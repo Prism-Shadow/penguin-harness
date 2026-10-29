@@ -1,25 +1,20 @@
 /**
- * CLI resolution: the ten cases of the RFC's table, one test each; the six fault names and
- * four reason names verbatim; the five record states the answer depends on; and the three
- * answers a product's manifest declaration can give.
+ * Resolution: the names it answers with, the RFC's ten cases as one table, the declaration
+ * a product carries, and the record reader agreeing with the hot-update layer's own.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readPushedCli, type PushedCli } from "@prismshadow/penguin-hmr/manifest";
+import { readPushedCli } from "@prismshadow/penguin-hmr/manifest";
 import {
-  answerForRecordState,
   CLI_FAULTS,
   CLI_REASONS,
-  CONSUMER_CONDITIONS,
   LEGACY_LOADER_NAME,
-  loaderDeclarationFor,
-  readCliRecord,
-  readLoaderDeclaration,
-  recordStateDetail,
   resolveCli,
-} from "../src/cli-resolution.js";
+  shimFromResolution,
+  type CliResolution,
+} from "../src/services/cli-shim.js";
 
 const made: string[] = [];
 
@@ -40,7 +35,6 @@ afterEach(async () => {
 interface Product {
   dir: string;
   entry: string;
-  /** Where the loader lands when the manifest declares one (and when it ships one undeclared). */
   loader: string;
 }
 
@@ -54,11 +48,7 @@ async function makeProduct(
   const loader = path.join(dist, LEGACY_LOADER_NAME);
   await fs.writeFile(entry, "export const cli = async () => 0;\n");
   if (options.loader !== false) await fs.writeFile(loader, "export const cli = async () => 0;\n");
-  const manifest: Record<string, unknown> = {
-    name: "fixture-cli",
-    version: "0.0.0",
-    bin: { penguin: "./dist/penguin.js" },
-  };
+  const manifest: Record<string, unknown> = { name: "fixture-cli", version: "0.0.0" };
   if (options.declare !== false) {
     manifest.penguin = { pushedCliLoader: options.declare ?? `./dist/${LEGACY_LOADER_NAME}` };
   }
@@ -89,8 +79,22 @@ async function makeRoot(
 /** The record a pushed CLI leaves: the store file the caller creates, named relatively. */
 const PUSHED = { cli: { bundle: "store/cli/abc123.mjs" } };
 
+/** One row of the RFC's table: how to build the world, and what the answer must be. */
+interface Case {
+  name: string;
+  product: () => Promise<Product>;
+  root: () => Promise<{ root: string; bundle: string }>;
+  /** The caller's entry; default the product's installed entry. */
+  self?: (product: Product) => string;
+  /** The entry the answer must name, when it names one. */
+  entry?: (product: Product, self: string) => string;
+  /** The pushed bundle the answer must carry, when it carries one. */
+  bundle?: (bundle: string) => string;
+  expect: Partial<CliResolution>;
+}
+
 describe("the names an answer is made of", () => {
-  it("is the six fault names, verbatim and in the RFC's order", () => {
+  it("is the six faults and the four reasons, verbatim and in the RFC's order", () => {
     expect([...CLI_FAULTS]).toEqual([
       "damaged-record",
       "cli-pointer-unusable",
@@ -99,377 +103,218 @@ describe("the names an answer is made of", () => {
       "loader-absent",
       "loader-unloadable",
     ]);
-  });
-
-  it("is the four reason names, verbatim and in the RFC's order", () => {
     expect([...CLI_REASONS]).toEqual(["pushed", "legacy", "no-record", "no-pushed-cli"]);
   });
-
-  it("names the two consumer conditions beyond the decision order", () => {
-    expect([...CONSUMER_CONDITIONS]).toEqual(["loader-unloadable", "entry-not-respawnable"]);
-  });
 });
 
-describe("the record's five states, each read on its own", () => {
-  it("`none`: no record at all", async () => {
-    const { root } = await makeRoot();
-    await expect(readCliRecord(root)).resolves.toEqual({ kind: "none" });
-  });
+describe("the RFC's ten cases", () => {
+  const cases: Case[] = [
+    {
+      name: "1. record and a declared loader present → the loader, `pushed`",
+      product: () => makeProduct(),
+      root: () => makeRoot({ record: PUSHED }),
+      entry: (product) => product.loader,
+      bundle: (bundle) => bundle,
+      expect: { kind: "entry", reason: "pushed" },
+    },
+    {
+      name: "2. record and a declared loader absent → fault `loader-missing`",
+      product: () => makeProduct({ loader: false }),
+      root: () => makeRoot({ record: PUSHED }),
+      expect: { kind: "fault", fault: "loader-missing" },
+    },
+    {
+      name: "3. record, no declaration, the legacy loader present → `legacy`",
+      product: () => makeProduct({ declare: false }),
+      root: () => makeRoot({ record: PUSHED }),
+      entry: (product) => product.loader,
+      bundle: (bundle) => bundle,
+      expect: { kind: "entry", reason: "legacy" },
+    },
+    {
+      name: "4. record, no declaration and no legacy loader → fault `loader-absent`",
+      product: () => makeProduct({ declare: false, loader: false }),
+      root: () => makeRoot({ record: PUSHED }),
+      expect: { kind: "fault", fault: "loader-absent" },
+    },
+    {
+      name: "5. the pointer's file is gone from the store → fault `cli-bundle-missing`",
+      product: () => makeProduct(),
+      root: () => makeRoot({ record: PUSHED, bundle: false }),
+      expect: { kind: "fault", fault: "cli-bundle-missing" },
+    },
+    {
+      name: "6. an unusable pointer → fault `cli-pointer-unusable`",
+      product: () => makeProduct(),
+      root: () => makeRoot({ record: { cli: { bundle: "../escaped.mjs" } } }),
+      expect: { kind: "fault", fault: "cli-pointer-unusable" },
+    },
+    {
+      name: "7. a record with no CLI section → the caller's entry, `no-pushed-cli`",
+      product: () => makeProduct(),
+      root: () => makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } }),
+      entry: (_product, self) => self,
+      expect: { kind: "entry", reason: "no-pushed-cli" },
+    },
+    {
+      name: "8. no record → the caller's entry, `no-record`",
+      product: () => makeProduct(),
+      root: () => makeRoot(),
+      entry: (_product, self) => self,
+      expect: { kind: "entry", reason: "no-record" },
+    },
+    {
+      name: "9. a damaged record → fault `damaged-record`",
+      product: () => makeProduct(),
+      root: () => makeRoot({ raw: "{ not json" }),
+      expect: { kind: "fault", fault: "damaged-record" },
+    },
+    {
+      name: "10. the caller is the declared loader → itself, `pushed`, loading the pushed bundle",
+      product: () => makeProduct(),
+      root: () => makeRoot({ record: PUSHED }),
+      self: (product) => product.loader,
+      entry: (_product, self) => self,
+      bundle: (bundle) => bundle,
+      expect: { kind: "entry", reason: "pushed" },
+    },
+    {
+      name: "10b. the caller is a legacy loader of a product that declares nothing → `legacy`",
+      product: () => makeProduct({ declare: false }),
+      root: () => makeRoot({ record: PUSHED }),
+      self: (product) => product.loader,
+      entry: (_product, self) => self,
+      bundle: (bundle) => bundle,
+      expect: { kind: "entry", reason: "legacy" },
+    },
+  ];
 
-  it("`damaged`: a record that will not parse", async () => {
-    const { root } = await makeRoot({ raw: "{ not json" });
-    const read = await readCliRecord(root);
-    expect(read.kind).toBe("damaged");
-    expect(read.kind === "damaged" && read.reason).toMatch(/not readable JSON/);
-  });
-
-  it("`damaged`: a record that holds no JSON object", async () => {
-    const { root } = await makeRoot({ raw: "null" });
-    await expect(readCliRecord(root)).resolves.toMatchObject({ kind: "damaged" });
-  });
-
-  it("`absent`: a record with no CLI section", async () => {
-    const { root } = await makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } });
-    await expect(readCliRecord(root)).resolves.toEqual({ kind: "absent" });
-  });
-
-  it("`unusable`: a CLI section with no pointer, an empty one, or one outside the store", async () => {
-    for (const cli of [{}, { bundle: "" }, { bundle: 42 }, { bundle: "../escaped.mjs" }]) {
-      const { root } = await makeRoot({ record: { cli } });
-      await expect(readCliRecord(root)).resolves.toMatchObject({ kind: "unusable" });
-    }
-  });
-
-  it("`missing`: a pointer the store no longer holds", async () => {
-    const { root, bundle } = await makeRoot({ record: PUSHED, bundle: false });
-    await expect(readCliRecord(root)).resolves.toEqual({ kind: "missing", file: bundle });
-  });
-
-  it("`bundle`: a pointer the store holds", async () => {
-    const { root, bundle } = await makeRoot({ record: PUSHED });
-    await expect(readCliRecord(root)).resolves.toEqual({ kind: "bundle", file: bundle });
-  });
-});
-
-describe("the declaration a product carries in its manifest", () => {
-  it("is `declared`, resolved against the manifest's directory", async () => {
-    const product = await makeProduct();
-    const read = await readLoaderDeclaration(path.join(product.dir, "package.json"));
-    expect(read).toEqual({
-      kind: "declared",
-      declaration: {
-        file: product.loader,
-        manifest: path.join(product.dir, "package.json"),
-      },
-    });
-  });
-
-  it("is `absent` for a manifest with no declaration, and for no manifest at all", async () => {
-    const product = await makeProduct({ declare: false });
-    await expect(readLoaderDeclaration(path.join(product.dir, "package.json"))).resolves.toEqual({
-      kind: "absent",
-      manifest: path.join(product.dir, "package.json"),
-    });
-    await expect(readLoaderDeclaration(path.join(product.dir, "nope.json"))).resolves.toEqual({
-      kind: "absent",
-      manifest: null,
-    });
-  });
-
-  it("is `broken` for a declaration that names no usable file", async () => {
-    const product = await makeProduct({ declare: 42 as unknown as string });
-    await expect(
-      readLoaderDeclaration(path.join(product.dir, "package.json")),
-    ).resolves.toMatchObject({ kind: "broken" });
-
-    const escaping = await makeProduct({ declare: "../elsewhere/penguin-hmr.js" });
-    await expect(
-      readLoaderDeclaration(path.join(escaping.dir, "package.json")),
-    ).resolves.toMatchObject({ kind: "broken" });
-
-    const unparseable = await tmp("penguin-resolution-broken-");
-    await fs.writeFile(path.join(unparseable, "package.json"), "{ not json");
-    await expect(
-      readLoaderDeclaration(path.join(unparseable, "package.json")),
-    ).resolves.toMatchObject({ kind: "broken" });
-  });
-
-  it("is found from the entry, through a bin symlink, at the owning package", async () => {
-    const product = await makeProduct();
-    const bin = path.join(product.dir, "node_modules", ".bin");
-    await fs.mkdir(bin, { recursive: true });
-    const linked = path.join(bin, "penguin");
-    await fs.symlink(path.relative(bin, product.entry), linked);
-    await expect(loaderDeclarationFor(linked)).resolves.toMatchObject({
-      kind: "declared",
-      declaration: { file: product.loader },
-    });
-  });
-
-  it("stops at the product's own manifest, which declares nothing, never the one above", async () => {
-    // A product nested in a directory that declares a loader must not borrow it: the nearest
-    // manifest is the product's own, and its silence is the answer.
-    const outer = await makeProduct();
-    const inner = path.join(outer.dir, "vendor", "inner");
-    await fs.mkdir(path.join(inner, "dist"), { recursive: true });
-    const entry = path.join(inner, "dist", "penguin.js");
-    await fs.writeFile(entry, "export const cli = async () => 0;\n");
-    await fs.writeFile(
-      path.join(inner, "package.json"),
-      JSON.stringify({ name: "inner-cli", version: "0.0.0" }, null, 2),
-    );
-    await expect(loaderDeclarationFor(entry)).resolves.toEqual({
-      kind: "absent",
-      manifest: path.join(inner, "package.json"),
-    });
-  });
-});
-
-describe("the ten cases and their answers", () => {
-  it("1. record, CLI file in the store, declared loader present → the loader, `pushed`", async () => {
-    const product = await makeProduct();
-    const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "entry", entry: product.loader, reason: "pushed" });
-  });
-
-  it("2. record, CLI file in the store, declared loader absent → fault `loader-missing`", async () => {
-    const product = await makeProduct({ loader: false });
-    const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "fault", fault: "loader-missing" });
-  });
-
-  it("3. record, CLI file in the store, no declaration, legacy loader present → `legacy`", async () => {
-    const product = await makeProduct({ declare: false });
-    const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "entry", entry: product.loader, reason: "legacy" });
-  });
-
-  it("4. record, CLI file in the store, no declaration and no legacy loader → `loader-absent`", async () => {
-    const product = await makeProduct({ declare: false, loader: false });
-    const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "fault", fault: "loader-absent" });
-  });
-
-  it("5. record, CLI file missing from the store → fault `cli-bundle-missing`, whatever is declared", async () => {
-    const { root, bundle } = await makeRoot({ record: PUSHED, bundle: false });
-    for (const declare of [undefined, false] as const) {
-      const product = await makeProduct(declare === false ? { declare: false } : {});
-      const resolved = await resolveCli({
-        self: product.entry,
-        root,
-        declaration: await loaderDeclarationFor(product.entry),
-      });
-      expect(resolved).toMatchObject({
-        kind: "fault",
-        fault: "cli-bundle-missing",
-        detail: bundle,
-      });
-    }
-  });
-
-  it("6. record, pointer unusable → fault `cli-pointer-unusable`, whatever is declared", async () => {
-    for (const record of [{ cli: {} }, { cli: { bundle: "../escaped.mjs" } }]) {
-      const { root } = await makeRoot({ record });
-      for (const declared of [true, false]) {
-        const product = await makeProduct(declared ? {} : { declare: false });
-        const resolved = await resolveCli({
-          self: product.entry,
-          root,
-          declaration: await loaderDeclarationFor(product.entry),
+  it("answers each case with its entry and reason, or its named fault", async () => {
+    for (const item of cases) {
+      const product = await item.product();
+      const { root, bundle } = await item.root();
+      const self = item.self?.(product) ?? product.entry;
+      const resolved = await resolveCli({ self, root });
+      expect({ name: item.name, ...resolved }).toMatchObject(item.expect);
+      if (resolved.kind === "entry") {
+        // The entry it names, and the pushed bundle it carries (none when nothing is pushed).
+        expect({
+          name: item.name,
+          entry: resolved.entry,
+          bundle: resolved.bundle,
+        }).toEqual({
+          name: item.name,
+          entry: item.entry?.(product, self) ?? self,
+          bundle: item.bundle?.(bundle) ?? null,
         });
-        expect(resolved).toMatchObject({ kind: "fault", fault: "cli-pointer-unusable" });
       }
     }
   });
 
-  it("7. record with no CLI section → the installed entry, `no-pushed-cli`", async () => {
-    const product = await makeProduct();
-    const { root } = await makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({
-      kind: "entry",
-      entry: product.entry,
-      reason: "no-pushed-cli",
-    });
-  });
-
-  it("8. no record → the installed entry, `no-record`", async () => {
-    const product = await makeProduct();
-    const { root } = await makeRoot();
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "entry", entry: product.entry, reason: "no-record" });
-  });
-
-  it("9. damaged record → fault `damaged-record`", async () => {
-    const product = await makeProduct();
-    const { root } = await makeRoot({ raw: "{ not json" });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
-    });
-    expect(resolved).toMatchObject({ kind: "fault", fault: "damaged-record" });
-  });
-
-  it("10. the caller is the declared loader → itself, `pushed`, whatever the record holds", async () => {
-    const product = await makeProduct();
-    for (const root of [await makeRoot(), await makeRoot({ record: PUSHED })]) {
-      const resolved = await resolveCli({
-        self: product.loader,
-        root: root.root,
-        declaration: await loaderDeclarationFor(product.loader),
-      });
-      expect(resolved).toMatchObject({ kind: "entry", entry: product.loader, reason: "pushed" });
-    }
-  });
-
-  it("10b. the caller is the legacy loader of a product that declares nothing → `legacy`", async () => {
-    const product = await makeProduct({ declare: false });
-    const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.loader,
-      root,
-      declaration: await loaderDeclarationFor(product.loader),
-    });
-    expect(resolved).toMatchObject({ kind: "entry", entry: product.loader, reason: "legacy" });
-  });
-
   it("keeps a broken declaration from falling back to the legacy name", async () => {
     const product = await makeProduct({ declare: "../elsewhere/penguin-hmr.js" });
-    // The legacy file is present beside the entry; a readable declaration that breaks must
-    // not be rescued by it.
     const { root } = await makeRoot({ record: PUSHED });
-    const resolved = await resolveCli({
-      self: product.entry,
-      root,
-      declaration: await loaderDeclarationFor(product.entry),
+    await expect(resolveCli({ self: product.entry, root })).resolves.toMatchObject({
+      kind: "fault",
+      fault: "loader-missing",
     });
-    expect(resolved).toMatchObject({ kind: "fault", fault: "loader-missing" });
   });
 });
 
-describe("the record-state table a consumer reports through", () => {
-  it("names each state exactly as resolution answers it, detail included", async () => {
-    // The pushed-CLI loader reads the record itself (it needs the file) and reports the state
-    // it found; it must not be able to name a state differently from the resolver.
+describe("the declaration a product carries", () => {
+  it("is found through a bin symlink, and a product that declares nothing inherits nothing", async () => {
     const product = await makeProduct();
-    const roots = {
-      none: await makeRoot(),
-      absent: await makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } }),
-      damaged: await makeRoot({ raw: "{ not json" }),
-      unusable: await makeRoot({ record: { cli: {} } }),
-      missing: await makeRoot({ record: PUSHED, bundle: false }),
-    };
-    for (const [state, { root }] of Object.entries(roots)) {
-      const record = await readCliRecord(root);
-      if (record.kind === "bundle") throw new Error(`${state} must not hold a bundle`);
-      const table = answerForRecordState(record.kind);
-      const name = table.kind === "entry" ? table.reason : table.fault;
-      expect([...CLI_REASONS, ...CLI_FAULTS]).toContain(name);
+    const bin = path.join(product.dir, "node_modules", ".bin", "penguin");
+    await fs.mkdir(path.dirname(bin), { recursive: true });
+    await fs.symlink(product.entry, bin);
+    const { root } = await makeRoot({ record: PUSHED });
+    await expect(resolveCli({ self: bin, root })).resolves.toMatchObject({
+      kind: "entry",
+      entry: product.loader,
+      reason: "pushed",
+    });
 
-      const resolved = await resolveCli({
-        self: product.entry,
-        root,
-        declaration: await loaderDeclarationFor(product.entry),
-      });
-      const resolvedName = resolved.kind === "entry" ? resolved.reason : resolved.fault;
-      expect(resolvedName).toBe(name);
-      expect(resolved.detail).toBe(recordStateDetail(record, root));
+    // A package nested inside a declaring product, with its own manifest that declares nothing:
+    // discovery stops there, so the outer declaration never answers for it.
+    const inner = path.join(product.dir, "vendor", "app");
+    await fs.mkdir(inner, { recursive: true });
+    await fs.writeFile(path.join(inner, "penguin.js"), "export const cli = async () => 0;\n");
+    await fs.writeFile(path.join(inner, "package.json"), JSON.stringify({ name: "inner" }));
+    await expect(resolveCli({ self: path.join(inner, "penguin.js"), root })).resolves.toMatchObject(
+      {
+        kind: "fault",
+        fault: "loader-absent",
+      },
+    );
+  });
+});
+
+describe("the record reader and the layer's own", () => {
+  it("agrees with `readPushedCli` wherever that reader answers", async () => {
+    const shapes: Array<{ name: string; root: () => Promise<{ root: string }> }> = [
+      { name: "no record", root: () => makeRoot() },
+      {
+        name: "no CLI section",
+        root: () => makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } }),
+      },
+      { name: "damaged record", root: () => makeRoot({ raw: "{ not json" }) },
+      { name: "unusable pointer", root: () => makeRoot({ record: { cli: {} } }) },
+      { name: "missing bundle", root: () => makeRoot({ record: PUSHED, bundle: false }) },
+      { name: "pushed bundle", root: () => makeRoot({ record: PUSHED }) },
+    ];
+    for (const shape of shapes) {
+      const product = await makeProduct();
+      const { root } = await shape.root();
+      const layer = await readPushedCli(root);
+      const resolved = await resolveCli({ self: product.entry, root });
+      const read = { name: shape.name, layer: layer.kind, resolved };
+      if (layer.kind === "bundle") {
+        expect(read).toMatchObject({ resolved: { kind: "entry", bundle: layer.file } });
+      } else if (layer.kind === "none") {
+        // The layer's one "nothing pushed" is resolution's two: both are that answer here.
+        expect(["no-record", "no-pushed-cli"]).toContain(
+          resolved.kind === "entry" ? resolved.reason : null,
+        );
+      } else {
+        expect(read).toMatchObject({ resolved: { kind: "fault" } });
+      }
     }
   });
 });
 
-describe("agrees with the layer's own reader", () => {
-  /**
-   * The five states, as the layer's three-answer reader projects them. Resolution reads the
-   * record itself — the layer answers two of the five pairs as one — so the two readers are
-   * pinned to each other here: a record the layer can answer must not arrive differently
-   * through resolution.
-   */
-  function projection(read: Awaited<ReturnType<typeof readCliRecord>>): PushedCli["kind"] {
-    switch (read.kind) {
-      case "none":
-      case "absent":
-        return "none";
-      case "bundle":
-        return "bundle";
-      case "damaged":
-      case "unusable":
-      case "missing":
-        return "broken";
-    }
-  }
+describe("the command shim on the answer", () => {
+  it("runs the loader of a pushed root, and the installed CLI with the name on a fault", async () => {
+    const installed = {
+      entry: "/install/penguin.js",
+      execArgs: ["--import", "tsx"],
+      unavailable: null,
+    };
 
-  it("reads every shape a record really takes as the layer reads it", async () => {
-    const shapes: { name: string; options: Parameters<typeof makeRoot>[0] }[] = [
-      { name: "no record", options: {} },
-      {
-        name: "a record with no CLI section",
-        options: { record: { platform: { bundle: "store/platform/x.mjs" } } },
-      },
-      { name: "a CLI section with no pointer", options: { record: { cli: {} } } },
-      { name: "an empty pointer", options: { record: { cli: { bundle: "" } } } },
-      {
-        name: "a pointer outside the store",
-        options: { record: { cli: { bundle: "../escaped.mjs" } } },
-      },
-      { name: "a pointer the store holds", options: { record: PUSHED } },
-      { name: "a pointer the store lost", options: { record: PUSHED, bundle: false } },
-      { name: "a record that will not parse", options: { raw: "{ not json" } },
-    ];
-    for (const { name, options } of shapes) {
-      const { root } = await makeRoot(options);
-      const layer = await readPushedCli(root);
-      const read = await readCliRecord(root);
-      expect({ name, kind: projection(read) }).toEqual({ name, kind: layer.kind });
-    }
-  });
+    const product = await makeProduct();
+    const { root } = await makeRoot({ record: PUSHED });
+    await expect(
+      resolveCli({ self: product.entry, root }).then((resolved) =>
+        shimFromResolution(installed, resolved),
+      ),
+    ).resolves.toEqual({
+      entry: product.loader,
+      execArgs: [],
+      unavailable: null,
+      answer: "pushed",
+    });
 
-  it("reads the three shapes the layer's cast cannot answer", async () => {
-    // Not a claim that the layer is wrong about a record it can read: these three are not
-    // records. `readPushedCli` casts whatever parsed into the record type, so a `cli` that is
-    // `null` reaches `.bundle` and throws, a `null` record throws, and an array answers "none".
-    // Resolution has to answer, so it names them: a CLI section that names no usable pointer,
-    // and a record that holds no JSON object. The test states both behaviours, so a later
-    // change to the layer's reader lands here instead of silently diverging.
-    const cliNull = await makeRoot({ record: { cli: null } });
-    await expect(readPushedCli(cliNull.root)).rejects.toThrow();
-    await expect(readCliRecord(cliNull.root)).resolves.toMatchObject({ kind: "unusable" });
+    const gone = await makeProduct({ loader: false });
+    await expect(
+      resolveCli({ self: gone.entry, root }).then((resolved) =>
+        shimFromResolution(installed, resolved),
+      ),
+    ).resolves.toEqual({
+      entry: installed.entry,
+      execArgs: installed.execArgs,
+      unavailable: null,
+      answer: "loader-missing",
+    });
 
-    const nullRecord = await makeRoot({ raw: "null" });
-    await expect(readPushedCli(nullRecord.root)).rejects.toThrow();
-    await expect(readCliRecord(nullRecord.root)).resolves.toMatchObject({ kind: "damaged" });
-
-    const arrayRecord = await makeRoot({ raw: "[]" });
-    await expect(readPushedCli(arrayRecord.root)).resolves.toEqual({ kind: "none" });
-    await expect(readCliRecord(arrayRecord.root)).resolves.toMatchObject({ kind: "damaged" });
+    expect(shimFromResolution(installed, null)).toMatchObject({ answer: "no-entry" });
   });
 });

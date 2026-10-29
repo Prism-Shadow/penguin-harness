@@ -2,13 +2,12 @@
  * `penguin-hmr`: the CLI currently pushed to this machine's HMR store, instead of the
  * one built into this binary. Use `penguin` when nothing is pushed.
  *
- * Which entry runs is resolution's answer (the shared procedure this package's server
- * publishes as `./cli-resolution`, beside the record reader this loader already imports):
- * this loader answers with itself for a root that holds a pushed CLI, and reports the reason
- * or the fault by name otherwise — `no-record` on a root nothing was ever pushed to,
- * `damaged-record`, `cli-pointer-unusable`, `cli-bundle-missing`, `loader-missing` for a
- * product whose declaration names no present loader. A name, not a sentence, is what a
- * person and a remote command act on.
+ * Which entry runs is the shared answer in the server's command-shim module,
+ * `@prismshadow/penguin-server/cli-shim` — the same answer the `penguin` written into this
+ * data root's `bin/` runs under. This loader asks it for the pushed bundle, and reports a
+ * fault by name: `no-record` and `no-pushed-cli` when nothing is pushed here,
+ * `damaged-record`, `cli-pointer-unusable`, `cli-bundle-missing` and `loader-missing` when
+ * the installation is broken, `loader-unloadable` when the bundle cannot load.
  */
 // First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
 // reaches node:sqlite the same way (see warnings.ts).
@@ -16,13 +15,7 @@ import "./warnings.js";
 import "dotenv/config";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";
-import {
-  answerForRecordState,
-  loaderDeclarationFor,
-  readCliRecord,
-  recordStateDetail,
-  resolveCli,
-} from "@prismshadow/penguin-server/cli-resolution";
+import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 
 /** This file: the loader's own entry, which resolution answers with on a pushed root. */
 const SELF = fileURLToPath(import.meta.url);
@@ -35,29 +28,16 @@ export async function loadPushedCli(
    */
   self: string = SELF,
 ): Promise<(argv: string[]) => Promise<number>> {
-  const resolved = await resolveCli({
-    self,
-    root,
-    declaration: await loaderDeclarationFor(self),
-  });
-  // A fault is reported by name: it says which part of the installation is broken, and a
+  const answer = await resolveCli({ self, root });
+  // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
-  if (resolved.kind === "fault") throw new Error(`${resolved.fault}: ${resolved.detail}`);
-  // The two reasons that name the installed CLI are not a CLI to load here: this entry
-  // exists to run the PUSHED one, and there is none.
-  if (resolved.reason === "no-record" || resolved.reason === "no-pushed-cli") {
-    throw new Error(`${resolved.reason}: nothing is pushed to ${root}; use \`penguin\` instead`);
+  if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
+  // The two reasons that answer an entry with no bundle mean nothing is pushed here: this
+  // entry exists to run the PUSHED CLI, and there is none to run.
+  if (answer.bundle === null) {
+    throw new Error(`${answer.reason}: nothing is pushed to ${root}; use \`penguin\` instead`);
   }
-  const record = await readCliRecord(root);
-  if (record.kind !== "bundle") {
-    // Resolution answered this entry itself (it is the product's loader), so the record's own
-    // state is what stands between it and a CLI: it reports that state under the name the
-    // fixed table gives it, not as a sentence about "an unusable CLI".
-    const answer = answerForRecordState(record.kind);
-    const name = answer.kind === "entry" ? answer.reason : answer.fault;
-    throw new Error(`${name}: ${recordStateDetail(record, root)}`);
-  }
-  const bundlePath = record.file;
+  const bundlePath = answer.bundle;
   // Cache-busted: a re-push writes a new file, but the same path may be reused.
   let mod: { cli?: (argv: string[]) => Promise<number> };
   try {
