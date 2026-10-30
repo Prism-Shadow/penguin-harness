@@ -2300,6 +2300,18 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
+  /**
+   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
+   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
+   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
+   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
+   * leading edge), and each of them showed through the page — the handle as a line that lit up
+   * under the pointer, took the cursor and resized the hidden dock.
+   */
+  const coveredByWorkbench =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
+      ? "invisible"
+      : "";
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -2309,8 +2321,9 @@ export function ChatPage() {
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
     <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
-          chat (which stays mounted, so its state survives a look at the page) below the
-          strip; the strip is absent when the Agent has no workbench with a UI. */}
+          chat (which stays mounted, so its state survives a look at the page, but is not
+          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
+          no workbench with a UI. */}
       <WorkbenchTabStrip
         tabs={workbenchTabs.tabs}
         notices={workbenchTabs.notices}
@@ -2337,7 +2350,9 @@ export function ChatPage() {
       {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
           nothing of the conversation is read until it is unarchived. */}
       {archivedRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
@@ -2345,7 +2360,9 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
@@ -2646,7 +2663,7 @@ export function ChatPage() {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
