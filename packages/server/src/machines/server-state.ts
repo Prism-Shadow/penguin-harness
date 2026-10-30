@@ -109,7 +109,7 @@ export async function probeServerState(
  * (packages/cli/src/penguin-hmr.ts): `no CLI pushed to <root>; use \`penguin\` instead`, or
  * `the CLI pushed to <root> is unusable: <why>`.
  */
-const SENTENCE_NO_PUSHED_CLI =
+const SENTENCE_NO_CLI_TO_RUN =
   /^(no CLI pushed to \S.*; use `penguin` instead|the CLI pushed to \S.* is unusable: .*)$/m;
 
 /**
@@ -119,14 +119,14 @@ const SENTENCE_NO_PUSHED_CLI =
  * carries no loader it can load, needs one remedy: an install from this page. The name says
  * which part broke, and the page's sentence says what to do about all of them.
  */
-const NAMED_NO_PUSHED_CLI =
+const NAMED_NO_CLI_TO_RUN =
   /^(?:own-entry|record-unreadable|cli-path-unusable|cli-file-missing|declared-loader-missing|no-loader|cli-unloadable): .*$/m;
 
 /** The page's sentence for a machine whose store has no CLI to run, with the far side's words after it. */
-export function noPushedCliDetail(said: string): string | null {
+export function noCliToRunDetail(said: string): string | null {
   // Both dialects: machines outlive releases, and a page that read only one would fall silent
   // on the half of the fleet that speaks the other.
-  const line = SENTENCE_NO_PUSHED_CLI.exec(said)?.[0] ?? NAMED_NO_PUSHED_CLI.exec(said)?.[0];
+  const line = SENTENCE_NO_CLI_TO_RUN.exec(said)?.[0] ?? NAMED_NO_CLI_TO_RUN.exec(said)?.[0];
   return line === undefined
     ? null
     : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Force install): that puts the build there. " +
@@ -150,7 +150,7 @@ async function probeIn(
       state: {
         kind: "unreachable",
         detail:
-          detail === "" ? "ssh exited without a message." : (noPushedCliDetail(detail) ?? detail),
+          detail === "" ? "ssh exited without a message." : (noCliToRunDetail(detail) ?? detail),
       },
       machineId: null,
     };
