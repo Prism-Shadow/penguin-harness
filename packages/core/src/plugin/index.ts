@@ -56,6 +56,17 @@ export { sessionShell } from "../environment/tools/command/shell.js";
 
 export type * from "./sandbox.js";
 export type * from "./languages.js";
+export type {
+  CliApiClient,
+  CliCommandContribution,
+  CliCommandEntry,
+  CliCommandProgram,
+  CliCommandRegister,
+  CliCommandSummary,
+  CliContext,
+  CliLoginSession,
+} from "./cli-commands.js";
+export { CLI_COMMANDS_SLOT, CLI_REGISTER_EXPORT, cliCommandKeyFault } from "./cli-commands.js";
 
 /**
  * What a plugin package's default export is.

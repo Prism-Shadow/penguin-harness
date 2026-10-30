@@ -1,15 +1,16 @@
 /**
- * `penguin server stop` (commands/server-stop.ts): what "stopped" means, and what a signal
+ * `penguin server stop` (src/cli/server-stop.ts): what "stopped" means, and what a signal
  * that did not land means. Driven with injected effects — the signal, the clock, the
- * platform — against a real lock file, so no server has to exist to be stopped.
+ * platform — against a real lock file, so no server has to exist to be stopped. Moved with
+ * the command from packages/cli/test/server-stop.test.ts; assertions unchanged.
  */
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stop } from "../src/commands/server-stop.js";
-import type { StopEffects } from "../src/commands/server-stop.js";
+import { stop } from "../src/cli/server-stop.js";
+import type { StopEffects } from "../src/cli/server-stop.js";
 
 /** A lock the liveness probe accepts: this process's pid, and a port that answers. */
 async function liveRoot(): Promise<{ root: string; port: number; close: () => void }> {

@@ -51,6 +51,7 @@ import type {
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HostCommandsResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListResponse,
@@ -2540,7 +2541,10 @@ router
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
-  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
+  // Host commands: a plain server's host offers none, so there is nothing to run.
+  .get("/api/command", (): HostCommandsResponse => ({ commands: [] }))
+  .post("/api/command/:command", () => notFound("Host command"));
 
 // ---------------------------------------------------------------------------------------------
 // The agent browser: the demo answers as a server with no desktop shell does, where the only
