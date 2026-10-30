@@ -243,6 +243,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `ace-rsi-toolkit` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |
 | | `awm-rsi-toolkit` | AWM，出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流，存入 Agent 的记忆。自成一体：自带初始化与评测参考 |
 | | `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944) |
+| | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904)：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验 |
 | | `evo-harness-rsi-toolkit` | Evo-Harness：单次执行、原 Solver 会话负反馈反思和一次批量编译。使用现有原生委派和 State 接口，提供批次校验、冻结 Skill 导出与完整测试统计。 |
 | | `openskill-rsi-toolkit` | 通过检索和独立虚拟验证构建技能库，冻结后进行 baseline／final Benchmark 评测。 |
 | | `trace-rsi-toolkit` | TRACE，出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：按技能汇总成功与失败轨迹，修订模块化技能库并测量重复运行的一致性。通过指令选择技能，自带 Benchmark、初始化、训练、评测与源码运行包参考，并说明上下文保留等适配 |

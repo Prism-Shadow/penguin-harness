@@ -34,6 +34,7 @@ export const RSI_TOOLKITS = [
   { plugin: "ace-rsi-toolkit", label: "ACE", href: "https://arxiv.org/abs/2510.04618" },
   { plugin: "awm-rsi-toolkit", label: "AWM", href: "https://arxiv.org/abs/2409.07429" },
   { plugin: "skilladam-rsi-toolkit", label: "SkillAdam", href: "https://arxiv.org/abs/2609.08944" },
+  { plugin: "skillopt-rsi-toolkit", label: "SkillOpt", href: "https://arxiv.org/abs/2605.23904" },
   {
     plugin: "evo-harness-rsi-toolkit",
     label: "Evo-Harness",

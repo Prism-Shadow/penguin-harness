@@ -73,6 +73,7 @@
     "@penguinharness/penguin-support": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
+    "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
     "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",

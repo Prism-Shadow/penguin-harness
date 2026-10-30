@@ -353,6 +353,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "openskill-rsi-toolkit",
       "opro-rsi-toolkit",
       "skilladam-rsi-toolkit",
+      "skillopt-rsi-toolkit",
       "trace-rsi-toolkit",
     ]);
     expect(names("office-productivity")).toEqual([

@@ -29,6 +29,8 @@ import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
 import oproPkg from "../../../../../plugins/opro-rsi-toolkit/package.json";
 import skilladamIcon from "../../../../../plugins/skilladam-rsi-toolkit/icon.svg?raw";
 import skilladamPkg from "../../../../../plugins/skilladam-rsi-toolkit/package.json";
+import skilloptIcon from "../../../../../plugins/skillopt-rsi-toolkit/icon.svg?raw";
+import skilloptPkg from "../../../../../plugins/skillopt-rsi-toolkit/package.json";
 import traceIcon from "../../../../../plugins/trace-rsi-toolkit/icon.svg?raw";
 import tracePkg from "../../../../../plugins/trace-rsi-toolkit/package.json";
 
@@ -143,6 +145,13 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "skilladam-rsi-toolkit",
         '"Run a SkillAdam experiment on the Project\'s selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."',
         "2026.10.29.4",
+      ),
+    ]),
+    libraryPlugin(skilloptPkg, skilloptIcon, [
+      skill(
+        "skillopt-rsi-toolkit",
+        "Run SkillOpt on selected Project Benchmarks by learning bounded Skill edits from trajectories, selecting candidates on fixed evaluation tasks, and testing frozen baseline and final States.",
+        "2026.10.30.1",
       ),
     ]),
     libraryPlugin(tracePkg, traceIcon, [
