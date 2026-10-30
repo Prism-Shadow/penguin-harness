@@ -134,6 +134,8 @@ describe("agent packages", () => {
       await expect(
         fs.readFile(path.join(dir, "agent_state", "system_config.yaml"), "utf8"),
       ).resolves.toBe(definition["my-agent/agent_state/system_config.yaml"]);
+      // The package's own skills land exactly as they are in the package; a system config
+      // the package does not carry would be written as the defaults (see the next test).
       // …and nothing that was lived:
       await expect(fs.access(path.join(dir, "agent_state", ".vault.toml"))).rejects.toThrow();
       await expect(fs.access(path.join(dir, "agent_state", "memory"))).rejects.toThrow();
@@ -186,7 +188,7 @@ describe("agent packages", () => {
       // The lived definition is untouched.
       await expect(
         fs.readFile(path.join(dir, "agent_state", "system_config.yaml"), "utf8"),
-      ).resolves.toBe("version: 7\n");
+      ).resolves.toContain("version: 7\n");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

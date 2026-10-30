@@ -263,8 +263,10 @@ export async function copyAgentPackage(opts: {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, bytes);
     copied.push(rel);
-    if (entry.state === "top" && entry.file === "system_config.yaml") hasConfig = true;
-    if (entry.state === "top" && entry.file === "AGENTS.md") hasAgentsMd = true;
+    // Either shape of the definition files counts: the package may carry them at the
+    // Agent-directory level or under agent_state/ — what it carries is what is kept.
+    if (rel === "system_config.yaml" || rel === "agent_state/system_config.yaml") hasConfig = true;
+    if (rel === "AGENTS.md" || rel === "agent_state/AGENTS.md") hasAgentsMd = true;
   }
   // Defaults for what the package does not carry — written as data, never executed.
   if (!hasConfig) {
