@@ -78,7 +78,7 @@ Remote commands resolve the peer's loader by asking: the peer declares, the call
 
 Resolution is one function in the command-shim module, `packages/server/src/services/cli-shim.ts` — the module that already decides which CLI the `penguin` on a person's PATH runs — published as the server package's `@prismshadow/penguin-server/cli-shim` subpath, beside `./hmr/manifest` and `./version-report`. It sits outside the hot-update layer: that layer — `packages/hmr`, `packages/server/src/hmr/` and `packages/desktop/` — carries the store and the record's mechanism, and a change there ships by rebuilding and redeploying every installation, while the decision procedure is the part a deployment may want to change without that cost. The CLI's loader imports the same subpath, so the loader and the shim act on one answer, and no channel's packaging changes.
 
-The record's five states — no record, a record that cannot be read, a record with no CLI entry, a CLI path that cannot be used, and a path whose file the store lost — are read in that module. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — merging the two "nothing pushed" states into one and the three faults into one, so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
+The record is read in that module, into three answers: a pushed bundle, nothing pushed, and a record the resolver cannot act on. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
 
 ### Resolution: the inputs and the order
 
@@ -89,7 +89,7 @@ Resolution takes the caller's own entry and the data root. It reads two things f
 3. **The declared loader.** A product that declares a loader answers it under the reason `declared-loader` when the target is present, and the fault `declared-loader-missing` when the target is absent or the declaration is broken.
 4. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy-loader` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `no-loader`.
 5. **No pushed CLI.** A root whose record is missing, or whose record carries no CLI entry, holds no pushed CLI: the caller's own entry runs, under the reason `own-entry`. The two shapes stay apart in the reader — they are two of the record's states — and answer the same way.
-6. **A record the resolver cannot use.** A record it cannot read or parse answers `record-unreadable`; a CLI path with no value, an empty one, or one outside the store answers `cli-path-unusable`; a path whose file the store no longer holds answers `cli-file-missing`.
+6. **A record the resolver cannot use.** A record it cannot read, parse, or act on — a `cli` entry with no usable bundle path, a path outside the store, a file the store no longer holds — answers `record-unreadable`, with what went wrong carried as its detail. Every one of these needs the same remedy, so they share one name.
 
 The first case that applies decides the answer. Cases 3 and 4 apply to a record that holds a pushed CLI; cases 5 and 6 apply to one that holds none.
 
@@ -101,8 +101,8 @@ The first case that applies decides the answer. Cases 3 and 4 apply to a record 
 | record | present, file in the store | declared loader absent | fault `declared-loader-missing` |
 | record | present, file in the store | no declaration, legacy loader present, window open | the legacy loader — `legacy-loader` |
 | record | present, file in the store | no declaration, no legacy loader | fault `no-loader` |
-| record | present, file missing from the store | any | fault `cli-file-missing` |
-| record | present, path unusable | any | fault `cli-path-unusable` |
+| record | present, file missing from the store | any | fault `record-unreadable` |
+| record | present, path unusable | any | fault `record-unreadable` |
 | record | no CLI entry | any | the caller's own entry — `own-entry` |
 | no record | — | any | the caller's own entry — `own-entry` |
 | damaged record | — | any | fault `record-unreadable` |
@@ -220,7 +220,6 @@ A few details stay open, each with the reason it cannot be settled here.
 - Whether a failed build-time assertion is a hard release failure or a warning during the window: the assertion is new, and the release has to carry it for a while before its false positives are known.
 - What the symlink channel's `PATH` face becomes. The extension-less link is still what that image exposes, and reshaping it changes how a person reaches the CLI there.
 - When the desktop application ships its loader. The product carries none, so its data root answers `no-loader`; the change belongs to the hot-update layer.
-- Whether the record's five states move into the layer's reader, leaving resolution a projection over one reader instead of a second reader of the same file.
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities
@@ -230,6 +229,11 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 ---
 
 ## Changes
+
+### v1.7.0
+
+- The record's reader narrowed from five states to three: a pushed bundle, nothing pushed, and a record the resolver cannot act on. The states it kept apart all needed the same remedy — an install from the Machines page — so `cli-path-unusable` and `cli-file-missing` folded into `record-unreadable`, which now carries what went wrong as its detail; `absent` folded into `none`, which already answered the same way. Four faults remain.
+- The declaration's reader narrowed from three answers to two: declared, or nothing. A manifest that cannot be read or parsed declares nothing — a product that cannot state its identity has none, and the answer it earns is the one a product from before the declaration earns.
 
 ### v1.6.0
 

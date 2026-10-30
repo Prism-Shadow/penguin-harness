@@ -78,7 +78,7 @@ loader 靠包清单里的一个字段亮明身份：`penguin.cliLoader`，值是
 
 resolution 是命令 shim 模块里的一个函数，`packages/server/src/services/cli-shim.ts`——也就是早已决定用户 `PATH` 上那个 `penguin` 运行什么的那份模块——以 server 包的 `@prismshadow/penguin-server/cli-shim` 子路径发布，与 `./hmr/manifest`、`./version-report` 并排。它位于热更新层之外：那一层——`packages/hmr`、`packages/server/src/hmr/` 与 `packages/desktop/`——承载 store 与记录的机制，改动那里意味着重建并重装每一台安装；判定过程是部署方可能想改、却不必付这个代价的那部分。CLI 的 loader 引入同一个子路径，于是 loader 与 shim 据同一个答案行动，也没有任何一条通道的打包需要改。
 
-记录的五种状态——没有记录、读不出、没有 CLI 一节、CLI 路径用不了、路径所指文件已不在 store 里——在这份模块里读。那一层的 reader 只答三种——`readPushedCli` 说「没有推送」「有个文件」「坏了」——把两个「没有推送」并成一个、把三个故障并成一个，所以 resolver 自己读 `<root>/hmr/harness.json`，并在那一层会作答的地方把答案投影到它的三种上。有一条用例钉住这层投影，两份 reader 因此不会无声地走岔。
+记录在这份模块里读成三种答案：推送的文件、没有推送、resolver 用不了的记录。那一层的 reader 只答三种——`readPushedCli` 说「没有推送」「有个文件」「坏了」——所以 resolver 自己读 `<root>/hmr/harness.json`，并在那一层会作答的地方把答案投影到它的三种上。有一条用例钉住这层投影，两份 reader 因此不会无声地走岔。
 
 ### resolution 的输入与顺序
 
@@ -89,7 +89,7 @@ resolution 收调用方自己的入口与数据根。它从磁盘读两样东西
 3. **声明的 loader。** 产品声明了 loader：目标存在时答这个 loader，理由 `declared-loader`；目标缺失或声明坏掉时答故障 `declared-loader-missing`。
 4. **旧名的 loader。** 产品没有声明时，过渡窗口开着且旧名 loader 存在，答那个 loader，理由 `legacy-loader`；既无声明、也无旧名 loader 时，答故障 `no-loader`。
 5. **没有推送的 CLI。** 记录不存在的根，或记录里没有 CLI 一节的根，都没有推送的 CLI：调用方自己的入口运行，理由 `own-entry`。这两种形态在 reader 里分开——它们是记录状态里的两种——答案相同。
-6. **用不了的记录。** 读不出或解析不了的记录答 `record-unreadable`；CLI 路径没有值、为空、或解析到 store 之外，答 `cli-path-unusable`；路径所指文件已不在 store 里，答 `cli-file-missing`。
+6. **用不了的记录。** 读不出、解析不了、或 resolver 无从处置的记录——`cli` 一节没有可用的 bundle 路径、路径解析到 store 之外、路径所指文件已不在 store 里——答 `record-unreadable`，出了什么问题随 detail 带上。这些情形要的都是同一个补救，所以共用一个名字。
 
 第一条命中的情形决定答案。第 3、4 条适用于带推送 CLI 的记录；第 5、6 条适用于不带的那一种。
 
@@ -101,8 +101,8 @@ resolution 收调用方自己的入口与数据根。它从磁盘读两样东西
 | 记录 | 在，文件在 store 里 | 声明的 loader 缺失 | 故障 `declared-loader-missing` |
 | 记录 | 在，文件在 store 里 | 无声明，旧名 loader 存在，窗口开着 | 旧名 loader——`legacy-loader` |
 | 记录 | 在，文件在 store 里 | 无声明，无旧名 loader | 故障 `no-loader` |
-| 记录 | 在，文件不在 store 里 | 任意 | 故障 `cli-file-missing` |
-| 记录 | 在，路径用不了 | 任意 | 故障 `cli-path-unusable` |
+| 记录 | 在，文件不在 store 里 | 任意 | 故障 `record-unreadable` |
+| 记录 | 在，路径用不了 | 任意 | 故障 `record-unreadable` |
 | 记录 | 没有 CLI 一节 | 任意 | 调用方自己的入口——`own-entry` |
 | 没有记录 | — | 任意 | 调用方自己的入口——`own-entry` |
 | 记录损坏 | — | 任意 | 故障 `record-unreadable` |
@@ -220,7 +220,6 @@ Node 的 `bin` 映射是声明的入口：包说它安装什么，调用方读�
 - 构建期断言失败是硬性的发行失败还是窗口期内的一条警告：断言是新的，发行得先带它一段时间，才知道它有哪些误报。
 - symlink 通道的 `PATH` 面变成什么。那个镜像暴露的仍是这条无扩展名链接，重塑它会改变人在那里到达 CLI 的方式。
 - 桌面应用何时带上它的 loader。产品今天不带，数据根因此答 `no-loader`；这项改动属于热更新层。
-- 记录的五种状态是否搬进那一层的 reader，让 resolution 成为对一份 reader 的投影，而不是同一个文件的第二个读法。
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities
@@ -230,6 +229,11 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 ---
 
 ## Changes
+
+### v1.7.0
+
+- 记录的读法从五种收窄到三种：推送的文件、没有推送、resolver 用不了的记录。原来分开的那些状态要的补救相同——都是从 Machines 页重装一次——所以 `cli-path-unusable` 与 `cli-file-missing` 并进 `record-unreadable`，出了什么问题随它的 detail 带上；`absent` 并进 `none`，两者本来答法就相同。剩下四个故障名。
+- 声明的读法从三种收窄到两种：声明了，或没有。读不出、解析不了的清单等于没有声明——说不出自己身份的产品就没有身份，它得到的答案与前声明时代的产品相同。
 
 ### v1.6.0
 

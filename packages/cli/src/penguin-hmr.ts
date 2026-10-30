@@ -5,9 +5,9 @@
  * Which entry runs is the shared answer in the server's command-shim module,
  * `@prismshadow/penguin-server/cli-shim` — the same answer the `penguin` written into this
  * data root's `bin/` runs under. This loader asks it for the pushed bundle, and reports a
- * fault by name: `own-entry` when nothing is pushed here, `record-unreadable`,
- * `cli-path-unusable`, `cli-file-missing` and `declared-loader-missing` when the
- * installation is broken, `cli-unloadable` when the pushed CLI cannot be loaded.
+ * fault by name: `own-entry` when nothing is pushed here, `record-unreadable` and
+ * `declared-loader-missing` when the installation is broken, `cli-unloadable` when the
+ * pushed CLI cannot be loaded.
  */
 // First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
 // reaches node:sqlite the same way (see warnings.ts).
