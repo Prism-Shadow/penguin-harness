@@ -14,6 +14,7 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
+  RetryStatus,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -383,6 +384,14 @@ export function MessageStream({
     );
   };
 
+  /**
+   * Presses of the earlier-messages Retry, the key of its row. The shared row holds a press until
+   * its next attempt begins, but a press that starts no load (the stream is rebuilding after a
+   * reconnect) brings no new attempt and leaves the failure as it was; a fresh row per press keeps
+   * Retry pressable, while a load that does start replaces the row with its spinner anyway.
+   */
+  const [olderPresses, setOlderPresses] = useState(0);
+
   /** Held refs for prepend scroll anchoring (see the layout effect below). */
   const olderRef = useRef(older);
   olderRef.current = older;
@@ -629,20 +638,29 @@ export function MessageStream({
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
-            <div className="flex h-7 items-center justify-center">
+            <div className="flex min-h-7 items-center justify-center">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
                   <Spinner size="sm" label={S.common.loading} />
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
-                <button
-                  type="button"
-                  onClick={older.onLoad}
-                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  {S.chat.loadEarlierRetry}
-                </button>
+                // The shared retry row, stopped: the cross, the sentence, the error after it in
+                // the muted ink, and Retry — not a red sentence that is itself the button.
+                <RetryStatus
+                  key={olderPresses}
+                  phase="gaveUp"
+                  label={S.chat.loadEarlierFailed}
+                  reason={older.error}
+                  reasonPlacement="inline"
+                  retry={{
+                    label: S.common.retry,
+                    onClick: () => {
+                      setOlderPresses((n) => n + 1);
+                      older.onLoad();
+                    },
+                  }}
+                />
               ) : !older.hasMore && older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}

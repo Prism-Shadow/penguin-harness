@@ -3853,8 +3853,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream retry row after a backfill failure: what failed; its Retry fetches the previous window again. */
+    loadEarlierFailed: "更早的对话加载失败",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3937,11 +3937,19 @@ Benchmark：
       sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
       /** The request went out; the row now only records it. */
       sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      gaveUp: (attempts: number) => (attempts > 1 ? `${attempts} 次请求均失败` : "请求失败"),
       /**
-       * Why it retried, in words: the title over the provider's own message behind the row's
-       * "?". The live protocol carries the classified cause on `error_code`; the legacy status
-       * spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+       * The ladder gave up and the run ended: said as the line a run ended on is, beside
+       * 「[已中断]」 and 「[错误]」 — how many attempts failed and why in words, then the
+       * provider's own message when it gave one.
+       */
+      failed: (attempts: number, cause: string, message?: string) =>
+        `[请求失败]：${attempts > 1 ? `${attempts} 次请求均失败（${cause}）` : cause}${message ? `：${message}` : ""}`,
+      /** Why it is retrying, after the row's sentence: the cause, then the provider's own words. */
+      why: (cause: string, message?: string) => (message ? `${cause}：${message}` : cause),
+      /**
+       * Why it retried, in words. The live protocol carries the classified cause on
+       * `error_code`; the legacy status spellings (failed/timeout/malformed) say the same thing
+       * for pre-convergence Traces.
        */
       cause: (
         status: "retryable" | "failed" | "timeout" | "malformed",

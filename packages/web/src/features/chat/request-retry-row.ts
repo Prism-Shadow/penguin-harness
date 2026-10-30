@@ -3,11 +3,14 @@
  * package's shared retry row (`RetryStatus`), the same row a machine's reconnect wears. Its
  * attempt is the turn's, of the engine's ceiling — `request_end.attempt` counts every attempt,
  * the first request included — so the row is about the next attempt while it waits and the one
- * sent after, and a ladder that gave up says how many it took.
+ * sent after.
  *
- * Why it retried waits behind the row's "?": the cause in words as the title over the provider's
- * own message, or the cause alone when the provider said nothing. The presses are the caller's
- * to grant (main session only, and only while a live countdown runs); this only places them.
+ * Why it retried sits on the row after the sentence, in sight: the cause in words, then the
+ * provider's own message when it gave one. The presses are the caller's to grant (main session
+ * only, and only while a live countdown runs); this only places them.
+ *
+ * A ladder that gave up ended the run, and is not this row: it is said as the line a run ended
+ * on is (`requestFailedNotice`), beside the stop marker and the error banner.
  */
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
 import type { RetryAction, RetryStatusProps } from "@prismshadow/penguin-ui";
@@ -19,8 +22,6 @@ export interface RequestRetryPresses {
   onRetryNow?: (() => void) | undefined;
   /** Stops retrying (the session abort); offered only while the countdown runs. */
   onStop?: (() => void) | undefined;
-  /** Sends the unfinished turn again, after the ladder gave up; offered on the stream's last line. */
-  onRetry?: (() => Promise<void>) | undefined;
 }
 
 export function requestRetryRow(
@@ -32,21 +33,12 @@ export function requestRetryRow(
   const t = S.chat.requestRetry;
   const m = DEFAULT_MAX_TURN_ATTEMPTS;
   const next = item.attempt + 1;
-  const cause = t.cause(item.status, item.errorCode);
-  const why =
-    item.errorMessage === undefined
-      ? { reason: cause, reasonTitle: null }
-      : { reason: item.errorMessage, reasonTitle: cause };
+  const why = {
+    reason: t.why(t.cause(item.status, item.errorCode), item.errorMessage),
+    reasonPlacement: "inline" as const,
+  };
   const press = (label: string, onClick: (() => unknown) | undefined): RetryAction | null =>
     onClick === undefined ? null : { label, onClick };
-  if (item.gaveUp === true) {
-    return {
-      phase: "gaveUp",
-      label: t.gaveUp(item.attempt),
-      ...why,
-      retry: press(S.chat.retryRun, presses.onRetry),
-    };
-  }
   if (item.retrying) return { phase: "retried", label: t.sent(next, m), ...why };
   if (countdownTo === null) return { phase: "trying", label: t.sending(next, m), ...why };
   return {
@@ -58,4 +50,13 @@ export function requestRetryRow(
     retry: press(t.retryNow, presses.onRetryNow),
     secondary: press(t.stop, presses.onStop),
   };
+}
+
+/**
+ * A ladder that gave up, as the line a run ended on says it: the bracketed label, how many
+ * attempts failed and why in words, then the provider's own message when it gave one.
+ */
+export function requestFailedNotice(item: ReconnectItem): string {
+  const t = S.chat.requestRetry;
+  return t.failed(item.attempt, t.cause(item.status, item.errorCode), item.errorMessage);
 }

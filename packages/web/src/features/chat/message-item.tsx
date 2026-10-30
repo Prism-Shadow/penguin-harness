@@ -16,12 +16,12 @@ import {
   AttachmentFile,
   AttachmentImage,
   AttachmentList,
-  Button,
   MessageAttachments,
   MessageBubble,
   MessageMeta,
   MessageRow,
   RetryStatus,
+  TextAction,
   useCountdown,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -32,7 +32,7 @@ import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
-import { requestRetryRow } from "./request-retry-row";
+import { requestFailedNotice, requestRetryRow } from "./request-retry-row";
 import { SessionThinking } from "./thinking-block";
 import { SessionToolCall } from "./tool-call-card";
 import { SessionSubagentChip } from "./subagent-chip";
@@ -130,17 +130,15 @@ function retryOffer(ctx: StreamRenderContext, last: boolean): StreamRenderContex
 }
 
 /**
- * "Retry" on the error banner or the stop marker a run ended on (a retry row that gave up offers
- * its own, as a link). A click disables it, and it stays disabled: the Task starting, or anything
- * landing after the line, takes the button away (and with it this state). A refused retry enables
- * it again — the page has already said why.
+ * "Retry" on the line a run ended on — the error banner, the stop marker, a retry ladder that
+ * gave up — as a text action at the end of the line, never a boxed button. A click disables it,
+ * and it stays disabled: the Task starting, or anything landing after the line, takes it away
+ * (and with it this state). A refused retry enables it again — the page has already said why.
  */
 function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
   const [acted, setActed] = useState(false);
   return (
-    <Button
-      variant="secondary"
-      size="xs"
+    <TextAction
       disabled={acted}
       onClick={() => {
         setActed(true);
@@ -148,7 +146,7 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
       }}
     >
       {S.chat.retryRun}
-    </Button>
+    </TextAction>
   );
 }
 
@@ -166,8 +164,12 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
  * leaves a later attempt with dead controls. History safety: replay delivers the following
  * request_begin/abort immediately, flipping the state, so neither the countdown nor the presses
  * render for replayed items; the presses are additionally main-session-only (a subagent's
- * backoff belongs to the child session, which the retry-now route does not target). A row that
- * gave up ended the run, and as the stream's last item it offers Retry (see retryOffer).
+ * backoff belongs to the child session, which the retry-now route does not target).
+ *
+ * A ladder that gave up ended the run, so it is said the way every line a run ended on is — the
+ * stop marker's and the error banner's notice: a bracketed label, the attempts and their cause,
+ * the provider's own words in sight (clamped, with Expand), and, as the stream's last item, the
+ * same Retry (see retryOffer).
  */
 function ReconnectLine({
   item,
@@ -188,16 +190,27 @@ function ReconnectLine({
       : null;
   const left = useCountdown(target);
   const main = ctx.origin.length === 0;
+  if (item.gaveUp === true) {
+    const retry = retryOffer(ctx, last);
+    return (
+      <MessageBubble
+        variant="notice"
+        actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+      >
+        {requestFailedNotice(item)}
+      </MessageBubble>
+    );
+  }
+  // A note between the messages, spaced like the transcript's other notes.
   return (
-    <div className="anim-msg my-1">
-      <RetryStatus
-        {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
-          onRetryNow: main ? ctx.onRetryNow : undefined,
-          onStop: main ? ctx.onGiveUp : undefined,
-          onRetry: item.gaveUp ? retryOffer(ctx, last) : undefined,
-        })}
-      />
-    </div>
+    <RetryStatus
+      {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
+        onRetryNow: main ? ctx.onRetryNow : undefined,
+        onStop: main ? ctx.onGiveUp : undefined,
+      })}
+      frame="note"
+      className="anim-msg my-2"
+    />
   );
 }
 

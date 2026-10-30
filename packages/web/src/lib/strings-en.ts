@@ -3662,8 +3662,8 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "Loading earlier messages…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "Failed to load earlier messages — click to retry",
+    /** Top-of-stream retry row after a backfill failure: what failed; its Retry fetches the previous window again. */
+    loadEarlierFailed: "Could not load earlier messages",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3744,8 +3744,11 @@ Scenarios:
         `Retrying in ${seconds} s (attempt ${n}/${m})`,
       sending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
       sent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      gaveUp: (attempts: number) =>
-        attempts > 1 ? `Request failed after ${attempts} attempts` : "Request failed",
+      failed: (attempts: number, cause: string, message?: string) => {
+        const why = `${cause.charAt(0).toLowerCase()}${cause.slice(1)}`;
+        return `[Failed]: ${attempts > 1 ? `all ${attempts} requests failed (${why})` : why}${message ? `: ${message}` : ""}`;
+      },
+      why: (cause: string, message?: string) => (message ? `${cause}: ${message}` : cause),
       cause: (
         status: "retryable" | "failed" | "timeout" | "malformed",
         errorCode?: string,
@@ -3837,7 +3840,7 @@ Scenarios:
     sessionNotFoundHint:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
-    historyLoadFailed: "Failed to load history",
+    historyLoadFailed: "Could not load the message history",
     machineAway: {
       reconnecting: (alias: string) => `${alias} is reconnecting`,
       reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,

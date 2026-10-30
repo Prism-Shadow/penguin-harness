@@ -1,11 +1,21 @@
+// @vitest-environment jsdom
 /**
  * MessageStream hands the links in its Markdown the conversation's Workspace and file opener
- * (react-dom/server static markup, node env, no DOM). Static markup carries no handlers, so
- * replyLinkBehavior is wrapped rather than replaced: every call still returns the real behaviour,
- * and the test keeps what the link adapter spread onto each rendered anchor in order to click it.
+ * (react-dom/server static markup; the one press below is driven in a live DOM). Static markup
+ * carries no handlers, so replyLinkBehavior is wrapped rather than replaced: every call still
+ * returns the real behaviour, and the test keeps what the link adapter spread onto each rendered
+ * anchor in order to click it.
  * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
- * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
- * while it is the stream's last item and no Task runs.
+ * The line a run ended on — that banner, the marker of a run the user stopped, or a retry ladder
+ * that gave up — offers Retry while it is the stream's last item and no Task runs. A ladder that
+ * gave up says so on that same notice, with the provider's own words in sight.
+ *
+ * Older history above the transcript:
+ * - Given the previous window failed to load, the top says so on the shared retry row with a
+ *   Retry, the error in sight after the sentence.
+ * - Given the window is being loaded again, the failure is gone and the loading line shows.
+ * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
+ *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
  *
  * What a prompt carried is drawn as one message, the way the composer showed it:
  * - Given a prompt's text and the image items right behind it, the images sit above the text in
@@ -26,11 +36,16 @@ import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
-import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
+import type {
+  A2uiActions,
+  OlderHistoryControls,
+  StreamRenderContext,
+} from "../src/features/chat/message-stream";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { LocaleProvider } from "../src/state/locale";
+import { button, click, mount, unmountAll } from "./helpers/dom";
 import { stubLocalStorage } from "./helpers/storage";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
@@ -52,6 +67,9 @@ const WS = "/home/user/workspaces/tmp-1";
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
+/** The words of every rendered button, tags dropped. */
+const buttonWords = (html: string) =>
+  [...html.matchAll(/<button\b[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]*>/g, ""));
 
 describe("MessageStream links", () => {
   it("a reply's link to a Workspace file renders without a target, and its click opens the file", () => {
@@ -123,17 +141,95 @@ describe("MessageStream error banner", () => {
         onAddExcerpt: () => {},
       }),
     );
-  const retry = `>${S.chat.retryRun}</button>`;
+  const offersRetry = (html: string) => buttonWords(html).includes(S.chat.retryRun);
   // A Retry run's reply lands right after the line: the held input has been sent again.
   const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
+  const gaveUp: ChatItem = {
+    kind: "reconnect",
+    id: 1,
+    status: "retryable",
+    attempt: 6,
+    retrying: false,
+    gaveUp: true,
+    errorCode: "network",
+    errorMessage: "503 upstream overloaded",
+  };
 
   it.each<[string, ChatItem]>([
     ["a failed run's banner", { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" }],
     ["a stopped run's marker", { kind: "abort", id: 1, errorCode: "user_abort" }],
+    ["a retry ladder that gave up", gaveUp],
   ])("%s offers Retry as the last line while no Task runs, and not otherwise", (_, ended) => {
-    expect(stream([ended])).toContain(retry);
-    expect(stream([ended, reply])).not.toContain(retry);
-    expect(stream([ended], true)).not.toContain(retry);
+    expect(offersRetry(stream([ended]))).toBe(true);
+    expect(offersRetry(stream([ended, reply]))).toBe(false);
+    expect(offersRetry(stream([ended], true))).toBe(false);
+  });
+
+  it("a ladder that gave up is the run's last line, its provider's words in sight, not a retry row", () => {
+    const html = stream([gaveUp]);
+    expect(html).toContain("503 upstream overloaded");
+    expect(html).not.toContain("data-retry-phase");
+  });
+});
+
+describe("MessageStream older history", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  const reply: ChatItem = { kind: "assistant_text", id: 1, text: "Done.", streaming: false };
+  const top = (over: Partial<OlderHistoryControls>) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: {
+          hasMore: true,
+          loading: false,
+          error: null,
+          prependedCount: 0,
+          onLoad: () => {},
+          ...over,
+        },
+      }),
+    );
+
+  it("a window that failed to load is said at the top with a Retry, its error in sight", () => {
+    const html = top({ error: "socket closed: ECONNRESET" });
+    expect(html).toContain('data-retry-phase="gaveUp"');
+    expect(html).toContain(S.chat.loadEarlierFailed);
+    expect(html).toContain("socket closed: ECONNRESET");
+    expect(buttonWords(html)).toContain(S.common.retry);
+  });
+
+  it("while the window loads again, the failure is gone and the loading line shows", () => {
+    const html = top({ loading: true, error: "socket closed: ECONNRESET" });
+    expect(html).not.toContain("data-retry-phase");
+    expect(html).toContain(S.chat.loadingEarlier);
+  });
+
+  it("a Retry that started no load stays pressable, and the next press asks again", async () => {
+    // A press that starts nothing: the failure, and so the row's state, stay as they were.
+    const onLoad = vi.fn();
+    await mount(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: { hasMore: true, loading: false, error: "socket closed", prependedCount: 0, onLoad },
+      }),
+    );
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(button(S.common.retry).disabled).toBe(false);
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(2);
+    await unmountAll();
   });
 });
 

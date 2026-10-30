@@ -720,10 +720,10 @@
   }
   /* No fill on hover or open either: a row that does something answers the pointer by lifting
      its words to the body ink, the line otherwise unchanged; a harness note or a server with
-     nothing to open is held still. The keyboard ring is drawn inside the row, since the card
-     clips at the row's own edges. */
+     nothing to open is held still, and so is a retry row, whose links are its only presses. The
+     keyboard ring is drawn inside the row, since the card clips at the row's own edges. */
   :root[data-theme="modern"]
-    .ui-frame:has(> .ui-activity)
+    .ui-frame:has(> .ui-activity):not([data-retry-phase])
     > [data-slot="head"]:is(button, :has(button)):hover
     :is([data-slot="label"], [data-slot="detail"]),
   :root[data-theme="modern"]

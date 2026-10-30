@@ -27,12 +27,89 @@
  * The box carries no margin and no motion of its own: where it sits (the transcript's spacing,
  * a user row's column, a steer's chip) decides both, through `className`.
  */
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import {
   ACTIVITY_HEAD_CLASS,
   ACTIVITY_HEAD_HOVER_CLASS,
   ActivityMarkSlot,
 } from "../../layout/disclosure-row/disclosure-row";
+
+/** Where a note leads: the whole line is then a button. */
+export interface TranscriptNoteAction {
+  onClick: () => void;
+  /** The hover hint: where the note leads, which its words do not say. */
+  hint?: string;
+  /** The button's accessible name, the note as one sentence. */
+  name?: string;
+}
+
+export interface TranscriptNoteFrameProps {
+  /** The head's run state as the activity hook knows it: running while something is live. */
+  state?: "running" | "done";
+  /** `fit`: the box takes its content's width; `fill`: the column's. */
+  width?: "fit" | "fill";
+  /** The head's parts wrap onto a second line in a narrow column; off when a part does its own. */
+  wrap?: boolean;
+  /** The note leads somewhere: its head is one button. */
+  action?: TranscriptNoteAction;
+  /** Placement only: the margin and the entrance motion. */
+  className?: string;
+  /** The box's own attributes: a role, a `data-*` naming what the note is. */
+  attributes?: HTMLAttributes<HTMLDivElement> & { [data: `data-${string}`]: string | undefined };
+  /** The head's parts, in order. */
+  children: ReactNode;
+}
+
+/**
+ * The note's box and its one head, an activity row of the `event` kind on the small rung in the
+ * muted ink: the one place the note's hooks are written. The note renders through it, and so does
+ * any other one-line row that stands between a conversation's messages (the retry row's `note`
+ * frame), so the transcript has one note shape.
+ *
+ * The fill is the box's and the head's corners follow it, so a hover tints the whole pill; a
+ * theme that takes the box away paints the head itself. The box does not clip, so the focus ring
+ * drawn round a head that is a button stays whole.
+ */
+export function TranscriptNoteFrame({
+  state = "done",
+  width = "fit",
+  wrap = true,
+  action,
+  className = "",
+  attributes,
+  children,
+}: TranscriptNoteFrameProps) {
+  const head = `ui-activity ${ACTIVITY_HEAD_CLASS} min-w-0 flex-1 rounded-[inherit] text-xs text-fg-muted${
+    wrap ? " flex-wrap" : ""
+  }`;
+  return (
+    <div
+      {...attributes}
+      className={`ui-frame flex ${width === "fill" ? "w-full" : "w-fit max-w-full"} rounded-md border border-line bg-surface-muted ${className}`}
+    >
+      {action !== undefined ? (
+        <button
+          type="button"
+          aria-label={action.name}
+          data-tooltip={action.hint}
+          // Where the note leads (the conversation it goes back to) is not in its words.
+          data-tooltip-extra
+          onClick={action.onClick}
+          className={`${head} ${ACTIVITY_HEAD_HOVER_CLASS} hover:text-fg`}
+          data-slot="head"
+          data-kind="event"
+          data-state={state}
+        >
+          {children}
+        </button>
+      ) : (
+        <p className={head} data-slot="head" data-kind="event" data-state={state}>
+          {children}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export interface TranscriptNoteProps {
   /** The leading mark: a registry glyph's path, drawn in the subtle ink, or a node of the caller's. */
@@ -57,7 +134,7 @@ export interface TranscriptNoteProps {
    * The note leads somewhere: the line becomes a button, with an arrow after its words. `name` is
    * the button's accessible name, the note as one sentence.
    */
-  action?: { onClick: () => void; hint?: string; name?: string };
+  action?: TranscriptNoteAction;
   /** Placement only: the margin and the entrance motion. */
   className?: string;
 }
@@ -112,36 +189,15 @@ export function TranscriptNote({
       )}
     </>
   );
-  // The fill is the box's and the head's corners follow it, so a hover tints the whole pill; a
-  // theme that takes the box away paints the head itself. The box does not clip, so the focus
-  // ring drawn round a head that is a button stays whole.
-  const head = `ui-activity ${ACTIVITY_HEAD_CLASS} min-w-0 flex-1 rounded-[inherit] text-xs text-fg-muted ${
-    truncate ? "" : "flex-wrap"
-  }`;
+  // A truncating subject keeps the line whole; otherwise the parts wrap in a narrow column.
   return (
-    <div
-      className={`ui-frame flex ${fill ? "w-full" : "w-fit max-w-full"} rounded-md border border-line bg-surface-muted ${className}`}
+    <TranscriptNoteFrame
+      width={width}
+      wrap={!truncate}
+      {...(action !== undefined ? { action } : {})}
+      className={className}
     >
-      {action !== undefined ? (
-        <button
-          type="button"
-          aria-label={action.name}
-          data-tooltip={action.hint}
-          // Where the note leads (the conversation it goes back to) is not in its words.
-          data-tooltip-extra
-          onClick={action.onClick}
-          className={`${head} ${ACTIVITY_HEAD_HOVER_CLASS} hover:text-fg`}
-          data-slot="head"
-          data-kind="event"
-          data-state="done"
-        >
-          {parts}
-        </button>
-      ) : (
-        <p className={head} data-slot="head" data-kind="event" data-state="done">
-          {parts}
-        </p>
-      )}
-    </div>
+      {parts}
+    </TranscriptNoteFrame>
   );
 }

@@ -131,7 +131,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "ToolCallCard",
     "ActivityGroup",
     "ChangesCard",
-    "TranscriptNote",
+    // The one-line note's box and head, through which the note and a conversation's retry row
+    // (2026-10-29) render.
+    "TranscriptNoteFrame",
     "CodeBlock",
     "Card",
     "Table",
@@ -157,8 +159,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   ],
   "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
-  // The activity family: the card, the row (a tool call's included) and the one-line note.
-  "ui-activity": ["ActivityGroup", "DisclosureRow", "TranscriptNote"],
+  // The activity family: the card, the row (a tool call's included) and the one-line note's head.
+  "ui-activity": ["ActivityGroup", "DisclosureRow", "TranscriptNoteFrame"],
   // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
   // renders through. The charts: the plot frame (its children — the trend, requests, token-bar
   // and score charts — carry parts, not the hook), the token donut, the sparkline and the ring.

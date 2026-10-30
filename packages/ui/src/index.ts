@@ -36,11 +36,13 @@ export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
+export * from "./components/feedback/load-failed/load-failed";
 
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
 export * from "./components/actions/link/link";
+export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
@@ -119,6 +121,7 @@ export * from "./components/content/prose/markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
+export * from "./components/content/clamped-text/clamped-text";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches

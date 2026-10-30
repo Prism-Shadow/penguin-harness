@@ -1820,15 +1820,33 @@ export const zh = {
     retry: {
       phases: "五个阶段",
       phasesHint:
-        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明收在句末的带圈问号里，只有标记带色。",
+        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明收在句末的带圈问号里，只有标记带色；句子不加粗，尝试与等待时为正文色，停下后转为淡色。",
       blocks: "正文字号",
-      blocksHint: "详情弹窗的分节与对话里：同样一行，正文字号，操作是同一行里的链接样式文字。",
+      blocksHint:
+        "详情弹窗的分节与加载失败的提示里：同样一行，正文字号，操作是同一行里的链接样式文字。",
       inCard: "在机器卡片中",
       inCardHint:
         "没有任务时占卡片中段；栏窄时两个操作一起换到句子下面；按下即置灰，下一次尝试开始才恢复。",
       inChat: "在对话中",
       inChatHint:
-        "模型请求重试时用同一行：引擎上限内的第几次请求，原因与服务方原话收在问号里，等待时带「立即重试」「放弃重试」。",
+        "模型请求重试时用同一行，套上对话里一行提示的外框，与 harness 注入、技能调用等提示同一形状：引擎上限内的第几次请求，原因与服务方原话接在句子后面、用淡色写出（过长时折成两行并可展开），等待时带「立即重试」「放弃重试」。更早的对话加载失败时，对话顶部也是这一行。",
+      ended: "结束运行的那一行",
+      endedHint:
+        "重试用尽时，运行就此结束，按结束运行的行写：中括号标签、原因与服务方原话写在同一行里（过长时折成三行并可展开），与「[已中断]」同一样式；「重试」是文字操作，不是按钮。上为链接样式，下为中括号样式。",
+      lookLink: "链接样式",
+      lookBracket: "中括号样式",
+      loadFailed: "加载失败",
+      loadFailedHint:
+        "内容加载不出来时占据它的位置：标记、一句标题、其下淡色一行原因或接下来会怎样，自动重试时加上重试行，再是一个文字操作，原始报错收在「技术细节」里。不写红字，标记说明失败。",
+      historyFailed: "历史消息加载失败",
+      networkError: "网络错误，请检查连接",
+      awayHeadline: (alias: string) => `${alias} 当前连不上，正在重连`,
+      awayHint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      openMachines: "去机器管理",
+      details: "技术细节",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
+      chatEarlierFailed: "更早的对话加载失败",
       narrow: "窄屏",
       narrowHint: "手机宽度下状态行在名称下方换行，操作不截断。",
       trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
@@ -1856,7 +1874,12 @@ export const zh = {
       chatWaiting: (s: number, n: number, m: number) => `${s} 秒后发起第 ${n}/${m} 次请求`,
       chatSending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
       chatSent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      chatGaveUp: (n: number) => `${n} 次请求均失败`,
+      chatWhy: (cause: string, message: string) => `${cause}：${message}`,
+      chatFailed: (n: number, cause: string, message: string) =>
+        `[请求失败]：${n} 次请求均失败（${cause}）：${message}`,
+      chatAborted: "[已中断]：重试等待中被中断",
+      chatLongError:
+        '503 {"type":"error","error":{"type":"overloaded_error","message":"upstream connect error or disconnect/reset before headers. reset reason: overflow; retried 6 times across 3 regions, last region ap-southeast-1, request id 7f3c2a9e-0d41-4b8f-9a6e-2c1d5e8f0a37, see the provider status page for the incident"}}',
       chatCause: "连接超时或网络中断",
       chatError: "upstream request timeout after 60s (request id 7f3c…)",
     },

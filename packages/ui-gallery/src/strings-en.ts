@@ -1876,16 +1876,34 @@ export const en: GalleryStrings = {
     retry: {
       phases: "Five phases",
       phasesHint:
-        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured.",
+        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured. The sentence is never bold: the body ink while an attempt is live, muted once it stops.",
       blocks: "At body size",
       blocksHint:
-        "In a dialog section and in a conversation: the same one line at body size, the actions link-style text in it.",
+        "In a dialog section and in a load-failure notice: the same one line at body size, the actions link-style text in it.",
       inCard: "In a machine card",
       inCardHint:
         "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
       inChat: "In a conversation",
       inChatHint:
-        "A model request being retried wears the same row: the attempt of the engine's ceiling, the cause and the provider's words behind the ?, Retry now and Stop retrying while it waits.",
+        "A model request being retried wears the same row, in the transcript's note frame, the shape of its other notes (injected by the harness, a skill invoked): the attempt of the engine's ceiling, the cause and the provider's words after the sentence in the muted ink (clamped to two lines with Expand), Retry now and Stop retrying while it waits. Earlier messages that failed to load get the same row at the top of the conversation.",
+      ended: "The line a run ends on",
+      endedHint:
+        "Once the attempts run out the run ends, and it is said the way a run's last line is: a bracketed label, the cause and the provider's words on the same line (clamped to three lines with Expand), the same shape as \"[Aborted]\"; Retry is a text action, not a button. Above, the link look; below, the bracket look.",
+      lookLink: "Link look",
+      lookBracket: "Bracket look",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "What stands where content could not be loaded: a mark, a one-line title, a muted line under it with the reason or what happens next, the retry row while something retries on its own, one text action, and the raw error folded under Technical details. No red words: the mark says it failed.",
+      historyFailed: "Could not load the message history",
+      networkError: "Network error, please check your connection",
+      awayHeadline: (alias: string) => `${alias} is reconnecting`,
+      awayHint:
+        "The conversation is kept on that machine and loads as soon as the connection is back.",
+      openMachines: "Go to Machines",
+      details: "Technical details",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
+      chatEarlierFailed: "Could not load earlier messages",
       narrow: "Narrow",
       narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
       trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
@@ -1914,7 +1932,12 @@ export const en: GalleryStrings = {
       chatWaiting: (s: number, n: number, m: number) => `Retrying in ${s} s (attempt ${n}/${m})`,
       chatSending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
       chatSent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      chatGaveUp: (n: number) => `Request failed after ${n} attempts`,
+      chatWhy: (cause: string, message: string) => `${cause}: ${message}`,
+      chatFailed: (n: number, cause: string, message: string) =>
+        `[Failed]: all ${n} requests failed (${cause.charAt(0).toLowerCase()}${cause.slice(1)}): ${message}`,
+      chatAborted: "[Aborted]: aborted during reconnect backoff",
+      chatLongError:
+        '503 {"type":"error","error":{"type":"overloaded_error","message":"upstream connect error or disconnect/reset before headers. reset reason: overflow; retried 6 times across 3 regions, last region ap-southeast-1, request id 7f3c2a9e-0d41-4b8f-9a6e-2c1d5e8f0a37, see the provider status page for the incident"}}',
       chatCause: "Connection timed out",
       chatError: "upstream request timeout after 60s (request id 7f3c…)",
     },
