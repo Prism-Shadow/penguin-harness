@@ -3,6 +3,7 @@
 - **Date:** 2026-10-06
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1403](https://github.com/Prism-Shadow/penguin-harness/pull/1403)
 
 [中文版](2026-10-06-password-dialog-shows-every-error.zh.md)
 
