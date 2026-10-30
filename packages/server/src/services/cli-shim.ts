@@ -39,6 +39,7 @@
  * shim is written as a stub that says what is missing rather than letting another
  * installation's `penguin` answer in its place.
  */
+import { readHarnessMeta } from "@prismshadow/penguin-hmr/manifest";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -502,42 +503,20 @@ export type CliResolution =
   | { kind: "fault"; fault: CliFault; detail: string };
 
 /**
- * What `<root>/hmr/harness.json` says about the pushed CLI. Three states: a pushed bundle,
- * nothing pushed, and a record this resolver cannot act on. The first two are the normal
- * answers; everything else — a file that cannot be read or parsed, a `cli` entry with no
- * usable bundle path, a path that climbs out of the store, a file the store lost — is one
- * fault under one name, with the original detail carried for the person who reads it.
+ * The record, read through the layer's one reader: a pushed bundle, nothing pushed, or a
+ * record the resolver cannot act on. The CLI half projects onto it — the manifest's
+ * `cli.bundle`, resolved against `<root>/hmr` — and the broken record keeps its reason.
  */
 type CliRecord =
   { state: "bundle"; file: string } | { state: "none" } | { state: "unreadable"; detail: string };
 
-/**
- * Reads the record's CLI half into those states. Never throws: a record a reader cannot act
- * on is one of the answers, because every caller has to say something useful either way.
- */
 async function readCliRecord(root: string): Promise<CliRecord> {
-  const file = path.join(root, "hmr", "harness.json");
-  let raw: string;
-  try {
-    raw = await fsp.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { state: "none" };
-    return { state: "unreadable", detail: messageOf(err) };
+  const meta = await readHarnessMeta(root);
+  if (meta.kind === "broken") return { state: "unreadable", detail: meta.reason };
+  if (meta.kind !== "meta" || typeof meta.manifest.cli?.bundle !== "string") {
+    return { state: "none" };
   }
-  let bundle: unknown;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    bundle =
-      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-        ? (parsed as { cli?: { bundle?: unknown } }).cli?.bundle
-        : undefined;
-  } catch (err) {
-    return { state: "unreadable", detail: messageOf(err) };
-  }
-  if (typeof bundle !== "string" || bundle.length === 0) return { state: "none" };
-  const abs = path.resolve(path.join(root, "hmr"), bundle);
-  if (!fs.existsSync(abs)) return { state: "none" };
-  return { state: "bundle", file: abs };
+  return { state: "bundle", file: path.resolve(path.join(root, "hmr"), meta.manifest.cli.bundle) };
 }
 
 /** What a product's package manifest says about its loader: a file, or nothing. */
@@ -668,8 +647,4 @@ async function realPathOf(file: string): Promise<string> {
   } catch {
     return abs;
   }
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

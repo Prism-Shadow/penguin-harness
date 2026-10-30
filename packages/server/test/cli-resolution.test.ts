@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readPushedCli } from "@prismshadow/penguin-hmr/manifest";
+import { readHarnessMeta } from "@prismshadow/penguin-hmr/manifest";
 import {
   CLI_FAULTS,
   CLI_REASONS,
@@ -236,12 +236,12 @@ describe("the declaration a product carries", () => {
 });
 
 describe("the record reader and the layer's own", () => {
-  it("agrees with `readPushedCli` on a pushed bundle and on nothing pushed", async () => {
+  it("projects resolution onto `readHarnessMeta`'s one answer", async () => {
     const shapes: Array<{
       name: string;
       root: () => Promise<{ root: string }>;
-      /** What the layer answers; where it says broken, resolution's answer is named too. */
-      layer: "none" | "bundle" | "broken";
+      /** What the layer answers; `broken` covers every record the resolver cannot act on. */
+      layer: "none" | "meta" | "broken";
       expect: Partial<CliResolution>;
     }> = [
       {
@@ -253,41 +253,45 @@ describe("the record reader and the layer's own", () => {
       {
         name: "no CLI section",
         root: () => makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } }),
-        layer: "none",
+        layer: "meta",
         expect: { kind: "entry", reason: "own-entry" },
       },
       {
         name: "a cli entry with no bundle path",
         root: () => makeRoot({ record: { cli: {} } }),
-        layer: "broken",
+        layer: "meta",
         expect: { kind: "entry", reason: "own-entry" },
       },
       {
         name: "missing file",
         root: () => makeRoot({ record: RECORD_WITH_CLI, bundle: false }),
-        layer: "broken",
+        layer: "meta",
         expect: { kind: "entry", reason: "own-entry" },
       },
       {
         name: "pushed bundle",
         root: () => makeRoot({ record: RECORD_WITH_CLI }),
-        layer: "bundle",
+        layer: "meta",
         expect: { kind: "entry", reason: "declared-loader" },
       },
     ];
     for (const shape of shapes) {
       const product = await makeProduct();
       const { root, bundle } = await shape.root();
-      const layer = await readPushedCli(root);
+      const meta = await readHarnessMeta(root);
       const resolved = await resolveCli({ callerEntry: product.entry, root });
-      expect({ name: shape.name, layer: layer.kind }).toEqual({
+      expect({ name: shape.name, layer: meta.kind }).toEqual({
         name: shape.name,
         layer: shape.layer,
       });
       expect({ name: shape.name, ...resolved }).toMatchObject(shape.expect);
-      if (shape.layer === "bundle" && resolved.kind === "entry") {
-        // The pushed bundle the layer holds is the one the answer carries.
-        expect(resolved.bundle).toBe(bundle);
+      if (shape.layer === "meta" && meta.kind === "meta" && resolved.kind === "entry") {
+        // Where the layer holds a cli bundle, it is the one the answer carries.
+        const expected =
+          typeof meta.manifest.cli?.bundle === "string"
+            ? path.resolve(path.join(root, "hmr"), meta.manifest.cli.bundle)
+            : null;
+        expect(resolved.bundle).toBe(expected);
       }
     }
   });
@@ -295,9 +299,8 @@ describe("the record reader and the layer's own", () => {
   it("answers a record it cannot read or parse with the fault `record-unreadable`", async () => {
     const product = await makeProduct();
     const { root } = await makeRoot({ raw: "{ not json" });
-    // The layer merges this into `broken` too; the resolver keeps the name, so the Machines
-    // page can say more than "nothing was ever pushed".
-    expect((await readPushedCli(root)).kind).toBe("broken");
+    const meta = await readHarnessMeta(root);
+    expect(meta.kind).toBe("broken");
     await expect(resolveCli({ callerEntry: product.entry, root })).resolves.toMatchObject({
       kind: "fault",
       fault: "record-unreadable",

@@ -78,17 +78,17 @@ Remote commands resolve the peer's loader by asking: the peer declares, the call
 
 Resolution is one function in the command-shim module, `packages/server/src/services/cli-shim.ts` — the module that already decides which CLI the `penguin` on a person's PATH runs — published as the server package's `@prismshadow/penguin-server/cli-shim` subpath, beside `./hmr/manifest` and `./version-report`. It sits outside the hot-update layer: that layer — `packages/hmr`, `packages/server/src/hmr/` and `packages/desktop/` — carries the store and the record's mechanism, and a change there ships by rebuilding and redeploying every installation, while the decision procedure is the part a deployment may want to change without that cost. The CLI's loader imports the same subpath, so the loader and the shim act on one answer, and no channel's packaging changes.
 
-The record is read in that module, into three answers: a pushed bundle, nothing pushed, and a record the resolver cannot act on. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
+The record is read once, by the layer's reader `readHarnessMeta` (`@prismshadow/penguin-hmr/manifest`): it answers `none` for a root that holds no committed version, `meta` with the record itself, or `broken` with why the record cannot be read. Resolution's CLI half projects onto that one answer — `meta`'s `cli.bundle`, resolved against `<root>/hmr` — and the same reader feeds the version report and `resolveCliBundlePath`, so no face of the record reads the file a second way. A test pins that projection, so resolution and the reader cannot drift apart unnoticed.
 
 ### Resolution: the inputs and the order
 
 Resolution takes the caller's own entry and the data root. It reads two things from disk: the record that root holds, and the declaration the caller's product carries in the nearest package manifest above its entry. Its answers are one entry with a reason, or one fault with a name.
 
 1. **Self, with a pushed CLI.** A caller whose own entry is its product's loader answers with itself, under the name it earns: `declared-loader` for the declared loader, `legacy-loader` for the legacy name. The answer carries the pushed bundle, so a loader never loads itself.
-2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record is read into the shapes the fault cases name; the resolver reads the file itself, because the layer's reader merges them (see "Where the answer lives").
+2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record, through the layer's one reader `readHarnessMeta` (see "Where the answer lives"); the CLI half projects onto its answer.
 3. **The declared loader.** A product that declares a loader answers it under the reason `declared-loader` when the target is present, and the fault `declared-loader-missing` when the target is absent or the declaration is broken.
 4. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy-loader` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `no-loader`.
-5. **No pushed CLI.** A root whose record is missing, or whose record carries no CLI entry, holds no pushed CLI: the caller's own entry runs, under the reason `own-entry`. The two shapes stay apart in the reader — they are two of the record's states — and answer the same way.
+5. **No pushed CLI.** A root whose record holds no committed CLI — no record, a record with no `cli` entry, an entry that names nothing usable, or a file the store lost — answers the caller's own entry, under the reason `own-entry`.
 6. **A record the resolver cannot use.** A record it cannot read, parse, or act on — a `cli` entry with no usable bundle path, a path outside the store, a file the store no longer holds — answers `record-unreadable`, with what went wrong carried as its detail. Every one of these needs the same remedy, so they share one name.
 
 The first case that applies decides the answer. Cases 3 and 4 apply to a record that holds a pushed CLI; cases 5 and 6 apply to one that holds none.
@@ -232,7 +232,8 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 ### v1.7.0
 
-- The record's reader narrowed from five states to three: a pushed bundle, nothing pushed, and a record the resolver cannot act on. The states it kept apart all needed the same remedy — an install from the Machines page — so `cli-path-unusable` and `cli-file-missing` folded into `record-unreadable`, which now carries what went wrong as its detail; `absent` folded into `none`, which already answered the same way. Four faults remain.
+- The record has one reader, `readHarnessMeta`: the layer answers `none`, `meta`, or `broken`, and every face of the record — the version report, the CLI bundle, resolution's CLI half — projects onto that one answer instead of reading the file a second way. Resolution's own reader is gone.
+- The fault names narrowed from six to four: `cli-path-unusable` and `cli-file-missing` folded into `record-unreadable`, which carries what went wrong as its detail, because the states the reader used to keep apart all needed the same remedy — an install from the Machines page.
 - The declaration's reader narrowed from three answers to two: declared, or nothing. A manifest that cannot be read or parsed declares nothing — a product that cannot state its identity has none, and the answer it earns is the one a product from before the declaration earns.
 
 ### v1.6.0
