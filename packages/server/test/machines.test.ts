@@ -724,11 +724,8 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
       "no CLI pushed to /home/cnns/.penguin/data; use `penguin` instead",
       "the CLI pushed to /home/cnns/.penguin/data is unusable: the committed CLI bundle is missing from the store: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
       "own-entry: nothing is pushed to /home/cnns/.penguin/data; use `penguin` instead",
-      "record-unreadable: /home/cnns/.penguin/data/hmr/harness.json is not readable JSON: Unexpected token",
-      "record-unreadable: harness.json points `cli.bundle` outside the store: ../x.mjs",
-      "record-unreadable: /home/cnns/.penguin/data/hmr/store/cli/x.mjs is not in the store",
-      "declared-loader-missing: /home/cnns/.penguin/lib/package.json declares /home/cnns/.penguin/lib/dist/penguin-hmr.js",
-      "no-loader: nothing declared above /home/cnns/.penguin/lib/dist",
+      "record-unsupported: /home/cnns/.penguin/data/hmr/harness.json is not readable JSON: Unexpected token",
+      "record-unsupported: harness.json's CLI half carries no recorded entry; push or install this version once",
       "cli-unloadable: /home/cnns/.penguin/data/hmr/store/cli/x.mjs: Cannot find module 'y'",
     ]) {
       const probe = await probeServerState(

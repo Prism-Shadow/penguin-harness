@@ -2,12 +2,13 @@
  * `penguin-hmr`: the CLI currently pushed to this machine's HMR store, instead of the
  * one built into this binary. Use `penguin` when nothing is pushed.
  *
- * Which entry runs is the shared answer in the server's command-shim module,
+ * What runs is the shared answer in the server's command-shim module,
  * `@prismshadow/penguin-server/cli-shim` — the same answer the `penguin` written into this
- * data root's `bin/` runs under. This loader asks it for the pushed bundle, and reports a
- * fault by name: `own-entry` when nothing is pushed here, `record-unreadable` and
- * `declared-loader-missing` when the installation is broken, `cli-unloadable` when the
- * pushed CLI cannot be loaded.
+ * data root's `bin/` runs under, and now the same shape: the record names the entry and the
+ * bundle, and both faces act on what it says. This loader reports a fault by name:
+ * `record-unsupported` when the record predates recorded entries (one push or install
+ * rewrites it), `cli-unloadable` when the pushed CLI cannot be loaded, and a sentence of
+ * its own when nothing is pushed here.
  */
 // First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
 // reaches node:sqlite the same way (see warnings.ts).
@@ -23,8 +24,8 @@ const SELF_ENTRY = fileURLToPath(import.meta.url);
 export async function loadCli(
   root: string,
   /**
-   * The entry resolution answers for: this module. A test that runs a fixture product's
-   * loader through this same procedure names that fixture instead.
+   * The entry resolution answers for when nothing is pushed: this module. A test that runs
+   * a fixture product's loader through this same procedure names that fixture instead.
    */
   callerEntry: string = SELF_ENTRY,
 ): Promise<(argv: string[]) => Promise<number>> {
@@ -32,10 +33,10 @@ export async function loadCli(
   // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
-  // The one reason that answers an entry with no bundle means nothing is pushed here: this
-  // entry exists to run the pushed CLI, and there is none to run.
+  // An entry with no bundle means nothing is pushed here: this entry exists to run the
+  // pushed CLI, and there is none to run.
   if (answer.bundle === null) {
-    throw new Error(`${answer.reason}: nothing is pushed to ${root}; use \`penguin\` instead`);
+    throw new Error(`own-entry: nothing is pushed to ${root}; use \`penguin\` instead`);
   }
   const bundlePath = answer.bundle;
   // Cache-busted: a re-push writes a new file, but the same path may be reused.

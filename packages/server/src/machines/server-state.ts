@@ -114,13 +114,11 @@ const SENTENCE_NO_CLI_TO_RUN =
 
 /**
  * The named reports the loader answers with now — `<name>: <detail>`, one line, the names of
- * `@prismshadow/penguin-server/cli-shim`'s four faults and of the reason that answers the
- * caller's own entry. A machine whose store holds no CLI, or whose store lost it, or that
- * carries no loader it can load, needs one remedy: an install from this page. The name says
- * which part broke, and the page's sentence says what to do about all of them.
+ * `@prismshadow/penguin-server/cli-shim`'s two faults and the loader's own when nothing is
+ * pushed. A machine whose store holds no CLI it can run needs one remedy: an install from
+ * this page. The name says which part broke, and the page's sentence says what to do.
  */
-const NAMED_NO_CLI_TO_RUN =
-  /^(?:own-entry|record-unreadable|declared-loader-missing|no-loader|cli-unloadable): .*$/m;
+const NAMED_NO_CLI_TO_RUN = /^(?:own-entry|record-unsupported|cli-unloadable): .*$/m;
 
 /** The page's sentence for a machine whose store has no CLI to run, with the far side's words after it. */
 export function noCliToRunDetail(said: string): string | null {
