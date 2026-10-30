@@ -2050,6 +2050,7 @@ export class ContextEngine {
         );
         await this.write(
           requestEnd(res.value.status, {
+            ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
             ...(res.value.errorMessage !== undefined
               ? { errorMessage: res.value.errorMessage }
               : {}),
