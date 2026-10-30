@@ -231,6 +231,12 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 
 ## Changes
 
+### v1.6.0
+
+- 命令 shim 的公开名字改成各自装的东西的名字。CLI loader 的函数叫 `loadCli`，它自己的入口常量叫 `SELF_ENTRY`；resolution 里「调用方自己的入口」这个输入叫 `callerEntry`。shim 的决定叫 `ShimDecision`，装答案名字的字段叫 `answerName`，shim 结果里那句消息叫 `detail`。两个选项叫 `explicitEntry` 与 `runsFromSource`，检出根叫 `checkoutRoot`，launcher 写的数据库路径叫 `databasePath`。
+- `CliLaunch` 与它的 `unavailable` 字段保留原名。runtime 把配置对象交给它启动的 platform，platform 可以比发布配置的 runtime 新，这些字段名因此跨版本读取；改名会让旧 runtime 发布的那句话丢失。
+- 用例夹具 `PUSHED` 改名为 `RECORD_WITH_CLI`：它是一份带 CLI 一节的记录，不表示发生过推送。
+
 ### v1.5.0
 
 - 把答案那一套名字改成「名字说的是它是什么」。三个理由名说的是哪个入口作答：`declared-loader`、`legacy-loader`、`own-entry`。两个「没有推送」的理由 `no-record` 与 `no-pushed-cli` 并成一个——它们答的是同一个入口，差异留在记录的五种状态里。六个故障名说的是哪一块坏了：`record-unreadable`、`cli-path-unusable`、`cli-file-missing`、`declared-loader-missing`、`no-loader`、`cli-unloadable`。
