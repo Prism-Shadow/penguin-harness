@@ -511,7 +511,10 @@ export function AppLayout() {
           and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
           reloads, so navigating the app must never re-parent one. */}
       <BuiltinBrowserLayer />
-      <AppPalette suggest={sessionCompletion} />
+      <AppPalette
+        suggest={sessionCompletion.suggest}
+        pending={sessionCompletion.pending ? S.commandPalette.pending : undefined}
+      />
     </AppShell>
   );
 }

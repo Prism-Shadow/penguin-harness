@@ -118,6 +118,7 @@ import {
 } from "../lib/session-grouping";
 import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
 import { noteScheduleEvent } from "../features/schedules/schedule-store";
+import { rememberCompletionRows } from "../lib/completion-cache";
 import {
   isCurrentProject,
   ofProject,
@@ -898,6 +899,15 @@ export function createSessionsStore() {
          * replaced nor dropped — and keep what the list already showed of them.
          */
         const applyAnswers = (results: readonly PageAnswer[], pending: ReadonlySet<string>) => {
+          // The completion cache (lib/completion-cache.ts) remembers what each Agent was seen
+          // holding, so the palette's next session-id completion offers it without the wait.
+          if (isCurrentProject(projectId, get().projectId)) {
+            for (const r of results) {
+              for (const page of r.pages) {
+                rememberCompletionRows(projectId, r.source, r.agentId, page.items);
+              }
+            }
+          }
           const unanswered = unansweredHere(results);
           const unansweredMachines = new Set(
             results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
@@ -1295,6 +1305,8 @@ export function createSessionsStore() {
         // Project switch / reload raced this page: drop it.
         if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
         const ok = results.filter((r) => r !== null);
+        // Remembered for the palette's completions too (lib/completion-cache.ts).
+        for (const r of ok) rememberCompletionRows(projectId, r.source, r.agentId, r.items);
         const prev = get().sessions;
         const seen = new Set(prev.map((s) => s.sessionId));
         // Deleted stays deleted (see the header): the page may have been read before it went.

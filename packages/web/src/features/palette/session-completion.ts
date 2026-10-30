@@ -4,8 +4,8 @@
  * The rows are the sidebar's own (the session store the sidebar pages into), so a completion
  * names what the app already holds without waiting for the network — and every query also asks
  * the servers live: each source (this server and the Project's machines) answers the prefix
- * from its whole index, so a session no loaded page carries is completed all the same. The two
- * merge, deduplicated by id; a source that does not answer takes nothing from the offer.
+ * from its whole index, so a session no loaded page carries is completed all the same. The
+ * three merge, deduplicated by id; a source that does not answer takes nothing from the offer.
  *
  * Pure core plus a hook: `sessionCompletionActions` builds the actions from rows the caller
  * passes (the hook reads the store; the tests pass literals), and `useSessionCompletion` is the
@@ -17,6 +17,7 @@ import { useNavigate } from "react-router";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { cachedCompletionRows, rememberCompletionRows } from "../../lib/completion-cache";
 import { cachedMachineAgents } from "../../lib/machine-cache";
 import { S } from "../../lib/strings";
 import { isSidebarRow } from "../../lib/session-grouping";
@@ -100,17 +101,25 @@ function mostRecentFirst(sessions: readonly SessionInfo[]): SessionInfo[] {
 }
 
 /**
- * The loaded rows and every source's answer, deduplicated by id and capped: an id both hold is
- * the row whose activity is the newer (a source answered after the store last fetched it), and
- * an id only one holds is kept — the store's own rows and a machine's are equally real.
+ * What the app has seen of each Agent's sessions is remembered in lib/completion-cache.ts —
+ * rows the sidebar fetched and rows the completion's own live answers brought, per (project,
+ * source, agent), no expiry. The next prefix that shares a head with one already asked (which
+ * every typed prefix does) offers the remembered sessions at once, and only the tail of the id
+ * is still on the network.
+ *
+ * The loaded rows, the remembered rows and every live answer merge, deduplicated by id and
+ * capped: an id several hold is the row whose activity is the newest (a later answer is the
+ * truer one), and an id only one holds is kept — the store's own rows, a remembered one and a
+ * live one are equally real.
  */
 export function mergeCompletionRows(
   loaded: readonly SessionInfo[],
+  remembered: readonly (readonly SessionInfo[])[],
   answers: readonly (readonly SessionInfo[])[],
 ): SessionInfo[] {
   const byId = new Map<string, SessionInfo>();
   for (const s of mostRecentFirst(loaded)) byId.set(s.sessionId, s);
-  for (const rows of answers) {
+  for (const rows of [...remembered, ...answers]) {
     for (const s of mostRecentFirst(rows)) {
       const known = byId.get(s.sessionId);
       if (known === undefined || known.lastActiveAt < s.lastActiveAt) byId.set(s.sessionId, s);
@@ -121,62 +130,92 @@ export function mergeCompletionRows(
 
 /**
  * The completion as the palette takes it: the store's rows and the router's navigate, memoized.
- * A query starting a session id answers from the loaded rows at once and asks every source (this
- * server, then the Project's machines) with the prefix live; the answers merge in as they land.
- * A source that fails — the network, a machine out of reach — is silently dropped: the loaded
- * rows still answer, which is what the palette did before the live query existed.
+ * A query starting a session id answers at once — from the loaded rows, the remembered answers
+ * and the previous query's — and asks every source (this server, then the Project's machines)
+ * with the prefix live; the answers merge in as they land. While the sources are still answering,
+ * `pending` says so and the palette draws a word for the wait. A source that fails — the network,
+ * a machine out of reach — is silently dropped: the loaded and remembered rows still answer,
+ * which is what the palette did before the live query existed.
  */
-export function useSessionCompletion(): (query: string) => readonly PaletteAction[] {
+export function useSessionCompletion(): {
+  suggest: (query: string) => readonly PaletteAction[];
+  pending: boolean;
+} {
   const { sessions, machineIds } = useSessions();
   const { currentProject, agents } = useProject();
   const navigate = useNavigate();
   const goTo = useCallback((path: string) => void navigate(path), [navigate]);
   const [live, setLive] = useState<readonly SessionInfo[]>([]);
+  const [pending, setPending] = useState(false);
   /** The query the `live` rows answer, so a keystroke that has no answer yet reads the last one's. */
   const asked = useRef<string>("");
 
   return useMemo(
-    () => (query: string) => {
-      const prefix = sessionQueryPrefix(query);
-      if (prefix === null) {
-        asked.current = "";
-        setLive([]);
-        return sessionCompletionActions(sessions, query, goTo);
-      }
-      if (asked.current !== query) {
-        asked.current = query;
-        const projectId = currentProject?.projectId;
-        if (projectId === undefined) {
+    () => ({
+      suggest: (query: string) => {
+        const prefix = sessionQueryPrefix(query);
+        // The answer this keystroke shows: the previous query's rows, until this one's are built.
+        let answer = live;
+        if (prefix === null) {
+          asked.current = "";
           setLive([]);
-        } else {
-          // Every source is asked the moment a fresh prefix arrives; a slow or absent one
-          // simply never contributes, and the loaded rows carried the answer meanwhile.
-          // The completion's agents: this server's Agent set, and each machine's own.
-          const agentIds = agents.map((a) => a.agentId);
-          for (const source of [null, ...machineIds]) {
-            // A machine's Agents are its own (lib/agent-location.ts); what it was last seen
-            // running stands in when it cannot be asked right now — the same account the
-            // session store pages by.
-            const agentIdsOfSource =
-              source === null
-                ? agentIds
-                : cachedMachineAgents(projectId, source).map((a) => a.agentId);
-            for (const agentId of agentIdsOfSource) {
-              api
-                .listSessions(
-                  projectId,
-                  agentId,
-                  { limit: SESSION_COMPLETION_MAX, order: "activity", sessionIdPrefix: prefix },
-                  source,
-                )
-                .then((res) => setLive((prev) => mergeCompletionRows([], [prev, res.sessions])))
-                .catch(() => {});
+          setPending(false);
+          answer = sessions;
+        } else if (asked.current !== query) {
+          asked.current = query;
+          const projectId = currentProject?.projectId;
+          if (projectId === undefined) {
+            setLive([]);
+            setPending(false);
+            answer = sessions;
+          } else {
+            // The immediate answer: the loaded rows, then every source's remembered rows —
+            // the cache is read here, at the read the row has to be known by, filtered to the
+            // prefix by the action builder below.
+            const merged = mergeCompletionRows(sessions, [], [live]);
+            // Every source is asked the moment a fresh prefix arrives; a slow or absent one
+            // simply never contributes, and the loaded and remembered rows carried the answer
+            // meanwhile. The completion's agents: this server's Agent set, and each machine's own.
+            const agentIds = agents.map((a) => a.agentId);
+            let outstanding = 0;
+            for (const source of [null, ...machineIds]) {
+              // A machine's Agents are its own (lib/agent-location.ts); what it was last seen
+              // running stands in when it cannot be asked right now — the same account the
+              // session store pages by.
+              const agentIdsOfSource =
+                source === null
+                  ? agentIds
+                  : cachedMachineAgents(projectId, source).map((a) => a.agentId);
+              for (const agentId of agentIdsOfSource) {
+                for (const s of cachedCompletionRows(projectId, source, agentId)) merged.push(s);
+                api
+                  .listSessions(
+                    projectId,
+                    agentId,
+                    { limit: SESSION_COMPLETION_MAX, order: "activity", sessionIdPrefix: prefix },
+                    source,
+                  )
+                  .then((res) => {
+                    rememberCompletionRows(projectId, source, agentId, res.sessions);
+                    setLive((prev) => mergeCompletionRows([], [], [prev, res.sessions]));
+                  })
+                  .catch(() => {})
+                  .finally(() => {
+                    outstanding -= 1;
+                    if (outstanding === 0) setPending(false);
+                  });
+                outstanding += 1;
+              }
             }
+            setPending(outstanding > 0);
+            setLive(merged);
+            answer = merged;
           }
         }
-      }
-      return sessionCompletionActions([...sessions, ...live], query, goTo);
-    },
-    [sessions, live, machineIds, agents, goTo, currentProject],
+        return sessionCompletionActions(answer, query, goTo);
+      },
+      pending,
+    }),
+    [sessions, live, pending, machineIds, agents, goTo, currentProject],
   );
 }

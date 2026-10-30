@@ -1137,6 +1137,8 @@ export const zh = {
     hint: (toggle: string | null): string =>
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+    /** Drawn while the completion's sources are still answering the typed session-id prefix. */
+    pending: "正在查找会话…",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */

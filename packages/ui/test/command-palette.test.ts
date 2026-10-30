@@ -121,4 +121,28 @@ describe("CommandPalette", () => {
       ]),
     );
   });
+
+  it("draws the wait as a status row with the spinner while the completions are pending", () => {
+    const html = palette({ pending: "Finding sessions…" });
+    // The wait's word: a status row (announced, not an option), the spinner inside it.
+    expect(html).toContain('role="status"');
+    expect(html).toMatch(/aria-live="polite"[^>]*>\s*<svg[^>]*data-live="spinner"/s);
+    expect(html).toContain("Finding sessions…");
+    // The row is not an option: it is neither selected nor counted by the keyboard model.
+    const options = [...html.matchAll(/role="option" aria-selected="(true|false)"/g)].map(
+      (m) => m[1],
+    );
+    expect(options).toEqual(["true", "false"]);
+  });
+
+  it("keeps the wait row above the actions it rides under, and replaces the empty sentence", () => {
+    const session = { id: "session:1", label: "A session", run: noop };
+    const withActions = palette({ pending: "Finding sessions…", suggest: () => [session] });
+    expect(withActions.indexOf('role="status"')).toBeLessThan(withActions.indexOf(">A session<"));
+    // With nothing listed yet, the wait takes the empty row's place — the wait is the answer.
+    expect(palette({ actions: [], pending: "Finding sessions…" })).not.toContain(
+      ">Nothing matches</p>",
+    );
+    expect(palette({ actions: [] })).toContain(">Nothing matches</p>");
+  });
 });

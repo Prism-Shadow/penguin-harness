@@ -5,9 +5,15 @@
  * (or the untitled fallback) with the status word beside the session's id; running one
  * navigates to that session's chat page.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../src/lib/strings";
+import {
+  COMPLETION_CACHE_MAX,
+  cachedCompletionRows,
+  rememberCompletionRows,
+  resetCompletionCache,
+} from "../src/lib/completion-cache";
 import {
   SESSION_COMPLETION_MAX,
   SESSION_DETAIL_ID_MAX,
@@ -139,7 +145,7 @@ describe("mergeCompletionRows", () => {
       agentId: "machine_agent",
       lastActiveAt: "2026-10-18T11:00:00.000Z",
     });
-    const merged = mergeCompletionRows(loaded, [[remote]]);
+    const merged = mergeCompletionRows(loaded, [], [[remote]]);
     expect(merged.map((s) => s.sessionId)).toEqual([
       "session-2026-10-09-remote",
       "session-2026-10-01-aaaa",
@@ -152,7 +158,7 @@ describe("mergeCompletionRows", () => {
       sessionId: "session-2026-10-01-aaaa",
       lastActiveAt: "2026-10-18T10:00:00.000Z",
     });
-    expect(mergeCompletionRows(loaded, [[duplicated]]).map((s) => s.sessionId)).toEqual([
+    expect(mergeCompletionRows(loaded, [], [[duplicated]]).map((s) => s.sessionId)).toEqual([
       "session-2026-10-01-aaaa",
       "session-2026-10-02-bbbb",
     ]);
@@ -164,7 +170,7 @@ describe("mergeCompletionRows", () => {
       lastActiveAt: "2026-10-19T09:00:00.000Z",
       title: "Renamed while away",
     });
-    const merged = mergeCompletionRows(loaded, [[fresher]]);
+    const merged = mergeCompletionRows(loaded, [], [[fresher]]);
     expect(merged).toHaveLength(2);
     expect(merged[0]!.sessionId).toBe("session-2026-10-02-bbbb");
     expect(merged[0]!.title).toBe("Renamed while away");
@@ -183,7 +189,7 @@ describe("mergeCompletionRows", () => {
       sessionId: "session-2026-10-03-cccc",
       lastActiveAt: "2026-10-18T12:00:00.000Z",
     });
-    expect(mergeCompletionRows([a, b], [[c]]).map((s) => s.sessionId)).toEqual([
+    expect(mergeCompletionRows([a, b], [], [[c]]).map((s) => s.sessionId)).toEqual([
       "session-2026-10-03-cccc",
       "session-2026-10-02-bbbb",
       "session-2026-10-01-aaaa",
@@ -195,13 +201,68 @@ describe("mergeCompletionRows", () => {
       row({ sessionId: `session-2026-10-${String(i).padStart(2, "0")}-load` }),
     );
     const extra = row({ sessionId: "session-2026-10-zz-extra" });
-    expect(mergeCompletionRows(loaded, [[extra]])).toHaveLength(SESSION_COMPLETION_MAX);
+    expect(mergeCompletionRows(loaded, [], [[extra]])).toHaveLength(SESSION_COMPLETION_MAX);
   });
 
   it("answers with the loaded rows alone when no server answered", () => {
-    expect(mergeCompletionRows(loaded, []).map((s) => s.sessionId)).toEqual([
+    expect(mergeCompletionRows(loaded, [], []).map((s) => s.sessionId)).toEqual([
       "session-2026-10-01-aaaa",
       "session-2026-10-02-bbbb",
     ]);
+  });
+});
+
+describe("completion cache", () => {
+  // Module state: every test starts from nothing, so a write one test made cannot answer
+  // another one's read.
+  beforeEach(() => resetCompletionCache());
+
+  const a = row({ sessionId: "session-2026-10-01-aaaa", lastActiveAt: "2026-10-18T10:00:00.000Z" });
+  const newer = row({
+    sessionId: "session-2026-10-01-aaaa",
+    lastActiveAt: "2026-10-18T12:00:00.000Z",
+    title: "Moved while away",
+  });
+  const b = row({ sessionId: "session-2026-10-02-bbbb", lastActiveAt: "2026-10-18T09:00:00.000Z" });
+
+  it("answers from what was remembered, without any fetch", () => {
+    rememberCompletionRows("p", null, "agent-1", [a, b]);
+    expect(cachedCompletionRows("p", null, "agent-1").map((s) => s.sessionId)).toEqual([
+      "session-2026-10-01-aaaa",
+      "session-2026-10-02-bbbb",
+    ]);
+  });
+
+  it("merges a later write in, keeping the newer activity of an id both hold", () => {
+    rememberCompletionRows("p", null, "agent-1", [newer]);
+    const cached = cachedCompletionRows("p", null, "agent-1");
+    expect(cached.map((s) => s.sessionId)).toContain("session-2026-10-01-aaaa");
+    expect(cached.find((s) => s.sessionId === "session-2026-10-01-aaaa")?.title).toBe(
+      "Moved while away",
+    );
+  });
+
+  it("keeps one agent's rows apart from another agent's and a machine's", () => {
+    const c = row({ sessionId: "session-2026-10-03-cccc" });
+    rememberCompletionRows("p", null, "agent-2", [c]);
+    expect(cachedCompletionRows("p", null, "agent-2").map((s) => s.sessionId)).toEqual([
+      "session-2026-10-03-cccc",
+    ]);
+    expect(cachedCompletionRows("p", "machine-1", "agent-2")).toEqual([]);
+  });
+
+  it("caps one agent's entry at the completion's size", () => {
+    rememberCompletionRows(
+      "p",
+      null,
+      "agent-3",
+      Array.from({ length: COMPLETION_CACHE_MAX + 10 }, (_, i) =>
+        row({
+          sessionId: `session-2026-10-${String(i).padStart(2, "0")}-cap`,
+          lastActiveAt: new Date(Date.UTC(2026, 9, 18, 8, 0, 0, i)).toISOString(),
+        }),
+      ),
+    );
+    expect(cachedCompletionRows("p", null, "agent-3")).toHaveLength(COMPLETION_CACHE_MAX);
   });
 });
