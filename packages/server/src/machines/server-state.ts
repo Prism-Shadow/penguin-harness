@@ -113,10 +113,9 @@ const SENTENCE_NO_CLI_TO_RUN =
   /^(no CLI pushed to \S.*; use `penguin` instead|the CLI pushed to \S.* is unusable: .*)$/m;
 
 /**
- * The named reports the loader answers with now — `<name>: <detail>`, one line, the names of
- * `@prismshadow/penguin-server/cli-shim`'s two faults and the loader's own when nothing is
- * pushed. A machine whose store holds no CLI it can run needs one remedy: an install from
- * this page. The name says which part broke, and the page's sentence says what to do.
+ * The named reports the loader answers with now — `<name>: <detail>`, one line — and the
+ * sentence older releases shipped: a root nothing was installed into, or one whose record
+ * says nothing usable. Both need one remedy, an install from this page.
  */
 const NAMED_NO_CLI_TO_RUN = /^(?:own-entry|record-unsupported|cli-unloadable): .*$/m;
 

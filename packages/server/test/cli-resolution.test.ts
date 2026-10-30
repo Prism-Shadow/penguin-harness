@@ -1,7 +1,6 @@
 /**
- * Resolution: the record decides — an install image names its program layout's loader, a
- * local push leaves the caller's own loader as the answer — and the resolver reports what
- * the record said, falling back to what the caller offers when it says nothing.
+ * Resolution: the caller's own entry is what runs; the record decides only whether a pushed
+ * bundle rides with it. The cases are the record's states.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -30,7 +29,7 @@ afterEach(async () => {
   }
 });
 
-/** A caller entry on disk, so the own-entry answer names something real. */
+/** A caller entry on disk, so the answer names something real. */
 async function makeCaller(): Promise<string> {
   const dir = await tmp("penguin-resolution-caller-");
   const entry = path.join(dir, "dist", "penguin.js");
@@ -39,7 +38,7 @@ async function makeCaller(): Promise<string> {
   return entry;
 }
 
-/** A data root whose record's CLI half is spelled by `record`. */
+/** A data root whose record is spelled by `record`, with its bundle present or not. */
 async function makeRoot(
   options: { record?: unknown; raw?: string; bundle?: boolean } = {},
 ): Promise<{ root: string; bundle: string }> {
@@ -59,109 +58,59 @@ async function makeRoot(
   return { root, bundle };
 }
 
-/** A record an install image lays down: the program layout's loader, relative. */
-const IMAGE_RECORD = { cli: { bundle: "store/cli/abc123.mjs", entry: "lib/dist/penguin-hmr.js" } };
-/** A record a local push leaves: the bundle only — the answer is the caller's own loader. */
-const LOCAL_PUSH_RECORD = { cli: { bundle: "store/cli/abc123.mjs" } };
-
 describe("the names an answer is made of", () => {
-  it("is the two faults and the one reason, verbatim", () => {
-    expect([...CLI_FAULTS]).toEqual(["record-unsupported", "cli-unloadable"]);
-    expect([...CLI_REASONS]).toEqual(["recorded-entry"]);
+  it("is the one fault and the one reason, verbatim", () => {
+    expect([...CLI_FAULTS]).toEqual(["record-unsupported"]);
+    expect([...CLI_REASONS]).toEqual(["own-entry"]);
   });
 });
 
-describe("the record decides", () => {
-  it("answers a recorded entry with that entry and the bundle it names", async () => {
+describe("the caller's own entry runs; the record decides what rides with it", () => {
+  it("answers a pushed bundle with the caller's entry and the bundle", async () => {
     const caller = await makeCaller();
-    const { root } = await makeRoot({
-      record: {
-        cli: { bundle: "store/cli/abc123.mjs", entry: "/install/lib/dist/penguin-hmr.js" },
-      },
-    });
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
-      kind: "entry",
-      entry: "/install/lib/dist/penguin-hmr.js",
-      reason: "recorded-entry",
-      bundle: path.join(root, "hmr", "store", "cli", "abc123.mjs"),
-    });
-  });
-
-  it("resolves a program-relative entry against the named program directory", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: IMAGE_RECORD });
-    await expect(
-      resolveCli({ callerEntry: caller, root, programDir: "/install" }),
-    ).resolves.toMatchObject({
-      kind: "entry",
-      entry: "/install/lib/dist/penguin-hmr.js",
-      reason: "recorded-entry",
-    });
-  });
-
-  it("faults a program-relative entry on a process that stands on no program directory", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: IMAGE_RECORD });
-    await expect(
-      resolveCli({ callerEntry: caller, root, programDir: null }),
-    ).resolves.toMatchObject({ kind: "fault", fault: "record-unsupported" });
-  });
-
-  it("answers a bundle with no recorded entry by the loader the caller offers", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: LOCAL_PUSH_RECORD });
-    await expect(
-      resolveCli({ callerEntry: caller, root, ownLoader: "/install/lib/dist/penguin-hmr.js" }),
-    ).resolves.toMatchObject({
-      kind: "entry",
-      entry: "/install/lib/dist/penguin-hmr.js",
-      reason: "recorded-entry",
-      bundle: path.join(root, "hmr", "store", "cli", "abc123.mjs"),
-    });
-  });
-
-  it("faults a bundle with no recorded entry when the caller offers no loader", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: LOCAL_PUSH_RECORD });
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
-      kind: "fault",
-      fault: "record-unsupported",
-    });
-  });
-
-  it("answers nothing pushed with the caller's own entry", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot();
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
+    const { root } = await makeRoot({ record: { cli: { bundle: "store/cli/abc123.mjs" } } });
+    await expect(resolveCli({ callerEntry: caller, root })).resolves.toEqual({
       kind: "entry",
       entry: caller,
-      reason: "recorded-entry",
+      reason: "own-entry",
+      bundle: path.join(root, "hmr", "store", "cli", "abc123.mjs"),
+    });
+  });
+
+  it("answers nothing pushed with the caller's entry and no bundle", async () => {
+    const caller = await makeCaller();
+    const { root } = await makeRoot();
+    await expect(resolveCli({ callerEntry: caller, root })).resolves.toEqual({
+      kind: "entry",
+      entry: caller,
+      reason: "own-entry",
       bundle: null,
     });
   });
 
-  it("answers a record with no committed version the same way", async () => {
+  it("answers a record with no CLI half the same way — no committed version rides", async () => {
     const caller = await makeCaller();
     const { root } = await makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } });
     await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
       kind: "entry",
-      reason: "recorded-entry",
+      entry: caller,
       bundle: null,
     });
   });
 
-  it("faults a record that will not parse", async () => {
+  it("faults a record that will not parse, carrying what went wrong", async () => {
     const caller = await makeCaller();
     const { root } = await makeRoot({ raw: "{ not json" });
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
-      kind: "fault",
-      fault: "record-unsupported",
-    });
+    const resolved = await resolveCli({ callerEntry: caller, root });
+    expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
+    if (resolved.kind === "fault") {
+      expect(resolved.detail).toMatch(/harness\.json is not readable JSON/);
+    }
   });
 });
 
 describe("the command shim on the answer", () => {
-  it("runs the recorded entry, and the server's own entry with the name on a fault", async () => {
+  it("keeps its own entry and options whatever the record said", async () => {
     const own = {
       entry: "/install/penguin.js",
       execArgs: ["--import", "tsx"],
@@ -169,31 +118,39 @@ describe("the command shim on the answer", () => {
     };
 
     const caller = await makeCaller();
-    const { root } = await makeRoot({
-      record: {
-        cli: { bundle: "store/cli/abc123.mjs", entry: "/install/lib/dist/penguin-hmr.js" },
-      },
-    });
+    const pushed = await makeRoot({ record: { cli: { bundle: "store/cli/abc123.mjs" } } });
     await expect(
-      resolveCli({ callerEntry: caller, root }).then((resolved) =>
-        shimFromResolution(own, resolved),
-      ),
-    ).resolves.toEqual({
-      entry: "/install/lib/dist/penguin-hmr.js",
-      execArgs: [],
-      unavailable: null,
-      answerName: "recorded-entry",
-    });
-
-    const legacy = await makeRoot({ record: LOCAL_PUSH_RECORD });
-    await expect(
-      resolveCli({ callerEntry: caller, root: legacy.root }).then((resolved) =>
+      resolveCli({ callerEntry: caller, root: pushed.root }).then((resolved) =>
         shimFromResolution(own, resolved),
       ),
     ).resolves.toEqual({
       entry: own.entry,
       execArgs: own.execArgs,
       unavailable: null,
+      answerName: "own-entry",
+    });
+
+    const bare = await makeRoot();
+    await expect(
+      resolveCli({ callerEntry: caller, root: bare.root }).then((resolved) =>
+        shimFromResolution(own, resolved),
+      ),
+    ).resolves.toEqual({
+      entry: own.entry,
+      execArgs: own.execArgs,
+      unavailable: null,
+      answerName: "own-entry",
+    });
+
+    const broken = await makeRoot({ raw: "{ not json" });
+    await expect(
+      resolveCli({ callerEntry: caller, root: broken.root }).then((resolved) =>
+        shimFromResolution(own, resolved),
+      ),
+    ).resolves.toEqual({
+      entry: own.entry,
+      execArgs: own.execArgs,
+      unavailable: own.unavailable,
       answerName: "record-unsupported",
     });
 

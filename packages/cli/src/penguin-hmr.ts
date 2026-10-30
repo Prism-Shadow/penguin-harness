@@ -18,19 +18,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 
-/** This file: the loader's own entry, which resolution answers with on a pushed root. */
+/** This file: the loader's own entry, which resolution answers with. */
 const SELF_ENTRY = fileURLToPath(import.meta.url);
 
 export async function loadCli(
   root: string,
-  /**
-   * The entry resolution answers for when nothing is pushed, and the loader it answers for
-   * when the record names a bundle but no entry: this module, whose file sits beside the
-   * CLI it loads.
-   */
+  /** The entry resolution answers for: this module. A test names a fixture instead. */
   selfEntry: string = SELF_ENTRY,
 ): Promise<(argv: string[]) => Promise<number>> {
-  const answer = await resolveCli({ callerEntry: selfEntry, root, ownLoader: selfEntry });
+  const answer = await resolveCli({ callerEntry: selfEntry, root });
   // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
