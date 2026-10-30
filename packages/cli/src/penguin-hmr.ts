@@ -33,7 +33,7 @@ export async function loadCli(
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
   // The one reason that answers an entry with no bundle means nothing is pushed here: this
-  // entry exists to run the PUSHED CLI, and there is none to run.
+  // entry exists to run the pushed CLI, and there is none to run.
   if (answer.bundle === null) {
     throw new Error(`${answer.reason}: nothing is pushed to ${root}; use \`penguin\` instead`);
   }
