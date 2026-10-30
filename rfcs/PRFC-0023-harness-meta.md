@@ -46,7 +46,7 @@ Absence narrows from every freshly installed machine to roots that were never pr
 
 ### Presence leaves the entry alone
 
-The record states what this root holds; which entry starts is decided by resolution, in [PRFC-0024](./PRFC-0024-cli-resolution.md#guide-level-explanation). A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
+The record states what this root holds; which entry starts is the starting installation's own fact — the entry beside which the pushed bundle loads — not a field of the record. A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -96,11 +96,11 @@ This is the floor this RFC lays, stated as a property of channels: whatever a ch
 
 The two names predate this RFC and outlive it. Presence narrows the missing one to roots that were never provisioned and leaves the damaged one as the fault a provisioning or a corrupted file can produce. A reading face that merges them tells a caller with a damaged record that nothing was ever pushed — the reply that quietly throws away a version the root still holds.
 
-### The record leaves the entry alone
+### The record describes; the installation starts
 
-> However complete [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) is, which entry starts the harness is still decided by [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation).
+> The record states what a root holds; which entry starts the harness is the starting installation's own fact, and no field of the record obligates one.
 
-A record that obligates a start path would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image. The record states what a root holds; resolution decides what runs. Keeping that seam is what lets this RFC lay its floor.
+A record that obligates a start path would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image. An entry is a fact about the machine that starts — it cannot travel in a record whose reader may stand on any layout — and the harness image travels instead: content-addressed bundles, relative to the store, which the starting installation loads beside its own entry. Keeping that seam is what lets this RFC lay its floor.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -116,7 +116,7 @@ Presence costs a marker inside the record ("provisioned, never pushed") that abs
 
 **The reading face reads one file**: it reads `hmr/harness.json` under the root and nothing else, so a machine whose record exists only in a mirror has no record it can act on.
 
-**The cost of leaving this out**: PRFC-0024's resolution has nothing to resolve on a fresh install.
+**The cost of leaving this out**: a fresh install's remote-command face has no record to read — the exact silence presence closes.
 
 ## Prior art
 [prior-art]: #prior-art
@@ -143,6 +143,10 @@ Once every root has a record, upgrade accounting can walk the record alone: plan
 ---
 
 ## Changes
+
+### v1.2.0
+
+- Reworded the invariant "the record leaves the entry alone" into "the record describes; the installation starts", and reworded the guide sentence under it: which entry starts is the starting installation's own fact, not a field of the record. The earlier wording deferred the decision to a resolution RFC (PRFC-0024, withdrawn — its subject was trivial: the starting installation runs its own entry beside the record's bundle), and an entry cannot travel in a record whose reader may stand on any layout.
 
 ### v1.1.0
 
