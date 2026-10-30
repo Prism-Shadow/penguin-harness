@@ -28,7 +28,13 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput, userText } from "@prismshadow/amsp/records";
+import {
+  isEventMessage,
+  isSessionMeta,
+  partialToolCallOutput,
+  toolCallOutput,
+  userText,
+} from "@prismshadow/amsp/records";
 import type { McpServerConnectResult, AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
@@ -331,16 +337,17 @@ export class Environment implements EnvironmentInterface {
   }
 
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent), closes MCP clients (stdio server processes included) and stops the file tools' sandboxed helper. Idempotent. */
-  dispose(): void {
+  dispose(): Promise<void> {
     // Suppress completion reports first: dispose kills the remaining background sessions, and
     // their exits must not masquerade as task completions after the Session has ended.
     this.bgDisposed = true;
     this.bgBuffer = [];
     this.bgFwdBuffer = [];
     this.commandSessions.dispose();
-    this.subagentSessions.dispose();
+    const settled = this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
     this.fsHost.dispose();
+    return settled;
   }
 
   // Background completion reports: a single listener (the owning Session), with events fired
@@ -378,7 +385,15 @@ export class Environment implements EnvironmentInterface {
   private bgFwdBuffer: AmspRecord[] = [];
 
   private emitBackgroundForward(msg: AmspRecord): void {
-    if (this.bgDisposed) return;
+    // A completed request can still be reporting its usage during cancellation cleanup.
+    // Keep attribution and request boundaries with it so the host can meter it exactly once.
+    const accounting =
+      isSessionMeta(msg) ||
+      (isEventMessage(msg) &&
+        (msg.payload.type === "token_usage" ||
+          msg.payload.type === "request_begin" ||
+          msg.payload.type === "request_end"));
+    if (this.bgDisposed && !accounting) return;
     if (this.bgFwdListener) this.bgFwdListener(msg);
     else this.bgFwdBuffer.push(msg);
   }
@@ -469,17 +484,21 @@ export class Environment implements EnvironmentInterface {
     }
     // Same admission rule as a spawn: never evict a running child to make room.
     if (!this.subagentSessions.makeRoom()) return "busy";
-    let session: ManagedSubagentSession;
+    let session: ManagedSubagentSession | undefined;
     try {
-      session = new ManagedSubagentSession(
-        await runner.resume({ agentId, sessionId: childSessionId }),
-        { resumeAgentId: agentId },
-      );
+      const handle = await runner.resume({ agentId, sessionId: childSessionId });
+      if (this.subagentSessions.isDisposed) {
+        await handle.dispose();
+        return "gone";
+      }
+      session = new ManagedSubagentSession(handle, { resumeAgentId: agentId });
+      this.subagentSessions.track(session);
+      this.subagentSessions.register(session);
     } catch {
+      session?.kill();
+      if (session) await Promise.allSettled([session.whenSettled()]);
       return "gone"; // No trace to resume from, or the agent is gone: nothing to revive.
     }
-    this.subagentSessions.track(session);
-    this.subagentSessions.register(session);
     this.attachHostTap(session);
     try {
       // Host-initiated like the started path: no completion notice at the parent.
