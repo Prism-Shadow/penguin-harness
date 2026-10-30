@@ -20,7 +20,6 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { bootAppDeps, createApp } from "./app.js";
-import { cliLoaderFor } from "./services/cli-shim.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
@@ -209,17 +208,7 @@ class PenguinServer {
    */
   /** The store and the swap, ahead of everything that boots against them (hmrMain takes it first). */
   createHost(): ServerHmrHost {
-    this.host = new HmrHost<PlatformApi>(
-      this.config.root,
-      packagedPlatform,
-      cliLoaderFor({
-        entry: this.config.cliEntry ?? null,
-        execArgs: this.config.cliLaunch?.execArgs ?? [],
-        checkout: this.config.cliLaunch?.checkout ?? null,
-        origin: this.config.cliLaunch?.origin ?? null,
-        unavailable: this.config.cliLaunch?.unavailable ?? null,
-      }),
-    );
+    this.host = new HmrHost<PlatformApi>(this.config.root, packagedPlatform);
     return this.host;
   }
 

@@ -1,6 +1,7 @@
 /**
- * Resolution: the record decides — the writer named the entry — and the resolver reports
- * what it said. The cases are the record's states, and the names it answers with.
+ * Resolution: the record decides — an install image names its program layout's loader, a
+ * local push leaves the caller's own loader as the answer — and the resolver reports what
+ * the record said, falling back to what the caller offers when it says nothing.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -38,7 +39,7 @@ async function makeCaller(): Promise<string> {
   return entry;
 }
 
-/** A data root whose record's CLI half carries an entry, a bundle, both, or neither. */
+/** A data root whose record's CLI half is spelled by `record`. */
 async function makeRoot(
   options: { record?: unknown; raw?: string; bundle?: boolean } = {},
 ): Promise<{ root: string; bundle: string }> {
@@ -58,12 +59,10 @@ async function makeRoot(
   return { root, bundle };
 }
 
-/** A record a push of this version leaves: the entry and the bundle, both absolute-ish. */
-const RECORD_WITH_ENTRY = (entry: string) => ({
-  cli: { bundle: "store/cli/abc123.mjs", entry },
-});
-/** A record a version before recorded entries left: a bundle only. */
-const LEGACY_RECORD = { cli: { bundle: "store/cli/abc123.mjs" } };
+/** A record an install image lays down: the program layout's loader, relative. */
+const IMAGE_RECORD = { cli: { bundle: "store/cli/abc123.mjs", entry: "lib/dist/penguin-hmr.js" } };
+/** A record a local push leaves: the bundle only — the answer is the caller's own loader. */
+const LOCAL_PUSH_RECORD = { cli: { bundle: "store/cli/abc123.mjs" } };
 
 describe("the names an answer is made of", () => {
   it("is the two faults and the one reason, verbatim", () => {
@@ -76,7 +75,9 @@ describe("the record decides", () => {
   it("answers a recorded entry with that entry and the bundle it names", async () => {
     const caller = await makeCaller();
     const { root } = await makeRoot({
-      record: RECORD_WITH_ENTRY("/install/lib/dist/penguin-hmr.js"),
+      record: {
+        cli: { bundle: "store/cli/abc123.mjs", entry: "/install/lib/dist/penguin-hmr.js" },
+      },
     });
     await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
       kind: "entry",
@@ -86,9 +87,9 @@ describe("the record decides", () => {
     });
   });
 
-  it("resolves a program-relative entry against this process's program directory", async () => {
+  it("resolves a program-relative entry against the named program directory", async () => {
     const caller = await makeCaller();
-    const { root } = await makeRoot({ record: RECORD_WITH_ENTRY("lib/dist/penguin-hmr.js") });
+    const { root } = await makeRoot({ record: IMAGE_RECORD });
     await expect(
       resolveCli({ callerEntry: caller, root, programDir: "/install" }),
     ).resolves.toMatchObject({
@@ -100,10 +101,32 @@ describe("the record decides", () => {
 
   it("faults a program-relative entry on a process that stands on no program directory", async () => {
     const caller = await makeCaller();
-    const { root } = await makeRoot({ record: RECORD_WITH_ENTRY("lib/dist/penguin-hmr.js") });
+    const { root } = await makeRoot({ record: IMAGE_RECORD });
     await expect(
       resolveCli({ callerEntry: caller, root, programDir: null }),
     ).resolves.toMatchObject({ kind: "fault", fault: "record-unsupported" });
+  });
+
+  it("answers a bundle with no recorded entry by the loader the caller offers", async () => {
+    const caller = await makeCaller();
+    const { root } = await makeRoot({ record: LOCAL_PUSH_RECORD });
+    await expect(
+      resolveCli({ callerEntry: caller, root, ownLoader: "/install/lib/dist/penguin-hmr.js" }),
+    ).resolves.toMatchObject({
+      kind: "entry",
+      entry: "/install/lib/dist/penguin-hmr.js",
+      reason: "recorded-entry",
+      bundle: path.join(root, "hmr", "store", "cli", "abc123.mjs"),
+    });
+  });
+
+  it("faults a bundle with no recorded entry when the caller offers no loader", async () => {
+    const caller = await makeCaller();
+    const { root } = await makeRoot({ record: LOCAL_PUSH_RECORD });
+    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
+      kind: "fault",
+      fault: "record-unsupported",
+    });
   });
 
   it("answers nothing pushed with the caller's own entry", async () => {
@@ -137,37 +160,6 @@ describe("the record decides", () => {
   });
 });
 
-describe("the transition from records without recorded entries", () => {
-  it("faults a pre-entry record, naming the remedy", async () => {
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: LEGACY_RECORD });
-    const resolved = await resolveCli({ callerEntry: caller, root });
-    expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
-    if (resolved.kind === "fault") {
-      expect(resolved.detail).toMatch(/push or install this version once/);
-    }
-  });
-
-  it("and one push of this version rewrites the record so it answers", async () => {
-    // The same root, after its next push: the host commits cli.entry (see hmr/host.ts's
-    // persistVersion), and the record that faulted now answers.
-    const caller = await makeCaller();
-    const { root } = await makeRoot({ record: LEGACY_RECORD });
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
-      kind: "fault",
-    });
-    await fs.writeFile(
-      path.join(root, "hmr", "harness.json"),
-      JSON.stringify(RECORD_WITH_ENTRY("/install/lib/dist/penguin-hmr.js")),
-    );
-    await expect(resolveCli({ callerEntry: caller, root })).resolves.toMatchObject({
-      kind: "entry",
-      entry: "/install/lib/dist/penguin-hmr.js",
-      reason: "recorded-entry",
-    });
-  });
-});
-
 describe("the command shim on the answer", () => {
   it("runs the recorded entry, and the server's own entry with the name on a fault", async () => {
     const own = {
@@ -178,7 +170,9 @@ describe("the command shim on the answer", () => {
 
     const caller = await makeCaller();
     const { root } = await makeRoot({
-      record: RECORD_WITH_ENTRY("/install/lib/dist/penguin-hmr.js"),
+      record: {
+        cli: { bundle: "store/cli/abc123.mjs", entry: "/install/lib/dist/penguin-hmr.js" },
+      },
     });
     await expect(
       resolveCli({ callerEntry: caller, root }).then((resolved) =>
@@ -191,7 +185,7 @@ describe("the command shim on the answer", () => {
       answerName: "recorded-entry",
     });
 
-    const legacy = await makeRoot({ record: LEGACY_RECORD });
+    const legacy = await makeRoot({ record: LOCAL_PUSH_RECORD });
     await expect(
       resolveCli({ callerEntry: caller, root: legacy.root }).then((resolved) =>
         shimFromResolution(own, resolved),

@@ -43,15 +43,8 @@ export interface Manifest {
    * `platform.bundle`; the two are separately compiled artifacts), kept as its own
    * field so a reader that only wants "which bundle does the CLI load right now"
    * never has to reach into `platform` at all.
-   *
-   * `entry` is the entry that RUNS this root's CLI, decided by whoever wrote the record:
-   * the pushing server names its own loader (absolute — a push lands on the machine that
-   * pushed), an install image names the program layout's loader (`lib/dist/…`, resolved by
-   * the consumer against its program directory). Optional: records written by versions
-   * whose readers guessed the entry instead carry no `entry`, and resolution answers
-   * `record-unsupported` for them — one push or install rewrites the record.
    */
-  cli?: { bundle: string; entry?: string };
+  cli?: { bundle: string };
   /** One gzip(JSON.stringify({ files })) artifact, restored straight into memory. */
   web?: { manifest: string };
   /**

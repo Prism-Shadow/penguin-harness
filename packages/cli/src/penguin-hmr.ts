@@ -24,12 +24,13 @@ const SELF_ENTRY = fileURLToPath(import.meta.url);
 export async function loadCli(
   root: string,
   /**
-   * The entry resolution answers for when nothing is pushed: this module. A test that runs
-   * a fixture product's loader through this same procedure names that fixture instead.
+   * The entry resolution answers for when nothing is pushed, and the loader it answers for
+   * when the record names a bundle but no entry: this module, whose file sits beside the
+   * CLI it loads.
    */
-  callerEntry: string = SELF_ENTRY,
+  selfEntry: string = SELF_ENTRY,
 ): Promise<(argv: string[]) => Promise<number>> {
-  const answer = await resolveCli({ callerEntry, root });
+  const answer = await resolveCli({ callerEntry: selfEntry, root, ownLoader: selfEntry });
   // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);

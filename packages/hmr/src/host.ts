@@ -192,19 +192,10 @@ export class HmrHost<Api extends Park = Park> {
    * fallback a failed restore lands on. Passed in rather than imported: this package is the
    * mechanism, and it must not know what a platform is or what this product's default one
    * contains. The server hands it its own (hmr/platform.ts's `packagedPlatform`).
-   *
-   * `cliLoader` is the entry that runs this installation's CLI — the loader the pushed CLI
-   * loads through — recorded into every version this host commits (the manifest's
-   * `cli.entry`). A push lands on the machine that pushed, so the absolute path is right
-   * there; an install image spells its own, layout-relative (hmr/pushed-build.ts). Null:
-   * this installation cannot name a loader (a desktop shell, a checkout that has not built
-   * the CLI), and its commits carry no `cli.entry` — resolution answers
-   * `record-unsupported` for them until a version with one lands.
    */
   constructor(
     private readonly root: string,
     private readonly packaged: PlatformBundle,
-    private readonly cliLoader: string | null = null,
   ) {
     this.current = packaged;
     this.hmrDir = path.join(root, "hmr");
@@ -716,10 +707,7 @@ export class HmrHost<Api extends Park = Park> {
 
       await this.commitManifest(() => ({
         platform: { bundle: `store/platform/${platformSha}.mjs` },
-        cli: {
-          bundle: `store/cli/${cliSha}.mjs`,
-          ...(this.cliLoader === null ? {} : { entry: this.cliLoader }),
-        },
+        cli: { bundle: `store/cli/${cliSha}.mjs` },
         web: { manifest: `store/web/${webSha}.webz` },
         ...(assetsDir === null
           ? {}
