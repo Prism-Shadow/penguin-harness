@@ -2020,21 +2020,30 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go — the base URL, API key and protocol you enter are saved once as the group\'s settings, and every imported model follows them; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, fetches the models it serves and imports the ones you tick — the base URL, API key and protocol you enter are saved once as the group\'s settings, and every imported model follows them; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
     groupModeCreate: "Create only",
     groupModeImport: "Import models",
-    groupImportAll: "Import all models",
+    groupImportFetch: "Fetch model list",
+    groupImportPicked: (n: number): string => (n === 1 ? "Import 1 model" : `Import ${n} models`),
+    groupImportPickTitle: "Models to import",
+    groupImportPickCount: (picked: number, total: number): string =>
+      `${picked} of ${total} selected`,
+    groupImportSelectAll: "Select all",
+    groupImportSelectNone: "Select none",
+    groupImportFilter: "Filter by model id",
     groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
     groupImportKeyHint: "The endpoint's API key (required unless the URL is the vendor's own)",
     groupImportListing: "Fetching model list…",
-    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportSaving: (n: number): string =>
+      n === 1 ? "Importing 1 model…" : `Importing ${n} models…`,
     groupImportUnsupported: "This protocol cannot list models — add them manually",
     groupImportFailed: "Fetching the model list failed",
     groupImportEmpty: "No models to import from this endpoint",
-    groupImported: (added: number, skipped: number): string =>
-      skipped > 0
-        ? `Imported ${added} models, skipped ${skipped} entries`
-        : `Imported ${added} models`,
+    groupImported: (added: number, skipped: number): string => {
+      const models = added === 1 ? "1 model" : `${added} models`;
+      if (skipped === 0) return `Imported ${models}`;
+      return `Imported ${models}, skipped ${skipped === 1 ? "1 entry" : `${skipped} entries`}`;
+    },
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
