@@ -46,7 +46,7 @@ Absence narrows from every freshly installed machine to roots that were never pr
 
 ### Presence leaves the entry alone
 
-The record states what this root holds; which entry starts is the starting installation's own fact — the entry beside which the pushed bundle loads — not a field of the record. A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
+The record says what this root holds. It does not say which program starts the harness — the harness the root holds is started by the installation that serves it, from that installation's own program directory. A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -98,9 +98,9 @@ The two names predate this RFC and outlive it. Presence narrows the missing one 
 
 ### The record describes; the installation starts
 
-> The record states what a root holds; which entry starts the harness is the starting installation's own fact, and no field of the record obligates one.
+> The record says what a root holds. It does not say which program starts the harness, and no field of the record names one.
 
-A record that obligates a start path would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image. An entry is a fact about the machine that starts — it cannot travel in a record whose reader may stand on any layout — and the harness image travels instead: content-addressed bundles, relative to the store, which the starting installation loads beside its own entry. Keeping that seam is what lets this RFC lay its floor.
+A record that named a start program would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image — and the name could not even be written down once for all readers, because the program that starts lives in each installation's own directory, while the record may be read on any layout. What travels is the harness itself: content-addressed bundles, stored relative to the record, which whichever installation serves this root loads from its own program. Keeping that seam is what lets this RFC lay its floor.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -146,7 +146,7 @@ Once every root has a record, upgrade accounting can walk the record alone: plan
 
 ### v1.2.0
 
-- Reworded the invariant "the record leaves the entry alone" into "the record describes; the installation starts", and reworded the guide sentence under it: which entry starts is the starting installation's own fact, not a field of the record. The earlier wording deferred the decision to a resolution RFC (PRFC-0024, withdrawn — its subject was trivial: the starting installation runs its own entry beside the record's bundle), and an entry cannot travel in a record whose reader may stand on any layout.
+- Reworded the invariant "the record leaves the entry alone" into "the record describes; the installation starts": the record says what a root holds, not which program starts the harness. The earlier wording deferred the decision to a resolution RFC (PRFC-0024, withdrawn — the question answers itself: whichever installation serves the root starts its own program).
 
 ### v1.1.0
 
