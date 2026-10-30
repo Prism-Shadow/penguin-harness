@@ -1348,9 +1348,10 @@ export class Session {
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web
    * session close) to avoid leaking background processes into the host process's lifetime.
-   * Optional, idempotent.
+   * Idempotent. Await the result before deleting the Session's files: background children
+   * may still be writing their cancellation records after receiving the abort signal.
    */
-  dispose(): void {
-    this.environment.dispose?.();
+  dispose(): void | Promise<void> {
+    return this.environment.dispose?.();
   }
 }

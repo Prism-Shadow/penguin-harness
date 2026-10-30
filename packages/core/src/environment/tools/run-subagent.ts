@@ -145,6 +145,11 @@ export function createSubagentTool(
           ...(provider !== undefined ? { provider } : {}),
           ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
+        // Cancellation can land while the child environment is being assembled.
+        if (signal?.aborted || manager.isDisposed) {
+          await handle.dispose();
+          return { status: "aborted" };
+        }
         session = new ManagedSubagentSession(handle, {
           // Spawn-time owner for the revival tombstone (undefined = a self-spawn of this Agent).
           ...(agentId !== undefined ? { resumeAgentId: agentId } : {}),
@@ -182,6 +187,11 @@ export function createSubagentTool(
         // not at the first input_subagent access.
         const meta = session.takeMeta();
         if (meta) yield meta;
+        // Yielding metadata lets the host begin removal before this run has started.
+        if (signal?.aborted || manager.isDisposed) {
+          session.kill();
+          return { status: "aborted" };
+        }
         session.startRun([userText(prompt, "parent_agent")]);
         return {
           status: "completed",

@@ -77,12 +77,17 @@ export function createInputSubagentTool(
         const clue = manager.releasedInfo(subagentId);
         const runner = services?.subagentRunner;
         if (clue && runner?.resume && !manager.isDisposed && manager.makeRoom()) {
+          let revived: ManagedSubagentSession | undefined;
           try {
             const handle = await runner.resume({
               sessionId: clue.sessionId,
               ...(clue.agentId !== undefined ? { agentId: clue.agentId } : {}),
             });
-            const revived = new ManagedSubagentSession(handle, {
+            if (signal?.aborted || manager.isDisposed) {
+              await handle.dispose();
+              return { status: "aborted" };
+            }
+            revived = new ManagedSubagentSession(handle, {
               ...(clue.agentId !== undefined ? { resumeAgentId: clue.agentId } : {}),
             });
             manager.track(revived);
@@ -90,6 +95,8 @@ export function createInputSubagentTool(
             session = revived;
             yield delta(`[subagent ${subagentId} resumed]\n`);
           } catch {
+            revived?.kill();
+            if (revived) await Promise.allSettled([revived.whenSettled()]);
             session = undefined;
           }
         }

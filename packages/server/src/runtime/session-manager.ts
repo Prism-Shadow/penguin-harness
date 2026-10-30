@@ -308,7 +308,7 @@ export interface RuntimeSession {
   /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
   onBackgroundState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
-  dispose?(): void;
+  dispose?(): void | Promise<void>;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -538,6 +538,8 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /** Replaced runtimes still owned by this Session, including their background work. */
+  retired?: RuntimeSession[];
   status: SessionStatus;
   approvals: Approvals;
   abort: AbortController | null;
@@ -1823,6 +1825,17 @@ export class SessionManager {
     return "removed";
   }
 
+  /** Cancel every run before waiting for the main Task's cleanup; children can otherwise start another model request during that wait. */
+  private abortRemoved(entry: RuntimeEntry): void {
+    entry.approvals.denyAll();
+    entry.abort?.abort();
+    for (const session of [entry.session, ...(entry.retired ?? [])]) {
+      for (const child of session.listBackgroundSubagents?.() ?? []) {
+        session.abortBackgroundSubagentRun?.(child.sessionId);
+      }
+    }
+  }
+
   /**
    * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
@@ -1830,15 +1843,17 @@ export class SessionManager {
    * conversation started (a dev server surviving its deleted conversation is
    * unreachable from every UI, running forever).
    */
-  private disposeRemoved(entry: RuntimeEntry): void {
-    const dispose = (): void => entry.session.dispose?.();
-    if (entry.running) void entry.running.then(dispose, dispose);
-    else dispose();
+  private disposeRemoved(entry: RuntimeEntry): Promise<void> {
+    const dispose = (): void | Promise<void> => entry.session.dispose?.();
+    return Promise.allSettled([
+      entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose()),
+      ...(entry.retired ?? []).map((session) => session.dispose?.()),
+    ]).then(() => undefined);
   }
 
   /**
    * Before deleting a Project, converge all its active runs and clear them out of the
-   * active table. Returns the in-flight drive Promises of the affected entries: the
+   * active table. Returns the drive and background-cleanup Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
    * interrupt-cleanup Trace writes don't recreate the directory after deletion.
    */
@@ -1846,11 +1861,9 @@ export class SessionManager {
     const runnings: Promise<void>[] = [];
     for (const [key, entry] of [...this.entries]) {
       if (entry.projectId !== projectId) continue;
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
+      this.abortRemoved(entry);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -1869,11 +1882,9 @@ export class SessionManager {
     const runnings: Promise<void>[] = [];
     for (const [key, entry] of [...this.entries]) {
       if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
+      this.abortRemoved(entry);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -1890,18 +1901,16 @@ export class SessionManager {
    * a new task recreates the entry and Trace file, reviving an already-deleted Session
    * between the abort snapshot and the file removal. The caller must call
    * endSessionDeletion once deletion finishes (success or failure). Returns the
-   * in-flight drive Promise: the caller should await it before deleting the Trace file,
+   * drive and background-cleanup Promise: the caller should await it before deleting the Trace file,
    * so cleanup writes don't recreate the file.
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
     this.deletingSessions.add(sessionId);
     const entry = this.entries.get(sessionId);
     if (!entry) return [];
-    entry.approvals.denyAll();
-    entry.abort?.abort();
+    this.abortRemoved(entry);
     this.entries.delete(sessionId);
-    this.disposeRemoved(entry);
-    return entry.running ? [entry.running] : [];
+    return [this.disposeRemoved(entry)];
   }
 
   endSessionDeletion(sessionId: string): void {
@@ -1929,18 +1938,14 @@ export class SessionManager {
     clearInterval(this.sweepTimer);
     const pending: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) pending.push(entry.running);
+      this.abortRemoved(entry);
       // Suspend means the environment too: dispose kills the Session's remaining
       // background processes (a dev server the conversation started, etc.). Without
       // this, a hot swap orphans them — the OS process keeps running while the next
       // App's freshly resumed Session starts with an empty process list, so the stop
       // control has gone blind. Sequenced after the in-flight drive settles, the same
       // ordering disposeRemoved uses.
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running) void entry.running.then(dispose, dispose);
-      else dispose();
+      pending.push(this.disposeRemoved(entry));
     }
     this.entries.clear();
     if (pending.length === 0) return;
@@ -1948,6 +1953,13 @@ export class SessionManager {
       Promise.allSettled(pending).then(() => undefined),
       new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
     ]);
+  }
+
+  private hasBackgroundWork(session: RuntimeSession): boolean {
+    return !!(
+      session.hasRunningBackgroundSubagents?.() ||
+      session.listBackgroundCommands?.().some((p) => p.running)
+    );
   }
 
   /**
@@ -1961,6 +1973,7 @@ export class SessionManager {
    */
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
+      if (entry.retired?.some((retired) => this.hasBackgroundWork(retired))) continue;
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       // A live background process (e.g. a dev server the conversation started) pins the
@@ -1981,6 +1994,7 @@ export class SessionManager {
       if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
+      void this.disposeRemoved(entry);
     }
   }
 
@@ -2129,7 +2143,8 @@ export class SessionManager {
       ) {
         return existing;
       }
-      this.entries.delete(sessionId);
+      // Keep ownership while loading: a failed reload or concurrent deletion must still
+      // reach the previous runtime and its children.
       discardedBackgroundTasks = existing.backgroundTasks;
     }
     const row = this.deps.sessions.findById(sessionId);
@@ -2168,6 +2183,7 @@ export class SessionManager {
       provider: row.provider,
       modelId: row.modelId,
       session,
+      ...(existing ? { retired: [existing.session, ...(existing.retired ?? [])] } : {}),
       status: "idle",
       approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
@@ -2190,6 +2206,7 @@ export class SessionManager {
     // crashed between the Trace write and the row update resumes (from the Trace) on the new
     // model, and the row is brought back in step here.
     this.syncEntryModel(entry);
+    if (currentId !== sessionId) this.entries.delete(sessionId);
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
