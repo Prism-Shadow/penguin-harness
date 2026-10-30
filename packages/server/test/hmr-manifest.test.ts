@@ -96,10 +96,14 @@ describe("resolveCliBundlePath: the CLI half of the record", () => {
     await expect(resolveCliBundlePath(root)).resolves.toBeNull();
   });
 
-  it("is null when the store lost the file (pruned)", async () => {
+  it("names the path the record holds, without checking the store holds it", async () => {
+    // The record decides WHAT to load; whether the named file is there is what loading it
+    // answers — a reader here would race the sweep that legitimately removes old bundles.
     root = await makeRoot();
     await writeManifest(root, { cli: { bundle: "store/cli/nonexistent.mjs" } });
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+    await expect(resolveCliBundlePath(root)).resolves.toBe(
+      path.join(root, "hmr", "store", "cli", "nonexistent.mjs"),
+    );
   });
 
   it("resolves a legitimate, in-store path against <root>/hmr", async () => {
