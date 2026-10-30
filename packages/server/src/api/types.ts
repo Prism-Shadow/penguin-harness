@@ -7057,6 +7057,8 @@ export interface PluginInstallOutcome {
   modules: boolean;
   /** The zip held the version already installed: nothing was installed. */
   unchanged?: boolean;
+  /** `kind: "agent"`: the definition was copied into this Project's agents/ — no install, a copy. */
+  agent?: { agentId: string; copied: string[] };
 }
 
 /** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */

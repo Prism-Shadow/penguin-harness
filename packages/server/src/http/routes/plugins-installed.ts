@@ -92,6 +92,13 @@ import {
 } from "../../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
+import { parseAgentPackageArchive } from "../../services/agent-package-archive.js";
+import {
+  copyAgentPackage,
+  reinstallAgentPackage,
+  agentPackageFiles,
+  AgentPackageError,
+} from "../../agents/package.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
@@ -269,6 +276,21 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
   };
 
+  /**
+   * An installed package can stand in for an Agent whose directory was deleted by hand:
+   * its definition part is re-copied into the Project (as data, never executed). Null when
+   * the package is not an Agent package — no keyword, no definition part.
+   */
+  const installedAgentPackage = async (name: string, projectId: string) => {
+    const dir = installedPackageDir(pluginsPrefix(deps.root), name);
+    try {
+      return await reinstallAgentPackage({ root: deps.root, projectId, name, dir });
+    } catch (err) {
+      if (err instanceof AgentPackageError) return null;
+      throw err;
+    }
+  };
+
   /** The machine a verb is scoped to — its own table — or null for the shared table. */
   const machineOf = (value: unknown): string | null => {
     if (value === undefined || value === null || value === "") return null;
@@ -408,6 +430,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const body = await readJson(c);
+    // `kind: "agent"` installs an Agent package: download, then COPY its definition into
+    // this Project's agents/ — no install scripts, no credentials, nothing executed.
+    const kind = body.kind;
+    if (kind !== undefined && kind !== "plugin" && kind !== "agent") {
+      throw new HttpError(400, "bad_request", "kind must be \"plugin\" or \"agent\".");
+    }
     const source = sourceOf(body.specifier);
     const machineId = machineOf(body.machineId);
     const runsHere = machineId === null || machineId === deps.machineId;
@@ -422,6 +450,19 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         );
       }
       const installed = await viaNpm(() => deps.packages.install(deps.root, source.spec));
+      if (kind === "agent") {
+        // The copy is the whole install: an Agent package does not enter the [plugins]
+        // table (nothing loads it), and the plugin vetting does not apply to it.
+        const copy = await installedAgentPackage(installed.name, projectId);
+        if (copy === null) {
+          throw new HttpError(
+            400,
+            "not_an_agent_package",
+            `${installed.name} does not carry an Agent definition (no penguin-agent keyword, no agent_state/ definition).`,
+          );
+        }
+        return c.json(await answer(projectId, installed, { agent: copy }));
+      }
       if ((await vetInstalled(installed)).modules) {
         await list(projectId, installed.name, {}, deps.machineId);
         deps.syncFleet(projectId);
@@ -438,6 +479,26 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       runsHere && !shipped.includes(source.name)
         ? await viaNpm(() => deps.packages.install(deps.root, source.spec))
         : null;
+    if (kind === "agent") {
+      if (!runsHere) {
+        throw new HttpError(
+          400,
+          "bad_request",
+          "An Agent package is copied on the server that downloads it; ask that machine's own Plugins page.",
+        );
+      }
+      // The copy is the whole install: from the package npm just fetched — or, already on
+      // this server, from the prefix (an Agent directory deleted by hand is re-copied).
+      const copy = await installedAgentPackage(installed?.name ?? source.name, projectId);
+      if (copy === null) {
+        throw new HttpError(
+          400,
+          "not_an_agent_package",
+          `${installed?.name ?? source.name} is not an Agent package (no penguin-agent keyword, no agent_state/ definition).`,
+        );
+      }
+      return c.json(await answer(projectId, installed, { agent: copy }));
+    }
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
     // loads it.
     const kinds = installed !== null ? await vetInstalled(installed) : null;
@@ -452,7 +513,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed));
+    return c.json(await answer(projectId, installed, { agent: copied }));
   });
 
   app.post("/archive", async (c) => {
@@ -460,7 +521,61 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const projectId = scope(c);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
-    const archive = await parsePluginArchive(new Uint8Array(Buffer.from(dataBase64, "base64")));
+    const bytes = new Uint8Array(Buffer.from(dataBase64, "base64"));
+    // `kind: "agent"`: an Agent package zip — package.json OPTIONAL there, the definition is
+    // what the package is for. Everything else is a plugin zip.
+    if (body.kind === "agent") {
+      const pkg = await parseAgentPackageArchive(bytes).catch((err: unknown) => {
+        if (err instanceof AgentPackageError) {
+          throw new HttpError(400, "agent_package_invalid", err.message);
+        }
+        throw err;
+      });
+      if ((await shippedNames()).includes(pkg.name)) {
+        throw new HttpError(
+          409,
+          "plugin_shipped",
+          `${pkg.name} ships with this server: a package under its name would replace it for every Project.`,
+        );
+      }
+      if (pkg.manifest) {
+        // npm semantics apply: the package (with its dependencies) goes into the prefix,
+        // the copy below reads it back from there — so a deleted Agent directory can be
+        // re-copied from the prefix later.
+        await viaNpm(() =>
+          deps.packages.installFiles(deps.root, Object.fromEntries(pkg.files)),
+        );
+        const dir = installedPackageDir(pluginsPrefix(deps.root), pkg.name);
+        const copy = await copyAgentPackage({
+          root: deps.root,
+          projectId,
+          agentId: pkg.agentId,
+          files: await agentPackageFiles(dir),
+        }).catch((err: unknown) => {
+          if (err instanceof AgentPackageError) {
+            throw new HttpError(400, "agent_package_invalid", err.message);
+          }
+          throw err;
+        });
+        return c.json(await answer(projectId, { name: pkg.name, version: null }, { agent: copy }), 201);
+      }
+      // No package.json: the definition files stand alone. Nothing goes into the prefix —
+      // the copy IS the whole install; there is no package here for npm to resolve or a
+      // table to name.
+      const copy = await copyAgentPackage({
+        root: deps.root,
+        projectId,
+        agentId: pkg.agentId,
+        files: pkg.files,
+      }).catch((err: unknown) => {
+        if (err instanceof AgentPackageError) {
+          throw new HttpError(400, "agent_package_invalid", err.message);
+        }
+        throw err;
+      });
+      return c.json(await answer(projectId, { name: pkg.name, version: null }, { agent: copy }), 201);
+    }
+    const archive = await parsePluginArchive(bytes);
     // The prefix resolves first: a zip under a shipped module's name would replace it.
     if ((await shippedNames()).includes(archive.name)) {
       throw new HttpError(
