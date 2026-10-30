@@ -264,7 +264,7 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, ApiError } from "./client";
+import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { S } from "../lib/strings";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
@@ -1310,26 +1310,19 @@ export async function getMessagesFrames(
       : page.kind === "tail"
         ? `?tailLimit=${page.limit}`
         : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
-  const response = await fetch(
+  // apiFetchStream (client.ts): the same URL routing, cookie and non-2xx → ApiError mapping
+  // every other call takes, with the 2xx body handed back unread — the frames answer is read
+  // as it arrives.
+  const response = await apiFetchStream(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages/frames${qs}`,
-    { credentials: "same-origin" },
   );
-  if (!response.ok || response.body === null) {
-    const status = response.status;
-    let code = "http_error";
-    let message = S.errors.networkError;
-    try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
-    } catch {
-      // A non-JSON error body: the generic code stands.
-    }
-    throw new ApiError(status, code, message);
-  }
   const headerDate = Date.parse(response.headers.get("date") ?? "");
   const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
-  const reader = response.body.getReader();
+  // A 2xx frames answer always carries a body (the route writes NDJSON lines);
+  // a null body is the same impossible answer as a missing one.
+  const bodyStream = response.body;
+  if (bodyStream === null) return { serverNowMs };
+  const reader = bodyStream.getReader();
   const decoder = new TextDecoder();
   let carry = "";
   for (;;) {
