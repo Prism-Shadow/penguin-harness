@@ -231,6 +231,12 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 ## Changes
 
+### v1.6.0
+
+- The command shim's public names now say what each one holds. The CLI loader's function is `loadCli`, and its own entry is `SELF_ENTRY`; the resolution input that names the caller's entry is `callerEntry`. The shim's decision is `ShimDecision`, the field that carries the name of the answer it acted on is `answerName`, and the message a shim result carries is `detail`. The two options are `explicitEntry` and `runsFromSource`, the checkout root is `checkoutRoot`, and the database path a launcher writes is `databasePath`.
+- `CliLaunch` and its `unavailable` field keep their names. A runtime publishes the configuration object to the platform it boots, and that platform can be newer than the runtime, so those field names are read across releases; renaming them would drop what an older runtime publishes.
+- The test fixture `PUSHED` is now `RECORD_WITH_CLI`: it is a record with a CLI entry, not a statement that a push happened.
+
 ### v1.5.0
 
 - Renamed the answer vocabulary so each name says what it is. The three reasons name the entry that answered: `declared-loader`, `legacy-loader`, `own-entry`. The two "nothing pushed" reasons, `no-record` and `no-pushed-cli`, became one — they answered the same entry, and the record's shapes stay as the reader's five states. The six faults name the piece that broke: `record-unreadable`, `cli-path-unusable`, `cli-file-missing`, `declared-loader-missing`, `no-loader`, `cli-unloadable`.
