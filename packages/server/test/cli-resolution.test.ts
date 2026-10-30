@@ -77,7 +77,7 @@ async function makeRoot(
 }
 
 /** The record a pushed CLI leaves: the store file the caller creates, named relatively. */
-const PUSHED = { cli: { bundle: "store/cli/abc123.mjs" } };
+const RECORD_WITH_CLI = { cli: { bundle: "store/cli/abc123.mjs" } };
 
 /** One row of the RFC's table: how to build the world, and what the answer must be. */
 interface Case {
@@ -85,9 +85,9 @@ interface Case {
   product: () => Promise<Product>;
   root: () => Promise<{ root: string; bundle: string }>;
   /** The caller's entry; default the product's entry. */
-  self?: (product: Product) => string;
+  callerEntry?: (product: Product) => string;
   /** The entry the answer must name, when it names one. */
-  entry?: (product: Product, self: string) => string;
+  entry?: (product: Product, callerEntry: string) => string;
   /** The pushed bundle the answer must carry, when it carries one. */
   bundle?: (bundle: string) => string;
   expect: Partial<CliResolution>;
@@ -112,7 +112,7 @@ describe("the RFC's ten cases", () => {
     {
       name: "1. record and a declared loader present → the loader, `declared-loader`",
       product: () => makeProduct(),
-      root: () => makeRoot({ record: PUSHED }),
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
       entry: (product) => product.loader,
       bundle: (bundle) => bundle,
       expect: { kind: "entry", reason: "declared-loader" },
@@ -120,13 +120,13 @@ describe("the RFC's ten cases", () => {
     {
       name: "2. record and a declared loader absent → fault `declared-loader-missing`",
       product: () => makeProduct({ loader: false }),
-      root: () => makeRoot({ record: PUSHED }),
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
       expect: { kind: "fault", fault: "declared-loader-missing" },
     },
     {
       name: "3. record, no declaration, the legacy loader present → `legacy-loader`",
       product: () => makeProduct({ declare: false }),
-      root: () => makeRoot({ record: PUSHED }),
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
       entry: (product) => product.loader,
       bundle: (bundle) => bundle,
       expect: { kind: "entry", reason: "legacy-loader" },
@@ -134,13 +134,13 @@ describe("the RFC's ten cases", () => {
     {
       name: "4. record, no declaration and no legacy loader → fault `no-loader`",
       product: () => makeProduct({ declare: false, loader: false }),
-      root: () => makeRoot({ record: PUSHED }),
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
       expect: { kind: "fault", fault: "no-loader" },
     },
     {
       name: "5. the path's file is gone from the store → fault `cli-file-missing`",
       product: () => makeProduct(),
-      root: () => makeRoot({ record: PUSHED, bundle: false }),
+      root: () => makeRoot({ record: RECORD_WITH_CLI, bundle: false }),
       expect: { kind: "fault", fault: "cli-file-missing" },
     },
     {
@@ -153,14 +153,14 @@ describe("the RFC's ten cases", () => {
       name: "7. a record with no CLI section → the caller's entry, `own-entry`",
       product: () => makeProduct(),
       root: () => makeRoot({ record: { platform: { bundle: "store/platform/x.mjs" } } }),
-      entry: (_product, self) => self,
+      entry: (_product, callerEntry) => callerEntry,
       expect: { kind: "entry", reason: "own-entry" },
     },
     {
       name: "8. no record → the caller's entry, `own-entry`",
       product: () => makeProduct(),
       root: () => makeRoot(),
-      entry: (_product, self) => self,
+      entry: (_product, callerEntry) => callerEntry,
       expect: { kind: "entry", reason: "own-entry" },
     },
     {
@@ -172,18 +172,18 @@ describe("the RFC's ten cases", () => {
     {
       name: "10. the caller is the declared loader → itself, `declared-loader`, loading the pushed bundle",
       product: () => makeProduct(),
-      root: () => makeRoot({ record: PUSHED }),
-      self: (product) => product.loader,
-      entry: (_product, self) => self,
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
+      callerEntry: (product) => product.loader,
+      entry: (_product, callerEntry) => callerEntry,
       bundle: (bundle) => bundle,
       expect: { kind: "entry", reason: "declared-loader" },
     },
     {
       name: "10b. the caller is a legacy loader of a product that declares nothing → `legacy-loader`",
       product: () => makeProduct({ declare: false }),
-      root: () => makeRoot({ record: PUSHED }),
-      self: (product) => product.loader,
-      entry: (_product, self) => self,
+      root: () => makeRoot({ record: RECORD_WITH_CLI }),
+      callerEntry: (product) => product.loader,
+      entry: (_product, callerEntry) => callerEntry,
       bundle: (bundle) => bundle,
       expect: { kind: "entry", reason: "legacy-loader" },
     },
@@ -193,8 +193,8 @@ describe("the RFC's ten cases", () => {
     for (const item of cases) {
       const product = await item.product();
       const { root, bundle } = await item.root();
-      const self = item.self?.(product) ?? product.entry;
-      const resolved = await resolveCli({ self, root });
+      const callerEntry = item.callerEntry?.(product) ?? product.entry;
+      const resolved = await resolveCli({ callerEntry, root });
       expect({ name: item.name, ...resolved }).toMatchObject(item.expect);
       if (resolved.kind === "entry") {
         // The entry it names, and the pushed bundle it carries (none when nothing is pushed).
@@ -204,7 +204,7 @@ describe("the RFC's ten cases", () => {
           bundle: resolved.bundle,
         }).toEqual({
           name: item.name,
-          entry: item.entry?.(product, self) ?? self,
+          entry: item.entry?.(product, callerEntry) ?? callerEntry,
           bundle: item.bundle?.(bundle) ?? null,
         });
       }
@@ -213,8 +213,8 @@ describe("the RFC's ten cases", () => {
 
   it("keeps a broken declaration from falling back to the legacy name", async () => {
     const product = await makeProduct({ declare: "../elsewhere/penguin-hmr.js" });
-    const { root } = await makeRoot({ record: PUSHED });
-    await expect(resolveCli({ self: product.entry, root })).resolves.toMatchObject({
+    const { root } = await makeRoot({ record: RECORD_WITH_CLI });
+    await expect(resolveCli({ callerEntry: product.entry, root })).resolves.toMatchObject({
       kind: "fault",
       fault: "declared-loader-missing",
     });
@@ -227,8 +227,8 @@ describe("the declaration a product carries", () => {
     const bin = path.join(product.dir, "node_modules", ".bin", "penguin");
     await fs.mkdir(path.dirname(bin), { recursive: true });
     await fs.symlink(product.entry, bin);
-    const { root } = await makeRoot({ record: PUSHED });
-    await expect(resolveCli({ self: bin, root })).resolves.toMatchObject({
+    const { root } = await makeRoot({ record: RECORD_WITH_CLI });
+    await expect(resolveCli({ callerEntry: bin, root })).resolves.toMatchObject({
       kind: "entry",
       entry: product.loader,
       reason: "declared-loader",
@@ -240,12 +240,12 @@ describe("the declaration a product carries", () => {
     await fs.mkdir(inner, { recursive: true });
     await fs.writeFile(path.join(inner, "penguin.js"), "export const cli = async () => 0;\n");
     await fs.writeFile(path.join(inner, "package.json"), JSON.stringify({ name: "inner" }));
-    await expect(resolveCli({ self: path.join(inner, "penguin.js"), root })).resolves.toMatchObject(
-      {
-        kind: "fault",
-        fault: "no-loader",
-      },
-    );
+    await expect(
+      resolveCli({ callerEntry: path.join(inner, "penguin.js"), root }),
+    ).resolves.toMatchObject({
+      kind: "fault",
+      fault: "no-loader",
+    });
   });
 });
 
@@ -259,14 +259,14 @@ describe("the record reader and the layer's own", () => {
       },
       { name: "damaged record", root: () => makeRoot({ raw: "{ not json" }) },
       { name: "unusable path", root: () => makeRoot({ record: { cli: {} } }) },
-      { name: "missing file", root: () => makeRoot({ record: PUSHED, bundle: false }) },
-      { name: "pushed bundle", root: () => makeRoot({ record: PUSHED }) },
+      { name: "missing file", root: () => makeRoot({ record: RECORD_WITH_CLI, bundle: false }) },
+      { name: "pushed bundle", root: () => makeRoot({ record: RECORD_WITH_CLI }) },
     ];
     for (const shape of shapes) {
       const product = await makeProduct();
       const { root } = await shape.root();
       const layer = await readPushedCli(root);
-      const resolved = await resolveCli({ self: product.entry, root });
+      const resolved = await resolveCli({ callerEntry: product.entry, root });
       const read = { name: shape.name, layer: layer.kind, resolved };
       if (layer.kind === "bundle") {
         expect(read).toMatchObject({ resolved: { kind: "entry", bundle: layer.file } });
@@ -289,28 +289,30 @@ describe("the command shim on the answer", () => {
     };
 
     const product = await makeProduct();
-    const { root } = await makeRoot({ record: PUSHED });
+    const { root } = await makeRoot({ record: RECORD_WITH_CLI });
     await expect(
-      resolveCli({ self: product.entry, root }).then((resolved) =>
+      resolveCli({ callerEntry: product.entry, root }).then((resolved) =>
         shimFromResolution(own, resolved),
       ),
     ).resolves.toEqual({
       entry: product.loader,
       execArgs: [],
       unavailable: null,
-      answer: "declared-loader",
+      answerName: "declared-loader",
     });
 
     const gone = await makeProduct({ loader: false });
     await expect(
-      resolveCli({ self: gone.entry, root }).then((resolved) => shimFromResolution(own, resolved)),
+      resolveCli({ callerEntry: gone.entry, root }).then((resolved) =>
+        shimFromResolution(own, resolved),
+      ),
     ).resolves.toEqual({
       entry: own.entry,
       execArgs: own.execArgs,
       unavailable: null,
-      answer: "declared-loader-missing",
+      answerName: "declared-loader-missing",
     });
 
-    expect(shimFromResolution(own, null)).toMatchObject({ answer: "no-entry" });
+    expect(shimFromResolution(own, null)).toMatchObject({ answerName: "no-entry" });
   });
 });

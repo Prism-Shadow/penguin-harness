@@ -311,28 +311,32 @@ export async function bootAppDeps(
     unavailable: config.cliLaunch?.unavailable ?? null,
   };
   const resolvedCli =
-    ownCli.entry === null ? null : await resolveCli({ self: ownCli.entry, root: config.root });
-  const shimAnswer = shimFromResolution(ownCli, resolvedCli);
-  const shim = ensureCliShim(config.root, shimAnswer.entry, {
-    execArgs: shimAnswer.execArgs,
-    unavailable: shimAnswer.unavailable,
+    ownCli.entry === null
+      ? null
+      : await resolveCli({ callerEntry: ownCli.entry, root: config.root });
+  const shimDecision = shimFromResolution(ownCli, resolvedCli);
+  const shim = ensureCliShim(config.root, shimDecision.entry, {
+    execArgs: shimDecision.execArgs,
+    unavailable: shimDecision.unavailable,
     dbPath: config.dbPath,
   });
   if (shim.kind === "written") {
     // The whole command the shim runs, loader included, and the answer it ran under.
     const command = [...shim.execArgs, shim.entry].join(" ");
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command} (${shimAnswer.answer})`);
+    shimLog(
+      `Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command} (${shimDecision.answerName})`,
+    );
   } else if (shim.kind === "stub") {
     shimLog(
       `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
-        `instead of running another installation's: ${shim.reason}`,
+        `instead of running another installation's: ${shim.detail}`,
     );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
     );
   } else {
-    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.detail}`);
   }
 
   // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
