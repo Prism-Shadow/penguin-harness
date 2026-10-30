@@ -25,7 +25,7 @@ import zlib from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
-import { readPushedCli } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/hmr/manifest.js";
 import { deployPacker, findCheckout } from "../src/machines/checkout-image.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { withoutCredentials } from "../../../scripts/build-git-stamp.mjs";
@@ -98,9 +98,12 @@ describe("a build laid down as a store", () => {
     expect(back.assets?.exec).toEqual(BUILD.assets?.exec);
 
     // What `penguin-hmr` runs on the machine that receives this directory.
-    const cli = await readPushedCli(root);
-    expect(cli.kind).toBe("bundle");
-    if (cli.kind === "bundle") expect(fs.readFileSync(cli.file, "utf8")).toBe(BUILD.cli);
+    const meta = await readHarnessMeta(root);
+    expect(meta.kind).toBe("meta");
+    if (meta.kind === "meta")
+      expect(fs.readFileSync(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8")).toBe(
+        BUILD.cli,
+      );
     expect(JSON.parse(harness)).toMatchObject({
       source: BUILD.source,
       pushedAt: "1970-01-01T00:00:00.000Z",
