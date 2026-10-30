@@ -78,21 +78,24 @@ const SOURCE_ENTRY = ["packages", "cli", "src", "penguin.ts"] as const;
 const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
 
 /**
- * The loader beside a CLI launch — the entry that loads a pushed CLI bundle, which a push
- * records as its `cli.entry`. For a build (and for an explicit entry, which is a build's
- * `penguin.js` in every channel that names one) the loader is the `penguin-hmr` compiled
- * beside it; for a source run it is the checkout's built loader — null while the CLI has
- * not been built, so the record a push leaves then carries no entry until it is.
+ * The loader beside this installation's own CLI — the answer for a record that names a
+ * bundle but no entry (a local push: this installation's loader is what loads it). For a
+ * build entry (and for an explicit entry, which is a build's `penguin.js` in every channel
+ * that names one) the loader is the `penguin-hmr` compiled beside it; for a source run it
+ * is the checkout's built loader. Null when neither is there: the CLI has not been built,
+ * and a push's bundle then rides unanswerable until it is.
  */
-export function cliLoaderFor(launch: CliLaunch): string | null {
-  if (launch.entry === null) return null;
-  if (launch.origin === "source") {
-    if (launch.checkout === null) return null;
-    const loader = path.join(launch.checkout, "packages", "cli", "dist", "penguin-hmr.js");
-    return fs.existsSync(loader) ? loader : null;
-  }
-  const beside = path.join(path.dirname(launch.entry), "penguin-hmr.js");
-  return fs.existsSync(beside) ? beside : null;
+export function ownLoaderFor(entry: string, origin: CliOrigin | null): string | undefined {
+  const beside =
+    origin === "source"
+      ? (() => {
+          const checkout = checkoutRoot(path.dirname(entry));
+          return checkout === null
+            ? null
+            : path.join(checkout, "packages", "cli", "dist", "penguin-hmr.js");
+        })()
+      : path.join(path.dirname(entry), "penguin-hmr.js");
+  return beside !== null && fs.existsSync(beside) ? beside : undefined;
 }
 
 /**
@@ -497,34 +500,26 @@ type CliRecord =
   | { state: "entry"; entry: string; bundle: string }
   /** Nothing pushed: no record, or a record whose CLI half carries no committed version. */
   | { state: "none" }
-  /** A record this resolver cannot act on: unreadable, or written by a version whose CLI
-   * half predates the recorded entry. One fault, the record's own words as the detail. */
+  /** A record this resolver cannot act on: unreadable, or a CLI half that names no entry
+   * and no caller offered its own. One fault, the record's own words as the detail. */
   | { state: "unsupported"; detail: string };
 
 /**
  * The CLI half of the record, through the layer's one reader (`readHarnessMeta`): the entry
- * to run and the bundle to load are what the record SAYS — the writer decided when it pushed.
- * A record without a recorded entry was written by a version that kept its reader guessing;
- * the remedy is one push or install from this version, which writes the entry.
+ * to run and the bundle to load are what the record SAYS — the writer decided when it laid
+ * the version down. An install image names its program layout's loader; a record without a
+ * recorded entry leaves the caller's own loader as the answer, and a caller that offers none
+ * faults.
  */
 async function readCliRecord(root: string): Promise<CliRecord> {
   const meta = await readHarnessMeta(root);
   if (meta.kind === "broken") return { state: "unsupported", detail: meta.reason };
   if (meta.kind !== "meta") return { state: "none" };
   const cli = meta.manifest.cli;
-  if (typeof cli?.entry !== "string" || cli.entry.length === 0) {
-    return {
-      state: "unsupported",
-      detail:
-        "harness.json's CLI half carries no recorded entry; push or install this version once",
-    };
-  }
-  if (typeof cli.bundle !== "string" || cli.bundle.length === 0) {
-    return { state: "unsupported", detail: "harness.json's CLI half names no bundle" };
-  }
+  if (typeof cli?.bundle !== "string" || cli.bundle.length === 0) return { state: "none" };
   return {
     state: "entry",
-    entry: cli.entry,
+    entry: typeof cli.entry === "string" && cli.entry.length > 0 ? cli.entry : "",
     bundle: path.resolve(path.join(root, "hmr"), cli.bundle),
   };
 }
@@ -543,22 +538,28 @@ function installedProgramDir(): string | null {
 }
 
 /**
- * Which entry runs this command. The record decides — the version that wrote it named the
- * entry its own loader runs — and the resolver only reports what it said.
+ * Which entry runs this command. The record decides — the version that laid it down named
+ * the entry — and the resolver only reports what it said, falling back to what the caller
+ * offers when the record says nothing.
  *
- * 1. A record with a CLI half: that half's entry, with the bundle it names. The entry is
- *    spelled for the machine the record lives on: absolute for a push this machine received,
- *    program-layout-relative (`lib/dist/…`) for an image an install laid down.
- * 2. Nothing pushed: the caller's own entry, `recorded-entry` never applying.
- * 3. A record that cannot be used: fault `record-unsupported`.
+ * 1. A record whose CLI half names an entry: that entry, with the bundle it names. The
+ *    entry is spelled for the machine the record lives on: absolute for a push this machine
+ *    received, program-layout-relative (`lib/dist/…`) for an image an install laid down.
+ * 2. A record with a bundle but no entry — a local push, whose answer is this machine's
+ *    own loader — answers the loader the caller offers (`ownLoader`).
+ * 3. Nothing pushed, or a CLI half that says neither: the caller's own entry, or, when it
+ *    offers no loader and the record cannot be acted on, the fault `record-unsupported`.
  */
 export async function resolveCli(input: {
   /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
   callerEntry: string;
   /** The data root whose record says which CLI runs here. */
   root: string;
+  /** The loader beside the caller's own CLI: the answer for a record that names a bundle
+   * but no entry. Absent: such a record faults. */
+  ownLoader?: string;
   /** The program directory the record's relative entries resolve against; default derived
-   * from this process (`installedRelease`). Null: relative entries answer their fault. */
+   * from this process. Null: relative entries answer their fault. */
   programDir?: string | null;
 }): Promise<CliResolution> {
   const record = await readCliRecord(path.resolve(input.root));
@@ -573,28 +574,47 @@ export async function resolveCli(input: {
       bundle: null,
     };
   }
-  if (path.isAbsolute(record.entry)) {
+  // The record names an entry: absolute as it stands, program-relative against the program
+  // directory — this process's when none was named, a fault when there is none to resolve
+  // against.
+  if (record.entry !== "") {
+    if (path.isAbsolute(record.entry)) {
+      return {
+        kind: "entry",
+        entry: path.resolve(record.entry),
+        reason: "recorded-entry",
+        bundle: record.bundle,
+      };
+    }
+    const programDir =
+      input.programDir === undefined ? installedProgramDir() : (input.programDir ?? null);
+    if (programDir === null) {
+      return {
+        kind: "fault",
+        fault: "record-unsupported",
+        detail: `harness.json's CLI entry is program-relative (${record.entry}), and this process stands on no program directory`,
+      };
+    }
     return {
       kind: "entry",
-      entry: path.resolve(record.entry),
+      entry: path.resolve(programDir, record.entry),
       reason: "recorded-entry",
       bundle: record.bundle,
     };
   }
-  // Program-relative: an install image's spelling, resolved against the program directory —
-  // this process's when none was named, and a fault when there is none to resolve against.
-  const programDir =
-    input.programDir === undefined ? installedProgramDir() : (input.programDir ?? null);
-  if (programDir === null) {
+  // A bundle with no recorded entry — a local push: the caller's own loader loads it, and a
+  // caller that offers none faults.
+  if (input.ownLoader === undefined) {
     return {
       kind: "fault",
       fault: "record-unsupported",
-      detail: `harness.json's CLI entry is program-relative (${record.entry}), and this process stands on no program directory`,
+      detail:
+        "harness.json's CLI half names a bundle but no entry, and the caller offers no loader of its own",
     };
   }
   return {
     kind: "entry",
-    entry: path.resolve(programDir, record.entry),
+    entry: path.resolve(input.ownLoader),
     reason: "recorded-entry",
     bundle: record.bundle,
   };
