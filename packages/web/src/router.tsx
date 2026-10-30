@@ -22,6 +22,7 @@ import {
   createBrowserRouter,
   createMemoryRouter,
   createRoutesFromElements,
+  useParams,
 } from "react-router";
 import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
 import { NavigationGuard } from "./lib/unsaved/navigation-guard";
@@ -43,6 +44,7 @@ import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
+import { orgPagePath } from "./features/company/company-nav";
 import { OverviewPage } from "./features/company/overview-page";
 import { OrgChartPage } from "./features/company/org-chart-page";
 import { CalendarPage } from "./features/company/calendar-page";
@@ -143,7 +145,27 @@ function RootFrame() {
   );
 }
 
-function appRoutes() {
+/**
+ * The organization layout's catch-all: an address under `/org/<projectId>/<orgId>` that no page
+ * claims — an old link, a bookmark, a typo — opens that organization's overview. The target is
+ * absolute on purpose: a relative `overview` is appended to whatever went unmatched, so
+ * `/org/p/o/garbage` became `/org/p/o/garbage/overview`, and every remount of the layout added
+ * another one.
+ *
+ * Exported so a suite can pin it as the layout's wildcard child without a signed-in app.
+ */
+export function OrgFallbackRedirect() {
+  const params = useParams<{ projectId: string; orgId: string }>();
+  return (
+    <Navigate to={orgPagePath(params.projectId ?? "", params.orgId ?? "", "overview")} replace />
+  );
+}
+
+/**
+ * The route table. Exported so a suite can read what the organization layout mounts on its
+ * wildcard child without a signed-in app around it.
+ */
+export function appRoutes() {
   return createRoutesFromElements(
     <Route element={<RootFrame />}>
       <Route path="/login" element={<LoginRoute />} />
@@ -193,7 +215,7 @@ function appRoutes() {
           <Route path="finance" element={<FinancePage />} />
           <Route path="handbook" element={<HandbookPage />} />
           <Route path="channels/:channelId" element={<ChannelView />} />
-          <Route path="*" element={<Navigate to="overview" replace />} />
+          <Route path="*" element={<OrgFallbackRedirect />} />
         </Route>
         {/* Settings and user management live in the settings dialog now (see
             SettingsDialog); their old routes fall through to the catch-all. */}
