@@ -25,9 +25,11 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -38,6 +40,9 @@ import { arrivalText } from "../prose/stream-arrivals";
 import type { RevealArrival } from "../prose/stream-arrivals";
 import type { CodeHighlighter } from "./highlight-options";
 import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
+import { alignRows, splitHighlighted } from "./code-lines";
+import type { CodeRow, HighlightedLines } from "./code-lines";
+import { useGutterClip } from "./gutter-clip";
 import "../prose/prose.css";
 
 export type { CodeHighlighter, CodeMark, HighlightOptions } from "./highlight-options";
@@ -83,7 +88,9 @@ export function resolveHighlighter(
  * With `lineNumbers`, the lines become blocks (see highlighter-core.ts's BLOCK_LINES) so a CSS
  * counter can draw a gutter that survives wrapping, and the unhighlighted fallback is split
  * into the same line elements — one gutter, whichever path rendered the code, and one shape for
- * a caller that needs to lay something else over it.
+ * a caller that needs to lay something else over it. Each line is an element of its own that
+ * outlives an edit, and keeps its colours while its text is what was highlighted (code-lines.ts):
+ * typing redraws the lines it touches, not the file and its gutter.
  */
 export function CodeSurface({
   language,
@@ -111,8 +118,10 @@ export function CodeSurface({
    * Wait this long after the last change before highlighting. 0 (the default) highlights every
    * change, which is right for code that is rendered once; an editor passes a delay so that
    * typing costs nothing but a re-render. While a highlight is pending the surface shows the
-   * CURRENT text unhighlighted rather than the previous text's colours — a code layer that
-   * lags the keystrokes it sits under is worse than a colourless one.
+   * CURRENT text, never the previous text's colours over it — a code layer that lags the
+   * keystrokes it sits under is worse than a colourless one. A numbered surface keeps the colours
+   * of the lines the change left alone and draws only the lines it touched plain; an unnumbered
+   * one draws the whole block plain.
    */
   settleMs?: number;
   className?: string;
@@ -126,7 +135,12 @@ export function CodeSurface({
   children?: ReactNode;
 }) {
   const highlighter = resolveHighlighter(highlight, useCodeHighlighter());
-  const [highlighted, setHighlighted] = useState<{ code: string; html: string }>();
+  const [highlighted, setHighlighted] = useState<{
+    code: string;
+    html: string;
+    /** The same markup cut into lines, for a numbered surface; null when it could not be. */
+    lines: HighlightedLines | null;
+  }>();
   // A plugin's languages arrive after the first paint, so a block rendered before them
   // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
   // generation is part of the effect's deps, so a registration re-runs the highlight once.
@@ -148,7 +162,9 @@ export function CodeSurface({
       void Promise.resolve()
         .then(() => highlighter(code, language, { blockLines: lineNumbers }))
         .then((out) => {
-          if (alive && out !== undefined) setHighlighted({ code, html: out });
+          if (alive && out !== undefined) {
+            setHighlighted({ code, html: out, lines: lineNumbers ? splitHighlighted(out) : null });
+          }
         })
         .catch(() => {
           // Unknown language / failed to load: keep the unhighlighted fallback.
@@ -181,8 +197,49 @@ export function CodeSurface({
    */
   const htmlProp = useMemo(() => (html === undefined ? undefined : { __html: html }), [html]);
 
+  /**
+   * A numbered surface draws line by line, from the newest highlight it has — the current text's
+   * or an earlier one, whose lines still colour the lines that did not change. Only markup that
+   * could not be cut into lines falls back to the whole block.
+   */
+  const split = highlighted?.lines ?? null;
+  const byLine = lines !== null && (split !== null || html === undefined);
+  const drawn = useRef<CodeRow[]>([]);
+  const nextKey = useRef(0);
+  const rows = useMemo(
+    () =>
+      byLine && lines !== null
+        ? alignRows(drawn.current, lines, split, () => (nextKey.current += 1))
+        : null,
+    [byLine, lines, split],
+  );
+  useEffect(() => {
+    if (rows !== null) drawn.current = rows;
+  }, [rows]);
+
+  /**
+   * Unwrapped, the numbers are a column of their own, sticky at the scroll box's left edge, and
+   * the code layer is clipped under it as it scrolls sideways (gutter-clip.ts). Wrapped, nothing
+   * scrolls sideways, and each line draws its own number in front of its first row (prose.css),
+   * which is what keeps a number beside its line however many rows the line wraps to.
+   */
+  const column = lines !== null && !wrap;
+  const lineCount = lines?.length ?? 0;
+  const numbers = useMemo(
+    () => (column ? Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n") : ""),
+    [column, lineCount],
+  );
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  useGutterClip({ surface: surfaceRef, layer: layerRef, gutter: gutterRef }, column);
+  const setLayer = useCallback((el: HTMLElement | null) => {
+    layerRef.current = el;
+  }, []);
+
   return (
     <div
+      ref={surfaceRef}
       className={`code-surface ${wrap ? "code-wrap" : "code-nowrap"} ${
         lines === null ? "" : "code-lines"
       } ${className}`}
@@ -195,21 +252,41 @@ export function CodeSurface({
             ({ "--code-gutter": `${String(lines.length).length + 2}ch` } as CSSProperties)
       }
     >
-      {htmlProp !== undefined ? (
-        <div dangerouslySetInnerHTML={htmlProp} />
+      {column && (
+        <div ref={gutterRef} className="code-gutter" aria-hidden="true">
+          {numbers}
+        </div>
+      )}
+      {rows !== null ? (
+        <pre
+          ref={setLayer}
+          className={split?.pre.className}
+          style={split?.pre.style}
+          tabIndex={split?.pre.tabIndex}
+        >
+          <code>
+            {/* No newline between the spans: they are blocks, and the text a selection
+                serialises out of a run of blocks already carries the breaks. The code sits in
+                an inner span keyed by its kind, so a line turning plain or coloured keeps its
+                line element, and with it the number drawn in front of it. */}
+            {rows.map((row) => (
+              <span key={row.key} className="line">
+                {row.html !== null ? (
+                  <span key="h" className="line-code" dangerouslySetInnerHTML={row.html} />
+                ) : (
+                  <span key="t" className="line-code">
+                    {row.text}
+                  </span>
+                )}
+              </span>
+            ))}
+          </code>
+        </pre>
+      ) : htmlProp !== undefined ? (
+        <div ref={setLayer} dangerouslySetInnerHTML={htmlProp} />
       ) : (
         <pre>
-          <code>
-            {lines === null
-              ? arrivalText(code, arrivals)
-              : // No newline between the spans: they are blocks, and the text a selection
-                // serialises out of a run of blocks already carries the breaks.
-                lines.map((line, i) => (
-                  <span key={i} className="line">
-                    {line}
-                  </span>
-                ))}
-          </code>
+          <code>{arrivalText(code, arrivals)}</code>
         </pre>
       )}
       {children}
