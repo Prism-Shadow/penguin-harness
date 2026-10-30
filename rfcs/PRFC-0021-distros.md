@@ -25,7 +25,7 @@ A read-only survey compared the channels facet by facet and found them diverging
 
 ### Two RFCs need this list as a premise
 
-Two RFCs that follow the same direction — harness meta always present (PRFC-0023) and CLI resolution (PRFC-0024) — both make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the two lists drift.
+Two RFCs that follow the same direction — harness meta always present (PRFC-0023) chief among them — make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the lists drift.
 
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -135,7 +135,7 @@ A few details are left to the implementation or to a later revision.
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-A channel-by-feature support matrix, maintained at the release surface. Release assertions can be phrased per channel ("every channel's product ships a loadable loader"), which is where PRFC-0024 points. A new channel — a future package ecosystem, an appliance image — joins here first and then inherits the sibling RFCs' claims.
+A channel-by-feature support matrix, maintained at the release surface. Release assertions can be phrased per channel ("every channel's product ships a loadable loader"). A new channel — a future package ecosystem, an appliance image — joins here first and then inherits the sibling RFCs' claims.
 
 ---
 

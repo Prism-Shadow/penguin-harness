@@ -25,7 +25,7 @@
 
 ### 两份 RFC 需要这份清单当前提
 
-同一方向下的两份 RFC——harness meta 常在（PRFC-0023）与 CLI 解析（PRFC-0024）——都要「在每条通道上」作断言。它们需要一份可引用的通道清单与可引用的侧面名，否则各自再列一遍，两份清单会漂移。
+同一方向下的 RFC——harness meta 常在（PRFC-0023）为代表——要「在每条通道上」作断言。它们需要一份可引用的通道清单与可引用的侧面名，否则各自再列一遍，清单会漂移。
 
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -135,7 +135,7 @@
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-一张通道 × 特性的支持矩阵，维护在发行面上，不放进 RFC。发行断言可以按通道措辞（「每条通道的产品都带可加载的 loader」），PRFC-0024 指向那里。一条新通道——未来的包生态、设备镜像——先在这里入列，再继承姊妹 RFC 的断言。
+一张通道 × 特性的支持矩阵，维护在发行面上，不放进 RFC。发行断言可以按通道措辞（「每条通道的产品都带可加载的 loader」）。一条新通道——未来的包生态、设备镜像——先在这里入列，再继承姊妹 RFC 的断言。
 
 ---
 
