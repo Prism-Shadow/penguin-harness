@@ -2705,6 +2705,10 @@ export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
     server: null,
   });
 
+/** Has the desktop shell open another window of the app (the command palette's New Window). */
+export const openDesktopWindow = () =>
+  apiFetch<void>("/api/desktop/window", { method: "POST", body: {}, server: null });
+
 // ---- Workbenches (an Agent's own extension packages, served as tabs beside the chat) ----
 const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;

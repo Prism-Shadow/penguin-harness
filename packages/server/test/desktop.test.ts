@@ -11,6 +11,9 @@
  *   even to a fully authorized admin session, and creates nobody.
  * - The shell's own session may set the password without the old one, but an old one it does
  *   give is still checked; a password session in desktop mode keeps needing it.
+ * - The window route has the shell open another window, for the shell's own window only: a
+ *   password session and a caller with no session are refused, a server with no shell wired
+ *   says so, and a plain server has no such route.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -22,6 +25,8 @@ import {
   TEST_DESKTOP_TOKEN,
 } from "./helpers.js";
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
+import { wireShellUpdatePort } from "../src/services/desktop-update-port.js";
+import { FakePort } from "./builtin-browser/fake-shell.js";
 
 describe("desktop claim", () => {
   /** What a browser gets for a token this server will not honour: the login page, plus the advice it can give there. */
@@ -220,6 +225,63 @@ describe("desktop-session password change", () => {
       expect(res.status).toBe(400);
     } finally {
       await t.cleanup();
+    }
+  });
+});
+
+describe("POST /api/desktop/window", () => {
+  const WINDOW = "/api/desktop/window";
+  const errorCode = async (res: Response): Promise<string> =>
+    ((await res.json()) as ErrorBody).error.code;
+
+  it("has the shell open a window and answers 202", async () => {
+    const t = await createDesktopApp();
+    try {
+      const shell = new FakePort();
+      wireShellUpdatePort(t.deps.desktop!, shell);
+      const api = apiClient(t.app, await desktopLoginCookie(t.app));
+      const res = await api.post(WINDOW, {});
+      expect(res.status).toBe(202);
+      expect(shell.sent).toContainEqual({ type: "desktop-open-window" });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("answers only the shell's own window, like the other desktop routes", async () => {
+    const t = await createDesktopApp();
+    try {
+      let opened = 0;
+      t.deps.desktop!.onOpenWindowCommand(() => opened++);
+      // A password session against the same server may be on another machine: a window
+      // appearing on this one means nothing there.
+      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      const forbidden = await admin.post(WINDOW, {});
+      expect(forbidden.status).toBe(403);
+      expect(await errorCode(forbidden)).toBe("desktop_shell_only");
+      const anonymous = await t.app.request(WINDOW, { method: "POST" });
+      expect(anonymous.status).toBe(401);
+      expect(opened).toBe(0);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("answers 503 while no port is wired, and does not exist outside desktop mode", async () => {
+    const t = await createDesktopApp();
+    try {
+      const res = await apiClient(t.app, await desktopLoginCookie(t.app)).post(WINDOW, {});
+      expect(res.status).toBe(503);
+      expect(await errorCode(res)).toBe("shell_unreachable");
+    } finally {
+      await t.cleanup();
+    }
+    const plain = await createTestApp();
+    try {
+      const res = await apiClient(plain.app, (await loginAdmin(plain.app)).cookie).post(WINDOW, {});
+      expect(res.status).toBe(404);
+    } finally {
+      await plain.cleanup();
     }
   });
 });
