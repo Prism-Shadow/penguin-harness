@@ -34,7 +34,7 @@ import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Settings } from "../mechanisms/settings.js";
 import { toAttachmentLimits } from "../services/attachment-limits.js";
-import { sessionMessages, sessionMessagesFrames, sessionTraceImage } from "../services/session-history.js";
+import { sessionMessages, sessionTraceImage } from "../services/session-history.js";
 import type { SessionHistoryDeps } from "../services/session-history.js";
 import { reserveStart } from "./admission.js";
 import { pendingApprovals } from "./approvals.js";
@@ -109,12 +109,6 @@ export function amspRoutes(deps: AmspRouteDeps): Hono<AppEnv> {
 
   app.get("/sessions/:sessionId/messages", (c) =>
     sessionMessages(c, deps, c.var.amsp.session!, SESSIONS_BASE),
-  );
-
-  // Streamed history (NDJSON frames; see MessagesHistoryFrame): the same windowed read
-  // as the JSON door above, sorted into frames.
-  app.get("/sessions/:sessionId/messages/frames", (c) =>
-    sessionMessagesFrames(c, deps, c.var.amsp.session!, SESSIONS_BASE),
   );
 
   app.get("/sessions/:sessionId/trace-image", (c) =>
