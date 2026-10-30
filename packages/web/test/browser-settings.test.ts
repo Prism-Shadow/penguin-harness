@@ -169,6 +169,7 @@ describe("turning Chrome connections off server-wide", () => {
     companyMode: false,
     browserExtensionsEnabled,
     agentApiEnabled: true,
+    telemetry: false,
   });
 
   it("asks first in the danger tone, saying every user's extension disconnects", () => {

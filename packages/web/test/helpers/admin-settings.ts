@@ -39,6 +39,7 @@ export const STORED_SETTINGS: ServerSettings = {
   companyMode: true,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,
+  telemetry: false,
 };
 
 export interface AdminSettingsServer {
