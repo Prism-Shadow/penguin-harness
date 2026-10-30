@@ -52,6 +52,7 @@ import {
   SEMANTIC_ID_PATTERN,
 } from "../../lib/semantic-id";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
+import { NAME_MAX_LENGTH } from "../../lib/name-limits";
 import { useAuth } from "../../state/auth";
 import { clearDraftChatDefaults, clearDraftModelRef } from "../../features/chat/draft-cache";
 import {
@@ -119,7 +120,13 @@ function CreateProjectForm({
     !(prefix
       ? PROJECT_SUFFIX_PATTERN.test(suffix) && id.length <= PROJECT_ID_MAX_LENGTH
       : SEMANTIC_ID_PATTERN.test(id));
-  const valid = suffix !== "" && !idBroken;
+  // The name's ceiling is stated the same way as the id's rule — said under the field as it is
+  // typed, Create held off — rather than clamped with maxLength: a silently truncated name
+  // would still be what the person submitted (and the source the id generation reads), so the
+  // limit must be told, not eaten. Trimmed, because that is what gets sent; the server enforces
+  // the same 100 on what it receives (routes/projects.ts).
+  const nameTooLong = name.trim().length > NAME_MAX_LENGTH;
+  const valid = suffix !== "" && !idBroken && !nameTooLong;
 
   const submit = async () => {
     if (!valid || busy) return;
@@ -168,6 +175,7 @@ function CreateProjectForm({
         <Input
           label={S.project.displayName}
           hint={S.project.displayNameHint}
+          error={nameTooLong ? S.project.displayNameTooLong(NAME_MAX_LENGTH) : undefined}
           size="sm"
           value={name}
           autoFocus

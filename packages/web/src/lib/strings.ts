@@ -1628,6 +1628,8 @@ export const zh = {
     displayName: "显示名",
     /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
     displayNameHint: "留空则使用 Project id 作为名称",
+    /** Create dialog: replaces the hint while the name outruns the server's ceiling (name-limits.ts). */
+    displayNameTooLong: (max: number) => `显示名最多 ${max} 个字符`,
     settings: "Project 设置",
     settingsTitle: "Project 设置",
     members: "成员",
@@ -1721,6 +1723,8 @@ export const zh = {
     /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
     idGenerateHint: "；也可以从名称生成",
     nameHint: "留空则使用 Agent id 作为名称",
+    /** Create dialog: replaces the hint while the name outruns the server's ceiling (name-limits.ts). */
+    nameTooLong: (max: number) => `名称最多 ${max} 个字符`,
     description: "描述",
     /** Create dialog's skill picker: the library skills installed into the new Agent. */
     createPlugins: "插件",
@@ -5602,6 +5606,8 @@ Benchmark：
     orgIdInfo: "组织 id 也是组织的目录名，创建后不可修改；可以点「用 AI 生成」从显示名或使命生成。",
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
+    /** Create dialog: said under the field on Create, before anything is sent (name-limits.ts). */
+    displayNameTooLong: (max: number) => `显示名最多 ${max} 个字符`,
     mission: "使命",
     missionHint: "一句话说明这个组织存在的目的；CEO 的初始化会话从它开始",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",

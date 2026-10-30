@@ -14,12 +14,15 @@
  *   back is no change.
  * - The create dialog waits for an id that keeps the rule, says a broken one under the field as
  *   it is typed, and asks before Cancel drops what was typed.
+ * - The create dialog says a display name past the server's ceiling under the field and holds
+ *   Create until the name is shortened.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { NAME_MAX_LENGTH } from "../src/lib/name-limits";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import {
   CreateProjectDialog,
@@ -203,5 +206,33 @@ describe("the create Project dialog", () => {
     expect(promptOpen()).toBe(true);
     await click(button(en.common.discard));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a display name past the server's ceiling under the field, and Create waits for a shorter one", async () => {
+    projectSettingsServer();
+    await mount(
+      h(
+        AuthProvider,
+        null,
+        h(
+          ProjectProvider,
+          null,
+          h(CreateProjectDialog, { open: true, onClose: () => {}, onCreated: () => {} }),
+          h(UnsavedPrompt),
+        ),
+      ),
+    );
+    await waitFor(() => dialogs().length === 1);
+    await type(nameField(), "n".repeat(NAME_MAX_LENGTH + 1));
+    expect(button(en.common.create).disabled).toBe(true);
+    await type(idField(), "lab_notes");
+    // The id keeps its rule; only the name holds Create off.
+    expect(button(en.common.create).disabled).toBe(true);
+    expect(nameField().getAttribute("aria-invalid")).toBe("true");
+    expect(dialogs()[0]!.textContent).toContain(en.project.displayNameTooLong(NAME_MAX_LENGTH));
+
+    await type(nameField(), "Research lab");
+    expect(nameField().getAttribute("aria-invalid")).toBeNull();
+    expect(button(en.common.create).disabled).toBe(false);
   });
 });

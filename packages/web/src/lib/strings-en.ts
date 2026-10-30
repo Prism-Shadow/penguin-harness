@@ -1505,6 +1505,8 @@ export const en: Strings = {
     displayName: "Display name",
     /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
     displayNameHint: "Leave empty to use the Project id as the name",
+    /** Create dialog: replaces the hint while the name outruns the server's ceiling (name-limits.ts). */
+    displayNameTooLong: (max: number) => `The display name may be at most ${max} characters`,
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -1598,6 +1600,8 @@ export const en: Strings = {
     /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
     idGenerateHint: "; you can also generate one from the name",
     nameHint: "Leave empty to use the agent id as the name",
+    /** Create dialog: replaces the hint while the name outruns the server's ceiling (name-limits.ts). */
+    nameTooLong: (max: number) => `The name may be at most ${max} characters`,
     description: "Description",
     createPlugins: "Plugins",
     createPluginsPlaceholder: "No plugins selected",
@@ -5359,6 +5363,8 @@ Scenarios:
       "The organization id is also its directory name and cannot change once created. Select Generate with AI to derive one from the display name or the mission.",
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
+    /** Create dialog: said under the field on Create, before anything is sent (name-limits.ts). */
+    displayNameTooLong: (max: number) => `The display name may be at most ${max} characters`,
     mission: "Mission",
     missionHint:
       "One sentence on why this organization exists; the CEO's first session starts from it",

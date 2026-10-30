@@ -49,6 +49,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
+import { NAME_MAX_LENGTH } from "../../lib/name-limits";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
@@ -226,6 +227,12 @@ function CreateAgentForm({
   const idValid = SEMANTIC_ID_PATTERN.test(id);
   // The id rule is named once something is typed into the box; an empty one has its asterisk.
   const idError = refused ?? (id !== "" && !idValid ? S.agent.idHint : undefined);
+  // The name's ceiling is stated the same way as the id's rule — said under the field as it is
+  // typed, Create held off — rather than clamped with maxLength: a silently truncated name would
+  // still be what the person submitted (and the source the id generation reads), so the limit
+  // must be told, not eaten. Trimmed, because that is what gets sent; the server enforces the
+  // same 100 on what it receives (routes/agents.ts).
+  const nameTooLong = name.trim().length > NAME_MAX_LENGTH;
 
   const onPickSnapshot = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -295,7 +302,7 @@ function CreateAgentForm({
 
   /** `confirmed`: the stdio confirmation was answered, or nothing picked asks for one. */
   const create = async (confirmed = false) => {
-    if (!projectId || !form.dirty || !idValid || busy) return;
+    if (!projectId || !form.dirty || !idValid || nameTooLong || busy) return;
     // A seed plugin with a stdio server runs a command on this server whenever a session of the
     // new Agent starts — said, and confirmed, before anything is created, as installing it later
     // from the Plugins page would ask.
@@ -352,7 +359,7 @@ function CreateAgentForm({
             <Button
               size="sm"
               variant="primary"
-              disabled={!form.dirty || !idValid || busy}
+              disabled={!form.dirty || !idValid || nameTooLong || busy}
               onClick={() => void create()}
             >
               {S.common.create}
@@ -406,6 +413,7 @@ function CreateAgentForm({
             value={name}
             onChange={(e) => form.patch({ name: e.target.value })}
             hint={S.agent.nameHint}
+            error={nameTooLong ? S.agent.nameTooLong(NAME_MAX_LENGTH) : undefined}
             autoFocus
           />
           <SemanticIdField
