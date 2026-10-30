@@ -126,9 +126,6 @@ export async function writePushedBuild(
   hmrDir: string,
   build: PushedBuild,
   at: Date,
-  /** The CLI entry the image names, spelled for the program layout it installs into
-   * (`lib/dist/penguin-hmr.js`); the consumer resolves it against its program directory. */
-  cliEntry?: string,
 ): Promise<string> {
   const web = build.web.files;
   if (typeof web["index.html"] !== "string") throw new Error("the web dist has no index.html");
@@ -168,10 +165,7 @@ export async function writePushedBuild(
   const text = JSON.stringify(
     {
       platform: { bundle: `store/platform/${platformSha}.mjs` },
-      cli: {
-        bundle: `store/cli/${cliSha}.mjs`,
-        ...(cliEntry === undefined ? {} : { entry: cliEntry }),
-      },
+      cli: { bundle: `store/cli/${cliSha}.mjs` },
       web: { manifest: `store/web/${webSha}.webz` },
       ...(assetsDir === null ? {} : { assets: { dir: assetsDir } }),
       ...(build.source === undefined ? {} : { source: build.source }),
