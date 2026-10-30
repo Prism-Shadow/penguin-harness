@@ -513,7 +513,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed, { agent: copied }));
+    return c.json(await answer(projectId, installed));
   });
 
   app.post("/archive", async (c) => {

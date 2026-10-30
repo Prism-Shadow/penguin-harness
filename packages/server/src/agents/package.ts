@@ -24,7 +24,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir, agentStateDir, defaultAgentsMd, defaultSystemConfig } from "@prismshadow/penguin-core";
 import { PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
-import { stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 
 /** The npm keyword that marks a plugin package as an Agent package. */
 export const AGENT_PACKAGE_KEYWORD = "penguin-agent";

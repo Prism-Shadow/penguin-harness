@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { strFromU8, zipSync } from "fflate";
+import { zipSync } from "fflate";
 import {
   AGENT_PACKAGE_KEYWORD,
   agentPackageFiles,
@@ -30,7 +30,11 @@ const skill = (name: string, body: string) =>
   `---\nname: ${name}\ndescription: ${body}\n---\n\n# ${name}\n`;
 
 const agentZip = (files: Record<string, string>) =>
-  zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, strFromU8(v)])));
+  zipSync(
+    Object.fromEntries(
+      Object.entries(files).map(([k, v]) => [k, new TextEncoder().encode(v) as Uint8Array]),
+    ),
+  );
 
 const unpacked = (files: Record<string, string>) =>
   new Map(Object.entries(files).map(([k, v]) => [k, new TextEncoder().encode(v)]));
