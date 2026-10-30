@@ -42,7 +42,7 @@
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-en.png" alt="The PenguinHarness start page: agents, RSI algorithms and Benchmarks, and the examples" width="900" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-start-page-en.png" alt="The PenguinHarness start page: agents, RSI algorithms and Benchmarks, and the examples" width="900" />
 </p>
 
 ## Why PenguinHarness
@@ -72,7 +72,7 @@ Pick an algorithm, pick a Benchmark, and an agent improves another agent round b
 Every new Project includes seventeen Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and a Train/Test pair for each of six GDPEVO domains: CRM, ERP, Finance, Healthcare, Legal and DataAnalysis. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
 </p>
 
 **Demo:** a decision agent is evaluated, revises its working method once, and is retested on the same model. Its score goes from 84 to 100, and the cost of every run is on screen.
@@ -96,24 +96,24 @@ https://github.com/user-attachments/assets/28c0ef95-1dfa-47be-bad0-7326ccdf4e7c
     <td width="50%" valign="top">
       <b>Browser automation</b><br />
       Agents drive your own Chrome through the PenguinHarness Browser extension, or the desktop app's built-in browser. They read pages as text and act through short scripts, so a step costs few tokens. <a href="https://penguin.ooo/blog/let-agents-use-the-browser">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
     </td>
     <td width="50%" valign="top">
       <b>Workbenches</b><br />
       Every agent can have its own hot-reloaded workbench: ask for one and the agent writes the page and its server code. The workbench appears as a tab beside the agent's chat. <a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <b>Remote machines</b><br />
       Add a machine the server reaches over ssh. Conversations in a Workspace on that machine run on it, in the same window. <a href="https://penguin.ooo/blog/run-agents-on-remote-machines">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-en.png" alt="A conversation running on the machine devbox" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-machines-en.png" alt="A conversation running on the machine devbox" />
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
       One unified API connects any agent to any external app: send input over HTTP and read the run back as a stream of AMSP events. <a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
     </td>
   </tr>
 </table>

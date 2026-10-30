@@ -42,7 +42,7 @@
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-zh.png" alt="PenguinHarness 起始页：Agent、RSI 算法、Benchmark 与示例" width="900" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-start-page-zh.png" alt="PenguinHarness 起始页：Agent、RSI 算法、Benchmark 与示例" width="900" />
 </p>
 
 ## 为什么选择 PenguinHarness
@@ -72,7 +72,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO 的 CRM、ERP、Finance、Healthcare、Legal 和 DataAnalysis 六个领域各自的 Train/Test 对，共十二个 GDPEVO 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
 </p>
 
 **演示**：以决策智能体为例，经过评测、一次工作方法的改进和同模型复测，分数从 84 提升到 100，每次运行的成本都看得到。
@@ -96,24 +96,24 @@ https://github.com/user-attachments/assets/138744cd-9ab8-42f3-bf6d-b0a25f404132
     <td width="50%" valign="top">
       <b>浏览器自动化</b><br />
       Agent 通过 PenguinHarness Browser 扩展操作你自己的 Chrome，也可以用桌面端的内置浏览器。读页面用文本、操作用短脚本，每一步只花很少的 Token。<a href="https://penguin.ooo/blog/let-agents-use-the-browser">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-zh.png" alt="Agent 在浏览器面板里阅读 PenguinHarness 博客" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-browser-zh.png" alt="Agent 在浏览器面板里阅读 PenguinHarness 博客" />
     </td>
     <td width="50%" valign="top">
       <b>工作台</b><br />
       每个 Agent 都能有自己的热定制工作台：开口要一个，Agent 就把页面和服务端代码一起写好，作为标签页显示在对话旁边。<a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-zh.png" alt="法务 Agent 的合同工作台页面" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-workflow-zh.png" alt="法务 Agent 的合同工作台页面" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <b>远程机器</b><br />
       添加一台机器，服务器通过 ssh 连接它。那台机器上 Workspace 里的会话就在那台机器上运行，而且仍在同一个窗口里。<a href="https://penguin.ooo/blog/run-agents-on-remote-machines">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-zh.png" alt="在 devbox 机器上运行的一个会话" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-machines-zh.png" alt="在 devbox 机器上运行的一个会话" />
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
       通过统一 API 把任意 Agent 接入外部应用：经 HTTP 发送输入，再以 AMSP 事件流读回运行过程。<a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-zh.png" alt="运行一次后的「试一试」面板" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-agent-api-zh.png" alt="运行一次后的「试一试」面板" />
     </td>
   </tr>
 </table>
