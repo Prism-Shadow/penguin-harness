@@ -27,9 +27,9 @@
  * offers — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
  * pass for themselves), else, for a server running from a checkout, that checkout's CLI,
  * from source while the server itself runs from source — and {@link resolveCli}, at the end
- * of this module, decides between that entry and the CLI loader — the entry that loads
- * whichever CLI the data root's record points at — which runs the same code this server
- * runs. See {@link shimFromResolution}.
+ * of this module, reads the data root's record for which entry runs there: the record
+ * decides, the writer named the entry when it pushed or installed. See
+ * {@link shimFromResolution}.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -76,6 +76,24 @@ export interface CliLaunch {
 /** The checkout's CLI entries, relative to the workspace root. */
 const SOURCE_ENTRY = ["packages", "cli", "src", "penguin.ts"] as const;
 const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
+
+/**
+ * The loader beside a CLI launch — the entry that loads a pushed CLI bundle, which a push
+ * records as its `cli.entry`. For a build (and for an explicit entry, which is a build's
+ * `penguin.js` in every channel that names one) the loader is the `penguin-hmr` compiled
+ * beside it; for a source run it is the checkout's built loader — null while the CLI has
+ * not been built, so the record a push leaves then carries no entry until it is.
+ */
+export function cliLoaderFor(launch: CliLaunch): string | null {
+  if (launch.entry === null) return null;
+  if (launch.origin === "source") {
+    if (launch.checkout === null) return null;
+    const loader = path.join(launch.checkout, "packages", "cli", "dist", "penguin-hmr.js");
+    return fs.existsSync(loader) ? loader : null;
+  }
+  const beside = path.join(path.dirname(launch.entry), "penguin-hmr.js");
+  return fs.existsSync(beside) ? beside : null;
+}
 
 /**
  * The root of the checkout `fromDir` lies in — the directory holding `pnpm-workspace.yaml` —
@@ -199,12 +217,12 @@ export interface ShimDecision {
 /**
  * The shim's decision, from resolution's answer.
  *
- * The shim carries the answer rather than deciding for itself: the loader a root with a
- * pushed CLI resolves to, the caller's own entry for a root with no pushed one, and that
- * entry with the fault recorded when resolution faults — a server that starts on its own
- * entry beats one that does not, and that fallback is now a named decision instead of an
- * accident. A loader is a plain file, so only the own entry keeps the interpreter options a
- * source run needs.
+ * The shim carries the answer rather than deciding for itself: the entry the record names
+ * for a pushed root, the caller's own entry for a root with no pushed one, and that entry
+ * with the fault recorded when resolution faults — a server that starts on its own entry
+ * beats one that does not, and that fallback is now a named decision instead of an accident.
+ * A recorded entry that is not the caller's own is a built loader, a plain file, so only the
+ * own entry keeps the interpreter options a source run needs.
  */
 export function shimFromResolution(own: OwnCli, resolved: CliResolution | null): ShimDecision {
   if (own.entry === null || resolved === null) {
@@ -449,41 +467,13 @@ function writeExecutable(file: string, content: string): void {
 // Resolution: which CLI entry runs
 // ---------------------------------------------------------------------------
 
-/**
- * Which entry runs a harness command, answered once for every consumer that runs one — this
- * shim, a server being re-spawned, a remote machine command, the push gate — and for the
- * CLI's own loader, which imports this module as `@prismshadow/penguin-server/cli-shim`.
- *
- * The question is small. A data root holds the record of its last push
- * (`hmr/harness.json`, PRFC-0023), and an installation ships a CLI. A pushed CLI is a bundle
- * the record points at, and a product ships a **CLI loader** that loads it. So: the CLI
- * loader when a CLI was pushed, the caller's own entry when nothing was, and a named fault
- * when the pieces do not line up.
- *
- * The loader's identity is a declaration in its package manifest:
- *
- *     "penguin": { "cliLoader": "./dist/penguin-hmr.js" }
- *
- * A rename that keeps the field works. A field that names nothing usable answers one named
- * fault. Products built before the declaration carry none, and only there does the old file
- * name answer — recorded as `legacy-loader` while the transition window lasts.
- */
-
-/** The loader's file name in products built before the declaration (the transition window). */
-export const LEGACY_LOADER_NAME = "penguin-hmr.js";
-
-/** The four faults a consumer can report, in the RFC's order; each names the piece that broke. */
-export const CLI_FAULTS = [
-  "record-unreadable",
-  "declared-loader-missing",
-  "no-loader",
-  "cli-unloadable",
-] as const;
+/** The two faults a consumer can report; each names the piece that broke. */
+export const CLI_FAULTS = ["record-unsupported", "cli-unloadable"] as const;
 
 export type CliFault = (typeof CLI_FAULTS)[number];
 
-/** The three reasons an entry can be the answer; each says which entry answered. */
-export const CLI_REASONS = ["declared-loader", "legacy-loader", "own-entry"] as const;
+/** The one reason an entry can be the answer: the record said so. */
+export const CLI_REASONS = ["recorded-entry"] as const;
 
 export type CliReason = (typeof CLI_REASONS)[number];
 
@@ -494,7 +484,7 @@ export type CliReason = (typeof CLI_REASONS)[number];
 export type CliResolution =
   | {
       kind: "entry";
-      /** The entry to run: the product's loader, the legacy loader, or the caller's own. */
+      /** The entry to run: what the record names. */
       entry: string;
       reason: CliReason;
       /** The pushed CLI bundle the record names; null when nothing is pushed. */
@@ -502,149 +492,110 @@ export type CliResolution =
     }
   | { kind: "fault"; fault: CliFault; detail: string };
 
-/**
- * The record, read through the layer's one reader: a pushed bundle, nothing pushed, or a
- * record the resolver cannot act on. The CLI half projects onto it — the manifest's
- * `cli.bundle`, resolved against `<root>/hmr` — and the broken record keeps its reason.
- */
+/** What `<root>/hmr/harness.json`'s CLI half says, as the resolver reads it. */
 type CliRecord =
-  { state: "bundle"; file: string } | { state: "none" } | { state: "unreadable"; detail: string };
+  | { state: "entry"; entry: string; bundle: string }
+  /** Nothing pushed: no record, or a record whose CLI half carries no committed version. */
+  | { state: "none" }
+  /** A record this resolver cannot act on: unreadable, or written by a version whose CLI
+   * half predates the recorded entry. One fault, the record's own words as the detail. */
+  | { state: "unsupported"; detail: string };
 
+/**
+ * The CLI half of the record, through the layer's one reader (`readHarnessMeta`): the entry
+ * to run and the bundle to load are what the record SAYS — the writer decided when it pushed.
+ * A record without a recorded entry was written by a version that kept its reader guessing;
+ * the remedy is one push or install from this version, which writes the entry.
+ */
 async function readCliRecord(root: string): Promise<CliRecord> {
   const meta = await readHarnessMeta(root);
-  if (meta.kind === "broken") return { state: "unreadable", detail: meta.reason };
-  if (meta.kind !== "meta" || typeof meta.manifest.cli?.bundle !== "string") {
-    return { state: "none" };
+  if (meta.kind === "broken") return { state: "unsupported", detail: meta.reason };
+  if (meta.kind !== "meta") return { state: "none" };
+  const cli = meta.manifest.cli;
+  if (typeof cli?.entry !== "string" || cli.entry.length === 0) {
+    return {
+      state: "unsupported",
+      detail:
+        "harness.json's CLI half carries no recorded entry; push or install this version once",
+    };
   }
-  return { state: "bundle", file: path.resolve(path.join(root, "hmr"), meta.manifest.cli.bundle) };
+  if (typeof cli.bundle !== "string" || cli.bundle.length === 0) {
+    return { state: "unsupported", detail: "harness.json's CLI half names no bundle" };
+  }
+  return {
+    state: "entry",
+    entry: cli.entry,
+    bundle: path.resolve(path.join(root, "hmr"), cli.bundle),
+  };
 }
 
-/** What a product's package manifest says about its loader: a file, or nothing. */
-type LoaderDeclaration =
-  | { state: "declared"; file: string }
-  /** No manifest to ask, or one from before the declaration. */
-  | { state: "absent" };
-
 /**
- * The declaration of the product that owns `entry`: the nearest package manifest above it,
- * read after resolving symlinks, because a bin link or a `PATH` entry names the file whose
- * package carries the declaration. The walk stops at that manifest whether it declares a
- * loader or not — a product must not inherit the declaration of the directory above it.
+ * This process's program directory, when it stands on an installed release: the directory
+ * holding `lib/` (`<root>/lib/dist/<entry>.js` names it), which the record's
+ * program-relative entries resolve against. Null for a checkout, a source run, and the
+ * desktop shell — installations that carry no such layout name no relative entry either.
  */
-async function loaderDeclarationFor(entry: string): Promise<LoaderDeclaration> {
-  let dir = path.dirname(await realPathOf(entry));
-  for (;;) {
-    const manifest = path.join(dir, "package.json");
-    if (fs.existsSync(manifest)) {
-      try {
-        const parsed: unknown = JSON.parse(await fsp.readFile(manifest, "utf8"));
-        const declared =
-          typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-            ? (parsed as { penguin?: { cliLoader?: unknown } }).penguin?.cliLoader
-            : undefined;
-        if (typeof declared === "string" && declared.trim().length > 0) {
-          return { state: "declared", file: path.resolve(path.dirname(manifest), declared) };
-        }
-      } catch {
-        // An unreadable or malformed manifest declares nothing.
-      }
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return { state: "absent" };
-    dir = parent;
-  }
+function installedProgramDir(): string | null {
+  const argv1 = process.argv[1];
+  if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
+  const parent = path.dirname(path.dirname(argv1));
+  return path.basename(parent) === "lib" ? parent : null;
 }
 
 /**
- * Which entry runs this command, in the RFC's fixed order. The first case that applies
- * decides; the answer carries its reason or its fault name.
+ * Which entry runs this command. The record decides — the version that wrote it named the
+ * entry its own loader runs — and the resolver only reports what it said.
  *
- * 1. A pushed CLI, and the caller is its product's loader: the caller itself,
- *    `declared-loader` (or `legacy-loader` for a product from before the declaration). A
- *    loader never loads itself; the bundle it loads rides along.
- * 2. A pushed CLI, and the product declares a loader: that loader, `declared-loader` — or the
- *    fault `declared-loader-missing` when the declaration names no present file.
- * 3. A pushed CLI, no declaration, the legacy loader beside the caller: it, `legacy-loader`.
- * 4. A pushed CLI, no declaration, no legacy loader: fault `no-loader`.
- * 5. Nothing pushed: the caller's own entry, `own-entry`.
- * 6. A record that cannot be used: fault `record-unreadable`.
+ * 1. A record with a CLI half: that half's entry, with the bundle it names. The entry is
+ *    spelled for the machine the record lives on: absolute for a push this machine received,
+ *    program-layout-relative (`lib/dist/…`) for an image an install laid down.
+ * 2. Nothing pushed: the caller's own entry, `recorded-entry` never applying.
+ * 3. A record that cannot be used: fault `record-unsupported`.
  */
 export async function resolveCli(input: {
   /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
   callerEntry: string;
-  /** The data root whose record says whether a CLI was pushed here. */
+  /** The data root whose record says which CLI runs here. */
   root: string;
-  /** Whether the transition window is open. Default true. */
-  legacyWindow?: boolean;
+  /** The program directory the record's relative entries resolve against; default derived
+   * from this process (`installedRelease`). Null: relative entries answer their fault. */
+  programDir?: string | null;
 }): Promise<CliResolution> {
-  const callerEntry = path.resolve(input.callerEntry);
-  const declaration = await loaderDeclarationFor(callerEntry);
   const record = await readCliRecord(path.resolve(input.root));
-  const declared = declaration.state === "declared" ? declaration.file : null;
-
-  if (record.state === "unreadable") {
-    return { kind: "fault", fault: "record-unreadable", detail: record.detail };
+  if (record.state === "unsupported") {
+    return { kind: "fault", fault: "record-unsupported", detail: record.detail };
   }
   if (record.state === "none") {
-    return { kind: "entry", entry: callerEntry, reason: "own-entry", bundle: null };
-  }
-  // A pushed CLI: the caller that is its loader answers itself, then the declared loader,
-  // then the legacy name, then the fault. The loader's own invocation spells its entry the
-  // same way its manifest declares it, so the comparison is the plain absolute path.
-  if (
-    declared !== null
-      ? path.resolve(callerEntry) === path.resolve(declared)
-      : isLegacyName(callerEntry, declaration)
-  ) {
     return {
       kind: "entry",
-      entry: callerEntry,
-      reason: declared !== null ? "declared-loader" : "legacy-loader",
-      bundle: record.file,
+      entry: path.resolve(input.callerEntry),
+      reason: "recorded-entry",
+      bundle: null,
     };
   }
-  if (declared !== null) {
-    return isFile(declared)
-      ? { kind: "entry", entry: declared, reason: "declared-loader", bundle: record.file }
-      : {
-          kind: "fault",
-          fault: "declared-loader-missing",
-          detail: `${declared} is not present`,
-        };
+  if (path.isAbsolute(record.entry)) {
+    return {
+      kind: "entry",
+      entry: path.resolve(record.entry),
+      reason: "recorded-entry",
+      bundle: record.bundle,
+    };
   }
-  if (input.legacyWindow !== false) {
-    const legacy = path.join(path.dirname(callerEntry), LEGACY_LOADER_NAME);
-    if (isFile(legacy)) {
-      return { kind: "entry", entry: legacy, reason: "legacy-loader", bundle: record.file };
-    }
+  // Program-relative: an install image's spelling, resolved against the program directory —
+  // this process's when none was named, and a fault when there is none to resolve against.
+  const programDir =
+    input.programDir === undefined ? installedProgramDir() : (input.programDir ?? null);
+  if (programDir === null) {
+    return {
+      kind: "fault",
+      fault: "record-unsupported",
+      detail: `harness.json's CLI entry is program-relative (${record.entry}), and this process stands on no program directory`,
+    };
   }
   return {
-    kind: "fault",
-    fault: "no-loader",
-    detail: `no loader is declared above ${path.dirname(callerEntry)}`,
+    kind: "entry",
+    entry: path.resolve(programDir, record.entry),
+    reason: "recorded-entry",
+    bundle: record.bundle,
   };
-}
-
-/** Whether the caller is the legacy loader of a product that declares nothing. */
-function isLegacyName(entry: string, declaration: LoaderDeclaration): boolean {
-  return declaration.state === "absent" && path.basename(entry) === LEGACY_LOADER_NAME;
-}
-
-/** A file that is really there: a directory named like the loader names no loader. */
-function isFile(file: string): boolean {
-  try {
-    return fs.statSync(file).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** The real path of a file that exists; the plain absolute path otherwise. */
-async function realPathOf(file: string): Promise<string> {
-  const abs = path.resolve(file);
-  try {
-    return await fsp.realpath(abs);
-  } catch {
-    return abs;
-  }
 }
