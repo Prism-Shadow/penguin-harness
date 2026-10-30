@@ -165,9 +165,9 @@ function defaultWebDist(): string {
 function cliLaunchFor(env: NodeJS.ProcessEnv): CliLaunch {
   const here = fileURLToPath(import.meta.url);
   return offeredCli({
-    explicit: env.PENGUIN_CLI_ENTRY,
+    explicitEntry: env.PENGUIN_CLI_ENTRY,
     moduleDir: path.dirname(here),
-    source: /\.[cm]?tsx?$/.test(here),
+    runsFromSource: /\.[cm]?tsx?$/.test(here),
     electron: process.versions.electron !== undefined,
   });
 }

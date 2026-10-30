@@ -77,15 +77,15 @@ const SOURCE_ENTRY = ["packages", "cli", "src", "penguin.ts"] as const;
 const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
 
 /**
- * The workspace root of the checkout `fromDir` lies in — the directory holding
- * `pnpm-workspace.yaml` — or null outside one.
+ * The root of the checkout `fromDir` lies in — the directory holding `pnpm-workspace.yaml` —
+ * or null outside one.
  *
  * Walks up rather than counting `..` segments, because the depth differs between a `tsx` run
  * (`packages/server/src/…`), a built one (`packages/server/dist/…`), the desktop shell's
  * single-file bundle, and a copy pnpm injected into another package's `node_modules`. Outside
  * a checkout (an npm install, a packaged app) the walk reaches the filesystem root.
  */
-export function workspaceRoot(fromDir: string): string | null {
+export function checkoutRoot(fromDir: string): string | null {
   let dir = path.resolve(fromDir);
   for (;;) {
     if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
@@ -111,12 +111,12 @@ export function checkoutTsLoader(checkout: string): string | null {
 }
 
 export interface OfferedCliOptions {
-  /** `PENGUIN_CLI_ENTRY` as the environment has it; blank counts as unset. */
-  explicit: string | undefined;
+  /** The entry `PENGUIN_CLI_ENTRY` names; blank counts as unset. */
+  explicitEntry: string | undefined;
   /** The directory of the server module asking: where the walk to a checkout starts. */
   moduleDir: string;
   /** Whether that module is TypeScript source — this server itself runs from source. */
-  source: boolean;
+  runsFromSource: boolean;
   /** Whether this process is Electron, which runs no TypeScript loader. */
   electron: boolean;
   /** The loader lookup; default {@link checkoutTsLoader}. */
@@ -139,10 +139,10 @@ export interface OfferedCliOptions {
  *    state instead of letting another installation's `penguin` stand in.
  */
 export function offeredCli(opts: OfferedCliOptions): CliLaunch {
-  const checkout = workspaceRoot(opts.moduleDir);
-  const explicit = opts.explicit?.trim();
-  if (explicit) {
-    return { entry: explicit, execArgs: [], checkout, origin: "env", unavailable: null };
+  const checkout = checkoutRoot(opts.moduleDir);
+  const explicitEntry = opts.explicitEntry?.trim();
+  if (explicitEntry) {
+    return { entry: explicitEntry, execArgs: [], checkout, origin: "env", unavailable: null };
   }
   if (checkout === null) {
     return { entry: null, execArgs: [], checkout: null, origin: null, unavailable: null };
@@ -161,7 +161,7 @@ export function offeredCli(opts: OfferedCliOptions): CliLaunch {
     fs.existsSync(builtEntry)
       ? { entry: builtEntry, execArgs: [], checkout, origin: "build", unavailable: null }
       : null;
-  const found = opts.source ? (fromSource() ?? fromBuild()) : (fromBuild() ?? fromSource());
+  const found = opts.runsFromSource ? (fromSource() ?? fromBuild()) : (fromBuild() ?? fromSource());
   if (found !== null) return found;
   const unbuilt = `${path.join(...BUILT_ENTRY)} is not built`;
   const why = opts.electron
@@ -186,17 +186,17 @@ export interface OwnCli {
   unavailable: string | null;
 }
 
-/** What the shim runs, and the name of resolution's answer it ran under. */
-export interface ShimLaunchAnswer {
+/** What the shim runs, and the name of the answer it runs under. */
+export interface ShimDecision {
   entry: string | null;
   execArgs: string[];
   unavailable: string | null;
   /** The answer's name: a reason, a fault, or `no-entry` when there was nothing to ask about. */
-  answer: CliReason | CliFault | "no-entry";
+  answerName: CliReason | CliFault | "no-entry";
 }
 
 /**
- * The shim's entry, from resolution's answer.
+ * The shim's decision, from resolution's answer.
  *
  * The shim carries the answer rather than deciding for itself: the loader a root with a
  * pushed CLI resolves to, the caller's own entry for a root with no pushed one, and that
@@ -205,13 +205,13 @@ export interface ShimLaunchAnswer {
  * accident. A loader is a plain file, so only the own entry keeps the interpreter options a
  * source run needs.
  */
-export function shimFromResolution(own: OwnCli, resolved: CliResolution | null): ShimLaunchAnswer {
+export function shimFromResolution(own: OwnCli, resolved: CliResolution | null): ShimDecision {
   if (own.entry === null || resolved === null) {
     return {
       entry: own.entry,
       execArgs: [...own.execArgs],
       unavailable: own.unavailable,
-      answer: "no-entry",
+      answerName: "no-entry",
     };
   }
   if (resolved.kind === "fault") {
@@ -219,7 +219,7 @@ export function shimFromResolution(own: OwnCli, resolved: CliResolution | null):
       entry: own.entry,
       execArgs: [...own.execArgs],
       unavailable: own.unavailable,
-      answer: resolved.fault,
+      answerName: resolved.fault,
     };
   }
   const same = resolved.entry === own.entry;
@@ -227,7 +227,7 @@ export function shimFromResolution(own: OwnCli, resolved: CliResolution | null):
     entry: resolved.entry,
     execArgs: same ? [...own.execArgs] : [],
     unavailable: null,
-    answer: resolved.reason,
+    answerName: resolved.reason,
   };
 }
 
@@ -235,10 +235,10 @@ export function shimFromResolution(own: OwnCli, resolved: CliResolution | null):
 export type CliShimResult =
   | { kind: "written"; dir: string; entry: string; execArgs: string[] }
   /** A checkout's CLI cannot run: the shim is a stub that says why. */
-  | { kind: "stub"; dir: string; reason: string }
+  | { kind: "stub"; dir: string; detail: string }
   /** No entry to point at; a shim left by an earlier boot was removed. */
   | { kind: "absent" }
-  | { kind: "failed"; reason: string };
+  | { kind: "failed"; detail: string };
 
 export interface CliShimOptions {
   /** Interpreter options before the entry (see CliLaunch.execArgs). Default none. */
@@ -266,10 +266,11 @@ export interface ShimLaunch {
   /** The data root the CLI targets unless its caller set `PENGUIN_HOME`. */
   root: string;
   /**
-   * The server's database when it is not `<root>/web.db` (PENGUIN_WEB_DB), named along with the
-   * root — the CLI reads it for `auth token` and `server status`. Absent or null: the default.
+   * The server's database path when it is not `<root>/web.db` (PENGUIN_WEB_DB), named along
+   * with the root — the CLI reads it for `auth token` and `server status`. Absent or null: the
+   * default.
    */
-  database?: string | null;
+  databasePath?: string | null;
   execPath: string;
   execArgs?: readonly string[];
   entry: string;
@@ -307,7 +308,7 @@ function cmdLiteral(value: string): string {
  */
 export function posixShimScript(launch: ShimLaunch): string {
   const argv = [launch.execPath, ...(launch.execArgs ?? []), launch.entry].map(posixQuote);
-  const database = launch.database ?? null;
+  const databasePath = launch.databasePath ?? null;
   return [
     "#!/bin/sh",
     "# penguin CLI shim, rewritten by the PenguinHarness server at every start.",
@@ -315,8 +316,8 @@ export function posixShimScript(launch: ShimLaunch): string {
     "# against this data root unless the caller set PENGUIN_HOME (or passes --root / --server).",
     'if [ -z "${PENGUIN_HOME-}" ]; then',
     `  PENGUIN_HOME=${posixQuote(launch.root)}; export PENGUIN_HOME`,
-    ...(database !== null
-      ? [`  PENGUIN_WEB_DB=${posixQuote(database)}; export PENGUIN_WEB_DB`]
+    ...(databasePath !== null
+      ? [`  PENGUIN_WEB_DB=${posixQuote(databasePath)}; export PENGUIN_WEB_DB`]
       : []),
     "fi",
     ...(launch.electron ? ["export ELECTRON_RUN_AS_NODE=1"] : []),
@@ -334,7 +335,7 @@ export function windowsShimScript(launch: ShimLaunch): string {
   const argv = [launch.execPath, ...(launch.execArgs ?? []), launch.entry].map(
     (part) => `"${cmdLiteral(part)}"`,
   );
-  const database = launch.database ?? null;
+  const databasePath = launch.databasePath ?? null;
   return [
     "@echo off",
     "rem penguin CLI shim, rewritten by the PenguinHarness server at every start.",
@@ -342,8 +343,8 @@ export function windowsShimScript(launch: ShimLaunch): string {
     "rem against this data root unless the caller set PENGUIN_HOME (or passes --root / --server).",
     "setlocal",
     // The database first: once PENGUIN_HOME is set, the condition no longer holds.
-    ...(database !== null
-      ? [`if not defined PENGUIN_HOME set "PENGUIN_WEB_DB=${cmdLiteral(database)}"`]
+    ...(databasePath !== null
+      ? [`if not defined PENGUIN_HOME set "PENGUIN_WEB_DB=${cmdLiteral(databasePath)}"`]
       : []),
     `if not defined PENGUIN_HOME set "PENGUIN_HOME=${cmdLiteral(launch.root)}"`,
     ...(launch.electron ? ['set "ELECTRON_RUN_AS_NODE=1"'] : []),
@@ -353,9 +354,9 @@ export function windowsShimScript(launch: ShimLaunch): string {
   ].join("\r\n");
 }
 
-/** The stub's message: one line, whatever the reason carried. */
-function stubMessage(reason: string): string {
-  return `penguin: this PenguinHarness instance cannot run its own CLI: ${reason.replace(/\s*[\r\n]+\s*/g, " ")}`;
+/** The stub's message: one line, whatever the detail carried. */
+function stubMessage(detail: string): string {
+  return `penguin: this PenguinHarness instance cannot run its own CLI: ${detail.replace(/\s*[\r\n]+\s*/g, " ")}`;
 }
 
 /**
@@ -363,14 +364,14 @@ function stubMessage(reason: string): string {
  * person nor an Agent gets another installation's `penguin` without being told. The heredoc's
  * quoted delimiter keeps the text literal.
  */
-export function posixStubScript(reason: string): string {
+export function posixStubScript(detail: string): string {
   return [
     "#!/bin/sh",
     "# penguin CLI shim, rewritten by the PenguinHarness server at every start.",
     "# This server runs from a checkout whose CLI cannot run; rather than let another",
     "# installation's penguin answer in its place, the shim says why.",
     "cat >&2 <<'PENGUIN_SHIM_EOF'",
-    stubMessage(reason),
+    stubMessage(detail),
     "PENGUIN_SHIM_EOF",
     "exit 1",
     "",
@@ -378,8 +379,8 @@ export function posixStubScript(reason: string): string {
 }
 
 /** The same stub for `cmd` and PowerShell; cmd's metacharacters escaped with `^`. */
-export function windowsStubScript(reason: string): string {
-  const text = cmdLiteral(stubMessage(reason)).replace(/[\^&|<>()]/g, "^$&");
+export function windowsStubScript(detail: string): string {
+  const text = cmdLiteral(stubMessage(detail)).replace(/[\^&|<>()]/g, "^$&");
   return [
     "@echo off",
     "rem penguin CLI shim, rewritten by the PenguinHarness server at every start.",
@@ -417,12 +418,12 @@ export function ensureCliShim(
       fs.mkdirSync(dir, { recursive: true });
       writeExecutable(posix, posixStubScript(unavailable));
       if (onWindows) fs.writeFileSync(windows, windowsStubScript(unavailable));
-      return { kind: "stub", dir, reason: unavailable };
+      return { kind: "stub", dir, detail: unavailable };
     }
     fs.mkdirSync(dir, { recursive: true });
     const launch: ShimLaunch = {
       root,
-      database: nonDefaultDatabase(root, opts.dbPath),
+      databasePath: nonDefaultDatabase(root, opts.dbPath),
       execPath: opts.execPath ?? process.execPath,
       execArgs: opts.execArgs ?? [],
       entry,
@@ -432,7 +433,7 @@ export function ensureCliShim(
     if (onWindows) fs.writeFileSync(windows, windowsShimScript(launch));
     return { kind: "written", dir, entry, execArgs: [...(opts.execArgs ?? [])] };
   } catch (err) {
-    return { kind: "failed", reason: err instanceof Error ? err.message : String(err) };
+    return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -641,23 +642,27 @@ async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaratio
  */
 export async function resolveCli(input: {
   /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
-  self: string;
+  callerEntry: string;
   /** The data root whose record says whether a CLI was pushed here. */
   root: string;
   /** Whether the transition window is open. Default true. */
   legacyWindow?: boolean;
 }): Promise<CliResolution> {
-  const self = path.resolve(input.self);
-  const declaration = await loaderDeclarationFor(self);
+  const callerEntry = path.resolve(input.callerEntry);
+  const declaration = await loaderDeclarationFor(callerEntry);
   const record = await readCliRecord(path.resolve(input.root));
   const declared = declaration.state === "declared" ? declaration.file : null;
 
   if (record.state === "bundle") {
     // 1. The caller is the loader: it answers itself, and the bundle says what it loads.
-    if (declared !== null ? await sameFile(self, declared) : isLegacyName(self, declaration)) {
+    if (
+      declared !== null
+        ? await sameFile(callerEntry, declared)
+        : isLegacyName(callerEntry, declaration)
+    ) {
       return {
         kind: "entry",
-        entry: self,
+        entry: callerEntry,
         reason: declared !== null ? "declared-loader" : "legacy-loader",
         bundle: record.file,
       };
@@ -677,7 +682,7 @@ export async function resolveCli(input: {
     }
     // 4, 5. The legacy name, only where no declaration exists.
     if (input.legacyWindow !== false) {
-      const legacy = path.join(path.dirname(self), LEGACY_LOADER_NAME);
+      const legacy = path.join(path.dirname(callerEntry), LEGACY_LOADER_NAME);
       if (isFile(legacy)) {
         return { kind: "entry", entry: legacy, reason: "legacy-loader", bundle: record.file };
       }
@@ -685,13 +690,13 @@ export async function resolveCli(input: {
     return {
       kind: "fault",
       fault: "no-loader",
-      detail: `no loader is declared above ${path.dirname(self)}`,
+      detail: `no loader is declared above ${path.dirname(callerEntry)}`,
     };
   }
 
   // 6. Nothing pushed — no record, or a record with no CLI section: the caller's own entry.
   if (record.state === "none" || record.state === "absent") {
-    return { kind: "entry", entry: self, reason: "own-entry", bundle: null };
+    return { kind: "entry", entry: callerEntry, reason: "own-entry", bundle: null };
   }
   // 7. The record is there and cannot be used: a named fault.
   if (record.state === "damaged") {
@@ -704,8 +709,8 @@ export async function resolveCli(input: {
 }
 
 /** Whether the caller is the legacy loader of a product that declares nothing. */
-function isLegacyName(self: string, declaration: LoaderDeclaration): boolean {
-  return declaration.state === "absent" && path.basename(self) === LEGACY_LOADER_NAME;
+function isLegacyName(entry: string, declaration: LoaderDeclaration): boolean {
+  return declaration.state === "absent" && path.basename(entry) === LEGACY_LOADER_NAME;
 }
 
 /** A file that is really there: a directory named like the loader names no loader. */

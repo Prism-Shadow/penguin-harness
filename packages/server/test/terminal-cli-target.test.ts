@@ -39,9 +39,9 @@ const bash = process.platform === "win32" ? null : onPath("bash");
 
 /** This checkout's CLI, as a dev server running from source offers it. */
 const cli = offeredCli({
-  explicit: undefined,
+  explicitEntry: undefined,
   moduleDir: path.dirname(fileURLToPath(import.meta.url)),
-  source: true,
+  runsFromSource: true,
   electron: false,
 });
 

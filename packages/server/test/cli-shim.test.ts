@@ -26,7 +26,7 @@ import {
   offeredCli,
   windowsShimScript,
   windowsStubScript,
-  workspaceRoot,
+  checkoutRoot,
 } from "../src/services/cli-shim.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -109,7 +109,7 @@ describe("the launcher scripts", () => {
   it("the Windows half is CRLF, keeps a caller's PENGUIN_HOME, and doubles a %", () => {
     const script = windowsShimScript({
       root: "C:\\data 100%",
-      database: "D:\\db\\web.db",
+      databasePath: "D:\\db\\web.db",
       execPath: "C:\\node.exe",
       execArgs: ["--import", "file:///C:/repo/loader.mjs"],
       entry: "C:\\app\\penguin.js",
@@ -192,7 +192,7 @@ describe("ensureCliShim", () => {
     const root = await tempRoot();
     ensureCliShim(root, "/repo/penguin.js", LINUX);
     const result = ensureCliShim(root, null, { ...LINUX, unavailable: "not built" });
-    expect(result).toEqual({ kind: "stub", dir: cliShimDir(root), reason: "not built" });
+    expect(result).toEqual({ kind: "stub", dir: cliShimDir(root), detail: "not built" });
     const shim = path.join(root, "bin", "penguin");
     expect(fs.readFileSync(shim, "utf8")).not.toContain("/repo/penguin.js");
     if (POSIX) expect(fs.statSync(shim).mode & 0o111).toBe(0o111);
@@ -239,27 +239,27 @@ describe("offeredCli: which CLI a server offers", () => {
     const repo = await checkout({ source: true, build: true });
     const base = {
       moduleDir: serverSrc(repo),
-      source: true,
+      runsFromSource: true,
       electron: false,
       tsLoader: loaderFound,
     };
-    expect(offeredCli({ ...base, explicit: " /opt/penguin/dist/penguin.js " })).toEqual({
+    expect(offeredCli({ ...base, explicitEntry: " /opt/penguin/dist/penguin.js " })).toEqual({
       entry: "/opt/penguin/dist/penguin.js",
       execArgs: [],
       checkout: repo,
       origin: "env",
       unavailable: null,
     });
-    expect(offeredCli({ ...base, explicit: "  " }).origin).toBe("source");
+    expect(offeredCli({ ...base, explicitEntry: "  " }).origin).toBe("source");
   });
 
   it("offers nothing, and reports nothing missing, outside a checkout", async () => {
     const notARepo = await tempRoot();
     expect(
       offeredCli({
-        explicit: undefined,
+        explicitEntry: undefined,
         moduleDir: notARepo,
-        source: false,
+        runsFromSource: false,
         electron: false,
         tsLoader: loaderFound,
       }),
@@ -269,9 +269,9 @@ describe("offeredCli: which CLI a server offers", () => {
   it("a server running from source offers the CLI source through the checkout's loader", async () => {
     const repo = await checkout({ source: true, build: true });
     const launch = offeredCli({
-      explicit: undefined,
+      explicitEntry: undefined,
       moduleDir: serverSrc(repo),
-      source: true,
+      runsFromSource: true,
       electron: false,
       tsLoader: loaderFound,
     });
@@ -287,9 +287,9 @@ describe("offeredCli: which CLI a server offers", () => {
   it("…and the build when the loader does not resolve", async () => {
     const repo = await checkout({ source: true, build: true });
     const launch = offeredCli({
-      explicit: undefined,
+      explicitEntry: undefined,
       moduleDir: serverSrc(repo),
-      source: true,
+      runsFromSource: true,
       electron: false,
       tsLoader: noLoader,
     });
@@ -305,7 +305,12 @@ describe("offeredCli: which CLI a server offers", () => {
       fs.mkdirSync(dir, { recursive: true });
       return dir;
     };
-    const opts = { explicit: undefined, source: false, electron: false, tsLoader: loaderFound };
+    const opts = {
+      explicitEntry: undefined,
+      runsFromSource: false,
+      electron: false,
+      tsLoader: loaderFound,
+    };
     expect(offeredCli({ ...opts, moduleDir: fromDist(built) }).origin).toBe("build");
 
     const unbuilt = await checkout({ source: true });
@@ -319,7 +324,12 @@ describe("offeredCli: which CLI a server offers", () => {
       fs.mkdirSync(dir, { recursive: true });
       return dir;
     };
-    const opts = { explicit: undefined, source: false, electron: true, tsLoader: loaderFound };
+    const opts = {
+      explicitEntry: undefined,
+      runsFromSource: false,
+      electron: true,
+      tsLoader: loaderFound,
+    };
     expect(offeredCli({ ...opts, moduleDir: desktopDist(built) }).origin).toBe("build");
 
     const unbuilt = await checkout({ source: true });
@@ -333,9 +343,9 @@ describe("offeredCli: which CLI a server offers", () => {
   it("a checkout with neither a runnable source nor a build says so", async () => {
     const repo = await checkout({ source: true });
     const launch = offeredCli({
-      explicit: undefined,
+      explicitEntry: undefined,
       moduleDir: serverSrc(repo),
-      source: true,
+      runsFromSource: true,
       electron: false,
       tsLoader: noLoader,
     });
@@ -354,16 +364,16 @@ describe("offeredCli: which CLI a server offers", () => {
     ]) {
       const from = path.join(repo, rel);
       fs.mkdirSync(from, { recursive: true });
-      expect(workspaceRoot(from), rel).toBe(repo);
+      expect(checkoutRoot(from), rel).toBe(repo);
     }
   });
 });
 
 /** This checkout's own CLI, the way a dev server running from source offers it. */
 const THIS_CHECKOUT_CLI = offeredCli({
-  explicit: undefined,
+  explicitEntry: undefined,
   moduleDir: path.dirname(fileURLToPath(import.meta.url)),
-  source: true,
+  runsFromSource: true,
   electron: false,
 });
 
@@ -479,7 +489,7 @@ describe("this checkout, as a dev server running from source sees it", () => {
   it("offers its own CLI source, through the tsx its CLI package depends on", () => {
     // A test runs from source exactly as `pnpm dev` runs the server: what it finds is what a
     // dev server here offers — this checkout's CLI as it is now, never a build from earlier.
-    const checkout = workspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
+    const checkout = checkoutRoot(path.dirname(fileURLToPath(import.meta.url)));
     expect(THIS_CHECKOUT_CLI).toEqual({
       entry: path.join(checkout!, "packages", "cli", "src", "penguin.ts"),
       execArgs: ["--import", expect.stringMatching(/^file:\/\/.*\/tsx\//)],

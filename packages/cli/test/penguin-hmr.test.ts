@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadPushedCli } from "../src/penguin-hmr.js";
+import { loadCli } from "../src/penguin-hmr.js";
 
 const made: string[] = [];
 
@@ -28,7 +28,7 @@ afterEach(async () => {
   }
 });
 
-/** A product whose declaration names the loader this test hands to `loadPushedCli`. */
+/** A product whose declaration names the loader this test hands to `loadCli`. */
 async function makeProduct(): Promise<{ loader: string }> {
   const dir = await tmp("penguin-loader-product-");
   const dist = path.join(dir, "dist");
@@ -65,36 +65,36 @@ async function makeRoot(
   return root;
 }
 
-const PUSHED = { cli: { bundle: "store/cli/abc123.mjs" } };
+const RECORD_WITH_CLI = { cli: { bundle: "store/cli/abc123.mjs" } };
 
 describe("penguin-hmr loads what resolution answers", () => {
   it("runs the pushed CLI on a root that holds one", async () => {
     const product = await makeProduct();
     const root = await makeRoot({
-      record: PUSHED,
+      record: RECORD_WITH_CLI,
       bundle: "export const cli = async () => 7;\n",
     });
-    const cli = await loadPushedCli(root, product.loader);
+    const cli = await loadCli(root, product.loader);
     await expect(cli([])).resolves.toBe(7);
   });
 
   it("reports `own-entry` on a root nothing was ever pushed to", async () => {
     const product = await makeProduct();
-    await expect(loadPushedCli(await makeRoot(), product.loader)).rejects.toThrow(/^own-entry:/);
+    await expect(loadCli(await makeRoot(), product.loader)).rejects.toThrow(/^own-entry:/);
   });
 
   it("reports `record-unreadable` for a record that will not parse", async () => {
     const product = await makeProduct();
     const root = await makeRoot({ raw: "{ not json" });
-    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^record-unreadable:/);
+    await expect(loadCli(root, product.loader)).rejects.toThrow(/^record-unreadable:/);
   });
 
   it("reports `cli-unloadable` for a CLI that cannot load", async () => {
     const product = await makeProduct();
     const root = await makeRoot({
-      record: PUSHED,
+      record: RECORD_WITH_CLI,
       bundle: "export const notACli = async () => 0;\n",
     });
-    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^cli-unloadable:/);
+    await expect(loadCli(root, product.loader)).rejects.toThrow(/^cli-unloadable:/);
   });
 });
