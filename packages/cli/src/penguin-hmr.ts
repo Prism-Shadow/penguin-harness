@@ -19,17 +19,17 @@ import { exitBelowNodeFloor } from "./node-floor-check.js";
 import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 
 /** This file: the loader's own entry, which resolution answers with on a pushed root. */
-const SELF = fileURLToPath(import.meta.url);
+const SELF_ENTRY = fileURLToPath(import.meta.url);
 
-export async function loadPushedCli(
+export async function loadCli(
   root: string,
   /**
    * The entry resolution answers for: this module. A test that runs a fixture product's
    * loader through this same procedure names that fixture instead.
    */
-  self: string = SELF,
+  callerEntry: string = SELF_ENTRY,
 ): Promise<(argv: string[]) => Promise<number>> {
-  const answer = await resolveCli({ self, root });
+  const answer = await resolveCli({ callerEntry, root });
   // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
@@ -58,10 +58,10 @@ export async function loadPushedCli(
   return mod.cli;
 }
 
-/** Only when run as the entry point, so tests can import loadPushedCli. */
+/** Only when run as the entry point, so tests can import loadCli. */
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   exitBelowNodeFloor();
-  loadPushedCli(resolveRoot())
+  loadCli(resolveRoot())
     .then((cli) => cli(process.argv.slice(2)))
     .then((code) => {
       process.exitCode = code;
