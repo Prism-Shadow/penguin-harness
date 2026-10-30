@@ -293,3 +293,139 @@ describe("MessageStream answered A2UI blocks", () => {
     expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
   });
 });
+
+/**
+ * The streamed-history read (web/src/lib/amsp/stream-controller.ts loadFrames over
+ * deps.loadMessageFrames), driven the way the wire delivers it — NDJSON frames handed to
+ * onFrame one line at a time:
+ * - The skeleton frames arrive first and fix every row's position in one pass: prompts and
+ *   the inserted kinds (steering chips) all become rows before any content fills in.
+ * - The meat frames fill the interiors with zero row movement: a steering chip's row never
+ *   re-inserts after layout, and the fill of a finished Task only appends inside it.
+ * - A resumed read replays frames the client already holds; the dedup drops those and the
+ *   sequence continues where the interrupted stream stopped.
+ */
+import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/amsp";
+import type { AmspRecord } from "@prismshadow/amsp";
+import { userSteeringText } from "@prismshadow/amsp/markers";
+import { createStreamController } from "../src/lib/amsp/stream-controller";
+import type { MessagesPageQuery, StreamController } from "../src/lib/amsp/stream-controller";
+import type { MessagesHistoryFrame } from "../src/api/endpoints";
+
+type FrameSink = (frame: MessagesHistoryFrame) => void;
+
+/** Item kinds of the model, in order. */
+const kinds = (h: Harness): string[] => h.controller.model.items.map((i) => i.kind);
+
+/** The texts of the user_text rows, in order. */
+const userTexts = (h: Harness): Array<string | null> =>
+  h.controller.model.items.map((i) => (i.kind === "user_text" ? i.text : null));
+
+interface Harness {
+  controller: StreamController;
+  errors: Array<string | null>;
+  served: Array<MessagesPageQuery | undefined>;
+  /** Deliver the scripted frames for one load call. */
+  serve: () => void;
+}
+
+/**
+ * A frames harness: each load() takes one script entry and delivers its frames line by
+ * line (the NDJSON wire's delivery), then resolves.
+ */
+function createFramesHarness(script: Array<{ frames: MessagesHistoryFrame[] }>): Harness {
+  const served: Array<MessagesPageQuery | undefined> = [];
+  const errors: Array<string | null> = [];
+  let cursor = 0;
+  const controller = createStreamController({
+    sessionId: "s1",
+    loadMessages: () => {
+      throw new Error("the JSON read must not run when the frames path serves");
+    },
+    loadMessageFrames: (page: MessagesPageQuery | undefined, onFrame: FrameSink) => {
+      served.push(page);
+      const entry = script[cursor++]!;
+      for (const frame of entry.frames) onFrame(frame);
+      return Promise.resolve({ serverNowMs: null });
+    },
+    onTaskState: () => {},
+    onPendingSteering: () => {},
+    onReturnedSteering: () => {},
+    onPendingFollowUps: () => {},
+    onLoading: () => {},
+    onError: (e) => errors.push(e),
+    onModelChange: () => {},
+    onPendingChange: () => {},
+    now: () => 1_000_000,
+  });
+  return { controller, errors, served, serve: () => {} };
+}
+
+function at<M extends AmspRecord>(msg: M, ts: string): M {
+  return { ...msg, timestamp: ts };
+}
+
+const T = (m: number, s: string) => `2026-07-05T00:0${m}:0${s}.000Z`;
+
+/** The page envelope frame for a full tail read (zeroed priors). */
+const pageFrame = (): MessagesHistoryFrame => ({
+  type: "page",
+  earlierTurns: 0,
+  prior: { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 },
+});
+
+describe("the streamed-history read", () => {
+  it("the skeleton fixes every row's position first — prompts and inserted kinds together — and meat fills with zero row movement", async () => {
+    // One transcript: a prompt, a steering chip inside the running Task, the Task's tool
+    // work, then a second prompt. The skeleton carries all four rows; the meat carries
+    // the tool work and the reply.
+    const prompt1 = at(userText("first question"), T(0, "0"));
+    const steering = at(userText(userSteeringText("go deeper")), T(0, "2"));
+    const call = at(toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }), T(0, "4"));
+    const output = at(toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }), T(0, "6"));
+    const reply = at(assistantText("all done"), T(0, "8"));
+    const prompt2 = at(userText("second question"), T(1, "0"));
+    const all = [prompt1, steering, call, output, reply, prompt2];
+
+    const skeleton: MessagesHistoryFrame = {
+      type: "skeleton",
+      cursor: "0:0",
+      messages: [prompt1, steering, prompt2],
+    };
+    const meat1: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [call, output] };
+    const meat2: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [reply] };
+
+    const h = createFramesHarness([{ frames: [pageFrame(), skeleton, meat1, meat2] }]);
+    const p = h.controller.load();
+    await p;
+    expect(h.errors.filter((e) => e !== null)).toEqual([]);
+    // The rows exist in transcript order; the steering chip's row position was fixed by
+    // the skeleton and the meat fill never re-inserted it.
+    expect(kinds(h)).toEqual(["user_text", "user_steering", "user_text", "tool_call", "assistant_text"]);
+    expect(userTexts(h)).toContain("first question");
+    expect(userTexts(h)).toContain("second question");
+  });
+
+  it("a resumed read replays frames the client already holds; the dedup drops them and nothing doubles", async () => {
+    const prompt1 = at(userText("only question"), T(0, "0"));
+    const reply = at(assistantText("the answer"), T(0, "4"));
+    const skeleton: MessagesHistoryFrame = {
+      type: "skeleton",
+      cursor: "0:0",
+      messages: [prompt1],
+    };
+    const meat: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [reply] };
+
+    // First read: skeleton + meat arrive; the stream is interrupted before a second
+    // meat frame. Re-entry replays the same envelope and frames.
+    const h = createFramesHarness([
+      { frames: [pageFrame(), skeleton, meat] },
+      { frames: [pageFrame(), skeleton, meat] },
+    ]);
+    await h.controller.load();
+    // Re-entry: a fresh model rebuilds from the replayed frames; the dedup drops the
+    // already-held envelope rows so nothing doubles.
+    await h.controller.retry();
+    expect(kinds(h)).toEqual(["user_text", "assistant_text"]);
+  });
+});

@@ -71,8 +71,11 @@ import {
   deserializePrefix,
   encodeCursor,
   finalizeScan,
+  frameCutIndexes,
   initialScanState,
+  isSkeletonMessage,
   mergedIntervalMs,
+  planMeatFrames,
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
@@ -81,6 +84,7 @@ import type {
   MessageCursor,
   ScanState,
   WindowPriorStats,
+  MessagesHistoryFrame,
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
@@ -89,11 +93,40 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { MESSAGE_WINDOW_FRAME_MAX_BYTES } from "./message-window.js";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
+
+/**
+ * Splits a skeleton's messages into consecutive chunks under `maxBytes` (each NDJSON
+ * frame's line budget, including its newline), always at least one message — a unit
+ * opener larger than the cap is its own oversized frame rather than a dropped row.
+ * All skeleton messages carry their trace position (images already by reference), so
+ * no per-chunk rework is needed.
+ */
+function chunkFrame(
+  messages: readonly AmspRecord[],
+  maxBytes = MESSAGE_WINDOW_FRAME_MAX_BYTES,
+): AmspRecord[][] {
+  const chunks: AmspRecord[][] = [];
+  let current: AmspRecord[] = [];
+  let bytes = 0;
+  for (const msg of messages) {
+    const size = Buffer.byteLength(JSON.stringify(msg), "utf8") + 1; // + the NDJSON newline
+    if (current.length > 0 && bytes + size > maxBytes) {
+      chunks.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(msg);
+    bytes += size;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
 
 /**
  * session_id an imported Trace file may declare: same alphabet as resource ids plus a length
@@ -771,6 +804,113 @@ export class TraceService implements Traces {
           }
         : {}),
     };
+  }
+
+  /**
+   * The streamed-history read (GET /messages?frames=1): the same windowed read
+   * (readMessagesPage) with its window and the WHOLE transcript's skeleton sorted
+   * into NDJSON frames.
+   *
+   * Shapes (see MessagesHistoryFrame in message-window.ts): one `page` line first —
+   * the window's envelope — then `skeleton` frames holding every unit opener of the
+   * whole transcript (plain text prompts and inserted kinds together, chronological,
+   * whole-transcript so rows exist before ANY window's meat fills in), then `meat`
+   * frames carrying this window's remaining messages in time order, cut only at
+   * group boundaries, each frame under the 64 KB soft cap (a single oversized group
+   * is its own frame and may exceed it) and always holding at least one group. Every
+   * frame carries the cursor to re-enter at through the ordinary `before` protocol.
+   *
+   * Frames are returned as an array and the route writes them out line by line: the
+   * framing decisions all live here (pure, unit-testable), the route only serializes.
+   * The window's own byte budget (MESSAGES_PAGE_MAX_BYTES) still bounds one response —
+   * the client's auto-refill stop line — and a page the budget cut short carries its
+   * `before` cursor exactly as the JSON read does.
+   */
+  async readMessagesFrames(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+  ): Promise<MessagesHistoryFrame[]> {
+    const result = await this.readMessagesPage(projectId, agentId, sessionId, req);
+    const pageFrame: MessagesHistoryFrame = {
+      type: "page",
+      earlierTurns: result.prior.turns,
+      prior: result.prior,
+      ...(result.before !== undefined ? { before: result.before } : {}),
+      ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
+      ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
+    };
+
+    // The skeleton: every unit opener of the whole transcript, with images by
+    // reference (frames never carry inline image bytes; the reference URL is
+    // immutable and the consumer fetches it lazily). Cursor: re-enter at the
+    // transcript's very beginning — the skeleton never re-sends on a resume.
+    const skeleton: AmspRecord[] = [];
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    for (const file of files) {
+      const raw = await this.readShard(file.path);
+      for (let i = 0; i < raw.length; i++) {
+        const msg = raw[i]!;
+        if (isSkeletonMessage(msg)) {
+          skeleton.push(
+            withImagesByReference(sessionId, {
+              ...msg,
+              tracePosition: { fileIndex: file.index, ordinal: i },
+            }) as HistoryMessage,
+          );
+        }
+      }
+    }
+    const skeletonFrames: MessagesHistoryFrame[] = [];
+    for (const messages of chunkFrame(skeleton)) {
+      skeletonFrames.push({ type: "skeleton", cursor: "0:0", messages });
+    }
+
+    // The meat: this window's messages minus its own skeleton rows, planned at group
+    // boundaries and the 64 KB soft cap. Every frame carries the cursor that RE-ENTERS
+    // this window: a `before` read echoes its own cursor (the ordinary before protocol
+    // answers the identical window again); a tail read names the window's first unit —
+    // the client re-enters a tail read by repeating the request (the replay carries
+    // every frame the interrupted stream already delivered, its dedup drops those, plus
+    // the ones it never received, so the sequence continues where the stream stopped).
+    const windowRows = result.messages.filter((m) => !isSkeletonMessage(m));
+    const meatFrames: MessagesHistoryFrame[] = [];
+    if (windowRows.length > 0) {
+      const byRef = windowRows.map((m) => withImagesByReference(sessionId, m) as HistoryMessage);
+      const cuts = frameCutIndexes(byRef);
+      const byteOf = (m: AmspRecord): number =>
+        Buffer.byteLength(JSON.stringify(m), "utf8") + 1; // + the NDJSON newline
+      const frames = planMeatFrames(byteOf, byRef, cuts, MESSAGE_WINDOW_FRAME_MAX_BYTES);
+      const reentryCursor =
+        req.kind === "before"
+          ? encodeCursor(req.cursor)
+          : (() => {
+              // The window's first unit start (its prompt — a user text that is not a
+              // steering block); a window that opens mid-unit starts at its first message.
+              for (const m of result.messages) {
+                const p = m.payload as { type?: string; role?: string; text?: string };
+                if (
+                  m.type === "model_msg" &&
+                  p.type === "text" &&
+                  p.role === "user" &&
+                  typeof p.text === "string" &&
+                  parseUserSteeringText(p.text) === null
+                ) {
+                  const pos = (m as HistoryMessage).tracePosition;
+                  if (pos !== undefined) return encodeCursor({ fileIndex: pos.fileIndex, ordinal: pos.ordinal });
+                }
+              }
+              const first = byRef[0] as HistoryMessage | undefined;
+              return first?.tracePosition !== undefined
+                ? encodeCursor({ fileIndex: first.tracePosition.fileIndex, ordinal: first.tracePosition.ordinal })
+                : "0:0";
+            })();
+      for (const { from, to } of frames) {
+        meatFrames.push({ type: "meat", cursor: reentryCursor, messages: byRef.slice(from, to) });
+      }
+    }
+    return [pageFrame, ...skeletonFrames, ...meatFrames];
   }
 
   /**

@@ -42,7 +42,7 @@ import type {
   SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
-import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
+import { sessionMessages, sessionMessagesFrames, sessionTraceImage } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
 import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
@@ -1091,6 +1091,14 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   // the same handler, its image references pointing at its own trace-image route.
   app.get("/:sessionId/messages", async (c) =>
     sessionMessages(c, deps, resolveSession(c), SESSION_ROUTES_BASE),
+  );
+
+  // Streamed history (NDJSON frames; see MessagesHistoryFrame): the same windowed read
+  // (`tailLimit` / `before`, live tail included on tail/full reads) sorted into frames —
+  // the page envelope, the whole transcript's skeleton, then the window's meat — written
+  // line by line so the first frames flush before the last is built.
+  app.get("/:sessionId/messages/frames", (c) =>
+    sessionMessagesFrames(c, deps, resolveSession(c), SESSION_ROUTES_BASE),
   );
 
   // AMSP's Session stream for a signed-in reader (a Workbench page, the SDK in a browser): the

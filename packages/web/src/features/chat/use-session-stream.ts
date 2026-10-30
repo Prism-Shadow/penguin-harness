@@ -24,7 +24,7 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMessages } from "../../api/endpoints";
+import { getGoal, getMessages, getMessagesFrames } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
 import { openSessionStream } from "../../api/sse";
@@ -257,6 +257,10 @@ export function useSessionStream(
       // controller seed the currently streaming message after a reload, and `page` (the
       // windowed-history envelope) drives tail-first loading (see stream-controller).
       loadMessages: (page) => getMessages(sessionId, page),
+      // The streamed-history read: frames arrive one NDJSON line at a time, so a long
+      // conversation lays out its skeleton rows before the meat frames finish (see
+      // stream-controller loadFrames).
+      loadMessageFrames: (page, onFrame) => getMessagesFrames(sessionId, page, onFrame),
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,

@@ -48,6 +48,143 @@ import {
   parseModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { HistoryMessage } from "../api/types.js";
+
+/**
+ * Frame protocol for the streamed history read (GET /messages?frames=1).
+ *
+ * A window (the same unit run the JSON paging returns) is sent as NDJSON frames
+ * instead of one JSON body:
+ *   - a `page` line first — the window's envelope, identical to MessagesPageInfo's
+ *     fields (re-entry cursor, prior stats, context model/agent state), so a frames
+ *     consumer seeds exactly what a JSON consumer would;
+ *   - `skeleton` frames — every unit's opening message of the WHOLE transcript, the
+ *     plain text prompts and the inserted kinds (steering chips, context summaries,
+ *     in-task background notices) together, chronological, so a client fixes every
+ *     row's position on the first frames and later frames only fill content in;
+ *   - `meat` frames — the window's remaining messages, chronological inside the
+ *     window, cut only at group boundaries (a tool_call is never separated from its
+ *     tool_call_output, a steering chip never from its trailing images, a compaction
+ *     span never split), 64 KB soft cap per frame and at least one group. The
+ *     transcript's byte budget (MESSAGES_PAGE_MAX_BYTES) bounds one response; the
+ *     client re-enters with the frame's `cursor` through the ordinary `before`
+ *     protocol for the next older window — that budget is the auto-refill stop line.
+ *
+ * Every frame carries the `cursor` to re-enter at: the cut immediately before the
+ * frame's oldest message. Closed shards are immutable and the active one is
+ * append-only, so a re-entry response replays frames whose messages the client
+ * already holds — its envelope dedup drops those, and the sequence continues
+ * exactly where the interrupted stream stopped.
+ */
+export const MESSAGE_WINDOW_FRAME_MAX_BYTES = 64 * 1024;
+
+/** One NDJSON line of a frames response (`GET /messages?frames=1`). */
+export type MessagesHistoryFrame =
+  | {
+      /** The window's envelope (the fields of MessagesPageInfo); the first line of every response. */
+      type: "page";
+      before?: string;
+      earlierTurns: number;
+      prior: WindowPriorStats;
+      contextModel?: { provider: string; modelId: string };
+      agentState?: string;
+      /** Live tail of a running Session, on tail/full reads only (same contract as MessagesResponse.live). */
+      live?: unknown;
+    }
+  | {
+      /** Every unit opener of the whole transcript (text + inserted kinds), chronological. */
+      type: "skeleton";
+      cursor?: string;
+      messages: HistoryMessage[];
+    }
+  | {
+      /** The window's remaining content, oldest frame first; `cursor` = re-entry point for the continuation. */
+      type: "meat";
+      cursor?: string;
+      messages: HistoryMessage[];
+    };
+
+/**
+ * Indexes into a chronological message run where a frame may cut (the cut falls
+ * BETWEEN messages[cuts[k]-1] and messages[cuts[k]]): after every message that
+ * leaves nothing open behind it — no tool_call awaiting its output, no steering
+ * chip still collecting its images, no compaction span in progress. Mirrors the
+ * pairing rules of scanMessages; a cut here never separates what the Web reducer
+ * renders together.
+ */
+export function frameCutIndexes(messages: readonly AmspRecord[]): number[] {
+  const cuts: number[] = [];
+  let compactionActive = false;
+  let steeringOpen = false;
+  const openTools = new Set<string>();
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]!;
+    if (msg.origin !== undefined && msg.origin.length > 0) continue;
+    if (isTaskRecord(msg)) continue;
+    const p = msg.payload as Record<string, unknown> & { type?: string; role?: string };
+    const isUserImage = msg.type === "model_msg" && p.type === "image_url";
+    if (!isUserImage) steeringOpen = false;
+    if (msg.type === "model_msg") {
+      if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
+        if (parseUserSteeringText(p.text) !== null) steeringOpen = true;
+      } else if (p.type === "tool_call" && typeof p.tool_call_id === "string") {
+        openTools.add(p.tool_call_id);
+      } else if (p.type === "tool_call_output" && typeof p.tool_call_id === "string") {
+        openTools.delete(p.tool_call_id);
+      }
+    } else if (msg.type === "event_msg") {
+      if (p.type === "compaction_begin") compactionActive = true;
+      else if (p.type === "compaction_end") compactionActive = false;
+    }
+    if (!compactionActive && !steeringOpen && openTools.size === 0) cuts.push(i + 1);
+  }
+  return cuts;
+}
+
+/**
+ * Plans the meat frames of one window, oldest frame first: each frame takes whole
+ * groups between consecutive safe cuts, closing at the newest safe cut that still
+ * fits `maxBytes` (soft cap — a single oversized group is its own frame and exceeds
+ * it), and always holds at least one group. Returns `[from, to)` index pairs into
+ * the window's message array.
+ */
+export function planMeatFrames(
+  byteOf: (msg: AmspRecord) => number,
+  messages: readonly AmspRecord[],
+  cuts: readonly number[],
+  maxBytes = MESSAGE_WINDOW_FRAME_MAX_BYTES,
+): Array<{ from: number; to: number }> {
+  const frames: Array<{ from: number; to: number }> = [];
+  const safe = [...cuts].sort((a, b) => a - b);
+  /** prefix[i] = bytes of messages[0..i-1]; `at(c)` extends to the window's end. */
+  const prefix: number[] = new Array(messages.length);
+  let acc = 0;
+  for (let i = 0; i < messages.length; i++) {
+    prefix[i] = acc;
+    acc += byteOf(messages[i]!);
+  }
+  const at = (c: number): number => (c >= messages.length ? acc : prefix[c]!);
+  let from = 0;
+  while (from < messages.length) {
+    // The newest safe cut whose content still fits the budget (the window's end
+    // closes too); a frame never opens without one closed group behind it.
+    let close = -1;
+    for (const c of safe) {
+      if (c <= from) continue;
+      if (at(c) - at(from) > maxBytes) break;
+      close = c;
+    }
+    if (close === -1) {
+      // The very first group passes the cap: it is its own frame (the ≥1 group
+      // floor beats the soft cap) — close at the first safe cut after `from`.
+      close = safe.find((c) => c > from) ?? messages.length;
+    }
+    close = Math.min(close, messages.length);
+    frames.push({ from, to: close });
+    from = close;
+  }
+  return frames;
+}
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
 export const CACHE_VERSION = 4;
@@ -113,6 +250,27 @@ interface TaskCarry {
   openTools: Record<string, number>;
   /** This Task's settled tool execution intervals (ms), unioned when it closes (mirrors task-stats taskToolIntervals). */
   toolIntervals: Array<[number, number]>;
+}
+
+/**
+ * The skeleton's row list: every unit opener of the whole transcript, chronological —
+ * a Task-starting main-session user prompt (the ordinary cut boundary) PLUS the inserted
+ * kinds that ride inside a running Task: steering chips, context-summary injections and
+ * in-task background notices. A consumer fixes each row's position when it arrives; the
+ * meat frames then only fill the units' interiors, so an inserted kind never re-inserts
+ * a row after layout.
+ */
+export function isSkeletonMessage(msg: AmspRecord): boolean {
+  if (msg.origin !== undefined && msg.origin.length > 0) return false;
+  if (isTaskRecord(msg)) return false;
+  if (msg.type !== "model_msg") return false;
+  const p = msg.payload as Record<string, unknown> & { type?: string; role?: string };
+  if (p.type === "image_url") return true;
+  if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return false;
+  // A compaction-summary injection is a row (banner item); steering and in-task notices
+  // likewise — the reducer renders each as its own item. A harness-injected input inside
+  // a Task (goal round, hook continue) is one too. Everything else is interior.
+  return true;
 }
 
 /**
