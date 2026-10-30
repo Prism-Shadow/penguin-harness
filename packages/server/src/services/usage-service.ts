@@ -47,6 +47,7 @@ import {
   localDateMinusDays,
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
+import { zonedOffsetSpans } from "../organization/zoned.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
@@ -288,30 +289,44 @@ export class UsageService implements UsageQueries {
     return { bySession, unpriced };
   }
 
-  /** Daily cost of a set of sessions over a window (the organization finance trend). */
+  /**
+   * Daily cost of a set of sessions over a window (the organization finance trend), each day a
+   * calendar day of `timeZone` rather than of the server, whose days the `date` column records.
+   * The window is queried in pieces of constant UTC offset, so a DST change inside it moves
+   * the day boundary with it.
+   */
   async dailyCostForSessions(
     projectId: string,
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>> {
     if (sessionIds.length === 0) return [];
-    const rows = this.usage.seriesByModel(
-      projectId,
-      "day",
-      { sessionIds, fromTs, toTs },
-      this.tiers(),
-    );
     const rates = new Map<string, TieredRates | undefined>();
     const byDate = new Map<string, number>();
-    for (const r of rows) {
-      const key = refKey(r.provider, r.modelId);
-      if (!rates.has(key)) {
-        rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+    // `toTs` is inclusive (`ts <= :toTs`); the spans are half-open.
+    for (const span of zonedOffsetSpans(timeZone, Date.parse(fromTs), Date.parse(toTs) + 1)) {
+      const rows = this.usage.seriesByModel(
+        projectId,
+        "day",
+        {
+          sessionIds,
+          fromTs: new Date(span.fromMs).toISOString(),
+          toTs: new Date(span.toMs - 1).toISOString(),
+        },
+        this.tiers(),
+        span.offsetMinutes,
+      );
+      for (const r of rows) {
+        const key = refKey(r.provider, r.modelId);
+        if (!rates.has(key)) {
+          rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+        }
+        const rate = rates.get(key);
+        if (!rate) continue;
+        byDate.set(r.key, (byDate.get(r.key) ?? 0) + costOf(r, rate));
       }
-      const rate = rates.get(key);
-      if (!rate) continue;
-      byDate.set(r.key, (byDate.get(r.key) ?? 0) + costOf(r, rate));
     }
     return [...byDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
