@@ -9,11 +9,20 @@
  * Session that never ran, which has no context to compact and switches inside the request (200
  * with the updated Session). Only that `session_meta` says the Session moved: the stream model
  * turns it into a model-change marker, and the page moves its Session row to the model it
- * names (see sessionRowStale). A compaction that fails streams no meta, and the Session stays
- * on the model it was on.
+ * names (see sessionRowStale). When the summary cannot be had — the current model is
+ * unavailable, or the compaction fails — the switch still completes, by Trace handoff: a
+ * `[model_switch_from]` block naming this Session follows the meta, and the marker says so.
+ * Only a stopped compaction streams no meta, and the Session then stays on its model.
  */
-import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../models/model-grouping";
+import type {
+  ModelRefDto,
+  ModelsResponse,
+  SessionInfo,
+  SessionStatus,
+} from "@prismshadow/penguin-server/api";
+import { modelCalledKeyless } from "@prismshadow/penguin-server/model-catalog";
+import { groupShape } from "../models/connection";
+import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { trailingCompaction } from "./thinking-level";
 import type { ThinkingSwitchItem } from "./thinking-level";
 
@@ -33,14 +42,40 @@ export function sessionModelPickerDisabled(status: SessionStatus): boolean {
  * - `"empty"` — nothing at all yet: the switch is immediate (the server answers 200);
  * - `"compacted"` — the transcript ends in a completed compaction or a model switch with
  *   nothing said since: the server runs no compaction and streams no pair, and the
- *   conversation continues on the target from what that context opened with.
+ *   conversation continues on the target from what that context opened with;
+ * - `"handover"` — there is conversation to compact, but the current model is unavailable (no
+ *   longer configured, or without a key on an endpoint that wants one): nothing is summarized,
+ *   and the target gets the conversation's Trace file path instead.
  */
-export type SwitchContextShape = "compact" | "empty" | "compacted";
+export type SwitchContextShape = "compact" | "empty" | "compacted" | "handover";
 
-/** Reads the shape off the transcript's end, the way the thinking switch's guard does (see `trailingCompaction`). */
-export function switchContextShape(items: ReadonlyArray<ThinkingSwitchItem>): SwitchContextShape {
+/**
+ * Reads the shape off the transcript's end, the way the thinking switch's guard does (see
+ * `trailingCompaction`), and off the configured models: `models` is the list the picker offers
+ * (absent while it loads, which reads as available — the server decides either way). A row
+ * with no key is available when its endpoint is one called without a key (an open MMSP or vLLM
+ * server — the catalog's `modelCalledKeyless`, the rule the models page's key field uses).
+ */
+export function switchContextShape(
+  items: ReadonlyArray<ThinkingSwitchItem>,
+  current: ModelRefDto,
+  models: Pick<ModelsResponse, "models" | "providers"> | null | undefined,
+): SwitchContextShape {
   if (items.length === 0) return "empty";
-  return trailingCompaction(items).compacted ? "compacted" : "compact";
+  if (trailingCompaction(items).compacted) return "compacted";
+  if (!models) return "compact";
+  const entry = models.models.find((m) => sameModelRef(m, current));
+  if (entry === undefined) return "handover";
+  const keyless = modelCalledKeyless(
+    {
+      provider: entry.provider,
+      modelId: entry.modelId,
+      clientType: entry.clientType,
+      baseUrl: entry.credential?.baseUrl,
+    },
+    groupShape(models.providers[entry.provider]),
+  );
+  return hasConfiguredKey(entry) || keyless ? "compact" : "handover";
 }
 
 /**

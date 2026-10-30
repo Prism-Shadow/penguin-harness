@@ -3,15 +3,22 @@
  * the real REPL over a fake stdin against the in-process fake server (same harness as
  * chat-clear.test.ts and chat-thinking.test.ts). The fake answers the contract's three
  * shapes — 202 streaming an ordinary manual compaction pair and then the new context's
- * `session_meta`, 200 carrying the Session back for one that never ran, and 409 with a code
- * per refusal. The REPL renders the compaction like any other and learns the new model from
+ * `session_meta` (followed, when the summary failed, by the Trace handoff naming the Session's
+ * file), 200 carrying the Session back for one that never ran, and 409 with a code per
+ * refusal. The REPL renders the compaction like any other and learns the new model from
  * the Session it re-reads. Before the first message there is no Session to switch: the chat
  * holds the model for the Session that message creates.
  */
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
-import { compactionBegin, compactionEnd, sessionMeta } from "@prismshadow/penguin-core";
+import {
+  buildModelSwitchMessage,
+  compactionBegin,
+  compactionEnd,
+  sessionMeta,
+  userText,
+} from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -87,14 +94,18 @@ function requestLog(sessionId: string): string[] {
     .map((r) => `${r.method} ${r.path.slice(`/api/sessions/${sessionId}`.length) || "/"}`);
 }
 
+/** The Trace file the fake's handoff names. */
+const TRACE_FILE = "/data/traces/2026-10-29/session_001.jsonl";
+
 /**
- * A 202 switch whose compaction ends with `status`: a plain manual pair, then — on completed
- * only — the new context's main-session `session_meta` naming the target, as core streams it.
- * The fake moves the Session's model only on completed.
+ * A 202 switch whose compaction ends with `status`: a plain manual pair, then — unless it was
+ * stopped — the new context's main-session `session_meta` naming the target, as core streams
+ * it, and after it, when the summary failed, the Trace handoff naming this Session's file. The
+ * fake moves the Session's model unless the switch was stopped.
  */
 function streamedSwitch(status: "completed" | "fatal" | "aborted", errorMessage?: string) {
   return (session: FakeSessionState, target: { provider: string; modelId: string }) => {
-    const completed = status === "completed";
+    const completed = status !== "aborted";
     return {
       completed,
       messages: [
@@ -117,6 +128,16 @@ function streamedSwitch(status: "completed" | "fatal" | "aborted", errorMessage?
                 workspace: session.workspace,
                 source: "user",
               }),
+            ]
+          : []),
+        ...(status === "fatal"
+          ? [
+              userText(
+                buildModelSwitchMessage(
+                  { sessionId: session.sessionId, tracePath: TRACE_FILE },
+                  { inPlace: true },
+                ),
+              ),
             ]
           : []),
       ],
@@ -172,13 +193,25 @@ describe("chat /switch-model: 202 streams the switch", () => {
     expect(replacement!.modelId).toBe("anthropic/claude-opus-5");
   });
 
-  it("a failed switch prints the plain failed compaction line and no model line; the Session stays on its model", async () => {
+  it("a summary that fails hands over by Trace path: the failed compaction line, the line naming the file, then the model line", async () => {
     server.switchModel = streamedSwitch("fatal", "the summary does not fit");
     const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/exit"]);
-    expect(out).toContain(
+    const failed = out.indexOf(
       t.compactionStop("summarize", "fatal", undefined, "the summary does not fit"),
     );
+    const handover = out.indexOf(t.switchModelHandedOver(TRACE_FILE));
+    const done = out.indexOf(t.switchModelDone(CURRENT, TARGET));
+    expect(failed).toBeGreaterThanOrEqual(0);
+    expect(handover).toBeGreaterThan(failed);
+    expect(done).toBeGreaterThan(handover);
+    expect(out).toContain(t.switchModelCurrent(TARGET));
+  });
+
+  it("a stopped switch prints no model line, and the Session stays on its model", async () => {
+    server.switchModel = streamedSwitch("aborted");
+    const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/exit"]);
     expect(out).not.toContain(t.switchModelDone(CURRENT, TARGET));
+    expect(out).not.toContain(t.switchModelHandedOver(TRACE_FILE));
     expect(out).toContain(t.switchModelCurrent(CURRENT));
   });
 });
@@ -245,7 +278,6 @@ describe("chat /switch-model: 409 refusals print one localized line each", () =>
       ),
     ],
     ["model_unavailable", t.switchModelUnavailable(TARGET, "Refused: model_unavailable.")],
-    ["compaction_not_configured", t.switchModelNoCompaction()],
   ];
   for (const [code, line] of cases) {
     it(code, async () => {

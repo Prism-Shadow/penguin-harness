@@ -3213,7 +3213,9 @@ export const en: Strings = {
     /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
     modelSwitchInSessionDirectConfirm: "Switch",
     modelSwitchInSessionBody: (from: string, to: string): string =>
-      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, it stays on "${from}".`,
+      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, "${to}" gets this conversation's Trace file path instead.`,
+    modelSwitchInSessionHandoverBody: (from: string, to: string): string =>
+      `"${from}" is unavailable right now, so nothing is summarized: "${to}" gets this conversation's Trace file path and reads the earlier history from it when it needs to.`,
     modelSwitchInSessionDirectBody: (to: string): string =>
       `This conversation has no context yet, so it switches to "${to}" right away.`,
     modelSwitchInSessionCompactedBody: (to: string): string =>
@@ -4004,6 +4006,12 @@ Scenarios:
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
     compactionResult: "Result",
     modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
+    modelChangedByTrace: (from: string, to: string): string =>
+      `Model switched · ${from} → ${to} · handed over by Trace`,
+    modelChangedByTraceHint: (tracePath?: string): string =>
+      tracePath
+        ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
+        : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";

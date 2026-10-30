@@ -40,6 +40,7 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  getModel,
   isHookContinue,
   isHookInput,
   isSessionMeta,
@@ -177,6 +178,22 @@ function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
   const { provider, modelId } = session;
   if (provider === undefined || modelId === undefined) return null;
   return { provider, modelId };
+}
+
+/**
+ * Refuses work on a runtime loaded for a model switch alone while it is still on the model it
+ * cannot reach (see `RuntimeEntry.stranded`), with the ordinary load's own refusal.
+ */
+function assertNotStranded(entry: RuntimeEntry): void {
+  const stranded = entry.stranded;
+  if (
+    stranded &&
+    entry.provider === stranded.on.provider &&
+    entry.modelId === stranded.on.modelId
+  ) {
+    const { status, code, message } = stranded.refusal;
+    throw new HttpError(status, code, message);
+  }
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
@@ -317,8 +334,14 @@ export interface SessionLoader {
    * Load a runtime Session from an index row: recover (with a Trace) or self-heal
    * rebuild (no Trace, under the row's session_id). Throws HttpError(409) for unrecoverable
    * cases such as a missing Workspace.
+   *
+   * `switchTo`: the ordinary load refused this Session, and this one is for a model switch to
+   * that model alone (see `SessionManager.startSwitch`). A Session whose model can no longer be
+   * reached recovers anyway — the switch sends that model nothing and hands the history over
+   * by Trace path — and one that left no Trace is rebuilt on the target directly, which is all
+   * a never-run Session's switch is; the target's own refusals are then the switch's 409s.
    */
-  load(row: SessionRow): Promise<RuntimeSession>;
+  load(row: SessionRow, opts?: { switchTo?: ModelRefDto }): Promise<RuntimeSession>;
 }
 
 /**
@@ -346,7 +369,8 @@ export function createCoreSessionLoader(
   } = {},
 ): SessionLoader {
   return {
-    async load(row: SessionRow): Promise<RuntimeSession> {
+    async load(row: SessionRow, loadOpts = {}): Promise<RuntimeSession> {
+      const { switchTo } = loadOpts;
       const agent = await createAgent({
         root,
         projectId: row.projectId,
@@ -368,7 +392,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            ...(switchTo ? { allowUnreachableModel: true } : {}),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -398,19 +425,40 @@ export function createCoreSessionLoader(
       // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
       // reading of the same row.
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
+      // A switch rebuilds it on the target: the model the row names could not be loaded, and a
+      // Session that never ran has no context on it to close.
+      const model = switchTo ?? { provider: row.provider, modelId: row.modelId };
+      if (
+        switchTo &&
+        !getModel(agent.projectConfig, { provider: switchTo.provider, model_id: switchTo.modelId })
+      ) {
+        throw switchRefusal(
+          new ModelSwitchRefusedError(
+            "model_not_configured",
+            `Model is not in the Project config: ${switchTo.provider}/${switchTo.modelId}.`,
+          ),
+          switchTo,
+        );
+      }
       try {
         return await agent.createSession({
           sessionId: row.sessionId,
           workspaceDir: row.workspace,
-          modelId: row.modelId,
-          provider: row.provider,
+          modelId: model.modelId,
+          provider: model.provider,
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
-        if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
+        if (switchTo && isMissingCredential(err)) {
+          throw switchRefusal(
+            new ModelSwitchRefusedError("model_unavailable", String(err)),
+            switchTo,
+          );
+        }
+        if (isMissingCredential(err)) throw modelCredentialMissing(model.modelId);
         throw toUnrecoverableError(err);
       }
     },
@@ -538,6 +586,13 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /**
+   * Set when the ordinary load refused this Session and it was loaded for a model switch alone
+   * (see `SessionLoader.load`'s `switchTo`): `refusal` is what the ordinary load answered, and
+   * `on` the model the runtime came up on — one it cannot reach. Until the Session moves off
+   * it, no Task or compaction runs here; each is answered with `refusal` instead.
+   */
+  stranded?: { refusal: { status: number; code: string; message: string }; on: ModelRefDto };
   status: SessionStatus;
   approvals: Approvals;
   abort: AbortController | null;
@@ -1150,6 +1205,8 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // Neither started nor queued on a runtime stranded on a model it cannot reach.
+      assertNotStranded(entry);
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
@@ -1243,6 +1300,7 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       await this.assertGoalPluginInstalled(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       const objective = args.objective;
       const started = await entry.session.runUserPromptHook?.("goal", objective, {
@@ -1392,6 +1450,8 @@ export class SessionManager {
    * material — the turn it resends already offered its text when it was first sent.
    */
   private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
+    // Every Task starts here — a retry, a queued follow-up, a background notice's delivery.
+    assertNotStranded(entry);
     const ac = new AbortController();
     entry.status = "running";
     entry.abort = ac;
@@ -1454,6 +1514,7 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       // When there's nothing to compact, core's compact() yields no messages at all: we
       // can't just return 202 and walk away, or the frontend would wait forever for a
@@ -1500,6 +1561,15 @@ export class SessionManager {
    * leaves them where they were. Usage: a drive bills to the model it started on, so the
    * switch's compaction request goes to the model that served it and the next run to the new
    * one.
+   *
+   * A Session not in memory is loaded the ordinary way first, so a refusal of the target is
+   * core's, as for any loaded Session. Only one the ordinary load refuses — its model can no
+   * longer be reached — is loaded for this switch alone (`SessionLoader.load`'s `switchTo`):
+   * with a Trace it is resumed anyway, since core then hands its history over by Trace path
+   * rather than ask that model for a summary; without one it is rebuilt on the target, and the
+   * load is the whole switch (200, or the target's 409). Such a runtime runs nothing on the
+   * model it cannot reach (`RuntimeEntry.stranded`), and one the switch did not move is not
+   * kept: the next access loads it the ordinary way and meets the ordinary refusal.
    */
   async startSwitch(
     sessionId: string,
@@ -1509,14 +1579,20 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+      const held = this.entries.get(sessionId) ?? this.deps.sessions.findById(sessionId);
+      if (held && held.provider === ref.provider && held.modelId === ref.modelId) {
         throw new HttpError(
           409,
           "same_model",
           `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
         );
+      }
+      const entry = await this.ensureEntry(sessionId, { switchTo: ref });
+      this.assertIdle(entry);
+      const from = { provider: entry.provider, modelId: entry.modelId };
+      if (from.provider === ref.provider && from.modelId === ref.modelId) {
+        // The load rebuilt a Session that left no Trace on the target: switched already.
+        return { sessionId: entry.sessionId, switched: true };
       }
       if (!entry.session.switchModel) {
         throw new HttpError(
@@ -1525,6 +1601,14 @@ export class SessionManager {
           "Switching the model is not available for this Session.",
         );
       }
+      // A runtime loaded for this switch alone that the switch did not move is dropped once
+      // nothing holds it: the next access loads it the ordinary way.
+      const dropUnmoved = (): void => {
+        if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
+        if (entry.provider !== from.provider || entry.modelId !== from.modelId) return;
+        if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
+        this.entries.delete(entry.sessionId);
+      };
       const ac = new AbortController();
       const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
       const head = gen.next();
@@ -1539,12 +1623,14 @@ export class SessionManager {
         if (first.done) return settled();
         entry.status = "compacting";
         this.publishState(entry, "compacting");
-        return this.drive(entry, resumeFrom(first.value, gen));
+        return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
       }, settled);
       let first: IteratorResult<AmspRecord, StopReason>;
       try {
         first = await head;
       } catch (err) {
+        settled();
+        dropUnmoved();
         throw switchRefusal(err, ref);
       }
       entry.lastActivityMs = Date.now();
@@ -2109,7 +2195,10 @@ export class SessionManager {
     }
   }
 
-  private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
+  private async ensureEntry(
+    sessionId: string,
+    loadOpts?: { switchTo?: ModelRefDto },
+  ): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
@@ -2144,7 +2233,21 @@ export class SessionManager {
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const session = await this.deps.loader.load(row);
+    // A switch first loads the Session the ordinary way; only a Session the ordinary load
+    // refuses is loaded for the switch alone, and stays stranded on its model until it moves.
+    let session: RuntimeSession;
+    let stranded: RuntimeEntry["stranded"];
+    try {
+      session = await this.deps.loader.load(row);
+    } catch (err) {
+      const switchTo = loadOpts?.switchTo;
+      if (switchTo === undefined || !(err instanceof HttpError)) throw err;
+      session = await this.deps.loader.load(row, { switchTo });
+      const on = runtimeModelOf(session) ?? { provider: row.provider, modelId: row.modelId };
+      if (on.provider !== switchTo.provider || on.modelId !== switchTo.modelId) {
+        stranded = { refusal: { status: err.status, code: err.code, message: err.message }, on };
+      }
+    }
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
@@ -2168,6 +2271,7 @@ export class SessionManager {
       provider: row.provider,
       modelId: row.modelId,
       session,
+      ...(stranded ? { stranded } : {}),
       status: "idle",
       approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,

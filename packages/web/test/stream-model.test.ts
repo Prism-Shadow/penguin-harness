@@ -44,6 +44,9 @@
  *   request included.
  * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
  *   and marks no model change.
+ * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
+ *   this Session) into the model-change marker; a `/model` block naming another Session stays a
+ *   Prompt.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -72,7 +75,7 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/amsp";
-import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import { buildBackgroundTaskDoneMessage, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/amsp";
 import {
   approvalKey,
@@ -546,6 +549,37 @@ describe("approvals and events", () => {
     expect(markers(child.model)).toEqual([]);
     expect(markers(m)).toHaveLength(1);
     expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
+  });
+
+  it("a switch that hands over by Trace path folds its handoff into the marker: no bubble, no Task; a /model block naming another Session is still the user's message", () => {
+    const onModel = (modelId: string) => sessionMeta({ ...meta("s1").payload, model_id: modelId });
+    const handoff = (sessionId: string) =>
+      userText(
+        buildModelSwitchMessage(
+          { sessionId, tracePath: "/data/traces/s1_001.jsonl", prevModelId: "a-1" },
+          { inPlace: true },
+        ),
+      );
+    const m = createStreamModel();
+    pushMessage(m, onModel("a-1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }));
+    pushMessage(m, toolListReady([]));
+    pushMessage(m, onModel("b-2"));
+    pushMessage(m, handoff("s1"));
+
+    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "model_change"]);
+    expect(items(m)[1]).toMatchObject({ handover: { tracePath: "/data/traces/s1_001.jsonl" } });
+    expect(m.taskOpen).toBe(false);
+
+    // A conversation /model opened names the Session it came from: that block is a Prompt.
+    const opened = createStreamModel();
+    pushMessage(opened, meta("s2"));
+    pushMessage(opened, handoff("s1"));
+    expect(items(opened).map((i) => i.kind)).toEqual(["user_text"]);
   });
 
   it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {

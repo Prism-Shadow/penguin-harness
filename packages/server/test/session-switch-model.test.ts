@@ -8,9 +8,18 @@
  * pair, each 409 code, 202 for a streamed switch and 200 for a Session that never ran — and the
  * bookkeeping the contract implies: the index row and the runtime entry move to the new model
  * (so `GET /` and the compaction threshold follow it, and a client re-reading the Session on the
- * new context's `session_meta` already finds it), stay put when the compaction fails or is aborted,
- * and usage is attributed to the model that served each request — the switch's own compaction
- * request to the previous model, the next Task to the new one.
+ * new context's `session_meta` already finds it) — by summary or, when the compaction fails, by
+ * Trace handoff — stay put when the switch is stopped, and usage is attributed to the model that
+ * served each request — the switch's own compaction request to the previous model, the next Task
+ * to the new one.
+ *
+ * A Session that is not in memory is loaded the ordinary way first, through the real loader and
+ * core: one whose model was removed from the Project config hands its history over by Trace path
+ * (202); one that left no Trace answers a target it cannot use with the target's own 409 whether
+ * its model is still configured or not, and is rebuilt on a good target (200); a load the switch
+ * did not move is not kept — the next Task meets the ordinary load's refusal. While a runtime
+ * loaded for the switch alone is still on the model it cannot reach, no Task is started or queued
+ * on it.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -26,7 +35,9 @@ import {
   sessionMeta,
   tokenUsage,
   toolListReady,
+  userText,
 } from "@prismshadow/penguin-core";
+import { buildModelSwitchMessage, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AmspRecord, StopReason, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   ModelRefDto,
@@ -38,9 +49,10 @@ import type {
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import { HttpError } from "../src/http/errors.js";
 import { compactionThresholdFor } from "../src/services/context-breakdown.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SID = "session-2026-09-16-10-00-00-aabb0007";
@@ -49,6 +61,8 @@ const A: ModelRefDto = { provider: "custom", modelId: "m-alpha" };
 const B: ModelRefDto = { provider: "custom", modelId: "m-beta" };
 /** Not in the Project config: core refuses it, and the manager answers with the refusal's code. */
 const UNKNOWN: ModelRefDto = { provider: "custom", modelId: "m-nowhere" };
+/** Configured without a key on a base URL: its client cannot be built. */
+const KEYLESS: ModelRefDto = { provider: "custom", modelId: "m-keyless" };
 const WINDOW_A = 1_000_000;
 const WINDOW_B = 200_000;
 
@@ -67,7 +81,11 @@ type SwitchBehaviour =
    * leaves: no event until the signal fires, then the stopped bootstrap is shown.
    */
   | { kind: "held" }
-  /** The compaction pair streams; `status` is how it ends. `gate` parks the compaction until it settles (or the signal fires). */
+  /**
+   * The compaction pair streams; `status` is how it ends — `completed` with the summary, a
+   * failure by Trace handoff (the switch still completes), `aborted` with no switch. `gate`
+   * parks the compaction until it settles (or the signal fires).
+   */
   | { kind: "stream"; status: StopReason; gate?: Promise<void> };
 
 interface SwitchFake extends RuntimeSession {
@@ -132,7 +150,7 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
       if (behaviour.gate) await Promise.race([behaviour.gate, aborted(opts.signal)]);
       const status: StopReason = opts.signal.aborted ? "aborted" : behaviour.status;
       yield compactionEnd({ reason: "manual", mode: "summarize", status });
-      if (status === "completed") {
+      if (status !== "aborted") {
         // The new context opens on the target: the getters follow it from here. Its opener's
         // toolset record comes first, and its session_meta — main-session, no origin — is the
         // last record on the stream.
@@ -149,12 +167,25 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
           workspace: "/tmp/w",
           source: "user",
         });
+        // No summary: the handoff names this Session's file instead.
+        if (status !== "completed") {
+          yield userText(
+            buildModelSwitchMessage(
+              { sessionId: SID, tracePath: "/tmp/traces/a.jsonl", ...prev(model) },
+              { inPlace: true },
+            ),
+          );
+        }
+        return "completed";
       }
       return status;
     },
   };
   return fake;
 }
+
+/** The handoff's previous-model fields for `model`. */
+const prev = (model: ModelRefDto) => ({ prevProvider: model.provider, prevModelId: model.modelId });
 
 describe("POST /switch-model", () => {
   let t: TestApp;
@@ -335,19 +366,6 @@ describe("POST /switch-model", () => {
     expect(row().modelId).toBe(A.modelId);
   });
 
-  it("409 compaction_not_configured: the Session has a context to close but no compaction to close it with", async () => {
-    adopt(
-      switchFake(A, {
-        kind: "throw",
-        error: new ModelSwitchRefusedError("compaction_not_configured", "no compaction here"),
-      }),
-    );
-    const res = await api.post(url, B);
-    expect(res.status).toBe(409);
-    expect(await errorCode(res)).toBe("compaction_not_configured");
-    expect(row().modelId).toBe(A.modelId);
-  });
-
   it("anything else core throws before its first event is a failure, not a refusal: 500, and the row stays", async () => {
     // An Agent State that no longer parses, a bootstrap that broke — mapped to a 409 they would
     // tell the user to configure the model, which is not what happened.
@@ -484,20 +502,30 @@ describe("POST /switch-model", () => {
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
   });
 
-  it("a failed compaction leaves the row, the entry and the attribution on the previous model", async () => {
+  it("a failed compaction still switches, by Trace handoff: the handoff follows the meta, the row moves, and the failed request bills to the previous model", async () => {
     adopt(switchFake(A, { kind: "stream", status: "fatal" }));
     const feed = listen();
     expect((await api.post(url, B)).status).toBe(202);
     await waitFor(() => feed.states().includes("idle"));
     expect((feed.messages[2]!.payload as { status: string }).status).toBe("fatal");
-    // No switch, so no new context and no session_meta.
-    expect(feed.kinds()).toEqual(["compaction_begin", "token_usage", "compaction_end"]);
-    expect(feed.rowAtEnd).toEqual([A]);
-    expect(row()).toMatchObject(A);
+    expect(feed.kinds()).toEqual([
+      "compaction_begin",
+      "token_usage",
+      "compaction_end",
+      "tool_list_ready",
+      "session_meta",
+      "text",
+    ]);
+    const handoff = parseModelSwitchMessage(
+      (feed.messages.at(-1)!.payload as { text: string }).text,
+    );
+    expect(handoff).toMatchObject({ sessionId: SID, ...prev(A) });
+    expect(feed.rowAtMeta).toEqual([B]);
+    expect(row()).toMatchObject(B);
 
-    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "still A" }] });
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
     await waitFor(() => usageModels().length === 2);
-    expect(usageModels()).toEqual([A.modelId, A.modelId]);
+    expect(usageModels()).toEqual([A.modelId, B.modelId]);
   });
 
   it("an aborted switch (POST /abort mid-compaction) ends `aborted` and leaves the row on the previous model", async () => {
@@ -668,13 +696,211 @@ describe("POST /switch-model", () => {
     expect(t.deps.errorsRepo.recent(PROJECT).map((r) => r.code)).toEqual([]);
   });
 
-  it("a failed switch tells nobody", async () => {
+  it("a stopped switch tells nobody", async () => {
     const heard: ModelRefDto[] = [];
     t.deps.manager.onModelChanged((_sessionId, model) => void heard.push(model));
-    adopt(switchFake(A, { kind: "stream", status: "fatal" }));
+    adopt(switchFake(A, { kind: "stream", status: "aborted" }));
     expect((await api.post(url, B)).status).toBe(202);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
     expect(row()).toMatchObject(A);
     expect(heard).toEqual([]);
+  });
+
+  describe("a Session not in memory, loaded for the switch by the real loader", () => {
+    /** Indexes the Session's row on A without a runtime, its Workspace an existing directory. */
+    const index = (): void => {
+      t.deps.sessionsRepo.insert({
+        sessionId: SID,
+        projectId: PROJECT,
+        agentId: "default_agent",
+        provider: A.provider,
+        modelId: A.modelId,
+        workspace: t.root,
+        approvalMode: "allow-all",
+        title: null,
+        createdAt: "2026-09-16T10:00:00.000Z",
+        lastActiveAt: "2026-09-16T10:00:00.000Z",
+      });
+    };
+    /** A Trace on A with one completed turn, as a process before a restart left it. */
+    const traceOnA = (): Promise<string> =>
+      writeTraceFile(t.root, PROJECT, "default_agent", "2026-09-16", SID, 1, [
+        sessionMeta({
+          session_id: SID,
+          provider: A.provider,
+          model_id: A.modelId,
+          model_context_window: WINDOW_A,
+          system_prompt: "sp",
+          agent_state: "/tmp/a",
+          workspace: t.root,
+          source: "user",
+        }),
+        userText("q1"),
+        requestBegin(),
+        assistantText("a1"),
+        requestEnd("completed"),
+        tokenUsage(counts(42), counts(42)),
+      ]);
+    /** Configures B, a keyless KEYLESS (its client cannot be built), and A only when `withA`. */
+    const configure = async (withA: boolean): Promise<void> => {
+      const row = (model: ModelRefDto, apiKey?: string) => ({
+        ...model,
+        ...(apiKey ? { apiKey } : {}),
+        baseUrl: "https://models.example/v1",
+        clientType: "openai",
+        contextWindow: WINDOW_B,
+      });
+      const put = await api.put(`/api/projects/${PROJECT}/models`, {
+        defaultModel: B,
+        models: [...(withA ? [row(A, "sk-alpha")] : []), row(B, "sk-beta"), row(KEYLESS)],
+      });
+      expect(put.status).toBe(200);
+    };
+    /** Removes A from the Project config. */
+    const removeA = (): Promise<void> => configure(false);
+
+    it("a model removed from the config is sent nothing: 202, B's meta then the handoff naming A's Trace file, and the row on B", async () => {
+      const file = await traceOnA();
+      index();
+      await removeA();
+      const feed = listen();
+
+      expect((await api.post(url, B)).status).toBe(202);
+      await waitFor(() => feed.states().includes("idle"));
+
+      expect(feed.kinds()).not.toContain("compaction_begin");
+      expect(feed.kinds().slice(-2)).toEqual(["session_meta", "text"]);
+      const handoff = parseModelSwitchMessage(
+        (feed.messages.at(-1)!.payload as { text: string }).text,
+      );
+      expect(handoff).toEqual({ sessionId: SID, tracePath: file, workspace: t.root, ...prev(A) });
+      expect(row()).toMatchObject(B);
+      expect(usageModels()).toEqual([]);
+    });
+
+    it("a load the switch did not move is not kept: refused for its target, the next Task meets the ordinary load's 409", async () => {
+      await traceOnA();
+      index();
+      await removeA();
+
+      const refused = await api.post(url, UNKNOWN);
+      expect(refused.status).toBe(409);
+      expect(await errorCode(refused)).toBe("model_not_configured");
+      const task = await api.post(`/api/sessions/${SID}/tasks`, {
+        input: [{ type: "text", text: "still on A?" }],
+      });
+      expect(task.status).toBe(409);
+      expect(await errorCode(task)).toBe("session_unrecoverable");
+      expect(row()).toMatchObject(A);
+    });
+
+    it.each([
+      {
+        model: "on a model still configured",
+        withA: true,
+        target: UNKNOWN,
+        code: "model_not_configured",
+      },
+      {
+        model: "on a model still configured",
+        withA: true,
+        target: KEYLESS,
+        code: "model_unavailable",
+      },
+      { model: "on a model now gone", withA: false, target: UNKNOWN, code: "model_not_configured" },
+      { model: "on a model now gone", withA: false, target: KEYLESS, code: "model_unavailable" },
+    ])(
+      "a Session that left no Trace, $model, answers a target it cannot use with 409 $code",
+      async ({ withA, target, code }) => {
+        index();
+        await configure(withA);
+
+        const res = await api.post(url, target);
+        expect(res.status).toBe(409);
+        expect(await errorCode(res)).toBe(code);
+        expect(row()).toMatchObject(A);
+      },
+    );
+
+    it("a Session that left no Trace is rebuilt on the target, though the model it was created on is gone: 200", async () => {
+      index();
+      await removeA();
+
+      const res = await api.post(url, B);
+      expect(res.status).toBe(200);
+      const { session } = (await res.json()) as SessionResponse;
+      expect(session).toMatchObject({ sessionId: SID, ...B });
+      expect(row()).toMatchObject(B);
+    });
+  });
+});
+
+describe("POST /switch-model on a Session the ordinary load refuses", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  /** What each load was asked for: `{}` the ordinary load, `{ switchTo }` the switch's own. */
+  const loads: Array<{ switchTo?: ModelRefDto }> = [];
+  let release: () => void = () => {};
+
+  beforeEach(async () => {
+    loads.length = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The ordinary load refuses the Session (its model is gone); the switch's own load hands
+    // back a runtime still on that model, whose switch waits and is then stopped.
+    const loader: SessionLoader = {
+      async load(_row, opts) {
+        loads.push(opts ?? {});
+        if (!opts?.switchTo) {
+          throw new HttpError(409, "session_unrecoverable", "The Session's model is gone.");
+        }
+        return switchFake(A, { kind: "stream", status: "aborted", gate });
+      },
+    };
+    t = await createTestApp({ loader });
+    const { cookie } = await provisionUser(t.app, "stranded");
+    api = apiClient(t.app, cookie);
+    t.deps.sessionsRepo.insert({
+      sessionId: SID,
+      projectId: "stranded-default_project",
+      agentId: "default_agent",
+      provider: A.provider,
+      modelId: A.modelId,
+      workspace: "/tmp/w",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-09-16T10:00:00.000Z",
+      lastActiveAt: "2026-09-16T10:00:00.000Z",
+    });
+  });
+  afterEach(async () => {
+    release();
+    await t.cleanup();
+  });
+
+  it("no Task runs on the runtime loaded for the switch: neither started nor queued while it switches, each answered with the ordinary load's 409, and nothing is kept once the switch stops", async () => {
+    const errorCode = async (res: Response): Promise<string> =>
+      ((await res.json()) as { error: { code: string } }).error.code;
+    expect((await api.post(`/api/sessions/${SID}/switch-model`, B)).status).toBe(202);
+    expect(loads).toEqual([{}, { switchTo: B }]);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "compacting");
+
+    const queued = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "and then this" }],
+      queueIfBusy: true,
+    });
+    expect(queued.status).toBe(409);
+    expect(await errorCode(queued)).toBe("session_unrecoverable");
+
+    release();
+    await waitFor(() => t.deps.manager.statusOf(SID) !== "compacting");
+    const after = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "now" }],
+    });
+    expect(after.status).toBe(409);
+    expect(await errorCode(after)).toBe("session_unrecoverable");
+    // That answer came from a fresh ordinary load: the switch's runtime was not kept.
+    expect(loads).toEqual([{}, { switchTo: B }, {}]);
   });
 });

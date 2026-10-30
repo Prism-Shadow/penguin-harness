@@ -55,6 +55,7 @@ import {
   ToolCallIdAllocator,
   effectiveMaxContextLength,
 } from "./llm/index.js";
+import { unreachableModel } from "./llm/unreachable-model.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,
@@ -106,6 +107,7 @@ import type {
   ApproveFn,
   CommandPolicyConfig,
   GenerativeModelConfig,
+  LLMInterface,
   ProxyEnvPolicy,
   SpawnConfiner,
   SubagentHandle,
@@ -276,6 +278,15 @@ export interface ResumeSessionOptions {
   /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
+  /**
+   * Resume even when the model the Trace names can no longer be reached — removed from the
+   * Project config, or with a client that cannot be built (a deleted key) — where resume
+   * otherwise throws. For a host that resumes the Session only to switch it to another model:
+   * the switch sends that model nothing and hands the history over by Trace path (see
+   * Session.switchModel). The context it leaves is never opened (no MCP connect, no history),
+   * and a Session that is run on it instead ends every request `fatal` with that reason.
+   */
+  allowUnreachableModel?: boolean;
 }
 
 /**
@@ -864,17 +875,31 @@ export class Agent {
     }
 
     // The Model carries over from the Trace (the latest file's paired reference) and must still
-    // be present in the Project config.
+    // be present in the Project config, with a client that can be built — unless the caller
+    // resumes only to switch away from it (see ResumeSessionOptions.allowUnreachableModel).
     const ref: ModelRef = { provider: meta.provider, model_id: meta.model_id };
-    const modelEntry = getModel(this.projectConfig, ref);
-    if (!modelEntry) {
-      throw new Error(
-        `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
-      );
+    const configured = getModel(this.projectConfig, ref);
+    let unreachable: string | undefined;
+    if (!configured) {
+      unreachable = `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`;
+      if (!opts.allowUnreachableModel) throw new Error(unreachable);
+    } else {
+      // Same check as createSession (see checkEntryClient): a key deleted since the Session was
+      // created surfaces here, at resume.
+      try {
+        checkEntryClient(configured, this.projectConfig, opts);
+      } catch (err) {
+        if (!opts.allowUnreachableModel) throw err;
+        unreachable = err instanceof Error ? err.message : String(err);
+      }
     }
-    // Same check as createSession (see checkEntryClient): a key deleted since the Session was
-    // created surfaces here, at resume.
-    checkEntryClient(modelEntry, this.projectConfig, opts);
+    // An unconfigured model's context is assembled on what its own Trace recorded of it.
+    const modelEntry: ModelEntry = configured ?? {
+      ...ref,
+      ...(typeof meta.model_context_window === "number"
+        ? { context_window: meta.model_context_window }
+        : {}),
+    };
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -906,7 +931,7 @@ export class Agent {
       modelEntry,
       resumed.contextClosed ? {} : { systemPrompt: meta.system_prompt },
     );
-    const rt = this.buildRuntime(spec, context);
+    const rt = this.buildRuntime(spec, context, { validateClient: unreachable === undefined });
 
     // History is injected once into the freshly built context object as part of the lazy
     // bootstrap (setHistory is only used on resume); Session cumulative Token counts carry
@@ -915,8 +940,9 @@ export class Agent {
     // throw a raw SyntaxError during conversion, and the message must indicate Trace
     // history corruption rather than a regular runtime error. With the bootstrap being
     // lazy, that corruption now surfaces on the first run instead of at resume time —
-    // the price of a resume that no longer blocks on MCP connects.
-    const bootstrap: typeof rt.bootstrap = async (opts) => {
+    // the price of a resume that no longer blocks on MCP connects. A model that cannot be
+    // reached opens nothing at all: its context gets the stand-in that sends nothing.
+    const replayed: typeof rt.bootstrap = async (opts) => {
       const r = await rt.bootstrap(opts);
       if (resumed.history.length > 0) {
         try {
@@ -930,6 +956,9 @@ export class Agent {
       }
       return r;
     };
+    const reason = unreachable;
+    const bootstrap: SessionConfig["bootstrap"] =
+      reason === undefined ? replayed : async () => ({ llm: unreachableModel(reason) });
 
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
@@ -958,8 +987,19 @@ export class Agent {
       }
     }
 
-    return this.newSession(spec, context, rt, trace, {
+    // Nor does any other request reach it: a bare request (a title) asked of the Session
+    // before it moves gets the stand-in too, and the ordinary one once it is on another model.
+    let session: Session | undefined;
+    const bareOffTheUnreachable =
+      (r: string): (() => LLMInterface) =>
+      () =>
+        session !== undefined &&
+        !sameModelRef({ provider: session.provider, model_id: session.modelId }, ref)
+          ? rt.createBareLLM()
+          : unreachableModel(r);
+    session = this.newSession(spec, context, rt, trace, {
       bootstrap,
+      ...(reason !== undefined ? { createBareLLM: bareOffTheUnreachable(reason) } : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -980,6 +1020,7 @@ export class Agent {
       },
       resumedHistory: resumed.renderMessages,
     });
+    return session;
   }
 
   /**
@@ -1083,7 +1124,11 @@ export class Agent {
    * Assembles a Session's runtime components (shared by createSession and resumeSession)
    * around the context it starts in — see {@link SessionRuntime} for what each part does.
    */
-  private buildRuntime(spec: SessionSpec, initial: AssembledContext): SessionRuntime {
+  private buildRuntime(
+    spec: SessionSpec,
+    initial: AssembledContext,
+    opts: { validateClient?: boolean } = {},
+  ): SessionRuntime {
     const { sessionId, workspaceDir, subagentDepth } = spec;
     // The context the Session is running: the initial one, then whatever `openNextContext` last
     // opened (or a never-run Session's model switch re-assembled, see `modelSwitch` below). Its
@@ -1538,14 +1583,17 @@ export class Agent {
     // is missing (e.g. OpenAI-protocol models without apiKey/OPENAI_API_KEY), and hosts
     // map that into their clean "credential missing" error before any Session or Trace
     // exists. Constructing the bare LLM (same credentials, no tools, no network) keeps
-    // that throw here; the instance is discarded.
-    createBareLLM();
+    // that throw here; the instance is discarded. A resume that was allowed an unreachable
+    // model (see ResumeSessionOptions.allowUnreachableModel) is the one runtime built on a
+    // context whose client cannot be built: it never builds one.
+    if (opts.validateClient !== false) createBareLLM();
 
     // The composition layer's half of an in-session model switch (see Session.switchModel):
     // the target is validated exactly as a creation model is — configured on disk, credential
-    // present at client construction — before anything is sent or recorded; a Session that
-    // never ran has its first context assembled again on the target, which the bootstrap then
-    // opens like any first context.
+    // present at client construction — before anything is sent or recorded, and the model the
+    // Session is on is asked the same question before it is sent the summary request; a
+    // Session that never ran has its first context assembled again on the target, which the
+    // bootstrap then opens like any first context.
     const modelSwitch: ModelSwitchSupport = {
       validate: async (ref) => {
         const entry = await this.modelEntryOnDisk(ref);

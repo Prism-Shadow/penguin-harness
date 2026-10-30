@@ -45,7 +45,11 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import { buildBackgroundTaskDoneMessage, buildHandoffMessage } from "@prismshadow/amsp/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildHandoffMessage,
+  buildModelSwitchMessage,
+} from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
@@ -885,5 +889,42 @@ describe("messages windowed reads", () => {
     expect([...first.messages, ...older.messages, ...afterSwitch.messages]).toEqual(
       await service.readMessages(P, A, S),
     );
+  });
+
+  it("a switch that handed over by Trace path opens no window of its own: like a summary, its handoff closes the window before", async () => {
+    // Shard 1 on m1, its summary request failed; shard 2 on m2 opens with the handoff naming
+    // this Session and shard 1, then two turns.
+    const shard1 = await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload({ model_id: "m1" })),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      at(
+        "2026-07-20T10:02:00.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 102, turns: 2 }),
+      ),
+      at(
+        "2026-07-20T10:02:04.000Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }),
+      ),
+    ]);
+    const handoff = buildModelSwitchMessage(
+      { sessionId: S, tracePath: shard1, prevProvider: "custom", prevModelId: "m1" },
+      { inPlace: true },
+    );
+    await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
+      sessionMeta(metaPayload({ provider: "other", model_id: "m2" })),
+      at("2026-07-20T10:02:05.000Z", userText(handoff)),
+      ...turn(3, 3, 3000),
+      ...turn(4, 4, 4000),
+    ]);
+
+    const afterSwitch = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    expect(userTexts(afterSwitch.messages)).toEqual(["q3", "q4"]);
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(afterSwitch.before!)!,
+      limit: 1,
+    });
+    expect(userTexts(older.messages)).toEqual(["q2", handoff]);
   });
 });
