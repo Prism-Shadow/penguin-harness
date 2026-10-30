@@ -75,6 +75,7 @@ import {
   initialScanState,
   isSkeletonMessage,
   mergedIntervalMs,
+  MESSAGE_WINDOW_FRAME_MAX_BYTES,
   planMeatFrames,
   scanMessages,
   serializePrefix,
@@ -93,7 +94,6 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { MESSAGE_WINDOW_FRAME_MAX_BYTES } from "./message-window.js";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";

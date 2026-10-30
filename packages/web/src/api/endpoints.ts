@@ -264,7 +264,7 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, apiRequest, ApiError } from "./client";
+import { apiFetch, apiFetchWithMeta, apiFetchStream, ApiError } from "./client";
 import { S } from "../lib/strings";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
@@ -1312,24 +1312,12 @@ export async function getMessagesFrames(
         : page.kind === "before"
           ? `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`
           : "";
-  const response = await apiRequest(
+  const response = await apiFetchStream(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages/frames${qs}`,
   );
-  if (!response.ok || response.body === null) {
-    const status = response.status;
-    let code = "http_error";
-    let message = S.errors.networkError;
-    try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
-    } catch {
-      // A non-JSON error body: the generic code stands.
-    }
-    throw new ApiError(status, code, message);
-  }
   const headerDate = Date.parse(response.headers.get("date") ?? "");
   const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  if (response.body === null) throw new ApiError(0, "network_error", S.errors.networkError);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let carry = "";

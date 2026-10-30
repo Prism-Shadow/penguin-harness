@@ -28,9 +28,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
 import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
 import type { ChatItem, ToolCallItem } from "../src/lib/amsp/stream-model";
-import type { MessagesPageQuery } from "../src/lib/amsp/stream-controller";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
-import type { StreamController } from "../src/lib/amsp/stream-controller";
+import type {
+  MessagesPageQuery,
+  StreamController,
+} from "../src/lib/amsp/stream-controller";
 import type { MessagesHistoryFrame } from "../src/api/endpoints";
 import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/amsp";
 import type { AmspRecord, SessionStatus } from "@prismshadow/amsp";
