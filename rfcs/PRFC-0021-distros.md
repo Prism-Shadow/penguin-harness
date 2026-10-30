@@ -23,9 +23,9 @@ Discussions of the distribution surface need one shared set of nouns for "how th
 
 A read-only survey compared the channels facet by facet and found them diverging on facts nobody records: the npm package and the release tarball ship a pushed-CLI loader, the Docker image and the desktop application do not; the harness record is written only when a hot push arrives or when a machine installs from a peer, so the other channels' roots start from "no record". The divergence is the current state; the defect lies in how it had to be found — from the code up, because no earlier document held the list.
 
-### Two RFCs need this list as a premise
+### Why the list is written down
 
-Two RFCs that follow the same direction — harness meta always present (PRFC-0023) chief among them — make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the lists drift.
+The RFCs that follow this direction — harness meta always present (PRFC-0023) chief among them — make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the lists drift. This RFC is that list: it predates them and defines the nouns they cite.
 
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
