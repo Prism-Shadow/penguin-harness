@@ -836,12 +836,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         // One entry per call into the App of the moment; a stream call's answer rides its
         // Request in (socket/stream-answer.ts), so its route answers it directly.
         const entered = (request: Request): Promise<Response> => {
-          const http = inner.api
-            .business()
-            ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
-              "HttpModule",
-              "http",
-            );
+          // A call's entry resolves the App of the moment. A DISPOSED App has emptied its
+          // module table: business() still answers, api() throws — the replaced-shell state
+          // this branch exists for (a push's grace window, a re-assembly caught mid-swap) —
+          // so a lookup that throws is the same "no App to enter" as one that answers
+          // undefined, and never the transport's 500 for the App's own errors (serve.ts).
+          let http: { fetchAs(userId: string, request: Request): Promise<Response> } | undefined;
+          try {
+            http = inner.api
+              .business()
+              ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
+                "HttpModule",
+                "http",
+              );
+          } catch {
+            http = undefined;
+          }
           if (http === undefined) {
             return Promise.resolve(
               Response.json(
