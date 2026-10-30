@@ -49,7 +49,12 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
+import {
+  cliLoaderFor,
+  ensureCliShim,
+  resolveCli,
+  shimFromResolution,
+} from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -254,7 +259,19 @@ export async function bootAppDeps(
   // Hoisted above the services so its registry can be populated before anything boots
   // against it. index.ts builds both and hands them in (hmrMain owns them there); a test
   // that boots without an entry gets the same pair here.
-  const hmr = host ?? new HmrHost<PlatformApi>(config.root, packagedPlatform);
+  const hmr =
+    host ??
+    new HmrHost<PlatformApi>(
+      config.root,
+      packagedPlatform,
+      cliLoaderFor({
+        entry: config.cliEntry ?? null,
+        execArgs: config.cliLaunch?.execArgs ?? [],
+        checkout: config.cliLaunch?.checkout ?? null,
+        origin: config.cliLaunch?.origin ?? null,
+        unavailable: config.cliLaunch?.unavailable ?? null,
+      }),
+    );
   // The default replace does what index.ts's does: point the boot at the new generation's
   // instance, so what createApp resolves from `boot.tree` is the current generation's.
   let booted: ServerBoot | null = null;
@@ -301,10 +318,10 @@ export async function bootAppDeps(
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
   // Which entry `penguin` is, answered once by the shared procedure rather than privately
-  // here: the loader of a pushed CLI when this root holds one, else this server's own entry,
-  // and that entry with the fault named when resolution faults. Asked pre-boot for the same
-  // reason the shim is written pre-boot — it describes this installation, not a state a push
-  // can change under a running App.
+  // here: the entry the record names when this root holds a pushed CLI, else this server's
+  // own entry, and that entry with the fault named when resolution faults. Asked pre-boot
+  // for the same reason the shim is written pre-boot — it describes this installation, not
+  // a state a push can change under a running App.
   const ownCli = {
     entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
