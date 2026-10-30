@@ -22,7 +22,12 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir, agentStateDir, defaultAgentsMd, defaultSystemConfig } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  agentStateDir,
+  defaultAgentsMd,
+  defaultSystemConfig,
+} from "@prismshadow/penguin-core";
 import { PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -63,7 +68,10 @@ export function definitionEntry(
     const parts = rel.split("/");
     // Dot-prefixed entries are the Agent's runtime state or install staging — the vault
     // above all: a secret never travels in a package.
-    if (parts.length === 2 && (RUNTIME_STATE_DIRS.includes(parts[1]!) || parts[1]!.startsWith("."))) {
+    if (
+      parts.length === 2 &&
+      (RUNTIME_STATE_DIRS.includes(parts[1]!) || parts[1]!.startsWith("."))
+    ) {
       return null;
     }
     return { state: "state", rel };
@@ -95,16 +103,15 @@ export async function readAgentManifest(
     const v = m[key];
     if (v === undefined) return undefined;
     if (typeof v !== "string" || v.length === 0 || v.length > 200) {
-      throw new AgentPackageError(`${AGENT_MANIFEST}: ${key} must be a string of 1–200 characters.`);
+      throw new AgentPackageError(
+        `${AGENT_MANIFEST}: ${key} must be a string of 1–200 characters.`,
+      );
     }
     return v;
   };
   let filesList: string[] | undefined;
   if (m.files !== undefined) {
-    if (
-      !Array.isArray(m.files) ||
-      !m.files.every((f) => typeof f === "string" && f.length > 0)
-    ) {
+    if (!Array.isArray(m.files) || !m.files.every((f) => typeof f === "string" && f.length > 0)) {
       throw new AgentPackageError(`${AGENT_MANIFEST}: files must be a list of paths.`);
     }
     filesList = m.files as string[];
@@ -242,12 +249,19 @@ export async function copyAgentPackage(opts: {
   if (manifest?.files !== undefined) {
     for (const wanted of manifest.files) {
       if (!opts.files.has(wanted)) {
-        throw new AgentPackageError(`${AGENT_MANIFEST} lists '${wanted}', which the package does not carry.`);
+        throw new AgentPackageError(
+          `${AGENT_MANIFEST} lists '${wanted}', which the package does not carry.`,
+        );
       }
     }
   }
   const dir = agentDir(opts.root, opts.projectId, agentId);
-  if (await fs.access(dir).then(() => true, () => false)) {
+  if (
+    await fs.access(dir).then(
+      () => true,
+      () => false,
+    )
+  ) {
     throw new AgentPackageError(`an Agent named '${agentId}' already exists in this project.`);
   }
   const copied: string[] = [];
@@ -257,9 +271,7 @@ export async function copyAgentPackage(opts: {
     const entry = definitionEntry(rel);
     if (entry === null) continue;
     const file =
-      entry.state === "top"
-        ? path.join(dir, entry.file)
-        : path.join(dir, ...entry.rel.split("/"));
+      entry.state === "top" ? path.join(dir, entry.file) : path.join(dir, ...entry.rel.split("/"));
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, bytes);
     copied.push(rel);
@@ -272,10 +284,7 @@ export async function copyAgentPackage(opts: {
   if (!hasConfig) {
     const file = agentStateDir(opts.root, opts.projectId, agentId);
     await fs.mkdir(file, { recursive: true });
-    await fs.writeFile(
-      path.join(file, "system_config.yaml"),
-      stringifyYaml(defaultSystemConfig()),
-    );
+    await fs.writeFile(path.join(file, "system_config.yaml"), stringifyYaml(defaultSystemConfig()));
     copied.push("system_config.yaml");
   }
   if (!hasAgentsMd) {

@@ -434,7 +434,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // this Project's agents/ — no install scripts, no credentials, nothing executed.
     const kind = body.kind;
     if (kind !== undefined && kind !== "plugin" && kind !== "agent") {
-      throw new HttpError(400, "bad_request", "kind must be \"plugin\" or \"agent\".");
+      throw new HttpError(400, "bad_request", 'kind must be "plugin" or "agent".');
     }
     const source = sourceOf(body.specifier);
     const machineId = machineOf(body.machineId);
@@ -542,9 +542,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         // npm semantics apply: the package (with its dependencies) goes into the prefix,
         // the copy below reads it back from there — so a deleted Agent directory can be
         // re-copied from the prefix later.
-        await viaNpm(() =>
-          deps.packages.installFiles(deps.root, Object.fromEntries(pkg.files)),
-        );
+        await viaNpm(() => deps.packages.installFiles(deps.root, Object.fromEntries(pkg.files)));
         const dir = installedPackageDir(pluginsPrefix(deps.root), pkg.name);
         const copy = await copyAgentPackage({
           root: deps.root,
@@ -557,7 +555,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           }
           throw err;
         });
-        return c.json(await answer(projectId, { name: pkg.name, version: null }, { agent: copy }), 201);
+        return c.json(
+          await answer(projectId, { name: pkg.name, version: null }, { agent: copy }),
+          201,
+        );
       }
       // No package.json: the definition files stand alone. Nothing goes into the prefix —
       // the copy IS the whole install; there is no package here for npm to resolve or a
@@ -573,7 +574,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         }
         throw err;
       });
-      return c.json(await answer(projectId, { name: pkg.name, version: null }, { agent: copy }), 201);
+      return c.json(
+        await answer(projectId, { name: pkg.name, version: null }, { agent: copy }),
+        201,
+      );
     }
     const archive = await parsePluginArchive(bytes);
     // The prefix resolves first: a zip under a shipped module's name would replace it.

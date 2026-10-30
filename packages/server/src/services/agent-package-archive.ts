@@ -88,10 +88,14 @@ export async function parseAgentPackageArchive(archive: Uint8Array): Promise<Age
       throw invalid(err instanceof Error ? err.message : String(err));
     }
     if (name.split("/").includes("node_modules")) {
-      throw invalid(`node_modules is not part of a package — installing it resolves the dependencies: ${name}`);
+      throw invalid(
+        `node_modules is not part of a package — installing it resolves the dependencies: ${name}`,
+      );
     }
     if (name.split("/").at(-1) === ".npmrc") {
-      throw invalid(`.npmrc is not part of a package — it would configure npm on the server: ${name}`);
+      throw invalid(
+        `.npmrc is not part of a package — it would configure npm on the server: ${name}`,
+      );
     }
   }
   const names = files.map(([name]) => name);
@@ -124,7 +128,9 @@ export async function parseAgentPackageArchive(archive: Uint8Array): Promise<Age
       throw invalid("package.json is not valid JSON.");
     }
     if (typeof parsed.name !== "string" || !PACKAGE_NAME.test(parsed.name)) {
-      throw invalid("package.json must name the package with a valid npm name (`name` or `@scope/name`).");
+      throw invalid(
+        "package.json must name the package with a valid npm name (`name` or `@scope/name`).",
+      );
     }
     const keywords = Array.isArray(parsed.keywords)
       ? parsed.keywords.filter((k): k is string => typeof k === "string")
@@ -159,7 +165,9 @@ export async function parseAgentPackageArchive(archive: Uint8Array): Promise<Age
   const dirName = prefix === "" ? undefined : prefix.replace(/\/$/, "");
   const agentId = agentManifest?.id ?? name?.split("/").pop() ?? dirName ?? "agent";
   if (!PLUGIN_NAME_PATTERN.test(agentId)) {
-    throw invalid(`the Agent id '${agentId}' is not a usable name: letters, digits, "_" and "-" only.`);
+    throw invalid(
+      `the Agent id '${agentId}' is not a usable name: letters, digits, "_" and "-" only.`,
+    );
   }
   const out: AgentPackageArchive = {
     name: name ?? agentId,

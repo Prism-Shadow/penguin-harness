@@ -112,7 +112,7 @@ describe("agent packages", () => {
           Object.entries(definition).map(([k, v]) => [k.replace(/^my-agent\//, ""), v]),
         ),
         // The parts an Agent package never carries, planted to prove the copy drops them.
-        "agent_state/.vault.toml": "TOKEN = \"secret\"\n",
+        "agent_state/.vault.toml": 'TOKEN = "secret"\n',
         "memory/user/MEMORY.md": "# memory\n",
         "traces/v1.jsonl": "{}\n",
         "snapshots/v1.tar.gz": "bytes",
@@ -183,7 +183,12 @@ describe("agent packages", () => {
       await fs.mkdir(path.join(dir, "agent_state"), { recursive: true });
       await fs.writeFile(path.join(dir, "agent_state", "system_config.yaml"), "version: 7\n");
       await expect(
-        copyAgentPackage({ root, projectId: "default_project", agentId: "my-agent", files: unpacked(definition) }),
+        copyAgentPackage({
+          root,
+          projectId: "default_project",
+          agentId: "my-agent",
+          files: unpacked(definition),
+        }),
       ).rejects.toThrow(/already exists/);
       // The lived definition is untouched.
       await expect(
@@ -209,7 +214,12 @@ describe("agent packages", () => {
         skill("review", "reviews code"),
       );
       const before = await agentPackageFiles(dir);
-      const out = await reinstallAgentPackage({ root, projectId: "default_project", name: "reviewer", dir });
+      const out = await reinstallAgentPackage({
+        root,
+        projectId: "default_project",
+        name: "reviewer",
+        dir,
+      });
       expect(out.agentId).toBe("reviewer");
       // The copy in the Project is byte-for-byte the package's definition files.
       const copied = path.join(root, "default_project", "agents", "reviewer");
