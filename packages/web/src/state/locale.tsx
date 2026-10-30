@@ -45,7 +45,7 @@ export function resolveSystemLocale(language: string | undefined): Locale {
  * resolves through resolveSystemLocale into one of the two before it ever reaches the document.
  */
 export function documentLangFor(locale: Locale): string {
-  return locale === "zh" ? "zh-CN" : "en";
+  return locale === "en" ? "en" : "zh-CN";
 }
 
 /**
