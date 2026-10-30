@@ -119,7 +119,7 @@ function ShortcutRow({
         {bindings.map((chord) => (
           <span
             key={`${chord.mod}/${chord.ctrl}/${chord.alt}/${chord.shift}/${chord.code}`}
-            className="flex items-center gap-0.5"
+            className="flex items-center gap-1"
           >
             <ChordKbd chord={chord} />
             <IconButton
