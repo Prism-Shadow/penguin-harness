@@ -20,7 +20,10 @@ import { withImagesByReference } from "./trace-images.js";
 import type { MessagesPageRequest } from "./trace-service.js";
 
 export interface SessionHistoryDeps {
-  traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;
+  traceService: Pick<
+    Traces,
+    "readMessages" | "readMessagesPage" | "readMessagesFrames" | "readTraceImage"
+  >;
   manager: Pick<
     SessionManager,
     "statusOf" | "liveFragments" | "pendingInputs" | "pendingBootstrap"
@@ -180,6 +183,45 @@ export async function sessionMessages(
     messages: appendPendingInputs(messages, pendingInputs),
     ...(live !== undefined ? { live } : {}),
   } satisfies MessagesResponse);
+}
+
+/**
+ * `GET …/sessions/:id/messages/frames`: the streamed-history read (see
+ * TraceService.readMessagesFrames and MessagesHistoryFrame). The frames arrive as
+ * NDJSON — one JSON object per line, `application/x-ndjson` — written line by line,
+ * so a client parses and lays out the skeleton while the meat frames are still being
+ * produced. Non-2xx answers stay the ordinary JSON error envelope (the route's error
+ * handling runs before this handler writes), so a frames consumer's failure path is
+ * the same one every other call takes.
+ */
+export async function sessionMessagesFrames(
+  c: Context,
+  deps: SessionHistoryDeps,
+  row: SessionRow,
+  imageBase: string,
+): Promise<Response> {
+  void imageBase;
+  const page = messagesPageQuery(c);
+  // The live tail rides the `page` frame on tail/full reads, exactly as the JSON read
+  // attaches it (a `before` page is immutable history and never carries it).
+  let live: unknown;
+  if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
+    live = {
+      cursor: deps.channels.get(row.sessionId).lastEventId,
+      fragments: deps.manager.liveFragments(row.sessionId),
+    };
+  }
+  const frames = await deps.traceService.readMessagesFrames(row.projectId, row.agentId, row.sessionId, page ?? {
+    kind: "tail",
+    limit: MESSAGES_PAGE_LIMIT_MAX,
+  });
+  if (live !== undefined && frames[0]?.type === "page") frames[0].live = live;
+  const lines = frames.map((f) => JSON.stringify(f));
+  return c.body(`${lines.join("\n")}\n`, 200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "x-content-type-options": "nosniff",
+    "cache-control": "no-store",
+  });
 }
 
 /**

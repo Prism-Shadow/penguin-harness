@@ -46,7 +46,7 @@ import type {
   MessagesPageRequest,
   MessagesPageResult,
 } from "../services/trace-service.js";
-import type { MessageCursor } from "../services/message-window.js";
+import type { MessageCursor, MessagesHistoryFrame } from "../services/message-window.js";
 
 /** TraceIndexStore: the mechanism TraceIndexRepo implements. */
 @Interface()
@@ -143,6 +143,14 @@ export abstract class Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult>;
+
+  /** Streamed-history read (GET /messages?frames=1): NDJSON frames, see MessagesHistoryFrame. */
+  abstract readMessagesFrames(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+  ): Promise<MessagesHistoryFrame[]>;
   abstract forkSessionTrace(
     projectId: string,
     agentId: string,

@@ -81,6 +81,7 @@ import type {
   MemoryScopeExport,
   MeResponse,
   MessagesResponse,
+  MessagesHistoryFrameDto,
   MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   MessagingChannel,
@@ -263,7 +264,8 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import { apiFetch, apiFetchWithMeta, ApiError } from "./client";
+import { S } from "../lib/strings";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam } from "../lib/session-grouping";
@@ -1280,6 +1282,74 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
 };
+
+/** One NDJSON line of the streamed history read (see MessagesHistoryFrameDto). */
+export type MessagesHistoryFrame = MessagesHistoryFrameDto;
+
+/**
+ * Consumes the streamed history read (`GET /messages/frames`): the same windowed read
+ * as getMessages, answered as NDJSON frames — the page envelope, the whole transcript's
+ * skeleton (every unit opener), then the window's meat at group boundaries — handed to
+ * `onFrame` as each line arrives, so a long conversation lays out its rows long before
+ * the last frame lands. Resolves with the `Date` header's reading (the server's clock,
+ * the same value getMessages reports) once the body is fully consumed.
+ *
+ * Read directly over HTTP (the frames answer is read as it arrives; the socket path
+ * answers whole bodies only, and a frames read is the one history call where waiting
+ * for the whole answer is exactly what the protocol exists to avoid). Non-2xx answers
+ * are the ordinary JSON error envelope, mapped through the same ApiError rules.
+ */
+export async function getMessagesFrames(
+  sessionId: string,
+  page: MessagesPageQuery | undefined,
+  onFrame: (frame: MessagesHistoryFrame) => void,
+): Promise<{ serverNowMs: number | null }> {
+  const qs =
+    page === undefined
+      ? ""
+      : page.kind === "tail"
+        ? `?tailLimit=${page.limit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages/frames${qs}`,
+    { credentials: "same-origin" },
+  );
+  if (!response.ok || response.body === null) {
+    const status = response.status;
+    let code = "http_error";
+    let message = S.errors.networkError;
+    try {
+      const body = (await response.json()) as { error?: { code?: string; message?: string } };
+      if (body.error?.code) code = body.error.code;
+      if (body.error?.message) message = body.error.message;
+    } catch {
+      // A non-JSON error body: the generic code stands.
+    }
+    throw new ApiError(status, code, message);
+  }
+  const headerDate = Date.parse(response.headers.get("date") ?? "");
+  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let carry = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    carry += decoder.decode(value, { stream: true });
+    for (;;) {
+      const nl = carry.indexOf("\n");
+      if (nl < 0) break;
+      const line = carry.slice(0, nl).trim();
+      carry = carry.slice(nl + 1);
+      if (line.length === 0) continue;
+      onFrame(JSON.parse(line) as MessagesHistoryFrame);
+    }
+  }
+  carry += decoder.decode();
+  const tail = carry.trim();
+  if (tail.length > 0) onFrame(JSON.parse(tail) as MessagesHistoryFrame);
+  return { serverNowMs };
+}
 
 // Task execution, approval, abort, compaction ------------------------------------------------------
 

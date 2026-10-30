@@ -56,6 +56,7 @@ import {
 } from "./stream-model";
 import type { ChatItem, StreamModel } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
+import type { MessagesHistoryFrame } from "../../api/endpoints";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
 export interface PendingApproval {
@@ -75,6 +76,21 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
   const seq = Number.parseInt(id.slice(sep + 1), 10);
   if (!Number.isInteger(seq) || seq < 0) return null;
   return { epoch: id.slice(0, sep), seq };
+}
+
+/** Doubt marker for the frames path's splice decision: fall back to the full JSON read. */
+class FallBackToFullRead extends Error {
+  constructor() {
+    super("frames splice: continuity unprovable");
+  }
+}
+
+/** Overlap-dedup key of a frame message: exact envelope identity (tracePosition excluded), the same rule appendPendingInputs and isDuplicate use. */
+function msgKey(msg: AmspRecord): string {
+  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
+    tracePosition?: unknown;
+  };
+  return JSON.stringify(envelope);
 }
 
 /** A windowed history request (mirrors the server's tailLimit / before params). */
@@ -119,6 +135,17 @@ export interface StreamControllerDeps {
     serverNowMs?: number | null;
     page?: MessagesPageInfo;
   }>;
+  /**
+   * The streamed-history read (GET /messages/frames): the same windowed read handed over
+   * frame by frame as each NDJSON line arrives (see MessagesHistoryFrame). A skeleton
+   * frame fixes every row's position before any meat fills in; a meat frame only fills
+   * content into the rows the skeleton placed. Absent (an older build) = the JSON reads
+   * above serve everything, as before.
+   */
+  loadMessageFrames?: (
+    page: MessagesPageQuery | undefined,
+    onFrame: (frame: MessagesHistoryFrame) => void,
+  ) => Promise<{ serverNowMs: number | null }>;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
   /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
@@ -343,6 +370,120 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
+   * The streamed-history path (deps.loadMessageFrames): a `page` frame seeds the
+   * envelope (same baseline rules as the JSON reads), a skeleton frame fixes every
+   * row's position — each of its messages goes through the ordinary push path — and
+   * each meat frame fills its window's interior (deduped: a re-entered read replays
+   * frames the client already holds). Frames feed the CURRENT model directly (no
+   * per-frame replay buffer): a frame's messages arrive strictly ordered, and a
+   * resync during a frames read bumps the epoch and rebuilds exactly as it does
+   * around the JSON reads.
+   */
+  const loadFrames = async (
+    currentEpoch: number,
+    freshModel: StreamModel | undefined,
+    opts: { page?: MessagesPageQuery; splice?: boolean } = {},
+  ): Promise<void> => {
+    const loadFramesFn = deps.loadMessageFrames;
+    if (loadFramesFn === undefined) {
+      await load(currentEpoch, freshModel, opts);
+      return;
+    }
+    try {
+      let sawPage = false;
+      let pageEnvelope: MessagesPageInfo | undefined;
+      let liveReplay: BufferedEvent[] | null = null;
+      const meatDedup = new Set<string>();
+      const skeletonDedup = new Set<string>();
+      const onFrame = (frame: MessagesHistoryFrame): void => {
+        if (frame.type === "page") {
+          sawPage = true;
+          pageEnvelope = {
+            ...(frame.before !== undefined ? { before: frame.before } : {}),
+            earlierTurns: frame.earlierTurns,
+            prior: frame.prior,
+            ...(frame.contextModel !== undefined ? { contextModel: frame.contextModel } : {}),
+            ...(frame.agentState !== undefined ? { agentState: frame.agentState } : {}),
+          };
+          // The splice decision runs on the envelope, before any content lands
+          // (same rules as the JSON path; see load).
+          if (opts.splice === true) {
+            const start = frame.before ?? null;
+            if (start !== null && start === tailStartCursor) {
+              // Continuity proven: keep prefix and paging state as they are.
+            } else if (start === null) {
+              adoptTailPage(pageEnvelope); // tail covers everything: prefix dropped
+            } else {
+              // Doubt: fall back to the full JSON read within this same epoch.
+              throw new FallBackToFullRead();
+            }
+          } else if (opts.page !== undefined) {
+            adoptTailPage(pageEnvelope);
+          } else {
+            adoptTailPage(undefined);
+          }
+          if (freshModel) model = freshModel;
+          if (frame.live !== undefined && frame.live !== null) {
+            liveReplay = weaveLiveTail(buffer, frame.live);
+            buffer = [];
+          }
+          return;
+        }
+        if (!sawPage) return; // frames before the envelope: malformed, ignored
+        const target = model;
+        const dedup = frame.type === "meat" ? meatDedup : skeletonDedup;
+        for (const msg of frame.messages) {
+          if (dedup.has(msgKey(msg))) continue;
+          dedup.add(msgKey(msg));
+          pushMessage(target, msg, now());
+        }
+        deps.onModelChange();
+      };
+      await loadFramesFn(opts.page, onFrame);
+      if (disposed || currentEpoch !== epoch) return;
+      if (!sawPage) throw new Error("frames response carried no page envelope");
+      // Replay the buffered events (live tail woven in on the page frame, if one came),
+      // then whatever else buffered, with overlap dedup.
+      const dedup = buildDedupIndex([], 0);
+      // A closure assignment TS's control-flow analysis can't see: read it widened.
+      const replay = liveReplay as BufferedEvent[] | null;
+      if (replay !== null) {
+        for (const e of replay) {
+          if (e.kind === "record") feedRecord(e.msg, dedup);
+          else handleServer(e.ev);
+          if (disposed || currentEpoch !== epoch) {
+            const at = replay.indexOf(e);
+            buffer.push(...replay.slice(at + 1).filter((r) => r.kind !== "record" || !r.seeded));
+            return;
+          }
+        }
+      }
+      for (const e of buffer) {
+        if (e.kind === "record") feedRecord(e.msg, dedup);
+        else handleServer(e.ev);
+        if (disposed || currentEpoch !== epoch) return;
+      }
+      buffer = [];
+      phase = "live";
+      // History finalization trusts only the in-stream authoritative state (as in load()).
+      if (streamStatus === "idle") finalizeHistory(model);
+      failed = false;
+      deps.onError(null);
+      deps.onLoading(false);
+      deps.onModelChange();
+    } catch (e) {
+      if (e instanceof FallBackToFullRead) {
+        await load(currentEpoch, freshModel, { ...opts, splice: false });
+        return;
+      }
+      if (disposed || currentEpoch !== epoch) return;
+      failed = true;
+      deps.onLoading(false);
+      deps.onError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /**
    * resync_required decision tree — which refetch rebuilds the model. Resync means the
    * SSE buffer was evicted and the transcript state is suspect, so every branch below
    * chooses correctness over cleverness (ANY doubt falls back to the full read):
@@ -384,7 +525,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // the input for a skeleton, losing scroll position, expanded tool cards, and composer
     // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
     // no-new-text pause is invisible next to a full teardown.
-    await load(epoch, createStreamModel(localDecisions), {
+    await loadFrames(epoch, createStreamModel(localDecisions), {
       page: { kind: "tail", limit: TAIL_UNITS },
       splice: prefixItems.length > 0,
     });
@@ -585,7 +726,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     },
     load: () => {
       epoch += 1;
-      return load(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
+      return loadFrames(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
     },
     retry: async () => {
       if (disposed || !failed) return;
@@ -599,7 +740,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
-      await load(epoch, createStreamModel(localDecisions), {
+      await loadFrames(epoch, createStreamModel(localDecisions), {
         page: { kind: "tail", limit: TAIL_UNITS },
       });
     },
