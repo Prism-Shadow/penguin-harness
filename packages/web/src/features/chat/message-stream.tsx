@@ -618,7 +618,8 @@ export function MessageStream({
           syncJump();
         }}
         onTouchEnd={() => follow.touchEnd()}
-        className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
+        className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6 [scrollbar-width:auto]"
+        style={{ scrollbarWidth: "auto" }}
       >
         <div className="mx-auto max-w-3xl">
           {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
@@ -643,7 +644,15 @@ export function MessageStream({
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
+              ) : older.hasMore ? (
+                <button
+                  type="button"
+                  onClick={older.onLoad}
+                  className="whitespace-nowrap py-1 text-xs text-gray-500 transition-colors duration-150 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {S.chat.loadEarlier}
+                </button>
+              ) : older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>
