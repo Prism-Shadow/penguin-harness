@@ -78,6 +78,8 @@ export class ManagedSubagentSession {
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
 
   private isRunning = false;
+  private runCompletion: Promise<void> = Promise.resolve();
+  private handleDisposal: Promise<void> | null = null;
   private exitInfo: SubagentExit | null = null;
   private killed = false;
 
@@ -168,7 +170,14 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(messages, this.runCtrl);
+    this.runCompletion = this.pump(messages, this.runCtrl);
+    // Hosts observe cleanup errors through whenSettled; background pumps have no caller.
+    void this.runCompletion.catch(() => {});
+  }
+
+  /** Waits for the current round's Trace writes and resource cleanup to finish. */
+  whenSettled(): Promise<void> {
+    return this.runCompletion;
   }
 
   /**
@@ -337,13 +346,26 @@ export class ManagedSubagentSession {
     this.abortCtrl.abort();
     for (const req of [...this.approvals]) this.settle(req, "deny");
     // If running, released by pump's finally after it finishes; otherwise released immediately.
-    if (!this.isRunning) this.handle.dispose();
+    if (!this.isRunning) this.runCompletion = this.disposeHandle();
     this.wakeSignal.notify();
   }
 
   /** Synchronous hard-kill path: the child Session runs in-process with no separate OS resources, so this is equivalent to `kill`. */
   killHard(): void {
     this.kill();
+  }
+
+  /** Starts release synchronously, but retains asynchronous descendant cleanup for callers. */
+  private disposeHandle(): Promise<void> {
+    if (!this.handleDisposal) {
+      try {
+        this.handleDisposal = Promise.resolve(this.handle.dispose());
+      } catch (error) {
+        this.handleDisposal = Promise.reject(error);
+      }
+      void this.handleDisposal.catch(() => {});
+    }
+    return this.handleDisposal;
   }
 
   // -------------------------------------------------------------------------
@@ -424,11 +446,14 @@ export class ManagedSubagentSession {
       const message = err instanceof Error ? err.message : String(err);
       this.exitInfo = { status: "failed", note: `[subagent error: ${message}]` };
     } finally {
-      this.isRunning = false;
-      if (this.killed) this.handle.dispose();
-      this.wakeSignal.notify();
-      this.notifyState();
-      this.fireSettleWatcher();
+      try {
+        if (this.killed) await this.disposeHandle();
+      } finally {
+        this.isRunning = false;
+        this.wakeSignal.notify();
+        this.notifyState();
+        this.fireSettleWatcher();
+      }
     }
   }
 
