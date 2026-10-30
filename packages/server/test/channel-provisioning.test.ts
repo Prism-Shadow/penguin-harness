@@ -31,6 +31,9 @@ afterEach(async () => {
   }
 });
 
+const CLI = "export async function cli(argv) { return 0; }\n";
+const WEB = { "index.html": Buffer.from("<html></html>").toString("base64") };
+
 /**
  * A minimal but bootable platform: hand-rolled any-schema context, park as the only
  * method — the least a bundle needs to pass the mechanism's floor. It travels as source
@@ -96,7 +99,7 @@ async function pushThroughHost(root: string): Promise<void> {
 async function layInstallImage(root: string): Promise<void> {
   await writePushedBuild(
     path.join(root, "hmr"),
-    { platform: PLATFORM, cli: CLI, web: { files: WEB } },
+    { platform: PLATFORM_SOURCE, cli: CLI, web: { files: WEB } },
     new Date(0),
   );
 }
@@ -180,7 +183,10 @@ describe("every channel's root holds a harness record, and its CLI reads one", (
     if (peer.kind !== "meta" || sender.kind !== "meta") return;
     expect(peer.manifest).toEqual(sender.manifest);
 
-    const answer = await resolveCli({ callerEntry: "/install/lib/dist/penguin.js", root: peerRoot });
+    const answer = await resolveCli({
+      callerEntry: "/install/lib/dist/penguin.js",
+      root: peerRoot,
+    });
     expect(answer).toMatchObject({
       kind: "entry",
       reason: "own-entry",
