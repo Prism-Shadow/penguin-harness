@@ -34,6 +34,7 @@ import { CompanyProvider } from "./state/company";
 import { AppLayout } from "./components/layout/app-layout";
 import { LoginPage } from "./pages/login";
 import { ChatPage } from "./features/chat/chat-page";
+import { SearchPage } from "./features/search/search-page";
 import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
@@ -60,6 +61,7 @@ import type { PageEntry } from "./lib/pages";
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
+  SearchPage,
   ChatPage,
   AgentsPage,
   AgentSettingsPage,

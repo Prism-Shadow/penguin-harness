@@ -351,4 +351,43 @@ CREATE TABLE IF NOT EXISTS org_desk_notices (   -- DERIVED CACHE (company mode):
   at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_org_desk_notices_agent ON org_desk_notices(project_id, org_id, agent_id);
+
+-- Session full-text search: one row per INDEXABLE message, the searchable projection of
+-- that message in \`body\`, and everything needed to report WHERE the hit was.
+--
+-- DERIVED CACHE like trace_files: the Trace tree stays the single source of truth, every
+-- row is rebuildable by re-indexing a shard, and a row is never authority for absence (an
+-- unindexed shard is scanned again, so a stale index costs one pass, never a false "no
+-- results"). The identity columns are UNINDEXED FTS5 columns rather than a companion table:
+-- the index and its row key cannot then drift apart, and a hit answers with the message it
+-- matched in the same SELECT.
+--
+-- \`body\` is NOT the original string: it is the CJK-segmented projection described in
+-- services/search-text.ts (one extra control character between tokens), because FTS5's
+-- default tokenizer treats a whole CJK run as ONE token, which would make a two-character
+-- Chinese query unmatchable. The projection is lossy by construction (it repeats characters
+-- to form its bigrams), so the original travels beside it in the UNINDEXED \`raw\` column and
+-- snippets are cut from that.
+CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
+  project_id UNINDEXED,
+  agent_id    UNINDEXED,
+  session_id  UNINDEXED,
+  file_index  UNINDEXED,
+  line_no     UNINDEXED,
+  role        UNINDEXED,
+  at          UNINDEXED,
+  body,
+  raw UNINDEXED
+);
+CREATE TABLE IF NOT EXISTS session_search_shards (  -- DERIVED CACHE: how much of each shard the indexer has consumed
+  project_id    TEXT NOT NULL,
+  agent_id      TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  file_index    INTEGER NOT NULL,
+  indexed_bytes INTEGER NOT NULL DEFAULT 0,  -- bytes consumed, always a record boundary
+  size_bytes    INTEGER NOT NULL DEFAULT 0,  -- shard size when last consumed
+  message_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (project_id, agent_id, session_id, file_index)
+);
+CREATE INDEX IF NOT EXISTS idx_session_search_shards_session ON session_search_shards(session_id);
 `;
