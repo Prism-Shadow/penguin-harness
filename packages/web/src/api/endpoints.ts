@@ -878,6 +878,12 @@ export interface ListSessionsOptions {
   withCounts?: boolean;
   /** The user's own rows only: an organization's desk, ticket and sub-sessions leave the page and the totals together (the development list's contract). */
   excludeOrg?: boolean;
+  /**
+   * Only the rows whose id starts this — the command palette's session completion asks with the
+   * prefix its user typed. The server requires the `session-` head and caps the length; paging
+   * applies within the filter.
+   */
+  sessionIdPrefix?: string;
 }
 
 /**
@@ -910,7 +916,8 @@ export const listSessions = (
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
       (opts.withCounts ? "&counts=1" : "") +
-      (opts.excludeOrg ? "&excludeOrg=1" : "")
+      (opts.excludeOrg ? "&excludeOrg=1" : "") +
+      (opts.sessionIdPrefix ? `&sessionIdPrefix=${encodeURIComponent(opts.sessionIdPrefix)}` : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,

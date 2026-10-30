@@ -1,9 +1,9 @@
 /**
  * The command palette's session completion (features/palette/session-completion.ts): the
- * query's first token starting a session id is the trigger; the rows offered are the
- * sidebar's own, in the order the session store holds them; each entry shows the title (or
- * the untitled fallback) with the status word beside the session's id; running one navigates
- * to that session's chat page.
+ * query's first token starting a session id is the trigger; the rows offered are the sidebar's
+ * own merged with what the servers answered for the prefix live; each entry shows the title
+ * (or the untitled fallback) with the status word beside the session's id; running one
+ * navigates to that session's chat page.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -11,6 +11,7 @@ import { S } from "../src/lib/strings";
 import {
   SESSION_COMPLETION_MAX,
   SESSION_DETAIL_ID_MAX,
+  mergeCompletionRows,
   sessionCompletionActions,
   sessionDetailId,
   sessionQueryPrefix,
@@ -123,5 +124,84 @@ describe("sessionCompletionActions", () => {
     const long = `session-${"x".repeat(60)}`;
     expect(sessionDetailId(long)).toBe(`${long.slice(0, SESSION_DETAIL_ID_MAX)}…`);
     expect(sessionDetailId(long)).toHaveLength(SESSION_DETAIL_ID_MAX + 1);
+  });
+});
+
+describe("mergeCompletionRows", () => {
+  const loaded = [
+    row({ sessionId: "session-2026-10-01-aaaa", lastActiveAt: "2026-10-18T10:00:00.000Z" }),
+    row({ sessionId: "session-2026-10-02-bbbb", lastActiveAt: "2026-10-18T09:00:00.000Z" }),
+  ];
+
+  it("merges a server answer carrying a session no loaded page has", () => {
+    const remote = row({
+      sessionId: "session-2026-10-09-remote",
+      agentId: "machine_agent",
+      lastActiveAt: "2026-10-18T11:00:00.000Z",
+    });
+    const merged = mergeCompletionRows(loaded, [[remote]]);
+    expect(merged.map((s) => s.sessionId)).toEqual([
+      "session-2026-10-09-remote",
+      "session-2026-10-01-aaaa",
+      "session-2026-10-02-bbbb",
+    ]);
+  });
+
+  it("keeps one id once when the loaded rows and a server answer both hold it", () => {
+    const duplicated = row({
+      sessionId: "session-2026-10-01-aaaa",
+      lastActiveAt: "2026-10-18T10:00:00.000Z",
+    });
+    expect(mergeCompletionRows(loaded, [[duplicated]]).map((s) => s.sessionId)).toEqual([
+      "session-2026-10-01-aaaa",
+      "session-2026-10-02-bbbb",
+    ]);
+  });
+
+  it("takes the newer activity of a row both sides hold", () => {
+    const fresher = row({
+      sessionId: "session-2026-10-02-bbbb",
+      lastActiveAt: "2026-10-19T09:00:00.000Z",
+      title: "Renamed while away",
+    });
+    const merged = mergeCompletionRows(loaded, [[fresher]]);
+    expect(merged).toHaveLength(2);
+    expect(merged[0]!.sessionId).toBe("session-2026-10-02-bbbb");
+    expect(merged[0]!.title).toBe("Renamed while away");
+  });
+
+  it("orders the merged rows most recently active first, whatever order the answers came in", () => {
+    const a = row({
+      sessionId: "session-2026-10-01-aaaa",
+      lastActiveAt: "2026-10-18T10:00:00.000Z",
+    });
+    const b = row({
+      sessionId: "session-2026-10-02-bbbb",
+      lastActiveAt: "2026-10-18T11:00:00.000Z",
+    });
+    const c = row({
+      sessionId: "session-2026-10-03-cccc",
+      lastActiveAt: "2026-10-18T12:00:00.000Z",
+    });
+    expect(mergeCompletionRows([a, b], [[c]]).map((s) => s.sessionId)).toEqual([
+      "session-2026-10-03-cccc",
+      "session-2026-10-02-bbbb",
+      "session-2026-10-01-aaaa",
+    ]);
+  });
+
+  it("caps the merged list", () => {
+    const loaded = Array.from({ length: SESSION_COMPLETION_MAX }, (_, i) =>
+      row({ sessionId: `session-2026-10-${String(i).padStart(2, "0")}-load` }),
+    );
+    const extra = row({ sessionId: "session-2026-10-zz-extra" });
+    expect(mergeCompletionRows(loaded, [[extra]])).toHaveLength(SESSION_COMPLETION_MAX);
+  });
+
+  it("answers with the loaded rows alone when no server answered", () => {
+    expect(mergeCompletionRows(loaded, []).map((s) => s.sessionId)).toEqual([
+      "session-2026-10-01-aaaa",
+      "session-2026-10-02-bbbb",
+    ]);
   });
 });

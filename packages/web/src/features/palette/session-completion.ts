@@ -1,21 +1,27 @@
 /**
  * Session completion for the command palette: typing the start of a session id (`session-…`)
- * offers that session — its title beside its status word and id, Enter jumps to its chat page. The rows
- * are the sidebar's own (the session store the sidebar pages into), so a completion names what
- * the app already holds and nothing is fetched for it.
+ * offers that session — its title beside its status word and id, Enter jumps to its chat page.
+ * The rows are the sidebar's own (the session store the sidebar pages into), so a completion
+ * names what the app already holds without waiting for the network — and every query also asks
+ * the servers live: each source (this server and the Project's machines) answers the prefix
+ * from its whole index, so a session no loaded page carries is completed all the same. The two
+ * merge, deduplicated by id; a source that does not answer takes nothing from the offer.
  *
  * Pure core plus a hook: `sessionCompletionActions` builds the actions from rows the caller
  * passes (the hook reads the store; the tests pass literals), and `useSessionCompletion` is the
  * function AppLayout hands the palette. The palette calls it with the raw query on every
  * keystroke; it answers nothing at all until the query's first token starts a session id.
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
+import * as api from "../../api/endpoints";
+import { cachedMachineAgents } from "../../lib/machine-cache";
 import { S } from "../../lib/strings";
 import { isSidebarRow } from "../../lib/session-grouping";
 import { useSessions } from "../../state/sessions";
+import { useProject } from "../../state/project";
 
 /** Every session id starts with this; the completion's trigger token starts with it too. */
 export const SESSION_ID_PREFIX = "session-";
@@ -56,11 +62,11 @@ export function sessionDetail(status: SessionStatus, sessionId: string): string 
 }
 
 /**
- * The sessions whose id starts the query, most recently active first, as palette actions: the
- * title (the sidebar's untitled fallback), the status word beside it, and a jump to the chat
- * page on run. Rows the sidebar does not draw are never offered — a completion lands somewhere
- * the sidebar itself could have taken the user. The row's secondary text carries the status
- * word beside the session's id.
+ * The sessions whose id starts the query, in the order the caller holds them (the store's, most
+ * recently active first), as palette actions: the title (the sidebar's untitled fallback), the
+ * status word beside it, and a jump to the chat page on run. Rows the sidebar does not draw are
+ * never offered — a completion lands somewhere the sidebar itself could have taken the user.
+ * The row's secondary text carries the status word beside the session's id.
  */
 export function sessionCompletionActions(
   sessions: readonly SessionInfo[],
@@ -69,25 +75,108 @@ export function sessionCompletionActions(
 ): readonly PaletteAction[] {
   const prefix = sessionQueryPrefix(query);
   if (prefix === null) return [];
-  const matches = sessions.filter(
-    (s) => isSidebarRow(s) && s.sessionId.toLowerCase().startsWith(prefix),
-  );
-  return matches.slice(0, SESSION_COMPLETION_MAX).map((s) => ({
-    id: `session:${s.sessionId}`,
-    label: s.title ?? S.chat.defaultSessionTitle,
-    keywords: [s.sessionId],
-    detail: sessionDetail(s.status, s.sessionId),
-    run: () => navigate(`/chat/${encodeURIComponent(s.sessionId)}`),
-  }));
+  return sessions
+    .filter((s) => isSidebarRow(s) && s.sessionId.toLowerCase().startsWith(prefix))
+    .slice(0, SESSION_COMPLETION_MAX)
+    .map((s) => ({
+      id: `session:${s.sessionId}`,
+      label: s.title ?? S.chat.defaultSessionTitle,
+      keywords: [s.sessionId],
+      detail: sessionDetail(s.status, s.sessionId),
+      run: () => navigate(`/chat/${encodeURIComponent(s.sessionId)}`),
+    }));
 }
 
-/** The completion as the palette takes it: the store's rows and the router's navigate, memoized. */
+/**
+ * The rows in the activity order the sidebar pages by: most recently active first, ties by id.
+ * The store holds its rows in this order already; a source's answer arrives in the order its
+ * server chose, and a merge over several sources needs one order of its own.
+ */
+function mostRecentFirst(sessions: readonly SessionInfo[]): SessionInfo[] {
+  return [...sessions].sort(
+    (a, b) =>
+      b.lastActiveAt.localeCompare(a.lastActiveAt) || b.sessionId.localeCompare(a.sessionId),
+  );
+}
+
+/**
+ * The loaded rows and every source's answer, deduplicated by id and capped: an id both hold is
+ * the row whose activity is the newer (a source answered after the store last fetched it), and
+ * an id only one holds is kept — the store's own rows and a machine's are equally real.
+ */
+export function mergeCompletionRows(
+  loaded: readonly SessionInfo[],
+  answers: readonly (readonly SessionInfo[])[],
+): SessionInfo[] {
+  const byId = new Map<string, SessionInfo>();
+  for (const s of mostRecentFirst(loaded)) byId.set(s.sessionId, s);
+  for (const rows of answers) {
+    for (const s of mostRecentFirst(rows)) {
+      const known = byId.get(s.sessionId);
+      if (known === undefined || known.lastActiveAt < s.lastActiveAt) byId.set(s.sessionId, s);
+    }
+  }
+  return mostRecentFirst([...byId.values()]).slice(0, SESSION_COMPLETION_MAX);
+}
+
+/**
+ * The completion as the palette takes it: the store's rows and the router's navigate, memoized.
+ * A query starting a session id answers from the loaded rows at once and asks every source (this
+ * server, then the Project's machines) with the prefix live; the answers merge in as they land.
+ * A source that fails — the network, a machine out of reach — is silently dropped: the loaded
+ * rows still answer, which is what the palette did before the live query existed.
+ */
 export function useSessionCompletion(): (query: string) => readonly PaletteAction[] {
-  const { sessions } = useSessions();
+  const { sessions, machineIds } = useSessions();
+  const { currentProject, agents } = useProject();
   const navigate = useNavigate();
   const goTo = useCallback((path: string) => void navigate(path), [navigate]);
+  const [live, setLive] = useState<readonly SessionInfo[]>([]);
+  /** The query the `live` rows answer, so a keystroke that has no answer yet reads the last one's. */
+  const asked = useRef<string>("");
+
   return useMemo(
-    () => (query: string) => sessionCompletionActions(sessions, query, goTo),
-    [sessions, goTo],
+    () => (query: string) => {
+      const prefix = sessionQueryPrefix(query);
+      if (prefix === null) {
+        asked.current = "";
+        setLive([]);
+        return sessionCompletionActions(sessions, query, goTo);
+      }
+      if (asked.current !== query) {
+        asked.current = query;
+        const projectId = currentProject?.projectId;
+        if (projectId === undefined) {
+          setLive([]);
+        } else {
+          // Every source is asked the moment a fresh prefix arrives; a slow or absent one
+          // simply never contributes, and the loaded rows carried the answer meanwhile.
+          // The completion's agents: this server's Agent set, and each machine's own.
+          const agentIds = agents.map((a) => a.agentId);
+          for (const source of [null, ...machineIds]) {
+            // A machine's Agents are its own (lib/agent-location.ts); what it was last seen
+            // running stands in when it cannot be asked right now — the same account the
+            // session store pages by.
+            const agentIdsOfSource =
+              source === null
+                ? agentIds
+                : cachedMachineAgents(projectId, source).map((a) => a.agentId);
+            for (const agentId of agentIdsOfSource) {
+              api
+                .listSessions(
+                  projectId,
+                  agentId,
+                  { limit: SESSION_COMPLETION_MAX, order: "activity", sessionIdPrefix: prefix },
+                  source,
+                )
+                .then((res) => setLive((prev) => mergeCompletionRows([], [prev, res.sessions])))
+                .catch(() => {});
+            }
+          }
+        }
+      }
+      return sessionCompletionActions([...sessions, ...live], query, goTo);
+    },
+    [sessions, live, machineIds, agents, goTo, currentProject],
   );
 }
