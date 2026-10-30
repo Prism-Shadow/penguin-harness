@@ -31,7 +31,7 @@ import type { TestApp } from "./helpers.js";
 
 const MACHINE = "QS7J4YVgSovi-Z2c";
 const SID = "session-2026-10-26-09-00-00-00000001";
-const ADMIN: ApiSocketRef = { apiSocket: true, ownerUserId: "admin" };
+const ADMIN: ApiSocketRef = { apiSocket: true, ownerUserId: "admin", sessionIsLive: () => true };
 
 type Frame = Record<string, unknown>;
 
