@@ -15,7 +15,7 @@ import {
   openTerminalLink,
   positionFromPointer,
   rangeContains,
-} from "../src/features/terminal/terminal-links";
+} from "../terminal-links";
 
 afterEach(() => {
   vi.unstubAllGlobals();

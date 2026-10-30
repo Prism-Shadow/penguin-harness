@@ -20,10 +20,12 @@ import { useInstantSetting } from "../../lib/instant-setting";
 import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { ModelCatalogSelect } from "../chat/model-select";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
-import { WorkspaceSelect } from "../chat/workspace-select";
+import {
+  ModelCatalogSelect,
+  effectiveThinkingLevel,
+  ThinkingLevelSelect,
+  WorkspaceSelect,
+} from "../chat";
 
 interface ApiSettingsProps {
   projectId: string;

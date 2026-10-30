@@ -24,8 +24,8 @@
  * is drawn as `lockedPrefix` in front of the box, and a proposal (which the server returns whole)
  * fills in the part after it.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -43,8 +43,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
-import type { IdSuggestNotice } from "./id-suggest-notice";
+import { idSuggestNotice, proposalValue, type IdSuggestNotice } from "./id-suggest-notice";
 
 export function SemanticIdField({
   projectId,

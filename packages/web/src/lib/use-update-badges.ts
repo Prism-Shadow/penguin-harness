@@ -22,19 +22,27 @@ import { useMemo } from "react";
 import { S } from "./strings";
 import { useUpdateFlow } from "./use-update-flow";
 import { useVersionInfo } from "./use-version-info";
-import { badgeNote, softwareUpdate } from "./update-badges";
-import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
+import {
+  badgeNote,
+  softwareUpdate,
+  type BadgeSource,
+  type SoftwareUpdate,
+  type UpdateBadgeNote,
+} from "./update-badges";
+
 import {
   kernelUpdateTodo,
   pluginUpdateTodo,
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
+  type Todo,
+  type TodoKey,
 } from "./todo-badges";
-import type { Todo, TodoKey } from "./todo-badges";
+
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
-import { catalogDelta } from "../features/models/catalog-sync";
+import { catalogDelta } from "./model-catalog-sync";
 import { useProject } from "../state/project";
 
 /** The nav routes that can carry a dot, and what each one's dot leads to. */

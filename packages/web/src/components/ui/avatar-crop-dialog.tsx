@@ -10,11 +10,17 @@
  * are stored by the same rule. It owns nothing but the choice: the caller decodes the file,
  * and gets the crop back to encode and send.
  */
-import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
+
 import { Button, Modal } from "@prismshadow/penguin-ui";
-import { AVATAR_MAX_ZOOM, clampCrop, initialCrop } from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+import { AVATAR_MAX_ZOOM, clampCrop, initialCrop, type AvatarCrop } from "../../lib/avatar-image";
+
 import { S } from "../../lib/strings";
 
 /** Edge of the frame on screen, in CSS pixels. */

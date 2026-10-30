@@ -22,8 +22,7 @@
  *
  * A plugin that is both shows About, then Files. The footer holds the card's own actions.
  */
-import { Fragment, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   Badge,
   CopyButton,
@@ -38,12 +37,10 @@ import {
   RuledSection,
   Skeleton,
   useMarkdownReader,
-} from "@prismshadow/penguin-ui";
-import type {
-  FileBrowserPreview,
-  FileTreeRow,
-  MarkdownReaderState,
-  TreeToggle,
+  type FileBrowserPreview,
+  type FileTreeRow,
+  type MarkdownReaderState,
+  type TreeToggle,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { linkSegments } from "../../lib/link-segments";
@@ -53,7 +50,7 @@ import { useReaderFind } from "../../lib/reader-find";
 import { useLocale } from "../../state/locale";
 import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";

@@ -6,8 +6,8 @@
  * re-read when the account's copy arrives (lib/account-sync). The shared UI package's accessibility
  * fallbacks (a close cross's name, a "Copied" announcement) are handed the same language here.
  */
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+
 import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../lib/strings";
 import { en } from "../lib/strings-en";

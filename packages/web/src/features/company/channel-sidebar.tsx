@@ -42,7 +42,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { Icon } from "../../components/ui/group-list";
 import { Truncated } from "../../components/ui/truncated";
-import { orgChannelPath } from "./company-nav";
+import { orgChannelPath } from "../../lib/company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
 

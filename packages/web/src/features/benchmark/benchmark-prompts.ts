@@ -11,8 +11,7 @@
  * files rather than guessed. The wording lives in the dictionaries; this module only assembles it.
  */
 import { S } from "../../lib/strings";
-import { composeAiPrompt } from "../ai-create/ai-create-prompt";
-import type { AiExample } from "../ai-create/ai-create-panel";
+import { composeAiPrompt, type AiExample } from "../ai-create";
 
 /** Directory names and Benchmark ids share the Agent id alphabet. */
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;

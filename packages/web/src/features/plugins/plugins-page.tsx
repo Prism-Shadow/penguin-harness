@@ -72,14 +72,12 @@ import { useSessions } from "../../state/sessions";
 import { agentKey } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { readKey, useRead } from "../../lib/read-store";
-import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { localizedText } from "../chat/skill-use";
+import { MachinePicker, type MachineChoice } from "../machines";
+import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
+import { localizedText } from "../../lib/skill-use";
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
-import { SettingsDialog } from "../settings/settings-dialog";
+import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
@@ -102,7 +100,10 @@ import {
 } from "./agent-installs";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
-import { usePluginsIncompatibleOnly, writePluginsIncompatibleOnly } from "./incompatible-only";
+import {
+  usePluginsIncompatibleOnly,
+  writePluginsIncompatibleOnly,
+} from "../../lib/plugins-incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
   foldKey,

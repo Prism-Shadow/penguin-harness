@@ -17,8 +17,8 @@
  * or Settings › Browser behind it (chrome-status-row.tsx). Switching back to the built-in browser
  * is done in Settings › Browser.
  */
-import { useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+
 import {
   WallpaperSurface,
   Button,
@@ -32,7 +32,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { requestSettings } from "../settings/settings-request";
+import { requestSettings } from "../settings";
 import { AddressBar } from "./address-bar";
 import {
   activateBrowserTab,

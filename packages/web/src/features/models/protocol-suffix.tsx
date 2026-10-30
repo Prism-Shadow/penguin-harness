@@ -37,8 +37,8 @@ import { ChevronDown, Dropdown, Menu, MenuRadioItem, Spinner } from "@prismshado
 // them — a change to the family reaches it.
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
-import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
-import type { ProtocolClientType } from "./protocol-types";
+import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "./protocol-types";
+
 import { toneInk } from "../../lib/tone";
 
 /** Whether a value is one of the protocols the menu always lists. */

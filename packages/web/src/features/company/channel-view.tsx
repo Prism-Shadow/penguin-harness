@@ -50,8 +50,9 @@ import {
   Skeleton,
   toastError,
   toastSuccess,
+  type ChannelSender,
 } from "@prismshadow/penguin-ui";
-import type { ChannelSender } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -61,11 +62,11 @@ import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { createStreamFollow, stickToBottom } from "../chat";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
@@ -95,8 +96,10 @@ import {
   joinedElsewhere,
   lastMessageId,
   messageCount,
+  type ChannelDay,
+  type StreamItem,
 } from "./channel-stream";
-import type { ChannelDay, StreamItem } from "./channel-stream";
+
 import { parsePrincipal } from "./principals";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */

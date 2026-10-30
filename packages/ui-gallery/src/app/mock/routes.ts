@@ -47,6 +47,7 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
@@ -183,6 +184,13 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  agentTabs: [],
+  sessionTabs: [],
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
