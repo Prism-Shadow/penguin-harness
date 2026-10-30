@@ -75,11 +75,12 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type {
-  ActivityCursor,
-  SessionListOrder,
-  SessionListPaging,
-  SessionService,
+import {
+  SESSION_ID_PREFIX_EXTRA_MAX,
+  type ActivityCursor,
+  type SessionListOrder,
+  type SessionListPaging,
+  type SessionService,
 } from "../../services/session-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
@@ -255,6 +256,16 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
 /** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
 const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
+
+/**
+ * The list endpoint's `sessionIdPrefix` filter: the query the command palette's session
+ * completion sends with, narrowed to what a session id can start with. The check runs before
+ * any read — anything else is a 400 that touches nothing.
+ */
+const SESSION_ID_PREFIX = "session-";
+
+/** Rejected before any read, so one request cannot name a prefix no session id could carry. */
+const SESSION_ID_PREFIX_MAX = SESSION_ID_PREFIX.length + SESSION_ID_PREFIX_EXTRA_MAX;
 
 /**
  * A base64 `data:` URL of an image, in the exact shape core parses it back out of
@@ -698,6 +709,18 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     if (rawExcludeOrg !== undefined && rawExcludeOrg !== "1") {
       throw badRequest("excludeOrg only accepts 1.");
     }
+    // Optional id-prefix filter (the completion's query): a session id starts `session-`, so
+    // anything else names nothing, and a prefix past the length cap names nothing either —
+    // both are refused before any read rather than answered with a page shaped by them.
+    const rawSessionIdPrefix = c.req.query("sessionIdPrefix");
+    if (rawSessionIdPrefix !== undefined) {
+      if (!rawSessionIdPrefix.toLowerCase().startsWith(SESSION_ID_PREFIX)) {
+        throw badRequest(`sessionIdPrefix must start with ${SESSION_ID_PREFIX}.`);
+      }
+      if (rawSessionIdPrefix.length > SESSION_ID_PREFIX_MAX) {
+        throw badRequest(`sessionIdPrefix must hold at most ${SESSION_ID_PREFIX_MAX} characters.`);
+      }
+    }
     const { sessions, counts, workspaceCounts, workspaceLatest, workspaceLatestActive } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
@@ -706,6 +729,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
         ...(rawExcludeOrg !== undefined ? { excludeOrg: true } : {}),
+        ...(rawSessionIdPrefix !== undefined ? { sessionIdPrefix: rawSessionIdPrefix } : {}),
         view: listingViewOfRequest(c),
       });
     return c.json({
