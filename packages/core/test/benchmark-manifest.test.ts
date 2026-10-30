@@ -14,7 +14,7 @@
  *   (`.seeding/`, `.harbor/`).
  * - A manifest whose new keys are out of shape is refused with a code naming the rule: an `id`
  *   other than the directory's is `benchmark_id_mismatch`; an `id` outside the id characters, a
- *   version that is not a date version, an origin that is not a table of a known kind, an origin
+ *   version outside the supported formats, an origin that is not a table of a known kind, an origin
  *   link that is not http(s) and an origin ref that is not a commit are `benchmark_manifest_invalid`,
  *   and so is a file that is not TOML.
  * - An origin's `imported_at` written as a TOML date-time reads as its ISO 8601 text.
@@ -101,6 +101,24 @@ describe("benchmark_config.toml", () => {
     expect(parseToml(await readRaw(dir))).toEqual(written);
   });
 
+  it("preserves Roadmap package metadata when a package is read and saved", async () => {
+    const dir = await benchDir("report-writing-v1");
+    const written = manifest({
+      version: "0.1.0",
+      titleZh: "报告写作",
+      lastUpdate: "2026-10-30T12:00:00Z",
+      author: { name: "Prism-Shadow", homepage: "https://github.com/Prism-Shadow" },
+    });
+    await writeBenchmarkManifest(dir, written);
+    expect(await readBenchmarkManifest(dir)).toEqual(written);
+    const { titleZh, lastUpdate, ...rest } = written;
+    expect(parseToml(await readRaw(dir))).toEqual({
+      ...rest,
+      title_zh: titleZh,
+      last_update: lastUpdate,
+    });
+  });
+
   it("a manifest from before id, version and origin reads as it always did, and is left as it is", async () => {
     const dir = await benchDir("swe-bench-v1");
     // What earlier releases' seeding, the create form and benchmark-design wrote.
@@ -174,7 +192,13 @@ describe("benchmark_config.toml", () => {
     ["another directory's id", 'id = "other-bench"\ntitle = "Copy"\n', "benchmark_id_mismatch"],
     ["an id outside the id characters", 'id = "../x"\n', "benchmark_manifest_invalid"],
     ["an id that is not text", "id = 7\n", "benchmark_manifest_invalid"],
-    ["a version that is not a date version", 'version = "1.0.0"\n', "benchmark_manifest_invalid"],
+    ["a version outside the supported formats", 'version = "1.0"\n', "benchmark_manifest_invalid"],
+    [
+      "an author without a name",
+      '[author]\nemail = "a@example.com"\n',
+      "benchmark_manifest_invalid",
+    ],
+    ["an invalid update timestamp", 'last_update = "yesterday"\n', "benchmark_manifest_invalid"],
     ["a version that is not text", "version = 2026\n", "benchmark_manifest_invalid"],
     ["an origin that is not a table", 'origin = "git"\n', "benchmark_manifest_invalid"],
     ["an origin kind nobody defined", '[origin]\nkind = "ftp"\n', "benchmark_manifest_invalid"],

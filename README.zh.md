@@ -69,7 +69,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 | `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741)：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State |
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793)：对比成功与失败轨迹，进化技能库并测量一致性 |
 
-每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO 的 CRM、ERP、Finance、Healthcare、Legal 和 DataAnalysis 六个领域各自的 Train/Test 对，共十二个 GDPEVO 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
+每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO Essential 六个场景各自的 Train/Test 对，共十二个 GDPEVO Essential 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />

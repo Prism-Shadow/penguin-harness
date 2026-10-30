@@ -28,7 +28,7 @@
  * An import writes the package it unpacked through the same check, so a copy written here always
  * reads back as it was written.
  *
- * The version is a date with a sequence number, `YYYY.MM.DD.N`, the plugins' format: whatever an
+ * Packages use `x.y.z` versions; existing `YYYY.MM.DD.N` date versions remain readable. Whatever an
  * Agent may edit on disk carries one, so a copy says which revision of its content it holds. A
  * Benchmark starts at the day's `.1` (nextDateVersion); benchmark-design moves it on whenever it
  * changes a case or the status; an import keeps the package's own. Nothing compares them for
@@ -81,6 +81,8 @@ export interface BenchmarkManifest {
   id: string;
   /** Not empty; a file without a usable one reads as the directory name. Written: 1 to 200 characters, not blank. */
   title: string;
+  /** Optional Chinese display title (`title_zh`). */
+  titleZh?: string;
   /** Absent rather than empty. Written: up to 2000 characters. */
   description?: string;
   /**
@@ -88,8 +90,12 @@ export interface BenchmarkManifest {
    * of the Chinese interface, as a plugin's is. Absent rather than empty; same limit.
    */
   descriptionZh?: string;
-  /** `YYYY.MM.DD.N`; absent in a file written before versions, which is unversioned. */
+  /** `x.y.z` or a legacy `YYYY.MM.DD.N`; absent in unversioned packages. */
   version?: string;
+  /** Package content update time (`last_update`), ISO 8601. */
+  lastUpdate?: string;
+  /** Package author and maintainer. */
+  author?: { name: string; email?: string; homepage?: string };
   /** A file that says neither `draft` nor `failed` is published. */
   status: BenchmarkStatus;
   /** Runs per case, a positive integer; absent when the file gives none, which counts as 1. Written: up to 1000. */
@@ -168,11 +174,47 @@ function idOf(raw: unknown, dirId: string): string {
   return raw;
 }
 
-/** The date version, when the file has one. */
+/** Package versions accept the Roadmap format and the existing date format. */
 function versionOf(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
-  if (typeof raw !== "string" || !PLUGIN_VERSION_PATTERN.test(raw)) {
-    throw invalid(`"version" must be a date version, the string "YYYY.MM.DD.N".`);
+  if (
+    typeof raw !== "string" ||
+    (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(raw) && !PLUGIN_VERSION_PATTERN.test(raw))
+  ) {
+    throw invalid(`"version" must be "x.y.z" or a date version "YYYY.MM.DD.N".`);
+  }
+  return raw;
+}
+
+function authorOf(raw: unknown): BenchmarkManifest["author"] {
+  if (raw === undefined) return undefined;
+  if (!isTable(raw) || typeof raw.name !== "string" || raw.name.trim() === "") {
+    throw invalid(`"author" must be a table with a non-empty "name".`);
+  }
+  const author: NonNullable<BenchmarkManifest["author"]> = { name: raw.name };
+  for (const field of ["email", "homepage"] as const) {
+    const value = raw[field];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || value.trim() === "") {
+      throw invalid(`"author.${field}" must be a non-empty string.`);
+    }
+    author[field] = value;
+  }
+  if (author.homepage !== undefined && !isWebLink(author.homepage)) {
+    throw invalid(`"author.homepage" must be an http(s) link.`);
+  }
+  return author;
+}
+
+function lastUpdateOf(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString();
+  if (
+    typeof raw !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(raw) ||
+    !Number.isFinite(Date.parse(raw))
+  ) {
+    throw invalid(`"last_update" must be an ISO 8601 timestamp.`);
   }
   return raw;
 }
@@ -224,14 +266,20 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
   const id = idOf(config.id, dirId);
   const version = versionOf(config.version);
   const origin = originOf(config.origin);
+  const author = authorOf(config.author);
+  const lastUpdate = lastUpdateOf(config.last_update);
   const { title, description, runs, status } = config;
+  const titleZh = config.title_zh;
   const descriptionZh = config.description_zh;
   return {
     id,
     title: typeof title === "string" && title !== "" ? title : id,
+    ...(typeof titleZh === "string" && titleZh !== "" ? { titleZh } : {}),
     ...(typeof description === "string" && description !== "" ? { description } : {}),
     ...(typeof descriptionZh === "string" && descriptionZh !== "" ? { descriptionZh } : {}),
     ...(version !== undefined ? { version } : {}),
+    ...(lastUpdate !== undefined ? { lastUpdate } : {}),
+    ...(author !== undefined ? { author } : {}),
     // The two states that make a Benchmark unusable are literal: "draft" while it is still being
     // built, "failed" when its calibration never produced a result to freeze. A file written
     // before the key existed has none, and an unrecognized value is neither: both are published.
@@ -244,16 +292,22 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
 /**
  * Throws a BenchmarkManifestError (`benchmark_manifest_invalid`) when `manifest` breaks a rule a
  * written manifest keeps: an id, a title of 1 to 200 characters that is not blank, a description
- * of at most 2000, a date version and an origin in shape when present, one of the three statuses,
+ * of at most 2000, a version and metadata in shape when present, one of the three statuses,
  * and a run count from 1 to 1000 when present. Such a manifest reads back exactly as it is.
  */
 export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
   if (!isValidId(manifest.id)) {
     throw invalid(`"id" must be the directory name: letters, digits, "_" and "-".`);
   }
-  const { title, description, descriptionZh, runs } = manifest;
+  const { title, titleZh, description, descriptionZh, runs } = manifest;
   if (typeof title !== "string" || title.trim() === "" || title.length > MAX_TITLE) {
     throw invalid(`"title" must be text of 1 to ${MAX_TITLE} characters.`);
+  }
+  if (
+    titleZh !== undefined &&
+    (typeof titleZh !== "string" || titleZh.trim() === "" || titleZh.length > MAX_TITLE)
+  ) {
+    throw invalid(`"title_zh" must be text of 1 to ${MAX_TITLE} characters.`);
   }
   if (
     description !== undefined &&
@@ -268,6 +322,8 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
     throw invalid(`"description_zh" must be text of at most ${MAX_DESCRIPTION} characters.`);
   }
   versionOf(manifest.version);
+  lastUpdateOf(manifest.lastUpdate);
+  authorOf(manifest.author);
   if (!STATUSES.includes(manifest.status)) {
     throw invalid(`"status" must be one of ${STATUSES.join(", ")}.`);
   }
@@ -285,6 +341,7 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
   const table: Record<string, unknown> = {
     id: manifest.id,
     title: manifest.title,
+    ...(manifest.titleZh !== undefined ? { title_zh: manifest.titleZh } : {}),
     ...(manifest.description !== undefined && manifest.description !== ""
       ? { description: manifest.description }
       : {}),
@@ -292,9 +349,11 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
       ? { description_zh: manifest.descriptionZh }
       : {}),
     ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+    ...(manifest.lastUpdate !== undefined ? { last_update: manifest.lastUpdate } : {}),
     status: manifest.status,
     ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),
   };
+  if (manifest.author !== undefined) table.author = { ...manifest.author };
   if (manifest.origin !== undefined) {
     const origin: Record<string, string> = { kind: manifest.origin.kind };
     for (const field of ORIGIN_TEXT_FIELDS) {
