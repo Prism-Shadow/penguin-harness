@@ -35,7 +35,6 @@
     "@penguinharness/continual-learning": "workspace:*",
     "@penguinharness/data-analysis": "workspace:*",
     "@penguinharness/default-rsi-toolkit": "workspace:*",
-    "@penguinharness/evo-harness-rsi-toolkit": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/humanizer": "workspace:*",
     "@penguinharness/model-development": "workspace:*",

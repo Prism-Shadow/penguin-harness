@@ -52,7 +52,7 @@ Use the following names across methods. Native method labels remain in the learn
 
 | Fields | Meaning |
 | --- | --- |
-| `method` | `skillopt` for this toolkit; the shared format also supports `skilladam`, `evo-harness`, `openskill` and `trace`. |
+| `method` | The method identifier: `skilladam`, `skillopt`, `openskill` or `trace`. |
 | `experiment_version`, `component_versions` | Fixed report identity and actual Harness, runner, Benchmark, model and toolkit versions. Prefer user-specified versions; record task repository and commit. |
 | `benchmark_id`, `training_unit_id` | Evaluation package and the independent unit that learned its artifact. Record the paired Train package separately. |
 | `phase`, `variant` | Resource phase: `train`, `test` or `controller`; measured State: `baseline` or `final`. |

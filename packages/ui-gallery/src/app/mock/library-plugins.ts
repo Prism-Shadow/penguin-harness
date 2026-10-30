@@ -21,8 +21,6 @@ import awmIcon from "../../../../../plugins/awm-rsi-toolkit/icon.svg?raw";
 import awmPkg from "../../../../../plugins/awm-rsi-toolkit/package.json";
 import defaultIcon from "../../../../../plugins/default-rsi-toolkit/icon.svg?raw";
 import defaultPkg from "../../../../../plugins/default-rsi-toolkit/package.json";
-import evoIcon from "../../../../../plugins/evo-harness-rsi-toolkit/icon.svg?raw";
-import evoPkg from "../../../../../plugins/evo-harness-rsi-toolkit/package.json";
 import openskillIcon from "../../../../../plugins/openskill-rsi-toolkit/icon.svg?raw";
 import openskillPkg from "../../../../../plugins/openskill-rsi-toolkit/package.json";
 import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
@@ -118,13 +116,6 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "agent-optimization",
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
-      ),
-    ]),
-    libraryPlugin(evoPkg, evoIcon, [
-      skill(
-        "evo-harness-rsi-toolkit",
-        '"Run Evo-Harness on selected Project Benchmarks: reflect on negative feedback in the original Solver Session, compile one batch of reusable Skills, then evaluate frozen baseline and final."',
-        "2026.10.29.4",
       ),
     ]),
     libraryPlugin(openskillPkg, openskillIcon, [

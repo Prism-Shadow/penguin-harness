@@ -118,7 +118,6 @@ RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：
 - **AWM**（`awm-rsi-toolkit`），出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流并存入 Agent 的记忆，可以在线（训练流）或离线（给定经验）进行，冻结后在 Benchmark 上测试。
 - **[SkillAdam](https://arxiv.org/abs/2609.08944)**（`skilladam-rsi-toolkit`）：持续更新问题记录，按评分变化调整 Skill 编辑预算。
 - **[SkillOpt](https://arxiv.org/abs/2605.23904)**（`skillopt-rsi-toolkit`）：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验。无独立验证集时，复用全部或指定部分 Train 筛选候选，仍保留全部 Train 参与学习。
-- **[Evo-Harness](https://arxiv.org/abs/2608.15071v2)**（`evo-harness-rsi-toolkit`）：Solver 单次作答、原会话内反思、一次批量编译 Skill。
 - **[OpenSkill](https://arxiv.org/abs/2606.06741)**（`openskill-rsi-toolkit`）：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State。
 - **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层实验组织，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，每个 Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，每个 Group 按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后与无 Skill 基线各进行三次完整测试。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
 
@@ -248,7 +247,6 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 | `awm-rsi-toolkit` | `awm-rsi-toolkit` | 运行 AWM：从成功轨迹归纳工作流 |
 | `skilladam-rsi-toolkit` | `skilladam-rsi-toolkit` | SkillAdam RSI 工具包：根据执行反馈迭代技能。 |
 | `skillopt-rsi-toolkit` | `skillopt-rsi-toolkit` | SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。 |
-| `evo-harness-rsi-toolkit` | `evo-harness-rsi-toolkit` | 从执行反馈按批次编译可复用技能。 |
 | `openskill-rsi-toolkit` | `openskill-rsi-toolkit` | OpenSkill RSI 工具包：通过检索与虚拟测试学习技能。 |
 | `trace-rsi-toolkit` | `trace-rsi-toolkit` | 运行 TRACE：对比轨迹演化技能库，评测冻结后的技能 |
 

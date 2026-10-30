@@ -49,7 +49,7 @@
 
 PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）框架。模型保持不变，进化的是 Harness：提示词、Skill、工具和钩子。它可以在你的电脑或服务器上运行，提供桌面端、Web App、CLI 和 SDK。
 
-- **一个框架**，**集齐所有 RSI 算法**。 Default、OPRO、APE、ACE、AWM、SkillAdam、SkillOpt、Evo-Harness、OpenSkill 和 TRACE 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
+- **一个框架**，**集齐所有 RSI 算法**。 Default、OPRO、APE、ACE、AWM、SkillAdam、SkillOpt、OpenSkill 和 TRACE 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
 - **一句话生成一个 Agent 应用**。 描述你的需求，Agent 就会把应用、页面和运行说明都写好。
 - **跑起来很便宜**。 工具集刻意保持精简，专为开源模型调优：在我们的数据分析测试集上，以 Claude Code 1/70 的成本取得最高准确率。
 
@@ -66,7 +66,6 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 | `awm-rsi-toolkit` | [AWM](https://arxiv.org/abs/2409.07429)：从成功的运行中归纳出工作流 |
 | `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944)：持续更新问题记录，按评分变化调整 Skill 编辑预算 |
 | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904)：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验 |
-| `evo-harness-rsi-toolkit` | [Evo-Harness](https://arxiv.org/abs/2608.15071v2)：Solver 单次作答、原会话内反思、一次批量编译 Skill |
 | `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741)：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State |
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793)：对比成功与失败轨迹，进化技能库并测量一致性 |
 
@@ -138,7 +137,7 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `evo-harness-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit` |
+| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit` |
 | 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
 | 软件开发 | `software-development`, `use-claude-code` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
