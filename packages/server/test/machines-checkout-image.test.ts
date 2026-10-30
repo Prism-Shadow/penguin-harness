@@ -84,12 +84,7 @@ afterEach(() => {
 describe("a build laid down as a store", () => {
   it("comes back whole through the hand-over's reader, and the hmr layer finds its CLI", async () => {
     const root = temp();
-    const harness = await writePushedBuild(
-      path.join(root, "hmr"),
-      BUILD,
-      new Date(0),
-      "lib/dist/penguin-hmr.js",
-    );
+    const harness = await writePushedBuild(path.join(root, "hmr"), BUILD, new Date(0));
 
     const body = readPushedBuild(root);
     if (body === null) throw new Error("the store did not read back");
@@ -112,7 +107,7 @@ describe("a build laid down as a store", () => {
     expect(JSON.parse(harness)).toMatchObject({
       source: BUILD.source,
       pushedAt: "1970-01-01T00:00:00.000Z",
-      cli: { entry: "lib/dist/penguin-hmr.js" },
+      cli: { bundle: expect.stringMatching(/^store\/cli\//) },
     });
   });
 

@@ -192,7 +192,8 @@ export async function readHarnessMeta(root: string): Promise<HarnessMeta> {
  */
 export async function resolveCliBundlePath(root: string): Promise<string | null> {
   const meta = await readHarnessMeta(root);
-  return meta.kind === "meta" && typeof meta.manifest.cli?.bundle === "string"
-    ? path.resolve(path.join(root, "hmr"), meta.manifest.cli.bundle)
+  const bundle = meta.kind === "meta" ? meta.manifest.cli?.bundle : undefined;
+  return typeof bundle === "string" && bundle.length > 0
+    ? path.resolve(path.join(root, "hmr"), bundle)
     : null;
 }

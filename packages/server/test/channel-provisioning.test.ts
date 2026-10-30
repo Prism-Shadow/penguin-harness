@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HmrHost } from "@prismshadow/penguin-hmr";
+import type { PlatformBundle } from "@prismshadow/penguin-hmr";
 import { readHarnessMeta, readHarnessInfo } from "../src/hmr/manifest.js";
 import { writePushedBuild } from "../src/hmr/pushed-build.js";
 import { resolveCli } from "../src/services/cli-shim.js";
@@ -30,16 +31,65 @@ afterEach(async () => {
   }
 });
 
-const PLATFORM = "export const platform = 1;\n";
-const CLI = "export const cli = async () => 7;\n";
-const WEB = { "index.html": "<html></html>" };
+/**
+ * A minimal but bootable platform: hand-rolled any-schema context, park as the only
+ * method — the least a bundle needs to pass the mechanism's floor. It travels as source
+ * (what a push carries) and as the in-process object (the packaged default a fresh host
+ * boots before any push), so the push's upgrade() sees the same method set on both sides.
+ */
+const PLATFORM_SOURCE = `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create(_ctx, context) {
+    return { park: () => context };
+  },
+};
+export const hotPlatform = { id: "packaged", iface, impl, context: {} };
+`;
+
+const PACKAGED: PlatformBundle = {
+  id: "packaged",
+  iface: {
+    kind: "iface",
+    name: "platform",
+    version: 1,
+    context: {
+      strictParse: (doc: unknown) => ({ ok: true as const, value: doc === undefined ? {} : doc }),
+      describe: () => ({ kind: "any" }),
+    },
+    methods: ["park"],
+    children: {},
+    migrations: {},
+  },
+  impl: {
+    create(_ctx: unknown, context: unknown) {
+      return { park: () => context };
+    },
+  },
+  context: {},
+} as unknown as PlatformBundle;
 
 /** A hot push through the layer's own host: the provisioning npm, tarball and Docker share. */
 async function pushThroughHost(root: string): Promise<void> {
-  const host = new HmrHost(root, { id: "packaged", iface: {}, impl: null as never });
-  const outcome = await host.upgradeAll({ platform: PLATFORM, cli: CLI, web: WEB });
-  expect(outcome.status).toBe("ok");
-  await host.stop?.().catch(() => {});
+  const host = new HmrHost(root, PACKAGED);
+  try {
+    const outcome = await host.upgradeAll({ platform: PLATFORM_SOURCE, cli: CLI, web: WEB });
+    expect(outcome).toMatchObject({ status: "ok", persisted: true });
+  } finally {
+    host.dispose();
+  }
 }
 
 /** An install image: the body a release ships (or a checkout builds), laid down as a store. */
@@ -75,7 +125,6 @@ describe("every channel's root holds a harness record, and its CLI reads one", (
         "utf8",
       );
       expect(cliBundle).toBe(CLI);
-
       // The version report face degrades to nothing.
       expect(await readHarnessInfo(root)).toMatchObject({ bundles: { cli: expect.any(String) } });
 
