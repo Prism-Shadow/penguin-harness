@@ -78,27 +78,6 @@ const SOURCE_ENTRY = ["packages", "cli", "src", "penguin.ts"] as const;
 const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
 
 /**
- * The loader beside this installation's own CLI — the answer for a record that names a
- * bundle but no entry (a local push: this installation's loader is what loads it). For a
- * build entry (and for an explicit entry, which is a build's `penguin.js` in every channel
- * that names one) the loader is the `penguin-hmr` compiled beside it; for a source run it
- * is the checkout's built loader. Null when neither is there: the CLI has not been built,
- * and a push's bundle then rides unanswerable until it is.
- */
-export function ownLoaderFor(entry: string, origin: CliOrigin | null): string | undefined {
-  const beside =
-    origin === "source"
-      ? (() => {
-          const checkout = checkoutRoot(path.dirname(entry));
-          return checkout === null
-            ? null
-            : path.join(checkout, "packages", "cli", "dist", "penguin-hmr.js");
-        })()
-      : path.join(path.dirname(entry), "penguin-hmr.js");
-  return beside !== null && fs.existsSync(beside) ? beside : undefined;
-}
-
-/**
  * The root of the checkout `fromDir` lies in — the directory holding `pnpm-workspace.yaml` —
  * or null outside one.
  *
@@ -220,12 +199,10 @@ export interface ShimDecision {
 /**
  * The shim's decision, from resolution's answer.
  *
- * The shim carries the answer rather than deciding for itself: the entry the record names
- * for a pushed root, the caller's own entry for a root with no pushed one, and that entry
- * with the fault recorded when resolution faults — a server that starts on its own entry
- * beats one that does not, and that fallback is now a named decision instead of an accident.
- * A recorded entry that is not the caller's own is a built loader, a plain file, so only the
- * own entry keeps the interpreter options a source run needs.
+ * Resolution's entry is always the caller's own, so the shim keeps its interpreter options
+ * whatever the record said; the fault rides on the same entry, named — a server that starts
+ * on its own entry beats one that does not, and that fallback is a named decision instead
+ * of an accident.
  */
 export function shimFromResolution(own: OwnCli, resolved: CliResolution | null): ShimDecision {
   if (own.entry === null || resolved === null) {
@@ -244,11 +221,10 @@ export function shimFromResolution(own: OwnCli, resolved: CliResolution | null):
       answerName: resolved.fault,
     };
   }
-  const same = resolved.entry === own.entry;
   return {
-    entry: resolved.entry,
-    execArgs: same ? [...own.execArgs] : [],
-    unavailable: null,
+    entry: own.entry,
+    execArgs: [...own.execArgs],
+    unavailable: own.unavailable,
     answerName: resolved.reason,
   };
 }
@@ -466,17 +442,16 @@ function writeExecutable(file: string, content: string): void {
   fs.chmodSync(file, 0o755);
 }
 
-// ---------------------------------------------------------------------------
-// Resolution: which CLI entry runs
+// ----------------------------------------------------------------// Resolution: which CLI entry runs
 // ---------------------------------------------------------------------------
 
-/** The two faults a consumer can report; each names the piece that broke. */
-export const CLI_FAULTS = ["record-unsupported", "cli-unloadable"] as const;
+/** The one fault a consumer can report: the record it read told it nothing usable. */
+export const CLI_FAULTS = ["record-unsupported"] as const;
 
 export type CliFault = (typeof CLI_FAULTS)[number];
 
-/** The one reason an entry can be the answer: the record said so. */
-export const CLI_REASONS = ["recorded-entry"] as const;
+/** The one reason an entry can be the answer: it is the caller's own. */
+export const CLI_REASONS = ["own-entry"] as const;
 
 export type CliReason = (typeof CLI_REASONS)[number];
 
@@ -487,7 +462,7 @@ export type CliReason = (typeof CLI_REASONS)[number];
 export type CliResolution =
   | {
       kind: "entry";
-      /** The entry to run: what the record names. */
+      /** The entry to run: the caller's own. */
       entry: string;
       reason: CliReason;
       /** The pushed CLI bundle the record names; null when nothing is pushed. */
@@ -495,127 +470,44 @@ export type CliResolution =
     }
   | { kind: "fault"; fault: CliFault; detail: string };
 
-/** What `<root>/hmr/harness.json`'s CLI half says, as the resolver reads it. */
-type CliRecord =
-  | { state: "entry"; entry: string; bundle: string }
-  /** Nothing pushed: no record, or a record whose CLI half carries no committed version. */
-  | { state: "none" }
-  /** A record this resolver cannot act on: unreadable, or a CLI half that names no entry
-   * and no caller offered its own. One fault, the record's own words as the detail. */
-  | { state: "unsupported"; detail: string };
-
 /**
- * The CLI half of the record, through the layer's one reader (`readHarnessMeta`): the entry
- * to run and the bundle to load are what the record SAYS — the writer decided when it laid
- * the version down. An install image names its program layout's loader; a record without a
- * recorded entry leaves the caller's own loader as the answer, and a caller that offers none
- * faults.
- */
-async function readCliRecord(root: string): Promise<CliRecord> {
-  const meta = await readHarnessMeta(root);
-  if (meta.kind === "broken") return { state: "unsupported", detail: meta.reason };
-  if (meta.kind !== "meta") return { state: "none" };
-  const cli = meta.manifest.cli;
-  if (typeof cli?.bundle !== "string" || cli.bundle.length === 0) return { state: "none" };
-  return {
-    state: "entry",
-    entry: typeof cli.entry === "string" && cli.entry.length > 0 ? cli.entry : "",
-    bundle: path.resolve(path.join(root, "hmr"), cli.bundle),
-  };
-}
-
-/**
- * This process's program directory, when it stands on an installed release: the directory
- * holding `lib/` (`<root>/lib/dist/<entry>.js` names it), which the record's
- * program-relative entries resolve against. Null for a checkout, a source run, and the
- * desktop shell — installations that carry no such layout name no relative entry either.
- */
-function installedProgramDir(): string | null {
-  const argv1 = process.argv[1];
-  if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
-  const parent = path.dirname(path.dirname(argv1));
-  return path.basename(parent) === "lib" ? parent : null;
-}
-
-/**
- * Which entry runs this command. The record decides — the version that laid it down named
- * the entry — and the resolver only reports what it said, falling back to what the caller
- * offers when the record says nothing.
+ * Which entry runs this command: the caller's own — the entry beside which the pushed
+ * bundle, if this root holds one, is loaded. Every consumer is an installation's own face
+ * (the command shim, the CLI's loader, a server being re-spawned), so the entry that runs
+ * is always the caller's own; the record decides only WHAT it loads. No consumer reads a
+ * program layout or an installation geometry out of the record: a bundle pointer is
+ * content-addressed and relative to the store, so it travels; an entry is a fact about the
+ * machine, and the machine already knows it.
  *
- * 1. A record whose CLI half names an entry: that entry, with the bundle it names. The
- *    entry is spelled for the machine the record lives on: absolute for a push this machine
- *    received, program-layout-relative (`lib/dist/…`) for an image an install laid down.
- * 2. A record with a bundle but no entry — a local push, whose answer is this machine's
- *    own loader — answers the loader the caller offers (`ownLoader`).
- * 3. Nothing pushed, or a CLI half that says neither: the caller's own entry, or, when it
- *    offers no loader and the record cannot be acted on, the fault `record-unsupported`.
+ * The one fault covers every record the resolver cannot act on — a file it cannot read or
+ * parse, a CLI half that names no usable bundle — with what went wrong as its detail.
  */
 export async function resolveCli(input: {
   /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
   callerEntry: string;
-  /** The data root whose record says which CLI runs here. */
+  /** The data root whose record says whether a CLI was pushed here. */
   root: string;
-  /** The loader beside the caller's own CLI: the answer for a record that names a bundle
-   * but no entry. Absent: such a record faults. */
-  ownLoader?: string;
-  /** The program directory the record's relative entries resolve against; default derived
-   * from this process. Null: relative entries answer their fault. */
-  programDir?: string | null;
 }): Promise<CliResolution> {
-  const record = await readCliRecord(path.resolve(input.root));
-  if (record.state === "unsupported") {
-    return { kind: "fault", fault: "record-unsupported", detail: record.detail };
+  const meta = await readHarnessMeta(path.resolve(input.root));
+  if (meta.kind === "broken") {
+    return { kind: "fault", fault: "record-unsupported", detail: meta.reason };
   }
-  if (record.state === "none") {
+  const bundle: unknown =
+    meta.kind === "meta"
+      ? (meta.manifest.cli as { bundle?: unknown } | undefined)?.bundle
+      : undefined;
+  if (typeof bundle !== "string" || bundle.length === 0) {
     return {
       kind: "entry",
       entry: path.resolve(input.callerEntry),
-      reason: "recorded-entry",
+      reason: "own-entry",
       bundle: null,
-    };
-  }
-  // The record names an entry: absolute as it stands, program-relative against the program
-  // directory — this process's when none was named, a fault when there is none to resolve
-  // against.
-  if (record.entry !== "") {
-    if (path.isAbsolute(record.entry)) {
-      return {
-        kind: "entry",
-        entry: path.resolve(record.entry),
-        reason: "recorded-entry",
-        bundle: record.bundle,
-      };
-    }
-    const programDir =
-      input.programDir === undefined ? installedProgramDir() : (input.programDir ?? null);
-    if (programDir === null) {
-      return {
-        kind: "fault",
-        fault: "record-unsupported",
-        detail: `harness.json's CLI entry is program-relative (${record.entry}), and this process stands on no program directory`,
-      };
-    }
-    return {
-      kind: "entry",
-      entry: path.resolve(programDir, record.entry),
-      reason: "recorded-entry",
-      bundle: record.bundle,
-    };
-  }
-  // A bundle with no recorded entry — a local push: the caller's own loader loads it, and a
-  // caller that offers none faults.
-  if (input.ownLoader === undefined) {
-    return {
-      kind: "fault",
-      fault: "record-unsupported",
-      detail:
-        "harness.json's CLI half names a bundle but no entry, and the caller offers no loader of its own",
     };
   }
   return {
     kind: "entry",
-    entry: path.resolve(input.ownLoader),
-    reason: "recorded-entry",
-    bundle: record.bundle,
+    entry: path.resolve(input.callerEntry),
+    reason: "own-entry",
+    bundle: path.resolve(path.join(path.resolve(input.root), "hmr"), bundle),
   };
 }

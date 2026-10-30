@@ -50,12 +50,7 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import {
-  ensureCliShim,
-  ownLoaderFor,
-  resolveCli,
-  shimFromResolution,
-} from "./services/cli-shim.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -307,11 +302,9 @@ export async function bootAppDeps(
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
   // Which entry `penguin` is, answered once by the shared procedure rather than privately
-  // here: the entry the record names when this root holds a pushed CLI, this server's own
-  // loader when the record names only a bundle (a local push — this installation's loader
-  // is what loads it), else this server's own entry; a fault rides on the own entry, named.
-  // Asked pre-boot for the same reason the shim is written pre-boot — it describes this
-  // installation, not a state a push can change under a running App.
+  // here: this server's own entry — the record decides only whether a pushed bundle rides
+  // with it. Asked pre-boot for the same reason the shim is written pre-boot — it describes
+  // this installation, not a state a push can change under a running App.
   const ownCli = {
     entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
@@ -320,11 +313,7 @@ export async function bootAppDeps(
   const resolvedCli =
     ownCli.entry === null
       ? null
-      : await resolveCli({
-          callerEntry: ownCli.entry,
-          root: config.root,
-          ownLoader: ownLoaderFor(ownCli.entry, config.cliLaunch?.origin ?? null),
-        });
+      : await resolveCli({ callerEntry: ownCli.entry, root: config.root });
   const shimDecision = shimFromResolution(ownCli, resolvedCli);
   const shim = ensureCliShim(config.root, shimDecision.entry, {
     execArgs: shimDecision.execArgs,

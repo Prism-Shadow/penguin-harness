@@ -93,14 +93,7 @@ export class ShippedImage {
         return { ok: false, detail: `this release's image is not readable: ${message(err)}` };
       }
       await fsp.rm(staging, { recursive: true, force: true });
-      // The release's loader, as the program layout spells it: every install of this release
-      // lays its program down the same way, so the relative name resolves on each of them.
-      await writePushedBuild(
-        path.join(staging, "hmr"),
-        build,
-        this.now(),
-        "lib/dist/penguin-hmr.js",
-      );
+      await writePushedBuild(path.join(staging, "hmr"), build, this.now());
       await fsp.rm(path.join(this.dir, id), { recursive: true, force: true });
       await fsp.rename(staging, path.join(this.dir, id));
       // Every other image is an older release's, or a lay-down that died with its process:
