@@ -99,15 +99,9 @@ export async function parseAgentPackageArchive(archive: Uint8Array): Promise<Age
   if (!names.includes("package.json")) {
     const tops = new Set(names.map((name) => name.split("/", 1)[0]!));
     const dir = tops.size === 1 ? [...tops][0]! : undefined;
-    if (dir === undefined || !names.includes(`${dir}/package.json`)) {
-      // No package.json anywhere: fine for an Agent package, as long as one top-level
-      // directory (or none) holds a definition.
-      if (dir === undefined) {
-        prefix = "";
-      } else {
-        prefix = `${dir}/`;
-      }
-    } else {
+    // One top-level DIRECTORY holding everything (its files, maybe its package.json) is
+    // stripped; a flat zip of definition files is a package as it is.
+    if (dir !== undefined && names.some((name) => name.startsWith(`${dir}/`))) {
       prefix = `${dir}/`;
     }
   }
@@ -147,6 +141,12 @@ export async function parseAgentPackageArchive(archive: Uint8Array): Promise<Age
     if (err instanceof AgentPackageError) throw invalid(err.message);
     throw err;
   });
+  // The manifest's file list must be truthful: every path it names has to exist.
+  for (const wanted of agentManifest?.files ?? []) {
+    if (!rel.has(wanted)) {
+      throw invalid(`agent.json lists '${wanted}', which the package does not carry.`);
+    }
+  }
   // An Agent package carries a definition: at least one part of one.
   const carriesDefinition = [...rel.keys()].some((n) => definitionEntry(n) !== null);
   if (!carriesDefinition) {

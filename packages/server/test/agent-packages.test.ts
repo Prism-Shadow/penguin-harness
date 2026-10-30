@@ -108,14 +108,16 @@ describe("agent packages", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-copy-"));
     try {
       const files = unpacked({
-        ...definition,
+        ...Object.fromEntries(
+          Object.entries(definition).map(([k, v]) => [k.replace(/^my-agent\//, ""), v]),
+        ),
         // The parts an Agent package never carries, planted to prove the copy drops them.
-        "my-agent/agent_state/.vault.toml": "TOKEN = \"secret\"\n",
-        "my-agent/agent_state/memory/user/MEMORY.md": "# memory\n",
-        "my-agent/traces/v1.jsonl": "{}\n",
-        "my-agent/snapshots/v1.tar.gz": "bytes",
-        "my-agent/workspaces/w/state.json": "{}\n",
-        "my-agent/scratchpad/s1/note.md": "note\n",
+        "agent_state/.vault.toml": "TOKEN = \"secret\"\n",
+        "memory/user/MEMORY.md": "# memory\n",
+        "traces/v1.jsonl": "{}\n",
+        "snapshots/v1.tar.gz": "bytes",
+        "workspaces/w/state.json": "{}\n",
+        "scratchpad/s1/note.md": "note\n",
       });
       const out = await copyAgentPackage({
         root,
