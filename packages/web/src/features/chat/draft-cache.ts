@@ -229,3 +229,23 @@ export function clearDraftChatDefaults(
     );
   }
 }
+
+/**
+ * What a successful send leaves in the new-conversation slot: the model selection plus the
+ * Workspace it was sent from, so the next conversation starts where the last one did
+ * (sticky Workspace). The machine travels with the path — a path alone does not identify a
+ * directory — and is omitted for this machine (absent = here, the same rule the draft read
+ * applies). Everything else (text, agent, approval, skills, chips) clears, so the next
+ * draft re-seeds those from the Project defaults. Shared by the send path and the
+ * untouched-prefill drop so the two leave identical slots.
+ */
+export function sentDraftCarryOver(sel: {
+  modelRef?: DraftCache["modelRef"];
+  workspace: string;
+  machineId?: string | null;
+}): DraftCache {
+  const out: DraftCache = { workspace: sel.workspace };
+  if (sel.modelRef) out.modelRef = sel.modelRef;
+  if (sel.machineId) out.machineId = sel.machineId;
+  return out;
+}

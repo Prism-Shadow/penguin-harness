@@ -77,7 +77,7 @@ import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope, currentDockScope } from "../dock/dock-state";
 import { setDockConversation } from "../dock/dock-terminal";
 import { StartDashboard } from "./start-dashboard";
-import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
+import { draftKey, loadDraft, saveDraft, sentDraftCarryOver } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
   DRAFT_FLUSH_EVENT,
@@ -627,7 +627,7 @@ export function DraftView({
 
   /**
    * Leaving an AI-composed prefill the user neither edited nor sent: the slot is left exactly as
-   * a successful send leaves it — model carry-over only — so the prompt cannot reappear in a
+   * a successful send leaves it — model-and-Workspace carry-over only — so the prompt cannot reappear in a
    * later new conversation, and the next "Create with AI" jump has nothing to park. Storage is
    * all this touches, deliberately: StrictMode runs the unmount cleanup once right after mount,
    * and the persist effect above then rewrites the slot from component state, which must still
@@ -635,9 +635,15 @@ export function DraftView({
    */
   const dropAiPrefill = useCallback(() => {
     if (!userId) return;
-    if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
-    else clearDraft(draftKey(userId, projectId));
-  }, [userId, projectId, modelRef]);
+    saveDraft(
+      draftKey(userId, projectId),
+      sentDraftCarryOver({
+        modelRef: modelRef ?? undefined,
+        workspace,
+        machineId: workspaceMachine,
+      }),
+    );
+  }, [userId, projectId, modelRef, workspace, workspaceMachine]);
   /** Latest-closure mirror for the unmount cleanup (same convention as persistRef). */
   const dropAiPrefillRef = useRef(dropAiPrefill);
   dropAiPrefillRef.current = dropAiPrefill;
@@ -676,10 +682,11 @@ export function DraftView({
 
   /**
    * Discard the draft after a successful send: first cancels the pending save timer, otherwise
-   * it would write the just-cleared draft back. The **model selection carries over** as the
-   * next conversation's default (review: switching the model, like switching the thinking
-   * level, makes the switched-to value the new default — the level persists on the Agent
-   * config, the model here in the per-user draft cache); everything else clears.
+   * it would write the just-cleared draft back. The **model selection and the Workspace carry
+   * over** as the next conversation's defaults (review: switching the model, like switching
+   * the thinking level, makes the switched-to value the new default — the level persists on
+   * the Agent config; the model and the Workspace here in the per-user draft cache, the
+   * machine traveling with the path); everything else clears.
    */
   const discardDraft = useCallback(() => {
     cancelPendingSave();
@@ -698,9 +705,15 @@ export function DraftView({
       removeDraftSession(userId, projectId, draftId);
       return;
     }
-    if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
-    else clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
+    saveDraft(
+      draftKey(userId, projectId),
+      sentDraftCarryOver({
+        modelRef: modelRef ?? undefined,
+        workspace,
+        machineId: workspaceMachine,
+      }),
+    );
+  }, [cancelPendingSave, userId, projectId, draftId, modelRef, workspace, workspaceMachine]);
 
   const selectAgent = (a: AgentSummary) => {
     setAgentId(a.agentId);
