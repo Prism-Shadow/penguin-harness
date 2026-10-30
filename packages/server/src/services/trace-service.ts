@@ -112,6 +112,16 @@ export const MESSAGES_PAGE_MAX_BYTES = 4 * 1024 * 1024;
 /** Recursion depth cap for sub-session expansion (run_subagent depth is already constrained by the SDK; this is just a defensive backstop against cycles). */
 const MAX_SUBAGENT_DEPTH = 4;
 
+/**
+ * How long one Project-wide force-reconcile is good for, and how long a child pointer may be
+ * assumed dead once a scan has passed.
+ *
+ * The scan is the expensive fallback in resolveChildAgent, and it is expensive in wall clock,
+ * not just in work: on a Project with ~3.5k shards it took ~14s, all of it on the same event
+ * loop the server answers requests on. Anything else in flight waits behind it.
+ */
+const PROJECT_SCAN_COOLDOWN_MS = 300_000;
+
 function forkSessionId(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `session-${formatLocalDate(date)}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
@@ -300,6 +310,16 @@ export class TraceService implements Traces {
   /** The shared in-process Session-origin registry, single source of truth for `source` (narrow tests may omit). */
   @Use() private readonly sources?: SessionOrigins;
   @Use() private readonly projectConfig?: ProjectConfigStore;
+  /** When the last Project-wide force-reconcile ran; see resolveChildAgent. */
+  private lastProjectScanAt = 0;
+  /**
+   * Child pointers a full Project scan could not resolve.
+   *
+   * A subagent pointer whose Trace never lands on disk (an aborted run, a pruned file) can
+   * never resolve, and the parent Session re-reads it on EVERY read. Remembering the dead
+   * ones is what keeps that from costing a Project scan each time.
+   */
+  private readonly unresolvableChildren = new Set<string>();
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
@@ -328,6 +348,59 @@ export class TraceService implements Traces {
    * cost one extra scan, never a false 404. Note this retry only covers a WHOLE-session
    * miss: a session with some shards indexed and a later one missed is served as-is.
    */
+  /**
+   * Register ONE Session's shards by listing the Agent's date directories.
+   *
+   * Answers "does this Session have Trace files, and how big are they" without walking the
+   * tree: a shard is named `<sessionId>_NNN.jsonl` inside a `yyyy-mm-dd` directory, so one
+   * listing per date directory is the whole search. Returns whether anything was found —
+   * false leaves the caller's full reconcile as the fallback, so a probe that cannot see a
+   * file (a date directory it failed to read, say) costs a walk, never a wrong answer.
+   */
+  private async probeSessionShards(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const dir = tracesDir(this.root, projectId, agentId);
+    let dates: string[];
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      dates = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return false; // no traces directory at all: nothing to find, and the walk agrees
+    }
+    let found = false;
+    for (const date of dates) {
+      let names: string[];
+      try {
+        names = await fs.readdir(path.join(dir, date));
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const m = TRACE_FILE_RE.exec(name);
+        if (m === null || m[1] !== sessionId) continue;
+        let sizeBytes = 0;
+        try {
+          sizeBytes = (await fs.stat(path.join(dir, date, name))).size;
+        } catch {
+          continue; // vanished between the listing and the stat: the walk would not see it either
+        }
+        this.store.upsertFile({
+          projectId,
+          agentId,
+          sessionId,
+          fileIndex: Number.parseInt(m[2]!, 10),
+          date,
+          sizeBytes,
+        });
+        found = true;
+      }
+    }
+    return found;
+  }
+
   private async locateAll(
     projectId: string,
     agentId: string,
@@ -335,6 +408,16 @@ export class TraceService implements Traces {
   ): Promise<LocatedFile[]> {
     await this.index.reconcileAgent(projectId, agentId);
     let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
+    if (rows.length === 0) {
+      // A Session the index has not seen (just created, or written by another process) used
+      // to cost a FORCE-reconciled walk of the Agent's whole trace tree on every read —
+      // thousands of shards to answer a question about one Session. The shard file name
+      // carries the Session id, so probe the date directories instead; the walk stays the
+      // fallback for a Session that turns up nowhere.
+      if (await this.probeSessionShards(projectId, agentId, sessionId)) {
+        rows = this.store.listFilesBySession(projectId, agentId, sessionId);
+      }
+    }
     if (rows.length === 0) {
       await this.index.reconcileAgent(projectId, agentId, { force: true });
       rows = this.store.listFilesBySession(projectId, agentId, sessionId);
@@ -445,22 +528,62 @@ export class TraceService implements Traces {
   }
 
   /**
-   * Locates a subagent pointer's owning Agent within the Project: a single index
-   * lookup (the old implementation walked EVERY Agent's whole traces tree to build a
-   * sessionId → agentId map per readMessages call). On a miss, the whole Project is
-   * force-reconciled ONCE per readMessages call and the lookup retried — a child
-   * Trace written by an external process is one scan away, never invisible.
-   */
-  private async resolveChildAgent(
+ * Locates a subagent pointer's owning Agent within the Project: a single index
+ * lookup (the old implementation walked EVERY Agent's whole traces tree to build a
+ * sessionId → agentId map per readMessages call). On a miss, the whole Project is
+ * force-reconciled ONCE per readMessages call and the lookup retried — a child
+ * Trace written by an external process is one scan away, never invisible.
+ *
+ * Two things keep that ONE scan from becoming one scan per read forever:
+ *
+ *  - a pointer the scan could not resolve is remembered (unresolvableChildren). A subagent
+ *    whose Trace never landed — an aborted run, a pruned file — is dead, and the parent
+ *    Session re-reads its pointer on every open;
+ *  - scans are rate-limited per Project (PROJECT_SCAN_COOLDOWN_MS), so a Session naming
+ *    many dead children cannot walk the trace tree once per pointer.
+ *
+ * On an install with ~3.5k shards the repeated walk cost 46s, then 72s, per conversation
+ * open, and every other route queued behind it on the same event loop.
+ */
+private async resolveChildAgent(
     projectId: string,
     childSid: string,
     ctx: { projectScanned: boolean },
   ): Promise<string | null> {
     const hit = this.store.findAgentBySession(projectId, childSid);
-    if (hit !== null || ctx.projectScanned) return hit;
+    if (hit !== null) return hit;
+    // The Session index already records which Agent owns a Session, and the Trace index is
+    // only a cache of files on disk — so an indexed Session answers this with one row lookup
+    // and no walk at all. This is the COMMON case (a subagent run creates its Session row),
+    // and going to the tree first is what made Projects expensive to open: the walk runs on
+    // the server's event loop, so its cost is paid by every route, not just this read.
+    const known = this.sessions?.findById(childSid);
+    if (known !== undefined && known !== null && known.agentId.length > 0) return known.agentId;
+    // Known-dead: a full scan already passed and this id was still missing. Same-agent
+    // children are unaffected — locateAll's mtime-gated reconcile indexes those first.
+    if (this.unresolvableChildren.has(childSid)) return null;
+    if (ctx.projectScanned) return null;
     ctx.projectScanned = true;
+    const now = Date.now();
+    if (now - this.lastProjectScanAt < PROJECT_SCAN_COOLDOWN_MS) return null;
+    this.lastProjectScanAt = now;
     await this.index.reconcileProject(projectId, { force: true });
-    return this.store.findAgentBySession(projectId, childSid);
+    const after = this.store.findAgentBySession(projectId, childSid);
+    // Still missing after a full walk: dead, not late. Remember it so the next read of this
+    // Session short-circuits instead of walking the Project again.
+    if (after === null) this.memoizeUnresolvable(childSid);
+    return after;
+  }
+
+  /**
+   * Remember a child pointer no Project scan could resolve, so later reads short-circuit.
+   *
+   * Bounded on purpose: the memo is a shortcut, never authority. Forgetting an entry costs at
+   * most one more scan — and only after the cooldown, never more than once per pointer.
+   */
+  private memoizeUnresolvable(childSid: string): void {
+    if (this.unresolvableChildren.size >= 4096) this.unresolvableChildren.clear();
+    this.unresolvableChildren.add(childSid);
   }
 
   /** A child session's concatenated raw shard messages, memoized per request; null = no Trace located. */
