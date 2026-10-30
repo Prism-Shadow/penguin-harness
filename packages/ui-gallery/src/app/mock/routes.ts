@@ -1343,6 +1343,42 @@ router
         : {}),
     };
   })
+  // Streamed history (NDJSON frames; see MessagesHistoryFrameDto): the same transcript
+  // the JSON route above serves, framed the same way the server frames it.
+  .get("/api/sessions/:sessionId/messages/frames", (ctx) => {
+    const transcript = transcriptOf(ctx);
+    const live = ctx.store.liveTail(ctx.params.sessionId!);
+    const before = ctx.query.get("before");
+    const messages = before === null ? transcript.history : [];
+    const skeleton = messages.filter(
+      (m) =>
+        m.type === "model_msg" &&
+        ((m.payload as { type?: string }).type === "image_url" ||
+          ((m.payload as { type?: string; role?: string }).type === "text" &&
+            (m.payload as { role?: string }).role === "user")),
+    );
+    const meat = messages.filter((m) => !skeleton.includes(m));
+    const lines: unknown[] = [
+      {
+        type: "page",
+        earlierTurns: 0,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+        ...(live && before === null ? { live } : {}),
+      },
+      { type: "skeleton", cursor: "0:0", messages: skeleton },
+      { type: "meat", cursor: before ?? "0:0", messages: meat },
+    ];
+    return raw(`${lines.map((f) => JSON.stringify(f)).join("\n")}\n`, {
+      "content-type": "application/x-ndjson; charset=utf-8",
+    });
+  })
   .post("/api/sessions/:sessionId/tasks", ({ store, params, body }): unknown => {
     const sessionId = params.sessionId!;
     const row = store.session(sessionId);

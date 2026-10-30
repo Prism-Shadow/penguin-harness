@@ -81,10 +81,7 @@ describe("frame cut points", () => {
         toolCallOutput({ output: "out", toolCallId: "t1", status: "completed" }),
       ),
       at("2026-07-21T10:00:05.000Z", userText("[user_steering]\nfaster\n[/user_steering]")),
-      at(
-        "2026-07-21T10:00:05.100Z",
-        imageUrlMessage(`data:image/png;base64,${"A".repeat(64)}`),
-      ),
+      at("2026-07-21T10:00:05.100Z", imageUrlMessage(`data:image/png;base64,${"A".repeat(64)}`)),
       at(
         "2026-07-21T10:00:06.000Z",
         compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 2 }),
@@ -134,7 +131,10 @@ describe("meat frame planning", () => {
     const { frameCutIndexes, planMeatFrames } = await import("../src/services/message-window.js");
     // Six complete tool groups (call+output), each ~10 KB; the cap lets three per frame.
     const group = (n: number): AmspRecord[] => [
-      at(`2026-07-21T10:00:0${n}.000Z`, toolCall({ name: "exec", arguments: "x".repeat(10_000), toolCallId: `t${n}` })),
+      at(
+        `2026-07-21T10:00:0${n}.000Z`,
+        toolCall({ name: "exec", arguments: "x".repeat(10_000), toolCallId: `t${n}` }),
+      ),
       at(
         `2026-07-21T10:00:0${n}.100Z`,
         toolCallOutput({ output: "y".repeat(100), toolCallId: `t${n}`, status: "completed" }),
@@ -172,19 +172,33 @@ describe("meat frame planning", () => {
     // One group of 50 KB then one of 60 KB — each its own frame under a 64 KB cap that
     // neither pair fits in, both under a floor that forbids an empty frame.
     const messages: AmspRecord[] = [
-      at("2026-07-21T10:00:00.000Z", toolCall({ name: "exec", arguments: "a".repeat(50_000), toolCallId: "t1" })),
+      at(
+        "2026-07-21T10:00:00.000Z",
+        toolCall({ name: "exec", arguments: "a".repeat(50_000), toolCallId: "t1" }),
+      ),
       at(
         "2026-07-21T10:00:01.000Z",
         toolCallOutput({ output: "b".repeat(100), toolCallId: "t1", status: "completed" }),
       ),
-      at("2026-07-21T10:00:02.000Z", toolCall({ name: "exec", arguments: "c".repeat(60_000), toolCallId: "t2" })),
+      at(
+        "2026-07-21T10:00:02.000Z",
+        toolCall({ name: "exec", arguments: "c".repeat(60_000), toolCallId: "t2" }),
+      ),
       at(
         "2026-07-21T10:00:03.000Z",
         toolCallOutput({ output: "d".repeat(100), toolCallId: "t2", status: "completed" }),
       ),
     ];
     const cuts = frameCutIndexes(messages);
-    const frames = planMeatFrames((m) => typeOf(m) === "tool_call" ? ((m.payload as { arguments?: string }).arguments?.length ?? 0) : 100, messages, cuts, 64_000);
+    const frames = planMeatFrames(
+      (m) =>
+        typeOf(m) === "tool_call"
+          ? ((m.payload as { arguments?: string }).arguments?.length ?? 0)
+          : 100,
+      messages,
+      cuts,
+      64_000,
+    );
     expect(frames).toEqual([
       { from: 0, to: 2 },
       { from: 2, to: 4 },
@@ -221,7 +235,13 @@ describe("readMessagesFrames (service level)", () => {
 
   it("the skeleton carries every unit opener (text prompts AND inserted kinds) before any meat; the window's meat fills at group boundaries", async () => {
     const steered = buildBackgroundTaskDoneMessage(
-      { kind: "command", id: "proc-1", status: "completed", detail: "exit 0", delivery: "steering" },
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit 0",
+        delivery: "steering",
+      },
       "Background command finished",
     );
     await writeTraceFile(root, P, A, "2026-07-21", S, 1, [
@@ -312,9 +332,7 @@ describe("readMessagesFrames (service level)", () => {
     expect(got).toEqual(owed);
     // And the two reads' skeletons agree (the skeleton is the re-entry's replayable head).
     const wholeSkeleton = whole.filter((f) => f.type === "skeleton").flatMap((f) => f.messages);
-    const resumedSkeleton = resumed
-      .filter((f) => f.type === "skeleton")
-      .flatMap((f) => f.messages);
+    const resumedSkeleton = resumed.filter((f) => f.type === "skeleton").flatMap((f) => f.messages);
     expect(resumedSkeleton).toEqual(wholeSkeleton);
   });
 
@@ -403,6 +421,8 @@ describe("readMessagesFrames (service level)", () => {
     expect(decodeCursor(page.before!)).toEqual({ fileIndex: 1, ordinal: 4 });
     const meat = frames.filter((f) => f.type === "meat").flatMap((f) => f.messages);
     expect(meat.some((m) => textOf(m) === "q2")).toBe(false); // q2 is a skeleton row
-    expect(meat.some((m) => typeOf(m) === "tool_call_output" && textOf(m).includes("out 2"))).toBe(false);
+    expect(meat.some((m) => typeOf(m) === "tool_call_output" && textOf(m).includes("out 2"))).toBe(
+      false,
+    );
   });
 });

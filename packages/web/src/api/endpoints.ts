@@ -264,7 +264,7 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, ApiError } from "./client";
+import { apiFetch, apiFetchWithMeta, apiRequest, ApiError } from "./client";
 import { S } from "../lib/strings";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
@@ -1305,14 +1305,15 @@ export async function getMessagesFrames(
   onFrame: (frame: MessagesHistoryFrame) => void,
 ): Promise<{ serverNowMs: number | null }> {
   const qs =
-    page === undefined
+    page === undefined || page.kind === undefined
       ? ""
       : page.kind === "tail"
         ? `?tailLimit=${page.limit}`
-        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
-  const response = await fetch(
+        : page.kind === "before"
+          ? `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`
+          : "";
+  const response = await apiRequest(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages/frames${qs}`,
-    { credentials: "same-origin" },
   );
   if (!response.ok || response.body === null) {
     const status = response.status;

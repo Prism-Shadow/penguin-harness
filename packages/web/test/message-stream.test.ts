@@ -32,12 +32,7 @@ import type { MessagesPageQuery } from "../src/lib/amsp/stream-controller";
 import { createStreamController } from "../src/lib/amsp/stream-controller";
 import type { StreamController } from "../src/lib/amsp/stream-controller";
 import type { MessagesHistoryFrame } from "../src/api/endpoints";
-import {
-  assistantText,
-  toolCall,
-  toolCallOutput,
-  userText,
-} from "@prismshadow/amsp";
+import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/amsp";
 import type { AmspRecord, SessionStatus } from "@prismshadow/amsp";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
@@ -342,10 +337,14 @@ describe("MessageStream frames consumption", () => {
       loadMessageFrames: (page, onFrame) =>
         new Promise<{ serverNowMs: number | null }>((resolve, reject) => {
           pageArgs.push(page);
-          pending.push({ page, resolve: () => {
-            for (const f of served.shift() ?? []) onFrame(f);
-            resolve({ serverNowMs: null });
-          }, reject });
+          pending.push({
+            page,
+            resolve: () => {
+              for (const f of served.shift() ?? []) onFrame(f);
+              resolve({ serverNowMs: null });
+            },
+            reject,
+          });
         }),
       onTaskState: (s) => states.push(s),
       onLoading: () => {},
@@ -376,7 +375,18 @@ describe("MessageStream frames consumption", () => {
 
   /** A frames response for a whole transcript of two units, the second with a tool group and an inserted notice. */
   const framesOf = (): MessagesHistoryFrame[] => [
-    { type: "page", earlierTurns: 0, prior: { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 } },
+    {
+      type: "page",
+      earlierTurns: 0,
+      prior: {
+        subagentTokens: 0,
+        elapsedMs: 0,
+        apiMs: 0,
+        toolMs: 0,
+        sessionTokens: 0,
+        contextTokens: 0,
+      },
+    },
     {
       type: "skeleton",
       cursor: "0:0",
@@ -428,7 +438,9 @@ describe("MessageStream frames consumption", () => {
     // appended AFTER the skeleton rows' unit positions.
     expect(itemsFull.length).toBeGreaterThan(3);
     expect(itemsFull.some((i) => i.kind === "tool_call")).toBe(true);
-    expect(itemsFull.some((i) => i.kind === "background_notice" || i.kind === "user_text")).toBe(true);
+    expect(itemsFull.some((i) => i.kind === "background_notice" || i.kind === "user_text")).toBe(
+      true,
+    );
   });
 
   it("cursor re-entry after an interruption: replayed frames dedup and the transcript converges to the uninterrupted sequence", async () => {
@@ -443,7 +455,14 @@ describe("MessageStream frames consumption", () => {
     // Re-entry (a fresh controller, as a retry is): the server replays page + skeleton
     // + the frames the client already held PLUS the continuation.
     const h2 = makeFramesHarness();
-    h2.serve({ kind: "before", cursor: (all[2] as Extract<MessagesHistoryFrame, { type: "meat" }>).cursor, limit: 20 }, all);
+    h2.serve(
+      {
+        kind: "before",
+        cursor: (all[2] as Extract<MessagesHistoryFrame, { type: "meat" }>).cursor,
+        limit: 20,
+      },
+      all,
+    );
     await h2.settle();
     await h2.settle();
     // Converged: same transcript as an uninterrupted whole, nothing duplicated.
@@ -470,7 +489,11 @@ describe("MessageStream frames consumption", () => {
         }),
       );
       groups.push(
-        toolCallOutput({ output: `out ${n} ${"y".repeat(500)}`, toolCallId: `t${n}`, status: "completed" }),
+        toolCallOutput({
+          output: `out ${n} ${"y".repeat(500)}`,
+          toolCallId: `t${n}`,
+          status: "completed",
+        }),
       );
     }
     // The server-side planner: same code the route uses.
@@ -484,7 +507,18 @@ describe("MessageStream frames consumption", () => {
     const plans = planMeatFrames(byteOf, groups, frameCutIndexes(groups));
     expect(plans.length).toBeGreaterThan(1);
     const frames: MessagesHistoryFrame[] = [
-      { type: "page", earlierTurns: 0, prior: { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 } },
+      {
+        type: "page",
+        earlierTurns: 0,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+      },
       { type: "skeleton", cursor: "0:0", messages: [userText("heavy")] },
       ...plans.map(({ from, to }, k) => ({
         type: "meat" as const,

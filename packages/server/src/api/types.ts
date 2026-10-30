@@ -2573,7 +2573,15 @@ export interface MessagesResponse {
  * those) and continues exactly where the interrupted stream stopped.
  */
 export type MessagesHistoryFrameDto =
-  | { type: "page"; before?: string; earlierTurns: number; prior: MessagesPageInfo["prior"]; contextModel?: ModelRefDto; agentState?: string; live?: MessagesLiveTail }
+  | {
+      type: "page";
+      before?: string;
+      earlierTurns: number;
+      prior: MessagesPageInfo["prior"];
+      contextModel?: ModelRefDto;
+      agentState?: string;
+      live?: MessagesLiveTail;
+    }
   | { type: "skeleton"; cursor: string; messages: HistoryMessage[] }
   | { type: "meat"; cursor: string; messages: HistoryMessage[] };
 

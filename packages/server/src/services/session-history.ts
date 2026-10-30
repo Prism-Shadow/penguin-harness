@@ -211,10 +211,15 @@ export async function sessionMessagesFrames(
       fragments: deps.manager.liveFragments(row.sessionId),
     };
   }
-  const frames = await deps.traceService.readMessagesFrames(row.projectId, row.agentId, row.sessionId, page ?? {
-    kind: "tail",
-    limit: MESSAGES_PAGE_LIMIT_MAX,
-  });
+  const frames = await deps.traceService.readMessagesFrames(
+    row.projectId,
+    row.agentId,
+    row.sessionId,
+    page ?? {
+      kind: "tail",
+      limit: MESSAGES_PAGE_LIMIT_MAX,
+    },
+  );
   if (live !== undefined && frames[0]?.type === "page") frames[0].live = live;
   const lines = frames.map((f) => JSON.stringify(f));
   return c.body(`${lines.join("\n")}\n`, 200, {

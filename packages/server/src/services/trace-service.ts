@@ -877,8 +877,7 @@ export class TraceService implements Traces {
     if (windowRows.length > 0) {
       const byRef = windowRows.map((m) => withImagesByReference(sessionId, m) as HistoryMessage);
       const cuts = frameCutIndexes(byRef);
-      const byteOf = (m: AmspRecord): number =>
-        Buffer.byteLength(JSON.stringify(m), "utf8") + 1; // + the NDJSON newline
+      const byteOf = (m: AmspRecord): number => Buffer.byteLength(JSON.stringify(m), "utf8") + 1; // + the NDJSON newline
       const frames = planMeatFrames(byteOf, byRef, cuts, MESSAGE_WINDOW_FRAME_MAX_BYTES);
       for (const { from, to } of frames) {
         const first = byRef[from]!;

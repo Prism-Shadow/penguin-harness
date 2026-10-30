@@ -34,7 +34,11 @@ import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Settings } from "../mechanisms/settings.js";
 import { toAttachmentLimits } from "../services/attachment-limits.js";
-import { sessionMessages, sessionMessagesFrames, sessionTraceImage } from "../services/session-history.js";
+import {
+  sessionMessages,
+  sessionMessagesFrames,
+  sessionTraceImage,
+} from "../services/session-history.js";
 import type { SessionHistoryDeps } from "../services/session-history.js";
 import { reserveStart } from "./admission.js";
 import { pendingApprovals } from "./approvals.js";
