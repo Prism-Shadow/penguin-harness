@@ -54,6 +54,8 @@ const employee = (
 
 const chart: OrgChartResponse = {
   ceoAgentId: "ceo",
+  budgetWarnRatio: 0.8,
+  budgetPauseRatio: 1,
   employees: [
     employee("ceo", "Alice", {
       title: "CEO",
