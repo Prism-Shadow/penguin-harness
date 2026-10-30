@@ -3471,6 +3471,21 @@ export const zh = {
       columnModified: "修改日期",
       /** Tooltip on a file row: files are listed for context but cannot be picked. */
       fileNotSelectable: "只能选择文件夹",
+      /** The new-folder row's field: what an empty field asks for. */
+      newFolderPlaceholder: "输入名称，按 Enter 新建",
+      /** Accessible name of the × that closes the new-folder row. */
+      newFolderCancel: "取消新建文件夹",
+      /** The toolbar's New folder while the folder on screen could not be read. */
+      newFolderDenied: "无法读取此文件夹，不能在这里新建",
+      /** Under the new-folder field: a character this machine does not allow in a name. */
+      newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
+      newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",
+      newFolderExists: (name: string): string => `这里已有名为「${name}」的项目`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "名称不能以空格或「.」结尾",
+      newFolderReserved: (name: string): string => `「${name}」是 Windows 保留的名称`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string => `已新建「${name}」，但这里的列表里找不到它`,
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",
@@ -6380,6 +6395,7 @@ Benchmark：
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       dir_permission_denied: "没有读取该目录的权限。",
+      dir_write_denied: "没有在该目录中新建的权限。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       reveal_failed: "无法打开文件夹。",

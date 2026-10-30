@@ -811,7 +811,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/dir-skills?path=` | The Skills a directory carries, for importing them into a new agent |
 | GET | `/workspace-files?workspace=&path=` | The **Files** panel on a directory no Session addresses yet (see below) |
 | GET / PUT / DELETE | `/workspace-files/content?workspace=&path=` | Reads, writes or deletes a file of that directory |
-| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | Creates a file or folder / moves one |
+| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | Creates a file or folder (403 `dir_write_denied` where the server may not write) / moves one |
 | GET | `/workspace-files/search?workspace=&q=` | Searches that directory by entry name |
 | POST | `/workspace-files/reveal?workspace=&path=` | Shows the file in the machine's own file manager |
 
@@ -1018,7 +1018,7 @@ There are two ways to change model. The in-session switch is `POST /switch-model
 
 - `GET /files/preview-redirect` backs **Open in new tab** and the rendered HTML view of the **Files** panel; see [Preview on a separate origin](#preview-on-a-separate-origin).
 - `PUT /files/content` answers with the version it wrote in `ETag`: the marker the next conditional write of the same file carries, so the **Files** panel's editor keeps editing after a save.
-- `POST /files/create` creates one empty text file or one folder, making missing parent directories as a write does. Anything already at `path`, a link included (it is not followed), returns 409 `target_exists` with nothing written.
+- `POST /files/create` creates one empty text file or one folder, making missing parent directories as a write does. Anything already at `path`, a link included (it is not followed), returns 409 `target_exists` with nothing written. A folder the account running the server may not write in, or a read-only volume, returns 403 `dir_write_denied`, also with nothing written.
 - `POST /files/move` moves a file or a folder. Missing parent directories of `to` are created. It returns 404 `path_not_found` when `from` is gone, and for a file, 409 `file_changed` when `ifVersion` no longer matches (a source that disappeared while a marker was given counts as changed). A folder has no single version marker, so it moves whole without one: a folder sent with `ifVersion` returns 400, and so does a folder moved into itself. It returns 409 `target_exists` when something is already at `to`, because the destination was never read and so is refused rather than overwritten, and 400 for a move onto the entry's own path.
 - `DELETE /files/content` also works on files only (400 for a directory). It returns 404 `path_not_found` when the file is gone, and 409 `file_changed` when `ifVersion` no longer matches. The marker is optional, and without it the delete is unconditional, but the **Files** panel always sends the marker its read returned.
 - `POST /files/reveal` selects the file on macOS and Windows, and opens its directory on a Linux desktop. Only the desktop shell's own window may call it. It returns 404 `not_found` when the server was not started by a desktop shell, and 403 `desktop_shell_only` for a browser session against a desktop-mode server: such a session cannot be told apart from a remote one, and a folder opening on the server's machine helps nobody there. The path is confined the same way as for a read (400 out of bounds, 404 `path_not_found`), and 502 `reveal_failed` means the file manager would not start.

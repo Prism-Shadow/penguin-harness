@@ -3280,6 +3280,23 @@ export const en: Strings = {
       columnModified: "Date modified",
       /** Tooltip on a file row: files are listed for context but cannot be picked. */
       fileNotSelectable: "Only folders can be chosen",
+      /** The new-folder row's field: what an empty field asks for. */
+      newFolderPlaceholder: "Type a name, then press Enter",
+      /** Accessible name of the × that closes the new-folder row. */
+      newFolderCancel: "Cancel new folder",
+      /** The toolbar's New folder while the folder on screen could not be read. */
+      newFolderDenied: "This folder can't be read, so nothing can be made in it here",
+      /** Under the new-folder field: a character this machine does not allow in a name. */
+      newFolderInvalid: (chars: string): string => `A name can't contain ${chars}`,
+      newFolderHidden:
+        "A name starting with “.” makes a hidden folder, which this list doesn't show. Choose another name.",
+      newFolderExists: (name: string): string => `Something named “${name}” is already here`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "A name can't end with a space or “.”",
+      newFolderReserved: (name: string): string => `“${name}” is a name Windows reserves`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string =>
+        `“${name}” was made, but this list doesn't show it`,
       empty: "This folder is empty",
       noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
       deniedTitle: "Can't read this folder",
@@ -6138,6 +6155,7 @@ Scenarios:
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
       dir_permission_denied: "Reading that directory is not allowed.",
+      dir_write_denied: "Creating anything in that directory is not allowed.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       reveal_failed: "Could not open the folder.",
