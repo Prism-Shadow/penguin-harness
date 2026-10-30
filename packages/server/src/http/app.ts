@@ -15,6 +15,7 @@ import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
+import { compressJson } from "./compress.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
@@ -126,6 +127,10 @@ export class HttpModule {
       return handleError(err, c);
     });
     app.notFound(() => declined());
+    // Outermost on purpose: every group's answer, whatever wrote it, is compressed by the same
+    // rule (http/compress.ts), and the request line below — when this surface writes one —
+    // keeps timing the handler rather than the compression behind it.
+    app.use("*", compressJson());
     app.use("*", async (c, next) => {
       const start = performance.now();
       await next();
