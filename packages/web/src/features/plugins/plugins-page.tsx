@@ -73,7 +73,7 @@ import { agentKey } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { readKey, useRead } from "../../lib/read-store";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { DRAFT_SESSION_ID } from "../chat/draft-session-id";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedText } from "../chat/skill-use";

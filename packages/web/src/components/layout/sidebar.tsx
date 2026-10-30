@@ -188,7 +188,7 @@ import {
 import type { GroupMode } from "../ui/group-list";
 import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
-import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { DRAFT_SESSION_ID } from "../../features/chat/draft-session-id";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
