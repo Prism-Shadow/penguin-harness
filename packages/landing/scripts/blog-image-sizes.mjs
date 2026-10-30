@@ -24,7 +24,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const POSTS = path.resolve(HERE, "../content/blog");
 const MANIFEST = path.resolve(HERE, "../src/lib/blog-image-sizes.json");
 const COMMUNITY_RAW =
-  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/blog-assets/";
+  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets/blog-assets/";
 
 /** Where a post's image source is downloaded from, or null for one that is not on the web. */
 const downloadUrl = (src) =>

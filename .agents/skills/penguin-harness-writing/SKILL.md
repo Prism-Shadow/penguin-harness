@@ -388,7 +388,7 @@ directions, comparing text after unescaping; `strip --figures-dir <figures dir>`
 that does not match its block and inlines the rest as one line; `check --in <post> --draft
 <draft>` re-runs the same assertions on the published post.
 
-**Screenshots** stay in `Prism-Shadow/penguin-harness-community` under `blog-assets/`,
+**Screenshots** stay in `Prism-Shadow/penguin-harness-community` under `assets/blog-assets/`,
 referenced as `/blog-assets/<name>-<lang>.png`; a new one is merged there before the post's PR.
 `strip` writes them as an image line plus an italic caption, escaping `<`, `>` and `&` outside code
 spans.
@@ -473,7 +473,7 @@ twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
   `check --in … --outline …`, and say in the PR body that assembly was manual. Typing a word into a
   section file is never the fallback.
 - **A post**: `strip --in <frozen draft> --out packages/landing/content/blog/<slug>.<lang>.md
-  --facts facts.md --figures-dir <figures dir> [--assets <community>/blog-assets]`, the first
+  --facts facts.md --figures-dir <figures dir> [--assets <community>/assets/blog-assets]`, the first
   language first, then the second with `--numbering-from` the first's post (or without it when
   its citations come in another order, see section 7). It prints the model's
   notes (`<!-- omitted: … -->`, `<!-- not applied: … -->`, `<!-- figure changed: … -->`) so they are

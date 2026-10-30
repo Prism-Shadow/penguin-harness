@@ -100,14 +100,15 @@ export const CLI_INSTALLERS: Record<"linux" | "macos" | "windows", CliInstaller[
 };
 
 /**
- * Heavy marketing media lives in the sibling `penguin-harness-community` repo rather than
- * in this one, so that assets only the landing site ever renders stay out of the clone of
- * everyone who builds the product. Served by raw.githubusercontent with
- * `access-control-allow-origin: *` and a 5-minute cache; a GitHub outage degrades the site
- * to missing media, which is the accepted trade for not carrying the bytes here.
+ * Heavy marketing media lives in the `assets/` directory of the sibling
+ * `penguin-harness-community` repo rather than in this one, so that assets only the landing
+ * site ever renders stay out of the clone of everyone who builds the product. Served by
+ * raw.githubusercontent with `access-control-allow-origin: *` and a 5-minute cache; a GitHub
+ * outage degrades the site to missing media, which is the accepted trade for not carrying the
+ * bytes here.
  */
-const COMMUNITY_RAW =
-  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main";
+const COMMUNITY_ASSETS =
+  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets";
 
 /**
  * Demo videos: several megabytes each — committing them here would multiply what every
@@ -117,7 +118,7 @@ const COMMUNITY_RAW =
  * `<video>` sniffs the container itself (verified in Chromium).
  * Pair every embed with a poster and `preload="none"`: nothing is fetched until play.
  */
-export const demoVideoUrl = (name: string): string => `${COMMUNITY_RAW}/videos/${name}.mp4`;
+export const demoVideoUrl = (name: string): string => `${COMMUNITY_ASSETS}/videos/${name}.mp4`;
 
 /**
  * Blog images: a few hundred KB per post, forever, since a published post's screenshots
@@ -131,7 +132,7 @@ export const demoVideoUrl = (name: string): string => `${COMMUNITY_RAW}/videos/$
  * Markdown that stays readable and diffable, and moving the host again is a one-line
  * change instead of a sweep over every post.
  */
-export const blogAssetUrl = (name: string): string => `${COMMUNITY_RAW}/blog-assets/${name}`;
+export const blogAssetUrl = (name: string): string => `${COMMUNITY_ASSETS}/blog-assets/${name}`;
 
 /** API key consoles (same URLs the in-app Models page links to). */
 export const DEEPSEEK_KEYS_URL = "https://platform.deepseek.com/api_keys";

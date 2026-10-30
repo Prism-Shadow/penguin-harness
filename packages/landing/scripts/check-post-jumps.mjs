@@ -88,7 +88,7 @@ await new Promise((resolve) => server.listen(PORT, "127.0.0.1", resolve));
 const SIZES = JSON.parse(
   readFileSync(path.resolve(HERE, "../src/lib/blog-image-sizes.json"), "utf8"),
 );
-const COMMUNITY = "/penguin-harness-community/raw/refs/heads/main/blog-assets/";
+const COMMUNITY = "/penguin-harness-community/raw/refs/heads/main/assets/blog-assets/";
 
 /** A stand-in for the picture at `url`, at the size recorded for the post's source. */
 function picture(url) {

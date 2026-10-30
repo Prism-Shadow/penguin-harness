@@ -10,7 +10,8 @@ import { ArrowRightIcon } from "../components/icons";
 const HREFS = {
   discord: "https://discord.gg/eFHKqqcU3D",
   x: "https://x.com/code_hiyouga",
-  wechat: "https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg",
+  wechat:
+    "https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg",
   github: REPO_URL,
 } as const;
 
