@@ -3,7 +3,7 @@
  * itself or also uses (src/lib/shortcuts/reserved.ts).
  */
 import { describe, expect, it } from "vitest";
-import { parseChord } from "../src/lib/shortcuts/chord";
+import { parseChord, serializeChord } from "../src/lib/shortcuts/chord";
 import { conflictsOf, findConflicts } from "../src/lib/shortcuts/conflicts";
 import { SHORTCUT_COMMANDS } from "../src/lib/shortcuts/registry";
 import {
@@ -21,9 +21,9 @@ const chord = (text: string, platform: Platform = "linux"): Chord => {
 
 describe("findConflicts", () => {
   it("reports two globals on one chord as same-scope, first in registry order winning", () => {
-    const keymap = new Map<CommandId, Chord | null>([
-      ["palette.toggle", chord("Mod+KeyK")],
-      ["terminal.toggle", chord("Mod+KeyK")],
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [chord("Mod+KeyK")]],
+      ["terminal.toggle", [chord("Mod+KeyK")]],
     ]);
     expect(findConflicts(keymap, SHORTCUT_COMMANDS)).toEqual([
       { chord: chord("Mod+KeyK"), a: "palette.toggle", b: "terminal.toggle", kind: "same-scope" },
@@ -31,35 +31,46 @@ describe("findConflicts", () => {
   });
 
   it("reports a global and a focus-scoped command on one chord as shadowed", () => {
-    const keymap = new Map<CommandId, Chord | null>([
-      ["palette.toggle", chord("Mod+KeyW")],
-      ["terminal.close", chord("Mod+KeyW")],
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [chord("Mod+KeyW")]],
+      ["terminal.close", [chord("Mod+KeyW")]],
     ]);
     const found = findConflicts(keymap, SHORTCUT_COMMANDS);
     expect(found).toHaveLength(1);
     expect(found[0]).toMatchObject({ a: "palette.toggle", b: "terminal.close", kind: "shadowed" });
   });
 
+  it("conflicts on any shared chord of two commands' lists, one Conflict per shared chord", () => {
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [chord("Mod+KeyK"), chord("Mod+KeyP")]],
+      ["terminal.toggle", [chord("Mod+KeyP"), chord("Mod+KeyK")]],
+    ]);
+    const found = findConflicts(keymap, SHORTCUT_COMMANDS);
+    expect(found).toHaveLength(2);
+    expect(found.map((c) => serializeChord(c.chord)).sort()).toEqual(["Mod+KeyK", "Mod+KeyP"]);
+    expect(found.every((c) => c.a === "palette.toggle" && c.b === "terminal.toggle")).toBe(true);
+  });
+
   it("does not report two different focus scopes: they never hold focus together", () => {
-    const keymap = new Map<CommandId, Chord | null>([
-      ["terminal.close", chord("Mod+KeyS")],
-      ["editor.save", chord("Mod+KeyS")],
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["terminal.close", [chord("Mod+KeyS")]],
+      ["editor.save", [chord("Mod+KeyS")]],
     ]);
     expect(findConflicts(keymap, SHORTCUT_COMMANDS)).toEqual([]);
   });
 
   it("ignores unbound commands and filters by id", () => {
-    const keymap = new Map<CommandId, Chord | null>([
-      ["palette.toggle", null],
-      ["terminal.toggle", null],
-      ["terminal.close", chord("Mod+KeyW")],
-      ["editor.save", chord("Mod+KeyW")],
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", []],
+      ["terminal.toggle", []],
+      ["terminal.close", [chord("Mod+KeyW")]],
+      ["editor.save", [chord("Mod+KeyW")]],
     ]);
     expect(findConflicts(keymap, SHORTCUT_COMMANDS)).toEqual([]);
-    const both = new Map<CommandId, Chord | null>([
-      ["palette.toggle", chord("Mod+KeyK")],
-      ["terminal.toggle", chord("Mod+KeyK")],
-      ["terminal.close", chord("Mod+KeyK")],
+    const both = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [chord("Mod+KeyK")]],
+      ["terminal.toggle", [chord("Mod+KeyK")]],
+      ["terminal.close", [chord("Mod+KeyK")]],
     ]);
     const all = findConflicts(both, SHORTCUT_COMMANDS);
     expect(all).toHaveLength(3);

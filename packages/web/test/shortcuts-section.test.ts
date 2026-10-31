@@ -3,7 +3,8 @@
  * markup against an injected keymap.
  *
  * - Every command is listed under its group, in either language.
- * - A chord is drawn the way the platform writes it.
+ * - A chord is drawn the way the platform writes it; each binding is its own chip with its own
+ *   remove button, and a recorded chord joins the command without dropping the default.
  * - A row can be reset only when overridden, and "Reset all" is enabled only when something is.
  * - No default sits on a chord the browser keeps; a binding on one is marked in the attention
  *   tone on either host. A chord the browser also uses gets a muted note, and in the desktop
@@ -22,8 +23,8 @@ import { setHostForTests, setPlatformForTests } from "../src/lib/shortcuts/platf
 import { SHORTCUT_COMMANDS } from "../src/lib/shortcuts/registry";
 import {
   KEYBINDINGS_KEY,
+  addBinding,
   configureKeybindingsStoreForTests,
-  setBinding,
 } from "../src/lib/shortcuts/store";
 import { memoryStorage } from "./helpers/storage";
 
@@ -122,9 +123,34 @@ describe("ShortcutsSection", () => {
     expect(count(desktop, S.shortcuts.browserCommon)).toBe(2);
   });
 
+  it("draws each binding as a chip with its own remove button", () => {
+    // Clean: every command holds one default binding, one chip and one remove button each.
+    const clean = render();
+    expect(count(clean, `data-tooltip="${S.shortcuts.removeBinding}"`)).toBe(
+      SHORTCUT_COMMANDS.length,
+    );
+    expect(count(clean, "<kbd>P</kbd>")).toBe(1); // the palette row's default chip
+    configureKeybindingsStoreForTests({
+      storage: keybindings({ v: 1, linux: { "palette.toggle": ["Mod+Alt+KeyP", "Mod+KeyP"] } }),
+    });
+    const html = render();
+    expect(count(html, `data-tooltip="${S.shortcuts.removeBinding}"`)).toBe(
+      SHORTCUT_COMMANDS.length + 1,
+    );
+    expect(count(html, "<kbd>P</kbd>")).toBe(2); // the default chip and the added Ctrl+P one
+  });
+
+  it("adds a recorded chord to the command without dropping the default", () => {
+    addBinding("palette.toggle", parseChord("Mod+KeyP")!);
+    const html = render();
+    expect(count(html, "<kbd>P</kbd>")).toBe(2);
+    // The browser's own Print, taken over: the added chord is named on the row.
+    expect(html).toContain(S.shortcuts.browserCommon);
+  });
+
   it("shows a binding's note as soon as the binding lands", () => {
     expect(count(render(), S.shortcuts.browserReserved)).toBe(0);
-    setBinding("palette.toggle", parseChord("Mod+KeyT"));
+    addBinding("palette.toggle", parseChord("Mod+KeyT")!);
     expect(count(render(), S.shortcuts.browserReserved)).toBe(1);
   });
 

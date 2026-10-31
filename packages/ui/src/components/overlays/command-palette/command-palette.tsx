@@ -17,12 +17,15 @@ import { useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDialogLayer } from "../esc-layers/esc-layers";
+import { Spinner } from "../../icons/spinner/spinner";
 
 export interface PaletteAction {
   id: string;
   label: string;
   /** Searchable words beyond the label (an English alias under a Chinese label, say). */
   keywords?: readonly string[];
+  /** A secondary line beside the label — a status word, an id — drawn in the muted ink. */
+  detail?: string;
   run: () => void;
 }
 
@@ -47,6 +50,20 @@ export interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   actions: readonly PaletteAction[];
+  /**
+   * The caller's own completions for a query — the seam a dynamic list (a session by its id
+   * prefix, say) plugs into without the palette knowing where the rows come from. Called with
+   * the raw query on every keystroke; its actions are appended after the filtered standing
+   * ones, so an empty standing match does not hide them.
+   */
+  suggest?: (query: string) => readonly PaletteAction[];
+  /**
+   * Drawn — beside a spinner — in the list's head row while the completions are still working.
+   * The palette only draws it: whether anything is pending and what the wait is called are the
+   * caller's to know. When the list holds actions anyway, the row rides under them, so the wait
+   * never hides what is ready.
+   */
+  pending?: ReactNode;
   /** Names the dialog for assistive technology; the palette shows no title. */
   title: string;
   /** The search box's placeholder, which is also its accessible name. */
@@ -61,6 +78,8 @@ export function CommandPalette({
   open,
   onClose,
   actions,
+  suggest,
+  pending,
   title,
   placeholder,
   emptyText,
@@ -98,6 +117,8 @@ export function CommandPalette({
         {/* Mounted per opening, so the query and the selection start over each time. */}
         <PaletteSearch
           actions={actions}
+          suggest={suggest}
+          pending={pending}
           placeholder={placeholder}
           emptyText={emptyText}
           onRun={run}
@@ -116,11 +137,15 @@ export function CommandPalette({
 /** The search box and the filtered list under it, with the keyboard selection. */
 function PaletteSearch({
   actions,
+  suggest,
+  pending,
   placeholder,
   emptyText,
   onRun,
 }: {
   actions: readonly PaletteAction[];
+  suggest?: (query: string) => readonly PaletteAction[];
+  pending?: ReactNode;
   placeholder: string;
   emptyText: string;
   onRun: (action: PaletteAction) => void;
@@ -128,17 +153,35 @@ function PaletteSearch({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const filtered = filterPaletteActions(actions, query);
-  const sel = Math.min(selected, Math.max(filtered.length - 1, 0));
+  // The caller's completions answer the raw query (their own rules decide when they apply) and
+  // list after the standing actions, so typing a prefix the standing labels cannot match still
+  // shows what the caller found.
+  const suggestions = suggest?.(query) ?? [];
+  const listed = [...filtered, ...suggestions];
+  const sel = Math.min(selected, Math.max(listed.length - 1, 0));
+  // The head row is the wait's word: the spinner sits inside the listbox (not an option, so it
+  // is never selectable nor filtered away) and rides under the actions that are already ready.
+  // With nothing listed yet, the spinner takes the empty row's place — the wait is the answer.
+  const loadingRow = pending !== undefined && (
+    <li
+      className="flex items-center gap-2 px-4 py-2 text-xs text-fg-subtle"
+      role="status"
+      aria-live="polite"
+    >
+      <Spinner size="sm" label="" className="text-fg-subtle" />
+      {pending}
+    </li>
+  );
 
   const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (filtered.length === 0) return;
+      if (listed.length === 0) return;
       const delta = e.key === "ArrowDown" ? 1 : -1;
-      setSelected((sel + delta + filtered.length) % filtered.length);
+      setSelected((sel + delta + listed.length) % listed.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const action = filtered[sel];
+      const action = listed[sel];
       if (action !== undefined) onRun(action);
     }
   };
@@ -157,21 +200,27 @@ function PaletteSearch({
         aria-label={placeholder}
         className="w-full border-b border-line bg-transparent px-4 py-3 text-sm outline-none placeholder:text-fg-subtle"
       />
-      {filtered.length === 0 ? (
+      {listed.length === 0 && loadingRow === false ? (
         <p className="px-4 py-3 text-sm text-fg-muted">{emptyText}</p>
       ) : (
         <ul className="max-h-[40vh] overflow-y-auto py-1" role="listbox">
-          {filtered.map((action, i) => (
+          {loadingRow}
+          {listed.map((action, i) => (
             <li key={action.id} role="option" aria-selected={i === sel}>
               <button
                 type="button"
-                className={`w-full px-4 py-2 text-left text-sm text-fg ${
+                className={`flex w-full items-baseline gap-2 px-4 py-2 text-left text-sm text-fg ${
                   i === sel ? "bg-surface-muted" : ""
                 }`}
                 onMouseEnter={() => setSelected(i)}
                 onClick={() => onRun(action)}
               >
-                {action.label}
+                <span className="truncate">{action.label}</span>
+                {action.detail !== undefined && (
+                  <span className="ml-auto pl-2 text-xs whitespace-nowrap text-fg-subtle">
+                    {action.detail}
+                  </span>
+                )}
               </button>
             </li>
           ))}

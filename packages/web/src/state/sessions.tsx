@@ -118,6 +118,7 @@ import {
 } from "../lib/session-grouping";
 import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
 import { noteScheduleEvent } from "../features/schedules/schedule-store";
+import { rememberCompletionRows } from "../lib/completion-cache";
 import {
   isCurrentProject,
   ofProject,
@@ -858,6 +859,7 @@ export function createSessionsStore() {
           }
           bySource.set(source, list);
         }
+
         /** One source's first pages; a source that fails to answer at all answers nothing. */
         const ask = async (source: string | null, wanted: WantedPage[]): Promise<PageAnswer[]> => {
           try {
@@ -907,6 +909,16 @@ export function createSessionsStore() {
           // So are resting ones, a probed one (one Agent's answer is not the machine's list),
           // and one whose answer has not landed yet.
           const silent = new Set([...unansweredMachines, ...rested, ...pending]);
+          // The completion cache (lib/completion-cache.ts) remembers what each Agent was seen
+          // holding, so the palette's next session-id completion offers it without the wait.
+          // Answers recorded only while this reload is still the current Project's.
+          if (isCurrentProject(projectId, get().projectId)) {
+            for (const r of results) {
+              for (const page of r.pages) {
+                rememberCompletionRows(projectId, r.source, r.agentId, page.items);
+              }
+            }
+          }
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
           // Deleted stays deleted (see the header), read now: a deletion heard while the answers
@@ -1295,6 +1307,8 @@ export function createSessionsStore() {
         // Project switch / reload raced this page: drop it.
         if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
         const ok = results.filter((r) => r !== null);
+        // Remembered for the palette's completions too (lib/completion-cache.ts).
+        for (const r of ok) rememberCompletionRows(projectId, r.source, r.agentId, r.items);
         const prev = get().sessions;
         const seen = new Set(prev.map((s) => s.sessionId));
         // Deleted stays deleted (see the header): the page may have been read before it went.
