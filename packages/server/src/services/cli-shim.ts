@@ -39,7 +39,7 @@
  * shim is written as a stub that says what is missing rather than letting another
  * installation's `penguin` answer in its place.
  */
-import { readHarnessMeta } from "@prismshadow/penguin-hmr/manifest";
+import { readHarnessMeta } from "../harness-meta.js";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createRequire } from "node:module";

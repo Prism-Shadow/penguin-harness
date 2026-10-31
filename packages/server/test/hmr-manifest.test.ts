@@ -8,7 +8,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readHarnessInfo, readHarnessMeta, resolveCliBundlePath } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/harness-meta.js";
+import { readHarnessInfo, resolveCliBundlePath } from "../src/hmr/manifest.js";
 
 async function makeRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-hmr-manifest-test-"));

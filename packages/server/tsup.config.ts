@@ -34,6 +34,7 @@ export default defineConfig({
     "auth-token": "src/auth-token.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    "harness-meta": "src/harness-meta.ts",
     "cli-shim": "src/services/cli-shim.ts",
     "version-report": "src/version-report.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
