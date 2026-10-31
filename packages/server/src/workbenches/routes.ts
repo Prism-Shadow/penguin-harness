@@ -215,14 +215,14 @@ export interface WorkbenchRouteDeps {
 }
 
 /**
- * The install manifest on its own, auth-less gate (see the handler comment in
- * `workbenchRoutes`): the same document the signed-in gate serves, minus the access check —
- * it reads only the workbench's own registration, nothing per-user. Its 404 for a missing
- * workbench says no more than the signed-in gate's does.
+ * The install manifest on its own, auth-less gate: a browser fetching a manifest for
+ * install carries no session for another host than the page's. It reads only the
+ * workbench's own registration — its name, version, tabs and icon — nothing per-user,
+ * and its 404 for a missing workbench says no more than the session-gated routes do.
  */
 export function manifestRoutes(workbenches: Workbenches): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  app.get("/:projectId/:agentId/:id/manifest.webmanifest", async (c) => {
+  app.get("/:id/manifest.webmanifest", async (c) => {
     const projectId = requireValidId(c as never, "projectId");
     const agentId = requireValidId(c as never, "agentId");
     const id = c.req.param("id");
@@ -306,25 +306,9 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     });
   });
 
-  // The install surface ("add to home screen"): generated from the workbench's registration,
-  // with its icon inlined (the first tab that names one, else the workbench's plugin icon,
-  // read with the folder, safe by the plugin library's own face), and the main app's penguin
-  // when it ships neither. Mounted BELOW, on its own auth-less gate: a browser fetching a
-  // manifest for install carries no session for another host than the page's, so the
-  // document the link sits in answers signed-in and the manifest answers anyone.
-  app.get("/:id/manifest.webmanifest", async (c) => {
-    const { projectId, agentId } = scope(c);
-    const id = c.req.param("id");
-    const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
-    if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
-    // A tab that names an icon gives the app its icon; a plugin icon is the fallback.
-    const icon =
-      contributedAppIcon(info.tabs) ?? (await deps.workbenches.iconSvg(projectId, agentId, id));
-    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, icon)), 200, {
-      "content-type": "application/manifest+json; charset=utf-8",
-      "cache-control": "no-cache",
-    });
-  });
+  // The install manifest is served by the auth-less gate mounted ahead of this one
+  // (`WorkbenchManifestModule.routes`, the `manifestRoutes` sub-app above) — the browser
+  // fetching a manifest for install carries no session for another host than the page's.
 
   // The same files for every workbench, but only under one that exists: a page of another
   // Project, or of a workbench since removed, gets the 404 its own files would.
@@ -394,11 +378,11 @@ export class WorkbenchRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly workbenches!: Workbenches;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
-  /** The manifest on its own gate, without auth — see the handler comment in workbenchRoutes. */
+  /** The manifest on its own auth-less gate, ahead of the session gate — see manifestRoutes. */
   @Bind("WorkbenchManifestModule.routes") manifestRoutes!: Hono<AppEnv>;
   setup() {
     this.routes = workbenchRoutes({ access: this.access, workbenches: this.workbenches });
-    // The manifest answers without a session (see the handler comment): it reads only the
+    // The manifest answers without a session (see manifestRoutes): it reads only the
     // workbench's own registration — its name, version, tabs and icon — nothing per-user.
     this.manifestRoutes = manifestRoutes(this.workbenches);
   }
