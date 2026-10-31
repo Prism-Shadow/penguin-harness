@@ -4,9 +4,7 @@ import path from "node:path";
 import type { Manifest } from "@prismshadow/penguin-hmr/manifest";
 
 export type HarnessMeta =
-  | { kind: "none" }
-  | { kind: "meta"; manifest: Manifest }
-  | { kind: "broken"; reason: string };
+  { kind: "none" } | { kind: "meta"; manifest: Manifest } | { kind: "broken"; reason: string };
 
 export async function readHarnessMeta(root: string): Promise<HarnessMeta> {
   const file = path.join(root, "hmr", "harness.json");
@@ -25,7 +23,8 @@ export async function readHarnessMeta(root: string): Promise<HarnessMeta> {
       (manifest.platform?.bundle === undefined &&
         manifest.cli?.bundle === undefined &&
         manifest.web?.manifest === undefined)
-    ) return { kind: "none" };
+    )
+      return { kind: "none" };
     return { kind: "meta", manifest };
   } catch (err) {
     return { kind: "broken", reason: `${file} is not readable JSON: ${message(err)}` };

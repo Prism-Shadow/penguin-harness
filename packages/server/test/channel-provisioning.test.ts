@@ -152,24 +152,30 @@ describe("every channel's carried image provisions the root it serves", () => {
     // program is laid out — the entry beside its dist/, npm through the server package.
     it(`${channel} 's program layout resolves the body the packer wrote`, async () => {
       const program = await tmp(`penguin-channel-${channel}-program-`);
-      const dist = channel === "npm"
-        ? path.join(program, "node_modules", "@prismshadow", "penguin-cli", "dist")
-        : path.join(program, channel === "docker" ? "opt/penguin/lib" : "lib", "dist");
+      const dist =
+        channel === "npm"
+          ? path.join(program, "node_modules", "@prismshadow", "penguin-cli", "dist")
+          : path.join(program, channel === "docker" ? "opt/penguin/lib" : "lib", "dist");
       await fs.mkdir(dist, { recursive: true });
       await fs.writeFile(path.join(dist, "penguin.js"), "// entry\n");
       const server = path.join(program, "node_modules", "@prismshadow", "penguin-server");
       if (channel === "npm") {
         await fs.mkdir(path.join(server, "dist"), { recursive: true });
-        await fs.writeFile(path.join(server, "package.json"), JSON.stringify({
-          name: "@prismshadow/penguin-server",
-          exports: { ".": "./dist/index.js" },
-        }));
+        await fs.writeFile(
+          path.join(server, "package.json"),
+          JSON.stringify({
+            name: "@prismshadow/penguin-server",
+            exports: { ".": "./dist/index.js" },
+          }),
+        );
         await fs.writeFile(path.join(server, "dist", "index.js"), "// server\n");
       }
       const store = await packImage(channel === "npm" ? path.join(server, "dist") : dist);
       expect(carriedBody(path.join(dist, "penguin.js"))).toBe(store);
       const root = await tmp(`penguin-layout-${channel}-root-`);
-      await expect(syncCarriedImage(root, carriedBody(path.join(dist, "penguin.js")))).resolves.toMatchObject({ kind: "copied" });
+      await expect(
+        syncCarriedImage(root, carriedBody(path.join(dist, "penguin.js"))),
+      ).resolves.toMatchObject({ kind: "copied" });
       await expectRecordAndAnswer(root);
 
       // No body beside the entry: the lookup says so rather than guessing elsewhere.
@@ -325,7 +331,8 @@ describe("store image consumers", () => {
     const store = await packImage(path.join(lib, "dist"));
     await fs.writeFile(path.join(lib, "package.json"), JSON.stringify({ version: "0.2.16" }));
     expect(shippedImage(path.join(lib, "dist", "penguin.js"))).toEqual({
-      baseVersion: "0.2.16", body: store,
+      baseVersion: "0.2.16",
+      body: store,
     });
     const root = await tmp("penguin-store-machine-root-");
     const image = new ShippedImage(path.join(root, "release-image"), "0.2.16", store);

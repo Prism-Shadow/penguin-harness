@@ -51,10 +51,18 @@ export async function layCarriedStore(dir: string, target: string): Promise<Carr
     };
     const stamped = {
       ...manifest,
-      ...(manifest.platform?.bundle ? { platform: { ...manifest.platform, bundle: pointer(manifest.platform.bundle) } } : {}),
-      ...(manifest.cli?.bundle ? { cli: { ...manifest.cli, bundle: pointer(manifest.cli.bundle) } } : {}),
-      ...(manifest.web?.manifest ? { web: { ...manifest.web, manifest: pointer(manifest.web.manifest) } } : {}),
-      ...(manifest.assets?.dir ? { assets: { ...manifest.assets, dir: pointer(manifest.assets.dir) } } : {}),
+      ...(manifest.platform?.bundle
+        ? { platform: { ...manifest.platform, bundle: pointer(manifest.platform.bundle) } }
+        : {}),
+      ...(manifest.cli?.bundle
+        ? { cli: { ...manifest.cli, bundle: pointer(manifest.cli.bundle) } }
+        : {}),
+      ...(manifest.web?.manifest
+        ? { web: { ...manifest.web, manifest: pointer(manifest.web.manifest) } }
+        : {}),
+      ...(manifest.assets?.dir
+        ? { assets: { ...manifest.assets, dir: pointer(manifest.assets.dir) } }
+        : {}),
       source: { ...manifest.source, ...source },
     };
     await fs.writeFile(path.join(staging, "harness.json"), JSON.stringify(stamped, null, 2));
