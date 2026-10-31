@@ -24,6 +24,7 @@ import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
 import { WEB_APP_CSP } from "../server/src/http/page-csp";
+import { penguinManifest } from "./scripts/penguin-manifest";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -92,7 +93,7 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
+  plugins: [penguinManifest(), penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
   // The module classes (`module.ts`, web-root.ts) use standard decorators, which no browser
   // runs yet. The production build lowers them for its browser target; the dev server
   // transforms for `esnext` by default and would pass them through as a syntax error.
