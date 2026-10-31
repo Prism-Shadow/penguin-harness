@@ -42,6 +42,26 @@ export function WorkbenchAppPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
+  // This page is its own installable app: its manifest link names THIS workbench's manifest
+  // (the app installs under the workbench's name and icon), not the main app's. The server
+  // rewrites the link in the HTML it serves, but a pushed web reaches the browser through a
+  // shell that predates that rewrite — so the page fixes the link itself, and restores the
+  // main app's link when it unmounts.
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (link === null) return;
+    const mainHref = link.getAttribute("href");
+    const here =
+      `/api/projects/${encodeURIComponent(projectId)}` +
+      `/agents/${encodeURIComponent(agentId)}` +
+      `/workbenches/${encodeURIComponent(workbenchId)}/manifest.webmanifest`;
+    if (mainHref === here || mainHref === null) return;
+    link.setAttribute("href", here);
+    return () => {
+      link.setAttribute("href", mainHref);
+    };
+  }, [projectId, agentId, workbenchId]);
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
