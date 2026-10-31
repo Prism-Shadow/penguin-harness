@@ -183,10 +183,10 @@ jobs:
           for p in amsp core server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
-          # The harness image the npm channel carries (hmr/carried-image.ts), packed the
+          # The harness image the npm channel carries (carried-image.ts), packed the
           # way the release's npm job packs it into the server package's dist/.
-          node scripts/deploy.mjs --out packages/server/dist/install-image.gz --skip-web-build
-          test -s packages/server/dist/install-image.gz
+          node scripts/pack-carried-store.mjs packages/server/dist/hmr
+          test -s packages/server/dist/hmr/harness.json
       - name: Pack the publishable packages
         run: |
           for p in amsp core server cli; do
@@ -198,7 +198,7 @@ jobs:
       - name: The server tarball carries the Web UI, the harness image and the license
         run: |
           listing="$(cd packages/server && npm pack --dry-run 2>&1)"
-          for want in web-dist/ LICENSE install-image.gz; do
+          for want in web-dist/ LICENSE dist/hmr/harness.json dist/hmr/store/; do
             echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
           done
           echo "server tarball carries web-dist/ and LICENSE"

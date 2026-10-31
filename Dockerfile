@@ -155,12 +155,12 @@ RUN set -eux; \
     pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"; \
     rm -f out/penguin/lib/pnpm-workspace.yaml; \
     cp -r packages/web/dist out/penguin/web; \
-    # The harness image this image carries (hmr/carried-image.ts): the same body a release
-    # tarball ships as lib/dist/install-image.gz, packed from these very sources — a root
+    # The harness image this image carries (carried-image.ts): the same store a release
+    # tarball ships as lib/dist/hmr/, packed from these very sources — a root
     # the container serves is reconciled against it at every start, so a fresh PENGUIN_HOME
     # holds a harness.json from its first boot, pushed CLI included.
-    node scripts/deploy.mjs --out out/penguin/lib/dist/install-image.gz --skip-web-build; \
-    test -s out/penguin/lib/dist/install-image.gz; \
+    node scripts/pack-carried-store.mjs out/penguin/lib/dist/hmr; \
+    test -s out/penguin/lib/dist/hmr/harness.json; \
     mkdir -p /opt/penguin; \
     mv out/penguin/lib /opt/penguin/lib; \
     mv out/penguin/web /opt/penguin/web; \
