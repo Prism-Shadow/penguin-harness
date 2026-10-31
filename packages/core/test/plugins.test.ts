@@ -403,10 +403,15 @@ describe("lookups", () => {
       expect(svgIcon.warnings).toEqual([]);
       expect(svgIcon.kind).toBe("svg");
       expect(svgIcon.icon).toBe("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>");
-      // A file that is not a PNG: refused, with the reason.
+      // A declared file that is neither .svg nor .png: refused, with the reason.
       const bad = readPluginIcon(dir, "note.txt");
       expect(bad.icon).toBeUndefined();
-      expect(bad.warnings.join(" ")).toMatch(/is not a PNG file/);
+      expect(bad.warnings.join(" ")).toMatch(/must name an \.svg or \.png file/);
+      // A declared .png whose bytes are not a PNG: refused, with the reason.
+      await write(dir, { "fake.png": Uint8Array.from([0x00, 0x01, 0x02]) });
+      const fake = readPluginIcon(dir, "fake.png");
+      expect(fake.icon).toBeUndefined();
+      expect(fake.warnings.join(" ")).toMatch(/is not a PNG file/);
       // Nothing declared and no icon.svg: silent none.
       expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
     } finally {
