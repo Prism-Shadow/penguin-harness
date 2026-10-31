@@ -44,7 +44,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 ### 内置 Benchmark
 
-新建的 Project 还自带一批取自公开评测集的 Benchmark：**PenguinHarness Benchmark Sec A** 到 **Sec E**，每个都是挑选出的、能在纯 CPU 的 Docker 环境里运行的子集；以及 **GDPevo Train** 和 **GDPevo Test**，同一个 GDPevo 子集的两半。各自的描述里写明了原始评测集：
+新建的 Project 还自带一批取自公开评测集的 Benchmark：**PenguinHarness Benchmark Sec A** 到 **Sec E**，每个都是挑选出的、能在纯 CPU 的 Docker 环境里运行的子集；以及 **GDPEVO Essential** 六个场景各自的 Train/Test 包。各自的描述里写明了原始评测集：
 
 | Benchmark | 原始评测集：衡量什么 |
 | --- | --- |
@@ -53,12 +53,12 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 | `penguinharness-benchmark-sec-c` | AutomationBench：跨模拟 SaaS 应用的业务流程 |
 | `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1：研究级的科学计算 |
 | `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0：在终端里完成的高难度真实任务 |
-| `penguinharness-benchmark-gdpevo-train` | GDPevo：六个公司环境（CRM、ERP、金融、医疗、法务、数据分析）里来自真实岗位的业务任务；训练题 |
-| `penguinharness-benchmark-gdpevo-test` | GDPevo：同样环境里留出的测试题 |
+| `penguinharness-benchmark-gdpevo-essential-<scenario>-train` | GDPEVO Essential：一个业务场景下的五道训练题，展示为五个 Case，在同一 Agent Session 和容器中连续训练 |
+| `penguinharness-benchmark-gdpevo-essential-<scenario>-test` | GDPEVO Essential：对应场景下的五道独立测试题 |
 
-GDPevo 衡量的是自进化，所以这两个 Benchmark 配合使用：先在 GDPevo Train 上优化 Agent，再到 GDPevo Test 上评估结果；测试题它没见过，但环境是训练时见过的。GDPevo 的答案是公开的，所以做 GDPevo 的题时，Agent 只能访问模型服务的 API 主机，连不上互联网。
+GDPEVO Essential 按场景独立开展自进化：先完成五个 Train Case 的学习，冻结学到的 Agent State，再评估配对的 Test 包。训练只启动一次，共用一个 Session 和容器，用量也只计一次。Case 题干写明启动方式和每道题的分数来源。测试题各自使用新的容器和 Session。GDPevo 的答案是公开的，所以做 GDPevo 的题时，Agent 只能访问模型服务的 API 主机，连不上互联网。
 
-每道题都以 [Harbor](https://github.com/harbor-framework/harbor) 任务的形式在 Docker 里运行。任务文件不在 PenguinHarness 里，而是放在公开仓库 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，运行它们的规则也写在那里。题干写着任务的简述和任务文件夹在该仓库固定提交下的链接，其中的 **How this case is run** 一节链接这些规则，并给出启动任务的命令。分数由任务自己的验证器决定：通过得 100 分，未通过得 0 分；GDPevo 的评分器对部分正确的答案按答对的比例给分。
+任务以 [Harbor](https://github.com/harbor-framework/harbor) 任务的形式在 Docker 里运行。任务文件不在 PenguinHarness 里，而是放在公开仓库 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，运行它们的规则也写在那里。题干写着任务的简述和任务文件夹在该仓库固定提交下的链接，启动说明链接这些规则，并给出启动任务的命令。分数由任务自己的验证器决定：通过得 100 分，未通过得 0 分；GDPevo 的评分器对部分正确的答案按答对的比例给分。
 
 **评估之前**
 
@@ -66,9 +66,9 @@ GDPevo 衡量的是自进化，所以这两个 Benchmark 配合使用：先在 G
 - 评估所用的模型，即评估会话的模型，已在**模型库**页面保存了 API key。评估会把这一条模型配置复制进每个任务容器，不需要 Vault。
 - 执行评估的 Agent 的 `agent-evaluation` Skill 为 2026.10.09.1 或更新版本。它随 `agent-evaluation` 插件提供（此前属于 `agent-tuning`）。在此之前创建的 Agent 保留着旧副本，需要在**插件市场**页面更新这个插件。
 
-它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial。每个 trial 都要独占一个 Docker 网络，而主机上的网络数量有限，所以同时至多跑四个；你另给了上限时以你的为准（最多八个），例如写在评估的**说明**里。同一台机器上的几个评估分摊这个上限。一个 trial 结束，下一个随即开始，不按批次等待。评估还会为每份仓库检出构建一次安装包，内含 Node.js 和 PenguinHarness CLI：trial 直接解包，不必再在各自的任务容器里安装，每个约省两分钟；安装包构建失败时，容器改为联网安装。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
+它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道独立题目的每次运行跑一次 Harbor trial。GDPEVO Essential 的五个 Train Case 则共用上文所述的一次训练 trial。每个 trial 都要独占一个 Docker 网络，而主机上的网络数量有限，所以同时至多跑四个；你另给了上限时以你的为准（最多八个），例如写在评估的**说明**里。同一台机器上的几个评估分摊这个上限。一个 trial 结束，下一个随即开始，不按批次等待。评估还会为每份仓库检出构建一次安装包，内含 Node.js 和 PenguinHarness CLI：trial 直接解包，不必再在各自的任务容器里安装，每个约省两分钟；安装包构建失败时，容器改为联网安装。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
-Sec A 到 Sec E 跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。这几套题按那里实测所用的模型校准过难度，所以分数只描述这些题，不代表上游完整评测集上的水平。GDPevo 的校准（用 Default RSI Toolkit 在 GDPevo Train 上优化一轮，再到 GDPevo Test 上评估）及其成本与分数，见 [results/gdpevo-rsi-calibration](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/gdpevo-rsi-calibration/README.md)。
+Sec A 到 Sec E 跑一次大约花多少钱、PenguinHarness 在这些题上得分如何（三次尝试的准确率、成本、Token 数与耗时），见仓库里的 [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md)。这几套题按那里实测所用的模型校准过难度，所以分数只描述这些题，不代表上游完整评测集上的水平。
 
 它们自带的评估记录为空。它们和示例一样，只在 Project 创建时写入，此后不再写入：删掉的不会再出现。升级前就已存在的 Project 不会因为升级而得到它们；之后新建的 Project 都有。要给已有的 Project 补上缺少的那个，从它的包文件夹导入即可（见[导入 Benchmark](#导入-benchmark)）。
 

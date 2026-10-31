@@ -73,6 +73,8 @@ function manifest(id: string, over: Record<string, unknown> = {}): Record<string
 
 /** The cases of the package every scenario starts from, by path inside the Benchmark. */
 const CASES: Record<string, string> = {
+  "CASE-001-contradictions/task_config.toml":
+    'id = "CASE-001-contradictions"\ntitle = "Two briefs"\ndescription = "Resolve conflicting briefs."\n',
   "CASE-001-contradictions/statement/README.md": "# Two briefs\n\nWrite the report.\n",
   "CASE-001-contradictions/statement/materials/brief-a.md": "Brief A says 3%.\n",
   "CASE-001-contradictions/rubric/README.md":
@@ -213,7 +215,13 @@ describe("benchmark packages", () => {
 
   describe("import", () => {
     it("a member imports a package: it lists with its cases, its own version and no evaluations, from a zip", async () => {
-      const files = packageFiles("report-writing-v1");
+      const metadata = {
+        version: "0.1.0",
+        title_zh: "报告写作",
+        last_update: "2026-10-30T12:00:00Z",
+        author: { name: "Prism-Shadow" },
+      };
+      const files = packageFiles("report-writing-v1", "report-writing-v1", metadata);
       // A dot-entry inside a case is no part of the package.
       files["report-writing-v1/CASE-001-contradictions/statement/.DS_Store"] = strToU8("x");
       const before = Date.now();
@@ -225,7 +233,7 @@ describe("benchmark packages", () => {
       expect(benchmark).toMatchObject({
         id: "report-writing-v1",
         title: "Report writing under conflicting sources",
-        version: "2026.10.08.3",
+        version: "0.1.0",
         status: "published",
         runs: 2,
         caseCount: 2,
@@ -238,6 +246,9 @@ describe("benchmark packages", () => {
       expect((await list()).map((b) => b.id)).toEqual(["report-writing-v1"]);
 
       const benchDir = path.join(dir, "report-writing-v1");
+      expect(
+        parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
+      ).toMatchObject(metadata);
       for (const [rel, text] of Object.entries(CASES)) {
         expect(await fs.readFile(path.join(benchDir, rel), "utf8"), rel).toBe(text);
       }

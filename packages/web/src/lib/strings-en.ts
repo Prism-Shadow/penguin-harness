@@ -3518,11 +3518,11 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       benchmarkImport: {
-        label: "Import GDPEVO-CRM",
-        desc: "Import GDPEVO-CRM's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
+        label: "Import GDPEVO Essential-Service Ticket Resolution",
+        desc: "Import GDPEVO Essential-Service Ticket Resolution's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
         prompt:
-          "Use the `benchmark-design` Skill to import the GDPEVO-CRM benchmark: " +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-crm-train, " +
+          "Use the `benchmark-design` Skill to import the GDPEVO Essential-Service Ticket Resolution benchmark: " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train, " +
           "together with its paired test set. If this Project already has them, just tell me " +
           "and leave them as they are.",
       },

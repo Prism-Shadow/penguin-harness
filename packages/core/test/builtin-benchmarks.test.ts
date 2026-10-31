@@ -95,8 +95,8 @@ describe("built-in Benchmarks", () => {
     expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
     for (const id of BUILTIN_IDS) {
       const config = await readConfig(id);
-      expect(config.status, id).toBe("published");
-      expect(Number(config.runs), id).toBe(1);
+      expect(["draft", "published"], id).toContain(config.status);
+      expect(Number(config.runs ?? 1), id).toBe(1);
       const scoreboard = parseYaml(
         await fs.readFile(path.join(dir(), id, "scoreboard.yaml"), "utf8"),
       ) as { evaluations: unknown[] };
@@ -111,13 +111,14 @@ describe("built-in Benchmarks", () => {
     for (const id of [EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS]) {
       const manifest = await readBenchmarkManifest(path.join(dir(), id));
       expect(manifest?.id, id).toBe(id);
-      expect(manifest?.version, id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-      expect(manifest?.origin, id).toEqual({ kind: "builtin" });
-      // The file spells the Chinese description `description_zh`; the reader calls it descriptionZh.
-      const { descriptionZh, ...rest } = manifest!;
+      expect(manifest?.version, id).toMatch(/^(?:\d+\.\d+\.\d+|\d{4}\.\d{2}\.\d{2}\.\d+)$/);
+      // TOML metadata uses snake_case; the reader exposes camelCase.
+      const { titleZh, descriptionZh, lastUpdate, ...rest } = manifest!;
       expect(await readConfig(id), id).toEqual({
         ...rest,
+        ...(titleZh !== undefined ? { title_zh: titleZh } : {}),
         ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
+        ...(lastUpdate !== undefined ? { last_update: lastUpdate } : {}),
       });
     }
   });
@@ -174,7 +175,7 @@ describe("built-in Benchmarks", () => {
     expect(await fs.readdir(mine)).toEqual(["benchmark_config.toml"]);
     expect(await fs.readdir(example)).toEqual(["scoreboard.yaml"]);
     for (const id of BUILTIN_IDS.slice(1))
-      expect((await readConfig(id)).status, id).toBe("published");
+      expect(["draft", "published"], id).toContain((await readConfig(id)).status);
   });
 
   it("a write that fails part-way leaves neither its directory nor staging debris, and the error reaches the caller", async () => {
