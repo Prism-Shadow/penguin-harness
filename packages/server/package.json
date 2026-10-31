@@ -42,6 +42,10 @@
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"
     },
+    "./harness-meta": {
+      "types": "./dist/harness-meta.d.ts",
+      "import": "./dist/harness-meta.js"
+    },
     "./cli-shim": {
       "types": "./dist/cli-shim.d.ts",
       "import": "./dist/cli-shim.js"
