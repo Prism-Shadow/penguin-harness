@@ -101,7 +101,7 @@ import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-ser
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
-import { readHarnessMeta } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/harness-meta.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
