@@ -4,7 +4,7 @@
  * `public/manifest.webmanifest` is not committed: a generated file next to a hand-written
  * `package.json` is one edit away from disagreeing with it, and the manifest is exactly the
  * package's own metadata (`name`, `description`, `version`) plus the install surface's shape
- * (standalone, `/`, the penguin icons — assets of `public/` like any other). On a build the
+ * (standalone, `/`, the penguin logo SVG — an asset of `public/` like any other). On a build the
  * manifest is emitted into `dist/` from the package.json at build time; on a dev server it is
  * answered by a middleware reading the same fields, so "add to home screen" against `pnpm dev`
  * sees the package too. The generated document is exported (`appManifest`) so the test asserts
@@ -26,8 +26,15 @@ export interface AppManifest {
   start_url: string;
   scope: string;
   display: "standalone";
-  icons: { src: string; sizes: string; type: "image/png" }[];
+  icons: { src: string; sizes: string; type: "image/svg+xml" }[];
 }
+
+/** The one icon: the penguin logo SVG, shipped as a file of `public/` like any other. */
+export const APP_ICON: { src: string; sizes: string; type: "image/svg+xml" } = {
+  src: "/penguin-logo.svg",
+  sizes: "any",
+  type: "image/svg+xml",
+};
 
 /** The package.json this plugin reads: the fields the manifest is generated from. */
 export interface ManifestPackage {
@@ -49,10 +56,7 @@ export function appManifest(pkg: ManifestPackage): AppManifest {
     start_url: "/",
     scope: "/",
     display: "standalone",
-    icons: [
-      { src: "/penguin-logo-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/penguin-logo-512.png", sizes: "512x512", type: "image/png" },
-    ],
+    icons: [{ ...APP_ICON }],
   };
 }
 

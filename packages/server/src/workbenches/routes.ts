@@ -495,19 +495,15 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   });
 
   // The install surface ("add to home screen"): generated from the workbench's registration,
-  // with the icons its own ui/ ships (checked through the same serving as the pages above)
-  // and the main app's penguin when it ships none.
+  // with its plugin icon (read with the folder, safe by the plugin library's own face)
+  // inlined, and the main app's penguin when it ships none.
   app.get("/:id/manifest.webmanifest", async (c) => {
     const { projectId, agentId } = scope(c);
     const id = c.req.param("id");
     const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
     if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
-    const shipped: string[] = [];
-    for (const { file } of WORKBENCH_ICONS) {
-      if ((await deps.workbenches.uiFile(projectId, agentId, id, file)) !== null)
-        shipped.push(file);
-    }
-    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, shipped)), 200, {
+    const iconSvg = await deps.workbenches.iconSvg(projectId, agentId, id);
+    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, iconSvg)), 200, {
       "content-type": "application/manifest+json; charset=utf-8",
       "cache-control": "no-cache",
     });

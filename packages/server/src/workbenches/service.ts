@@ -533,6 +533,16 @@ export class WorkbenchService implements Workbenches {
     return (await this.runtime()?.file(rel)) ?? null;
   }
 
+  async iconSvg(projectId: string, agentId: string, workbenchId: string): Promise<string | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const folder = await readFolder(
+      path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
+      workbenchId,
+    );
+    return folder?.iconSvg ?? null;
+  }
+
   async history(
     projectId: string,
     agentId: string,

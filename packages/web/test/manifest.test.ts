@@ -31,9 +31,15 @@ describe("the main app's manifest", () => {
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url).toBe("/");
     expect(manifest.scope).toBe("/");
-    // The icons are assets of public/, shipped as files like any other.
-    for (const src of manifest.icons.map((i) => i.src.replace(/^\//, ""))) {
-      await expect(fs.stat(path.join(pkgDir, "public", src))).resolves.toBeTruthy();
+    // One SVG icon, the penguin logo — no raster PNGs, the file is an asset of public/.
+    expect(manifest.icons).toEqual([
+      { src: "/penguin-logo.svg", sizes: "any", type: "image/svg+xml" },
+    ]);
+    await expect(fs.stat(path.join(pkgDir, "public", "penguin-logo.svg"))).resolves.toBeTruthy();
+    for (const png of ["penguin-logo-192.png", "penguin-logo-512.png"]) {
+      await expect(fs.stat(path.join(pkgDir, "public", png))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     }
   });
 

@@ -3,9 +3,11 @@
  *
  * The manifest is generated from the workbench's registration — `name` is the first tab's
  * title (the workbench's own name when it contributes none), `version` its package's,
- * `scope` and `start_url` its `ui/` mount — and its icons are the ones its `ui/icons/`
- * ships, the main app's penguin icons when it ships none. UI files and api dispatch are
- * untouched (covered by workbenches.test.ts).
+ * `scope` and `start_url` its `ui/` mount — and its icon is the plugin icon a workbench
+ * already ships as a plugin package (`package.json#penguin.icon`, `icon.svg` at the root,
+ * read through the plugin library's own reader), inlined as a data URI; a workbench without
+ * one falls back to the main app's penguin SVG. There is no `ui/icons/` convention. UI files
+ * and api dispatch are untouched (covered by workbenches.test.ts).
  *
  * Like the loaded-once group there, each case runs the TypeScript compiler, so one app and
  * one compile are shared.
@@ -13,9 +15,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir } from "@prismshadow/penguin-core";
-import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import { agentDir, isSafeIconSvg } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
+import { MAIN_ICON } from "../src/workbenches/manifest.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 const PROJECT = "owner-wf";
@@ -40,28 +42,14 @@ const MANIFEST = {
   children: [],
 };
 
-/** Rewrites the table the harness wrote into the folder: the workbench was written against an OLDER one. */
-async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): Promise<void> {
-  const file = path.join(dir, ".harness", "ifaces.json");
-  const table = JSON.parse(await fs.readFile(file, "utf8")) as IfaceTable;
-  edit(table);
-  await fs.writeFile(file, JSON.stringify(table));
-}
+/** The icon the first case ships: the same shape a plugin's `icon.svg` takes. */
+const ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="4" height="4" fill="#0258f4"/></svg>';
 
-/** The demo workbench, its one page and — when asked — its icons. */
-async function writeDemo(dir: string, opts: { icons?: boolean } = {}): Promise<void> {
+/** The demo workbench, its one page and — when asked — its plugin icon. */
+async function writeDemo(dir: string, opts: { icon?: boolean } = {}): Promise<void> {
   await fs.mkdir(path.join(dir, "ui"), { recursive: true });
-  if (opts.icons) {
-    await fs.mkdir(path.join(dir, "ui", "icons"), { recursive: true });
-    // A 1×1 transparent PNG, the smallest thing a browser accepts as an icon.
-    await fs.writeFile(
-      path.join(dir, "ui", "icons", "icon-192.png"),
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-        "base64",
-      ),
-    );
-  }
+  if (opts.icon) await fs.writeFile(path.join(dir, "icon.svg"), ICON_SVG);
   await fs.writeFile(
     path.join(dir, "package.json"),
     JSON.stringify({
@@ -92,8 +80,8 @@ export default {
   await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
 }
 
-/** An app with the owner's Project and a demo workbench (with or without icons) in its default Agent. */
-async function workbenchApp(opts: { icons?: boolean } = {}) {
+/** An app with the owner's Project and a demo workbench (with or without an icon) in its default Agent. */
+async function workbenchApp(opts: { icon?: boolean } = {}) {
   const t = await createTestApp();
   const a = await provisionUser(t.app, "owner");
   const owner = apiClient(t.app, a.cookie);
@@ -112,7 +100,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
 
   // One real compiler load, shared by both cases (see the loaded-once note in workbenches.test.ts).
   beforeAll(async () => {
-    ({ t, owner, dir } = await workbenchApp());
+    ({ t, owner, dir } = await workbenchApp({ icon: true }));
     const res = await owner.get(BASE);
     expect(res.status).toBe(200);
     wf = ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches[0]!;
@@ -129,34 +117,37 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     return JSON.parse(text) as Record<string, unknown>;
   };
 
-  it("answers the tab's title and the workbench's own scope, and falls back to the main app's icons", async () => {
+  it("answers the tab's title, the workbench's own scope and its plugin icon inlined", async () => {
     const m = await manifest();
     expect(m.name).toBe("Board");
     expect(m.short_name).toBe("Demo");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
-    expect(String(m.scope)).toBe(`${BASE}/${wf.id}/ui/`);
+    expect(m.scope).toBe(`${BASE}/${wf.id}/ui/`);
     expect(m.start_url).toBe(m.scope);
     const icons = m.icons as { src: string; sizes: string; type: string }[];
-    expect(icons).toEqual([
-      { src: "/penguin-logo-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/penguin-logo-512.png", sizes: "512x512", type: "image/png" },
-    ]);
+    expect(icons).toHaveLength(1);
+    expect(icons[0]!.type).toBe("image/svg+xml");
+    expect(icons[0]!.sizes).toBe("any");
+    // Inlined, so it has no external reference and rides with the install — and the text
+    // inside is exactly the SVG the package ships, safe by the plugin icon's own face.
+    expect(icons[0]!.src).toMatch(/^data:image\/svg\+xml;base64,/);
+    const decoded = Buffer.from(
+      icons[0]!.src.slice("data:image/svg+xml;base64,".length),
+      "base64",
+    ).toString("utf8");
+    expect(decoded).toBe(ICON_SVG);
+    expect(isSafeIconSvg(decoded)).toBe(true);
   });
 
-  it("serves the workbench's own ui/icons when it ships them", async () => {
-    await writeDemo(dir, { icons: true });
+  it("falls back to the main app's penguin SVG when the workbench ships no icon", async () => {
+    await fs.rm(path.join(dir, "icon.svg"));
     const res = await owner.post(`${BASE}/${wf.id}/reload`);
     expect(res.status, await res.text()).toBe(200);
     const m = await manifest();
-    const icons = m.icons as { src: string; sizes: string; type: string }[];
-    expect(icons).toEqual([
-      { src: `${BASE}/${wf.id}/ui/icons/icon-192.png`, sizes: "192x192", type: "image/png" },
-    ]);
-    // And the icon itself is served through the same ui/ route as the pages.
-    const icon = await owner.get(`${BASE}/${wf.id}/ui/icons/icon-192.png`);
-    expect(icon.status).toBe(200);
-    expect(icon.headers.get("content-type")).toBe("image/png");
+    expect(m.icons).toEqual([{ src: MAIN_ICON, sizes: "any", type: "image/svg+xml" }]);
+    // The ui/icons convention does not exist: the fallback is not served from the workbench.
+    expect((m.icons as { src: string }[])[0]!.src).not.toContain("/ui/");
   });
 
   it("404s for a workbench that does not exist", async () => {
