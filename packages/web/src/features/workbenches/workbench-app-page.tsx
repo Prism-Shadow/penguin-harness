@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
+import type { PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
@@ -138,11 +138,6 @@ export function WorkbenchAppPage() {
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>
       )}
-      <div className="fixed right-4 bottom-4 z-40">
-        <Button variant="secondary" size="sm" onClick={() => exit[0]!.run()}>
-          {S.workbenches.exitFullPageButton}
-        </Button>
-      </div>
       <AppPalette extra={exit} />
     </div>
   );

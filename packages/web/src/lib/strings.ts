@@ -1242,7 +1242,6 @@ export const zh = {
         ? "让这个页面占满整个应用；打开命令面板可退出"
         : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
     exitFullPage: "退出全页模式（回到工作台）",
-    exitFullPageButton: "退出全屏",
     retryHistory: "重试",
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
