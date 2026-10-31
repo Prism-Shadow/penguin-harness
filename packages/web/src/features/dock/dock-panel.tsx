@@ -18,7 +18,7 @@
  * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text.
  *
  * The header carries the strip, a "+" menu (the panels the registry offers here), a
- * move-to-other-edge button, a fullscreen toggle, and the dock's × (hide — tabs and everything
+ * move-to-other-edge button, and the dock's × (hide — tabs and everything
  * their bodies hold stay; each tab's own always-visible × is what removes). A terminal has no way
  * out of its conversation's dock: no window of its own, no background form — it is a tab of the
  * terminal panel, and fullscreen is how it gets large. Tabs drag sideways to reorder;
@@ -485,12 +485,7 @@ export function DockPanel({
 
   // ------------------------------------------------------------------------------ fullscreen
 
-  // The header's button toggles in place (corners out ↔ corners in): a flip made there keeps the
-  // focus where it is, and a quick second click lands on the same button rather than on whatever
-  // slid into its slot. It is the explicit control; the boundary drag's snap (above) is the other,
-  // and nothing floats over the surface as a way out. What the surface covers is coveredElement's.
   const coarsePointer = useCoarsePointer();
-  const toggleFullscreen = () => setDockFullscreen(fullscreen ? null : position);
   // The built-in browser lays its page over the panel's slot by coordinates and caches, per slot,
   // which ancestors clip it and whether it sits in a lifted surface. The frame's phase — not the
   // store's flag — is what changes both: the box is lifted, and clipping, through its enter and
@@ -712,21 +707,6 @@ export function DockPanel({
             >
               <GlyphIcon
                 d={position === "right" ? ICONS.panelBottom : ICONS.panelRight}
-                size={ICON_SIZE.rowLead}
-              />
-            </DockHeaderButton>
-          )}
-          {/* Not in the picker state: with no tab there is nothing to show full screen. While
-              fullscreen it stays where it was, as the one way back. */}
-          {tabs.length > 0 && (
-            <DockHeaderButton
-              label={fullscreen ? S.dock.exitFullscreen : S.dock.fullscreen}
-              coarse={coarsePointer}
-              data-testid="dock-fullscreen"
-              onClick={toggleFullscreen}
-            >
-              <GlyphIcon
-                d={fullscreen ? ICONS.cornersIn : ICONS.cornersOut}
                 size={ICON_SIZE.rowLead}
               />
             </DockHeaderButton>

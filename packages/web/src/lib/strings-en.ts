@@ -489,8 +489,6 @@ export const en: Strings = {
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
-    fullscreen: "Full screen",
-    exitFullscreen: "Exit full screen",
     panelUnavailable: "This panel isn't available",
   },
 
