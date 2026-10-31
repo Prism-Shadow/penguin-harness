@@ -70,7 +70,15 @@ export class ShippedImage {
   #bodyId(): string | null {
     if (this.#id === undefined) {
       try {
-        const hash = crypto.createHash("sha256").update(fs.readFileSync(fs.statSync(this.body).isDirectory() ? path.join(this.body, "harness.json") : this.body));
+        const hash = crypto
+          .createHash("sha256")
+          .update(
+            fs.readFileSync(
+              fs.statSync(this.body).isDirectory()
+                ? path.join(this.body, "harness.json")
+                : this.body,
+            ),
+          );
         this.#id = hash.digest("hex").slice(0, 16);
       } catch {
         this.#id = null;
