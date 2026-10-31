@@ -211,16 +211,16 @@ export interface WorkbenchRouteDeps {
  * it reads only the workbench's own registration, nothing per-user. Its 404 for a missing
  * workbench says no more than the signed-in gate's does.
  */
-export function manifestRoutes(deps: Pick<WorkbenchRouteDeps, "workbenches">): Hono<AppEnv> {
+export function manifestRoutes(workbenches: Workbenches): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.get("/:projectId/:agentId/:id/manifest.webmanifest", async (c) => {
     const projectId = requireValidId(c as never, "projectId");
     const agentId = requireValidId(c as never, "agentId");
     const id = c.req.param("id");
-    const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
+    const info = (await workbenches.list(projectId, agentId)).find((w) => w.id === id);
     if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
     const icon =
-      contributedAppIcon(info.tabs) ?? (await deps.workbenches.iconSvg(projectId, agentId, id));
+      contributedAppIcon(info.tabs) ?? (await workbenches.iconSvg(projectId, agentId, id));
     return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, icon)), 200, {
       "content-type": "application/manifest+json; charset=utf-8",
       "cache-control": "no-cache",
