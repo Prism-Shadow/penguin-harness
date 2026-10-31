@@ -732,7 +732,7 @@ function staticResponse(
  */
 function workbenchAppPage(reqPath: string): { projectId: string; agentId: string; workbenchId: string } | null {
   const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/.*)?$/.exec(reqPath);
-  return m === null ? null : { projectId: m[1], agentId: m[2], workbenchId: m[3] };
+  return m === null ? null : { projectId: m[1]!, agentId: m[2]!, workbenchId: m[3]! };
 }
 
 /**
