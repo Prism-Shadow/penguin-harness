@@ -3,11 +3,12 @@
  *
  * The manifest is generated from the workbench's registration — `name` is the first tab's
  * title (the workbench's own name when it contributes none), `version` its package's,
- * `scope` and `start_url` its `ui/` mount — and its icon is the plugin icon a workbench
- * already ships as a plugin package (`package.json#penguin.icon`, `icon.svg` at the root,
- * read through the plugin library's own reader), inlined as a data URI; a workbench without
- * one falls back to the main app's penguin SVG. There is no `ui/icons/` convention. UI files
- * and api dispatch are untouched (covered by workbenches.test.ts).
+ * `scope` and `start_url` its full-page app route (the page whose manifest link names this
+ * manifest) — and its icon is the plugin icon a workbench already ships as a plugin package
+ * (`package.json#penguin.icon`, `icon.svg` at the root, read through the plugin library's own
+ * reader), inlined as a data URI; a workbench without one falls back to the main app's
+ * penguin SVG. There is no `ui/icons/` convention. UI files and api dispatch are untouched
+ * (covered by workbenches.test.ts).
  *
  * Like the loaded-once group there, each case runs the TypeScript compiler, so one app and
  * one compile are shared.
@@ -117,13 +118,13 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     return JSON.parse(text) as Record<string, unknown>;
   };
 
-  it("answers the tab's title, the workbench's own scope and its plugin icon inlined", async () => {
+  it("answers the tab's title, the app route as its scope and its plugin icon inlined", async () => {
     const m = await manifest();
     expect(m.name).toBe("Board");
     expect(m.short_name).toBe("Demo");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
-    expect(m.scope).toBe(`${BASE}/${wf.id}/ui/`);
+    expect(m.scope).toBe(`${BASE}/${wf.id}`);
     expect(m.start_url).toBe(m.scope);
     const icons = m.icons as { src: string; sizes: string; type: string }[];
     expect(icons).toHaveLength(1);

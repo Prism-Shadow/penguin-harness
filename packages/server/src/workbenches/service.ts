@@ -55,7 +55,6 @@ import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   AppCenterShortcut,
-  WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -215,11 +214,7 @@ export function loadHints(
  * the folder, under `ui/`) turned into the URL it is served from. The slot's shape was
  * checked with the tree; where a page may live is this host's rule.
  */
-function contributedTabs(
-  manifests: readonly Manifest[],
-  uiBase: string,
-  defaultIcon: WorkbenchTabIcon | null,
-): WorkbenchTab[] {
+function contributedTabs(manifests: readonly Manifest[], uiBase: string): WorkbenchTab[] {
   const tabs: WorkbenchTab[] = [];
   const keys = new Set<string>();
   for (const m of manifests) {
@@ -231,22 +226,8 @@ function contributedTabs(
         );
       }
       keys.add(tab.key);
-      if (tab.icon !== undefined) {
-        const i = tab.icon;
-        if (
-          i === null ||
-          typeof i !== "object" ||
-          (i.kind !== "svg" && i.kind !== "png") ||
-          typeof i.data !== "string" ||
-          i.data === ""
-        ) {
-          throw new Error(
-            `contribution '${tab.id}': icon must be { kind: "svg" | "png", data } — an SVG's markup or a PNG's base64 bytes`,
-          );
-        }
-      }
       if (!("iframe" in tab.renderer)) {
-        tabs.push(tab.icon !== undefined ? tab : { ...tab, ...(defaultIcon ? { icon: defaultIcon } : {}) });
+        tabs.push(tab);
         continue;
       }
       const src = tab.renderer.iframe.src;
@@ -262,7 +243,6 @@ function contributedTabs(
         .join("/");
       tabs.push({
         ...tab,
-        ...(tab.icon === undefined && defaultIcon ? { icon: defaultIcon } : {}),
         renderer: { iframe: { src: `${uiBase}/${rest}` } },
       });
     }
@@ -1000,15 +980,7 @@ export class WorkbenchService implements Workbenches {
     const appCenter = await readAppCenterManifest(folder.dir, folder.id);
     try {
       const manifests = await readManifests(folder);
-      const tabs = contributedTabs(
-        manifests,
-        uiBase(projectId, agentId, folder.id),
-        folder.iconSvg === null
-          ? null
-          : folder.iconSvg.kind === "png"
-            ? { kind: "png", data: folder.iconSvg.data }
-            : { kind: "svg", data: folder.iconSvg.data },
-      );
+      const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
       const ts = await loadTypeScript(this.hmr.assetsDir());
       // A new workbench takes its types from THIS harness; one that has them keeps them, and
       // they are its side of the comparison below.
