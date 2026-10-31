@@ -1,3 +1,6 @@
 # Playwright E2E artifacts
 test-results/
 playwright-report/
+
+# Generated from package.json by the penguin:manifest vite plugin (scripts/penguin-manifest.ts).
+public/manifest.webmanifest

@@ -174,6 +174,12 @@ export abstract class Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<string | null>;
+  /**
+   * The workbench's plugin icon as SVG text (its package's `penguin.icon`, read through the
+   * plugin library's own reader), or null when it ships none or the icon is refused. Server
+   * side only — the icon never enters a `WorkbenchInfo`.
+   */
+  abstract iconSvg(projectId: string, agentId: string, workbenchId: string): Promise<string | null>;
   abstract history(
     projectId: string,
     agentId: string,

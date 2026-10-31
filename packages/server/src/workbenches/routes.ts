@@ -7,6 +7,7 @@
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name)
+ *   GET    /:id/manifest.webmanifest  the workbench's PWA manifest (see manifest.ts)
  *   *      /:id/api/*              handed to the workbench's WorkbenchMain.handle: JSON by default, any
  *                                  content type when the handler names one (see respond)
  *
@@ -27,6 +28,7 @@ import type {
   Workbenches,
 } from "../mechanisms/workbenches.js";
 import { WorkbenchNotFound } from "./service.js";
+import { workbenchManifest } from "./manifest.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -266,6 +268,21 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const body = await fs.readFile(file);
     return c.body(body, 200, {
       "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream",
+      "cache-control": "no-cache",
+    });
+  });
+
+  // The install surface ("add to home screen"): generated from the workbench's registration,
+  // with its plugin icon (read with the folder, safe by the plugin library's own face)
+  // inlined, and the main app's penguin when it ships none.
+  app.get("/:id/manifest.webmanifest", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
+    if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
+    const iconSvg = await deps.workbenches.iconSvg(projectId, agentId, id);
+    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, iconSvg)), 200, {
+      "content-type": "application/manifest+json; charset=utf-8",
       "cache-control": "no-cache",
     });
   });

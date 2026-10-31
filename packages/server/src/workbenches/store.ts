@@ -18,7 +18,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentDir, readPluginIcon } from "@prismshadow/penguin-core";
 import type { WorkbenchVersion } from "../mechanisms/workbenches.js";
 
 export const STATE_FILE = "state.json";
@@ -34,6 +34,12 @@ export interface WorkbenchFolder {
   revision: string;
   uiRev: string | null;
   pkg: { name: string; version: string | null };
+  /**
+   * The plugin icon's SVG text (from `package.json#penguin.icon`, `icon.svg` at the root by
+   * default), read through the plugin library's own reader — safe by the same face every
+   * plugin icon passes; null when the workbench ships none or it is refused.
+   */
+  iconSvg: string | null;
 }
 
 export function workbenchesDir(root: string, projectId: string, agentId: string): string {
@@ -98,7 +104,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   } catch {
     return null;
   }
-  let pkg: { name?: unknown; version?: unknown } = {};
+  let pkg: { name?: unknown; version?: unknown; penguin?: { icon?: unknown } } = {};
   try {
     pkg = JSON.parse(raw) as typeof pkg;
   } catch {
@@ -116,6 +122,9 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
+    iconSvg:
+      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
+        .icon ?? null,
   };
 }
 

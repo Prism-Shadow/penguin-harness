@@ -19,6 +19,7 @@ import type { Plugin } from "vite";
 import { penguinUi } from "../ui/src/vite-plugin";
 import { probeSitesDefine } from "../../scripts/probe-sites.mjs";
 import { probeSummariesDefine } from "../../scripts/gen-probe-docs.mjs";
+import { penguinManifest } from "./scripts/penguin-manifest";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -102,7 +103,7 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [penguinUi(), react(), tailwindcss(), katexWoff2Only()],
+  plugins: [penguinManifest(), penguinUi(), react(), tailwindcss(), katexWoff2Only()],
   // Where each browser probe (`web.*`) is recorded, for the performance panel's links: the page
   // carries its own table, at the commit this bundle was built from (scripts/probe-sites.mjs).
   // And each probe's one-sentence summary in both languages, from the probe reference itself.
