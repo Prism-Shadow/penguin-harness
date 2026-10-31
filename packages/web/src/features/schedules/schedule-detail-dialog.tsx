@@ -94,7 +94,15 @@ export function ScheduleDetailDialog({
     if (projectId === null) return;
     setBusy(true);
     try {
-      await api.updateSchedule(projectId, item.agentId, item.name, toggleBody(item, !item.enabled));
+      await api.updateSchedule(
+        projectId,
+        item.agentId,
+        item.name,
+        toggleBody(item, !item.enabled),
+        // The Project-wide page lists this machine's schedules; a machine is a separate
+        // server's list, opened from its own panel (see schedule-panel.tsx).
+        null,
+      );
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       onChanged();
     } catch (e) {
@@ -139,7 +147,7 @@ export function ScheduleDetailDialog({
     if (projectId === null) return;
     setBusy(true);
     try {
-      await api.deleteSchedule(projectId, item.agentId, item.name);
+      await api.deleteSchedule(projectId, item.agentId, item.name, null);
       setConfirmingDelete(false);
       onChanged();
       onClose();

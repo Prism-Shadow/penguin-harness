@@ -142,7 +142,7 @@ export function scheduleError(
 export function scheduleInvalidFiles(
   projectId: string | null,
 ): ProjectSchedulesResponse["invalidFiles"] {
-  return peek(projectId)?.invalidFiles ?? [];
+  return peek(projectId, null)?.invalidFiles ?? [];
 }
 
 /**

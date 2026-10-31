@@ -95,9 +95,9 @@ describe("filterBucket / scheduleGlyph", () => {
     expect(filterBucket("active")).toBe("active");
     expect(filterBucket("disabled")).toBe("paused");
     expect(filterBucket("auto_paused")).toBe("paused");
-    expect(filterBucket("done")).toBe("completed");
-    expect(filterBucket("expired")).toBe("completed");
-    expect(filterBucket("missed")).toBe("completed");
+    expect(filterBucket("done")).toBeNull();
+    expect(filterBucket("expired")).toBeNull();
+    expect(filterBucket("missed")).toBeNull();
     expect(filterBucket("invalid")).toBeNull();
     // Every non-"all" chip is a bucket some status lands in.
     const landed = (["active", "disabled"] as const).map((s) => filterBucket(s));

@@ -57,7 +57,6 @@ export function countByStatus(
     all: items.length,
     active: 0,
     paused: 0,
-    completed: 0,
   };
   for (const item of items) {
     const bucket = filterBucket(item.status);

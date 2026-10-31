@@ -62,7 +62,9 @@ function useCatalog(projectId: string) {
     if (!projectId) return;
     let cancelled = false;
     api
-      .getModels(projectId)
+      // The catalog this machine holds: an employee's model is picked from the local one, the
+      // same list the Project's own model page shows (see models-page.tsx).
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })

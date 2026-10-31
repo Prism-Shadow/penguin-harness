@@ -58,7 +58,7 @@ describe("scheduleType", () => {
 });
 
 describe("countByStatus", () => {
-  it("counts the panel's buckets, and 'all' counts every task including an invalid file", () => {
+  it("counts the chips' buckets: settled and invalid rows fall under no chip, 'all' keeps them", () => {
     const statuses: ScheduleStatus[] = [
       "active",
       "active",
@@ -69,7 +69,10 @@ describe("countByStatus", () => {
       "invalid",
     ];
     const counts = countByStatus(statuses.map((status, i) => item({ name: `t${i}`, status })));
-    expect(counts).toEqual({ all: 7, active: 2, paused: 1, completed: 3 });
+    // Settled states (done / expired / missed) are archived out of the list by the scheduler —
+    // one still listed before its archive move gets no chip of its own, exactly like an invalid
+    // file; "all" is the only count that includes them.
+    expect(counts).toEqual({ all: 7, active: 2, paused: 1 });
   });
 });
 

@@ -322,7 +322,7 @@ export function SchedulesPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="w-full min-w-0 sm:w-96">
             <Segmented
-              cols={4}
+              cols={3}
               options={SCHEDULE_FILTERS.map((value) => ({
                 value,
                 label: chip(
@@ -330,9 +330,7 @@ export function SchedulesPage() {
                     ? S.schedule.filterAll
                     : value === "active"
                       ? S.schedule.filterActive
-                      : value === "paused"
-                        ? S.schedule.filterPaused
-                        : S.schedule.filterCompleted,
+                      : S.schedule.filterPaused,
                   statusCounts[value],
                 ),
               }))}
