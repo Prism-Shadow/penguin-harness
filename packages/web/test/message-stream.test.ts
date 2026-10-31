@@ -233,7 +233,12 @@ describe("the streamed-history read", () => {
       "user_text", "tool_call", "assistant_text", "task_stats",
       "user_text", "tool_call", "assistant_text",
     ]);
-    expect(userTexts(h)).toEqual(["q1", "q2", "q3"]);
+    // userTexts maps one entry per item: only the prompts carry text.
+    expect(userTexts(h)).toEqual([
+      "q1", null, null, null,
+      "q2", null, null, null,
+      "q3", null, null,
+    ]);
   });
 
   it("openers of units older than the window ride leading skeleton frames, then the window's interleaved stream — one pass, correct final order", async () => {
@@ -255,8 +260,9 @@ describe("the streamed-history read", () => {
     ]);
     await h.controller.load();
     expect(h.errors.filter((e) => e !== null)).toEqual([]);
-    expect(kinds(h)).toEqual(["user_text", "user_text", "user_text", "assistant_text", "task_stats"]);
-    // userTexts maps text per item: the settled unit's stats row contributes null.
+    // The last unit's stats row only lands at finalizeHistory when the stream's
+    // status is idle; this harness runs no task_state, so it stays open — no row.
+    expect(kinds(h)).toEqual(["user_text", "user_text", "user_text", "assistant_text"]);
     expect(userTexts(h)).toEqual(["q1", "q2", "q3", null]);
   });
 
