@@ -22,6 +22,8 @@ import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useAppPageTab } from "./use-app-page-tab";
 import { useInstallManifest } from "../../lib/workbench-tabs";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useDocumentTitle } from "../../lib/use-document-title";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
@@ -48,6 +50,9 @@ export function WorkbenchAppPage() {
     enabled: !safe,
   });
   const paletteShortcut = useShortcutLabel("palette.toggle");
+  // The page is the app: the browser tab carries the tab's own name (the manifest's name is
+  // the same title), not the main app's.
+  useDocumentTitle(tab?.title ?? null);
 
   // This page is its own installable app: its manifest link names THIS tab's manifest while
   // mounted (one app per tab), the workbench's when no tab key is in the route — a remote
