@@ -791,6 +791,16 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await reloadError()).toContain("module tree rejected");
   });
 
+  it("refuses a tab that names an icon: the strip is a text strip", async () => {
+    // The icon slot no longer exists — a tab draws no icon — so a manifest still declaring
+    // one is an undeclared key the tree rejects, and the previous instance keeps serving.
+    await list();
+    await writeContributions({
+      "WebModule.sessionTabs": [{ ...TAB, icon: { kind: "svg", data: "<svg xmlns=\"http://www.w3.org/2000/svg\"/>" } }],
+    });
+    expect(await reloadError()).toContain("module tree rejected");
+  });
+
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
     // A workbench with no contribution is server-side only — and since this one has pages, the
     // load says that nothing shows them, with the entry to add, in the API and in the status

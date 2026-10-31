@@ -61,6 +61,13 @@ describe("workbench tabs", () => {
     );
   });
 
+  it("carries no icon: the strip is a text strip", () => {
+    // The server no longer fills a default in and no longer passes one through — a tab is
+    // its key, its titles and its page, and nothing the strip would draw beside the title.
+    const [t] = workbenchTabsOf([info({ tabs: [{ ...tab("board", "index.html"), icon: undefined } as never] })]);
+    expect(t).not.toHaveProperty("icon");
+  });
+
   it("falls back to Chat when the active tab is gone", () => {
     const tabs = workbenchTabsOf([info({})]);
     expect(settleActiveTab("demo/board", tabs)).toBe("demo/board");
