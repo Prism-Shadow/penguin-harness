@@ -43,6 +43,7 @@ import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
+  WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -396,7 +397,11 @@ export class WorkbenchService implements Workbenches {
     }
   }
 
-  async iconSvg(projectId: string, agentId: string, workbenchId: string): Promise<string | null> {
+  async iconSvg(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<{ kind: "svg" | "png"; data: string } | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
     const folder = await readFolder(
