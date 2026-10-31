@@ -60,15 +60,15 @@ The six channels as they stand. The facts below come from a read-only survey, re
 
 ### The npm package
 
-Installed from the package registry. **Entry**: the two bin links the package declares — the main CLI and the pushed-CLI loader. **Harness data root**: the default profile root; the server's startup copies its carried image into it, so any root an npm-installed server serves holds a record from its first start. **Pushed-CLI reachability**: both entries are present and the loader resolves, so a server started from this channel can re-run through the pushed CLI. **Carried harness image**: yes — the server dependency ships one in its `dist/`, packed with the package.
+Installed from the package registry. **Entry**: the two bin links the package declares — the main CLI and the pushed-CLI loader. **Harness data root**: the default profile root; the server's startup copies its carried image into it, so any root an npm-installed server serves holds a record from its first start. **Pushed-CLI reachability**: both entries are present and the loader resolves, so a server started from this channel can re-run through the pushed CLI. **Carried harness image**: yes — the server dependency carries a store in `dist/hmr/`.
 
 ### The release tarball and the universal bundle
 
-Installed by the release scripts into a directory of launcher, libraries, and a bundled runtime; the universal variant carries no bundled runtime. **Entry**: the launcher script beside the installed CLI pair. **Harness data root**: the default profile root, reconciled against the carried image at every start. **Pushed-CLI reachability**: the loader ships beside the entry, so re-running through the pushed CLI works. **Carried harness image**: yes — the release directory carries a push-format harness image of its own build, copied into the root at start and used for machine installs.
+Installed by the release scripts into a directory of launcher, libraries, and a bundled runtime; the universal variant carries no bundled runtime. **Entry**: the launcher script beside the installed CLI pair. **Harness data root**: the default profile root, reconciled against the carried image at every start. **Pushed-CLI reachability**: the loader ships beside the entry, so re-running through the pushed CLI works. **Carried harness image**: yes — the release directory carries a harness store in `lib/dist/hmr/`, copied into the root at start and used for machine installs.
 
 ### The Docker image
 
-**Entry**: an extension-less symlink on `PATH` pointing at the CLI inside the image. **Harness data root**: a volume, reconciled against the carried image at every start of the container. **Pushed-CLI reachability**: the loader is in the image and nothing resolves it, so pushed CLI changes do not take effect on this channel today. **Carried harness image**: yes — the image packs one at build time, like a release does.
+**Entry**: an extension-less symlink on `PATH` pointing at the CLI inside the image. **Harness data root**: a volume, reconciled against the carried image at every start of the container. **Pushed-CLI reachability**: the loader is in the image and nothing resolves it, so pushed CLI changes do not take effect on this channel today. **Carried harness image**: yes — the image carries a store in `lib/dist/hmr/`, built like a release store.
 
 ### The desktop application
 
