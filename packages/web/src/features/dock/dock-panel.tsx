@@ -38,8 +38,8 @@
  * dragging a tab out to the other edge. The boundary drag is how the flip happens by gesture:
  * pulled past the dock's maximum size by a small slack, the dock snaps to fullscreen and the drag
  * is over; while fullscreen the handle sits on the cover's leading edge, and a pull back inward
- * past the slack (or a double click) snaps it back to its stored size. The header's toggle (now
- * corners in) is the other way back, and the store drops fullscreen by itself when the surface
+ * past the slack (or a double click) snaps it back to its stored size — and the store drops
+ * fullscreen by itself when the surface
  * stops qualifying (hidden, emptied, or a dock it covers brought forward). Esc is left alone: the
  * terminal, the editor and web pages each own it.
  */
