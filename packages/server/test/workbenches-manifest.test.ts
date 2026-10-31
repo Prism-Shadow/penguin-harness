@@ -200,4 +200,21 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     const res = await owner.get(`${BASE}/no-such/manifest.webmanifest`);
     expect(res.status).toBe(404);
   });
+
+  it("answers without a session — the install face fetches the manifest with no cookie", async () => {
+    // Installation runs on the workbench's own host, where the main origin's session cookie
+    // is not sent; the manifest must answer anyway (this exact fetch used to 401 behind the
+    // session gate and the browser refused to install).
+    const res = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`);
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/manifest+json");
+    expect((JSON.parse(text) as { name: string }).name).toBe("Board");
+  });
+
+  it("keeps the rest of the prefix behind the session gate", async () => {
+    // Only the manifest path is public: the same prefix without a cookie still demands one.
+    const res = await t.app.request(`${BASE}`);
+    expect(res.status).toBe(401);
+  });
 });
