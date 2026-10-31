@@ -23,6 +23,7 @@ import {
   type WorkbenchTab,
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
+import { useDocumentTitle } from "../../lib/use-document-title";
 import { AppPalette } from "../palette/app-palette";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
@@ -41,6 +42,9 @@ export function WorkbenchAppPage() {
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
+  // The page is the app: the browser tab carries the tab's own name (the manifest's name is
+  // the same title), not the main app's.
+  useDocumentTitle(tab?.title ?? null);
 
   // This page is its own installable app: its manifest link names THIS workbench's manifest
   // (the app installs under the workbench's name and icon), not the main app's. The server
