@@ -19,6 +19,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -328,6 +329,22 @@ export function resolvePushPlan(
   return plan.harness === null ? null : plan;
 }
 
+/** The store carried by npm, release tarballs and container program layouts. */
+export function carriedStore(argv1: string | undefined = process.argv[1]): string | null {
+  if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
+  const beside = path.join(path.dirname(argv1), "hmr");
+  if (fs.existsSync(path.join(beside, "harness.json"))) return beside;
+  try {
+    const server = createRequire(path.resolve(argv1)).resolve(
+      "@prismshadow/penguin-server/package.json",
+    );
+    const dir = path.join(path.dirname(server), "dist", "hmr");
+    return fs.existsSync(path.join(dir, "harness.json")) ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The install image a release build ships, in its program's `dist/` beside the entry. */
 export const SHIPPED_IMAGE = "install-image.gz";
 
@@ -342,6 +359,8 @@ export function shippedImage(
 ): { baseVersion: string; body: string } | null {
   const release = installedRelease(argv1);
   if (release === null) return null;
+  const store = carriedStore(argv1);
+  if (store !== null) return { baseVersion: release.version, body: store };
   const body = path.join(release.dir, "dist", SHIPPED_IMAGE);
   return fs.existsSync(body) ? { baseVersion: release.version, body } : null;
 }
