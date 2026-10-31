@@ -32,10 +32,8 @@ import {
   workbenchUiUrl,
   type WorkbenchNotice,
   type WorkbenchTab,
-  type WorkbenchTabIcon,
   type WorkbenchUpdatedDetail,
 } from "../../lib/workbench-tabs";
-import { sanitizeSkillIcon } from "../skills/skill-icon";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
@@ -123,29 +121,6 @@ const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
-/** A tab icon: an SVG's markup inlined (the same face a skill icon passes), a PNG as an img. */
-function TabIcon({ icon }: { icon: WorkbenchTabIcon }) {
-  if (icon.kind === "png") {
-    return (
-      <img
-        aria-hidden
-        src={`data:image/png;base64,${icon.data}`}
-        alt=""
-        className="block h-4 w-4 shrink-0 object-contain"
-      />
-    );
-  }
-  const safe = sanitizeSkillIcon(icon.data);
-  if (safe === null) return null;
-  return (
-    <span
-      aria-hidden
-      className="block h-4 w-4 shrink-0 [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-      dangerouslySetInnerHTML={{ __html: safe }}
-    />
-  );
-}
-
 export function WorkbenchTabStrip({
   tabs,
   notices = [],
@@ -201,11 +176,6 @@ export function WorkbenchTabStrip({
               className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
               onClick={() => onSelect(t.tabId)}
             >
-              {t.icon !== undefined && (
-                <span className="mr-1.5 flex items-center">
-                  <TabIcon icon={t.icon} />
-                </span>
-              )}
               {localizedText(locale, t.title, t.titleZh)}
               {t.error !== null && (
                 <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workbenches.brokenMark}>

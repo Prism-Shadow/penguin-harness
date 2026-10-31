@@ -15,12 +15,6 @@
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "./server-context";
 
-/** A tab icon: an SVG's markup, or a PNG's bytes base64-encoded — the strip picks the media type. */
-export interface WorkbenchTabIcon {
-  kind: "svg" | "png";
-  data: string;
-}
-
 export interface WorkbenchTab {
   /** `<workbenchId>/<key>`: what the strip selects by. */
   tabId: string;
@@ -29,11 +23,6 @@ export interface WorkbenchTab {
   key: string;
   title: string;
   titleZh?: string;
-  /**
-   * The tab's icon — what the manifest contributed, else the workbench's plugin icon the
-   * server filled in; absent when the workbench ships no icon and contributed none.
-   */
-  icon?: WorkbenchTabIcon;
   /** Where the page is served from — through the machine's connection when the workbench lives on one. */
   src: string;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
@@ -104,7 +93,6 @@ export function workbenchTabsOf(
               key: tab.key,
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
-              ...(tab.icon === undefined ? {} : { icon: tab.icon }),
               src: apiUrl(tab.renderer.iframe.src, machineId),
               machineId,
               name: w.name,

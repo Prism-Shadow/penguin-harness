@@ -118,12 +118,6 @@ export type WorkbenchTabRenderer = { iframe: { src: string } } | { builtin: stri
  * manifest `renderer.iframe.src` is a path inside the workbench folder, under `ui/`; in a
  * `WorkbenchInfo` it is the URL that file is served from.
  */
-/** A tab icon: an SVG's markup, or a PNG's bytes base64-encoded — the strip picks the media type. */
-export interface WorkbenchTabIcon {
-  kind: "svg" | "png";
-  data: string;
-}
-
 export interface WorkbenchTab {
   id: string;
   /** Unique within the workbench; the tab's stable name (it appears in the full-page URL). */
@@ -131,12 +125,6 @@ export interface WorkbenchTab {
   title: string;
   titleZh?: string;
   renderer: WorkbenchTabRenderer;
-  /**
-   * The tab's icon: what the manifest contributed (`WebModule.sessionTabs[].icon`), else the
-   * workbench's plugin icon (`package.json#penguin.icon`) — the strip draws it; absent when
-   * the workbench ships no icon and contributed none.
-   */
-  icon?: WorkbenchTabIcon;
 }
 
 export interface WorkbenchInfo {
