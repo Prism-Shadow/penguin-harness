@@ -412,7 +412,13 @@ describe("lookups", () => {
       const fake = readPluginIcon(dir, "fake.png");
       expect(fake.icon).toBeUndefined();
       expect(fake.warnings.join(" ")).toMatch(/is not a PNG file/);
+      // Nothing declared: the root icon.svg (which this fixture wrote) is the default.
+      const fallback = readPluginIcon(dir, undefined);
+      expect(fallback.warnings).toEqual([]);
+      expect(fallback.kind).toBe("svg");
+      expect(fallback.icon).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
       // Nothing declared and no icon.svg: silent none.
+      await fs.rm(path.join(dir, "icon.svg"));
       expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
     } finally {
       await fs.rm(dir, { recursive: true });
