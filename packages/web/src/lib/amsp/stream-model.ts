@@ -80,14 +80,18 @@ import type {
 } from "@prismshadow/amsp";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
+  abandonLiveRequest,
   addLlmDuration,
   addToolExecution,
   beginCompaction,
+  beginLiveRequest,
   commitPendingCompaction,
   createTaskStatsTracker,
   endCompaction,
   endTask,
+  noteLiveChars,
   resetTaskCounters,
+  settleLiveRequest,
   trackMainUsage,
   trackSubagentUsage,
 } from "./task-stats";
@@ -1193,7 +1197,29 @@ function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
 // Streamed fragments
 // ---------------------------------------------------------------------------
 
+/**
+ * Characters of model output a streamed fragment carries, for the live speed reading: assistant
+ * text, thinking and tool-call arguments are billed as output. Tool OUTPUT fragments are not —
+ * they go back to the model as input — so they contribute nothing.
+ */
+function streamedOutputChars(p: PartialModelPayload): number {
+  switch (p.type) {
+    case "partial_text":
+      return p.text?.length ?? 0;
+    case "partial_thinking":
+      return p.thinking?.length ?? 0;
+    case "partial_tool_call":
+      return p.arguments?.length ?? 0;
+    default:
+      return 0;
+  }
+}
+
 function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number): void {
+  // Live speed: assistant text, thinking and tool-call arguments are the three parts a provider
+  // bills as output, so every fragment of them advances this Request's character count until its
+  // token_usage replaces the estimate with the exact figure.
+  noteLiveChars(model.stats, streamedOutputChars(p), tsMs);
   switch (p.type) {
     case "partial_text": {
       if (p.event_type === "start") {
@@ -1757,6 +1783,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     }
     case "token_usage":
       trackMainUsage(model.stats, p);
+      // The Request's own usage is the exact output figure the live estimate was standing in
+      // for, so the chip switches to it here (compaction's usage reports no speed).
+      if (!model.stats.compactionActive) settleLiveRequest(model.stats, p.request.output, tsMs);
       return;
     case "mcp_connect_begin": {
       model.items.push({
@@ -1899,6 +1928,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         model.openRequestBeginMs = tsMs ?? null;
         model.openRequestFirstItemId = model.nextItemId;
         model.openApprovalWaitMs = 0;
+        // The live speed chip starts measuring this Request from its own begin timestamp (server
+        // time, like every other duration here); compaction requests report no speed.
+        beginLiveRequest(model.stats, tsMs);
         // A new turn: whatever the previous one owed the model has been sent with it.
         model.turnToolOutputs = false;
       }
@@ -1922,6 +1954,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       model.openRequestBeginMs = null;
       model.openApprovalWaitMs = 0;
+      // No usage came with this Request (a fatal end, an interruption): drop the in-flight
+      // measurement rather than let a partial estimate linger as the chip's reading.
+      if (model.stats.liveBeginMs !== null) abandonLiveRequest(model.stats);
       // The Request is over: its texts learn whether it completed (the fork point needs a
       // completed one), and a call it cut short will never run.
       markRequestTexts(model, p.status === "completed");

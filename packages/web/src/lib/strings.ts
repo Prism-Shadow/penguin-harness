@@ -4179,6 +4179,8 @@ Benchmark：
     statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
+    /** The header chip's live output speed while a reply streams: `≈` marks the estimate made from the text so far (the provider reports tokens only at the end of a request). */
+    statLiveSpeed: "模型速度（生成中为估算，请求结束为实测）",
     /** Copied-stats-line parenthesis wrappers around the cached amount (fullwidth for zh typography). */
     statParenOpen: "（",
     statParenClose: "）",

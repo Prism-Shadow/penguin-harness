@@ -68,6 +68,16 @@ export function bucketCostUsd(
   );
 }
 
+/**
+ * Characters-per-output-token assumed until a completed Request calibrates it: mixed prose with
+ * Chinese runs closer to 1, English closer to 4, and assistant answers usually carry both. Only
+ * ever the first Request of a Session reads it — afterwards the ratio comes from real usage.
+ */
+export const DEFAULT_CHARS_PER_TOKEN = 2.5;
+/** Below these a Request is too short to calibrate the ratio (a two-word answer says nothing about the tokenizer). */
+const MIN_CALIBRATION_CHARS = 32;
+const MIN_CALIBRATION_TOKENS = 16;
+
 /** Stats tracker: Session-level cumulative counts that persist across Tasks + this-Task delta counts. */
 export interface TaskStatsTracker {
   /** Current context occupancy = total from the most recent main-session request (not updated by compaction requests). */
@@ -118,6 +128,18 @@ export interface TaskStatsTracker {
   pendingCompactionOutput: number;
   /** Whether token_usage occurred during this Task (if not, no stats row is produced). */
   hasUsage: boolean;
+  /**
+   * Live output-speed reading of the Request in flight (see {@link liveOutputSpeed}) — the
+   * header's `t/s` chip. `liveChars` counts the output characters streamed since
+   * `liveBeginMs`, `liveLastMs` is the newest fragment's server timestamp (the reading's
+   * clock), `liveLastTps` the exact rate of the last Request that reported its usage, and
+   * `liveCharsPerToken` this Session's calibrated character→token ratio.
+   */
+  liveChars: number;
+  liveBeginMs: number | null;
+  liveLastMs: number | null;
+  liveLastTps: number | null;
+  liveCharsPerToken: number;
   /** Session total elapsed time (sum of each Task's elapsed time, ms). */
   sessionElapsedMs: number;
   /**
@@ -156,6 +178,11 @@ export function createTaskStatsTracker(): TaskStatsTracker {
     pendingCompactionCacheWrite: 0,
     pendingCompactionOutput: 0,
     hasUsage: false,
+    liveChars: 0,
+    liveBeginMs: null,
+    liveLastMs: null,
+    liveLastTps: null,
+    liveCharsPerToken: DEFAULT_CHARS_PER_TOKEN,
     sessionElapsedMs: 0,
     sessionLlmMs: 0,
     sessionToolMs: 0,
@@ -297,6 +324,109 @@ export function addLlmDuration(t: TaskStatsTracker, ms: number): void {
   if (ms > 0) t.taskLlmMs += ms;
 }
 
+// ---------------------------------------------------------------------------
+// Live output speed (the header's tok/s chip)
+// ---------------------------------------------------------------------------
+
+/**
+ * Live output speed of the Request in flight.
+ *
+ * The stats row's `outputTps` is exact but exists only once the Task ends: a provider reports a
+ * Request's output tokens exactly once, in that Request's `token_usage`, and the stream carries
+ * no per-chunk count. So while the model is still writing, the only live signal is the output
+ * text itself, and the reading is an **estimate**: characters streamed so far (assistant text,
+ * thinking and tool-call arguments — the three parts a provider bills as output) divided by this
+ * Session's calibrated characters-per-token ratio. The ratio is learned from the preceding
+ * Request (`chars ÷ request.output`), so it converges on the running Model's own tokenizer
+ * instead of staying a global guess; only a Session's first Request reads
+ * {@link DEFAULT_CHARS_PER_TOKEN}.
+ *
+ * Both readings are measured on the **server** clock — `request_begin` to the newest fragment —
+ * never the local one: a client/server offset would otherwise scale every figure, the same
+ * reason settled durations are taken from Trace timestamps only. The Request's `token_usage`
+ * replaces the estimate with the exact `output ÷ generation seconds`, so the live number and
+ * the stats row that follows are the same measurement rather than two different ones.
+ */
+export interface LiveSpeedReading {
+  /** tok/s of the Request in flight (estimated) or of the last settled Request (exact); null = nothing measured yet. */
+  tps: number | null;
+  /** The figure is estimated from streamed characters — this Request's usage has not arrived yet. */
+  estimated: boolean;
+}
+
+/** A Request opened: start counting its streamed output from `beginMs` (server time). */
+export function beginLiveRequest(t: TaskStatsTracker, beginMs: number | null | undefined): void {
+  t.liveChars = 0;
+  t.liveBeginMs = beginMs ?? null;
+  t.liveLastMs = beginMs ?? null;
+  t.liveLastTps = null;
+}
+
+/**
+ * Adds one streamed output fragment to the open Request: `chars` of assistant text / thinking /
+ * tool-call arguments, arriving at `tsMs`. Nothing is counted outside a Request (complete
+ * messages on a history replay, a compaction's own output).
+ */
+export function noteLiveChars(t: TaskStatsTracker, chars: number, tsMs?: number): void {
+  if (t.liveBeginMs === null || chars <= 0) return;
+  t.liveChars += chars;
+  if (tsMs !== undefined) t.liveLastMs = tsMs;
+}
+
+/**
+ * Settles the open Request against its reported usage: `outputTokens` over the generation
+ * seconds observed so far, plus the calibration that turns the next Request's characters into
+ * tokens. Called when `token_usage` arrives, which is the one moment both halves are known.
+ */
+export function settleLiveRequest(
+  t: TaskStatsTracker,
+  outputTokens: number,
+  tsMs?: number,
+): void {
+  const begin = t.liveBeginMs;
+  const end = tsMs ?? t.liveLastMs;
+  const chars = t.liveChars;
+  t.liveBeginMs = null;
+  t.liveLastMs = null;
+  t.liveChars = 0;
+  if (begin === null || end === null || end <= begin) {
+    t.liveLastTps = null;
+    return;
+  }
+  const seconds = (end - begin) / 1000;
+  t.liveLastTps = outputTokens > 0 ? outputTokens / seconds : null;
+  if (outputTokens >= MIN_CALIBRATION_TOKENS && chars >= MIN_CALIBRATION_CHARS) {
+    const ratio = chars / outputTokens;
+    // A degenerate ratio (a run of punctuation, one huge tool argument) says nothing about the
+    // tokenizer — keeping the previous calibration is better than swinging to it.
+    if (ratio >= 0.2 && ratio <= 12) t.liveCharsPerToken = ratio;
+  }
+}
+
+/**
+ * Drops the open Request without a reading (no usage arrived: a fatal Request, an interruption):
+ * the last exact figure stands, nothing is fabricated for what was never reported.
+ */
+export function abandonLiveRequest(t: TaskStatsTracker): void {
+  t.liveChars = 0;
+  t.liveBeginMs = null;
+  t.liveLastMs = null;
+}
+
+/**
+ * What the header chip shows: the estimate while a Request streams (estimated), else the last
+ * Request's exact figure. Null before anything was measured — a chip with no reading is hidden,
+ * never rendered as 0 t/s.
+ */
+export function liveOutputSpeed(t: TaskStatsTracker): LiveSpeedReading {
+  const { liveBeginMs: begin, liveLastMs: last } = t;
+  if (begin !== null && last !== null && last > begin && t.liveChars > 0) {
+    const tps = t.liveChars / t.liveCharsPerToken / ((last - begin) / 1000);
+    if (Number.isFinite(tps) && tps > 0) return { tps, estimated: true };
+  }
+  return { tps: t.liveLastTps, estimated: false };
+}
+
 /** Subagent (with origin) token_usage: request delta counts toward this Task and the Session-level subagent cumulative. */
 export function trackSubagentUsage(t: TaskStatsTracker, p: TokenUsagePayload): void {
   t.taskTokens += p.request.total;
@@ -352,6 +482,10 @@ export function resetTaskCounters(t: TaskStatsTracker): void {
   clearPendingCompaction(t);
   t.hasUsage = false;
   t.compactionActive = false;
+  // The live speed belongs to the Request that was streaming; a new Task starts measuring its
+  // own first Request (and the header chip is hidden between Tasks anyway).
+  abandonLiveRequest(t);
+  t.liveLastTps = null;
 }
 
 /** Structured data for one stats row (rendered by the view layer via formatTaskStats). */
@@ -386,6 +520,10 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
   // Unsettled pending compaction usage is discarded at close: the round's end is fixed and no
   // further Request follows in this round → compaction after round end, doesn't belong to this round.
   clearPendingCompaction(t);
+  // The live reading belongs to the Request that was streaming; the Task's own figure is the
+  // stats row's outputTps below, so the chip's source is cleared together with its Task.
+  abandonLiveRequest(t);
+  t.liveLastTps = null;
   if (!t.hasUsage) {
     t.taskTokens = 0;
     return null;

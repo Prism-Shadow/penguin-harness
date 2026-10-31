@@ -62,7 +62,7 @@ import { apiErrorText } from "../../lib/api-error";
 import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatDateTime, humanizeTokens } from "../../lib/format";
+import { formatDateTime, formatTps, humanizeTokens } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import {
   sessionActivity,
@@ -80,7 +80,7 @@ import {
 import type { StreamModel } from "../../lib/amsp/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
-import { bucketCostUsd } from "../../lib/amsp/task-stats";
+import { bucketCostUsd, liveOutputSpeed } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -202,6 +202,8 @@ interface HeaderStats {
   costText: string | null;
   /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
+  /** The Model's current output speed; null = nothing measured yet (no Request has run). */
+  speedText: string | null;
   elapsedNode: ReactNode;
   /**
    * The elapsed time's API / tool breakdown, what its "?" opens in the details card, or null
@@ -232,9 +234,25 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
     costText: cost.costText,
     costUncosted: cost.costUncosted,
+    speedText: speedText(stats, model.taskOpen),
     elapsedNode: <SessionElapsed {...elapsed} />,
     elapsedSplit: sessionElapsedSplit(elapsed),
   };
+}
+
+/**
+ * The live output speed chip's text: only while a Task runs (when idle the chip is not rendered
+ * at all), and only once a Request has actually measured something. An estimated reading — the
+ * Request is still streaming and its usage has not arrived — is marked with `≈`, because the
+ * exact figure takes over the moment the Request reports it and the reply's own stats row shows
+ * that final measurement.
+ */
+function speedText(stats: StreamModel["stats"], taskOpen: boolean): string | null {
+  if (!taskOpen) return null;
+  const reading = liveOutputSpeed(stats);
+  if (reading.tps == null) return null;
+  const text = formatTps(reading.tps);
+  return reading.estimated ? `≈${text}` : text;
 }
 
 /**
@@ -2409,6 +2427,17 @@ export function ChatPage() {
                       glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
                       label={`${S.common.cost}（${currency}）`}
+                    />
+                  )}
+                  {/* The Model's output speed, live while a Task runs: the chip appears with the
+                      first streamed fragment and settles on the Request's exact figure when its
+                      usage arrives (see liveOutputSpeed). Idle, or before anything ran, there is
+                      nothing to read — no chip rather than a 0 t/s that never existed. */}
+                  {hs.speedText != null && (
+                    <StatChip
+                      glyph={STAT_ICONS.tps}
+                      value={hs.speedText}
+                      label={S.chat.statLiveSpeed}
                     />
                   )}
                   <StatChip

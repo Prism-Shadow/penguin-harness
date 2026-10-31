@@ -4004,6 +4004,8 @@ Scenarios:
     statCached: "cached",
     statOutput: "Output tokens",
     statTps: "Output TPS",
+    /** The header chip's live output speed while a reply streams: `≈` marks the estimate made from the text so far (the provider reports tokens only at the end of a request). */
+    statLiveSpeed: "Model speed (estimated while generating, measured once the request finishes)",
     /** Copied-stats-line parenthesis wrappers around the cached amount (ASCII with a leading space for en). */
     statParenOpen: " (",
     statParenClose: ")",
