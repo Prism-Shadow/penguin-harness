@@ -2662,6 +2662,29 @@ export interface MessagesResponse {
   page?: MessagesPageInfo;
 }
 
+/**
+ * One NDJSON line of the streamed history read (`GET /messages/frames`), the frame
+ * protocol of MessagesHistoryFrame (server, services/message-window.ts):
+ *   - `page` first — the windowed-read envelope, the fields of MessagesPageInfo, with
+ *     the live tail attached on tail/full reads;
+ *   - `skeleton` — every unit opener of the WHOLE transcript (plain text prompts and
+ *     the inserted kinds together, chronological), so a consumer fixes every row's
+ *     position before any content fills in; `cursor` names the re-entry point for a
+ *     resume (the transcript's beginning — the skeleton never re-sends);
+ *   - `meat` — the window's remaining messages, cut only at group boundaries (a
+ *     tool_call is never separated from its tool_call_output), each frame under the
+ *     64 KB soft cap and always holding at least one group; `cursor` names the cut
+ *     immediately before the frame's oldest message, the point a resumed read
+ *     continues from.
+ * A consumer re-enters an interrupted stream through the ordinary `before` protocol:
+ * the re-entry response replays frames the client already holds (its dedup drops
+ * those) and continues exactly where the interrupted stream stopped.
+ */
+export type MessagesHistoryFrameDto =
+  | { type: "page"; before?: string; earlierTurns: number; prior: MessagesPageInfo["prior"]; contextModel?: ModelRefDto; agentState?: string; live?: MessagesLiveTail }
+  | { type: "skeleton"; cursor: string; messages: HistoryMessage[] }
+  | { type: "meat"; cursor: string; messages: HistoryMessage[] };
+
 // ---------------------------------------------------------------------------
 // Task run, approval, interruption, compaction
 // ---------------------------------------------------------------------------

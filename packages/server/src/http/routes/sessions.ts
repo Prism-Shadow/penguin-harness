@@ -1250,6 +1250,37 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     } satisfies MessagesResponse);
   });
 
+  // Streamed history (NDJSON frames; see MessagesHistoryFrame): the same windowed read
+  // (`tailLimit` / `before`, live tail included on tail/full reads) sorted into frames —
+  // the page envelope, the whole transcript's skeleton, then the window's meat — written
+  // line by line so the first frames flush before the last is built.
+  app.get("/:sessionId/messages/frames", async (c) => {
+    const row = resolveSession(c);
+    const page = messagesPageQuery(c);
+    // The live tail rides the `page` frame on tail/full reads, exactly as the JSON read
+    // attaches it (a `before` page is immutable history and never carries it).
+    let live: MessagesLiveTail | undefined;
+    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
+      live = {
+        cursor: deps.channels.get(row.sessionId).lastEventId,
+        fragments: deps.manager.liveFragments(row.sessionId),
+      };
+    }
+    const frames = await deps.traceService.readMessagesFrames(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
+      page ?? { kind: "tail", limit: MESSAGES_PAGE_LIMIT_MAX },
+    );
+    if (live !== undefined && frames[0]?.type === "page") frames[0].live = live;
+    const lines = frames.map((f) => JSON.stringify(f));
+    return c.body(`${lines.join("\n")}\n`, 200, {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    });
+  });
+
   app.get("/:sessionId/stream", (c) => {
     const row = resolveSession(c);
     const channel = deps.channels.get(row.sessionId);

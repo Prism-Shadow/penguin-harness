@@ -68,8 +68,11 @@ import {
   deserializePrefix,
   encodeCursor,
   finalizeScan,
+  frameCutIndexes,
   initialScanState,
+  isSkeletonMessage,
   mergedIntervalMs,
+  planMeatFrames,
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
@@ -78,6 +81,7 @@ import type {
   MessageCursor,
   ScanState,
   WindowPriorStats,
+  MessagesHistoryFrame,
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
@@ -86,6 +90,7 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { MESSAGE_WINDOW_FRAME_MAX_BYTES } from "./message-window.js";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
@@ -93,6 +98,51 @@ import type { Telemetry } from "../mechanisms/telemetry.js";
 import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
+
+/**
+ * Trace-position order: shard index first (files rotate forward), then the ordinal
+ * within the shard. Total order — the interleaved frames read depends on it.
+ */
+function comparePosition(a: { fileIndex: number; ordinal: number }, b: { fileIndex: number; ordinal: number }): number {
+  return a.fileIndex !== b.fileIndex ? a.fileIndex - b.fileIndex : a.ordinal - b.ordinal;
+}
+
+/**
+ * The trace position the window's stream starts at: its FIRST message's position, the
+ * point openers older than the window stop before. A window's rows come back from
+ * readMessagesPage in trace order already, so the first row's position is the start —
+ * undefined when the window is empty (a full read or an empty transcript: no openers
+ * precede it, nothing to emit ahead).
+ */
+function windowFirstPosition(messages: readonly OmniMessage[]): { fileIndex: number; ordinal: number } | undefined {
+  for (const m of messages) {
+    const pos = (m as HistoryMessage).tracePosition;
+    if (pos !== undefined) return pos;
+  }
+  return undefined;
+}
+
+function chunkFrame(
+  messages: readonly OmniMessage[],
+  maxBytes = MESSAGE_WINDOW_FRAME_MAX_BYTES,
+): OmniMessage[][] {
+  const chunks: OmniMessage[][] = [];
+  let current: OmniMessage[] = [];
+  let bytes = 0;
+  for (const msg of messages) {
+    const size = Buffer.byteLength(JSON.stringify(msg), "utf8") + 1; // + the NDJSON newline
+    if (current.length > 0 && bytes + size > maxBytes) {
+      chunks.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(msg);
+    bytes += size;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 
 /**
  * session_id an imported Trace file may declare: same alphabet as resource ids plus a length
@@ -791,6 +841,121 @@ export class TraceService implements Traces {
           }
         : {}),
     };
+  }
+
+  /**
+   * The streamed-history read (GET /messages?frames=1): the same windowed read
+   * (readMessagesPage) with its window sorted into NDJSON frames, the transcript's
+   * unit openers INTERLEAVED with their units' content in trace order.
+   *
+   * Shapes (see MessagesHistoryFrame in message-window.ts): one `page` line first —
+   * the window's envelope — then the body frames: the openers of units OLDER than
+   * the window (rows a page boundary would hide, so the outline stays complete
+   * without their interiors) come first, then the window's own stream — each unit's
+   * opener immediately followed by that unit's interior, cut only at group
+   * boundaries, each frame under the 64 KB soft cap (a single oversized group is its
+   * own frame and may exceed it) and always holding at least one group. Arrival
+   * order IS trace order: a consumer that appends as frames land lays the transcript
+   * out exactly as the JSON read does. (The earlier shape — every opener of the
+   * whole transcript ahead of the window's content — mis-ordered: the reducer
+   * appends and never re-inserts by position, so an older unit's interior landed
+   * after a newer unit's prompt; 2026-10-31.) Every
+   * frame carries the cursor to re-enter at through the ordinary `before` protocol.
+   *
+   * Frames are returned as an array and the route writes them out line by line: the
+   * framing decisions all live here (pure, unit-testable), the route only serializes.
+   * The window's own byte budget (MESSAGES_PAGE_MAX_BYTES) still bounds one response —
+   * the client's auto-refill stop line — and a page the budget cut short carries its
+   * `before` cursor exactly as the JSON read does.
+   */
+  async readMessagesFrames(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+  ): Promise<MessagesHistoryFrame[]> {
+    const result = await this.readMessagesPage(projectId, agentId, sessionId, req);
+    const pageFrame: MessagesHistoryFrame = {
+      type: "page",
+      earlierTurns: result.prior.turns,
+      prior: result.prior,
+      ...(result.before !== undefined ? { before: result.before } : {}),
+      ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
+      ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
+    };
+
+    // The openers of units OLDER than this window: rows a page boundary hides — a
+    // tail read of the last units still names the units before them, or the outline
+    // (and the resume-position of the window's first unit) would be incomplete.
+    // Chronological, images by reference, cursor at the transcript's very beginning
+    // (these never re-send on a resume).
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const windowStart = windowFirstPosition(result.messages);
+    const beforeOpeners: OmniMessage[] = [];
+    if (windowStart !== undefined) {
+      for (const file of files) {
+        const raw = await this.readShard(file.path);
+        for (let i = 0; i < raw.length; i++) {
+          const msg = raw[i]!;
+          if (!isSkeletonMessage(msg)) continue;
+          const pos = { fileIndex: file.index, ordinal: i };
+          if (comparePosition(pos, windowStart) >= 0) break;
+          beforeOpeners.push(withImagesByReference(sessionId, { ...msg, tracePosition: pos }) as HistoryMessage);
+        }
+      }
+    }
+    const beforeFrames: MessagesHistoryFrame[] = [];
+    for (const messages of chunkFrame(beforeOpeners)) {
+      beforeFrames.push({ type: "skeleton", cursor: "0:0", messages });
+    }
+
+    // The window's own stream: every message in trace order — each unit's OPENER
+    // immediately followed by that unit's interior (a cut may fall between units, never
+    // inside a group). Appending as frames land reproduces the JSON read's order
+    // exactly; the client's reducer appends and never re-inserts by position, so the
+    // opener must not precede its own unit's content by more than its interior.
+    const streamRows = [...result.messages].sort((a, b) => {
+      const pa = (a as HistoryMessage).tracePosition;
+      const pb = (b as HistoryMessage).tracePosition;
+      if (pa === undefined || pb === undefined) return 0;
+      return comparePosition(pa, pb);
+    });
+    const byRef = streamRows.map((m) => withImagesByReference(sessionId, m) as HistoryMessage);
+    const meatFrames: MessagesHistoryFrame[] = [];
+    if (byRef.length > 0) {
+      const cuts = frameCutIndexes(byRef);
+      const byteOf = (m: OmniMessage): number =>
+        Buffer.byteLength(JSON.stringify(m), "utf8") + 1; // + the NDJSON newline
+      const frames = planMeatFrames(byteOf, byRef, cuts, MESSAGE_WINDOW_FRAME_MAX_BYTES);
+      const reentryCursor =
+        req.kind === "before"
+          ? encodeCursor(req.cursor)
+          : (() => {
+              // The window's first unit start (its prompt — a user text that is not a
+              // steering block); a window that opens mid-unit starts at its first message.
+              for (const m of result.messages) {
+                const p = m.payload as { type?: string; role?: string; text?: string };
+                if (
+                  m.type === "model_msg" &&
+                  p.type === "text" &&
+                  p.role === "user" &&
+                  typeof p.text === "string" &&
+                  parseUserSteeringText(p.text) === null
+                ) {
+                  const pos = (m as HistoryMessage).tracePosition;
+                  if (pos !== undefined) return encodeCursor({ fileIndex: pos.fileIndex, ordinal: pos.ordinal });
+                }
+              }
+              const first = byRef[0] as HistoryMessage | undefined;
+              return first?.tracePosition !== undefined
+                ? encodeCursor({ fileIndex: first.tracePosition.fileIndex, ordinal: first.tracePosition.ordinal })
+                : "0:0";
+            })();
+      for (const { from, to } of frames) {
+        meatFrames.push({ type: "meat", cursor: reentryCursor, messages: byRef.slice(from, to) });
+      }
+    }
+    return [pageFrame, ...beforeFrames, ...meatFrames];
   }
 
   /**

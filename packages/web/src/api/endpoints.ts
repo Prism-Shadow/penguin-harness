@@ -81,6 +81,7 @@ import type {
   MemoryScopeExport,
   MeResponse,
   MessagesResponse,
+  MessagesHistoryFrameDto,
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
@@ -1283,6 +1284,67 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
 };
+
+/** One NDJSON line of the streamed history read (see MessagesHistoryFrameDto). */
+export type MessagesHistoryFrame = MessagesHistoryFrameDto;
+
+/**
+ * Consumes the streamed history read (`GET /messages/frames`): the same windowed read
+ * as getMessages, answered as NDJSON frames — the page envelope, the whole transcript's
+ * skeleton (every unit opener), then the window's meat at group boundaries — handed to
+ * `onFrame` as each line arrives, so a long conversation lays out its rows long before
+ * the last frame lands. Resolves with the `Date` header's reading (the server's clock,
+ * the same value getMessages reports) once the body is fully consumed.
+ *
+ * Read directly over HTTP (the frames answer is read as it arrives; the socket path
+ * answers whole bodies only, and a frames read is the one history call where waiting
+ * for the whole answer is exactly what the protocol exists to avoid). Non-2xx answers
+ * are the ordinary JSON error envelope, mapped through the same ApiError rules.
+ */
+export async function getMessagesFrames(
+  sessionId: string,
+  page: MessagesPageQuery | undefined,
+  onFrame: (frame: MessagesHistoryFrame) => void,
+): Promise<{ serverNowMs: number | null }> {
+  const qs =
+    page === undefined
+      ? ""
+      : page.kind === "tail"
+        ? `?tailLimit=${page.limit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+  // apiFetchStream (client.ts): the same URL routing, cookie and non-2xx → ApiError mapping
+  // every other call takes, with the 2xx body handed back unread — the frames answer is read
+  // as it arrives.
+  const response = await apiFetchStream(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages/frames${qs}`,
+  );
+  const headerDate = Date.parse(response.headers.get("date") ?? "");
+  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  // A 2xx frames answer always carries a body (the route writes NDJSON lines);
+  // a null body is the same impossible answer as a missing one.
+  const bodyStream = response.body;
+  if (bodyStream === null) return { serverNowMs };
+  const reader = bodyStream.getReader();
+  const decoder = new TextDecoder();
+  let carry = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    carry += decoder.decode(value, { stream: true });
+    for (;;) {
+      const nl = carry.indexOf("\n");
+      if (nl < 0) break;
+      const line = carry.slice(0, nl).trim();
+      carry = carry.slice(nl + 1);
+      if (line.length === 0) continue;
+      onFrame(JSON.parse(line) as MessagesHistoryFrame);
+    }
+  }
+  carry += decoder.decode();
+  const tail = carry.trim();
+  if (tail.length > 0) onFrame(JSON.parse(tail) as MessagesHistoryFrame);
+  return { serverNowMs };
+}
 
 // Task execution, approval, abort, compaction ------------------------------------------------------
 

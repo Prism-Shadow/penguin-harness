@@ -1391,6 +1391,29 @@ router
         : {}),
     };
   })
+  // The streamed history read: the same windowed answer sorted into frames (page envelope,
+  // the transcript's openers as the skeleton, the interior as the meat) — NDJSON lines, the
+  // shape the web consumer parses line by line.
+  .get("/api/sessions/:sessionId/messages/frames", (ctx) => {
+    const transcript = transcriptOf(ctx);
+    const prior = { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 };
+    const skeleton = transcript.history.filter(
+      (m) =>
+        m.type === "model_msg" &&
+        (m.payload as { type?: string; role?: string }).type === "text" &&
+        (m.payload as { role?: string }).role === "user",
+    );
+    const meat = transcript.history.filter((m) => !skeleton.includes(m));
+    const frames: Array<Record<string, unknown>> = [
+      { type: "page", earlierTurns: 0, prior },
+      { type: "skeleton", cursor: "0:0", messages: skeleton },
+      { type: "meat", cursor: "0:0", messages: meat },
+    ];
+    return raw(
+      frames.map((f) => JSON.stringify(f)).join("\n") + "\n",
+      { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+    );
+  })
   .post("/api/sessions/:sessionId/tasks", ({ store, params, body }): unknown => {
     const sessionId = params.sessionId!;
     const row = store.session(sessionId);

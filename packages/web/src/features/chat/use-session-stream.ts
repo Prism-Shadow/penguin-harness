@@ -24,7 +24,7 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMessages } from "../../api/endpoints";
+import { getGoal, getMessages, getMessagesFrames } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
 import { openSessionStream } from "../../api/sse";
@@ -275,6 +275,10 @@ export function useSessionStream(
         const start = performance.now();
         return getMessages(sessionId, page).finally(() => probe.fetched(performance.now() - start));
       },
+      // The streamed-history read: frames arrive one NDJSON line at a time, so a long
+      // conversation lays out its skeleton rows before the meat frames finish (see
+      // stream-controller loadFrames).
+      loadMessageFrames: (page, onFrame) => getMessagesFrames(sessionId, page, onFrame),
       onTaskState: (state) => {
         probeRef.current?.taskState(state);
         setTaskState(state);
