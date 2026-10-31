@@ -72,7 +72,7 @@ Installed by the release scripts into a directory of launcher, libraries, and a 
 
 ### The desktop application
 
-**Entry**: the desktop shell starts its server process directly from a bundled server entry. **Harness data root**: the shared release-profile root, reconciled against the carried image at every start. **Pushed-CLI reachability**: the current product ships no pushed-CLI loader, so the pushed CLI is unreachable; the user-facing command shim points at the bundled CLI. One implementation line already demonstrates the shape that ships the loader and consults the record before starting. **Carried harness image**: yes — the application bundle carries a push-format image of its own build.
+**Entry**: the desktop shell starts its server process directly from a bundled server entry. **Harness data root**: the shared release-profile root; desktop startup provisioning remains a candidate. **Pushed-CLI reachability**: the current product ships no pushed-CLI loader, so the pushed CLI is unreachable; the user-facing command shim points at the bundled CLI. One implementation line already demonstrates the shape that ships the loader and consults the record before starting. **Carried harness image**: yes — desktop carries the existing gz image of its own build for machine installs.
 
 ### The source checkout
 
@@ -143,7 +143,7 @@ A channel-by-feature support matrix, maintained at the release surface. Release 
 
 ### v1.1.0
 
-- Revised the facts under PRFC-0023's carried-image reconciliation: the npm package and the Docker image gain a **Carried harness image** (the server dependency's `dist/`, and a build-time pack in the image), the release tarball and desktop app's images now also feed the start-time copy into the data root, and every **Harness data root** facet says the root is reconciled at start rather than provisioned at install. The channels stay the same channels.
+- Revised the facts under PRFC-0023's carried-image reconciliation: the npm package and the Docker image gain a **Carried harness image** (the server dependency's `dist/`, and a build-time pack in the image), the release tarball's store also feeds the start-time copy into the data root; desktop keeps its existing gz image, and every **Harness data root** facet says the root is reconciled at start rather than provisioned at install. The channels stay the same channels.
 
 ### v1.0.0
 

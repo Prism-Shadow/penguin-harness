@@ -38,7 +38,7 @@ The HMR layer landed with a criterion: a missing record and a damaged record are
 
 ### Provisioning is a self-push
 
-Every channel's program carries a harness image — the hot push's own body format, packed from the same sources the program was built from. The data root is wherever the user points the harness, chosen per run and unknown at pack time, so no installer writes the record: every start of the program copies its image into the root it serves, before anything reads the root. The copy is a reconciliation, and it has four answers: a root with no record receives one; a root whose record came from this very image stays as it is; a root whose record came from an older image (an upgraded installation) rises to the version this program carries; and a root whose record came from a hot push — or from a peer's copied state — keeps it, because a push is a newer decision than any shipped image. The reading face sees the same thing it sees for a pushed record: it answers with the record, the machine's pushed-CLI face works from the first moment, and the first hot push replaces the record as any push replaces any record.
+The npm, tarball and Docker programs carry a harness store (`harness.json` plus `store/`), built from the same sources as the program. The desktop application carries its existing gz image for machine installs; startup provisioning there remains a candidate. The data root is wherever the user points the harness, chosen per run and unknown at pack time, so no installer writes the record: every start of the program copies its image into the root it serves, before anything reads the root. The copy is a reconciliation, and it has four answers: a root with no record receives one; a root whose record came from this very image stays as it is; a root whose record came from an older image (an upgraded installation) rises to the version this program carries; and a root whose record came from a hot push — or from a peer's copied state — keeps it, because a push is a newer decision than any shipped image. The reading face sees the same thing it sees for a pushed record: it answers with the record, the machine's pushed-CLI face works from the first moment, and the first hot push replaces the record as any push replaces any record.
 
 ### What "no record" says after presence
 
@@ -67,7 +67,7 @@ The reader returns the record or raises. Two situations carry their own names: *
 
 ### Provisioning copies the carried image at every start
 
-Per channel, what changes is only where the body sits: a release tarball and the desktop app carry `install-image.gz` beside their entry in `dist/`; the npm package's server dependency carries one in its `dist/`; the Docker image packs one at build time like a release does. The server's startup copies the body it finds into the data root (the reconciliation described above, hmr/carried-image.ts); a machines-installed peer keeps copying the sender's record at install. A start whose body cannot be read, or whose copy cannot be written, says so and continues — the root keeps whatever record it had. The staging copies the release image and the checkout image lay down for machine installs stay as they are: the root's own copy is written from the same body at start.
+The npm server dependency carries `dist/hmr/`; release tarballs and Docker carry `lib/dist/hmr/`. The packer uses the built server's `writePushedBuild` to create these stores. Startup copies the store into the selected data root through staging and commits its record with an atomic rename. An unreadable existing record stays untouched. Desktop keeps the existing `install-image.gz` and its machine-install path; conversion of desktop startup remains a candidate. The checkout image keeps its gz build intermediate.
 
 ### One store, mirrored only in flight *(candidate)*
 
@@ -79,7 +79,7 @@ A record's files can be damaged in place. The reader names such damage when aske
 
 ### Each channel's facets after this RFC
 
-Every channel's **harness data root** facet becomes "carries a record from the first start, copied from the image its program ships"; the machines-installed peer keeps its copy-at-install behavior and gains nothing.
+The npm, tarball and Docker **harness data root** facets become "carries a record from the first start, copied from the image its program ships"; the machines-installed peer keeps its copy-at-install behavior and gains nothing.
 
 ## Invariants
 [invariants]: #invariants
