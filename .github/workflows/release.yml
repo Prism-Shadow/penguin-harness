@@ -259,7 +259,7 @@ jobs:
           node scripts/build-plugins.mjs --out out/penguin/lib/plugins
           test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
 
-      # lib/dist/install-image.gz: this release's harness in the hot push's format, packed by the
+      # lib/dist/hmr/: this release's harness in the hot push's format, packed by the
       # push's own packer from the stamped sources. An installed server with nothing pushed to it
       # installs it on machines (packages/server/src/machines/shipped-image.ts): every command it
       # runs on a machine goes through the CLI it leaves in that machine's store. One copy serves
@@ -267,8 +267,8 @@ jobs:
       # its native modules first.
       - name: Pack the install image
         run: |
-          node scripts/deploy.mjs --out out/penguin/lib/dist/install-image.gz --skip-web-build
-          test -s out/penguin/lib/dist/install-image.gz
+          node scripts/pack-carried-store.mjs out/penguin/lib/dist/hmr
+          test -s out/penguin/lib/dist/hmr/harness.json
 
       # node-pty compiles its terminal binding when it is installed, for the machine installing
       # it — this runner, linux-x64 — and publishes prebuilds for darwin and win32 only. So the
@@ -661,13 +661,13 @@ jobs:
       - name: Build and test
         run: |
           pnpm -r build
-          # The harness image the npm channel carries (hmr/carried-image.ts): the same body
+          # The harness image the npm channel carries (carried-image.ts): the same body
           # the tarball packs into lib/dist/, packed from these stamped sources into the
           # server package's dist/ (its files allowlist ships it). An npm install serving a
           # PENGUIN_HOME is reconciled against it at every start, so the root holds a
           # harness.json from its first boot, pushed CLI included.
-          node scripts/deploy.mjs --out packages/server/dist/install-image.gz --skip-web-build
-          test -s packages/server/dist/install-image.gz
+          node scripts/pack-carried-store.mjs packages/server/dist/hmr
+          test -s packages/server/dist/hmr/harness.json
           bash scripts/release-npm.sh test
 
       # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
