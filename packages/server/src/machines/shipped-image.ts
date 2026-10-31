@@ -20,6 +20,7 @@
  * the running program ships, so after an upgrade the new body names a new directory and the
  * old one is never read again — it is removed when the new one is laid down.
  */
+import { layCarriedStore } from "../carried-store.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -69,7 +70,7 @@ export class ShippedImage {
   #bodyId(): string | null {
     if (this.#id === undefined) {
       try {
-        const hash = crypto.createHash("sha256").update(fs.readFileSync(this.body));
+        const hash = crypto.createHash("sha256").update(fs.readFileSync(fs.statSync(this.body).isDirectory() ? path.join(this.body, "harness.json") : this.body));
         this.#id = hash.digest("hex").slice(0, 16);
       } catch {
         this.#id = null;
@@ -86,6 +87,13 @@ export class ShippedImage {
     const staging = path.join(this.dir, `.staging-${process.pid}-${id}`);
     try {
       await fsp.mkdir(this.dir, { recursive: true });
+      if (fs.statSync(this.body).isDirectory()) {
+        await layCarriedStore(this.body, path.join(this.dir, id, "hmr"));
+        const plan = this.plan();
+        return plan === null
+          ? { ok: false, detail: "the image was written but cannot be read back." }
+          : { ok: true, plan };
+      }
       let build: PushedBuild;
       try {
         build = JSON.parse(zlib.gunzipSync(await fsp.readFile(this.body)).toString("utf8"));
