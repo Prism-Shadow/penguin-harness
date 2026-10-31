@@ -334,15 +334,14 @@ export function carriedStore(argv1: string | undefined = process.argv[1]): strin
   if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
   const beside = path.join(path.dirname(argv1), "hmr");
   if (fs.existsSync(path.join(beside, "harness.json"))) return beside;
-  try {
-    const server = createRequire(path.resolve(argv1)).resolve(
-      "@prismshadow/penguin-server",
-    );
-    const dir = path.join(path.dirname(server), "hmr");
-    return fs.existsSync(path.join(dir, "harness.json")) ? dir : null;
-  } catch {
-    return null;
+  // The server publishes import-only exports. Resolve the dependency's search roots
+  // rather than asking CommonJS resolution to select an entry it cannot import.
+  const search = createRequire(path.resolve(argv1)).resolve.paths("@prismshadow/penguin-server") ?? [];
+  for (const modules of search) {
+    const dir = path.join(modules, "@prismshadow", "penguin-server", "dist", "hmr");
+    if (fs.existsSync(path.join(dir, "harness.json"))) return dir;
   }
+  return null;
 }
 
 /** The install image a release build ships, in its program's `dist/` beside the entry. */

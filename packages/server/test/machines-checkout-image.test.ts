@@ -25,7 +25,7 @@ import zlib from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
-import { readHarnessMeta } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/harness-meta.js";
 import { deployPacker, findCheckout } from "../src/machines/checkout-image.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { withoutCredentials } from "../../../scripts/build-git-stamp.mjs";
