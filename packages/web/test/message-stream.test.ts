@@ -225,9 +225,12 @@ describe("the streamed-history read", () => {
     const h = createFramesHarness([{ frames: [pageFrame(), ...stream] }]);
     await h.controller.load();
     expect(h.errors.filter((e) => e !== null)).toEqual([]);
+    // A finished unit's ledger row (task_stats) settles each unit before the next
+    // prompt — exactly where the JSON path puts it; the last unit's row lands at
+    // finalizeHistory (end of the frames read).
     expect(kinds(h)).toEqual([
-      "user_text", "tool_call", "assistant_text",
-      "user_text", "tool_call", "assistant_text",
+      "user_text", "tool_call", "assistant_text", "task_stats",
+      "user_text", "tool_call", "assistant_text", "task_stats",
       "user_text", "tool_call", "assistant_text",
     ]);
     expect(userTexts(h)).toEqual(["q1", "q2", "q3"]);
@@ -252,8 +255,9 @@ describe("the streamed-history read", () => {
     ]);
     await h.controller.load();
     expect(h.errors.filter((e) => e !== null)).toEqual([]);
-    expect(kinds(h)).toEqual(["user_text", "user_text", "user_text", "assistant_text"]);
-    expect(userTexts(h)).toEqual(["q1", "q2", "q3"]);
+    expect(kinds(h)).toEqual(["user_text", "user_text", "user_text", "assistant_text", "task_stats"]);
+    // userTexts maps text per item: the settled unit's stats row contributes null.
+    expect(userTexts(h)).toEqual(["q1", "q2", "q3", null]);
   });
 
   it("the skeleton fixes every row's position first — prompts and inserted kinds together — and meat fills with zero row movement", async () => {
