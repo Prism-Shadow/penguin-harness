@@ -88,7 +88,7 @@ import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
 import type { EventRelay } from "../src/machines/event-relay.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
-import { readHarnessMeta } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/harness-meta.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
