@@ -98,8 +98,6 @@ headers, declare its return type (\`Promise<WorkbenchResponse>\`) so they are no
       "renderer": { "iframe": { "src": "ui/index.html" } } }
   ]
 }
-// icon (optional): { "kind": "svg", "data": "<svg ..." } or { "kind": "png", "data": "<base64>" } —
-// per-tab; a tab without one shows the workbench's own plugin icon (penguin.icon), or nothing.
 \`\`\`
 
 One entry per tab, beside the chat of this Agent; \`key\` is unique in the workbench; \`src\` is a

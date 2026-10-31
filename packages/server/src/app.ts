@@ -724,6 +724,35 @@ function staticResponse(
  * directory on disk. Serves the caching contract above, so pushes take effect
  * on the next navigation and hashed assets stop re-downloading.
  */
+/**
+ * A workbench's full-page route (`/app/<project>/<agent>/<workbench>[/:tabKey]`) is its own
+ * installable app: served through the SPA fallback (no such file exists), its index.html's
+ * manifest link stops naming the main app's manifest and names the workbench's own — the
+ * app installs under the workbench's name and icon. Null for every other path.
+ */
+function workbenchAppPage(reqPath: string): { projectId: string; agentId: string; workbenchId: string } | null {
+  const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/.*)?$/.exec(reqPath);
+  return m === null ? null : { projectId: m[1], agentId: m[2], workbenchId: m[3] };
+}
+
+/**
+ * index.html served for a workbench's app page, with its manifest link retargeted. The
+ * source link is the template's literal (`href="/manifest.webmanifest"`); when the built
+ * file ever words it differently the page is passed through untouched rather than
+ * half-rewritten. Other pages keep the main app's manifest.
+ */
+function withWorkbenchManifestLink(content: Buffer, reqPath: string): Buffer {
+  const page = workbenchAppPage(reqPath);
+  if (page === null) return content;
+  const href =
+    `/api/projects/${encodeURIComponent(page.projectId)}` +
+    `/agents/${encodeURIComponent(page.agentId)}` +
+    `/workbenches/${encodeURIComponent(page.workbenchId)}/manifest.webmanifest`;
+  const html = content.toString("utf8");
+  const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
+  return rewritten === html ? content : Buffer.from(rewritten, "utf8");
+}
+
 function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
@@ -742,7 +771,8 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       if (content === undefined) {
         return c.json(errorBody("not_found", "Resource does not exist."), 404);
       }
-      return staticResponse(c, content, servedPath, etagOfBuffer(content));
+      const served = servedPath === "index.html" ? withWorkbenchManifestLink(content, reqPath) : content;
+      return staticResponse(c, served, servedPath, etagOfBuffer(served));
     }
 
     const webDist = source.dir;
@@ -781,10 +811,11 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
+    const served = file === path.join(base, "index.html") ? withWorkbenchManifestLink(content, reqPath) : content;
     // A weak size+mtime validator, the classic disk-file shape — hashing every
     // response would cost more than the 304s save.
-    const etag = `W/"${content.byteLength}-${Math.round(mtimeMs)}"`;
-    return staticResponse(c, content, path.relative(base, file).split(path.sep).join("/"), etag);
+    const etag = `W/"${served.byteLength}-${Math.round(mtimeMs)}"`;
+    return staticResponse(c, served, path.relative(base, file).split(path.sep).join("/"), etag);
   });
 }
 
