@@ -229,7 +229,7 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("full screen is a dock at its largest below the toolbar — by its button or a drag past the max", async ({
+test("full screen is a dock at its largest below the toolbar — by a drag past the max", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -256,9 +256,15 @@ test("full screen is a dock at its largest below the toolbar — by its button o
   const rowBox = () => page.locator("[data-dock-row]").boundingBox();
   const headerBox = (dock) => dock.getByTestId("dock-header").boundingBox();
 
-  // The header button: the right dock covers its own row — the conversation column — while the
+  // A drag past the max: the right dock covers its own row — the conversation column — while the
   // toolbar with the title and the statistics stays, and nothing under the cover reflowed.
-  await right.getByTestId("dock-fullscreen").click();
+  const rightHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
+  let rhb = await rightHandle.boundingBox();
+  let rrow = await rowBox();
+  await page.mouse.move(rhb.x + rhb.width / 2, rhb.y + rhb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rrow.x + 40, rhb.y + rhb.height / 2, { steps: 12 });
+  await page.mouse.up();
   await expect(right).toHaveAttribute("data-fullscreen", "full");
   let row = await rowBox();
   let header = await headerBox(right);
@@ -278,8 +284,14 @@ test("full screen is a dock at its largest below the toolbar — by its button o
   await expect(bottom.locator('[data-tab-id="memory"][data-active="true"]')).toBeVisible();
   await expect(right).toHaveAttribute("data-fullscreen", "full");
 
-  // The header button leaves in place.
-  await right.getByTestId("dock-fullscreen").click();
+  // The header offers no fullscreen button: the way back is the drag.
+  await expect(right.getByTestId("dock-fullscreen")).toHaveCount(0);
+  const rHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
+  const rhb2 = await rHandle.boundingBox();
+  await page.mouse.move(rhb2.x + rhb2.width / 2, rhb2.y + rhb2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rhb2.x + 300, rhb2.y + rhb2.height / 2, { steps: 12 });
+  await page.mouse.up();
   await expect(right).not.toHaveAttribute("data-fullscreen");
 
   // Dragging the right boundary well past the widest it may be snaps into full screen ...
@@ -300,8 +312,15 @@ test("full screen is a dock at its largest below the toolbar — by its button o
   await expect(right).not.toHaveAttribute("data-fullscreen");
 
   // A full-screen bottom dock grows up to the toolbar, over the row and the right dock with it;
-  // the right dock coming back on stage, from under the cover, ends it.
-  await bottom.getByTestId("dock-fullscreen").click();
+  // the right dock coming back on stage, from under the cover, ends it. The bottom dock snaps in
+  // by a drag past its maximum, too.
+  const bottomHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="horizontal"]:visible');
+  const bhb = await bottomHandle.boundingBox();
+  const brow = await rowBox();
+  await page.mouse.move(bhb.x + bhb.width / 2, bhb.y + bhb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(brow.x + 40, bhb.y + bhb.height / 2, { steps: 12 });
+  await page.mouse.up();
   await expect(bottom).toHaveAttribute("data-fullscreen", "full");
   row = await rowBox();
   header = await headerBox(bottom);
