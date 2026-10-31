@@ -16,6 +16,7 @@
  * partial record (e.g. `platform` present but `web` or `cli` missing) is never
  * trusted — the whole version is treated as absent instead of partially applied.
  */
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { HarnessInfo } from "@prismshadow/penguin-core";
@@ -86,7 +87,7 @@ function str(value: unknown): string | null {
  * crash it. A record missing every artifact pointer counts as nothing pushed, and so does an
  * unreadable one — the only reader here that deliberately collapses the two, because its
  * caller is a report with nowhere to put a fault. The host says so at boot instead, and
- * `penguin-hmr` says so through resolution's named faults.
+ * `penguin-hmr` says so through readPushedCli.
  */
 export async function readHarnessInfo(root: string): Promise<HarnessInfo | null> {
   const manifest = await readManifest(root);
@@ -141,7 +142,7 @@ function msg(err: unknown): string {
 /**
  * Reads and parses `<root>/hmr/harness.json`; null when missing or corrupt. The published
  * `./hmr/manifest` subpath is a contract with installed CLIs, so this keeps its shape;
- * a caller that has to tell the two apart reads it through readHarnessMeta.
+ * a caller that has to tell the two apart reads it through readPushedCli.
  */
 export async function readManifest(root: string): Promise<Manifest | null> {
   const read = await readManifestFile(root);
@@ -149,51 +150,59 @@ export async function readManifest(root: string): Promise<Manifest | null> {
 }
 
 /**
- * What this root's record holds, as one of three answers. No file means nothing was ever
- * pushed here; a file that cannot be read or parsed is a fault on a root that DID commit a
- * version, and the two must not arrive as the same value — a reader that acts on "nothing
- * pushed" would quietly ignore a version this root still holds.
+ * What this root has for the `penguin-hmr` loader. Three answers, never two: a root that
+ * pushed no CLI and a root whose record names one it cannot produce are different
+ * situations, and collapsing them tells the caller "nothing pushed" when the truth is
+ * "the store lost it".
  */
-export type HarnessMeta =
-  /** Nothing has ever been pushed here: no file, or a record with no committed version. */
+export type PushedCli =
+  /** Nothing has pushed a CLI here: a fresh root, or a record with no `cli` entry. */
   | { kind: "none" }
-  /** The record: the manifest this root committed at its last push. */
-  | { kind: "meta"; manifest: Manifest }
-  /** The record is there and cannot be read or parsed. Says which, so it can be repaired. */
+  /** The committed CLI bundle, absolute. */
+  | { kind: "bundle"; file: string }
+  /** The record names a CLI this root cannot produce. Says which, so it can be repaired. */
   | { kind: "broken"; reason: string };
 
 /**
- * The record this data root holds, at the one fixed path. Never throws: a record a reader
- * cannot act on is an answer (`broken`), not an exception, because every caller has to say
- * something useful either way. The one read of the file; every other face over it — the
- * version report, the CLI bundle, resolution's answer — projects onto this.
+ * Reads the committed CLI bundle. Never throws: a malformed record is an answer
+ * (`broken`), not an exception, because the caller is a CLI entry point that has to print
+ * something useful either way.
+ *
+ * `cli.bundle` is trusted content, written only by persistVersion, but a reader must never
+ * let a malformed or malicious value walk it out of the store via `..` segments — an escape
+ * is `broken`, like a file the store no longer holds (pruned, see host.ts's pruneStore).
  */
-export async function readHarnessMeta(root: string): Promise<HarnessMeta> {
+export async function readPushedCli(root: string): Promise<PushedCli> {
   const read = await readManifestFile(root);
-  if (read.kind === "broken") return read;
-  // A record that names no version at all holds nothing: every artifact pointer absent is
-  // a file with no commit behind it.
-  const manifest = read.kind === "manifest" ? read.manifest : null;
-  if (
-    manifest !== null &&
-    manifest.platform?.bundle === undefined &&
-    manifest.cli?.bundle === undefined &&
-    manifest.web?.manifest === undefined
-  ) {
-    return { kind: "none" };
+  if (read.kind === "none") return { kind: "none" };
+  if (read.kind === "broken") return { kind: "broken", reason: read.reason };
+  // No `cli` entry at all is a version that pushed no CLI; an entry that names nothing
+  // usable is a record this root cannot act on.
+  if (read.manifest.cli === undefined) return { kind: "none" };
+  const bundle: unknown = read.manifest.cli.bundle;
+  if (typeof bundle !== "string" || bundle.length === 0) {
+    return { kind: "broken", reason: "harness.json has a `cli` entry with no bundle path" };
   }
-  return manifest === null ? { kind: "none" } : { kind: "meta", manifest };
+  const hmrDir = path.join(root, "hmr");
+  const abs = path.resolve(hmrDir, bundle);
+  if (abs !== hmrDir && !abs.startsWith(hmrDir + path.sep)) {
+    return {
+      kind: "broken",
+      reason: `harness.json points \`cli.bundle\` outside ${hmrDir}: ${bundle}`,
+    };
+  }
+  if (!fs.existsSync(abs)) {
+    return { kind: "broken", reason: `the committed CLI bundle is missing from the store: ${abs}` };
+  }
+  return { kind: "bundle", file: abs };
 }
 
 /**
- * The CLI half of the record: the committed bundle, or null for anything else — nothing
- * pushed, a record that cannot be read, an entry that names nothing usable. readHarnessMeta
+ * The committed CLI bundle's path, or null for anything else. The published `./hmr/manifest`
+ * subpath is a contract with installed CLIs, so this keeps its shape; readPushedCli is what
  * says WHY there is no path.
  */
 export async function resolveCliBundlePath(root: string): Promise<string | null> {
-  const meta = await readHarnessMeta(root);
-  const bundle = meta.kind === "meta" ? meta.manifest.cli?.bundle : undefined;
-  return typeof bundle === "string" && bundle.length > 0
-    ? path.resolve(path.join(root, "hmr"), bundle)
-    : null;
+  const cli = await readPushedCli(root);
+  return cli.kind === "bundle" ? cli.file : null;
 }
