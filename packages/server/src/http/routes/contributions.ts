@@ -57,6 +57,12 @@ export interface WebShellSlots {
     title: string;
     titleZh?: string;
     renderer: { builtin: string } | { iframe: { src: string } };
+    /**
+     * The tab's app icon, optional: an SVG's markup or a PNG's bytes base64-encoded. The
+     * FIRST tab that names one is the workbench's PWA app icon (what installing carries);
+     * the tab strip itself draws no icon.
+     */
+    icon?: { kind: "svg" | "png"; data: string };
   };
   /**
    * A plugin's quick start: the demo the Plugins page pre-fills into a new-chat draft for the

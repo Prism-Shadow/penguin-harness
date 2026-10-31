@@ -43,6 +43,11 @@ const MANIFEST = {
   children: [],
 };
 
+/** A real PNG header (the first 16 bytes of a 1×1): what a `.png`-faced icon must begin with. */
+const PNG_BYTES_BASE64 = Buffer.from(
+  Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]),
+).toString("base64");
+
 /** The icon the first case ships: the same shape a plugin's `icon.svg` takes. */
 const ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="4" height="4" fill="#0258f4"/></svg>';
@@ -124,7 +129,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(m.short_name).toBe("Demo");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
-    expect(m.scope).toBe(`${BASE}/${wf.id}`);
+    expect(m.scope).toBe(`/app/owner-wf/default_agent/${wf.id}`);
     expect(m.start_url).toBe(m.scope);
     const icons = m.icons as { src: string; sizes: string; type: string }[];
     expect(icons).toHaveLength(1);
@@ -149,6 +154,46 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(m.icons).toEqual([{ src: MAIN_ICON, sizes: "any", type: "image/svg+xml" }]);
     // The ui/icons convention does not exist: the fallback is not served from the workbench.
     expect((m.icons as { src: string }[])[0]!.src).not.toContain("/ui/");
+  });
+
+  it("takes the app icon from the first tab that names one, svg or png", async () => {
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "Demo",
+        version: "1.0.0",
+        type: "module",
+        penguin: {
+          modules: [
+            {
+              ...MANIFEST,
+              contributes: {
+                "WebModule.sessionTabs": [
+                  TAB,
+                  {
+                    ...TAB,
+                    id: "demo.png",
+                    key: "png",
+                    title: "Png",
+                    renderer: { iframe: { src: "ui/index.html" } },
+                    icon: { kind: "png", data: PNG_BYTES_BASE64 },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const res = await owner.post(`${BASE}/${wf.id}/reload`);
+    expect(res.status, await res.text()).toBe(200);
+    // The FIRST tab that names an icon is the app's icon, ahead of the plugin's own.
+    const m = (await (await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`)).json()) as {
+      icons: { src: string; type: string }[];
+    };
+    expect(m.icons).toHaveLength(1);
+    expect(m.icons[0]!.type).toBe("image/png");
+    expect(m.icons[0]!.src).toBe(`data:image/png;base64,${PNG_BYTES_BASE64}`);
   });
 
   it("404s for a workbench that does not exist", async () => {

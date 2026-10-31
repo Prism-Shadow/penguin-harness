@@ -61,6 +61,15 @@ describe("workbench tabs", () => {
     );
   });
 
+  it("carries no icon to the strip: the strip is a text strip", () => {
+    // The server may fill a tab's icon in (it is the app's icon for installing), but the
+    // strip's own view of a tab drops it — a tab is its key, its titles and its page.
+    const [t] = workbenchTabsOf([
+      info({ tabs: [{ ...tab("board", "index.html"), icon: { kind: "svg", data: "<svg/>" } } as never] }),
+    ]);
+    expect(t).not.toHaveProperty("icon");
+  });
+
   it("falls back to Chat when the active tab is gone", () => {
     const tabs = workbenchTabsOf([info({})]);
     expect(settleActiveTab("demo/board", tabs)).toBe("demo/board");

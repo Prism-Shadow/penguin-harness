@@ -791,6 +791,17 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await reloadError()).toContain("module tree rejected");
   });
 
+  it("carries a tab's icon through as data, though the strip draws no icon", async () => {
+    // The icon is the app's icon for installing (the manifest takes the first tab that
+    // names one); it rides on the resolved tab as data, whatever the strip shows.
+    await list();
+    const icon = { kind: "svg", data: '<svg xmlns="http://www.w3.org/2000/svg"/>' };
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, icon }] });
+    const reloaded = await reload();
+    expect(reloaded.error).toBeNull();
+    expect(reloaded.tabs[0]).toMatchObject({ key: TAB.key, icon });
+  });
+
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
     // A workbench with no contribution is server-side only — and since this one has pages, the
     // load says that nothing shows them, with the entry to add, in the API and in the status
