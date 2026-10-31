@@ -25,6 +25,7 @@ import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
+import { carriedBody, syncCarriedImage } from "./hmr/carried-image.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
   server.loadEnv();
   server.installProxy();
   server.readConfig();
+  await server.syncCarriedImage();
   await server.ensureSoleInstance();
   server.listen();
   // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
@@ -150,6 +152,30 @@ class PenguinServer {
   /** Resolves the process configuration, which comes from the environment only (config.ts). */
   readConfig(): void {
     this.config = resolveServerConfig();
+  }
+
+  /**
+   * The root's record, reconciled against the harness image this program carries — before
+   * anything reads the root (the lock file lives beside the record, the HMR restore reads
+   * it, the CLI shim names it). A start that cannot copy says so on the console and
+   * continues: the root keeps whatever record it had, which is what the reconciliation
+   * promises (a pushed record is never touched; an unreadable one is left to be reported).
+   */
+  async syncCarriedImage(): Promise<void> {
+    const outcome = await syncCarriedImage(this.config.root, carriedBody());
+    switch (outcome.kind) {
+      case "copied":
+        console.log(
+          `[server] harness image copied into ${this.config.root}` +
+            (outcome.source.revision ? ` (${outcome.source.revision})` : ""),
+        );
+        break;
+      case "failed":
+        console.warn(`[server] could not copy the harness image: ${outcome.detail}`);
+        break;
+      default:
+        break; // current / kept / absent are the ordinary no-news answers
+    }
   }
 
   /**
