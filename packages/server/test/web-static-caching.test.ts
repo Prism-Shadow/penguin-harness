@@ -29,6 +29,9 @@ const PLATFORM_BUNDLE_FILE = fileURLToPath(
 const webFiles = (marker: string) => ({
   "index.html": Buffer.from(`<html>${marker}</html>`).toString("base64"),
   "assets/index-abc123.js": Buffer.from(`console.log("${marker}")`).toString("base64"),
+  // The PWA manifest rides in the web push as a static file; browsers install a manifest
+  // only when it answers `application/manifest+json` (Deployer's 53531 read, 2026-10-31).
+  "manifest.webmanifest": Buffer.from(`{"name":"${marker}"}`).toString("base64"),
 });
 
 async function pushWeb(t: TestApp, cookie: string, marker: string) {
@@ -80,6 +83,13 @@ describe("web static caching, from a pushed web", () => {
     const asset = await t.app.request("/assets/index-abc123.js");
     expect(asset.status).toBe(200);
     expect(asset.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  it("serves the pushed manifest.webmanifest as application/manifest+json, not octet-stream", async () => {
+    const res = await t.app.request("/manifest.webmanifest");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/manifest+json");
+    expect(await res.json()).toEqual({ name: "v1" });
   });
 
   it("answers a matching ETag with a bodiless 304 that keeps the contract", async () => {
