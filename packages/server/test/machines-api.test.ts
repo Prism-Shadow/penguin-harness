@@ -80,6 +80,8 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
+import { setTimingsSink } from "../src/machines/transport/index.js";
+import type { MachineSample } from "../src/machines/transport/index.js";
 import type {
   MachinesUseResponse,
   MachinesResponse,
@@ -1060,9 +1062,71 @@ describe("machines API", () => {
       machinesRepo.patch("ssh:nas", { remotePort: 7364 });
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       expect(starts).toEqual([7364]);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Starting its server");
+    });
+
+    /** Down until started, so a connect runs every stage up to the hold. */
+    const startable = (over: Partial<MachinesEffects> = {}) => {
+      let up = false;
+      return boot({
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7364, pid: 4242 }, machineId: null }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async () => {
+          up = true;
+          return { ok: true };
+        },
+        ...over,
+      });
+    };
+
+    it("a connect job keeps each stage it ran, and when the connection was held", async () => {
+      await startable();
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      const job = t.deps.machines.job()!;
+      expect(job.stages?.slice(0, 4).map((s) => [s.stage, s.ok])).toEqual([
+        ["probe", true],
+        ["start-server", true],
+        ["reprobe", true],
+        ["hold", true],
+      ]);
+      expect(job.result).toMatchObject({ ok: true, connectedAt: expect.any(String) });
+    });
+
+    it("with a telemetry sink set, each stage and the connect are samples; a failed hold says so without its text", async () => {
+      await startable({
+        hold: async () => ({ ok: false, detail: "Permission denied (publickey)." }),
+      });
+      installed("9.9.9");
+      const samples: MachineSample[] = [];
+      setTimingsSink((sample) => samples.push(sample));
+      try {
+        await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+        await waitFor(() => t.deps.machines.job()?.running === false);
+      } finally {
+        setTimingsSink(null);
+      }
+      expect(
+        samples
+          .filter((s) => s.probe === "machine.connect.stage")
+          .map((s) => [s.attrs?.stage, s.status]),
+      ).toEqual([
+        ["probe", "ok"],
+        ["start-server", "ok"],
+        ["reprobe", "ok"],
+        ["hold", "error"],
+      ]);
+      expect(samples.find((s) => s.probe === "machine.connect")).toMatchObject({
+        status: "error",
+        keys: { machine: "ssh:nas" },
+        attrs: { failedStep: "connect" },
+      });
+      expect(JSON.stringify(samples)).not.toContain("Permission denied");
     });
 
     it("a remembered port that does not take is the failure, not a cue to try another", async () => {
@@ -1116,7 +1180,7 @@ describe("machines API", () => {
       installed("9.9.9");
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       expect(starts).toEqual([layout.defaultPort]);
       expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(layout.defaultPort);
     });
@@ -1138,7 +1202,7 @@ describe("machines API", () => {
       installed("9.9.9");
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7376);
     });
 
@@ -1162,7 +1226,7 @@ describe("machines API", () => {
       machinesRepo.patch("ssh:nas", { remotePort: 7364 });
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       expect(starts).toEqual([]);
       expect(holds).toBe(1);
       expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
@@ -1186,7 +1250,7 @@ describe("machines API", () => {
       installed("9.9.9");
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       const nas = (
         (await (await admin.get(`/api/projects/${PROJECT}/machines`)).json()) as MachinesResponse
       ).machines.find((m) => m.id === "ssh:nas");
@@ -1427,7 +1491,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toEqual({ ok: true, connected: true, connectedAt: expect.any(String) });
         expect(restarts).toEqual(["stop", "start"]);
         expect(job.log.join("\n")).toContain(
           "Its server runs 9.9.9, not the build installed there; restarting it onto that build…",
@@ -1457,7 +1521,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toEqual({ ok: true, connected: true, connectedAt: expect.any(String) });
         expect(upgraded).toEqual(["ssh:nas"]);
         expect(job.log.join("\n")).toContain(
           "It runs 9.9.9+hmr.0123456789ab; bringing it to 9.9.9+hmr.cafe01234567 first…",
@@ -1532,7 +1596,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toEqual({ ok: true, connected: true, connectedAt: expect.any(String) });
         expect(touched).toEqual([]);
         expect(remote.state.puts).toHaveLength(1);
       } finally {
@@ -2242,7 +2306,7 @@ describe("machines API", () => {
       expect([...installs].sort()).toEqual(["build-box", "nas"]);
       for (const job of jobsOf()) {
         expect(job.kind).toBe("use");
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toMatchObject({ ok: true, connected: true });
       }
       expect(connected).toEqual(new Set(["ssh:build-box", "ssh:nas"]));
       expect(Object.keys(recordsInStore()).sort()).toEqual(["ssh:build-box", "ssh:nas"]);
@@ -2262,7 +2326,7 @@ describe("machines API", () => {
       await waitFor(settled);
       expect(installs).toBe(0);
       expect(jobsOf()[0]?.log[0]).toBe("Already on 9.9.9.");
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toMatchObject({ ok: true, connected: true });
     });
 
     it("a machine behind this build is brought forward first, then connected", async () => {
@@ -2278,7 +2342,7 @@ describe("machines API", () => {
       await useBody(["ssh:nas"]);
       await waitFor(settled);
       expect(installs).toBe(1);
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toMatchObject({ ok: true, connected: true });
       expect(recordsInStore()["ssh:nas"]?.version).toBe("9.9.9");
     });
 
@@ -2298,7 +2362,7 @@ describe("machines API", () => {
         message: "error: checksum mismatch for Bundle.",
         canReplaceProgram: true,
       });
-      expect(nas?.result).toEqual({ ok: true, connected: true });
+      expect(nas?.result).toMatchObject({ ok: true, connected: true });
       expect(connected).toEqual(new Set(["ssh:nas"]));
     });
 
@@ -3414,7 +3478,7 @@ describe("machines API", () => {
       const used = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
       expect(used.refused).toEqual([]);
       await waitFor(settled);
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true, connectedAt: expect.any(String) });
     });
 
     it("the first install builds the image, installs it, and records its version — the server's own store untouched", async () => {
@@ -3518,7 +3582,7 @@ describe("machines API", () => {
       broken = false;
       await useBody(["ssh:nas"]);
       await waitFor(settled);
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true, connectedAt: expect.any(String) });
       expect(installs).toBe(1);
       expect((await listed()).checkoutImage).toEqual({ state: "built" });
     });
@@ -3572,6 +3636,7 @@ describe("machines API", () => {
       expect(jobsOf().find((job) => job.machineId === "ssh:nas")?.result).toEqual({
         ok: true,
         connected: true,
+        connectedAt: expect.any(String),
       });
       // Nothing holds it any more: the next build sweeps it, and keeps the image in use.
       await useBody(["ssh:build-box"]);
