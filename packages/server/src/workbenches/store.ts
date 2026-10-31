@@ -35,11 +35,12 @@ export interface WorkbenchFolder {
   uiRev: string | null;
   pkg: { name: string; version: string | null };
   /**
-   * The plugin icon's SVG text (from `package.json#penguin.icon`, `icon.svg` at the root by
-   * default), read through the plugin library's own reader — safe by the same face every
-   * plugin icon passes; null when the workbench ships none or it is refused.
+   * The plugin icon (from `package.json#penguin.icon` — `.svg` or `.png` —, `icon.svg` at the
+   * root by default), read through the plugin library's own reader: an SVG's markup or a PNG's
+   * bytes base64-encoded — safe by the same face every plugin icon passes; null when the
+   * workbench ships none or it is refused.
    */
-  iconSvg: string | null;
+  iconSvg: { kind: "svg" | "png"; data: string } | null;
 }
 
 export function workbenchesDir(root: string, projectId: string, agentId: string): string {
@@ -122,9 +123,9 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
-    iconSvg:
-      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
-        .icon ?? null,
+    iconSvg: (({ icon, kind }) => (icon === undefined ? null : { kind, data: icon }))(
+      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined),
+    ),
   };
 }
 

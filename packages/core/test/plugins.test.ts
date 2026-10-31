@@ -141,6 +141,7 @@ describe("loadLibraryPlugins", () => {
       ).toContain(manifest.penguin.category);
       const icon = readPluginIcon(path.join(pluginsRoot, dir), manifest.penguin.icon);
       expect(icon.warnings, dir).toEqual([]);
+      expect(icon.kind, `${dir} icon kind`).toBe("svg");
       expect(icon.icon, `${dir} icon`).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
       expect(raw.files ?? [], dir).not.toContain("plugin.json");
       expect(existsSync(path.join(pluginsRoot, dir, "plugin.json")), dir).toBe(false);
@@ -383,6 +384,34 @@ describe("lookups", () => {
     expect(libraryPlugin("../etc")).toBeUndefined();
     expect(librarySkill("goal")).toBeUndefined();
     expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("readPluginIcon reads a declared PNG by its bytes and an SVG by its markup, and refuses the rest", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-icon-"));
+    try {
+      const png = Uint8Array.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+      ]);
+      await write(dir, { "icon.png": png, "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>", "note.txt": "hello" });
+      // A declared .png: bytes base64-encoded, kind png.
+      const pngIcon = readPluginIcon(dir, "icon.png");
+      expect(pngIcon.warnings).toEqual([]);
+      expect(pngIcon.kind).toBe("png");
+      expect(pngIcon.icon).toBe(Buffer.from(png).toString("base64"));
+      // A declared .svg: markup from the root, kind svg.
+      const svgIcon = readPluginIcon(dir, "icon.svg");
+      expect(svgIcon.warnings).toEqual([]);
+      expect(svgIcon.kind).toBe("svg");
+      expect(svgIcon.icon).toBe("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>");
+      // A file that is not a PNG: refused, with the reason.
+      const bad = readPluginIcon(dir, "note.txt");
+      expect(bad.icon).toBeUndefined();
+      expect(bad.warnings.join(" ")).toMatch(/is not a PNG file/);
+      // Nothing declared and no icon.svg: silent none.
+      expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true });
+    }
   });
 });
 

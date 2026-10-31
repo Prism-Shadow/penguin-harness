@@ -47,6 +47,12 @@ export interface WebShellSlots {
     title: string;
     titleZh?: string;
     renderer: { builtin: string } | { iframe: { src: string } };
+    /**
+     * The tab's icon, optional: an SVG's markup or a PNG's bytes base64-encoded. A workbench
+     * that contributes none gets its package's plugin icon (`penguin.icon`) by default — the
+     * strip draws the icon; a tab and a package with neither show no icon.
+     */
+    icon?: { kind: "svg" | "png"; data: string };
   };
 }
 
