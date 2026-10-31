@@ -124,7 +124,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(m.short_name).toBe("Demo");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
-    expect(m.scope).toBe(`${BASE}/${wf.id}`);
+    expect(m.scope).toBe(`/app/owner-wf/default_agent/${wf.id}`);
     expect(m.start_url).toBe(m.scope);
     const icons = m.icons as { src: string; sizes: string; type: string }[];
     expect(icons).toHaveLength(1);
