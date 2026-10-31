@@ -17,6 +17,7 @@
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
+ *   GET    /:id/manifest.webmanifest  the workbench's PWA manifest (see manifest.ts)
  *   GET    /:id/sdk/ui/*           the page runtime compiled pages import (see ui-runtime.ts)
  *   GET    /:id/sdk/amsp.js        the page SDK: AMSP's browser build (see page-sdk.ts)
  *   GET    /:id/sdk/workbench.js   the page SDK: that build plus this server's signed-in door
@@ -82,6 +83,7 @@ import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
+import { WORKBENCH_ICONS, workbenchManifest } from "./manifest.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 const MIME: Record<string, string> = {
@@ -490,6 +492,25 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     };
     if (etagMatches(c.req.header("if-none-match"), file.etag)) return c.body(null, 304, headers);
     return new Response(file.body, { status: 200, headers });
+  });
+
+  // The install surface ("add to home screen"): generated from the workbench's registration,
+  // with the icons its own ui/ ships (checked through the same serving as the pages above)
+  // and the main app's penguin when it ships none.
+  app.get("/:id/manifest.webmanifest", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
+    if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
+    const shipped: string[] = [];
+    for (const { file } of WORKBENCH_ICONS) {
+      if ((await deps.workbenches.uiFile(projectId, agentId, id, file)) !== null)
+        shipped.push(file);
+    }
+    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, shipped)), 200, {
+      "content-type": "application/manifest+json; charset=utf-8",
+      "cache-control": "no-cache",
+    });
   });
 
   // The same files for every workbench, but only under one that exists: a page of another
