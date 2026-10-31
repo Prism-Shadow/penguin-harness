@@ -155,9 +155,23 @@ describe("every channel's carried image provisions the root it serves", () => {
       const other = await tmp(`penguin-channel-${channel}-other-`);
       await expect(syncCarriedImage(other, body)).resolves.toMatchObject({ kind: "copied" });
       await expectRecordAndAnswer(other);
-      expect(carriedBody("/install/lib/dist/penguin.js")).toBe(
-        path.join("/install/lib/dist", "install-image.gz"),
-      );
+    });
+
+    // The lookup that finds the body: a real layout on disk, the way each channel's
+    // program is laid out — the entry beside its dist/, npm through the server package.
+    it(`${channel} 's program layout resolves the body the packer wrote`, async () => {
+      const program = await tmp(`penguin-channel-${channel}-program-`);
+      const dist = path.join(program, "lib", "dist");
+      await fs.mkdir(dist, { recursive: true });
+      await fs.writeFile(path.join(dist, "penguin.js"), "// entry\n");
+      await packImage(dist);
+      expect(carriedBody(path.join(dist, "penguin.js"))).toBe(path.join(dist, "install-image.gz"));
+
+      // No body beside the entry: the lookup says so rather than guessing elsewhere.
+      const bare = path.join(program, "lib", "bare");
+      await fs.mkdir(bare, { recursive: true });
+      await fs.writeFile(path.join(bare, "penguin.js"), "// entry\n");
+      expect(carriedBody(path.join(bare, "penguin.js"))).toBeNull();
     });
   }
 });
