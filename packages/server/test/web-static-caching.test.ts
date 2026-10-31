@@ -27,7 +27,9 @@ const PLATFORM_BUNDLE_FILE = fileURLToPath(
 );
 
 const webFiles = (marker: string) => ({
-  "index.html": Buffer.from(`<html>${marker}</html>`).toString("base64"),
+  "index.html": Buffer.from(
+    `<html><link rel="manifest" href="/manifest.webmanifest" />${marker}</html>`,
+  ).toString("base64"),
   "assets/index-abc123.js": Buffer.from(`console.log("${marker}")`).toString("base64"),
 });
 
