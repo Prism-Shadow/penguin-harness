@@ -336,7 +336,8 @@ export function carriedStore(argv1: string | undefined = process.argv[1]): strin
   if (fs.existsSync(path.join(beside, "harness.json"))) return beside;
   // The server publishes import-only exports. Resolve the dependency's search roots
   // rather than asking CommonJS resolution to select an entry it cannot import.
-  const search = createRequire(path.resolve(argv1)).resolve.paths("@prismshadow/penguin-server") ?? [];
+  const search =
+    createRequire(path.resolve(argv1)).resolve.paths("@prismshadow/penguin-server") ?? [];
   for (const modules of search) {
     const dir = path.join(modules, "@prismshadow", "penguin-server", "dist", "hmr");
     if (fs.existsSync(path.join(dir, "harness.json"))) return dir;
