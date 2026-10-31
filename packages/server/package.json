@@ -140,6 +140,7 @@
   "files": [
     "dist",
     "web-dist",
+    "install-image.gz",
     "LICENSE"
   ],
   "publishConfig": {
