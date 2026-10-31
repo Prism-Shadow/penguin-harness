@@ -61,10 +61,12 @@ describe("workbench tabs", () => {
     );
   });
 
-  it("carries no icon: the strip is a text strip", () => {
-    // The server no longer fills a default in and no longer passes one through — a tab is
-    // its key, its titles and its page, and nothing the strip would draw beside the title.
-    const [t] = workbenchTabsOf([info({ tabs: [{ ...tab("board", "index.html"), icon: undefined } as never] })]);
+  it("carries no icon to the strip: the strip is a text strip", () => {
+    // The server may fill a tab's icon in (it is the app's icon for installing), but the
+    // strip's own view of a tab drops it — a tab is its key, its titles and its page.
+    const [t] = workbenchTabsOf([
+      info({ tabs: [{ ...tab("board", "index.html"), icon: { kind: "svg", data: "<svg/>" } } as never] }),
+    ]);
     expect(t).not.toHaveProperty("icon");
   });
 

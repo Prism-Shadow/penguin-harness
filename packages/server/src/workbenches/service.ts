@@ -43,6 +43,7 @@ import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
+  WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -195,6 +196,15 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
     }
   }
   return tabs;
+}
+
+/**
+ * The workbench's app icon for its PWA manifest: the icon of the first tab that names one
+ * (the tab is the thing a person opens and installs), else null — the manifest falls back to
+ * the workbench's own plugin icon, then the main app's penguin.
+ */
+export function contributedAppIcon(tabs: readonly WorkbenchTab[]): WorkbenchTabIcon | null {
+  return tabs.find((t) => t.icon !== undefined)?.icon ?? null;
 }
 
 /** Pairs the manifests with the emitted default export, by name. */

@@ -33,6 +33,7 @@ import type {
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchNotFound } from "./service.js";
 import { workbenchManifest } from "./manifest.js";
+import { contributedAppIcon } from "./service.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -289,8 +290,10 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const id = c.req.param("id");
     const info = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
     if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
-    const iconSvg = await deps.workbenches.iconSvg(projectId, agentId, id);
-    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, iconSvg)), 200, {
+    // A tab that names an icon gives the app its icon; a plugin icon is the fallback.
+    const icon =
+      contributedAppIcon(info.tabs) ?? (await deps.workbenches.iconSvg(projectId, agentId, id));
+    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, icon)), 200, {
       "content-type": "application/manifest+json; charset=utf-8",
       "cache-control": "no-cache",
     });
