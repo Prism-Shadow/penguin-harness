@@ -629,6 +629,24 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
   contributes: {
     "HttpModule.routes": [
       {
+        id: "WorkbenchManifestModule.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "none",
+        order: 19,
+      },
+      {
+        id: "WorkbenchesModule.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "user",
+        order: 20,
+      },
+      {
+        id: "WorkbenchManifestModule.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "none",
+        order: 19,
+      },
+      {
         id: "WorkbenchesModule.routes",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "user",
@@ -639,10 +657,6 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
         prefix: "/api/projects/:projectId/app-center",
         auth: "user",
         order: 20,
-        id: "WorkbenchManifestModule.routes",
-        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
-        auth: "none",
-        order: 21,
       },
     ],
   },
