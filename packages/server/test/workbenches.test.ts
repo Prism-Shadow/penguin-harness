@@ -845,7 +845,10 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     await writeContributions({
       "WebModule.sessionTabs": [{ ...TAB, icon: { kind: "gif", data: "x" } }],
     });
-    expect(await reloadError()).toContain("icon must be { kind");
+    // A refused contribution keeps the previous instance serving (with its two tabs).
+    const broken = await reload();
+    expect(broken.error).toContain("icon must be { kind");
+    expect(broken.tabs).toHaveLength(2);
   });
 
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
