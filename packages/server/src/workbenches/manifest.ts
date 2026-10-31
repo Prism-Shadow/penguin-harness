@@ -19,6 +19,13 @@ export const MANIFEST_FILE = "manifest.webmanifest";
 /** The main app's icon, the fallback for a workbench that ships no plugin icon. */
 export const MAIN_ICON = "/penguin-logo.svg";
 
+/** One icon entry of a PWA manifest: an inlined SVG or PNG (the type follows the kind). */
+export interface WorkbenchManifestIcon {
+  src: string;
+  sizes: string;
+  type: "image/svg+xml" | "image/png";
+}
+
 /** A PWA manifest: only what the install surface needs. */
 export interface WorkbenchManifest {
   name: string;
@@ -27,7 +34,7 @@ export interface WorkbenchManifest {
   start_url: string;
   scope: string;
   display: "standalone";
-  icons: { src: string; sizes: string; type: "image/svg+xml" }[];
+  icons: WorkbenchManifestIcon[];
 }
 
 /** The workbench's `ui/` mount: its own scope, and the base of every icon URL it serves. */
@@ -39,15 +46,16 @@ export function workbenchUiBase(projectId: string, agentId: string, workbenchId:
   );
 }
 
-/** The workbench's plugin icon as a PWA icon entry: inlined, so it rides with the install. */
-export function workbenchIcon(iconSvg: string | null): {
-  src: string;
-  sizes: string;
-  type: "image/svg+xml";
-} {
-  if (iconSvg === null) return { src: MAIN_ICON, sizes: "any", type: "image/svg+xml" };
+/**
+ * The workbench's plugin icon as a PWA icon entry: inlined, so it rides with the install. An
+ * SVG is base64-encoded here (the reader hands markup over); a PNG arrives already base64.
+ * Null (no icon, or one refused) falls back to the main app's penguin SVG.
+ */
+export function workbenchIcon(icon: { kind: "svg" | "png"; data: string } | null): WorkbenchManifestIcon {
+  if (icon === null) return { src: MAIN_ICON, sizes: "any", type: "image/svg+xml" };
+  if (icon.kind === "png") return { src: `data:image/png;base64,${icon.data}`, sizes: "any", type: "image/png" };
   return {
-    src: `data:image/svg+xml;base64,${Buffer.from(iconSvg, "utf8").toString("base64")}`,
+    src: `data:image/svg+xml;base64,${Buffer.from(icon.data, "utf8").toString("base64")}`,
     sizes: "any",
     type: "image/svg+xml",
   };
@@ -63,7 +71,7 @@ export function workbenchManifest(
   projectId: string,
   agentId: string,
   info: WorkbenchInfo,
-  iconSvg: string | null,
+  icon: { kind: "svg" | "png"; data: string } | null,
 ): WorkbenchManifest {
   const base = workbenchUiBase(projectId, agentId, info.id);
   return {
@@ -73,6 +81,6 @@ export function workbenchManifest(
     start_url: base,
     scope: base,
     display: "standalone",
-    icons: [workbenchIcon(iconSvg)],
+    icons: [workbenchIcon(icon)],
   };
 }

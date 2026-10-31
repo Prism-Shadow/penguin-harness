@@ -568,33 +568,60 @@ export function isSafeIconSvg(text: string): boolean {
 }
 
 /**
- * A package's icon: the SVG `penguin.icon` names, else `icon.svg` at the package root when there
- * is one. Read only when the file stays inside the package (a symlink is not followed), weighs at
- * most MAX_PLUGIN_ICON_BYTES and passes isSafeIconSvg; otherwise no icon (the UI's puzzle glyph),
- * with a warning saying why. A package with no icon at all has none, silently. The icon is the
- * text from its `<svg` root on: the Web App inlines only markup that begins there, so an XML
- * declaration the file opens with is left behind rather than costing the icon.
+ * What a package's icon read returned: `icon` is the SVG markup (an `image/svg+xml` icon) or
+ * the PNG bytes base64-encoded (a `image/png` one) — the caller picks the media type by
+ * `kind` — and `warnings` says why a declared icon was refused. A package with no icon at
+ * all has neither, silently.
+ */
+export interface PluginIcon {
+  icon?: string;
+  kind: "svg" | "png";
+}
+
+/**
+ * A package's icon: the file `penguin.icon` names (`.svg` or `.png`), else `icon.svg` at the
+ * package root when there is one. Read only when the file stays inside the package (a symlink
+ * is not followed), weighs at most MAX_PLUGIN_ICON_BYTES and — an SVG — passes isSafeIconSvg;
+ * otherwise no icon (the UI's puzzle glyph), with a warning saying why. An SVG is the text from
+ * its `<svg` root on: the Web App inlines only markup that begins there, so an XML declaration
+ * the file opens with is left behind rather than costing the icon. A PNG is read as bytes and
+ * handed over base64-encoded: a raster has no markup to be unsafe, so only the size and the
+ * magic number are checked.
  */
 export function readPluginIcon(
   dir: string,
   declared: string | undefined,
-): { icon?: string; warnings: string[] } {
+): { icon?: string; kind: "svg" | "png"; warnings: string[] } {
   const rel = declared ?? "icon.svg";
   const key = declared !== undefined ? `penguin.icon (${declared})` : "icon.svg";
   const abs = path.resolve(dir, rel);
   const inside = path.relative(dir, abs);
   if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
-    return { warnings: [`${key} is not a file inside the package; ignored`] };
+    return { warnings: [`${key} is not a file inside the package; ignored`], kind: "svg" };
   }
   let stat: fs.Stats;
   try {
     stat = fs.lstatSync(abs);
   } catch {
-    return { warnings: declared !== undefined ? [`${key} does not exist; ignored`] : [] };
+    return { warnings: declared !== undefined ? [`${key} does not exist; ignored`] : [], kind: "svg" };
   }
-  if (!stat.isFile()) return { warnings: [`${key} is not a plain file; ignored`] };
+  if (!stat.isFile()) return { warnings: [`${key} is not a plain file; ignored`], kind: "svg" };
   if (stat.size > MAX_PLUGIN_ICON_BYTES) {
-    return { warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`] };
+    return { warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`], kind: "svg" };
+  }
+  if (!/\.(svg|png)$/i.test(rel)) {
+    return { warnings: [`${key} must name an .svg or .png file; ignored`], kind: "svg" };
+  }
+  if (/\.png$/i.test(rel)) {
+    const bytes = fs.readFileSync(abs);
+    if (!bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      return { warnings: [`${key} is not a PNG file; ignored`], kind: "png" };
+    }
+    return {
+      icon: bytes.toString("base64"),
+      kind: "png",
+      warnings: [],
+    };
   }
   const icon = svgFromRoot(fs.readFileSync(abs, "utf8"));
   if (!isSafeIconSvg(icon)) {
@@ -602,7 +629,8 @@ export function readPluginIcon(
       warnings: [
         `${key} is not a plain SVG (script, event handlers, links and external references are refused); ignored`,
       ],
+      kind: "svg",
     };
   }
-  return { icon, warnings: [] };
+  return { icon, kind: "svg", warnings: [] };
 }

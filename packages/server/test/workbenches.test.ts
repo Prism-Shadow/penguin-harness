@@ -63,6 +63,11 @@ const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
 
+/** A real PNG header (the first 16 bytes of a 1×1): what a `.png` plugin icon must begin with. */
+const PNG_BYTES_BASE64 = Buffer.from(
+  Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]),
+).toString("base64");
+
 const TAB = {
   id: "demo.board",
   key: "board",
@@ -170,12 +175,25 @@ async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): P
   await fs.writeFile(file, JSON.stringify(table));
 }
 
-/** Writes the demo workbench into `dir`: its manifest, its handler and its one page. */
+/** Writes the demo workbench into `dir`: its manifest, its handler, its one page and its PNG icon. */
 async function writeDemo(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, "ui"), { recursive: true });
-  await fs.writeFile(path.join(dir, "package.json"), packageJson());
   await fs.writeFile(path.join(dir, "index.ts"), indexSource("hello"));
   await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
+  // The demo ships a PNG plugin icon (`penguin.icon`), so the tab default and the PWA
+  // manifest both have a real raster to carry.
+  await fs.writeFile(path.join(dir, "icon.png"), Buffer.from(PNG_BYTES_BASE64, "base64"));
+  await fs.writeFile(path.join(dir, "package.json"), packageJsonWithPenguinIcon());
+}
+
+/** The demo's package.json with `penguin.icon` naming the PNG. */
+function packageJsonWithPenguinIcon(): string {
+  return JSON.stringify({
+    name: "Demo",
+    version: "1.0.0",
+    type: "module",
+    penguin: { icon: "icon.png", modules: [MANIFEST] },
+  });
 }
 
 /** An app with the owner's Project and the demo workbench written into its default Agent. */
@@ -223,9 +241,14 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
   it("checks and transpiles the TypeScript, boots the tree, serves its UI and dispatches to its handler", async () => {
     expect(wf).toMatchObject({ id: "demo", name: "Demo", version: "1.0.0", error: null });
     expect(wf!.uiRev).toMatch(/^[0-9a-f]{12}$/);
-    // The tab is the contribution, its page path turned into the URL it is served from.
+    // The tab is the contribution, its page path turned into the URL it is served from —
+    // and, the tab contributing no icon, the package's PNG plugin icon rides with it.
     expect(wf!.tabs).toEqual([
-      { ...TAB, renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } } },
+      {
+        ...TAB,
+        icon: { kind: "png", data: PNG_BYTES_BASE64 },
+        renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } },
+      },
     ]);
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
     // Beside it, what the load came to — the Agent's only view of it is its own files.
@@ -776,6 +799,56 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     await list();
     await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
     expect(await reloadError()).toContain("module tree rejected");
+  });
+
+  it("a tab's contributed icon rides through, and a tab without one gets the package's plugin icon", async () => {
+    // The package ships a PNG as its plugin icon (`penguin.icon`); a tab that contributes no
+    // icon of its own shows it, a tab that contributes an SVG shows that one instead, and a
+    // malformed contribution is refused with the reason.
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "Demo",
+        version: "1.0.0",
+        type: "module",
+        penguin: {
+          icon: "icon.png",
+          modules: [
+            {
+              ...MANIFEST,
+              contributes: {
+                "WebModule.sessionTabs": [
+                  TAB,
+                  {
+                    ...TAB,
+                    id: "demo.svg",
+                    key: "svg",
+                    title: "SVG",
+                    renderer: { iframe: { src: "ui/index.html" } },
+                    icon: { kind: "svg", data: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const info = await reload();
+    expect(info.error).toBeNull();
+    const [board, svg] = info.tabs;
+    // The package's PNG, read by the plugin reader (bytes base64), is the default.
+    expect(board!.icon).toEqual({ kind: "png", data: PNG_BYTES_BASE64 });
+    // The tab's own contribution wins over the package default.
+    expect(svg!.icon).toEqual({ kind: "svg", data: '<svg xmlns="http://www.w3.org/2000/svg"/>' });
+
+    await writeContributions({
+      "WebModule.sessionTabs": [{ ...TAB, icon: { kind: "gif", data: "x" } }],
+    });
+    // A refused contribution keeps the previous instance serving (with its two tabs).
+    const broken = await reload();
+    expect(broken.error).toContain("icon must be { kind");
+    expect(broken.tabs).toHaveLength(2);
   });
 
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
