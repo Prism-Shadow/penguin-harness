@@ -21,6 +21,7 @@ import { isAppCenterPath } from "../../lib/app-center-path";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useAppPageTab } from "./use-app-page-tab";
+import { useInstallManifest } from "../../lib/workbench-tabs";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
@@ -47,6 +48,14 @@ export function WorkbenchAppPage() {
     enabled: !safe,
   });
   const paletteShortcut = useShortcutLabel("palette.toggle");
+
+  // This page is its own installable app: its manifest link names THIS tab's manifest while
+  // mounted (one app per tab), the workbench's when no tab key is in the route — a remote
+  // machine's workbench adds the machine query the route carries. On unmount the main app's
+  // literal link is restored, never the href found on arrival (on a server-rewritten page
+  // that href is already a workbench manifest — keeping it would leave the install surface
+  // on the workbench). The hook lives in lib/workbench-tabs with the rest of the face.
+  useInstallManifest(projectId, agentId, workbenchId, tabKey, machineId);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
