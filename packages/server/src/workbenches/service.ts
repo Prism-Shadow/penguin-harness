@@ -55,6 +55,7 @@ import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   AppCenterShortcut,
+  WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -555,7 +556,11 @@ export class WorkbenchService implements Workbenches {
     return (await this.runtime()?.file(rel)) ?? null;
   }
 
-  async iconSvg(projectId: string, agentId: string, workbenchId: string): Promise<string | null> {
+  async iconSvg(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<{ kind: "svg" | "png"; data: string } | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
     const folder = await readFolder(
