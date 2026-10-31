@@ -26,7 +26,7 @@ import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { nodeFloorRefusal } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
-import { carriedBody, syncCarriedImage } from "./hmr/carried-image.js";
+import { carriedBody, syncCarriedImage } from "./carried-image.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
