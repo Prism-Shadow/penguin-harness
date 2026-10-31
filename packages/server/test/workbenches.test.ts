@@ -241,9 +241,14 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
   it("checks and transpiles the TypeScript, boots the tree, serves its UI and dispatches to its handler", async () => {
     expect(wf).toMatchObject({ id: "demo", name: "Demo", version: "1.0.0", error: null });
     expect(wf!.uiRev).toMatch(/^[0-9a-f]{12}$/);
-    // The tab is the contribution, its page path turned into the URL it is served from.
+    // The tab is the contribution, its page path turned into the URL it is served from —
+    // and, the tab contributing no icon, the package's PNG plugin icon rides with it.
     expect(wf!.tabs).toEqual([
-      { ...TAB, renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } } },
+      {
+        ...TAB,
+        icon: { kind: "png", data: PNG_BYTES_BASE64 },
+        renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } },
+      },
     ]);
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
     // Beside it, what the load came to — the Agent's only view of it is its own files.
