@@ -336,9 +336,9 @@ export function carriedStore(argv1: string | undefined = process.argv[1]): strin
   if (fs.existsSync(path.join(beside, "harness.json"))) return beside;
   try {
     const server = createRequire(path.resolve(argv1)).resolve(
-      "@prismshadow/penguin-server/package.json",
+      "@prismshadow/penguin-server",
     );
-    const dir = path.join(path.dirname(server), "dist", "hmr");
+    const dir = path.join(path.dirname(server), "hmr");
     return fs.existsSync(path.join(dir, "harness.json")) ? dir : null;
   } catch {
     return null;
