@@ -58,12 +58,9 @@ export function workbenchAppBase(
   workbenchId: string,
   tabKey?: string,
 ): string {
-  const segments = [
-    projectId,
-    agentId,
-    workbenchId,
-    ...(tabKey === undefined ? [] : [tabKey]),
-  ].map(encodeURIComponent);
+  const segments = [projectId, agentId, workbenchId, ...(tabKey === undefined ? [] : [tabKey])].map(
+    encodeURIComponent,
+  );
   return `/app/${segments.join("/")}`;
 }
 
@@ -72,9 +69,12 @@ export function workbenchAppBase(
  * SVG is base64-encoded here (the reader hands markup over); a PNG arrives already base64.
  * Null (no icon, or one refused) falls back to the main app's penguin SVG.
  */
-export function workbenchIcon(icon: { kind: "svg" | "png"; data: string } | null): WorkbenchManifestIcon {
+export function workbenchIcon(
+  icon: { kind: "svg" | "png"; data: string } | null,
+): WorkbenchManifestIcon {
   if (icon === null) return { src: MAIN_ICON, sizes: "any", type: "image/svg+xml" };
-  if (icon.kind === "png") return { src: `data:image/png;base64,${icon.data}`, sizes: "any", type: "image/png" };
+  if (icon.kind === "png")
+    return { src: `data:image/png;base64,${icon.data}`, sizes: "any", type: "image/png" };
   return {
     src: `data:image/svg+xml;base64,${Buffer.from(icon.data, "utf8").toString("base64")}`,
     sizes: "any",

@@ -790,7 +790,8 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       if (content === undefined) {
         return c.json(errorBody("not_found", "Resource does not exist."), 404);
       }
-      const served = servedPath === "index.html" ? withWorkbenchManifestLink(content, reqPath) : content;
+      const served =
+        servedPath === "index.html" ? withWorkbenchManifestLink(content, reqPath) : content;
       return staticResponse(c, served, servedPath, etagOfBuffer(served));
     }
 
@@ -830,7 +831,10 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
-    const served = file === path.join(base, "index.html") ? withWorkbenchManifestLink(content, reqPath) : content;
+    const served =
+      file === path.join(base, "index.html")
+        ? withWorkbenchManifestLink(content, reqPath)
+        : content;
     // A weak size+mtime validator, the classic disk-file shape — hashing every
     // response would cost more than the 304s save.
     const etag = `W/"${served.byteLength}-${Math.round(mtimeMs)}"`;
