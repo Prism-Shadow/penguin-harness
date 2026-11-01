@@ -35,14 +35,15 @@ import type {
 } from "../services/benchmark-service.js";
 
 /**
- * The static half of an Agent-definition contribution: a display name, an optional
- * description, and the package-relative paths of the definition's files — the
- * contributor's `agent_state/` content as the manifest lists it. The code half is
- * nothing to run: installing copies the listed files into the Project, as data.
+ * The static half of an Agent-definition contribution: the id the definition installs
+ * under (the contributor package's unscoped name), a display name, and the
+ * package-relative paths of the definition's files — the contributor's `agent_state/`
+ * content as the manifest lists it. There is no code half: installing copies the listed
+ * files into the Project, as data.
  */
 export interface AgentDefinitionContribution {
-  name: string;
-  description?: string;
+  agentId: string;
+  name?: string;
   agentState: string[];
 }
 

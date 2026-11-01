@@ -41,6 +41,12 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import {
+  AgentDefinition,
+  agentDefinitionsFromTable,
+  copyAgentDefinition,
+  packageFiles,
+} from "../agents/package.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
@@ -634,6 +640,60 @@ export async function loadPlugins(
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
+    }
+  }
+  // A package that contributes an Agent definition (its ifaces.json, agents/package.ts)
+  // has that definition copied into the agents/ of every Project that lists it — as data,
+  // named by the contribution's agentId. The copy runs here, where the load runs: an
+  // install apply, a push and a boot all pass through, so a re-install updates the copy
+  // in place and a directory deleted by hand is re-filled by the next load. Nothing in
+  // the package executes for this: the contribution is the table's static data, and a
+  // copy failure warns per Project rather than failing the load.
+  if (loaded.length > 0) {
+    const projects = await listProjectIds(root);
+    for (const { specifier, file } of loaded) {
+      const dir = file === null ? null : path.dirname(file);
+      if (dir === null) continue;
+      let definitions: AgentDefinition[];
+      try {
+        definitions = await contributedAgentDefinitions(dir);
+      } catch {
+        continue;
+      }
+      if (definitions.length === 0) continue;
+      const asking = (
+        await Promise.all(
+          projects.map(async (projectId) => ({
+            projectId,
+            lists: (await readProjectPluginList(root, projectId, machineId)).includes(specifier),
+          })),
+        )
+      )
+        .filter((p) => p.lists)
+        .map((p) => p.projectId);
+      if (asking.length === 0) continue;
+      let files: Map<string, Uint8Array>;
+      try {
+        files = await packageFiles(dir);
+      } catch {
+        continue;
+      }
+      for (const definition of definitions) {
+        for (const projectId of asking) {
+          try {
+            const copied = await copyAgentDefinition({ root, projectId, definition, files });
+            if (copied.length === 0) {
+              console.warn(
+                `[plugins] '${specifier}': the Agent definition '${definition.agentId}' carries no copyable files`,
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[plugins] ${projectId}: copying the Agent definition '${definition.agentId}' of '${specifier}' failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
     }
   }
   return { loaded, failed };
