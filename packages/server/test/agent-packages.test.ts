@@ -64,14 +64,14 @@ describe("agent definitions as plugin packages", () => {
       await fs.writeFile(
         path.join(dir, "ifaces.json"),
         JSON.stringify({
-          ifaces: {},
+          ifaces: { "@acme/reviewer#Agent": { name: "Agent", methods: {} } },
           types: {},
           modules: {
             Agent: {
               name: "Agent",
               kind: "component",
               requires: {},
-              provides: {},
+              provides: { Agent: "@acme/reviewer#Agent" },
               contributes: {
                 [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
               },
