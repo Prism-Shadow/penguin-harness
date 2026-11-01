@@ -217,7 +217,7 @@ describe("agent definitions as plugin packages", () => {
         projectId: "p1",
         definition: {
           agentId: "reviewer",
-          agentState: ["agent_state/system_config.yaml", "agent_state/skills/review/SKILL.md"],
+          files: ["agent_state/system_config.yaml", "agent_state/skills/review/SKILL.md"],
         },
         files,
       });
