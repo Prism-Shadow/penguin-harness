@@ -225,8 +225,12 @@ describe("agent definitions as plugin packages", () => {
     const result = await loadPlugins(root);
     // Both load — the bare one is a plain plugin whose default export carries no modules;
     // the reviewer's contribution is what its table carries, not something the loader scans.
+    // A listed name resolves to its entry file (the loader's own specifier for it).
     expect(result.failed.size).toBe(0);
-    expect(result.loaded.map((e) => e.specifier)).toEqual([good, "@acme/bare"]);
+    expect(result.loaded.map((e) => e.specifier.split("/").slice(-3).join("/"))).toEqual([
+      "@acme/reviewer/index.mjs",
+      "@acme/bare/index.mjs",
+    ]);
   });
 });
 
