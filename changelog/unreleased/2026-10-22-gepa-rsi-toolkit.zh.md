@@ -7,7 +7,7 @@
 
 [English](2026-10-22-gepa-rsi-toolkit.md)
 
-插件库新增第六个 RSI 工具包 `gepa-rsi-toolkit`（GEPA RSI Toolkit，分类 `rsi`，预装）。它唯一的 Skill `gepa-rsi-toolkit`（`2026.10.22.1`）对照 `gepa-ai/gepa` 的 `8f287de942f41a6d1e0e7e5b2d576247c4bedee9` 运行 GEPA（[Agrawal 等，2025](https://arxiv.org/abs/2507.19457)），在只有一条指令的系统上采用 `optimize` 的默认设置：父代从逐题 Pareto 前沿抽取，每次取 3 道反馈题组成小批量，反思模型阅读父代的 Trace 与分数并写出新指令，子代只有在小批量总分严格更高时才被接纳，每个被接纳的子代都做一次完整测量，最后保留平均分最高者。Web App 无需改动，「优化」标签页的**方法**字段即可选到它，因为这份列表读自插件库的 `rsi` 分类。
+插件库新增 RSI 工具包 `gepa-rsi-toolkit`（GEPA RSI Toolkit，分类 `rsi`，预装）。它唯一的 Skill `gepa-rsi-toolkit`（`2026.10.22.1`）对照 `gepa-ai/gepa` 的 `8f287de942f41a6d1e0e7e5b2d576247c4bedee9` 运行 GEPA（[Agrawal 等，2025](https://arxiv.org/abs/2507.19457)），在只有一条指令的系统上采用 `optimize` 的默认设置：父代从逐题 Pareto 前沿抽取，每次取 3 道反馈题组成小批量，反思模型阅读父代的 Trace 与分数并写出新指令，子代只有在小批量总分严格更高时才被接纳，每个被接纳的子代都做一次完整测量，最后保留平均分最高者。Web App 无需改动，「优化」标签页的**方法**字段即可选到它，因为这份列表读自插件库的 `rsi` 分类。
 
 ## 细节
 
