@@ -7057,7 +7057,7 @@ export interface PluginInstallOutcome {
   modules: boolean;
   /** The zip held the version already installed: nothing was installed. */
   unchanged?: boolean;
-  /** `kind: "agent"`: the definition was copied into this Project's agents/ — no install, a copy. */
+  /** The package carries an Agent definition: it was copied into this Project's agents/ — a copy, not an install. */
   agent?: { agentId: string; copied: string[] };
 }
 

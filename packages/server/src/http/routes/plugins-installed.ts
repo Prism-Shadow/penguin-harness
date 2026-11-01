@@ -7,10 +7,14 @@
  *            machineId? }         does not ship it, add it to this Project's shared table — or
  *                                 to that machine's own table — and apply (admin). The specifier
  *                                 is a registry name, or an https link to a git repository or a
- *                                 tarball (plugin/source.ts), which installs here only
+ *                                 tarball (plugin/source.ts), which installs here only. A
+ *                                 package that carries an Agent definition (an `agent_state/`
+ *                                 beside its package.json) has that part copied into this
+ *                                 Project
  *   POST   /archive               install an uploaded package zip on this server (admin); 409
  *          { dataBase64,          plugin_exists when another version is installed, unless
- *            overwrite? }         `overwrite`
+ *            overwrite? }         `overwrite`; an Agent definition in the zip is copied into
+ *                                 this Project
  *   PUT    / { plugins }          rewrite this Project's shared table, and apply (admin)
  *   DELETE /?specifier=…          drop it from every table of this Project — or, with
  *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin);
@@ -18,9 +22,11 @@
  *
  * WHAT A TABLE LISTS is server modules: a package of Skills, hooks or MCP servers alone is the
  * library's (core lists every package of the prefix that carries them), installed into Agents
- * rather than loaded, so installing one writes no table. And a package from a link or a zip is
- * listed in THIS machine's own table, never the shared one: another machine handed its name
- * would fetch whatever the registry has under that name.
+ * rather than loaded, so installing one writes no table — and a package may carry an Agent
+ * definition besides (an `agent_state/` beside its package.json), which installing copies into
+ * this Project the same way. And a package from a link or a zip is listed in THIS machine's own
+ * table, never the shared one: another machine handed its name would fetch whatever the
+ * registry has under that name.
  *
  * WHAT IS REFUSED after the fact: the prefix resolves before the shipped plugins, so a package
  * under the name of a module the build ships would replace it for every Project — a zip saying
@@ -92,12 +98,12 @@ import {
 } from "../../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
-import { parseAgentPackageArchive } from "../../services/agent-package-archive.js";
 import {
-  copyAgentPackage,
-  reinstallAgentPackage,
-  agentPackageFiles,
-  AgentPackageError,
+  AgentCopyError,
+  copyAgentDefinition,
+  hasAgentDefinition,
+  hasAgentDefinitionFiles,
+  packageFiles,
 } from "../../agents/package.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
@@ -277,16 +283,24 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /**
-   * An installed package can stand in for an Agent whose directory was deleted by hand:
-   * its definition part is re-copied into the Project (as data, never executed). Null when
-   * the package is not an Agent package — no keyword, no definition part.
+   * An installed package can stand in for an Agent whose directory was deleted by hand: if
+   * it carries an Agent definition (`agent_state/` beside its package.json), that part is
+   * re-copied into the Project (as data, never executed). Null when it carries none.
    */
   const installedAgentPackage = async (name: string, projectId: string) => {
     const dir = installedPackageDir(pluginsPrefix(deps.root), name);
+    if (!(await hasAgentDefinition(dir))) return null;
     try {
-      return await reinstallAgentPackage({ root: deps.root, projectId, name, dir });
+      return await copyAgentDefinition({
+        root: deps.root,
+        projectId,
+        packageName: name,
+        files: await packageFiles(dir),
+      });
     } catch (err) {
-      if (err instanceof AgentPackageError) return null;
+      if (err instanceof AgentCopyError) {
+        throw new HttpError(400, "agent_name_invalid", err.message);
+      }
       throw err;
     }
   };
@@ -403,15 +417,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
     }
     const kinds = kindsOf(installed.name);
-    if (!kinds.library && !kinds.modules) {
+    // An Agent definition is a plugin contribution like the library's: a package whose
+    // whole content is an agent_state/ is a plugin package all the same.
+    const agent = await hasAgentDefinition(
+      installedPackageDir(pluginsPrefix(deps.root), installed.name),
+    );
+    if (!kinds.library && !agent && !kinds.modules) {
       return refuseInstalled(
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor the ifaces.json of server modules.`,
+        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor an Agent definition (\`agent_state/\`) nor the ifaces.json of server modules.`,
       );
     }
-    return kinds;
+    return { ...kinds, agent };
   };
 
   /** The answer to an install: the Project's list, and what landed on this server. */
@@ -430,15 +449,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const body = await readJson(c);
-    // `kind: "agent"` installs an Agent package: download, then COPY its definition into
-    // this Project's agents/ — no install scripts, no credentials, nothing executed.
-    const kind = body.kind;
-    if (kind !== undefined && kind !== "plugin" && kind !== "agent") {
-      throw new HttpError(400, "bad_request", 'kind must be "plugin" or "agent".');
-    }
     const source = sourceOf(body.specifier);
     const machineId = machineOf(body.machineId);
     const runsHere = machineId === null || machineId === deps.machineId;
+    // A package that carries an Agent definition has that part copied into this Project on
+    // every install — as data, nothing executed, nothing loaded, no table written for it.
+    const agentCopy = async (installed: InstalledPackage) => {
+      const copy = await installedAgentPackage(installed.name, projectId);
+      return copy === null ? {} : { agent: copy };
+    };
     if (source.kind === "link") {
       // A link names no package another machine could fetch by name: it installs here, and is
       // listed for this machine alone.
@@ -450,24 +469,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         );
       }
       const installed = await viaNpm(() => deps.packages.install(deps.root, source.spec));
-      if (kind === "agent") {
-        // The copy is the whole install: an Agent package does not enter the [plugins]
-        // table (nothing loads it), and the plugin vetting does not apply to it.
-        const copy = await installedAgentPackage(installed.name, projectId);
-        if (copy === null) {
-          throw new HttpError(
-            400,
-            "not_an_agent_package",
-            `${installed.name} does not carry an Agent definition (no penguin-agent keyword, no agent_state/ definition).`,
-          );
-        }
-        return c.json(await answer(projectId, installed, { agent: copy }));
-      }
-      if ((await vetInstalled(installed)).modules) {
+      const kinds = await vetInstalled(installed);
+      const agent = kinds.agent ? await agentCopy(installed) : {};
+      if (kinds.modules) {
         await list(projectId, installed.name, {}, deps.machineId);
         deps.syncFleet(projectId);
       }
-      return c.json(await answer(projectId, installed));
+      return c.json(await answer(projectId, installed, agent));
     }
     // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
@@ -479,29 +487,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       runsHere && !shipped.includes(source.name)
         ? await viaNpm(() => deps.packages.install(deps.root, source.spec))
         : null;
-    if (kind === "agent") {
-      if (!runsHere) {
-        throw new HttpError(
-          400,
-          "bad_request",
-          "An Agent package is copied on the server that downloads it; ask that machine's own Plugins page.",
-        );
-      }
-      // The copy is the whole install: from the package npm just fetched — or, already on
-      // this server, from the prefix (an Agent directory deleted by hand is re-copied).
-      const copy = await installedAgentPackage(installed?.name ?? source.name, projectId);
-      if (copy === null) {
-        throw new HttpError(
-          400,
-          "not_an_agent_package",
-          `${installed?.name ?? source.name} is not an Agent package (no penguin-agent keyword, no agent_state/ definition).`,
-        );
-      }
-      return c.json(await answer(projectId, installed, { agent: copy }));
-    }
-    // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
-    // loads it.
+    // A package that vets as carrying an Agent definition has that part re-copied from the
+    // prefix: an Agent directory deleted by hand is re-filled by the next install.
+    let agent: Partial<PluginInstallOutcome> = {};
     const kinds = installed !== null ? await vetInstalled(installed) : null;
+    if (kinds !== null && kinds.agent && installed !== null) {
+      agent = await agentCopy(installed);
+    }
     if (kinds === null || kinds.modules) {
       // `pkg@1.2.3` installs that version, and the table records it as what this Project asks
       // of the package; the key is the bare name, which is what the loader resolves.
@@ -513,7 +505,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed));
+    return c.json(await answer(projectId, installed, agent));
   });
 
   app.post("/archive", async (c) => {
@@ -522,63 +514,6 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
     const bytes = new Uint8Array(Buffer.from(dataBase64, "base64"));
-    // `kind: "agent"`: an Agent package zip — package.json OPTIONAL there, the definition is
-    // what the package is for. Everything else is a plugin zip.
-    if (body.kind === "agent") {
-      const pkg = await parseAgentPackageArchive(bytes).catch((err: unknown) => {
-        if (err instanceof AgentPackageError) {
-          throw new HttpError(400, "agent_package_invalid", err.message);
-        }
-        throw err;
-      });
-      if ((await shippedNames()).includes(pkg.name)) {
-        throw new HttpError(
-          409,
-          "plugin_shipped",
-          `${pkg.name} ships with this server: a package under its name would replace it for every Project.`,
-        );
-      }
-      if (pkg.manifest) {
-        // npm semantics apply: the package (with its dependencies) goes into the prefix,
-        // the copy below reads it back from there — so a deleted Agent directory can be
-        // re-copied from the prefix later.
-        await viaNpm(() => deps.packages.installFiles(deps.root, Object.fromEntries(pkg.files)));
-        const dir = installedPackageDir(pluginsPrefix(deps.root), pkg.name);
-        const copy = await copyAgentPackage({
-          root: deps.root,
-          projectId,
-          agentId: pkg.agentId,
-          files: await agentPackageFiles(dir),
-        }).catch((err: unknown) => {
-          if (err instanceof AgentPackageError) {
-            throw new HttpError(400, "agent_package_invalid", err.message);
-          }
-          throw err;
-        });
-        return c.json(
-          await answer(projectId, { name: pkg.name, version: null }, { agent: copy }),
-          201,
-        );
-      }
-      // No package.json: the definition files stand alone. Nothing goes into the prefix —
-      // the copy IS the whole install; there is no package here for npm to resolve or a
-      // table to name.
-      const copy = await copyAgentPackage({
-        root: deps.root,
-        projectId,
-        agentId: pkg.agentId,
-        files: pkg.files,
-      }).catch((err: unknown) => {
-        if (err instanceof AgentPackageError) {
-          throw new HttpError(400, "agent_package_invalid", err.message);
-        }
-        throw err;
-      });
-      return c.json(
-        await answer(projectId, { name: pkg.name, version: null }, { agent: copy }),
-        201,
-      );
-    }
     const archive = await parsePluginArchive(bytes);
     // The prefix resolves first: a zip under a shipped module's name would replace it.
     if ((await shippedNames()).includes(archive.name)) {
@@ -606,12 +541,23 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const installed = await viaNpm(() =>
       deps.packages.installFiles(deps.root, Object.fromEntries(archive.files)),
     );
+    // A definition part (agent_state/ with content) travels with the package, wherever it
+    // came from: copied into this Project as data, on top of whatever else the package is.
+    let agent: PluginInstallOutcome["agent"];
+    if (hasAgentDefinitionFiles(archive.files)) {
+      agent = await copyAgentDefinition({
+        root: deps.root,
+        projectId,
+        packageName: archive.name,
+        files: archive.files,
+      });
+    }
     // Uploaded, so this server's alone (see the header): listed for this machine only.
     if (kindsOf(installed.name).modules) {
       await list(projectId, installed.name, {}, deps.machineId);
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed), 201);
+    return c.json(await answer(projectId, installed, agent ? { agent } : {}), 201);
   });
 
   app.delete("/", async (c) => {

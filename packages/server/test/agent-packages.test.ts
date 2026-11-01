@@ -1,148 +1,187 @@
 /**
- * Agent packages: a plugin package whose definition part is an Agent's definition.
- * The three rules under test (proposal: an Agent may be a plugin with an optional
- * package.json; a package that is an Agent is downloaded through the plugin channels;
- * what follows the download is a COPY into the Project — nothing executes):
+ * Agent definitions as a plugin package contribution (agents/package.ts, and what the
+ * plugin install surface does with them). The three rules under test (proposal: an Agent
+ * may be a plugin, its package.json being optional; a package that is an Agent is
+ * downloaded through the plugin channels; what follows the download is a COPY into the
+ * Project — nothing executes):
  *
- *   - a zip WITHOUT a package.json is an Agent package: names come from the directory
- *     (or agent.json), and the definition copies;
- *   - the copy is exactly the definition: the runtime directories (traces, snapshots,
- *     workspaces, memory, the vault, scratchpad) never leave the package, and missing
- *     defaults are written as data;
- *   - nothing executes: copying writes bytes and nothing else, and a package without
- *     the Agent keyword or definition parts refuses to be re-copied as one.
+ *   - the definition is an `agent_state/` beside the package.json — no marker, no extra
+ *     manifest — and the Agent's lived history (memory, traces, snapshots, workspaces,
+ *     scratchpad, the vault) is not part of it;
+ *   - installing copies that part into the Project, as data: byte-for-byte, named by the
+ *     package's unscoped name, nothing run, no table written;
+ *   - reinstalling updates the copy in place, and re-fills an Agent directory deleted by
+ *     hand; a package with no definition is no Agent install.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { zipSync } from "fflate";
+import { strFromU8, strToU8, zipSync } from "fflate";
+import type { PluginInstallOutcome } from "../src/api/types.js";
+import { PluginInstallError } from "../src/plugin/install.js";
 import {
-  AGENT_PACKAGE_KEYWORD,
-  agentPackageFiles,
-  copyAgentPackage,
-  reinstallAgentPackage,
-  AgentPackageError,
+  agentDefinitionEntry,
+  copyAgentDefinition,
+  hasAgentDefinition,
+  hasAgentDefinitionFiles,
+  packageFiles,
 } from "../src/agents/package.js";
-import { parseAgentPackageArchive } from "../src/services/agent-package-archive.js";
+import { parsePluginArchive } from "../src/services/plugin-archive.js";
+import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
+import type { TestApp } from "./helpers.js";
+
+type Files = Record<string, string | Uint8Array>;
+
+const bytes = (value: string | Uint8Array) => (typeof value === "string" ? strToU8(value) : value);
+
+const zip = (files: Files) =>
+  zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, bytes(v)])));
 
 const skill = (name: string, body: string) =>
   `---\nname: ${name}\ndescription: ${body}\n---\n\n# ${name}\n`;
 
-const agentZip = (files: Record<string, string>) =>
-  zipSync(
-    Object.fromEntries(
-      Object.entries(files).map(([k, v]) => [k, new TextEncoder().encode(v) as Uint8Array]),
-    ),
-  );
+const asFiles = (files: Files) => new Map(Object.entries(files).map(([k, v]) => [k, bytes(v)]));
 
-const unpacked = (files: Record<string, string>) =>
-  new Map(Object.entries(files).map(([k, v]) => [k, new TextEncoder().encode(v)]));
-
-const definition = {
-  "my-agent/agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
-  "my-agent/agent_state/system_config.yaml": "version: 1\n",
-  "my-agent/agent_state/AGENTS.md": "# guidance\n",
+const definition: Files = {
+  "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
+  "agent_state/system_config.yaml": "version: 1\n",
+  "agent_state/AGENTS.md": "# guidance\n",
 };
 
-describe("agent packages", () => {
-  it("a zip without a package.json is an Agent package, named by its directory", async () => {
-    const pkg = await parseAgentPackageArchive(agentZip(definition));
-    expect(pkg.manifest).toBe(false);
-    expect(pkg.agentId).toBe("my-agent");
-    expect(pkg.name).toBe("my-agent");
-    // The definition files are the package; nothing else is demanded.
-    expect([...pkg.files.keys()].sort()).toEqual([
-      "agent_state/AGENTS.md",
-      "agent_state/skills/review/SKILL.md",
-      "agent_state/system_config.yaml",
-    ]);
+/** An npm-installed package as a directory in the prefix, with the prefix's own manifest. */
+const installedPackage = async (root: string, name: string, files: Files): Promise<string> => {
+  const dir = path.join(root, "plugins", "node_modules", ...name.split("/"));
+  for (const [rel, value] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), bytes(value));
+  }
+  return dir;
+};
+
+/**
+ * npm as a stub: whatever its links map holds under a source is what that source installs.
+ * A link holds one package; a registry name falls back to the package filed under it.
+ */
+const fakeNpm = () => {
+  const removed: string[] = [];
+  const links = new Map<string, Files>();
+  return {
+    removed,
+    links,
+    install: async (root: string, source: string) => {
+      const held = links.get(source);
+      if (held === undefined) throw new PluginInstallError(`404 Not Found - GET ${source}`);
+      const manifest = JSON.parse(strFromU8(bytes(held["package.json"]!))) as { name: string };
+      await installedPackage(root, manifest.name, held);
+      return { name: manifest.name, version: "1.0.0" };
+    },
+    installFiles: async (root: string, files: Record<string, Uint8Array>) => {
+      const manifest = JSON.parse(strFromU8(files["package.json"]!)) as { name: string };
+      await installedPackage(root, manifest.name, files as Files);
+      return { name: manifest.name, version: "1.0.0" };
+    },
+    remove: async (_root: string, name: string) => {
+      removed.push(name);
+    },
+  };
+};
+
+describe("agent definitions as plugin packages", () => {
+  let t: TestApp;
+  const apps: TestApp[] = [];
+
+  const boot = async (packages?: ReturnType<typeof fakeNpm>) => {
+    t = await createTestApp(packages === undefined ? {} : { pluginPackages: packages });
+    apps.push(t);
+    return apiClient(t.app, (await loginAdmin(t.app)).cookie);
+  };
+
+  afterEach(async () => {
+    for (const app of apps.splice(0)) await app.cleanup();
   });
 
-  it("package.json is optional, and the keyword marks it when it is there", async () => {
-    const marked = await parseAgentPackageArchive(
-      agentZip({
-        "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
-        "package.json": JSON.stringify({
-          name: "@acme/reviewer",
-          version: "1.2.0",
-          keywords: ["other", AGENT_PACKAGE_KEYWORD],
-        }),
-        "agent.json": JSON.stringify({ id: "reviewer" }),
-      }),
-    );
-    expect(marked.manifest).toBe(true);
-    expect(marked.name).toBe("@acme/reviewer");
-    expect(marked.agentId).toBe("reviewer");
-  });
-
-  it("a keyworded package.json requires a release version", async () => {
-    await expect(
-      parseAgentPackageArchive(
-        agentZip({
-          "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
-          "package.json": JSON.stringify({
-            name: "@acme/reviewer",
-            keywords: [AGENT_PACKAGE_KEYWORD],
-          }),
-        }),
-      ),
-    ).rejects.toThrow(/release version/);
-  });
-
-  it("an agent.json that lists a file the package does not carry is refused", async () => {
-    const zip = agentZip({
+  it("a package carries an Agent definition when its agent_state/ holds content, and the lived history is not part of it", () => {
+    const files = asFiles({
+      "package.json": "{}",
       ...definition,
-      "my-agent/agent.json": JSON.stringify({ files: ["agent_state/skills/ghost/SKILL.md"] }),
+      // The parts an Agent's package never carries, wherever they sit.
+      "agent_state/.vault.toml": 'TOKEN = "secret"\n',
+      "agent_state/memory/user/MEMORY.md": "# memory\n",
+      "agent_state/traces/t.jsonl": "{}\n",
+      "agent_state/snapshots/s.tar.gz": "bytes",
+      "agent_state/workspaces/w/state.json": "{}\n",
+      "agent_state/scratchpad/s/note.md": "note\n",
+      "traces/t.jsonl": "{}\n",
+      "README.md": "not the definition\n",
     });
-    await expect(parseAgentPackageArchive(zip)).rejects.toThrow(/ghost/);
+    expect(hasAgentDefinitionFiles(files)).toBe(true);
+    for (const rel of Object.keys(definition)) {
+      expect(agentDefinitionEntry(rel)).toBe(rel);
+    }
+    for (const rel of [
+      "agent_state/.vault.toml",
+      "agent_state/memory/user/MEMORY.md",
+      "agent_state/traces/t.jsonl",
+      "agent_state/snapshots/s.tar.gz",
+      "agent_state/workspaces/w/state.json",
+      "agent_state/scratchpad/s/note.md",
+      "agent_state",
+      "README.md",
+      "traces/t.jsonl",
+      "skills/notes/SKILL.md",
+    ]) {
+      expect(agentDefinitionEntry(rel), rel).toBeNull();
+    }
   });
 
-  it("a zip with neither a package.json nor a definition is not an Agent package", async () => {
-    await expect(
-      parseAgentPackageArchive(agentZip({ "README.md": "not an agent\n" })),
-    ).rejects.toThrow(/Not an Agent package/);
+  it("a directory with no agent_state/ carries no definition, and one with only lived history does not either", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-def-"));
+    try {
+      expect(await hasAgentDefinition(root)).toBe(false);
+      const state = path.join(root, "agent_state");
+      await fs.mkdir(path.join(state, "memory"), { recursive: true });
+      await fs.writeFile(path.join(state, "memory", "MEMORY.md"), "# memory\n");
+      await fs.writeFile(path.join(state, ".vault.toml"), 'TOKEN = "secret"\n');
+      expect(await hasAgentDefinition(root)).toBe(false);
+      await fs.mkdir(path.join(state, "skills", "review"), { recursive: true });
+      await fs.writeFile(path.join(state, "skills", "review", "SKILL.md"), skill("review", "r"));
+      expect(await hasAgentDefinition(root)).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
-  it("the copy is exactly the definition, and the lived history never leaves the package", async () => {
+  it("installing copies the definition as data, named by the package's unscoped name — nothing else lands", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-copy-"));
     try {
-      const files = unpacked({
-        ...Object.fromEntries(
-          Object.entries(definition).map(([k, v]) => [k.replace(/^my-agent\//, ""), v]),
-        ),
-        // The parts an Agent package never carries, planted to prove the copy drops them.
-        "agent_state/.vault.toml": 'TOKEN = "secret"\n',
-        "memory/user/MEMORY.md": "# memory\n",
-        "traces/v1.jsonl": "{}\n",
-        "snapshots/v1.tar.gz": "bytes",
-        "workspaces/w/state.json": "{}\n",
-        "scratchpad/s1/note.md": "note\n",
-      });
-      const out = await copyAgentPackage({
+      const out = await copyAgentDefinition({
         root,
         projectId: "default_project",
-        agentId: "my-agent",
-        files,
+        packageName: "@acme/reviewer",
+        files: asFiles({
+          "package.json": '{"name":"@acme/reviewer","version":"1.0.0"}',
+          "skills/notes/SKILL.md": skill("notes", "the package's own plugin part"),
+          ...definition,
+          "agent_state/.vault.toml": 'TOKEN = "secret"\n',
+          "agent_state/memory/user/MEMORY.md": "# memory\n",
+          "agent_state/traces/t.jsonl": "{}\n",
+        }),
       });
-      expect(out.agentId).toBe("my-agent");
-      const dir = path.join(root, "default_project", "agents", "my-agent");
-      // The definition is there…
+      expect(out.agentId).toBe("reviewer");
+      const dir = path.join(root, "default_project", "agents", "reviewer");
       await expect(
         fs.readFile(path.join(dir, "agent_state", "skills", "review", "SKILL.md"), "utf8"),
-      ).resolves.toBe(definition["my-agent/agent_state/skills/review/SKILL.md"]);
+      ).resolves.toBe(definition["agent_state/skills/review/SKILL.md"]);
       await expect(
         fs.readFile(path.join(dir, "agent_state", "system_config.yaml"), "utf8"),
-      ).resolves.toBe(definition["my-agent/agent_state/system_config.yaml"]);
-      // The package's own skills land exactly as they are in the package; a system config
-      // the package does not carry would be written as the defaults (see the next test).
-      // …and nothing that was lived:
+      ).resolves.toBe("version: 1\n");
+      // The lived history is not in the package, and nothing outside the Agent's directory
+      // is written: the copy is the whole install.
       await expect(fs.access(path.join(dir, "agent_state", ".vault.toml"))).rejects.toThrow();
       await expect(fs.access(path.join(dir, "agent_state", "memory"))).rejects.toThrow();
-      await expect(fs.access(path.join(dir, "traces"))).rejects.toThrow();
-      await expect(fs.access(path.join(dir, "snapshots"))).rejects.toThrow();
-      await expect(fs.access(path.join(dir, "workspaces"))).rejects.toThrow();
-      await expect(fs.access(path.join(dir, "scratchpad"))).rejects.toThrow();
+      await expect(fs.access(path.join(dir, "agent_state", "traces"))).rejects.toThrow();
+      expect(await fs.readdir(path.join(root, "default_project", "agents"))).toEqual(["reviewer"]);
       expect(out.copied).toEqual([
         "agent_state/skills/review/SKILL.md",
         "agent_state/system_config.yaml",
@@ -153,100 +192,246 @@ describe("agent packages", () => {
     }
   });
 
-  it("a package without system_config.yaml or AGENTS.md gets the defaults, written as data", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-default-"));
+  it("a package name whose unscoped part cannot name an Agent directory is refused", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-name-"));
     try {
-      const out = await copyAgentPackage({
+      await expect(
+        copyAgentDefinition({
+          root,
+          projectId: "default_project",
+          packageName: "@acme/not a name",
+          files: asFiles(definition),
+        }),
+      ).rejects.toThrow(/cannot name an Agent directory/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reinstalling updates the copy in place: carried files are replaced, the rest is kept", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-update-"));
+    try {
+      const dir = path.join(root, "default_project", "agents", "reviewer", "agent_state");
+      await fs.mkdir(path.join(dir, "skills", "old"), { recursive: true });
+      await fs.writeFile(path.join(dir, "system_config.yaml"), "version: 7\n");
+      await fs.writeFile(path.join(dir, "skills", "old", "SKILL.md"), skill("old", "kept"));
+      await copyAgentDefinition({
         root,
         projectId: "default_project",
-        agentId: "plain",
-        files: unpacked({
+        packageName: "reviewer",
+        files: asFiles({
+          "agent_state/system_config.yaml": "version: 8\n",
           "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
         }),
       });
-      expect(out.copied).toContain("system_config.yaml");
-      expect(out.copied).toContain("AGENTS.md");
-      const config = await fs.readFile(
-        path.join(root, "default_project", "agents", "plain", "agent_state", "system_config.yaml"),
-        "utf8",
+      await expect(fs.readFile(path.join(dir, "system_config.yaml"), "utf8")).resolves.toBe(
+        "version: 8\n",
       );
-      expect(config).toContain("version: 1");
+      await expect(
+        fs.readFile(path.join(dir, "skills", "review", "SKILL.md"), "utf8"),
+      ).resolves.toBe(skill("review", "reviews code"));
+      await expect(fs.readFile(path.join(dir, "skills", "old", "SKILL.md"), "utf8")).resolves.toBe(
+        skill("old", "kept"),
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
-  it("copying never executes and never overwrites: an existing Agent directory refuses", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-exists-"));
-    try {
-      const dir = path.join(root, "default_project", "agents", "my-agent");
-      await fs.mkdir(path.join(dir, "agent_state"), { recursive: true });
-      await fs.writeFile(path.join(dir, "agent_state", "system_config.yaml"), "version: 7\n");
-      await expect(
-        copyAgentPackage({
-          root,
-          projectId: "default_project",
-          agentId: "my-agent",
-          files: unpacked(definition),
-        }),
-      ).rejects.toThrow(/already exists/);
-      // The lived definition is untouched.
-      await expect(
-        fs.readFile(path.join(dir, "agent_state", "system_config.yaml"), "utf8"),
-      ).resolves.toContain("version: 7\n");
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("re-copying an installed package runs no scripts: it is a copy of files, nothing else", async () => {
+  it("re-copying an installed package runs nothing: the package on disk is untouched, byte for byte", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-reinstall-"));
     try {
-      const prefix = path.join(root, "plugins");
-      const dir = path.join(prefix, "node_modules", "reviewer");
-      await fs.mkdir(path.join(dir, "agent_state", "skills", "review"), { recursive: true });
-      await fs.writeFile(
-        path.join(dir, "package.json"),
-        JSON.stringify({ name: "reviewer", version: "1.0.0", keywords: [AGENT_PACKAGE_KEYWORD] }),
-      );
-      await fs.writeFile(
-        path.join(dir, "agent_state", "skills", "review", "SKILL.md"),
-        skill("review", "reviews code"),
-      );
-      const before = await agentPackageFiles(dir);
-      const out = await reinstallAgentPackage({
+      const dir = await installedPackage(root, "reviewer", {
+        "package.json": JSON.stringify({ name: "reviewer", version: "1.0.0" }),
+        ...definition,
+        "postinstall.sh": "exit 1\n",
+      });
+      if (!(await hasAgentDefinition(dir))) throw new Error("expected a definition");
+      const before = await packageFiles(dir);
+      await copyAgentDefinition({
         root,
         projectId: "default_project",
-        name: "reviewer",
-        dir,
+        packageName: "reviewer",
+        files: before,
       });
-      expect(out.agentId).toBe("reviewer");
-      // The copy in the Project is byte-for-byte the package's definition files.
-      const copied = path.join(root, "default_project", "agents", "reviewer");
       await expect(
-        fs.readFile(path.join(copied, "agent_state", "skills", "review", "SKILL.md"), "utf8"),
-      ).resolves.toBe(skill("review", "reviews code"));
-      // The package itself is unchanged — nothing wrote into it, nothing ran from it.
-      expect(Object.fromEntries(before)).toEqual(Object.fromEntries(await agentPackageFiles(dir)));
+        fs.readFile(
+          path.join(root, "default_project", "agents", "reviewer", "agent_state", "AGENTS.md"),
+          "utf8",
+        ),
+      ).resolves.toBe("# guidance\n");
+      expect(Object.fromEntries(before)).toEqual(Object.fromEntries(await packageFiles(dir)));
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
-  it("a package that is not an Agent package refuses to be re-copied as one", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-notagent-"));
-    try {
-      const dir = path.join(root, "plugins", "node_modules", "plain");
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(
-        path.join(dir, "package.json"),
-        JSON.stringify({ name: "plain", version: "1.0.0" }),
-      );
-      await expect(
-        reinstallAgentPackage({ root, projectId: "default_project", name: "plain", dir }),
-      ).rejects.toThrow(AgentPackageError);
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
+  it("an uploaded zip whose Agent definition is the whole package installs as a plugin package, and the definition is copied", async () => {
+    const npm = fakeNpm();
+    const admin = await boot(npm);
+    const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
+      dataBase64: Buffer.from(
+        zip({
+          "package.json": JSON.stringify({ name: "@acme/reviewer", version: "1.0.0" }),
+          ...definition,
+        }),
+      ).toString("base64"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { installed?: PluginInstallOutcome };
+    expect(body.installed).toMatchObject({
+      name: "@acme/reviewer",
+      library: false,
+      agent: { agentId: "reviewer" },
+    });
+    expect(body.installed?.agent?.copied).toEqual([
+      "agent_state/skills/review/SKILL.md",
+      "agent_state/system_config.yaml",
+      "agent_state/AGENTS.md",
+    ]);
+    // The package is installed the plugin way; the copy landed in the Project; nothing is
+    // listed for it (a definition alone loads nothing).
+    await expect(
+      fs.readFile(
+        path.join(t.root, "default_project", "agents", "reviewer", "agent_state", "AGENTS.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("# guidance\n");
+    await expect(
+      fs.access(path.join(t.root, "plugins", "node_modules", "@acme", "reviewer", "package.json")),
+    ).resolves.toBeUndefined();
+    const list = (await (
+      await admin.get("/api/projects/default_project/plugins/installed")
+    ).json()) as { plugins: { specifier: string }[] };
+    expect(list.plugins).toEqual([]);
+  });
+
+  it("a definition beside skills lands in both places: the library and the Project", async () => {
+    const admin = await boot(fakeNpm());
+    const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
+      dataBase64: Buffer.from(
+        zip({
+          "package.json": JSON.stringify({ name: "@acme/notes", version: "1.0.0" }),
+          "skills/notes/SKILL.md": skill("notes", "takes notes"),
+          ...definition,
+        }),
+      ).toString("base64"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { installed?: PluginInstallOutcome };
+    expect(body.installed).toMatchObject({
+      name: "@acme/notes",
+      library: true,
+      agent: { agentId: "notes" },
+    });
+    await expect(
+      fs.readFile(
+        path.join(t.root, "default_project", "agents", "notes", "agent_state", "AGENTS.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("# guidance\n");
+  });
+
+  it("a zip that is neither a plugin nor a carrier of a definition is refused", async () => {
+    const admin = await boot(fakeNpm());
+    const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
+      dataBase64: Buffer.from(
+        zip({
+          "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }),
+          "index.js": "export {};\n",
+        }),
+      ).toString("base64"),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("plugin_archive_invalid");
+    expect(body.error.message).toMatch(/Not a PenguinHarness plugin/);
+  });
+
+  it("an install whose package carries an Agent definition copies it, and lists nothing", async () => {
+    const npm = fakeNpm();
+    const files: Files = {
+      "package.json": JSON.stringify({ name: "reviewer", version: "1.0.0" }),
+      ...definition,
+    };
+    npm.links.set("https://example.com/reviewer-1.0.0.tgz", files);
+    npm.links.set("reviewer", files);
+    const admin = await boot(npm);
+
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "https://example.com/reviewer-1.0.0.tgz",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { installed?: PluginInstallOutcome };
+    expect(body.installed).toMatchObject({
+      name: "reviewer",
+      library: false,
+      agent: { agentId: "reviewer" },
+    });
+    await expect(
+      fs.readFile(
+        path.join(t.root, "default_project", "agents", "reviewer", "agent_state", "AGENTS.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("# guidance\n");
+    // The definition is a contribution, not a server module: nothing is listed for it.
+    const config = await fs.readFile(
+      path.join(t.root, "default_project", ".project_config.toml"),
+      "utf8",
+    );
+    expect(config).not.toContain("reviewer");
+
+    // A directory deleted by hand is re-filled by the next install of the same package.
+    await fs.rm(path.join(t.root, "default_project", "agents", "reviewer"), {
+      recursive: true,
+      force: true,
+    });
+    const again = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "reviewer",
+    });
+    expect(again.status).toBe(200);
+    await expect(
+      fs.readFile(
+        path.join(t.root, "default_project", "agents", "reviewer", "agent_state", "AGENTS.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("# guidance\n");
+  });
+
+  it("a package without a definition is refused on install, and taken back", async () => {
+    const npm = fakeNpm();
+    npm.links.set("https://example.com/left-pad-1.0.0.tgz", {
+      "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }),
+      "index.js": "export {};\n",
+    });
+    const admin = await boot(npm);
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "https://example.com/left-pad-1.0.0.tgz",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("not_a_plugin");
+    expect(body.error.message).toMatch(/install scripts had already run/);
+    expect(npm.removed).toEqual(["left-pad"]);
+  });
+
+  it("a package zip parses with its definition part reported, whatever else the package carries", async () => {
+    const archive = await parsePluginArchive(
+      zip({
+        "package.json": JSON.stringify({ name: "@acme/reviewer", version: "1.0.0" }),
+        ...definition,
+        "README.md": "readme\n",
+      }),
+    );
+    expect(archive).toMatchObject({
+      name: "@acme/reviewer",
+      version: "1.0.0",
+      library: false,
+      modules: false,
+      agent: true,
+    });
+    // The whole package is in the files; the copy drops the lived history (agents/package.ts).
+    expect(archive.files.has("agent_state/AGENTS.md")).toBe(true);
+    expect(archive.files.has("README.md")).toBe(true);
   });
 });
