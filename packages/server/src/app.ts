@@ -757,15 +757,11 @@ function workbenchAppPage(reqPath: string): {
 function withWorkbenchManifestLink(content: Buffer, reqPath: string): Buffer {
   const page = workbenchAppPage(reqPath);
   if (page === null) return content;
-  const segments = [
-    page.projectId,
-    page.agentId,
-    page.workbenchId,
-    ...(page.tabKey === undefined ? [] : [`tabs/${page.tabKey}`]),
-  ].map(encodeURIComponent);
+  const segments = [page.projectId, page.agentId, page.workbenchId].map(encodeURIComponent);
+  // `tabs/` is a literal, not a segment: only the tab key is encoded.
   const href =
     `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
-    (page.tabKey === undefined ? "" : `/tabs/${segments[3]}`) +
+    (page.tabKey === undefined ? "" : `/tabs/${encodeURIComponent(page.tabKey)}`) +
     "/manifest.webmanifest";
   const html = content.toString("utf8");
   const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
