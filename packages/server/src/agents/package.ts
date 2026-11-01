@@ -85,7 +85,7 @@ export async function copyAgentState(opts: {
         target.on("finish", () => resolve());
         source.pipe(target);
       });
-      copied.push(childRel);
+      copied.push(`${AGENT_STATE_DIR}/${childRel}`);
     }
   };
   await walk(opts.fromDir, "");
