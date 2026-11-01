@@ -146,8 +146,8 @@ export async function copyAgentDefinition(opts: {
   /** The npm package name (`name` or `@scope/name`); the unscoped part names the Agent. */
   packageName: string;
   files: ReadonlyMap<string, Uint8Array>;
-  /** The contribution as its manifest carries it: the display name and the file list. */
-  definition: { name: string; agentState: string[] };
+  /** The contribution as the package's table carries it: the display name and the file list. */
+  definition: AgentDefinition;
 }): Promise<{ agentId: string; copied: string[] }> {
   const agentId = unscopedPackageName(opts.packageName);
   if (!PLUGIN_NAME_PATTERN.test(agentId)) {
