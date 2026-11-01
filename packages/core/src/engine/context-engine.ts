@@ -2208,9 +2208,9 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** User interruption, or the turn cap: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  /** User interruption, the turn cap, or a server restart: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
   private async *emitAbort(
-    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns",
+    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns" | "server_restart",
     errorMessage?: string,
   ): AsyncGenerator<AmspRecord> {
     const msg = abortEvent(errorCode, errorMessage);

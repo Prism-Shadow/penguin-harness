@@ -20,6 +20,7 @@
  * instance: 127.0.0.1:15432 tracker/tracker, schema `penguin`).
  */
 import { Worker, receiveMessageOnPort, MessageChannel } from "node:worker_threads";
+import type { MessagePort as MessagePortType } from "node:worker_threads";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { translateScript, translateStatement, convertPlaceholders } from "./translate.js";
@@ -80,7 +81,8 @@ function resolveWorkerUrl(): URL {
       // not a file URL (bundled oddly) — fall through
     }
   }
-  return candidates[0];
+  if (candidates.length === 0) throw new Error("no worker URL candidates");
+  return candidates[0]!;
 }
 
 function parseDsn(dsn: string): PgConfig {
@@ -197,8 +199,8 @@ class LazyPgStatement implements PgStatementSyncLike {
 export class PgDatabaseSync implements PgDatabaseSyncLike {
   private readonly worker: Worker;
   /** Main-side reply port (port1); port2 is transferred to the worker with the first request. */
-  private readonly replyPort: MessagePort;
-  private readonly workerPort: MessagePort;
+  private readonly replyPort: MessagePortType;
+  private readonly workerPort: MessagePortType;
   private readonly ctrl: Int32Array;
   private primed = false;
   private nextId = 0;
@@ -248,7 +250,7 @@ export class PgDatabaseSync implements PgDatabaseSyncLike {
   }
 
   /** One synchronous round-trip to the worker. */
-  private call(
+  public call(
     sql: string,
     params: unknown[] | null,
     want: "exec" | "rows" | "run",

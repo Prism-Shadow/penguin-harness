@@ -72,6 +72,11 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
+  WorkflowDefinition,
+  WorkflowDefinitionsResponse,
+  WorkflowInstanceDetail,
+  WorkflowInstanceExport,
+  WorkflowInstancesResponse,
 } from "@prismshadow/penguin-server/api";
 import {
   resolveAgentId,
@@ -1324,6 +1329,263 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     );
     if (opts.json === true) printJson(detail);
     else printLine(t.org.ticketAttached(detail.ticketId, sessionId));
+  });
+
+  // ---- workflows (company-mode cross-ticket processes) ----
+
+  const workflow = org.command("workflow").description(t.org.workflowDesc);
+
+  const renderWorkflowInstance = (d: WorkflowInstanceDetail): string => {
+    const head = [
+      `${d.title} (${d.instanceId})`,
+      `${t.org.wfDefinition()}: ${d.definitionName} v${d.definitionVersion}${d.versionMismatch ? ` (${t.org.wfMismatch(d.definition?.version ?? d.definitionVersion)})` : ""}`,
+      `${t.org.wfBizKey()}: ${d.bizKey}`,
+      `${t.org.wfStage()}: ${d.currentStage}`,
+      `${t.org.wfUpdated()}: ${d.updatedAt} (${d.updatedBy})`,
+    ];
+    if (d.attachments.length > 0) head.push(`${t.org.wfAttached()}: ${d.attachments.join(", ")}`);
+    const stages = (d.definition?.stages ?? []).map(
+      (s) => `  [${d.stepStates[s.key] ?? "pending"}] ${s.name} (${s.key})`,
+    );
+    return [...head, ...stages].join("\n") + "\n";
+  };
+
+  scoped(workflow.command("ls").description(t.org.workflowLsDesc), t).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const res = await scope.client.request<WorkflowDefinitionsResponse>(
+      "GET",
+      `${scope.base}/workflows`,
+    );
+    if (opts.json === true) {
+      printJson(res);
+      return;
+    }
+    if (res.definitions.length === 0) {
+      printLine(t.org.workflowsEmpty());
+      return;
+    }
+    process.stdout.write(
+      renderTable(
+        [t.agent.colId(), t.org.colVersion(), t.org.colName(), t.org.colStages(), t.org.colInstances()],
+        res.definitions.map((d) => [
+          d.id,
+          `v${d.version}`,
+          d.invalid !== undefined ? `${d.name} (invalid)` : d.name,
+          String(d.stageCount),
+          String(d.instanceCount),
+        ]),
+      ),
+    );
+  });
+
+  scoped(
+    workflow
+      .command("instances")
+      .description(t.org.workflowInstancesDesc)
+      .option("--definition-id <id>", t.org.wfDefinitionFilter),
+    t,
+  ).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const query =
+      opts.definitionId !== undefined
+        ? `?definitionId=${enc(String(opts.definitionId))}`
+        : "";
+    const res = await scope.client.request<WorkflowInstancesResponse>(
+      "GET",
+      `${scope.base}/workflow-instances${query}`,
+    );
+    if (opts.json === true) {
+      printJson(res);
+      return;
+    }
+    if (res.instances.length === 0) {
+      printLine(t.org.workflowInstancesEmpty());
+      return;
+    }
+    process.stdout.write(
+      renderTable(
+        [t.agent.colId(), t.org.colBizKey(), t.org.colTitle(), t.org.colStage(), t.org.colUpdated()],
+        res.instances.map((i) => [
+          i.instanceId,
+          i.bizKey,
+          i.title,
+          i.currentStage,
+          i.updatedAt,
+        ]),
+      ),
+    );
+  });
+
+  scoped(workflow.command("show <instance_id>").description(t.org.workflowShowDesc), t).action(
+    async (instanceId: string, opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const detail = await scope.client.request<WorkflowInstanceDetail>(
+        "GET",
+        `${scope.base}/workflow-instances/${enc(instanceId)}`,
+      );
+      if (opts.json === true) printJson(detail);
+      else process.stdout.write(renderWorkflowInstance(detail));
+    },
+  );
+
+  scoped(
+    workflow
+      .command("start")
+      .description(t.org.workflowStartDesc)
+      .requiredOption("--definition-id <id>", t.org.wfDefinitionId)
+      .requiredOption("--biz-key <key>", t.org.wfBizKeyOpt)
+      .requiredOption("--title <text>", t.org.wfTitleOpt),
+    t,
+  ).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await scope.client.request<WorkflowInstanceDetail>(
+      "POST",
+      `${scope.base}/workflow-instances`,
+      {
+        definitionId: String(opts.definitionId),
+        bizKey: String(opts.bizKey),
+        title: String(opts.title),
+        ...actorFields(),
+      },
+    );
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.workflowStarted(detail.instanceId, detail.currentStage));
+  });
+
+  scoped(
+    workflow
+      .command("advance <instance_id>")
+      .description(t.org.workflowAdvanceDesc)
+      .option("--skip <stage>", t.org.wfSkipOpt),
+    t,
+  ).action(async (instanceId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await scope.client.request<WorkflowInstanceDetail>(
+      "POST",
+      `${scope.base}/workflow-instances/${enc(instanceId)}/advance`,
+      {
+        ...(opts.skip !== undefined ? { skip: String(opts.skip) } : {}),
+        ...actorFields(),
+      },
+    );
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.workflowAdvanced(detail.instanceId, detail.currentStage));
+  });
+
+  scoped(
+    workflow
+      .command("reject <instance_id>")
+      .description(t.org.workflowRejectDesc)
+      .requiredOption("--reason <text>", t.org.wfReasonOpt)
+      .option("--to <stage>", t.org.wfToOpt),
+    t,
+  ).action(async (instanceId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await scope.client.request<WorkflowInstanceDetail>(
+      "POST",
+      `${scope.base}/workflow-instances/${enc(instanceId)}/reject`,
+      {
+        reason: String(opts.reason),
+        ...(opts.to !== undefined ? { to: String(opts.to) } : {}),
+        ...actorFields(),
+      },
+    );
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.workflowRejected(detail.instanceId, detail.currentStage));
+  });
+
+  scoped(
+    workflow
+      .command("attach <instance_id>")
+      .description(t.org.workflowAttachDesc)
+      .requiredOption("--ticket <ticket_id>", t.org.wfTicketOpt),
+    t,
+  ).action(async (instanceId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await scope.client.request<WorkflowInstanceDetail>(
+      "POST",
+      `${scope.base}/workflow-instances/${enc(instanceId)}/attach`,
+      { ticketId: String(opts.ticket), ...actorFields() },
+    );
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.workflowAttached(detail.instanceId, String(opts.ticket)));
+  });
+
+  scoped(
+    workflow
+      .command("note <instance_id>")
+      .description(t.org.workflowNoteDesc)
+      .requiredOption("--text <text>", t.org.wfTextOpt),
+    t,
+  ).action(async (instanceId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await scope.client.request<WorkflowInstanceDetail>(
+      "POST",
+      `${scope.base}/workflow-instances/${enc(instanceId)}/note`,
+      { text: String(opts.text), ...actorFields() },
+    );
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.workflowNoted(detail.instanceId));
+  });
+
+  scoped(
+    workflow
+      .command("export <instance_id>")
+      .description(t.org.workflowExportDesc)
+      .option("--output <file>", t.org.wfOutputOpt),
+    t,
+  ).action(async (instanceId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const exp = await scope.client.request<WorkflowInstanceExport>(
+      "GET",
+      `${scope.base}/workflow-instances/${enc(instanceId)}/export`,
+    );
+    if (opts.json === true) {
+      printJson(exp);
+      return;
+    }
+    if (opts.output !== undefined) {
+      const file = String(opts.output);
+      fs.writeFileSync(file, exp.markdown, "utf8");
+      printLine(t.org.workflowExported(exp.filename, file));
+    } else {
+      process.stdout.write(exp.markdown + (exp.markdown.endsWith("\n") ? "" : "\n"));
+    }
+  });
+
+  scoped(
+    workflow
+      .command("upgrade <workflow_id>")
+      .description(t.org.workflowUpgradeDesc)
+      .requiredOption("--file <path>", t.org.wfFileOpt),
+    t,
+  ).action(async (wfId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const file = String(opts.file);
+    let yaml: string;
+    try {
+      yaml = fs.readFileSync(file, "utf8");
+    } catch {
+      fail(t, t.org.wfFileUnreadable(file));
+      return;
+    }
+    const def = await scope.client.request<WorkflowDefinition>(
+      "PUT",
+      `${scope.base}/workflows/${enc(wfId)}`,
+      { yaml },
+    );
+    if (opts.json === true) printJson(def);
+    else printLine(t.org.workflowUpgraded(def.id, def.version));
   });
 
   // ---- channels ----

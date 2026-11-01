@@ -268,6 +268,11 @@ export interface CreateSessionOptions {
    * resumed with `resumeSession`, never created again.
    */
   sessionId?: string;
+  /**
+   * Whether the Session should fail over to the Project's `model_fallback_chain` when a run
+   * hits a rate limit (429). Defaults to false; the server sets it when the Project has a chain.
+   */
+  failoverOnRateLimit?: boolean;
 }
 
 export interface ResumeSessionOptions {
@@ -276,6 +281,8 @@ export interface ResumeSessionOptions {
   /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
+  /** See CreateSessionOptions.failoverOnRateLimit. */
+  failoverOnRateLimit?: boolean;
 }
 
 /**

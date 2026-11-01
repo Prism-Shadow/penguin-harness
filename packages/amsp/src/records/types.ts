@@ -352,6 +352,7 @@ export type ErrorCode =
   | "backoff_interrupted"
   | "compaction_interrupted"
   | "max_turns" // the Task reached max_turns; error_message names the cap
+  | "server_restart" // the server's own shutdown interrupted the run (auto-resume target)
   // LLM request failures (request_end / compaction_end; the status carries the retry
   // decision, the code carries the classified cause).
   | "timeout" // idle timeout / connection went silent

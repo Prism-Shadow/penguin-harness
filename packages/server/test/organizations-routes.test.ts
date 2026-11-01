@@ -269,6 +269,52 @@ describe("organization routes", () => {
     });
   });
 
+  it("validates workflow ids and bodies before asking the service", async () => {
+    const base = `/api/projects/${ownerProject}/organizations`;
+    // Reads list through: the bidding template seeds on the service side, not here.
+    expect((await owner.get(`${base}/acme/workflows`)).status).toBe(200);
+    expect((await owner.get(`${base}/acme/workflows/bidding-v1`)).status).toBe(200);
+    expect((await owner.get(`${base}/acme/workflows/BAD`)).status).toBe(400);
+    expect((await owner.get(`${base}/acme/workflow-instances`)).status).toBe(200);
+    expect(
+      (await owner.get(`${base}/acme/workflow-instances/not-an-id`)).status,
+    ).toBe(400);
+    // A definition id no definition could carry names none.
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances`, { definitionId: "BAD", bizKey: "term-1", title: "T" })).status,
+    ).toBe(400);
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances`, { definitionId: "bidding-v1", bizKey: "term-1" })).status,
+    ).toBe(400); // title missing
+    const id = "2026-11-01-term-one";
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances/${id}/advance`, {})).status,
+    ).toBe(200);
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances/${id}/advance`, { skip: "BAD STAGE" })).status,
+    ).toBe(400);
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances/${id}/reject`, {})).status,
+    ).toBe(400); // reason missing
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances/${id}/attach`, { ticketId: "nope" })).status,
+    ).toBe(400);
+    expect(
+      (await owner.post(`${base}/acme/workflow-instances/${id}/note`, { text: "" })).status,
+    ).toBe(400);
+    expect(calls.map((c) => c.method)).toContain("workflowDefinitions");
+    expect(calls.map((c) => c.method)).toContain("advanceWorkflowInstance");
+    // Definition upgrades take YAML text; export renders through the service.
+    expect((await owner.put(`${base}/acme/workflows/bidding-v1`, {})).status).toBe(400);
+    expect(
+      (await owner.put(`${base}/acme/workflows/bidding-v1`, { yaml: "id: bidding-v1\n" })).status,
+    ).toBe(200);
+    expect((await owner.get(`${base}/acme/workflow-instances/${id}/export`)).status).toBe(200);
+    expect((await owner.get(`${base}/acme/workflow-instances/nope/export`)).status).toBe(400);
+    expect(calls.map((c) => c.method)).toContain("writeWorkflowDefinition");
+    expect(calls.map((c) => c.method)).toContain("workflowExport");
+  });
+
   it("carries the organization's language both ways", async () => {
     const base = `/api/projects/${ownerProject}/organizations`;
     expect((await owner.post(base, { orgId: "acme", mission: "x", language: "fr" })).status).toBe(

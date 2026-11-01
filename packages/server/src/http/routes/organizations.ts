@@ -14,6 +14,10 @@
  *   GET|POST      …/:orgId/calendar ; GET|PUT|DELETE …/:orgId/calendar/:agentId/:name
  *   GET|POST      …/:orgId/tickets ; GET|PUT …/:orgId/tickets/:ticketId
  *   POST          …/:orgId/tickets/:ticketId/(move|block|unblock|progress|start|attach)
+ *   GET           …/:orgId/workflows ; GET|PUT …/:orgId/workflows/:wfId
+ *   GET|POST      …/:orgId/workflow-instances ; GET …/:orgId/workflow-instances/:instanceId
+ *   GET           …/:orgId/workflow-instances/:instanceId/export
+ *   POST          …/:orgId/workflow-instances/:instanceId/(advance|reject|attach|note)
  *   GET|POST      …/:orgId/channels ; GET|PATCH …/:orgId/channels/:channelId
  *   POST          …/:orgId/channels/:channelId/members
  *   DELETE        …/:orgId/channels/:channelId/members/:principal
@@ -47,6 +51,7 @@ import type { Settings } from "../../mechanisms/settings.js";
 import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
+import { isWorkflowId, isWorkflowInstanceId } from "../../organization/workflow-paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
 import type { Actor, OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
@@ -70,6 +75,25 @@ const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
 function requireTicketId(raw: string | undefined): string {
   if (!raw || !TICKET_ID_PATTERN.test(raw)) throw badRequest("Invalid ticket id.");
+  return raw;
+}
+
+/** A workflow definition id in the path or body: an id no definition could carry names none. */
+function requireWorkflowId(raw: unknown): string {
+  if (typeof raw !== "string" || !isWorkflowId(raw)) throw badRequest("Invalid workflow id.");
+  return raw;
+}
+
+/** A workflow instance id in the path: `<yyyy-mm-dd>-<slug>`, the ticket shape. */
+function requireWorkflowInstanceId(raw: string | undefined): string {
+  if (!raw || !isWorkflowInstanceId(raw)) throw badRequest("Invalid workflow instance id.");
+  return raw;
+}
+
+/** A stage key in a body (`skip`/`to` targets): plain `key` spelling, existence checked by the service. */
+function requireWorkflowStageKey(raw: unknown): string {
+  if (typeof raw !== "string" || !/^[a-z][a-z0-9_]{1,63}$/.test(raw))
+    throw badRequest("Invalid workflow stage.");
   return raw;
 }
 
@@ -749,6 +773,153 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const sessionId = requireString(body, "sessionId", { minLen: 1, maxLen: 200 });
     return c.json(
       await deps.orgService.attachTicket(projectId, orgId, ticketId, sessionId, actorOf(c, body)),
+    );
+  });
+
+  // ---- workflows (company-mode cross-ticket processes) ----
+
+  app.get("/:orgId/workflows", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    return c.json(await deps.orgService.workflowDefinitions(projectId, orgId));
+  });
+
+  app.get("/:orgId/workflows/:wfId", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const wfId = requireWorkflowId(c.req.param("wfId"));
+    member(c, projectId);
+    return c.json(await deps.orgService.workflowDefinition(projectId, orgId, wfId));
+  });
+
+  app.put("/:orgId/workflows/:wfId", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const wfId = requireWorkflowId(c.req.param("wfId"));
+    member(c, projectId);
+    const body = await readJson(c);
+    const yaml = requireString(body, "yaml", { minLen: 1, maxLen: 200_000 });
+    return c.json(await deps.orgService.writeWorkflowDefinition(projectId, orgId, wfId, yaml));
+  });
+
+  app.get("/:orgId/workflow-instances", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    const definitionId = optionalString(c.req.query(), "definitionId", { minLen: 1, maxLen: 64 });
+    return c.json(await deps.orgService.workflowInstances(projectId, orgId, definitionId));
+  });
+
+  app.post("/:orgId/workflow-instances", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    const body = await readJson(c);
+    const definitionId = requireWorkflowId(body.definitionId);
+    const bizKey = requireString(body, "bizKey", { minLen: 1, maxLen: 100 });
+    const title = requireString(body, "title", { minLen: 1, maxLen: 200 });
+    return c.json(
+      await deps.orgService.createWorkflowInstance(
+        projectId,
+        orgId,
+        { definitionId, bizKey, title },
+        actorOf(c, body),
+      ),
+      201,
+    );
+  });
+
+  app.get("/:orgId/workflow-instances/:instanceId", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    return c.json(await deps.orgService.workflowInstance(projectId, orgId, instanceId));
+  });
+
+  app.get("/:orgId/workflow-instances/:instanceId/export", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    return c.json(await deps.orgService.workflowExport(projectId, orgId, instanceId));
+  });
+
+  app.post("/:orgId/workflow-instances/:instanceId/advance", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    const body = await readJson(c);
+    const skip =
+      body.skip === undefined || body.skip === null
+        ? undefined
+        : requireWorkflowStageKey(body.skip);
+    return c.json(
+      await deps.orgService.advanceWorkflowInstance(
+        projectId,
+        orgId,
+        instanceId,
+        skip === undefined ? {} : { skip },
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.post("/:orgId/workflow-instances/:instanceId/reject", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    const body = await readJson(c);
+    const reason = requireString(body, "reason", { minLen: 1, maxLen: 2000 });
+    const to =
+      body.to === undefined || body.to === null ? undefined : requireWorkflowStageKey(body.to);
+    return c.json(
+      await deps.orgService.rejectWorkflowInstance(
+        projectId,
+        orgId,
+        instanceId,
+        { reason, ...(to === undefined ? {} : { to }) },
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.post("/:orgId/workflow-instances/:instanceId/attach", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    const body = await readJson(c);
+    const ticketId = requireTicketId(typeof body.ticketId === "string" ? body.ticketId : undefined);
+    return c.json(
+      await deps.orgService.attachWorkflowTicket(
+        projectId,
+        orgId,
+        instanceId,
+        { ticketId },
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.post("/:orgId/workflow-instances/:instanceId/note", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const instanceId = requireWorkflowInstanceId(c.req.param("instanceId"));
+    member(c, projectId);
+    const body = await readJson(c);
+    const text = requireString(body, "text", { minLen: 1, maxLen: 10000 });
+    return c.json(
+      await deps.orgService.noteWorkflowInstance(
+        projectId,
+        orgId,
+        instanceId,
+        { text },
+        actorOf(c, body),
+      ),
     );
   });
 

@@ -1489,7 +1489,7 @@ export class SessionManager {
    * switching a Session closes its context and opens another, which is not something to do
    * from inside the run that just ended.
    */
-  private async afterRun(entry: RuntimeEntry, input: OmniMessage[]): Promise<void> {
+  private async afterRun(entry: RuntimeEntry, input: AmspRecord[]): Promise<void> {
     try {
       const end = entry.lastRequestEnd;
       entry.lastRequestEnd = undefined;

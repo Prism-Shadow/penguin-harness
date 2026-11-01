@@ -137,7 +137,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   }> = inCompany
     ? COMPANY_NAV_KEYS.map((key) => ({
         key,
-        // The seven entries keep their places with no organization, disabled: a rail that
+        // The eight entries keep their places with no organization, disabled: a rail that
         // empties itself reads as a broken shell rather than as an empty one.
         to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
         label: S.nav.org[key],

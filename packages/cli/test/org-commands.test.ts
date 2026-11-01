@@ -892,6 +892,75 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   });
 });
 
+describe("penguin org workflow", () => {
+  const ID = "2026-09-02-term";
+
+  it("ls lists the seeded bidding definition; start posts key, title and actor", async () => {
+    expect(await cli(["org", "workflow", "ls"])).toBe(0);
+    expect(out()).toContain("bidding-v1");
+    expect(
+      await cli([
+        "org",
+        "workflow",
+        "start",
+        "--definition-id",
+        "bidding-v1",
+        "--biz-key",
+        "term-99",
+        "--title",
+        "Test project",
+      ]),
+    ).toBe(0);
+    // The fake slugs the id the way tickets are slugged (digits fall off).
+    expect(lastRequest("POST", "/workflow-instances")?.body).toMatchObject({
+      definitionId: "bidding-v1",
+      bizKey: "term-99",
+      title: "Test project",
+    });
+    expect(out()).toContain(t.org.workflowStarted(ID, "capture"));
+  });
+
+  it("advance / reject / attach / note post their transitions with the actor", async () => {
+    await cli(["org", "workflow", "start", "--definition-id", "bidding-v1", "--biz-key", "term-99", "--title", "T"]);
+    expect(await cli(["org", "workflow", "advance", ID])).toBe(0);
+    expect(lastRequest("POST", `/workflow-instances/${ID}/advance`)?.body).toEqual({});
+    expect(out()).toContain(t.org.workflowAdvanced(ID, "terms"));
+    expect(
+      await cli(["org", "workflow", "reject", ID, "--reason", "Missing points"]),
+    ).toBe(0);
+    expect(lastRequest("POST", `/workflow-instances/${ID}/reject`)?.body).toEqual({
+      reason: "Missing points",
+    });
+    expect(out()).toContain(t.org.workflowRejected(ID, "capture"));
+    expect(
+      await cli(["org", "workflow", "attach", ID, "--ticket", "2026-09-02-plan"]),
+    ).toBe(0);
+    expect(lastRequest("POST", `/workflow-instances/${ID}/attach`)?.body).toEqual({
+      ticketId: "2026-09-02-plan",
+    });
+    expect(await cli(["org", "workflow", "note", ID, "--text", "hello"])).toBe(0);
+    expect(lastRequest("POST", `/workflow-instances/${ID}/note`)?.body).toEqual({ text: "hello" });
+  });
+
+  it("show renders the instance; export prints its Markdown; upgrade PUTs the file", async () => {
+    await cli(["org", "workflow", "start", "--definition-id", "bidding-v1", "--biz-key", "term-99", "--title", "T"]);
+    expect(await cli(["org", "workflow", "show", ID])).toBe(0);
+    expect(out()).toContain(`T (${ID})`);
+    expect(await cli(["org", "workflow", "export", ID])).toBe(0);
+    expect(out()).toContain(`# T`);
+    expect(await cli(["org", "workflow", "show", "2026-09-02-nope"])).toBe(1);
+    expect(err()).toContain("workflow_instance_not_found");
+    const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "wfup-")), "v2.yaml");
+    fs.writeFileSync(tmp, "id: bidding-v1\nversion: 9\n", "utf8");
+    expect(await cli(["org", "workflow", "upgrade", "bidding-v1", "--file", tmp])).toBe(0);
+    expect(lastRequest("PUT", "/workflows/bidding-v1")?.body).toMatchObject({
+      yaml: expect.stringContaining("version: 9") as string,
+    });
+    expect(out()).toContain(t.org.workflowUpgraded("bidding-v1", 2));
+    expect(await cli(["org", "workflow", "upgrade", "bidding-v1", "--file", `${tmp}.missing`])).toBe(1);
+  });
+});
+
 describe("penguin org handbook", () => {
   it("list prints the files with the index first; show prints the index or a document", async () => {
     org().handbook.set("decisions/2026-09-02-hire-plan.md", "# Hire plan\n");

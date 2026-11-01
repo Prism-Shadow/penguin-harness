@@ -106,6 +106,26 @@ import {
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
+import { BIDDING_V1_YAML } from "../../organization/templates/bidding-v1.js";
+import {
+  parseWorkflowDefinition,
+  renderWorkflowExport,
+  replayEvents,
+  type WorkflowDefinition,
+  type WorkflowInstanceSnapshot,
+} from "../../organization/workflow-files.js";
+import { WorkflowStore } from "../../organization/workflow-store.js";
+import type {
+  WorkflowDefinitionsResponse,
+  WorkflowInstanceAdvanceRequest,
+  WorkflowInstanceAttachRequest,
+  WorkflowInstanceCreateRequest,
+  WorkflowInstanceDetail,
+  WorkflowInstanceExport,
+  WorkflowInstanceNoteRequest,
+  WorkflowInstanceRejectRequest,
+  WorkflowInstancesResponse,
+} from "../../api/workflow-types.js";
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
@@ -161,6 +181,10 @@ const notFound = (orgId: string): HttpError =>
 
 const ticketNotFound = (ticketId: string): HttpError =>
   new HttpError(404, "ticket_not_found", `Ticket does not exist: ${ticketId}`);
+const workflowNotFound = (wfId: string): HttpError =>
+  new HttpError(404, "workflow_not_found", `Workflow does not exist: ${wfId}`);
+const workflowInstanceNotFound = (instanceId: string): HttpError =>
+  new HttpError(404, "workflow_instance_not_found", `Workflow instance does not exist: ${instanceId}`);
 
 const channelNotFound = (channelId: string): HttpError =>
   new HttpError(404, "channel_not_found", `Channel does not exist: ${channelId}`);
@@ -2637,6 +2661,427 @@ export class OrganizationService {
     }
     return { desks, tickets: ticketGroups };
   }
+
+  // ---------------------------------------------------------------------------
+  // Workflows (company-mode cross-ticket processes; files are the truth, same as tickets)
+  // ---------------------------------------------------------------------------
+
+  private workflowStore(): WorkflowStore {
+    return new WorkflowStore();
+  }
+
+  /** Copies the bundled template into the org on first use; a hand-deleted definition reseeds. */
+  private async ensureWorkflowSeed(dir: string): Promise<void> {
+    const wf = this.workflowStore();
+    const existing = await wf.readDefinition(dir, "bidding-v1");
+    if (existing !== null) return;
+    const parsed = parseWorkflowDefinition(BIDDING_V1_YAML);
+    if (parsed.ok) await wf.writeDefinition(dir, "bidding-v1", parsed.value);
+  }
+
+  async workflowDefinitions(projectId: string, orgId: string): Promise<WorkflowDefinitionsResponse> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    await this.ensureWorkflowSeed(org.dir);
+    const [defs, insts] = await Promise.all([
+      wf.listDefinitions(org.dir),
+      wf.listInstances(org.dir),
+    ]);
+    const counts = new Map<string, number>();
+    for (const i of insts) counts.set(i.snapshot.definitionId, (counts.get(i.snapshot.definitionId) ?? 0) + 1);
+    return {
+      definitions: defs.map((d) => ({
+        id: d.wfId,
+        version: d.parsed.ok ? d.parsed.value.version : 0,
+        name: d.parsed.ok ? d.parsed.value.name : d.wfId,
+        description: d.parsed.ok ? d.parsed.value.description : "",
+        stageCount: d.parsed.ok ? d.parsed.value.stages.length : 0,
+        instanceCount: counts.get(d.wfId) ?? 0,
+        ...(d.parsed.ok ? {} : { invalid: d.parsed.error }),
+      })),
+    };
+  }
+
+  async workflowDefinition(projectId: string, orgId: string, wfId: string): Promise<WorkflowDefinition> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    await this.ensureWorkflowSeed(org.dir);
+    const found = await wf.readDefinition(org.dir, wfId);
+    if (found === null) throw workflowNotFound(wfId);
+    if (!found.parsed.ok)
+      throw new HttpError(409, "workflow_invalid", `Workflow ${wfId} needs repair: ${found.parsed.error}`);
+    return found.parsed.value;
+  }
+
+  async workflowInstances(
+    projectId: string,
+    orgId: string,
+    definitionId?: string,
+  ): Promise<WorkflowInstancesResponse> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    await this.ensureWorkflowSeed(org.dir);
+    const [defs, insts] = await Promise.all([
+      wf.listDefinitions(org.dir),
+      wf.listInstances(org.dir),
+    ]);
+    const names = new Map(defs.filter((d) => d.parsed.ok).map((d) => [d.wfId, (d.parsed as { value: WorkflowDefinition }).value.name]));
+    const items = insts
+      .filter((i) => !definitionId || i.snapshot.definitionId === definitionId)
+      .map((i) => ({
+        ...i.snapshot,
+        definitionName: names.get(i.snapshot.definitionId) ?? i.snapshot.definitionId,
+        snapshotStale: i.snapshotStale,
+      }));
+    return { instances: items };
+  }
+
+  async workflowInstance(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    const inst = await wf.readInstance(org.dir, instanceId);
+    if (inst === null) throw workflowInstanceNotFound(instanceId);
+    const def = await wf.readDefinition(org.dir, inst.snapshot.definitionId);
+    const definition = def !== null && def.parsed.ok ? def.parsed.value : null;
+    return {
+      ...inst.snapshot,
+      definitionName: definition?.name ?? inst.snapshot.definitionId,
+      snapshotStale: inst.snapshotStale,
+      events: inst.events,
+      definition,
+      versionMismatch:
+        definition !== null && definition.version !== inst.snapshot.definitionVersion,
+    };
+  }
+
+  async createWorkflowInstance(
+    projectId: string,
+    orgId: string,
+    req: WorkflowInstanceCreateRequest,
+    actor: Actor,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    await this.ensureWorkflowSeed(org.dir);
+    const def = await wf.readDefinition(org.dir, req.definitionId);
+    if (def === null) throw workflowNotFound(req.definitionId);
+    if (!def.parsed.ok)
+      throw new HttpError(409, "workflow_invalid", `Workflow ${req.definitionId} needs repair.`);
+    // Pin the narrowed value: property narrowing does not survive into the lock closure.
+    const definition = def.parsed.value;
+    const by = actor.agentId ?? actor.userId;
+    const at = new Date(this.now()).toISOString();
+    let instanceId = "";
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      // Idempotent on bizKey: re-posting the same project returns its instance.
+      const existing = (await wf.listInstances(org.dir)).find(
+        (i) => i.snapshot.definitionId === req.definitionId && i.snapshot.bizKey === req.bizKey,
+      );
+      if (existing) {
+        instanceId = existing.instanceId;
+        return;
+      }
+      const day = at.slice(0, 10);
+      const slug = slugify(req.bizKey).slice(0, 40) || "instance";
+      let candidate = `${day}-${slug}`;
+      let n = 2;
+      while (await wf.readInstance(org.dir, candidate)) candidate = `${day}-${slug}-${n++}`;
+      instanceId = candidate;
+      await wf.createInstance(org.dir, instanceId, definition, req.bizKey, req.title, by, at);
+    });
+    return this.workflowInstance(projectId, orgId, instanceId);
+  }
+
+  /** Next stage after `current`, honoring `skip` for skippable stages and parallel convergence. */
+  private nextWorkflowStage(
+    def: WorkflowDefinition,
+    current: string,
+    skip?: string,
+  ): string | null {
+    const idx = def.stages.findIndex((s) => s.key === current);
+    if (idx < 0) return null;
+    if (skip) {
+      const target = def.stages.find((s) => s.key === skip);
+      if (!target || !target.skipWhen) return null;
+      // A skipped stage must be reachable: it is the current one or the next one.
+      if (skip !== current && def.stages[idx + 1]?.key !== skip) return null;
+      const skipIdx = def.stages.findIndex((s) => s.key === skip);
+      return def.stages[skipIdx + 1]?.key ?? null;
+    }
+    return def.stages[idx + 1]?.key ?? null;
+  }
+
+  async advanceWorkflowInstance(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+    req: WorkflowInstanceAdvanceRequest,
+    actor: Actor,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    const by = actor.agentId ?? actor.userId;
+    let moved: { from: string; to: string } | null = null;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const inst = await wf.readInstance(org.dir, instanceId);
+      if (inst === null) throw workflowInstanceNotFound(instanceId);
+      const def = await wf.readDefinition(org.dir, inst.snapshot.definitionId);
+      if (def === null || !def.parsed.ok)
+        throw new HttpError(409, "workflow_invalid", "Workflow definition needs repair.");
+      const definition = def.parsed.value;
+      const cur = inst.snapshot.currentStage;
+      // Exit gates of the current stage: skipping the current stage itself bypasses
+      // them, skipping a later stage bypasses that stage's — never the current one's.
+      if (!(req.skip !== undefined && req.skip === cur)) {
+        await this.requireWorkflowGates(org.dir, definition, inst.snapshot, cur);
+      }
+      const next = this.nextWorkflowStage(definition, cur, req.skip);
+      if (next === null)
+        throw new HttpError(400, "workflow_stuck", "No next stage: already at the end or bad skip target.");
+      const at = new Date(this.now()).toISOString();
+      const snap = replayEvents(
+        inst.snapshot,
+        definition.stages.map((s) => s.key),
+        [{ kind: "advanced", at, by, from: cur, to: next }],
+      );
+      await wf.appendEvent(org.dir, instanceId, { kind: "advanced", at, by, from: cur, to: next }, snap);
+      moved = { from: cur, to: next };
+    });
+    const detail = await this.workflowInstance(projectId, orgId, instanceId);
+    if (moved !== null) {
+      const { from, to } = moved;
+      await this.notifyWorkflowTransition(projectId, orgId, actor, detail, {
+        kind: "advanced",
+        from,
+        to,
+      });
+    }
+    return detail;
+  }
+
+  /**
+   * Exit gates carrying a `ticketPrefix` must be proven by an attached ticket already in
+   * review or done; plain-text gates stay advisory (the UI renders them as a checklist).
+   * Throws 400 naming every unmet gate with its fulfillment link.
+   */
+  private async requireWorkflowGates(
+    dir: string,
+    definition: WorkflowDefinition,
+    snapshot: WorkflowInstanceSnapshot,
+    stageKey: string,
+  ): Promise<void> {
+    const stage = definition.stages.find((s) => s.key === stageKey);
+    if (!stage) return;
+    const unmet: string[] = [];
+    for (const gate of stage.exits) {
+      if (!gate.ticketPrefix) continue;
+      // Ticket ids lead with a date (`2026-10-14-resp-…`), so the prefix matches after
+      // a dash or at the start — never as a bare substring of some other word.
+      const needle = gate.ticketPrefix;
+      let proven = false;
+      for (const ticketId of snapshot.attachments) {
+        if (!(ticketId === needle || ticketId.startsWith(`${needle}-`) || ticketId.includes(`-${needle}`))) continue;
+        const found = await this.deps.store.findTicket(dir, ticketId);
+        if (found !== null && (found.column === "review" || found.column === "done")) {
+          proven = true;
+          break;
+        }
+      }
+      if (!proven) {
+        const link = gate.link
+          ? `（去落实：${gate.link.replace("{bizKey}", snapshot.bizKey)}）`
+          : "";
+        unmet.push(`${gate.text}（需 ${gate.ticketPrefix}* 工单进入评审）${link}`);
+      }
+    }
+    if (unmet.length > 0)
+      throw new HttpError(400, "workflow_gate_unmet", `准出门未满足：${unmet.join("；")}`);
+  }
+
+  /** Best-effort notice into the all-hands channel; a failed notice never fails the transition. */
+  private async notifyWorkflowTransition(
+    projectId: string,
+    orgId: string,
+    actor: Actor,
+    detail: WorkflowInstanceDetail,
+    transition: { kind: "advanced" | "rejected"; from: string; to: string; reason?: string },
+  ): Promise<void> {
+    const nameOf = (key: string): string =>
+      detail.definition?.stages.find((s) => s.key === key)?.name ?? key;
+    const by = actor.agentId ?? actor.userId;
+    const head = `【工作流】${detail.title}（${detail.bizKey}）`;
+    const text =
+      transition.kind === "advanced"
+        ? `${head}推进：${nameOf(transition.from)} → ${nameOf(transition.to)}（${by}）`
+        : `${head}驳回：${nameOf(transition.from)} → ${nameOf(transition.to)}，原因：${transition.reason ?? ""}（${by}）`;
+    try {
+      await this.sendChannelMessage(projectId, orgId, actor.userId, DEFAULT_CHANNEL_ID, {
+        text,
+        ...(actor.sessionId !== undefined ? { sessionId: actor.sessionId } : {}),
+      });
+    } catch (err) {
+      this.deps.log?.(
+        `org: workflow notify failed for ${detail.instanceId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  async rejectWorkflowInstance(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+    req: WorkflowInstanceRejectRequest,
+    actor: Actor,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    const by = actor.agentId ?? actor.userId;
+    let moved: { from: string; to: string } | null = null;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const inst = await wf.readInstance(org.dir, instanceId);
+      if (inst === null) throw workflowInstanceNotFound(instanceId);
+      const def = await wf.readDefinition(org.dir, inst.snapshot.definitionId);
+      if (def === null || !def.parsed.ok)
+        throw new HttpError(409, "workflow_invalid", "Workflow definition needs repair.");
+      const stages = def.parsed.value.stages.map((s) => s.key);
+      const idx = stages.indexOf(inst.snapshot.currentStage);
+      const to = req.to ?? (idx > 0 ? stages[idx - 1] : undefined);
+      if (!to || !stages.includes(to) || stages.indexOf(to) >= idx)
+        throw new HttpError(400, "workflow_bad_target", "Reject target must be an earlier stage.");
+      const at = new Date(this.now()).toISOString();
+      const snap = replayEvents(inst.snapshot, stages, [
+        { kind: "rejected", at, by, from: inst.snapshot.currentStage, to, reason: req.reason },
+      ]);
+      await wf.appendEvent(
+        org.dir,
+        instanceId,
+        { kind: "rejected", at, by, from: inst.snapshot.currentStage, to, reason: req.reason },
+        snap,
+      );
+      moved = { from: inst.snapshot.currentStage, to };
+    });
+    const detail = await this.workflowInstance(projectId, orgId, instanceId);
+    if (moved !== null) {
+      const { from, to } = moved;
+      await this.notifyWorkflowTransition(projectId, orgId, actor, detail, {
+        kind: "rejected",
+        from,
+        to,
+        reason: req.reason,
+      });
+    }
+    return detail;
+  }
+
+  async attachWorkflowTicket(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+    req: WorkflowInstanceAttachRequest,
+    actor: Actor,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    const by = actor.agentId ?? actor.userId;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const inst = await wf.readInstance(org.dir, instanceId);
+      if (inst === null) throw workflowInstanceNotFound(instanceId);
+      // Existence only: the ticket keeps its own column and lifecycle.
+      const ticket = await this.deps.store.findTicket(org.dir, req.ticketId);
+      if (ticket === null) throw ticketNotFound(req.ticketId);
+      if (!inst.snapshot.attachments.includes(req.ticketId)) {
+        const at = new Date(this.now()).toISOString();
+        const snap = replayEvents(
+          inst.snapshot,
+          Object.keys(inst.snapshot.stepStates),
+          [{ kind: "attached", at, by, ticketId: req.ticketId }],
+        );
+        await wf.appendEvent(org.dir, instanceId, { kind: "attached", at, by, ticketId: req.ticketId }, snap);
+      }
+    });
+    return this.workflowInstance(projectId, orgId, instanceId);
+  }
+
+  async noteWorkflowInstance(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+    req: WorkflowInstanceNoteRequest,
+    actor: Actor,
+  ): Promise<WorkflowInstanceDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const wf = this.workflowStore();
+    const by = actor.agentId ?? actor.userId;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const inst = await wf.readInstance(org.dir, instanceId);
+      if (inst === null) throw workflowInstanceNotFound(instanceId);
+      const at = new Date(this.now()).toISOString();
+      await wf.appendEvent(
+        org.dir,
+        instanceId,
+        { kind: "note", at, by, text: req.text },
+        { ...inst.snapshot, updatedAt: at, updatedBy: by },
+      );
+    });
+    return this.workflowInstance(projectId, orgId, instanceId);
+  }
+
+  /**
+   * Writes a new version of a definition (YAML text, hand-edit friendly). The id must
+   * match the path and the version must move forward; instances keep replaying on their
+   * own version and report `versionMismatch` until they are re-based by hand.
+   */
+  async writeWorkflowDefinition(
+    projectId: string,
+    orgId: string,
+    wfId: string,
+    yaml: string,
+  ): Promise<WorkflowDefinition> {
+    const org = await this.requireOrg(projectId, orgId);
+    const parsed = parseWorkflowDefinition(yaml);
+    if (!parsed.ok)
+      throw new HttpError(400, "workflow_invalid", `Workflow definition invalid: ${parsed.error}`);
+    if (parsed.value.id !== wfId)
+      throw new HttpError(
+        400,
+        "workflow_id_mismatch",
+        `Definition id ${parsed.value.id} does not match ${wfId}.`,
+      );
+    const wf = this.workflowStore();
+    await this.ensureWorkflowSeed(org.dir);
+    // Pin the narrowed value: property narrowing does not survive into the lock closure.
+    const definition = parsed.value;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const current = await wf.readDefinition(org.dir, wfId);
+      const currentVersion =
+        current !== null && current.parsed.ok ? current.parsed.value.version : 0;
+      if (definition.version <= currentVersion)
+        throw new HttpError(
+          409,
+          "workflow_version_stale",
+          `Version ${definition.version} is not newer than v${currentVersion}.`,
+        );
+      await wf.writeDefinition(org.dir, wfId, definition);
+    });
+    return definition;
+  }
+
+  async workflowExport(
+    projectId: string,
+    orgId: string,
+    instanceId: string,
+  ): Promise<WorkflowInstanceExport> {
+    const detail = await this.workflowInstance(projectId, orgId, instanceId);
+    return {
+      instanceId: detail.instanceId,
+      filename: `workflow-${detail.instanceId}.md`,
+      markdown: renderWorkflowExport(detail),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2845,6 +3290,17 @@ export abstract class OrgService extends Interface<
     | "progressTicket"
     | "startTicket"
     | "attachTicket"
+    | "workflowDefinitions"
+    | "workflowDefinition"
+    | "workflowInstances"
+    | "workflowInstance"
+    | "createWorkflowInstance"
+    | "advanceWorkflowInstance"
+    | "rejectWorkflowInstance"
+    | "attachWorkflowTicket"
+    | "noteWorkflowInstance"
+    | "writeWorkflowDefinition"
+    | "workflowExport"
     | "channels"
     | "channel"
     | "createChannel"

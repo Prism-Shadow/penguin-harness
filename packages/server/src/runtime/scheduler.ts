@@ -466,13 +466,13 @@ export class Scheduler implements Scheduling {
     await this.dispatch(projectId, agentId, def, state);
   }
 
-  /** Send one fire: queue if the bound Session is busy; in new-Session mode, create and send immediately. */
+  /** Send one fire: queue if the bound Session is busy; in new-Session mode, create and send immediately. Returns the new Session id (new-Session mode) or null on failure. */
   private async dispatch(
     projectId: string,
     agentId: string,
     def: ScheduleDefinition,
     state: ScheduleStateRow,
-  ): Promise<void> {
+  ): Promise<{ sessionId: string; queued: boolean } | null> {
     const key = this.keyOf(projectId, agentId, def.name);
     if (def.sessionId !== undefined) {
       const row = this.sessions.findById(def.sessionId);
@@ -486,7 +486,7 @@ export class Scheduler implements Scheduling {
           ctx: { projectId, agentId, sessionId: def.sessionId },
         });
         this.repo.markInvalid(projectId, agentId, def.name, "session_missing");
-        return;
+        return null;
       }
       if (this.runner.statusOf(def.sessionId) !== "idle") {
         // Queue when busy: at most one per task; new slots during the wait are consumed but don't stack.
@@ -500,10 +500,10 @@ export class Scheduler implements Scheduling {
             sessionId: def.sessionId,
           });
         }
-        return;
+        return { sessionId: def.sessionId, queued: true };
       }
       await this.send(projectId, agentId, def, state, def.sessionId);
-      return;
+      return { sessionId: def.sessionId, queued: false };
     }
     // New-Session mode: each fire opens a new session (optional workspace and paired model ref; same semantics as opening a session manually).
     try {

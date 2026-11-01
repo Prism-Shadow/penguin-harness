@@ -53,6 +53,7 @@ describe("org keys and paths", () => {
 
   it("builds page paths under the /org prefix, encoding the ids", () => {
     expect(orgPagePath("p1", "acme", "tickets")).toBe("/org/p1/acme/tickets");
+    expect(orgPagePath("p1", "acme", "workflows")).toBe("/org/p1/acme/workflows");
     expect(orgPagePath("alice-proj", "a b", "overview")).toBe("/org/alice-proj/a%20b/overview");
     expect(orgPagePath("p1", "acme", "handbook")).toBe("/org/p1/acme/handbook");
   });

@@ -1,0 +1,77 @@
+/**
+ * The bidding workflow template as a bundled string. The human-readable source is
+ * `bidding-v1.yaml` next to this file; the two must stay identical
+ * (`workflow-files.test.ts` fails on drift). A string — not a file read — because the
+ * server ships as a bundle: there is no `src/organization/templates/` beside `dist/`.
+ */
+export const BIDDING_V1_YAML: string = `# 招投标交付流程模板（bidding-v1）
+# 由公司模式工作流引擎执行；\`{bizKey}\` 在展示层展开为实例的业务键（如 term-1247）。
+id: bidding-v1
+version: 1
+name: 招投标交付流程
+description: 医疗信息化招标项目从线索到交付的七阶段流程：抓取→要点→深析→响应文件→演示→质检→交付。响应文件与演示可并行，汇聚于质检；纯服务项目可跳过演示。
+bizKeyPrefix: term-
+stages:
+  - key: capture
+    name: 线索抓取
+    ownerRole: 交付助理
+    entries: []
+    exits:
+      - text: 要点表行已生成（含截止时间）
+        link: /terms?bizKey={bizKey}
+  - key: terms
+    name: 要点解析
+    ownerRole: 标书分析师
+    entries:
+      - text: 招标文件原文已入库
+    exits:
+      - text: 预算/限价已确认
+        link: /terms?bizKey={bizKey}
+      - text: 无严重漏抽（实质性条款全覆盖）
+  - key: analysis
+    name: 深度分析
+    ownerRole: 分析师
+    entries:
+      - text: 要点表已确认
+    exits:
+      - text: 深析报告已出（需求/评分/风险）
+  - key: response
+    name: 响应文件
+    ownerRole: 标书编写
+    entries:
+      - text: 深析报告已出
+    exits:
+      - text: 响应文件工单进入评审
+        ticketPrefix: resp-
+        link: /responses?bizKey={bizKey}
+    parallelWith:
+      - demo
+  - key: demo
+    name: 演示制作
+    ownerRole: Demo工程师
+    entries:
+      - text: 深析报告已出
+    exits:
+      - text: 演示工单进入评审
+        ticketPrefix: demo-
+        link: /demos?bizKey={bizKey}
+    parallelWith:
+      - response
+    skipWhen: no-demo
+  - key: qa
+    name: 质量门
+    ownerRole: QA
+    entries:
+      - text: 响应文件与演示（如有）均进入评审
+    exits:
+      - text: 三专家投票通过
+      - text: 交付体检无error
+  - key: delivery
+    name: 交付归档
+    ownerRole: 交付助理
+    entries:
+      - text: 质量门已通过
+    exits:
+      - text: 交付件已导出
+      - text: 经验已入库
+`;

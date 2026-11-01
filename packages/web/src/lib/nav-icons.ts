@@ -36,6 +36,8 @@ export const NAV_ICONS = {
   orgCalendar: ICONS.calendar,
   /** The ticket board. */
   orgTickets: ICONS.kanban,
+  /** Company mode's workflows: the chain linking tickets into a process. */
+  orgWorkflow: ICONS.chainLink,
   /** Finance. */
   orgFinance: ICONS.dollarCircle,
   /** The handbook, the company's knowledge base. */

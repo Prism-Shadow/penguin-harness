@@ -7664,3 +7664,28 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
+
+// ---------------------------------------------------------------------------
+// Company-mode workflows (re-exported from workflow-types.ts so the Web App's
+// `@prismshadow/penguin-server/api` path mapping sees one surface).
+// ---------------------------------------------------------------------------
+export type {
+  WorkflowDefinition,
+  WorkflowDefinitionItem,
+  WorkflowInstanceAdvanceRequest,
+  WorkflowInstanceAttachRequest,
+  WorkflowInstanceCreateRequest,
+  WorkflowInstanceDetail,
+  WorkflowInstanceEvent,
+  WorkflowInstanceEventKind,
+  WorkflowInstanceExport,
+  WorkflowInstanceItem,
+  WorkflowInstanceNoteRequest,
+  WorkflowInstanceRejectRequest,
+  WorkflowInstanceSnapshot,
+  WorkflowInstancesResponse,
+  WorkflowDefinitionsResponse,
+  WorkflowStage,
+  WorkflowStageGate,
+  WorkflowStepState,
+} from "./workflow-types.js";

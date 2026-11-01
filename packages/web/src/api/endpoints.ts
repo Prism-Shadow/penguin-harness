@@ -232,6 +232,18 @@ import type {
   VersionHistoryResponse,
   WorkbenchInfo,
   WorkbenchVersion,
+  WorkflowDefinition,
+  WorkflowDefinitionItem,
+  WorkflowDefinitionsResponse,
+  WorkflowInstanceAdvanceRequest,
+  WorkflowInstanceAttachRequest,
+  WorkflowInstanceCreateRequest,
+  WorkflowInstanceDetail,
+  WorkflowInstanceExport,
+  WorkflowInstanceItem,
+  WorkflowInstanceNoteRequest,
+  WorkflowInstanceRejectRequest,
+  WorkflowInstancesResponse,
   VersionRollbackResponse,
   VersionResponse,
   WeChatBindingPutRequest,
@@ -2775,6 +2787,83 @@ export const attachOrgTicket = (
   ticketId: string,
   body: OrgTicketAttachRequest,
 ) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "attach", body);
+
+// ---- Company-mode workflows (definitions → instances → stage transitions) ----
+
+const instanceBase = (projectId: string, orgId: string, instanceId: string) =>
+  `${orgBase(projectId, orgId)}/workflow-instances/${encodeURIComponent(instanceId)}`;
+
+/** Every workflow definition of the organization (the bidding template seeds itself). */
+export const listOrgWorkflows = (projectId: string, orgId: string) =>
+  apiFetch<WorkflowDefinitionsResponse>(`${orgBase(projectId, orgId)}/workflows`);
+
+export const getOrgWorkflow = (projectId: string, orgId: string, wfId: string) =>
+  apiFetch<WorkflowDefinition>(
+    `${orgBase(projectId, orgId)}/workflows/${encodeURIComponent(wfId)}`,
+  );
+
+export const listOrgWorkflowInstances = (projectId: string, orgId: string, definitionId?: string) =>
+  apiFetch<WorkflowInstancesResponse>(
+    `${orgBase(projectId, orgId)}/workflow-instances${definitionId ? `?definitionId=${encodeURIComponent(definitionId)}` : ""}`,
+  );
+
+export const createOrgWorkflowInstance = (
+  projectId: string,
+  orgId: string,
+  body: WorkflowInstanceCreateRequest,
+) =>
+  apiFetch<WorkflowInstanceDetail>(`${orgBase(projectId, orgId)}/workflow-instances`, {
+    method: "POST",
+    body,
+  });
+
+export const getOrgWorkflowInstance = (projectId: string, orgId: string, instanceId: string) =>
+  apiFetch<WorkflowInstanceDetail>(instanceBase(projectId, orgId, instanceId));
+
+/** Auditable Markdown of an instance (stages, gates, attachments, timeline) as JSON. */
+export const exportOrgWorkflowInstance = (projectId: string, orgId: string, instanceId: string) =>
+  apiFetch<WorkflowInstanceExport>(`${instanceBase(projectId, orgId, instanceId)}/export`);
+
+/** `…/workflow-instances/:instanceId/<action>` POST helper shared by the four transitions. */
+const instanceAction = <T>(
+  projectId: string,
+  orgId: string,
+  instanceId: string,
+  action: string,
+  body: unknown,
+) =>
+  apiFetch<T>(`${instanceBase(projectId, orgId, instanceId)}/${action}`, {
+    method: "POST",
+    body,
+  });
+
+export const advanceOrgWorkflowInstance = (
+  projectId: string,
+  orgId: string,
+  instanceId: string,
+  body: WorkflowInstanceAdvanceRequest = {},
+) => instanceAction<WorkflowInstanceDetail>(projectId, orgId, instanceId, "advance", body);
+
+export const rejectOrgWorkflowInstance = (
+  projectId: string,
+  orgId: string,
+  instanceId: string,
+  body: WorkflowInstanceRejectRequest,
+) => instanceAction<WorkflowInstanceDetail>(projectId, orgId, instanceId, "reject", body);
+
+export const attachOrgWorkflowTicket = (
+  projectId: string,
+  orgId: string,
+  instanceId: string,
+  body: WorkflowInstanceAttachRequest,
+) => instanceAction<WorkflowInstanceDetail>(projectId, orgId, instanceId, "attach", body);
+
+export const noteOrgWorkflowInstance = (
+  projectId: string,
+  orgId: string,
+  instanceId: string,
+  body: WorkflowInstanceNoteRequest,
+) => instanceAction<WorkflowInstanceDetail>(projectId, orgId, instanceId, "note", body);
 
 const channelBase = (projectId: string, orgId: string, channelId: string) =>
   `${orgBase(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;

@@ -103,6 +103,9 @@ export interface FakeOrgState {
   handbook: Map<string, string>;
   /** Desk sessions keyed by employee. */
   desks: Map<string, Json>;
+  /** Workflow definitions (DTO summaries) and instances keyed by instance id. */
+  workflows: Json[];
+  workflowInstances: Map<string, Json>;
   /** The `unpriced` flag of the finance response. */
   unpriced: boolean;
 }
@@ -570,6 +573,17 @@ export class FakeServer {
       handbook: new Map([["README.md", `# ${overrides.name ?? "Org"} — organization handbook\n`]]),
       desks: new Map(),
       unpriced: false,
+      workflows: [
+        {
+          id: "bidding-v1",
+          version: 1,
+          name: "Bidding",
+          description: "",
+          stageCount: 7,
+          instanceCount: 0,
+        },
+      ],
+      workflowInstances: new Map(),
       ...overrides,
     };
     this.orgs.set(org.orgId, org);
@@ -1110,6 +1124,62 @@ export class FakeServer {
         return this.json(this.ticketDetail(org, rec));
       }
       if (c !== undefined && method === "POST") return this.ticketAction(org, rec, c, body);
+    }
+
+    if (a === "workflows") {
+      if (b === undefined) {
+        if (method !== "GET") return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+        return this.json({ definitions: org.workflows });
+      }
+      if (!/^[a-z][a-z0-9_-]{1,63}$/.test(b)) return this.badRequest("Invalid workflow id.");
+      const rec = (org.workflows as Json[]).find((w) => (w as { id: string }).id === b);
+      if (method === "PUT") {
+        if (!isNonEmptyString(body?.yaml)) return this.badRequest("yaml is required.");
+        if (!rec) return this.error(404, "workflow_not_found", `Workflow does not exist: ${b}`);
+        (rec as { version: number }).version += 1;
+        return this.json({
+          id: b,
+          version: (rec as { version: number }).version,
+          name: "Bidding",
+          description: "",
+          bizKeyPrefix: "term-",
+          stages: [],
+        });
+      }
+      if (!rec) return this.error(404, "workflow_not_found", `Workflow does not exist: ${b}`);
+      return this.json({
+        id: b,
+        version: 1,
+        name: "Bidding",
+        description: "",
+        bizKeyPrefix: "term-",
+        stages: [],
+      });
+    }
+
+    if (a === "workflow-instances") {
+      if (b === undefined) {
+        if (method === "POST") return this.createWorkflowInstance(org, body ?? {});
+        const filter = url.searchParams.get("definitionId") ?? undefined;
+        const instances = [...org.workflowInstances.values()].filter(
+          (x) => filter === undefined || (x as { definitionId: string }).definitionId === filter,
+        );
+        return this.json({ instances });
+      }
+      if (!TICKET_ID_RE.test(b)) return this.badRequest("Invalid workflow instance id.");
+      const rec = org.workflowInstances.get(b);
+      if (!rec) {
+        return this.error(404, "workflow_instance_not_found", `Workflow instance does not exist: ${b}`);
+      }
+      if (c === "export" && method === "GET") {
+        return this.json({
+          instanceId: b,
+          filename: `workflow-${b}.md`,
+          markdown: `# ${String((rec as { title: string }).title)}\n`,
+        });
+      }
+      if (c === undefined && method === "GET") return this.json(rec);
+      if (c !== undefined && method === "POST") return this.workflowInstanceAction(org, rec, c, body);
     }
 
     if (a === "handbook" && b === "files") {
@@ -1669,6 +1739,75 @@ export class FakeServer {
       ...(typeof body.body === "string" ? { rawBody: body.body } : {}),
     });
     return this.json(this.ticketDetail(org, rec), 201);
+  }
+
+  /** POST …/workflow-instances and …/workflow-instances/:id/(advance|reject|attach|note). */
+  private createWorkflowInstance(org: FakeOrgState, body: Json): Response {
+    if (!/^[a-z][a-z0-9_-]{1,63}$/.test(String(body?.definitionId ?? ""))) {
+      return this.badRequest("Invalid workflow id.");
+    }
+    if (!isNonEmptyString(body?.bizKey)) return this.badRequest("bizKey is required.");
+    if (!isNonEmptyString(body?.title)) return this.badRequest("title is required.");
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    const instanceId = `${ORG_TODAY}-${slugify(String(body.bizKey))}`;
+    const rec: Json = {
+      instanceId,
+      definitionId: String(body.definitionId),
+      definitionVersion: 1,
+      bizKey: body.bizKey,
+      title: body.title,
+      currentStage: "capture",
+      stepStates: { capture: "active" },
+      attachments: [],
+      updatedAt: ORG_NOW,
+      updatedBy: actor.principal,
+      definitionName: "Bidding",
+      snapshotStale: false,
+      events: [{ kind: "created", at: ORG_NOW, by: actor.principal }],
+      definition: null,
+      versionMismatch: false,
+    };
+    org.workflowInstances.set(instanceId, rec);
+    return this.json(rec, 201);
+  }
+
+  private workflowInstanceAction(
+    org: FakeOrgState,
+    rec: Json,
+    action: string,
+    body: Json | undefined,
+  ): Response {
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    switch (action) {
+      case "advance": {
+        rec.currentStage = "terms";
+        rec.updatedAt = ORG_NOW;
+        return this.json(rec);
+      }
+      case "reject": {
+        if (!isNonEmptyString(body?.reason)) return this.badRequest("reason is required.");
+        rec.currentStage = "capture";
+        rec.updatedAt = ORG_NOW;
+        return this.json(rec);
+      }
+      case "attach": {
+        if (!TICKET_ID_RE.test(String(body?.ticketId ?? ""))) {
+          return this.badRequest("Invalid ticket id.");
+        }
+        (rec.attachments as string[]).push(String(body?.ticketId));
+        rec.updatedAt = ORG_NOW;
+        return this.json(rec);
+      }
+      case "note": {
+        if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+        rec.updatedAt = ORG_NOW;
+        return this.json(rec);
+      }
+      default:
+        return this.error(404, "not_found", `No fake action ${action}.`);
+    }
   }
 
   /** POST …/tickets/:id/(move|block|unblock|progress|start|attach). */

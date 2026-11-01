@@ -50,6 +50,7 @@ import { InboxPage } from "./features/company/inbox-page";
 import { OrgChartPage } from "./features/company/org-chart-page";
 import { CalendarPage } from "./features/company/calendar-page";
 import { TicketsPage } from "./features/company/tickets-page";
+import { WorkflowsPage } from "./features/company/workflows-page";
 import { FinancePage } from "./features/company/finance-page";
 import { ChannelView } from "./features/company/channel-view";
 import { HandbookPage } from "./features/company/handbook-page";
@@ -196,6 +197,7 @@ function appRoutes() {
           <Route path="chart" element={<OrgChartPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="tickets" element={<TicketsPage />} />
+          <Route path="workflows" element={<WorkflowsPage />} />
           <Route path="finance" element={<FinancePage />} />
           <Route path="handbook" element={<HandbookPage />} />
           <Route path="channels/:channelId" element={<ChannelView />} />

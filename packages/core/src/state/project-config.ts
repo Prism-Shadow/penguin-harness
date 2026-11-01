@@ -257,6 +257,8 @@ export interface ProjectConfig {
    */
   providers?: ProviderTable;
   models: ModelEntry[];
+  /** Ordered model fallback chain (`[model_fallback_chain]`): provider/model pairs tried in order when a request is rate-limited or the primary model fails. Empty/absent = no fallback. */
+  model_fallback_chain?: ModelRef[];
 }
 
 /**

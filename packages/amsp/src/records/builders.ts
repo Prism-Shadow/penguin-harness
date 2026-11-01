@@ -232,10 +232,10 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
-/** abort event: a user interruption (its three codes), or the Task stopped at its turn cap (`max_turns`, with a line naming the cap). */
+/** abort event: a user interruption (its three codes), the Task stopped at its turn cap (`max_turns`, with a line naming the cap), or the server's own shutdown (`server_restart`). */
 export function abortEvent(
   errorCode:
-    "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns" = "user_abort",
+    "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns" | "server_restart" = "user_abort",
   errorMessage?: string,
 ): AmspRecord<AbortPayload> {
   return event({

@@ -405,6 +405,44 @@ export interface Messages {
     ticketProgressDesc: string;
     ticketStartDesc: string;
     ticketAttachDesc: string;
+    workflowDesc: string;
+    workflowLsDesc: string;
+    workflowInstancesDesc: string;
+    workflowShowDesc: string;
+    workflowStartDesc: string;
+    workflowAdvanceDesc: string;
+    workflowRejectDesc: string;
+    workflowAttachDesc: string;
+    workflowNoteDesc: string;
+    workflowExportDesc: string;
+    workflowUpgradeDesc: string;
+    wfDefinitionFilter: string;
+    wfDefinitionId: string;
+    wfBizKeyOpt: string;
+    wfTitleOpt: string;
+    wfSkipOpt: string;
+    wfReasonOpt: string;
+    wfToOpt: string;
+    wfTicketOpt: string;
+    wfTextOpt: string;
+    wfOutputOpt: string;
+    wfFileOpt: string;
+    wfDefinition(): string;
+    wfMismatch(version: number): string;
+    wfBizKey(): string;
+    wfStage(): string;
+    wfUpdated(): string;
+    wfAttached(): string;
+    workflowsEmpty(): string;
+    workflowInstancesEmpty(): string;
+    workflowStarted(instanceId: string, stage: string): string;
+    workflowAdvanced(instanceId: string, stage: string): string;
+    workflowRejected(instanceId: string, stage: string): string;
+    workflowAttached(instanceId: string, ticketId: string): string;
+    workflowNoted(instanceId: string): string;
+    workflowExported(filename: string, file: string): string;
+    workflowUpgraded(wfId: string, version: number): string;
+    wfFileUnreadable(file: string): string;
     channelDesc: string;
     channelLsDesc: string;
     channelCreateDesc: string;
@@ -656,6 +694,13 @@ export interface Messages {
     colUnread(): string;
     colMentions(): string;
     colPrincipal(): string;
+    colVersion(): string;
+    colName(): string;
+    colStages(): string;
+    colInstances(): string;
+    colBizKey(): string;
+    colStage(): string;
+    colUpdated(): string;
   };
   /** `penguin browser`: the desktop app's built-in browser (commands/browser.ts, browser-output.ts). */
   browser: {
@@ -1557,6 +1602,44 @@ const en: Messages = {
       "Open a ticket session that works on the ticket in the background; prints the session id. Only the ticket's owner (its desk) or a person may start one — assign the ticket to move it to another employee",
     ticketAttachDesc:
       "Attach an existing session as a contributor (defaults to the calling session)",
+    workflowDesc: "Workflows: cross-ticket processes with stages, gates and an audit trail",
+    workflowLsDesc: "List the workflow definitions (the bidding template seeds itself)",
+    workflowInstancesDesc: "List workflow instances (one business key at a time, --definition-id filters)",
+    workflowShowDesc: "Show an instance: stages, gates, attachments and timeline",
+    workflowStartDesc: "Start an instance for one business key (idempotent per key)",
+    workflowAdvanceDesc: "Advance to the next stage (exit gates must hold; --skip bypasses one)",
+    workflowRejectDesc: "Send back to an earlier stage with a reason",
+    workflowAttachDesc: "Attach an existing ticket as gate proof (the ticket keeps its column)",
+    workflowNoteDesc: "Record a note into the instance's event stream",
+    workflowExportDesc: "Export the audit trail as Markdown (prints it, or --output writes a file)",
+    workflowUpgradeDesc: "Write a new definition version from a YAML file (must move forward)",
+    wfDefinitionFilter: "Only instances of this definition",
+    wfDefinitionId: "Definition id",
+    wfBizKeyOpt: "Business key, e.g. term-1247",
+    wfTitleOpt: "Instance title",
+    wfSkipOpt: "Skippable stage to bypass",
+    wfReasonOpt: "Reason (required)",
+    wfToOpt: "Stage to return to (defaults to the previous one)",
+    wfTicketOpt: "Ticket id to attach",
+    wfTextOpt: "Note text",
+    wfOutputOpt: "Write the Markdown to this file instead of printing it",
+    wfFileOpt: "YAML file carrying the new definition version",
+    wfDefinition: () => "Definition",
+    wfMismatch: (version) => `newer v${version} available`,
+    wfBizKey: () => "Business key",
+    wfStage: () => "Stage",
+    wfUpdated: () => "Updated",
+    wfAttached: () => "Attached",
+    workflowsEmpty: () => "No workflow definitions yet.",
+    workflowInstancesEmpty: () => "No workflow instances yet.",
+    workflowStarted: (instanceId, stage) => `Instance ${instanceId} started at ${stage}.`,
+    workflowAdvanced: (instanceId, stage) => `Instance ${instanceId} advanced to ${stage}.`,
+    workflowRejected: (instanceId, stage) => `Instance ${instanceId} sent back to ${stage}.`,
+    workflowAttached: (instanceId, ticketId) => `Ticket ${ticketId} attached to ${instanceId}.`,
+    workflowNoted: (instanceId) => `Note recorded on ${instanceId}.`,
+    workflowExported: (filename, file) => `Exported ${filename} to ${file}.`,
+    workflowUpgraded: (wfId, version) => `Workflow ${wfId} upgraded to v${version}.`,
+    wfFileUnreadable: (file) => `Cannot read ${file}.`,
     channelDesc:
       "The organization's channels (default_channel is the all-hands one everybody is in)",
     channelLsDesc: "List the channels: every one of them for a person, its own for an employee",
@@ -1787,6 +1870,13 @@ const en: Messages = {
     colUnread: () => "UNREAD",
     colMentions: () => "@ME",
     colPrincipal: () => "PRINCIPAL",
+    colName: () => "NAME",
+    colVersion: () => "VERSION",
+    colStages: () => "STAGES",
+    colInstances: () => "INSTANCES",
+    colBizKey: () => "BIZ KEY",
+    colStage: () => "STAGE",
+    colUpdated: () => "UPDATED",
   },
   browser: {
     desc: "The agent browser: read pages, run JavaScript, click and type, import sign-ins",
@@ -2804,6 +2894,44 @@ const zh: Messages = {
     ticketUnblocked: (ticketId) => `工单 ${ticketId} 已解除阻塞。`,
     progressRecorded: (ticketId) => `已在工单 ${ticketId} 记录进展。`,
     ticketAttached: (ticketId, sessionId) => `会话 ${sessionId} 已挂接到工单 ${ticketId}。`,
+    workflowDesc: "工作流：跨工单的流程（阶段、门禁与审计轨迹）",
+    workflowLsDesc: "列出流程定义（招投标模板会自动生成）",
+    workflowInstancesDesc: "列出实例（一次一个业务键，--definition-id 过滤）",
+    workflowShowDesc: "查看实例：阶段、门禁、挂单与时间线",
+    workflowStartDesc: "为一个业务键发起实例（同键重复发起回到已有实例）",
+    workflowAdvanceDesc: "推进到下一阶段（准出门须满足；--skip 跳过一阶段）",
+    workflowRejectDesc: "驳回回早先阶段并给出原因",
+    workflowAttachDesc: "挂载已有工单作为门禁证明（工单本身不动）",
+    workflowNoteDesc: "往实例事件流记一条备注",
+    workflowExportDesc: "导出审计 Markdown（打印，或 --output 写文件）",
+    workflowUpgradeDesc: "从 YAML 文件写入新版本定义（版本号必须前进）",
+    wfDefinitionFilter: "只看该定义的实例",
+    wfDefinitionId: "定义 id",
+    wfBizKeyOpt: "业务键，如 term-1247",
+    wfTitleOpt: "实例标题",
+    wfSkipOpt: "要跳过的可跳阶段",
+    wfReasonOpt: "原因（必填）",
+    wfToOpt: "驳回到的阶段（默认上一阶段）",
+    wfTicketOpt: "要挂载的工单 id",
+    wfTextOpt: "备注正文",
+    wfOutputOpt: "把 Markdown 写到该文件而不是打印",
+    wfFileOpt: "载有新版本定义的 YAML 文件",
+    wfDefinition: () => "定义",
+    wfMismatch: (version) => `有新版本 v${version}`,
+    wfBizKey: () => "业务键",
+    wfStage: () => "阶段",
+    wfUpdated: () => "更新",
+    wfAttached: () => "已挂单",
+    workflowsEmpty: () => "还没有流程定义。",
+    workflowInstancesEmpty: () => "还没有实例。",
+    workflowStarted: (instanceId, stage) => `实例 ${instanceId} 已在 ${stage} 发起。`,
+    workflowAdvanced: (instanceId, stage) => `实例 ${instanceId} 已推进到 ${stage}。`,
+    workflowRejected: (instanceId, stage) => `实例 ${instanceId} 已驳回回 ${stage}。`,
+    workflowNoted: (instanceId) => `已在 ${instanceId} 记录备注。`,
+    workflowAttached: (instanceId, ticketId) => `工单 ${ticketId} 已挂到 ${instanceId}。`,
+    workflowExported: (filename, file) => `已导出 ${filename} 到 ${file}。`,
+    workflowUpgraded: (wfId, version) => `流程 ${wfId} 已升到 v${version}。`,
+    wfFileUnreadable: (file) => `读不到 ${file}。`,
     channelCreated: (channelId) => `已创建频道 ${channelId}。`,
     channelInvited: (channelId, principal) => `已邀请 ${principal} 加入 ${channelId}。`,
     channelJoined: (channelId) => `已加入 ${channelId}。`,
@@ -2894,6 +3022,13 @@ const zh: Messages = {
     colUnread: () => "未读",
     colMentions: () => "@我",
     colPrincipal: () => "主体",
+    colName: () => "名称",
+    colVersion: () => "版本",
+    colStages: () => "阶段数",
+    colInstances: () => "实例数",
+    colBizKey: () => "业务键",
+    colStage: () => "阶段",
+    colUpdated: () => "更新",
   },
   browser: {
     desc: "Agent 浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
