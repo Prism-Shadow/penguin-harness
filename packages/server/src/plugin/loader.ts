@@ -43,7 +43,7 @@ import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
 import {
   AgentDefinition,
-  agentDefinitionsFromTable,
+  contributedAgentDefinitions,
   copyAgentDefinition,
   packageFiles,
 } from "../agents/package.js";
