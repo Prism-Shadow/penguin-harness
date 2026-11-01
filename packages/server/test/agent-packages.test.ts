@@ -212,7 +212,7 @@ describe("agent definitions as plugin packages", () => {
     }
   });
 
-  it("a package whose table contributes a definition loads; a bare agent_state/ without the table is no plugin and loads as a refusal", async () => {
+  it("a package whose table contributes a definition loads; a package without one loads as the plain plugin it is, and no copy runs for it", async () => {
     const good = await writePackage("@acme/reviewer");
     // A package without a table: the loader refuses an unresolvable entry shape the same
     // way it refuses any package that is not a plugin — no agent scan saves it.
@@ -223,8 +223,10 @@ describe("agent definitions as plugin packages", () => {
     }
     await writeConfig(["@acme/reviewer", "@acme/bare"]);
     const result = await loadPlugins(root);
-    expect(result.loaded.map((e) => e.specifier)).toEqual([good]);
-    expect(result.failed.get("@acme/bare")).toBeTruthy();
+    // Both load — the bare one is a plain plugin whose default export carries no modules;
+    // the reviewer's contribution is what its table carries, not something the loader scans.
+    expect(result.failed.size).toBe(0);
+    expect(result.loaded.map((e) => e.specifier)).toEqual([good, "@acme/bare"]);
   });
 });
 
