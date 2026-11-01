@@ -1,7 +1,8 @@
 /**
  * The agents mechanisms: what a node may require, declared apart from what implements it.
  */
-import { Interface, Slot } from "@prismshadow/penguin-core/kernel";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Slot } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "../services/agent-config-service.js";
 import type {
   AgentConfigUpdateRequest,
