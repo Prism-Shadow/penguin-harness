@@ -1,25 +1,50 @@
 /**
- * An Agent definition as a plugin package contribution.
+ * The Agent definition a plugin package registers, and what installing does with it.
  *
- * A plugin package can carry an Agent definition the way it carries skills, hooks or MCP
- * servers: an `agent_state/` directory beside its package.json, holding the parts someone
- * polished. The package stays a normal plugin package — a valid npm package, no marker,
- * no extra manifest — and installing it copies that definition into the Project's agents/
- * directory as data: nothing in the package runs at copy time, no credentials are written,
- * nothing is registered anywhere. The Agent's lived history (memory, traces, snapshots,
- * workspaces, scratchpad, the vault) is runtime state and never travels in a package.
+ * The package registers the contribution in its own manifest: `"penguin": { "agent": true }`
+ * in its package.json — the same block the hook package and the MCP servers are declared in.
+ * The harness reads that one line; the definition's content lives in the package's
+ * `agent_state/` directory, the way a skill's lives in `skills/<name>/SKILL.md`. Installing
+ * the package copies that directory into the Project's agents/ as data: nothing in the
+ * package runs at copy time, no credentials are written, nothing is registered anywhere.
+ * The Agent's lived history (memory, traces, snapshots, workspaces, scratchpad, the vault)
+ * is runtime state and never travels in a package.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { PLUGIN_NAME_PATTERN, agentDir, unscopedPackageName } from "@prismshadow/penguin-core";
 
-/** The package directory that holds an Agent definition (the Agent's own agent_state). */
+/** The package directory that holds a registered Agent definition (the Agent's own agent_state). */
 export const AGENT_STATE_DIR = "agent_state";
 
 /** Directories inside `agent_state/` that are the Agent's lived history, never its definition. */
 export const RUNTIME_STATE_DIRS = ["memory", "traces", "snapshots", "workspaces", "scratchpad"];
 
 export class AgentCopyError extends Error {}
+
+/**
+ * Whether a parsed package.json registers an Agent definition: `penguin.agent === true`, the
+ * one form the manifest reader accepts. Anything else is the manifest reader's business —
+ * it warns and ignores — and reads as no registration here.
+ */
+export function registersAgent(packageJson: unknown): boolean {
+  const penguin =
+    typeof packageJson === "object" && packageJson !== null
+      ? (packageJson as { penguin?: { agent?: unknown } }).penguin
+      : undefined;
+  return typeof penguin === "object" && penguin !== null && penguin.agent === true;
+}
+
+/** Whether an installed package directory registers one: its package.json, as parsed. */
+export async function registeredAgent(dir: string): Promise<boolean> {
+  let packageJson: unknown;
+  try {
+    packageJson = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    return false; // no readable manifest
+  }
+  return registersAgent(packageJson);
+}
 
 /**
  * One definition entry of a package (package-relative POSIX path): `agent_state/…`, minus
@@ -33,26 +58,6 @@ export function agentDefinitionEntry(rel: string): string | null {
   const inner = parts[1]!;
   if (inner.startsWith(".") || RUNTIME_STATE_DIRS.includes(inner)) return null;
   return rel;
-}
-
-/** Whether a package, as files (package-relative), carries an Agent definition. */
-export function hasAgentDefinitionFiles(files: ReadonlyMap<string, unknown>): boolean {
-  for (const rel of files.keys()) if (agentDefinitionEntry(rel) !== null) return true;
-  return false;
-}
-
-/** Whether an installed package directory carries an Agent definition. */
-export async function hasAgentDefinition(dir: string): Promise<boolean> {
-  const entries = await fs
-    .readdir(path.join(dir, AGENT_STATE_DIR), { withFileTypes: true })
-    .catch(() => null);
-  if (entries === null) return false; // no agent_state/
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    if (entry.isFile()) return true;
-    if (entry.isDirectory() && !RUNTIME_STATE_DIRS.includes(entry.name)) return true;
-  }
-  return false;
 }
 
 /** A package directory as files (relative path → bytes), `node_modules/` and `.git/` left out. */
@@ -72,7 +77,7 @@ export async function packageFiles(dir: string): Promise<Map<string, Uint8Array>
 }
 
 /**
- * Copies a package's Agent definition into the Project: `agents/<unscoped>/agent_state/…`,
+ * Copies a registered Agent definition into the Project: `agents/<unscoped>/agent_state/…`,
  * as data — nothing runs, nothing is registered, no credentials are written. The Agent is
  * named by the package's unscoped name. Reinstalling updates the definition files in place
  * (the way a skill reinstall does); files the package does not carry are left as they are,

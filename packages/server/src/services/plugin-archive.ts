@@ -7,9 +7,9 @@
  * On the way in nothing is trusted that has not been checked: the caps are read from the
  * central directory before a byte inflates (as the Skill archive's are), every path is
  * zip-slip-checked, and the package must be a plugin — skills, a hook package, MCP servers
- * (`penguin.mcp_servers`) or an Agent definition (`agent_state/` beside its package.json)
- * beside its package.json that the library would read as it is (checked with the library's
- * own reader), or the `ifaces.json` of server modules. Installing it is then npm's
+ * (`penguin.mcp_servers`), a registered Agent definition (`penguin.agent`) or server modules
+ * (`ifaces.json`) beside its package.json that the library would read as it is (checked with
+ * the library's own reader, when it carries library parts). Installing it is then npm's
  * (plugin/install.ts).
  */
 import fs from "node:fs/promises";
@@ -23,7 +23,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { PACKAGE_NAME } from "../plugin/loader.js";
-import { hasAgentDefinitionFiles } from "../agents/package.js";
+import { registersAgent } from "../agents/package.js";
 import { assertSafeEntryPath } from "./skill-import-limits.js";
 
 /** Decoded zip cap: the Skill archive's, which stays within the 20MB body limit after base64. */
@@ -60,7 +60,7 @@ export interface PluginArchive {
   library: boolean;
   /** It carries server modules (a Project's plugin list loads it). */
   modules: boolean;
-  /** It carries an Agent definition (`agent_state/` beside its package.json). */
+  /** It registers an Agent definition (`penguin.agent` in its package.json). */
   agent: boolean;
 }
 
@@ -168,12 +168,12 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
   const library =
     has("skills") || has("hooks") || has("workbenches") || declaresMcpServers(manifest);
   const modules = rel.has("ifaces.json");
-  // An Agent definition is a plugin contribution like the skills above: `agent_state/` with
-  // content beside the package.json, lived history dropped (agents/package.ts).
-  const agent = hasAgentDefinitionFiles(rel);
+  // A registered Agent definition (`penguin.agent`) is a plugin contribution like the skills
+  // above; the registration is the manifest's own declaration, not a scan of the package.
+  const agent = registersAgent(manifest);
   if (!library && !agent && !modules) {
     throw invalid(
-      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (`penguin.mcp_servers`) nor an Agent definition (`agent_state/`) nor the ifaces.json of server modules.",
+      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (`penguin.mcp_servers`) nor a registered Agent definition (`penguin.agent`) nor the ifaces.json of server modules.",
     );
   }
   if (library) await checkWithLibrary(rel);
