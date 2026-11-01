@@ -85,6 +85,9 @@ describe("agent definitions as plugin packages", () => {
       await fs.writeFile(
         path.join(dir, "index.mjs"),
         lower(`import { Component, Bind } from ${JSON.stringify(decorators)};
+               @Component({
+                 contributes: { "AgentConfigService.definitions": [{ id: "agent.definition", agentId: "reviewer" }] },
+               })
                export class Agent {
                  @Bind("agent.definition") copy() {
                    throw new Error("probe: the copy must be replaced");
