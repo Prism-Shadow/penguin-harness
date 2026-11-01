@@ -142,7 +142,7 @@ describe("web static caching, from a pushed web", () => {
     // The full-page route of a workbench is its own installable app: its index.html stops
     // naming the main app's manifest and names the workbench's — per workbench, from the
     // path's own project/agent/id segments.
-    const page = await t.app.request("/app/proj-1/agent-1/wb-9/tab-3");
+    const page = await t.app.request("/app/proj-1/agent-1/wb-9");
     const html = await page.text();
     expect(html).toContain('href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"');
     // The rewritten bytes are a different representation: their own ETag, so a client
@@ -153,6 +153,13 @@ describe("web static caching, from a pushed web", () => {
     const other = await t.app.request("/app/proj-1/agent-1/wb-10");
     expect(await other.text()).toContain(
       'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-10/manifest.webmanifest"',
+    );
+
+    // A route that names a tab gets THAT tab's manifest: one app per tab, the launcher
+    // opening the tab the route shows.
+    const tabbed = await t.app.request("/app/proj-1/agent-1/wb-9/tab-3");
+    expect(await tabbed.text()).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/tabs/tab-3/manifest.webmanifest"',
     );
 
     // Everything else keeps the main app's manifest: the shell itself, and a session page

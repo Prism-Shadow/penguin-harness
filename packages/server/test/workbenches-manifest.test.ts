@@ -221,4 +221,32 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     const res = await t.app.request(`${BASE}`);
     expect(res.status).toBe(401);
   });
+
+  it("answers a per-tab manifest that installs the tab as its own app", async () => {
+    // A second tab, so the two differ; the tab's own manifest names IT and opens ITS page.
+    const stats = { ...TAB, id: "demo.stats", key: "stats", title: "Stats" };
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"));
+    pkg.penguin.modules[0]!.contributes["WebModule.sessionTabs"] = [TAB, stats];
+    await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(pkg, null, 1));
+    const reloaded = await owner.post(`${BASE}/${wf.id}/reload`);
+    expect(reloaded.status, await reloaded.text()).toBe(200);
+
+    const res = await t.app.request(`${BASE}/${wf.id}/tabs/stats/manifest.webmanifest`);
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    const m = JSON.parse(text) as { name: string; short_name: string; scope: string };
+    // The tab is the app: its own title, its own full-page route as scope/start_url.
+    expect(m.name).toBe("Stats");
+    expect(m.short_name).toBe("Stats");
+    expect(m.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}/stats`);
+    // The workbench-level manifest keeps its own face: the first tab, the shared route.
+    const whole = JSON.parse(
+      await (await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`)).text(),
+    ) as { name: string; scope: string };
+    expect(whole.name).toBe("Board");
+    expect(whole.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}`);
+    // An unknown tab is the same 404 the routes give an unknown workbench.
+    const missing = await t.app.request(`${BASE}/${wf.id}/tabs/nope/manifest.webmanifest`);
+    expect(missing.status).toBe(404);
+  });
 });
