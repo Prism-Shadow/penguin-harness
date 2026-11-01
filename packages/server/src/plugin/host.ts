@@ -66,6 +66,11 @@ export class PluginHost {
     return this.plugins.flatMap((e) => e.modules);
   }
 
+  /** Every registered plugin, in load order: the specifier each module came from. */
+  registered(): readonly LoadedPlugin[] {
+    return this.plugins;
+  }
+
   /** The nodes plugins stand in for, by name — what the platform builds instead of its own. */
   replacements(): ReadonlyMap<string, ModuleDef> {
     return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));

@@ -119,7 +119,7 @@ export class AgentConfigService implements AgentConfig {
     // came from, and that is the name the list is read against.
     const host = pluginHostFrom(resources);
     const byModule = new Map<string, string>();
-    for (const plugin of host.modules()) {
+    for (const plugin of host.registered()) {
       for (const module of plugin.modules) {
         byModule.set(module.manifest.name, plugin.specifier);
       }
