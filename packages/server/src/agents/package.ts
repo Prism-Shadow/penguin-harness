@@ -63,16 +63,19 @@ export async function copyAgentState(opts: {
   toAgentDir: string;
 }): Promise<string[]> {
   const copied: string[] = [];
+  // `fromDir` IS the agent_state/ itself: every path the copy reports is relative to it.
   const walk = async (at: string, rel: string): Promise<void> => {
     for (const entry of await fs.readdir(at, { withFileTypes: true })) {
       const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
       if (entry.isDirectory()) {
-        if (!agentDefinitionEntry(`${childRel}/x`)) continue; // a skipped top-level dir
+        // A directory the definition must not carry (the lived history, the vault) is
+        // skipped whole; the rest is walked, the rule checked again at each level.
+        if (!agentDefinitionEntry(`${AGENT_STATE_DIR}/${childRel}/x`)) continue;
         await walk(path.join(at, entry.name), childRel);
         continue;
       }
-      if (!entry.isFile() || !agentDefinitionEntry(childRel)) continue;
-      const file = path.join(opts.toAgentDir, ...childRel.split("/"));
+      if (!entry.isFile() || !agentDefinitionEntry(`${AGENT_STATE_DIR}/${childRel}`)) continue;
+      const file = path.join(opts.toAgentDir, AGENT_STATE_DIR, ...childRel.split("/"));
       await fs.mkdir(path.dirname(file), { recursive: true });
       await new Promise<void>((resolve, reject) => {
         const source = fsp.createReadStream(path.join(at, entry.name));

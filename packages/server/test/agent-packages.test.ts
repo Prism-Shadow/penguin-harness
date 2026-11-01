@@ -33,6 +33,7 @@ import {
   AGENT_STATE_DIR,
 } from "../src/agents/package.js";
 import { parsePluginArchive } from "../src/services/plugin-archive.js";
+import { decorators } from "./plugin-fixtures.js";
 import { createTestApp, loginAdmin, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -83,9 +84,9 @@ describe("agent definitions as plugin packages", () => {
       );
       await fs.writeFile(
         path.join(dir, "index.mjs"),
-        `import { Component, Bind } from "penguin-kernel-decorators";
+        `import { Component, Bind } from ${JSON.stringify(decorators)};
          export class Agent {
-           @Bind("agent.definition") copy({ root, projectId, agentId }) {
+           @Bind("agent.definition") copy() {
              throw new Error("probe: the copy must be replaced");
            }
          }
