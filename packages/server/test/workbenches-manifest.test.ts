@@ -126,7 +126,11 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
   it("answers the tab's title, the app route as its scope and its plugin icon inlined", async () => {
     const m = await manifest();
     expect(m.name).toBe("Board");
-    expect(m.short_name).toBe("Demo");
+    // Same source as `name` — the first tab's title, not the package name: the browser shows
+    // one in the install prompt and the other as the launcher label, and two different
+    // strings read as two different apps (a workbench titled "Sakana" on a folder "shot"
+    // installed as "shot"). See the 2026-10-31 read on the deployed instance.
+    expect(m.short_name).toBe("Board");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
     expect(m.scope).toBe(`/app/owner-wf/default_agent/${wf.id}`);

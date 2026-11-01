@@ -76,10 +76,12 @@ export function workbenchIcon(icon: { kind: "svg" | "png"; data: string } | null
 }
 
 /**
- * The manifest for one workbench. `name` is its first tab's title (the tab is the thing a
- * person opens), falling back to the workbench's own name; the icon is the plugin icon the
- * folder read (`iconSvg`, null when the workbench ships none), the main app's penguin
- * otherwise.
+ * The manifest for one workbench. `name` and `short_name` come from one source — the first
+ * tab's title (the tab is the thing a person opens), falling back to the workbench's own
+ * name — because a browser shows one in the install prompt and the other as the launcher
+ * label, and two different sources read as two different apps ("preview says A, the icon
+ * says B"). The icon is the plugin icon the folder read (`iconSvg`, null when the workbench
+ * ships none), the main app's penguin otherwise.
  */
 export function workbenchManifest(
   projectId: string,
@@ -88,9 +90,10 @@ export function workbenchManifest(
   icon: { kind: "svg" | "png"; data: string } | null,
 ): WorkbenchManifest {
   const base = workbenchAppBase(projectId, agentId, info.id);
+  const title = info.tabs[0]?.title ?? info.name;
   return {
-    name: info.tabs[0]?.title ?? info.name,
-    short_name: info.name,
+    name: title,
+    short_name: title,
     version: info.version ?? "0.0.0",
     start_url: base,
     scope: base,
