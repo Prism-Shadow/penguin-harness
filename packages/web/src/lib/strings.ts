@@ -5216,7 +5216,7 @@ Benchmark：
       benchmarkId: string;
       time: string;
       label: string;
-      version: number;
+      version: number | string;
       provider: string;
       modelId: string;
       thinkingLevel: string;

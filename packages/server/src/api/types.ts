@@ -4511,8 +4511,8 @@ export interface BenchmarkEvaluation {
   provider: string;
   /** Thinking level read from the unchanged Target Agent configuration. */
   thinkingLevel: string;
-  /** Agent State version number under test. */
-  version: number;
+  /** Agent State version under test: a build number, or a version label such as a semver string. */
+  version: number | string;
   /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
   /** Model-written average of known Case costs; null when every Case cost is unknown. */
