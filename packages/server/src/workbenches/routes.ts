@@ -27,9 +27,8 @@ import type {
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
-import { WorkbenchNotFound } from "./service.js";
+import { contributedAppIcon, WorkbenchNotFound } from "./service.js";
 import { workbenchManifest } from "./manifest.js";
-import { contributedAppIcon } from "./service.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -70,6 +69,12 @@ const tooLarge = () =>
     "payload_too_large",
     `A workbench request body is at most ${MAX_BODY_BYTES} bytes`,
   );
+
+/** The headers both manifest routes answer with (see manifestRoutes). */
+const MANIFEST_HEADERS = {
+  "content-type": "application/manifest+json; charset=utf-8",
+  "cache-control": "no-cache",
+} as const;
 
 const isJson = (contentType: string | undefined): boolean =>
   contentType === undefined || /^application\/([\w.-]+\+)?json\b/i.test(contentType.trim());
@@ -213,18 +218,39 @@ export interface WorkbenchRouteDeps {
  */
 export function manifestRoutes(workbenches: Workbenches): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  const find = async (projectId: string, agentId: string, id: string) => {
+    const info = (await workbenches.list(projectId, agentId)).find((w) => w.id === id);
+    if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
+    return info;
+  };
+  const manifest = async (
+    projectId: string,
+    agentId: string,
+    id: string,
+    tabKey: string | undefined,
+  ): Promise<string> => {
+    const info = await find(projectId, agentId, id);
+    const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);
+    if (tabKey !== undefined && tab === undefined)
+      throw new HttpError(404, "not_found", "No such tab on the workbench.");
+    const icon =
+      contributedAppIcon(tab === undefined ? info.tabs : [tab]) ??
+      (await workbenches.iconSvg(projectId, agentId, id));
+    return JSON.stringify(workbenchManifest(projectId, agentId, info, icon, tabKey));
+  };
+  // One manifest per workbench, and one per tab: the tab's own names the tab as the app —
+  // its title (or its declared shortName) and its own full-page route as start_url/scope.
   app.get("/:id/manifest.webmanifest", async (c) => {
     const projectId = requireValidId(c as never, "projectId");
     const agentId = requireValidId(c as never, "agentId");
-    const id = c.req.param("id");
-    const info = (await workbenches.list(projectId, agentId)).find((w) => w.id === id);
-    if (info === undefined) throw new HttpError(404, "not_found", "No such workbench.");
-    const icon =
-      contributedAppIcon(info.tabs) ?? (await workbenches.iconSvg(projectId, agentId, id));
-    return c.body(JSON.stringify(workbenchManifest(projectId, agentId, info, icon)), 200, {
-      "content-type": "application/manifest+json; charset=utf-8",
-      "cache-control": "no-cache",
-    });
+    const body = await manifest(projectId, agentId, c.req.param("id"), undefined);
+    return c.body(body, 200, MANIFEST_HEADERS);
+  });
+  app.get("/:id/tabs/:tabKey/manifest.webmanifest", async (c) => {
+    const projectId = requireValidId(c as never, "projectId");
+    const agentId = requireValidId(c as never, "agentId");
+    const body = await manifest(projectId, agentId, c.req.param("id"), c.req.param("tabKey"));
+    return c.body(body, 200, MANIFEST_HEADERS);
   });
   return app;
 }

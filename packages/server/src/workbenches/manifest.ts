@@ -52,12 +52,16 @@ export function workbenchUiBase(projectId: string, agentId: string, workbenchId:
  * (its manifest link points here), and the manifest's `start_url` and `scope` — launching the
  * app opens the shell on this workbench, and the scope keeps its navigations in the window.
  */
-export function workbenchAppBase(projectId: string, agentId: string, workbenchId: string): string {
-  return (
-    `/app/${encodeURIComponent(projectId)}` +
-    `/${encodeURIComponent(agentId)}` +
-    `/${encodeURIComponent(workbenchId)}`
+export function workbenchAppBase(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  tabKey?: string,
+): string {
+  const segments = [projectId, agentId, workbenchId, ...(tabKey === undefined ? [] : [tabKey])].map(
+    encodeURIComponent,
   );
+  return `/app/${segments.join("/")}`;
 }
 
 /**
@@ -65,9 +69,12 @@ export function workbenchAppBase(projectId: string, agentId: string, workbenchId
  * SVG is base64-encoded here (the reader hands markup over); a PNG arrives already base64.
  * Null (no icon, or one refused) falls back to the main app's penguin SVG.
  */
-export function workbenchIcon(icon: { kind: "svg" | "png"; data: string } | null): WorkbenchManifestIcon {
+export function workbenchIcon(
+  icon: { kind: "svg" | "png"; data: string } | null,
+): WorkbenchManifestIcon {
   if (icon === null) return { src: MAIN_ICON, sizes: "any", type: "image/svg+xml" };
-  if (icon.kind === "png") return { src: `data:image/png;base64,${icon.data}`, sizes: "any", type: "image/png" };
+  if (icon.kind === "png")
+    return { src: `data:image/png;base64,${icon.data}`, sizes: "any", type: "image/png" };
   return {
     src: `data:image/svg+xml;base64,${Buffer.from(icon.data, "utf8").toString("base64")}`,
     sizes: "any",
@@ -76,21 +83,38 @@ export function workbenchIcon(icon: { kind: "svg" | "png"; data: string } | null
 }
 
 /**
- * The manifest for one workbench. `name` is its first tab's title (the tab is the thing a
- * person opens), falling back to the workbench's own name; the icon is the plugin icon the
- * folder read (`iconSvg`, null when the workbench ships none), the main app's penguin
- * otherwise.
+ * The manifest for one workbench — or, when `tabKey` is given, for one of its tabs. `name`
+ * and `short_name` come from one source — the tab's own title (the tab is the thing a person
+ * opens), falling back to the workbench's own name — because a browser shows one in the
+ * install prompt and the other as the launcher label, and two different sources read as two
+ * different apps ("preview says A, the icon says B"). A tab may declare its own launcher
+ * label (`shortName` in its sessionTabs contribution); it overrides the title for
+ * `short_name`, so a tab installs under a name that fits under an icon without giving up
+ * its title in the strip.
+ *
+ * A tab's manifest makes the tab its own installable app: `start_url` and `scope` are the
+ * tab's full-page route, so launching the icon opens THAT tab — one workbench installs as
+ * one app per tab, not one shared app.
+ *
+ * The icon is the plugin icon the service resolved (`icon`, null when the workbench ships
+ * none), the main app's penguin otherwise.
  */
 export function workbenchManifest(
   projectId: string,
   agentId: string,
   info: WorkbenchInfo,
   icon: { kind: "svg" | "png"; data: string } | null,
+  tabKey?: string,
 ): WorkbenchManifest {
-  const base = workbenchAppBase(projectId, agentId, info.id);
+  const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);
+  // Unreachable through the route (it 404s an unknown tab first); a guard, not a fallback.
+  if (tabKey !== undefined && tab === undefined)
+    throw new Error(`workbench '${info.id}' has no tab '${tabKey}'`);
+  const base = workbenchAppBase(projectId, agentId, info.id, tabKey);
+  const title = tab?.title ?? info.tabs[0]?.title ?? info.name;
   return {
-    name: info.tabs[0]?.title ?? info.name,
-    short_name: info.name,
+    name: title,
+    short_name: tab?.shortName ?? title,
     version: info.version ?? "0.0.0",
     start_url: base,
     scope: base,

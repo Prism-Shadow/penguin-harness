@@ -45,7 +45,9 @@ const MANIFEST = {
 
 /** A real PNG header (the first 16 bytes of a 1×1): what a `.png`-faced icon must begin with. */
 const PNG_BYTES_BASE64 = Buffer.from(
-  Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]),
+  Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+  ]),
 ).toString("base64");
 
 /** The icon the first case ships: the same shape a plugin's `icon.svg` takes. */
@@ -126,7 +128,11 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
   it("answers the tab's title, the app route as its scope and its plugin icon inlined", async () => {
     const m = await manifest();
     expect(m.name).toBe("Board");
-    expect(m.short_name).toBe("Demo");
+    // Same source as `name` — the first tab's title, not the package name: the browser shows
+    // one in the install prompt and the other as the launcher label, and two different
+    // strings read as two different apps (a workbench titled "Sakana" on a folder "shot"
+    // installed as "shot"). See the 2026-10-31 read on the deployed instance.
+    expect(m.short_name).toBe("Board");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");
     expect(m.scope).toBe(`/app/owner-wf/default_agent/${wf.id}`);
@@ -216,5 +222,33 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // Only the manifest path is public: the same prefix without a cookie still demands one.
     const res = await t.app.request(`${BASE}`);
     expect(res.status).toBe(401);
+  });
+
+  it("answers a per-tab manifest that installs the tab as its own app", async () => {
+    // A second tab, so the two differ; the tab's own manifest names IT and opens ITS page.
+    const stats = { ...TAB, id: "demo.stats", key: "stats", title: "Stats" };
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"));
+    pkg.penguin.modules[0]!.contributes["WebModule.sessionTabs"] = [TAB, stats];
+    await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(pkg, null, 1));
+    const reloaded = await owner.post(`${BASE}/${wf.id}/reload`);
+    expect(reloaded.status, await reloaded.text()).toBe(200);
+
+    const res = await t.app.request(`${BASE}/${wf.id}/tabs/stats/manifest.webmanifest`);
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    const m = JSON.parse(text) as { name: string; short_name: string; scope: string };
+    // The tab is the app: its own title, its own full-page route as scope/start_url.
+    expect(m.name).toBe("Stats");
+    expect(m.short_name).toBe("Stats");
+    expect(m.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}/stats`);
+    // The workbench-level manifest keeps its own face: the first tab, the shared route.
+    const whole = JSON.parse(
+      await (await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`)).text(),
+    ) as { name: string; scope: string };
+    expect(whole.name).toBe("Board");
+    expect(whole.scope).toBe(`/app/${PROJECT}/${AGENT}/${wf.id}`);
+    // An unknown tab is the same 404 the routes give an unknown workbench.
+    const missing = await t.app.request(`${BASE}/${wf.id}/tabs/nope/manifest.webmanifest`);
+    expect(missing.status).toBe(404);
   });
 });

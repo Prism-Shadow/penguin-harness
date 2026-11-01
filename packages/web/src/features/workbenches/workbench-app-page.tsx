@@ -46,11 +46,13 @@ export function WorkbenchAppPage() {
   // the same title), not the main app's.
   useDocumentTitle(tab?.title ?? null);
 
-  // This page is its own installable app: its manifest link names THIS workbench's manifest
-  // (the app installs under the workbench's name and icon), not the main app's. The server
-  // rewrites the link in the HTML it serves, but a pushed web reaches the browser through a
-  // shell that predates that rewrite — so the page fixes the link itself, and restores the
-  // main app's link when it unmounts.
+  // This page is its own installable app: its manifest link names THIS tab's manifest (the
+  // app installs under the tab's name and icon, and opens this tab), not the main app's —
+  // one app per tab, not one per workbench shared by its tabs. Without a tab key in the
+  // route it names the workbench's manifest (the first tab's face). The server rewrites the
+  // link in the HTML it serves, but a pushed web reaches the browser through a shell that
+  // predates that rewrite — so the page fixes the link itself, and restores the main app's
+  // link when it unmounts.
   useEffect(() => {
     const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (link === null) return;
@@ -58,13 +60,15 @@ export function WorkbenchAppPage() {
     const here =
       `/api/projects/${encodeURIComponent(projectId)}` +
       `/agents/${encodeURIComponent(agentId)}` +
-      `/workbenches/${encodeURIComponent(workbenchId)}/manifest.webmanifest`;
+      `/workbenches/${encodeURIComponent(workbenchId)}` +
+      (tabKey === undefined ? "" : `/tabs/${encodeURIComponent(tabKey)}`) +
+      `/manifest.webmanifest`;
     if (mainHref === here || mainHref === null) return;
     link.setAttribute("href", here);
     return () => {
       link.setAttribute("href", mainHref);
     };
-  }, [projectId, agentId, workbenchId]);
+  }, [projectId, agentId, workbenchId, tabKey]);
 
   useEffect(() => {
     let alive = true;

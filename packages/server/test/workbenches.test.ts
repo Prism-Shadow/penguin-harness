@@ -802,6 +802,28 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(reloaded.tabs[0]).toMatchObject({ key: TAB.key, icon });
   });
 
+  it("carries a tab's declared shortName, blank or absent meaning the title", async () => {
+    // The launcher label when the tab installs as its own app: declared it overrides the
+    // title for short_name; blank or of another type it means nothing, never an empty label.
+    await list();
+    await writeContributions({
+      "WebModule.sessionTabs": [
+        { ...TAB, shortName: "Brd" },
+        { ...TAB, id: "demo.stats", key: "stats", title: "Stats", shortName: "  " },
+      ],
+    });
+    const reloaded = await reload();
+    expect(reloaded.error).toBeNull();
+    const tabs = reloaded.tabs as { key: string; shortName?: string }[];
+    expect(tabs.find((t) => t.key === "board")!.shortName).toBe("Brd");
+    expect(tabs.find((t) => t.key === "stats")).not.toHaveProperty("shortName");
+    // And of another type it is dropped, not carried as a wrong-typed field.
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, shortName: 7 }] });
+    const typed = await reload();
+    expect(typed.error).toBeNull();
+    expect(typed.tabs[0]).not.toHaveProperty("shortName");
+  });
+
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
     // A workbench with no contribution is server-side only — and since this one has pages, the
     // load says that nothing shows them, with the entry to add, in the API and in the status
