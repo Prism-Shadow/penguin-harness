@@ -254,7 +254,7 @@ Let any evaluation of the Benchmark finish before you delete it. Deleting does n
 
 ## How it works
 
-- **Storage.** A Benchmark is the directory `benchmarks/<benchmark>/` in the Project, beside `agents/`, named by its Benchmark id. Its manifest is `benchmark_config.toml`, which also records a package version and where the copy came from (a Benchmark made by an earlier release has neither); each case has `statement/README.md` and `rubric/README.md`, with `task_config.toml` in Roadmap packages, and the scores are in `scoreboard.yaml`. See [Benchmark storage](/self-improvement#benchmark-storage).
+- **Storage.** A Benchmark is the directory `benchmarks/<benchmark>/` in the Project, beside `agents/`, named by its Benchmark id. Its manifest is `benchmark_config.toml`, which also records a package version and where the copy came from; each case has `statement/README.md` and `rubric/README.md`, with `task_config.toml` in Roadmap packages, and the scores are in `scoreboard.yaml`. See [Benchmark storage](/self-improvement#benchmark-storage).
 - **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
