@@ -69,8 +69,11 @@ import {
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentDefinitionSource } from "../mechanisms/agents.js";
+import { listProjectIds, readProjectPluginList } from "../plugin/loader.js";
+import { pluginHostFrom } from "../plugin/host.js";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
@@ -92,6 +95,71 @@ export class AgentConfigService implements AgentConfig {
   @Use() private readonly paths!: Paths;
   private get root(): string {
     return this.paths.root;
+  }
+
+  /**
+   * The Agent definitions plugins contribute, consumed the way the sandbox consumes its
+   * backends: each contribution's static half names the Agent (the id the copy installs
+   * under), and its code half is the contributor copying its own `agent_state/` —
+   * streaming, however big the definition is, with nothing of the package read here. The
+   * copy runs at boot/assembly, into every Project whose plugin list asks for the
+   * contributor; a failure warns per Project and never fails the boot.
+   */
+  private readonly definitionSources: {
+    agentId: string;
+    copy: AgentDefinitionSource;
+    /** The package the contribution came from, as a Project's list carries it. */
+    specifier: string;
+  }[] = [];
+
+  setup({ contributions, resources }: ClassCtx): void {
+    this.definitionSources.length = 0;
+    // A contribution's `from` is the module's name; a Project's list carries the PACKAGE.
+    // The plugin host is what loaded the package — it says which specifier each module
+    // came from, and that is the name the list is read against.
+    const host = pluginHostFrom(resources);
+    const byModule = new Map<string, string>();
+    for (const plugin of host.modules()) {
+      for (const module of plugin.modules) {
+        byModule.set(module.manifest.name, plugin.specifier);
+      }
+    }
+    for (const contributed of contributions.definitions ?? []) {
+      if (typeof contributed.code !== "function") continue;
+      const specifier = byModule.get(contributed.from);
+      if (specifier === undefined) continue;
+      this.definitionSources.push({
+        agentId: contributed.data.agentId as string,
+        copy: contributed.code as AgentDefinitionSource,
+        specifier,
+      });
+    }
+    // Boot fills the deployment's standing Projects that already list a contributing
+    // package; an install apply and a re-assembly call applyPluginCopies again.
+    void this.applyPluginCopies().catch(() => {});
+  }
+
+  /**
+   * Runs every contributed definition's copy into the Projects that list its package.
+   * An install apply and a re-assembly both call this, so a re-install updates the copy
+   * in place and a directory deleted by hand is re-filled.
+   */
+  async applyPluginCopies(machineId: string | null = null): Promise<void> {
+    if (this.definitionSources.length === 0) return;
+    const projects = await listProjectIds(this.root);
+    for (const projectId of projects) {
+      const list = await readProjectPluginList(this.root, projectId, machineId);
+      for (const { agentId, copy, specifier } of this.definitionSources) {
+        if (!list.includes(specifier)) continue;
+        try {
+          await copy({ root: this.root, projectId, agentId });
+        } catch (err) {
+          console.warn(
+            `[agents] ${projectId}: copying the Agent definition '${agentId}' of '${specifier}' failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
   }
 
   /** Whether the Agent exists (determined by the presence of system_config.yaml, matching the CLI's convention). */

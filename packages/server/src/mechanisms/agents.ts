@@ -36,20 +36,27 @@ import type {
 
 /**
  * The static half of an Agent-definition contribution: the id the definition installs
- * under (the contributor package's unscoped name), a display name, and the
- * package-relative paths of the definition's files — the contributor's `agent_state/`
- * content as the manifest lists it. There is no code half: installing copies the listed
- * files into the Project, as data.
+ * under (the contributor package's unscoped name) and a display name. The definition's
+ * file list is NOT here — the contributor knows its own files, and the copy is its code
+ * half to run: streaming its `agent_state/` into the target, however big it is, with
+ * nothing read into memory to do it.
  */
 export interface AgentDefinitionContribution {
   agentId: string;
   name?: string;
-  agentState: string[];
 }
 
-/** The slots the agents mechanism opens to plugin packages: an Agent definition is one. */
+/** Where the contributor copies its own definition: one call per Project that lists it. */
+export type AgentDefinitionSource = (opts: {
+  root: string;
+  projectId: string;
+  /** The definition's target: `agents/<agentId>/agent_state/…`. */
+  agentId: string;
+}) => Promise<string[]>;
+
+/** The slot the agents mechanism opens to plugin packages: an Agent definition is one. */
 export interface AgentConfigSlots {
-  definitions: Slot<AgentDefinitionContribution>;
+  definitions: Slot<AgentDefinitionContribution, AgentDefinitionSource>;
 }
 
 /** AgentConfig: the mechanism AgentConfigService implements. */

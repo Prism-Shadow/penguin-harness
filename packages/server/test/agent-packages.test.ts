@@ -1,21 +1,23 @@
 /**
- * The Agent definition a plugin package contributes (`ifaces.json`), and what loading does
- * with it. The three rules under test (proposal: an Agent may be a plugin, the package
- * contributing the definition through its own module manifest; a package that is an Agent is
- * downloaded through the plugin channels; what follows the download is a COPY into the
- * Project — nothing executes):
+ * The Agent definition a plugin package contributes, and how its copy is consumed.
  *
- *   - the contribution is the package's own module manifest — a module in its entry file
- *     whose generated table (`ifaces.json`) contributes to the agents mechanism's
- *     `definitions` slot; the copy reads that table without importing anything, and the
- *     definition's content is the `agent_state/` convention, minus the Agent's lived
- *     history (memory, traces, snapshots, workspaces, scratchpad, the vault);
- *   - the load that listing triggers copies the listed files into the Project, as data:
- *     named by the contribution's agentId, nothing run, no table written — an install apply,
- *     a push and a boot all pass through the same load, so a re-install updates the copy in
- *     place and a directory deleted by hand is re-filled;
- *   - a package whose table contributes nothing to the slot is no Agent package; an upload
- *     is refused when the package is a plugin by neither half.
+ * The package contributes the definition the way it contributes a sandbox backend: a
+ * module in its entry file contributes to the agents mechanism's `definitions` slot — the
+ * static half names the Agent (the id the copy installs under), and the code half,
+ * bound with `@Bind`, is the contributor copying its OWN `agent_state/` into the target.
+ * The service consumes the contributions at assembly the way the sandbox consumes its
+ * backends: nothing reads the package or its table — the manifest is data, and the copy
+ * streams file by file, however big the definition is.
+ *
+ * The three rules under test:
+ *   - the copy lands under the contribution's agentId, carries the definition files, and
+ *     skips the lived history (memory, traces, snapshots, workspaces, scratchpad, the
+ *     vault) — the same rules a contributor's own copy follows through the shared helpers;
+ *   - the assembly consumes the contributions: a Project whose list carries the package
+ *     gets the copy when the service runs (boot, an install apply, a re-assembly); one
+ *     that does not list it gets nothing;
+ *   - an install surface with no Agent verb of its own: a package is a plugin by its
+ *     library parts or its table — a bare agent_state/ without one is refused.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -25,8 +27,8 @@ import { strToU8, zipSync } from "fflate";
 import { PLUGINS_FILE, loadPlugins } from "../src/plugin/loader.js";
 import {
   agentDefinitionEntry,
-  agentDefinitionsFromTable,
-  copyAgentDefinition,
+  agentTargetDir,
+  copyAgentState,
   AGENT_DEFINITIONS_SLOT,
   AGENT_STATE_DIR,
 } from "../src/agents/package.js";
@@ -39,64 +41,57 @@ const bytes = (value: string | Uint8Array) => (typeof value === "string" ? strTo
 const skill = (name: string, body: string) =>
   `---\nname: ${name}\ndescription: ${body}\n---\n\n# ${name}\n`;
 
-/** The definition's file list, as the manifest's `agentState` carries it. */
-const DEFINITION_FILES = [
-  "agent_state/skills/review/SKILL.md",
-  "agent_state/system_config.yaml",
-  "agent_state/AGENTS.md",
-];
-
-/** The table a definition package's entry generates into ifaces.json: one module, one contribution. */
-const agentTable = () =>
-  JSON.stringify({
-    ifaces: {},
-    types: {},
-    modules: {
-      agent: {
-        name: "agent",
-        kind: "component",
-        requires: {},
-        provides: {},
-        contributes: {
-          [AGENT_DEFINITIONS_SLOT]: [
-            {
-              id: "agent.definition",
-              agentId: "reviewer",
-              name: "reviewer",
-              agentState: DEFINITION_FILES,
-            },
-          ],
-        },
-        children: [],
-      },
-    },
-    plugin: { modules: ["agent"], replaces: [] },
-  });
-
 /** The files of a definition package, as its directory holds them. */
 const packageFilesOf = (name: string): Record<string, string> => ({
   "package.json": JSON.stringify({ name, version: "1.0.0", main: "./index.mjs" }),
   "index.mjs": "export default { modules: [] };\n",
-  "ifaces.json": agentTable(),
-  ...Object.fromEntries(
-    DEFINITION_FILES.map((rel) =>
-      rel === "agent_state/skills/review/SKILL.md"
-        ? [rel, skill("review", "reviews code")]
-        : rel === "agent_state/system_config.yaml"
-          ? [rel, "version: 1\n"]
-          : [rel, "# guidance\n"],
-    ),
-  ),
+  "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
+  "agent_state/system_config.yaml": "version: 1\n",
+  "agent_state/AGENTS.md": "# guidance\n",
 });
 
 describe("agent definitions as plugin packages", () => {
   let root: string;
 
-  const writePackage = async (name: string): Promise<string> => {
+  const writePackage = async (name: string, withTable = true): Promise<string> => {
     const dir = path.join(root, "plugins", "node_modules", ...name.split("/"));
     for (const [rel, value] of Object.entries(packageFilesOf(name))) {
       await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
       await fs.writeFile(path.join(dir, rel), value, "utf8");
+    }
+    if (withTable) {
+      await fs.writeFile(
+        path.join(dir, "ifaces.json"),
+        JSON.stringify({
+          ifaces: {},
+          types: {},
+          modules: {
+            agent: {
+              name: "agent",
+              kind: "component",
+              requires: {},
+              provides: {},
+              contributes: {
+                [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
+              },
+              children: [],
+            },
+          },
+          plugin: { modules: ["agent"], replaces: [] },
+        }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "index.mjs"),
+        `import { Component, Bind } from "penguin-kernel-decorators";
+         export class Agent {
+           @Bind("agent.definition") copy({ root, projectId, agentId }) {
+             throw new Error("probe: the copy must be replaced");
+           }
+         }
+         export default { modules: [Agent] };\n`,
+        "utf8",
+      );
     }
     return path.join(dir, "index.mjs");
   };
@@ -118,44 +113,9 @@ describe("agent definitions as plugin packages", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("the definition is read from the table the package's entry generates; a table without the slot's contribution reads as none", () => {
-    const table = JSON.parse(agentTable());
-    expect(agentDefinitionsFromTable(table)).toEqual([
-      { agentId: "reviewer", name: "reviewer", files: DEFINITION_FILES },
-    ]);
-    // No table, no contribution to the slot, a missing or malformed half — each is none.
-    expect(agentDefinitionsFromTable({})).toEqual([]);
-    expect(agentDefinitionsFromTable({ modules: { agent: {} } })).toEqual([]);
-    expect(
-      agentDefinitionsFromTable({
-        modules: { agent: { contributes: { [AGENT_DEFINITIONS_SLOT]: ["nope"] } } },
-      }),
-    ).toEqual([]);
-    expect(
-      agentDefinitionsFromTable({
-        modules: { agent: { contributes: { [AGENT_DEFINITIONS_SLOT]: [{ id: "x" }] } } },
-      }),
-    ).toEqual([]);
-    expect(
-      agentDefinitionsFromTable({
-        modules: {
-          agent: {
-            contributes: {
-              [AGENT_DEFINITIONS_SLOT]: [{ id: "x", agentId: "not a name", agentState: [] }],
-            },
-          },
-        },
-      }),
-    ).toEqual([]);
-  });
-
   it("a definition entry is an agent_state/ file only, and the lived history is never part of it", () => {
-    expect(agentDefinitionEntry("agent_state/skills/review/SKILL.md")).toBe(
-      "agent_state/skills/review/SKILL.md",
-    );
-    expect(agentDefinitionEntry("agent_state/system_config.yaml")).toBe(
-      "agent_state/system_config.yaml",
-    );
+    expect(agentDefinitionEntry("agent_state/skills/review/SKILL.md")).toBe(true);
+    expect(agentDefinitionEntry("agent_state/system_config.yaml")).toBe(true);
     for (const rel of [
       "agent_state/.vault.toml",
       "agent_state/memory/user/MEMORY.md",
@@ -169,36 +129,46 @@ describe("agent definitions as plugin packages", () => {
       "skills/notes/SKILL.md",
       "package.json",
     ]) {
-      expect(agentDefinitionEntry(rel), rel).toBeNull();
+      expect(agentDefinitionEntry(rel), rel).toBe(false);
     }
   });
 
-  it("the copy lands under the contribution's agentId, carries the definition files, and nothing else", async () => {
+  it("the copy streams the definition into the Agent's directory: carried files land, the lived history and the vault never travel", async () => {
     const target = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-copy-"));
     try {
-      const files = new Map(
-        Object.entries(packageFilesOf("@acme/reviewer")).map(([k, v]) => [k, bytes(v)]),
+      const from = path.join(target, "pkg", AGENT_STATE_DIR);
+      await fs.mkdir(path.join(from, "skills", "review"), { recursive: true });
+      await fs.writeFile(
+        path.join(from, "skills", "review", "SKILL.md"),
+        skill("review", "reviews code"),
       );
-      files.set("agent_state/.vault.toml", bytes('TOKEN = "secret"\n'));
-      files.set("agent_state/memory/user/MEMORY.md", bytes("# memory\n"));
-      const copied = await copyAgentDefinition({
-        root: target,
-        projectId: "p1",
-        definition: { agentId: "reviewer", name: "reviewer", files: DEFINITION_FILES },
-        files,
-      });
-      expect(copied).toEqual(DEFINITION_FILES);
-      const dir = path.join(target, "p1", "agents", "reviewer");
+      await fs.writeFile(path.join(from, "system_config.yaml"), "version: 1\n");
+      await fs.writeFile(path.join(from, "AGENTS.md"), "# guidance\n");
+      // The lived history sits beside the definition, as it does in a worked Agent:
+      // the copy leaves it where it is.
+      await fs.mkdir(path.join(from, "memory", "user"), { recursive: true });
+      await fs.writeFile(path.join(from, "memory", "user", "MEMORY.md"), "# memory\n");
+      await fs.writeFile(path.join(from, ".vault.toml"), 'TOKEN = "secret"\n');
+
+      const toAgent = agentTargetDir(target, "p1", "reviewer");
+      const copied = await copyAgentState({ fromDir: from, toAgentDir: toAgent });
+      expect(copied).toEqual([
+        "agent_state/AGENTS.md",
+        "agent_state/skills/review/SKILL.md",
+        "agent_state/system_config.yaml",
+      ]);
       await expect(
-        fs.readFile(path.join(dir, "agent_state", "skills", "review", "SKILL.md"), "utf8"),
+        fs.readFile(path.join(toAgent, "agent_state", "AGENTS.md"), "utf8"),
+      ).resolves.toBe("# guidance\n");
+      await expect(
+        fs.readFile(path.join(toAgent, "agent_state", "skills", "review", "SKILL.md"), "utf8"),
       ).resolves.toBe(skill("review", "reviews code"));
       await expect(
-        fs.readFile(path.join(dir, "agent_state", "system_config.yaml"), "utf8"),
-      ).resolves.toBe("version: 1\n");
-      // The lived history is not copied, and nothing outside the Agent's directory lands.
-      await expect(fs.access(path.join(dir, "agent_state", ".vault.toml"))).rejects.toThrow();
-      await expect(fs.access(path.join(dir, "agent_state", "memory"))).rejects.toThrow();
-      expect(await fs.readdir(path.join(target, "p1", "agents"))).toEqual(["reviewer"]);
+        fs.access(path.join(toAgent, "agent_state", "memory", "user", "MEMORY.md")),
+      ).rejects.toThrow();
+      await expect(fs.access(path.join(toAgent, "agent_state", ".vault.toml"))).rejects.toThrow();
+      // The source is untouched: the copy is data, nothing writes back.
+      await expect(fs.readFile(path.join(from, "AGENTS.md"), "utf8")).resolves.toBe("# guidance\n");
     } finally {
       await fs.rm(target, { recursive: true, force: true });
     }
@@ -207,95 +177,50 @@ describe("agent definitions as plugin packages", () => {
   it("reinstalling updates the copy in place: carried files are replaced, the rest is kept", async () => {
     const target = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-update-"));
     try {
-      const dir = path.join(target, "p1", "agents", "reviewer", "agent_state");
-      await fs.mkdir(path.join(dir, "skills", "old"), { recursive: true });
-      await fs.writeFile(path.join(dir, "system_config.yaml"), "version: 7\n");
-      await fs.writeFile(path.join(dir, "skills", "old", "SKILL.md"), skill("old", "kept"));
-      const files = new Map(
-        Object.entries({
-          "agent_state/system_config.yaml": "version: 8\n",
-          "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
-        }).map(([k, v]) => [k, bytes(v)]),
+      const from = path.join(target, "pkg", AGENT_STATE_DIR);
+      await fs.mkdir(path.join(from, "skills", "review"), { recursive: true });
+      await fs.writeFile(path.join(from, "system_config.yaml"), "version: 8\n");
+      await fs.writeFile(
+        path.join(from, "skills", "review", "SKILL.md"),
+        skill("review", "reviews code"),
       );
-      await copyAgentDefinition({
-        root: target,
-        projectId: "p1",
-        definition: {
-          agentId: "reviewer",
-          files: ["agent_state/system_config.yaml", "agent_state/skills/review/SKILL.md"],
-        },
-        files,
-      });
-      await expect(fs.readFile(path.join(dir, "system_config.yaml"), "utf8")).resolves.toBe(
-        "version: 8\n",
-      );
-      await expect(
-        fs.readFile(path.join(dir, "skills", "review", "SKILL.md"), "utf8"),
-      ).resolves.toBe(skill("review", "reviews code"));
-      await expect(fs.readFile(path.join(dir, "skills", "old", "SKILL.md"), "utf8")).resolves.toBe(
+
+      const toAgent = agentTargetDir(target, "p1", "reviewer");
+      await fs.mkdir(path.join(toAgent, "agent_state", "skills", "old"), { recursive: true });
+      await fs.writeFile(path.join(toAgent, "agent_state", "system_config.yaml"), "version: 7\n");
+      await fs.writeFile(
+        path.join(toAgent, "agent_state", "skills", "old", "SKILL.md"),
         skill("old", "kept"),
       );
+
+      await copyAgentState({ fromDir: from, toAgentDir: toAgent });
+      await expect(
+        fs.readFile(path.join(toAgent, "agent_state", "system_config.yaml"), "utf8"),
+      ).resolves.toBe("version: 8\n");
+      await expect(
+        fs.readFile(path.join(toAgent, "agent_state", "skills", "review", "SKILL.md"), "utf8"),
+      ).resolves.toBe(skill("review", "reviews code"));
+      await expect(
+        fs.readFile(path.join(toAgent, "agent_state", "skills", "old", "SKILL.md"), "utf8"),
+      ).resolves.toBe(skill("old", "kept"));
     } finally {
       await fs.rm(target, { recursive: true, force: true });
     }
   });
 
-  it("the load that listing triggers copies the definition into the Project; a re-load after a hand deletion re-fills it", async () => {
-    const specifier = await writePackage("@acme/reviewer");
-    await writeConfig([specifier]);
-    const first = await loadPlugins(root);
-    expect(first.failed.size).toBe(0);
-    await expect(
-      fs.readFile(path.join(root, "p1", "agents", "reviewer", "agent_state", "AGENTS.md"), "utf8"),
-    ).resolves.toBe("# guidance\n");
-    // The Agent's lived history stays out of the copy.
-    await expect(
-      fs.access(path.join(root, "p1", "agents", "reviewer", "agent_state", "memory")),
-    ).rejects.toThrow();
-
-    // A directory deleted by hand is re-filled by the next load of the same package.
-    await fs.rm(path.join(root, "p1", "agents", "reviewer"), { recursive: true, force: true });
-    await loadPlugins(root);
-    await expect(
-      fs.readFile(path.join(root, "p1", "agents", "reviewer", "agent_state", "AGENTS.md"), "utf8"),
-    ).resolves.toBe("# guidance\n");
-  });
-
-  it("only the Projects that list the package get the copy", async () => {
-    await writePackage("@acme/reviewer");
-    await writeConfig(["@acme/reviewer"], "p1");
-    await writeConfig([], "p2");
-    await loadPlugins(root);
-    await expect(
-      fs.access(path.join(root, "p1", "agents", "reviewer", "agent_state", "AGENTS.md")),
-    ).resolves.toBeUndefined();
-    await expect(fs.access(path.join(root, "p2", "agents"))).rejects.toThrow();
-  });
-
-  it("a table that contributes nothing to the slot copies nothing", async () => {
+  it("a package whose table contributes a definition loads; a bare agent_state/ without the table is no plugin and loads as a refusal", async () => {
+    const good = await writePackage("@acme/reviewer");
+    // A package without a table: the loader refuses an unresolvable entry shape the same
+    // way it refuses any package that is not a plugin — no agent scan saves it.
     const dir = path.join(root, "plugins", "node_modules", "@acme", "bare");
-    await fs.mkdir(path.join(dir, "agent_state"), { recursive: true });
-    await fs.writeFile(
-      path.join(dir, "package.json"),
-      JSON.stringify({ name: "@acme/bare", version: "1.0.0", main: "./index.mjs" }),
-      "utf8",
-    );
-    await fs.writeFile(path.join(dir, "index.mjs"), "export default { modules: [] };\n", "utf8");
-    await fs.writeFile(
-      path.join(dir, "ifaces.json"),
-      JSON.stringify({
-        ifaces: {},
-        types: {},
-        modules: { util: { name: "util", kind: "component" } },
-        plugin: { modules: ["util"], replaces: [] },
-      }),
-      "utf8",
-    );
-    await fs.writeFile(path.join(dir, AGENT_STATE_DIR, "AGENTS.md"), "# guidance\n", "utf8");
-    await writeConfig(["@acme/bare"]);
+    for (const [rel, value] of Object.entries(packageFilesOf("@acme/bare"))) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), value, "utf8");
+    }
+    await writeConfig(["@acme/reviewer", "@acme/bare"]);
     const result = await loadPlugins(root);
-    expect(result.loaded.map((e) => e.specifier)).toContain("@acme/bare");
-    await expect(fs.access(path.join(root, "p1", "agents"))).rejects.toThrow();
+    expect(result.loaded.map((e) => e.specifier)).toEqual([good]);
+    expect(result.failed.get("@acme/bare")).toBeTruthy();
   });
 });
 
@@ -313,13 +238,33 @@ describe("agent definition packages on the install surface", () => {
     for (const app of apps.splice(0)) await app.cleanup();
   });
 
-  it("a zip whose package contributes a definition installs through the plugin channel — the table travels, the copy follows the load", async () => {
+  it("a zip whose package carries a table installs through the plugin channel", async () => {
     const admin = await boot();
     const zipFiles: Record<string, string | Uint8Array> = {
-      "package.json": JSON.stringify({ name: "@acme/reviewer", version: "1.0.0" }),
+      "package.json": JSON.stringify({
+        name: "@acme/reviewer",
+        version: "1.0.0",
+        main: "./index.mjs",
+      }),
       "index.mjs": "export default { modules: [] };\n",
-      "ifaces.json": agentTable(),
-      ...Object.fromEntries(DEFINITION_FILES.map((rel) => [rel, "# guidance\n"])),
+      "ifaces.json": JSON.stringify({
+        ifaces: {},
+        types: {},
+        modules: {
+          agent: {
+            name: "agent",
+            kind: "component",
+            requires: {},
+            provides: {},
+            contributes: {
+              [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
+            },
+            children: [],
+          },
+        },
+        plugin: { modules: ["agent"], replaces: [] },
+      }),
+      "agent_state/AGENTS.md": "# guidance\n",
     };
     const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
       dataBase64: Buffer.from(
@@ -353,10 +298,30 @@ describe("agent definition packages on the install surface", () => {
 
   it("a zip parses as a plugin the table it holds; the whole package travels as its files", async () => {
     const zipFiles: Record<string, string | Uint8Array> = {
-      "package.json": JSON.stringify({ name: "@acme/reviewer", version: "1.0.0" }),
+      "package.json": JSON.stringify({
+        name: "@acme/reviewer",
+        version: "1.0.0",
+        main: "./index.mjs",
+      }),
       "index.mjs": "export default { modules: [] };\n",
-      "ifaces.json": agentTable(),
-      ...Object.fromEntries(DEFINITION_FILES.map((rel) => [rel, "# guidance\n"])),
+      "ifaces.json": JSON.stringify({
+        ifaces: {},
+        types: {},
+        modules: {
+          agent: {
+            name: "agent",
+            kind: "component",
+            requires: {},
+            provides: {},
+            contributes: {
+              [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
+            },
+            children: [],
+          },
+        },
+        plugin: { modules: ["agent"], replaces: [] },
+      }),
+      "agent_state/AGENTS.md": "# guidance\n",
     };
     const archive = await parsePluginArchive(
       zipSync(Object.fromEntries(Object.entries(zipFiles).map(([k, v]) => [k, bytes(v)]))),
@@ -367,7 +332,6 @@ describe("agent definition packages on the install surface", () => {
       library: false,
       modules: true,
     });
-    // The whole package is in the files; the copy drops the lived history (agents/package.ts).
     expect(archive.files.has("agent_state/AGENTS.md")).toBe(true);
   });
 });

@@ -1,21 +1,23 @@
 /**
- * The Agent definition a plugin package contributes, and what loading does with it.
+ * The Agent definition a plugin package contributes, and how its copy travels.
  *
- * The package contributes the definition the way it contributes a sandbox provider: a
+ * The package contributes the definition the way it contributes a sandbox backend: a
  * module in its entry file whose manifest (generated into `ifaces.json`) contributes to
- * the agents mechanism's `definitions` slot — the static half names the Agent and lists
- * the definition's files, the package's `agent_state/` content as the manifest lists it.
- * Nothing here imports the package: the table is the package's static description, read
- * and checked WITHOUT executing the module. When a package loads (a boot, a Project's
- * apply after an install), the listed files are copied into the agents/ of every Project
- * that lists the package — as data: nothing in the package runs at copy time, no
- * credentials are written, nothing is registered anywhere. The Agent's lived history
- * (memory, traces, snapshots, workspaces, scratchpad, the vault) is runtime state and
- * never travels in a package.
+ * the agents mechanism's `definitions` slot. The contribution's static half names the
+ * Agent; its CODE half is the contributor copying its own `agent_state/` — the agents
+ * mechanism (services/agent-config-service.ts) calls it once per Project that lists the
+ * package, and the copy streams file by file, however big the definition is, with nothing
+ * of the package read into memory. Nothing here imports the package either: the manifest
+ * is data, read and checked WITHOUT executing the module.
+ *
+ * The Agent's lived history (memory, traces, snapshots, workspaces, scratchpad, the
+ * vault) is runtime state and never travels in a package — the copy below skips it, and
+ * a contributor's own copy does the same by sharing these helpers.
  */
 import fs from "node:fs/promises";
+import fsp from "node:fs";
 import path from "node:path";
-import { PLUGIN_NAME_PATTERN, agentDir } from "@prismshadow/penguin-core";
+import { PLUGIN_NAME_PATTERN, agentStateDir } from "@prismshadow/penguin-core";
 
 /** The package directory that holds a contributed definition (the Agent's own agent_state). */
 export const AGENT_STATE_DIR = "agent_state";
@@ -29,139 +31,65 @@ export const AGENT_DEFINITIONS_SLOT = "AgentConfigService.definitions";
 export class AgentCopyError extends Error {}
 
 /**
- * One Agent definition a package contributes, read from its ifaces.json without importing
- * the package: the contribution's static half — the Agent id the copy lands under, a
- * display name, and the definition's files, package-relative as the manifest lists them.
+ * Whether a definition-file path is one the copy may take: inside `agent_state/`, no
+ * traversal, no lived history, no dot-prefixed entry — the vault above all: a secret
+ * never travels in a package.
  */
-export interface AgentDefinition {
-  /** The Agent's id: the directory the copy lands under, as the contribution names it. */
-  agentId: string;
-  /** The contribution's display name, when the manifest carries one. */
-  name?: string;
-  /** Package-relative definition files: the contribution's `agentState` list, checked. */
-  files: string[];
-}
-
-/** Whether a definition-file path is one the copy may take: inside `agent_state/`, no traversal, no lived history. */
-export function agentDefinitionEntry(rel: string): string | null {
+export function agentDefinitionEntry(rel: string): boolean {
   const parts = rel.split("/");
-  if (parts[0] !== AGENT_STATE_DIR || parts.length < 2) return null;
-  if (parts.some((part) => part === "" || part === "." || part === "..")) return null;
+  if (parts[0] !== AGENT_STATE_DIR || parts.length < 2) return false;
+  if (parts.some((part) => part === "" || part === "." || part === "..")) return false;
   const inner = parts[1]!;
-  if (inner.startsWith(".") || RUNTIME_STATE_DIRS.includes(inner)) return null;
-  return rel;
+  if (inner.startsWith(".") || RUNTIME_STATE_DIRS.includes(inner)) return false;
+  return true;
 }
 
-/** The shape one manifest's `contributes` entry takes in the table, as read here. */
-type ModuleTable = {
-  contributes?: Record<string, ReadonlyArray<Record<string, unknown>>>;
-};
-
-/** One definition per table entry: the slot's data half, as the manifest carries it. */
-function definitionOf(entry: Record<string, unknown>): AgentDefinition | null {
-  const agentId = entry.agentId;
-  const name = entry.name;
-  const agentState = entry.agentState;
-  if (typeof agentId !== "string" || agentId.length === 0) return null;
-  if (!PLUGIN_NAME_PATTERN.test(agentId)) return null;
-  if (!Array.isArray(agentState) || !agentState.every((f) => typeof f === "string")) return null;
-  return {
-    agentId,
-    ...(typeof name === "string" && name.length > 0 ? { name } : {}),
-    files: agentState.filter((f) => f !== ""),
-  };
-}
-
-/** The definitions a parsed ifaces.json table carries: every module's contribution to the slot. */
-export function agentDefinitionsFromTable(table: unknown): AgentDefinition[] {
-  const modules = (table as { modules?: unknown } | null)?.modules;
-  if (typeof modules !== "object" || modules === null) return [];
-  const out: AgentDefinition[] = [];
-  for (const moduleTable of Object.values(modules as Record<string, ModuleTable | undefined>)) {
-    const contributions = moduleTable?.contributes?.[AGENT_DEFINITIONS_SLOT];
-    if (!Array.isArray(contributions)) continue;
-    for (const entry of contributions) {
-      if (typeof entry !== "object" || entry === null) continue;
-      const definition = definitionOf(entry);
-      if (definition !== null) out.push(definition);
-    }
-  }
-  return out;
+/** Whether an Agent id is one the copy may install under: a plugin name. */
+export function isAgentId(agentId: string): boolean {
+  return PLUGIN_NAME_PATTERN.test(agentId);
 }
 
 /**
- * The Agent definitions a package directory contributes, read from its ifaces.json. Nothing
- * is imported — the table is the package's static description, generated beside its
- * package.json.
+ * Copies a definition directory into an Agent's state, streaming: `from` is the
+ * contributor package's own `agent_state/` (it knows where it lives, from its entry
+ * module's import.meta.url), `toAgentDir` the target Agent's directory. Files the
+ * definition does not carry are left as they are; the lived history and dot-prefixed
+ * entries — the vault above all — are skipped where they sit. Each file is streamed
+ * whole (open → pump → close): a multi-gigabyte weight in the definition travels
+ * without any of it in memory.
  */
-export async function contributedAgentDefinitions(dir: string): Promise<AgentDefinition[]> {
-  let table: unknown;
-  try {
-    table = JSON.parse(await fs.readFile(path.join(dir, "ifaces.json"), "utf8"));
-  } catch {
-    return []; // no table — the package contributes no modules at all
-  }
-  return agentDefinitionsFromTable(table);
-}
-
-/**
- * The Agent definitions a package contributes, read from an in-memory file map (a loaded
- * package's files, package-relative): its ifaces.json, as the table reads.
- */
-export function agentDefinitionsFromFiles(
-  files: ReadonlyMap<string, Uint8Array>,
-): AgentDefinition[] {
-  const tableFile = files.get("ifaces.json");
-  if (tableFile === undefined) return [];
-  let table: unknown;
-  try {
-    table = JSON.parse(new TextDecoder().decode(tableFile));
-  } catch {
-    return []; // a broken table contributes nothing — the module load is the surface that refuses it
-  }
-  return agentDefinitionsFromTable(table);
-}
-
-/**
- * Copies one contributed definition into the Project: `agents/<agentId>/…`, as data —
- * nothing runs, nothing is registered, no credentials are written. Reinstalling updates
- * the definition files in place (the way a skill reinstall does); files the package does
- * not carry are left as they are, and the Agent's lived state is never in the package.
- */
-export async function copyAgentDefinition(opts: {
-  root: string;
-  projectId: string;
-  definition: AgentDefinition;
-  /** The package's files, package-relative → bytes. */
-  files: ReadonlyMap<string, Uint8Array>;
+export async function copyAgentState(opts: {
+  fromDir: string;
+  toAgentDir: string;
 }): Promise<string[]> {
-  const { agentId } = opts.definition;
-  const dir = agentDir(opts.root, opts.projectId, agentId);
   const copied: string[] = [];
-  for (const rel of opts.definition.files) {
-    if (agentDefinitionEntry(rel) === null) continue;
-    const bytes = opts.files.get(rel);
-    if (bytes === undefined) continue;
-    const file = path.join(dir, ...rel.split("/"));
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, bytes);
-    copied.push(rel);
-  }
+  const walk = async (at: string, rel: string): Promise<void> => {
+    for (const entry of await fs.readdir(at, { withFileTypes: true })) {
+      const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!agentDefinitionEntry(`${childRel}/x`)) continue; // a skipped top-level dir
+        await walk(path.join(at, entry.name), childRel);
+        continue;
+      }
+      if (!entry.isFile() || !agentDefinitionEntry(childRel)) continue;
+      const file = path.join(opts.toAgentDir, ...childRel.split("/"));
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await new Promise<void>((resolve, reject) => {
+        const source = fsp.createReadStream(path.join(at, entry.name));
+        const target = fsp.createWriteStream(file);
+        source.on("error", reject);
+        target.on("error", reject);
+        target.on("finish", () => resolve());
+        source.pipe(target);
+      });
+      copied.push(childRel);
+    }
+  };
+  await walk(opts.fromDir, "");
   return copied;
 }
 
-/** A package directory as files (relative path → bytes), `node_modules/` and `.git/` left out. */
-export async function packageFiles(dir: string): Promise<Map<string, Uint8Array>> {
-  const out = new Map<string, Uint8Array>();
-  const walk = async (at: string, rel: string): Promise<void> => {
-    for (const entry of await fs.readdir(at, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name === ".git") continue;
-      const child = path.join(at, entry.name);
-      const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
-      if (entry.isDirectory()) await walk(child, childRel);
-      else if (entry.isFile()) out.set(childRel, new Uint8Array(await fs.readFile(child)));
-    }
-  };
-  await walk(dir, "");
-  return out;
+/** The Agent directory a definition installs into: `agents/<agentId>` of the Project. */
+export function agentTargetDir(root: string, projectId: string, agentId: string): string {
+  return path.dirname(agentStateDir(root, projectId, agentId));
 }
