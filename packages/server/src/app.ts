@@ -726,14 +726,26 @@ function staticResponse(
  * on the next navigation and hashed assets stop re-downloading.
  */
 /**
- * A workbench's full-page route (`/app/<project>/<agent>/<workbench>[/:tabKey]`) is its own
+ * A workbench's full-page route (`/app/<project>/<agent>/<workbench>[/<tabKey>]`) is its own
  * installable app: served through the SPA fallback (no such file exists), its index.html's
- * manifest link stops naming the main app's manifest and names the workbench's own — the
- * app installs under the workbench's name and icon. Null for every other path.
+ * manifest link stops naming the main app's manifest and names the workbench's own — or, when
+ * the route names a tab (a fourth segment), that tab's own manifest: one app per tab, the
+ * launcher opening THAT tab. Null for every other path.
  */
-function workbenchAppPage(reqPath: string): { projectId: string; agentId: string; workbenchId: string } | null {
-  const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/.*)?$/.exec(reqPath);
-  return m === null ? null : { projectId: m[1]!, agentId: m[2]!, workbenchId: m[3]! };
+function workbenchAppPage(reqPath: string): {
+  projectId: string;
+  agentId: string;
+  workbenchId: string;
+  tabKey?: string;
+} | null {
+  const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/([^/]+))?/.exec(reqPath);
+  if (m === null) return null;
+  return {
+    projectId: m[1]!,
+    agentId: m[2]!,
+    workbenchId: m[3]!,
+    ...(m[4] === undefined ? {} : { tabKey: m[4] }),
+  };
 }
 
 /**
@@ -745,10 +757,16 @@ function workbenchAppPage(reqPath: string): { projectId: string; agentId: string
 function withWorkbenchManifestLink(content: Buffer, reqPath: string): Buffer {
   const page = workbenchAppPage(reqPath);
   if (page === null) return content;
+  const segments = [
+    page.projectId,
+    page.agentId,
+    page.workbenchId,
+    ...(page.tabKey === undefined ? [] : [`tabs/${page.tabKey}`]),
+  ].map(encodeURIComponent);
   const href =
-    `/api/projects/${encodeURIComponent(page.projectId)}` +
-    `/agents/${encodeURIComponent(page.agentId)}` +
-    `/workbenches/${encodeURIComponent(page.workbenchId)}/manifest.webmanifest`;
+    `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
+    (page.tabKey === undefined ? "" : `/tabs/${segments[3]}`) +
+    "/manifest.webmanifest";
   const html = content.toString("utf8");
   const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
   return rewritten === html ? content : Buffer.from(rewritten, "utf8");

@@ -161,6 +161,12 @@ export interface WorkbenchTab {
   key: string;
   title: string;
   titleZh?: string;
+  /**
+   * The launcher label when this tab installs as its own app (`/app/…/<key>` and its own
+   * manifest): shown under the home-screen icon. Falls back to the tab's `title` when
+   * absent — a blank declaration means that fallback, never an empty label.
+   */
+  shortName?: string;
   renderer: WorkbenchTabRenderer;
   /**
    * The tab's app icon (what the manifest contributed): the first tab that names one is the

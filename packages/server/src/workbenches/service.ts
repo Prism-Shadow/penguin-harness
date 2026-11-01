@@ -168,6 +168,13 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
   for (const m of manifests) {
     for (const entry of m.contributes[`${WEB_MODULE}.${TABS_SLOT}`] ?? []) {
       const tab = entry as unknown as WorkbenchTab;
+      // A declared launcher label survives only when it is a non-blank string; anything else
+      // falls back to the tab's title at manifest time.
+      const declared = typeof (entry as { shortName?: unknown }).shortName;
+      const declaredText =
+        declared === "string" ? ((entry as { shortName: string }).shortName ?? "").trim() : "";
+      if (declaredText === "") delete tab.shortName;
+      else tab.shortName = declaredText;
       if (keys.has(tab.key)) {
         throw new Error(
           `contribution '${tab.id}': another tab of this workbench already has the key '${tab.key}'`,

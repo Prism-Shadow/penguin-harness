@@ -48,6 +48,11 @@ export interface WebShellSlots {
     titleZh?: string;
     renderer: { builtin: string } | { iframe: { src: string } };
     /**
+     * The launcher label when the tab installs as its own app (`/app/…/<key>`): overrides
+     * the title for the PWA manifest's short_name. Absent or blank it means the title.
+     */
+    shortName?: string;
+    /**
      * The tab's app icon, optional: an SVG's markup or a PNG's bytes base64-encoded. The
      * FIRST tab that names one is the workbench's PWA app icon (what installing carries);
      * the tab strip itself draws no icon.
