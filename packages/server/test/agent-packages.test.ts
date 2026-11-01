@@ -59,7 +59,12 @@ const agentTable = () =>
         provides: {},
         contributes: {
           [AGENT_DEFINITIONS_SLOT]: [
-            { id: "agent.definition", name: "reviewer", agentState: DEFINITION_FILES },
+            {
+              id: "agent.definition",
+              agentId: "reviewer",
+              name: "reviewer",
+              agentState: DEFINITION_FILES,
+            },
           ],
         },
         children: [],
