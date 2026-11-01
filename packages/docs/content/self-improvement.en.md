@@ -145,7 +145,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   ├── rubric/                 # private scoring rubric, isolated from the Target Agent
-│   └── task_config.toml        # task metadata and optional resource budget (Roadmap packages)
+│   └── task_config.toml        # task metadata and optional resource budget
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
@@ -176,7 +176,7 @@ kind = "agent"
 | `title`, `description` | The title (without one, the directory name stands in) and an optional description; at most 200 and 2,000 characters when the server writes them |
 | `title_zh` | Optional Chinese title, preserved when importing or saving a package |
 | `description_zh` | Optional: the description in Chinese, shown instead of `description` in the Chinese interface, as a plugin's `description_zh` is; same limit |
-| `version` | `"x.y.z"` for Roadmap packages; existing `"YYYY.MM.DD.N"` date versions are also accepted |
+| `version` | `"x.y.z"` for Benchmark packages; existing `"YYYY.MM.DD.N"` date versions are also accepted |
 | `last_update` | Package update time, in ISO 8601 format |
 | `[author]` | Package author: `name`, with optional `email` and `homepage` |
 | `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
@@ -185,7 +185,7 @@ kind = "agent"
 
 `id`, `version` and `[origin]` are new in this release, and every one of them is optional when the file is read. A manifest written by an earlier release has none of them and is read as it is: under its directory name, unversioned, and with no origin. Nothing rewrites it, and nothing has to be done by hand. An `id`, `version` or `[origin]` that is present but out of shape makes the manifest unreadable (see [Benchmark status](#benchmark-status)). An earlier release that reads a manifest written by this one ignores the keys it does not know.
 
-Roadmap packages use `x.y.z` versions and retain their version when imported. A locally created Benchmark starts at the day's `.1`, another revision on the same day takes the next number, and `benchmark-design` moves the version on whenever it changes a case or the status. A Benchmark's page shows its version beside the directory path.
+Benchmark packages use `x.y.z` versions and retain their version when imported. A locally created Benchmark starts at the day's `.1`, another revision on the same day takes the next number, and `benchmark-design` moves the version on whenever it changes a case or the status. A Benchmark's page shows its version beside the directory path.
 
 [Community RFC-0001](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/rfcs/RFC-0001-benchmark.md) defines the metadata required for repository submissions. Existing Project manifests remain readable without the new fields.
 

@@ -1,4 +1,4 @@
-# 支持 Roadmap 的 Benchmark 包格式
+# 支持 Benchmark 包元信息与任务配置
 
 - **Date:** 2026-10-30
 - **Type:** feature

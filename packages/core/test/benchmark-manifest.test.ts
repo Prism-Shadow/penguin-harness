@@ -101,7 +101,7 @@ describe("benchmark_config.toml", () => {
     expect(parseToml(await readRaw(dir))).toEqual(written);
   });
 
-  it("preserves Roadmap package metadata when a package is read and saved", async () => {
+  it("preserves Benchmark package metadata when a package is read and saved", async () => {
     const dir = await benchDir("report-writing-v1");
     const written = manifest({
       version: "0.1.0",

@@ -1,4 +1,4 @@
-# Support Roadmap Benchmark packages
+# Support Benchmark package metadata and task configuration
 
 - **Date:** 2026-10-30
 - **Type:** feature

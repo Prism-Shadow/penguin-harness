@@ -174,7 +174,7 @@ function idOf(raw: unknown, dirId: string): string {
   return raw;
 }
 
-/** Package versions accept the Roadmap format and the existing date format. */
+/** Package versions accept semantic versions and the existing date format. */
 function versionOf(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
   if (

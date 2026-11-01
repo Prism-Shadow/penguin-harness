@@ -254,7 +254,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 
 ## 工作原理
 
-- **存储。** Benchmark 就是 Project 里与 `agents/` 平级的 `benchmarks/<benchmark>/` 目录，以 Benchmark id 命名。它的清单是 `benchmark_config.toml`，其中还记有包版本和这份副本的来源；每道题都有 `statement/README.md` 和 `rubric/README.md`，Roadmap 包另有 `task_config.toml`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
+- **存储。** Benchmark 就是 Project 里与 `agents/` 平级的 `benchmarks/<benchmark>/` 目录，以 Benchmark id 命名。它的清单是 `benchmark_config.toml`，其中还记有包版本和这份副本的来源；每道题都有 `statement/README.md`、`rubric/README.md` 和 `task_config.toml`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
 - **状态。** `benchmark_config.toml` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。

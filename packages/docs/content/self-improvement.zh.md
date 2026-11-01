@@ -145,7 +145,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   ├── rubric/                 # private scoring rubric, isolated from the Target Agent
-│   └── task_config.toml        # task metadata and optional resource budget (Roadmap packages)
+│   └── task_config.toml        # 任务元信息和可选资源预算
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
@@ -176,7 +176,7 @@ kind = "agent"
 | `title`、`description` | 标题（缺省时以目录名代替）和可选的描述；由服务端写入时分别不超过 200 和 2,000 个字符 |
 | `title_zh` | 可选的中文标题，导入和保存时保留 |
 | `description_zh` | 可选：中文描述，中文界面下代替 `description` 显示，与插件的 `description_zh` 一样；长度限制相同 |
-| `version` | Roadmap 包使用 `"x.y.z"`，也接受原有日期版本 `"YYYY.MM.DD.N"` |
+| `version` | Benchmark 包使用 `"x.y.z"`，也接受原有日期版本 `"YYYY.MM.DD.N"` |
 | `last_update` | 包的更新时间，使用 ISO 8601 格式 |
 | `[author]` | 包作者：`name`，以及选填的 `email` 和 `homepage` |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
@@ -185,7 +185,7 @@ kind = "agent"
 
 `id`、`version` 与 `[origin]` 是本版本新增的键，读取时都可以省略。早先版本写下的清单一个都没有，照原样读取：以目录名为 id，没有版本，也没有来源。没有任何东西改写它，也不需要手动处理。`id`、`version` 或 `[origin]` 出现了却不合规，清单就读不了（见 [Benchmark 状态](#benchmark-状态)）。早先版本读到本版本写下的清单时，会忽略它不认识的键。
 
-Roadmap 包使用 `x.y.z` 版本，导入时保留原值。本地创建的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+Benchmark 包使用 `x.y.z` 版本，导入时保留原值。本地创建的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
 
 [Community RFC-0001](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/rfcs/RFC-0001-benchmark.zh.md) 规定了仓库提交所需的元信息。已有 Project 的清单缺少新字段时仍可读取。
 
