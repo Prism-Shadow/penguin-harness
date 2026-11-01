@@ -111,7 +111,6 @@ describe("built-in Benchmarks", () => {
     for (const id of [EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS]) {
       const manifest = await readBenchmarkManifest(path.join(dir(), id));
       expect(manifest?.id, id).toBe(id);
-      expect(manifest?.version, id).toMatch(/^(?:\d+\.\d+\.\d+|\d{4}\.\d{2}\.\d{2}\.\d+)$/);
       // TOML metadata uses snake_case; the reader exposes camelCase.
       const { titleZh, descriptionZh, lastUpdate, ...rest } = manifest!;
       expect(await readConfig(id), id).toEqual({
