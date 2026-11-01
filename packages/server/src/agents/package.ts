@@ -157,7 +157,7 @@ export async function copyAgentDefinition(opts: {
   }
   const dir = agentDir(opts.root, opts.projectId, agentId);
   const copied: string[] = [];
-  for (const rel of opts.definition.agentState) {
+  for (const rel of opts.definition.files) {
     if (agentDefinitionEntry(rel) === null) continue;
     const bytes = opts.files.get(rel);
     if (bytes === undefined) continue;
