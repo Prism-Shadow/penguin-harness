@@ -46,6 +46,27 @@ export function commandForArgv(program: Command, argv: string[]): Command {
   return cmd;
 }
 
+/**
+ * The word commander would call an unknown command, when a help flag is present but the
+ * word is not a command. `--help` is answered before commander rejects a stray word, so
+ * `penguin machine --help` printed the top-level help and exited 0 while the bare word
+ * errored — the help flag hid the very thing the user was looking up. Root-level only:
+ * the root holds no value-taking option, so the first bare word is a command name or a
+ * stray word, exactly the case the bare call fails on. A word that names a real command,
+ * an argument belonging to one, or any deeper level walks on — it is commander's to
+ * answer, unchanged.
+ *
+ * Returns the stray word, or null when the help request belongs where it always did
+ * (no help flag, or the word names a command).
+ */
+export function helpWouldHideUnknownCommand(program: Command, argv: string[]): string | null {
+  if (!argv.some((token) => token === "-h" || token === "--help")) return null;
+  const word = argv.find((token) => !token.startsWith("-"));
+  if (word === undefined) return null;
+  const named = program.commands.some((c) => c.name() === word || c.aliases().includes(word));
+  return named ? null : word;
+}
+
 /** Full spelling of a command including its ancestors (`penguin schedule add`). */
 function commandPath(cmd: Command): string {
   const parts: string[] = [];

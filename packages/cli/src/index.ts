@@ -23,7 +23,7 @@ import { registerBrowserCommand } from "./commands/browser.js";
 import { registerServeCommands } from "./commands/serve.js";
 import { registerUpdateCommand } from "./commands/update.js";
 import { registerVersionCommand } from "./commands/version.js";
-import { reportCommanderError } from "./usage-error.js";
+import { helpWouldHideUnknownCommand, reportCommanderError } from "./usage-error.js";
 import { defaultMessages } from "./i18n.js";
 
 /**
@@ -72,6 +72,15 @@ export async function cli(argv: string[]): Promise<number> {
   const priorExitCode = process.exitCode;
   process.exitCode = undefined;
   try {
+    // Commander answers `--help` before it would reject a stray word, so an unknown word
+    // riding the help flag printed the top-level help and exited 0. The bare word fails
+    // the same way without the flag, so the help request takes the bare path: raising the
+    // same commander failure here lets `reportCommanderError` below say exactly what the
+    // bare call says (see usage-error.ts).
+    const hidden = helpWouldHideUnknownCommand(program, argv);
+    if (hidden !== null) {
+      throw new CommanderError(1, "commander.excessArguments", `unknown command '${hidden}'`);
+    }
     await program.parseAsync(argv, { from: "user" });
     return typeof process.exitCode === "number" ? process.exitCode : 0;
   } catch (err) {

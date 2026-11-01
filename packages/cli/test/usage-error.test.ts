@@ -8,7 +8,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
-import { commandForArgv } from "../src/usage-error.js";
+import { commandForArgv, helpWouldHideUnknownCommand } from "../src/usage-error.js";
 
 let stdout: string[];
 let stderr: string[];
@@ -93,6 +93,55 @@ describe("unknown option and unknown command", () => {
       expect(err()).toContain(t.usage.unknownCommand("nosuchthing"));
       expect(err()).toContain("penguin");
     }
+  });
+});
+
+// `--help` used to be answered before the root rejected a stray word, so
+// `penguin machine --help` printed the top-level help and exited 0 while the bare word
+// errored. The help request now takes the bare word's path — the same sentence and usage
+// hint byte for byte — and the help text itself stays away from stdout.
+describe("an unknown word must not hide behind --help", () => {
+  it("the bare word's error answers the help request too, in each language", async () => {
+    for (const lang of ["en", "zh"] as const) {
+      process.env.PENGUIN_LANG = lang;
+      const t = getMessages(lang);
+      for (const [word, argv] of [
+        ["machine", ["machine", "--help"]],
+        ["plugins", ["plugins", "-h"]],
+        ["machine", ["--help", "machine"]],
+      ] as const) {
+        stdout.length = 0;
+        stderr.length = 0;
+        expect(await cli([...argv])).toBe(1);
+        expect(stdout.join("")).toBe("");
+        expect(err()).toContain(t.usage.unknownCommand(word));
+      }
+    }
+  });
+
+  it("the help spelling answers exactly what the bare word answers", async () => {
+    for (const lang of ["en", "zh"] as const) {
+      process.env.PENGUIN_LANG = lang;
+      stderr.length = 0;
+      expect(await cli(["machine"])).toBe(1);
+      const bareErr = err();
+      stderr.length = 0;
+      expect(await cli(["machine", "--help"])).toBe(1);
+      expect(err()).toBe(bareErr);
+    }
+  });
+
+  it("known commands and the top level still answer help with exit 0", async () => {
+    process.env.PENGUIN_LANG = "en";
+    stdout.length = 0;
+    stderr.length = 0;
+    expect(await cli(["--help"])).toBe(0);
+    expect(stdout.join("")).toContain("Usage: penguin");
+    expect(err()).toBe("");
+    stdout.length = 0;
+    expect(await cli(["plugin", "--help"])).toBe(0);
+    expect(stdout.join("")).toContain("Usage: penguin plugin");
+    expect(err()).toBe("");
   });
 });
 
