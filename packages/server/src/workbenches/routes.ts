@@ -82,10 +82,9 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
+import { WorkbenchDisabled, contributedAppIcon, WorkbenchNotFound } from "./service.js";
 import { WORKBENCH_ICONS, workbenchManifest } from "./manifest.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
-import { contributedAppIcon } from "./service.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -320,12 +319,7 @@ export function manifestRoutes(workbenches: Workbenches): Hono<AppEnv> {
   app.get("/:id/tabs/:tabKey/manifest.webmanifest", async (c) => {
     const projectId = requireValidId(c as never, "projectId");
     const agentId = requireValidId(c as never, "agentId");
-    const body = await manifest(
-      projectId,
-      agentId,
-      c.req.param("id"),
-      c.req.param("tabKey"),
-    );
+    const body = await manifest(projectId, agentId, c.req.param("id"), c.req.param("tabKey"));
     return c.body(body, 200, MANIFEST_HEADERS);
   });
   return app;

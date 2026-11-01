@@ -144,7 +144,9 @@ describe("web static caching, from a pushed web", () => {
     // path's own project/agent/id segments.
     const page = await t.app.request("/app/proj-1/agent-1/wb-9");
     const html = await page.text();
-    expect(html).toContain('href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"');
+    expect(html).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"',
+    );
     // The rewritten bytes are a different representation: their own ETag, so a client
     // holding the plain page's validator re-downloads instead of keeping a stale link.
     expect(page.headers.get("etag")).not.toBe(await etagOfIndex());
