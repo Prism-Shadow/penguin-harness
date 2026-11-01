@@ -14,6 +14,10 @@ export type Language = "en" | "zh";
 /** Installer locations are localized at the message boundary, not embedded in update logic. */
 export type InstallerSource = "configured" | "oss" | "github";
 
+/** Readiness probe failure classes; selects which hint `webProbeFailed` appends. */
+export type WebProbeFailureKind =
+  "timeout" | "refused" | "reset" | "permission" | "dns" | "unknown";
+
 /** Resolve the language from the env var; `zh` matches exactly, everything else falls back to English (see comment #2). */
 export function resolveLanguage(): Language {
   const v = (process.env.PENGUIN_LANG ?? "").trim().toLowerCase();
@@ -249,7 +253,6 @@ export interface Messages {
   };
   /** `penguin plugin`: the plugins installed on the server (an admin's, via the local API token). */
   plugin: {
-    desc: string;
     listDesc: string;
     installDesc: string;
     /** `install --overwrite`: replace another version of an uploaded package directory. */
@@ -823,9 +826,16 @@ export interface Messages {
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
   chatThinkingConfigured(): string;
-  /** `penguin auth`: help text and every line the command can print. */
+  serve: {
+    port: string;
+    host: string;
+    noOpen: string;
+    /** Printed by the supervising process as it relaunches the service on a restart request (the web UI's "restart to update"). */
+    restarting: string;
+    app: string;
+  };
+  /** `penguin server reset-admin-password`: help text and every line the command can print. */
   auth: {
-    desc: string;
     loginDesc: string;
     statusDesc: string;
     logoutDesc: string;
@@ -857,14 +867,24 @@ export interface Messages {
     noServer(root: string): string;
     failed(detail: string): string;
   };
+  resetPassword: {
+    /** Refusal while a live server owns the data root (stop it first, then retry). */
+    serverRunning(url: string): string;
+    /** The root has no Web database: nothing to reset. */
+    noDatabase(dbPath: string): string;
+    /** The database exists but the admin was never seeded. */
+    noAdmin(): string;
+    /** Success header, printed above the framed credentials notice. */
+    done(root: string): string;
+    /** Hint printed below the notice. */
+    next(): string;
+  };
   /** `penguin version`: help text only — the command's output is data, never prose. */
   version: {
-    description: string;
     json: string;
   };
   /** `penguin update`: help text and every line the command can print. */
   update: {
-    desc: string;
     check: string;
     releaseOpt: string;
     yes: string;
@@ -908,52 +928,21 @@ export interface Messages {
     installerFetchFailed(sources: InstallerSource[]): string;
   };
 
-  /** `penguin exec <package> <args…>`: help text and every line it can print. */
+  /** `penguin exec <package> [args…]`: a plugin's command, run by the server, named by its package. */
   exec: {
-    desc: string;
     /** The <package> argument's help text. */
     packageArg: string;
     /** The variadic arguments' help text. */
     argsArg: string;
-    /** No contributing package goes by the name given. */
+    /** No plugin on the server contributes commands under the name given. */
     unknownPackage(name: string): string;
-    /** The contributing packages, listed after the unknown-name error. */
+    /** The plugins that do, listed after the unknown-name error (empty: none does). */
     candidates(packages: readonly string[]): string;
     /** The short name names more than one package: only the full npm name is unambiguous. */
     shortCollision(short: string, packages: readonly string[]): string;
   };
 
-  /** `penguin plugin check`: help text and the report's sections. */
-  pluginCheck: {
-    desc: string;
-    checkDesc: string;
-    /** Report section: keys two or more packages contribute. */
-    ambiguousSection: string;
-    /** One ambiguous key, with every package that contributes it. */
-    ambiguousLine(key: string, packages: readonly string[]): string;
-    /** Report section: registrations refused by the ownership rules. */
-    invalidSection: string;
-    /** One invalid registration, with the rendered reason. */
-    invalidLine(pkg: string, id: string, key: string, reason: string): string;
-    /** Reason: the key's root segment is one the host keeps for itself. */
-    reasonReserved(root: string): string;
-    /** Reason: the key sits under another package's key that package did not open. */
-    reasonForeign(prefix: string, owner: string): string;
-    /** Reason: the package registers one key more than once. */
-    reasonDuplicate(): string;
-    /** Reason: the entry's shape is not what dispatch reads (the validator's own words). */
-    reasonMalformed(detail: string): string;
-    /** Report section: skill texts that call an ambiguous command. */
-    skillsSection: string;
-    /** One hit: the skill file (relative to its package) and the line number. */
-    skillLine(file: string, line: number): string;
-    /** Report section: sources that could not be read. */
-    faultsSection: string;
-    /** Printed when nothing was found. */
-    clean(): string;
-  };
-
-  /** The host's ambiguity report: one argv matched commands from two or more packages. */
+  /** The ambiguity report: one argv matched commands from two or more plugins. */
   ambiguous: {
     /** The header; `words` is the argv's command words, `packages` the matching package count. */
     header(words: string, packages: number): string;
@@ -1164,6 +1153,14 @@ export interface Messages {
   vaultKeyMissing(key: string): string;
   vaultListTitle(): string;
   vaultListEmpty(): string;
+  /** URL prompt once the `penguin web` service is ready. */
+  webReady(url: string): string;
+  /** Refusal when `penguin server` finds a live server on the same data root. */
+  serverAlreadyRunning(url: string): string;
+  /** Notice when `penguin web` finds a live server on the same data root (it opens that instance instead). */
+  webAlreadyRunning(url: string): string;
+  /** Diagnostic shown after the `penguin web` ready-poll times out (15s). */
+  webProbeFailed(url: string, detail: string, kind: WebProbeFailureKind, port: number): string;
 }
 
 function headerEn(
@@ -1414,7 +1411,6 @@ const en: Messages = {
     colRole: () => "ROLE",
   },
   plugin: {
-    desc: "Manage the plugins installed on the server (admin)",
     listDesc:
       "List the server modules the Project lists and the plugins of Skills, hooks or MCP servers installed on the server",
     installDesc:
@@ -1969,8 +1965,14 @@ const en: Messages = {
       `Agent ${agentId} has no sessions in project ${projectId} yet: start one with \`penguin run -m "..."\` or \`penguin chat\`.`,
   },
   chatThinkingConfigured: () => "agent default",
+  serve: {
+    port: "Listen port (falls back to the PORT env var, default 7364)",
+    host: "Listen address (falls back to the HOST env var, default 127.0.0.1)",
+    noOpen: "Do not open a browser automatically",
+    restarting: "Restarting the service to apply the update…",
+    app: "Open one workbench page as the whole app: <project>/<agent>/<workbench>[/<tab>] (Ctrl+P or Ctrl+Shift+P in the page opens the command palette to leave)",
+  },
   auth: {
-    desc: "Sign in to a PenguinHarness server from the terminal",
     loginDesc: "Sign in with a password and remember the session",
     statusDesc: "Show the remembered session, if there is one",
     logoutDesc: "Revoke the remembered session and forget it",
@@ -2005,12 +2007,25 @@ const en: Messages = {
       `${root} has no web.db — no server has ever run on this data root, so there is no account to mint for.`,
     failed: (detail) => `Could not mint a token: ${detail}`,
   },
+  resetPassword: {
+    serverRunning: (url) =>
+      `A PenguinHarness server is running on this data root: ${url}\n` +
+      `Stop it first, then run \`penguin server reset-admin-password\` again.`,
+    noDatabase: (dbPath) =>
+      `No Web database at ${dbPath} — nothing to reset. ` +
+      `Start the service once (\`penguin web\`) to create the admin account.`,
+    noAdmin: () =>
+      "The Web database has no admin account yet — nothing to reset. " +
+      "Start the service once (`penguin web`) to seed it.",
+    done: (root) =>
+      `The admin account on data root ${root} was returned to its unclaimed state, and all of its sign-in sessions were revoked.`,
+    next: () =>
+      "Start the service (`penguin web`): it will print a sign-in link that claims the account — usable until a password is set.",
+  },
   version: {
-    description: "Show which build is running",
     json: "Print the full build info as JSON (the body of GET /api/version)",
   },
   update: {
-    desc: "Upgrade this PenguinHarness install in place",
     check: "Only report the current and latest versions; change nothing",
     releaseOpt:
       "Target a specific release tag instead of the latest (e.g. v0.1.2 or 0.1.2); named --release because -v/--version is the CLI's own version flag",
@@ -2080,41 +2095,21 @@ const en: Messages = {
   },
 
   exec: {
-    desc: "Run one contributing package's command by naming the package (the unambiguous form of a command two packages contribute)",
-    packageArg:
-      "The contributing package: its unique short name, or its npm name when the short one collides",
+    packageArg: "The plugin: its unique short name, or its npm name when the short one collides",
     argsArg: "The command and its arguments, as they would follow `penguin`",
-    unknownPackage: (name) => `No contributing package is named '${name}'.`,
-    candidates: (packages) => `Contributing packages: ${packages.join(", ")}.`,
+    unknownPackage: (name) => `No plugin on the server contributes commands as '${name}'.`,
+    candidates: (packages) =>
+      packages.length === 0
+        ? "No plugin on the server contributes commands."
+        : `Plugins with commands: ${packages.join(", ")}.`,
     shortCollision: (short, packages) =>
-      `'${short}' names more than one package (${packages.join(", ")}); pass the full npm name.`,
-  },
-
-  pluginCheck: {
-    desc: "The plugin surface of this CLI: what the resolved packages contribute",
-    checkDesc:
-      "Report ambiguous keys, invalid registrations, and skills that call an ambiguous command",
-    ambiguousSection:
-      "Ambiguous keys (two or more packages contribute the same key; the invocation reports them):",
-    ambiguousLine: (key, packages) => `  ${key} — contributed by ${packages.join(", ")}`,
-    invalidSection: "Invalid registrations (ignored by help and dispatch):",
-    invalidLine: (pkg, id, key, reason) => `  ${pkg} ${id} '${key}': ${reason}`,
-    reasonReserved: (root) => `the root segment '${root}' is reserved for the CLI itself`,
-    reasonForeign: (prefix, owner) =>
-      `it sits under '${prefix}', which ${owner} did not open to other packages`,
-    reasonDuplicate: () => "the package registers this key more than once",
-    reasonMalformed: (detail) => detail,
-    skillsSection:
-      "Skills that call an ambiguous command (name the package with `penguin exec <package> …`):",
-    skillLine: (file, line) => `  ${file}:${line}`,
-    faultsSection: "Faults (a source could not be read):",
-    clean: () => "No problems found.",
+      `'${short}' names more than one plugin (${packages.join(", ")}); pass the full npm name.`,
   },
 
   ambiguous: {
     header: (words, packages) =>
-      `Ambiguous command: '${words}' matches commands from ${packages} packages. Run the one you meant:`,
-    note: () => "Note: after it runs, tell the user which package's command that was.",
+      `Ambiguous command: '${words}' matches commands from ${packages} plugins. Run the one you meant:`,
+    note: () => "Note: after it runs, tell the user which plugin's command that was.",
   },
 
   header: headerEn,
@@ -2320,6 +2315,28 @@ const en: Messages = {
   vaultKeyMissing: (key) => `Vault entry ${key} does not exist.`,
   vaultListTitle: () => "Vault environment variables (values masked):",
   vaultListEmpty: () => "The vault is empty. Add one with `penguin config vault set`.",
+  webReady: (url) => `Web UI ready: ${url}`,
+  serverAlreadyRunning: (url) =>
+    `A PenguinHarness server is already running on this data root: ${url}\n` +
+    `Stop it first, or point PENGUIN_HOME at a separate data root.`,
+  webAlreadyRunning: (url) =>
+    `Already running on this data root — opening the existing instance: ${url}`,
+  webProbeFailed: (url, detail, kind, port) => {
+    const hint = {
+      timeout:
+        `The connection timed out. Check whether a firewall or security application is blocking it. ` +
+        `Allow PenguinHarness to communicate on local port ${port}.`,
+      refused:
+        "Nothing accepted the connection. Check whether the server exited or HOST/PORT points somewhere else.",
+      reset:
+        "The connection closed before an HTTP response. Check local security software and retry.",
+      permission:
+        "The operating system denied the connection. Check firewall or security policy permissions.",
+      dns: "The host name could not be resolved. Check --host or HOST.",
+      unknown: `Open ${url} manually after the server is ready.`,
+    }[kind];
+    return `Server readiness check failed for ${url}.\nLast probe error: ${detail}\n${hint}`;
+  },
 };
 
 const zh: Messages = {
@@ -2520,7 +2537,6 @@ const zh: Messages = {
     colRole: () => "角色",
   },
   plugin: {
-    desc: "管理服务端安装的插件（管理员）",
     listDesc: "列出 Project 启用的服务端模块，以及服务端安装的 Skill / 钩子 / MCP Server 插件",
     installDesc:
       "把插件安装到服务端：npm 包名（@scope/name、name@1.2.3）、指向 git 仓库或 tarball 的 https 链接，或本地插件包目录（先用插件库的读取器校验，去掉 node_modules 打成 zip 后上传）。服务端模块插件会立即载入，正在进行的 Agent 运行会被中止",
@@ -3034,8 +3050,14 @@ const zh: Messages = {
       `Agent ${agentId} 在 Project ${projectId} 下还没有任何会话：先用 \`penguin run -m "..."\` 或 \`penguin chat\` 开始一个。`,
   },
   chatThinkingConfigured: () => "Agent 配置值",
+  serve: {
+    port: "监听端口（其次取环境变量 PORT，缺省 7364）",
+    host: "监听地址（其次取环境变量 HOST，缺省 127.0.0.1）",
+    noOpen: "不自动打开浏览器",
+    restarting: "正在重启服务以应用更新…",
+    app: "以某个 workbench 页面占满整个应用打开：<project>/<agent>/<workbench>[/<tab>]（页面内按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可退出）",
+  },
   auth: {
-    desc: "在终端里登录 PenguinHarness 服务",
     loginDesc: "用密码登录并记住会话",
     statusDesc: "显示已记住的会话",
     logoutDesc: "吊销并忘记已记住的会话",
@@ -3068,12 +3090,22 @@ const zh: Messages = {
     noServer: (root) => `${root} 上没有 web.db——该数据根上从未运行过服务，因此没有可签发的账号。`,
     failed: (detail) => `签发失败：${detail}`,
   },
+  resetPassword: {
+    serverRunning: (url) =>
+      `该数据根目录已有 PenguinHarness 服务在运行：${url}\n` +
+      `请先停止它，再重新执行 \`penguin server reset-admin-password\`。`,
+    noDatabase: (dbPath) =>
+      `${dbPath} 处没有 Web 数据库，无可重置。请先执行 \`penguin web\` 启动一次服务以创建管理员账号。`,
+    noAdmin: () =>
+      "Web 数据库中尚无管理员账号，无可重置。请先执行 `penguin web` 启动一次服务完成种子创建。",
+    done: (root) => `数据根目录 ${root} 的管理员账号已退回未认领状态，其全部登录会话已吊销。`,
+    next: () =>
+      "启动服务（`penguin web`），它会打印一条登录链接用于认领该账号——在密码被设置之前一直有效。",
+  },
   version: {
-    description: "显示当前运行的是哪个构建",
     json: "以 JSON 输出完整构建信息（即 GET /api/version 的响应体）",
   },
   update: {
-    desc: "原地升级当前的 PenguinHarness 安装",
     check: "只报告当前版本与最新版本，不做任何修改",
     releaseOpt:
       "指定目标版本而不是最新版（如 v0.1.2 或 0.1.2）；之所以叫 --release，是因为 -v/--version 是 CLI 自身的版本参数",
@@ -3139,36 +3171,21 @@ const zh: Messages = {
   },
 
   exec: {
-    desc: "点名贡献包来执行其命令（两个包贡献同一命令时的无歧义形式）",
-    packageArg: "贡献包：短名唯一时可用短名，撞名时用 npm 全名",
+    packageArg: "插件：短名唯一时可用短名，撞名时用 npm 全名",
     argsArg: "命令与其参数，即跟在 `penguin` 后面的内容",
-    unknownPackage: (name) => `没有名为 '${name}' 的贡献包。`,
-    candidates: (packages) => `贡献命令的包：${packages.join("、")}。`,
+    unknownPackage: (name) => `服务端没有以 '${name}' 为名贡献命令的插件。`,
+    candidates: (packages) =>
+      packages.length === 0
+        ? "服务端没有贡献命令的插件。"
+        : `贡献命令的插件：${packages.join("、")}。`,
     shortCollision: (short, packages) =>
-      `短名 '${short}' 对应多个包（${packages.join("、")}），请传 npm 全名。`,
-  },
-
-  pluginCheck: {
-    desc: "本 CLI 的插件面：已解析的包各贡献了什么",
-    checkDesc: "报告歧义 key、无效注册，以及调用了歧义命令的技能",
-    ambiguousSection: "歧义 key（两个及以上包贡献了同一 key；调用时会报出）：",
-    ambiguousLine: (key, packages) => `  ${key} —— 由 ${packages.join("、")} 贡献`,
-    invalidSection: "无效注册（不进帮助与分派）：",
-    invalidLine: (pkg, id, key, reason) => `  ${pkg} ${id} '${key}'：${reason}`,
-    reasonReserved: (root) => `根段 '${root}' 为 CLI 自身保留`,
-    reasonForeign: (prefix, owner) => `它位于 '${prefix}' 之下，而 ${owner} 未向其他包开放该子树`,
-    reasonDuplicate: () => "该包对同一 key 注册了多次",
-    reasonMalformed: (detail) => detail,
-    skillsSection: "调用了歧义命令的技能（用 `penguin exec <包> …` 点名包执行）：",
-    skillLine: (file, line) => `  ${file}:${line}`,
-    faultsSection: "故障（某个来源读不出来）：",
-    clean: () => "没有发现问题。",
+      `短名 '${short}' 对应多个插件（${packages.join("、")}），请传 npm 全名。`,
   },
 
   ambiguous: {
     header: (words, packages) =>
-      `命令有歧义：'${words}' 同时命中 ${packages} 个包的命令。请执行你所指的那一行：`,
-    note: () => "注：执行之后，把实际运行的是哪个包的命令告诉用户。",
+      `命令有歧义：'${words}' 同时命中 ${packages} 个插件的命令。请执行你所指的那一行：`,
+    note: () => "注：执行之后，把实际运行的是哪个插件的命令告诉用户。",
   },
 
   header: headerZh,
@@ -3350,6 +3367,21 @@ const zh: Messages = {
   vaultKeyMissing: (key) => `vault 条目 ${key} 不存在。`,
   vaultListTitle: () => "vault 环境变量（值已掩码）：",
   vaultListEmpty: () => "vault 为空。用 `penguin config vault set` 添加。",
+  webReady: (url) => `Web 界面已就绪：${url}`,
+  serverAlreadyRunning: (url) =>
+    `该数据根目录已有 PenguinHarness 服务在运行：${url}\n请先停止它，或用 PENGUIN_HOME 指定另一个数据根目录。`,
+  webAlreadyRunning: (url) => `该数据根目录已有服务在运行，打开既有实例：${url}`,
+  webProbeFailed: (url, detail, kind, port) => {
+    const hint = {
+      timeout: `连接超时。请检查防火墙或安全软件是否拦截。请允许 PenguinHarness 在本机端口 ${port} 上通信。`,
+      refused: "没有进程接受连接。请检查服务是否已经退出，或 HOST/PORT 是否指向了其他地址。",
+      reset: "连接在收到 HTTP 响应前已关闭。请检查本机安全软件后重试。",
+      permission: "操作系统拒绝了连接。请检查防火墙或安全策略权限。",
+      dns: "无法解析主机名。请检查 --host 或 HOST。",
+      unknown: `请在服务就绪后手动打开 ${url}。`,
+    }[kind];
+    return `服务探活失败：${url}\n最后一次探测错误：${detail}\n${hint}`;
+  },
 };
 
 /** Get the message set for a language. */

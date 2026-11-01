@@ -20,9 +20,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "build": "tsup",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
+    "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
+    "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
+    "build": "pnpm gen:ifaces && tsup",
     "penguin": "node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {

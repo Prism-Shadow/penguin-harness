@@ -25,3 +25,4 @@ export type {
 } from "./config.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
+export type { PluginCliCommands, PluginCliCommandsSlots } from "./cli-commands.js";

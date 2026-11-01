@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getMessages, maskApiKey, resolveLanguage } from "../src/i18n.js";
-import { CostCommand, OrgCommand, RunCommand, SessionCommand } from "../src/cli-commands.js";
-import { moduleCliCommandEntries } from "@prismshadow/penguin-core/plugin";
+import { bootBuiltinCommands } from "../src/cli-commands.js";
 
 describe("resolveLanguage (env PENGUIN_LANG, default en)", () => {
   let prev: string | undefined;
@@ -42,13 +41,9 @@ describe("getMessages", () => {
     // Command/option descriptions are also localized.
     expect(getMessages("zh").config.addDesc).toContain("模型");
     expect(getMessages("en").config.addDesc).toContain("model");
+    // config lang copy.
+    expect(getMessages("zh").config.langDesc).toContain("语言");
     expect(getMessages("en").config.langDesc).toContain("language");
-    // The top-level command summary now lives only in the @Module entry declaration.
-    const entryOf = (cls: unknown) => moduleCliCommandEntries(cls as never)![0]!;
-    expect(entryOf(RunCommand).summary.en).toContain("Task");
-    expect(entryOf(CostCommand).summary.en.length).toBeGreaterThan(0);
-    expect(entryOf(OrgCommand).summary.zh).not.toBe(entryOf(OrgCommand).summary.en);
-    expect(entryOf(SessionCommand).summary.zh).not.toBe(entryOf(SessionCommand).summary.en);
     expect(getMessages("en").langSet("zh", "/x/.zshrc")).toContain("/x/.zshrc");
     expect(getMessages("zh").langInvalid("fr")).toContain("fr");
     // Thinking-level control and tool-output collapsing (issue #305).
@@ -107,10 +102,6 @@ describe("getMessages", () => {
       expect(m.log.desc.length).toBeGreaterThan(0);
       expect(m.agent.lsDesc.length).toBeGreaterThan(0);
       expect(m.project.lsDesc.length).toBeGreaterThan(0);
-      // The cost summary lives in the @Module entry declaration now.
-      expect(moduleCliCommandEntries(CostCommand as never)![0]!.summary.en.length).toBeGreaterThan(
-        0,
-      );
       expect(m.schedule.lsDesc.length).toBeGreaterThan(0);
       // Interpolating messages carry their arguments in both languages.
       expect(m.ls.empty("proj-x")).toContain("proj-x");
@@ -196,7 +187,6 @@ describe("getMessages", () => {
     );
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
-    expect(getMessages("zh").input.desc).not.toBe(getMessages("en").input.desc);
     expect(getMessages("zh").session.renamed("s", "t")).not.toBe(
       getMessages("en").session.renamed("s", "t"),
     );
@@ -217,6 +207,21 @@ describe("getMessages", () => {
       expect(lines[3]).toContain("mod");
       expect(lines[4]).toContain("http://localhost:7368 (/dev)");
     }
+  });
+});
+
+describe("command summaries (declared with each command)", () => {
+  it("every command of the CLI is summarized in both languages, and not with one text twice", async () => {
+    const summaries = new Map(
+      (await bootBuiltinCommands()).map((command) => [command.key, command.summary]),
+    );
+    for (const summary of summaries.values()) {
+      expect(summary.en.length).toBeGreaterThan(0);
+      expect(summary.zh.length).toBeGreaterThan(0);
+      expect(summary.zh).not.toBe(summary.en);
+    }
+    expect(summaries.get("run")!.en).toContain("Task");
+    expect(summaries.get("cost")!.zh).toContain("Token");
   });
 });
 

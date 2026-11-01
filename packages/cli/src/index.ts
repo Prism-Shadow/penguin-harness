@@ -1,85 +1,32 @@
 /**
- * The whole CLI as a plain function — one host plus the command contributions it
- * discovers, returning an exit code.
+ * The whole CLI as a plain function: commander commands over
+ * @prismshadow/penguin-core, returning an exit code.
  *
  * Built twice: into this package's `penguin` binary (penguin.ts), and — as the CLI
  * artifact pushed to POST /api/hmr/upgrade — into the bundle `penguin-hmr` loads from
  * the HMR store instead (see scripts/deploy.mjs).
  *
- * THE HOST keeps what dispatch needs to exist before anything can be named: `--version`
- * (the same string `penguin version` prints), and its own reserved commands — auth, exec,
- * plugin, update, version — registered eagerly, their code statically imported. Their
- * root segments are closed to contributions (RESERVED_ROOTS), so no package can shadow
- * them.
- *
- * THE CONTRIBUTIONS are everything else. One discovery reads the `cli.commands` data
- * halves — the CLI's own table, the server package's declaration module, the plugin
- * closure of the data root — without importing any command's code (contributions.ts).
- * Then one decision, before the parse:
- *
- *   - argv names commands from TWO OR MORE packages → the ambiguity report: one
- *     copyable `penguin exec <package> …` line per candidate, exit code 2. Nothing runs;
- *     naming the package is the caller's call to make.
- *   - argv names ONE package's commands → that package's code half loads now (the only
- *     import of it anywhere) and registers on the program; commander's own nesting
- *     handles the rest (`server` + `server.status` from one package never collide).
- *   - argv names none (bare `penguin`, `--help`, a reserved command, a stray word) →
- *     PHANTOM registration: every discovered command as a plain commander tree carrying
- *     its summary — the data half alone — so help and completion list the world without
- *     loading a line of any package's code.
+ * The CLI's own commands are contributions to `CliCommandsModule` (cli-commands.ts): the
+ * host boots that module, turns each command's key into its node on the program, writes
+ * the summary as its description and lets the command fill the node in. A first word that
+ * names none of them may be a plugin's command, which the server lists and runs
+ * (plugin-cli-commands.ts).
  */
 import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
-import { registerAuthCommand } from "./commands/auth.js";
-import { registerExecCommand, shellQuote } from "./commands/exec.js";
-import { registerPluginCommand } from "./commands/plugin.js";
-import { registerUpdateCommand } from "./commands/update.js";
-import { registerVersionCommand } from "./commands/version.js";
+import type { CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import { bootBuiltinCommands, builtinContext } from "./cli-commands.js";
+import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";
-import { defaultMessages, resolveLanguage } from "./i18n.js";
-import { cliContext } from "./context.js";
-import { commandOnChain } from "@prismshadow/penguin-core/plugin";
-import {
-  cliSummary,
-  discoverCliCommands,
-  matchingCommands,
-  matchingPackages,
-  registerPackageCommands,
-  type CliDiscovered,
-} from "./contributions.js";
+import { getMessages, resolveLanguage } from "./i18n.js";
 
-/** The help/completion half of the discovery: every command as a summary-carrying tree. */
-function registerPhantoms(
-  program: Command,
-  commands: readonly CliDiscovered[],
-  language: "en" | "zh",
-): void {
-  const listed = new Set<string>();
-  for (const { entry } of commands) {
-    // Two packages contributing the same key list once here; the invocation is where
-    // that gets reported, and a doubled help line helps nobody.
-    if (listed.has(entry.key)) continue;
-    listed.add(entry.key);
-    (commandOnChain(program, entry.key) as Command).description(cliSummary(entry, language));
+/** The node for a dotted key under `program`, found or built one segment at a time. */
+function commandAt(program: Command, key: string): Command {
+  let node = program;
+  for (const segment of key.split(".")) {
+    node = node.commands.find((c) => c.name() === segment) ?? node.command(segment);
   }
-}
-
-/** The ambiguity report: header, one exec line per candidate package, the closing note. */
-function reportAmbiguous(
-  argv: readonly string[],
-  pkgs: readonly string[],
-  t: ReturnType<typeof defaultMessages>,
-): number {
-  const words = argv.filter((arg) => !arg.startsWith("-")).join(" ");
-  process.stderr.write(`${t.ambiguous.header(words, pkgs.length)}\n`);
-  const rest = argv.map(shellQuote).join(" ");
-  for (const pkg of pkgs) {
-    // The package's npm name (or whatever identity its package.json declared) is what
-    // `exec` accepts verbatim; quoted so the line pastes into a shell as one command.
-    process.stderr.write(`  penguin exec ${shellQuote(pkg)} ${rest}\n`);
-  }
-  process.stderr.write(`${t.ambiguous.note()}\n`);
-  return 2;
+  return node;
 }
 
 /**
@@ -88,8 +35,8 @@ function reportAmbiguous(
  * read back then restored, so calling this more than once in a process is safe.
  */
 export async function cli(argv: string[]): Promise<number> {
-  const t = defaultMessages();
   const language = resolveLanguage();
+  const t = getMessages(language);
   const program = new Command();
   program
     .name("penguin")
@@ -105,33 +52,39 @@ export async function cli(argv: string[]): Promise<number> {
     // are copied down (commander's copyInheritedSettings).
     .configureOutput({ outputError: () => {} });
 
-  registerAuthCommand(program, t);
-
-  // One discovery, one match, one registration decision — all before the parse. The
-  // context carries the resolved language and this invocation's data root to whichever
-  // package's code half a dispatch names.
-  const ctx = cliContext({ language });
-  const discovery = await discoverCliCommands({ root: ctx.root });
-  const matches = matchingCommands(discovery.commands, argv);
-  const pkgs = matchingPackages(matches);
-  if (pkgs.length >= 2) {
-    return reportAmbiguous(argv, pkgs, t);
+  const ctx = builtinContext(language);
+  for (const command of await bootBuiltinCommands()) {
+    const node = commandAt(program, command.key).description(command.summary[language]);
+    // CliCommandProgram is opaque in the contract; the host knows what it built.
+    command.code.register(node as unknown as CliCommandProgram, ctx);
   }
-  if (pkgs.length === 1) {
-    await registerPackageCommands(discovery, pkgs[0]!, matches[0]!.entry.key, program, ctx);
-  } else {
-    registerPhantoms(program, discovery.commands, language);
-  }
-
-  registerExecCommand(program, t, { language });
-  registerPluginCommand(program, t, { language });
-  registerUpdateCommand(program, t);
-  registerVersionCommand(program, t);
 
   // Show help only when no subcommand is given (empty input); do not error.
   program.action(() => {
     program.outputHelp();
   });
+
+  const first = argv[0];
+  if (
+    first !== undefined &&
+    !first.startsWith("-") &&
+    first !== "help" &&
+    !program.commands.some((c) => c.name() === first || c.aliases().includes(first))
+  ) {
+    // Not one of the CLI's commands: perhaps a plugin's. Only a running server is asked.
+    try {
+      const code = await dispatchPluginCommand(
+        argv,
+        language,
+        serverPluginCommands({ autoStart: false }, t),
+        t,
+      );
+      if (code !== null) return code;
+    } catch (err) {
+      process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
+  }
 
   const priorExitCode = process.exitCode;
   process.exitCode = undefined;

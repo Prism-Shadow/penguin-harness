@@ -1,40 +1,21 @@
 /**
- * `penguin exec <package> [args…]` — one contributing package's commands, by name.
+ * `penguin exec <plugin> [args…]` — one plugin's commands, by name, run on the server.
  *
  *   penguin exec my-plugin deploy --prod
- *   penguin exec @scope/my-plugin deploy --prod   (when two packages share the short name)
+ *   penguin exec @scope/my-plugin -- deploy --help   (`--` hands every option to the plugin)
  *
- * The unambiguous form of a contributed command: the package named is the ONLY candidate,
- * so this is also what the host's ambiguity report hands the caller — one copyable line
- * per package, the original argv shell-quoted behind it. Name resolution: an exact npm
- * name always wins; a short name (`packageShortName`) works while exactly one contributing
- * package carries it; anything else is an error naming the candidates.
+ * The unambiguous form of a plugin command: the plugin named is the only candidate, so this
+ * is also what the ambiguity report hands the caller, one copyable line per plugin. Name
+ * resolution: an exact npm name always wins; a short name (`packageShortName`) works while
+ * exactly one plugin carries it; anything else is an error naming the candidates.
  *
- * The package's own parse decides the rest: its code half registers on a fresh program
- * (the same settings the host's program gets), and the args parse against that alone —
- * commander's own nesting does the dispatch, so `server` + `server.status` from one package
- * never collide. With no args the fresh program prints its help: what this package
- * contributes, straight from the code half that owns it.
+ * The server parses the args against that plugin's commands alone and answers with what
+ * they printed and their exit code; with no args it prints the plugin's own help. A server
+ * that is not running is started, as for any command that needs one.
  */
-import { Command, CommanderError } from "commander";
-import type { Messages } from "../i18n.js";
-import { reportCommanderError } from "../usage-error.js";
-import { cliContext } from "../context.js";
-import {
-  discoverCliCommands,
-  matchingCommands,
-  packageShortName,
-  registerPackageCommands,
-  type CliDiscovery,
-} from "../contributions.js";
-
-/** A word POSIX shells read back unchanged: letters, digits, and the portable punctuation set. */
-const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
-/** One word in a copyable command line, single-quoted the way POSIX shells read it back. */
-export function shellQuote(text: string): string {
-  return SAFE_WORD.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
-}
+import type { Command } from "commander";
+import type { Language, Messages } from "../i18n.js";
+import { packageShortName, serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
 
 /** What name resolution decided: the package, or the error to report. */
 export type ExecResolution =
@@ -42,45 +23,35 @@ export type ExecResolution =
   | { readonly unknown: string }
   | { readonly collision: { readonly short: string; readonly fulls: readonly string[] } };
 
-/**
- * Resolves the name `penguin exec` was given against the contributing packages: an exact
- * npm name first, then a short name only while it is unique. Pure, so a test can drive it
- * with a synthetic discovery.
- */
-export function resolveExecPackage(discovery: CliDiscovery, name: string): ExecResolution {
-  const pkgs: string[] = [];
-  for (const cmd of discovery.commands) if (!pkgs.includes(cmd.pkg)) pkgs.push(cmd.pkg);
-  if (pkgs.includes(name)) return { pkg: name };
-  const byShort = pkgs.filter((pkg) => packageShortName(pkg) === name);
+/** Resolves the name `penguin exec` was given against the plugins that contribute commands. */
+export function resolveExecPackage(packages: readonly string[], name: string): ExecResolution {
+  if (packages.includes(name)) return { pkg: name };
+  const byShort = packages.filter((pkg) => packageShortName(pkg) === name);
   if (byShort.length === 1) return { pkg: byShort[0]! };
   if (byShort.length > 1) return { collision: { short: name, fulls: byShort } };
   return { unknown: name };
 }
 
-/**
- * Registers the host's `exec` command. Its action resolves the package against a fresh
- * discovery (the review-quality read of the same data the dispatch already matched), then
- * parses the remaining argv on the package's own program.
- */
+/** Fills in `penguin exec`, on the node the host located by the command's key. */
 export function registerExecCommand(
-  program: Command,
+  exec: Command,
   t: Messages,
-  opts: { language: "en" | "zh" },
+  opts: { language: Language },
 ): void {
-  program
-    .command("exec")
-    .description(t.exec.desc)
+  exec
     .argument("<package>", t.exec.packageArg)
     .argument("[args...]", t.exec.argsArg)
+    .allowUnknownOption()
     .action(async (name: string, args: string[]) => {
-      const ctx = cliContext({ language: opts.language });
-      const discovery = await discoverCliCommands({ root: ctx.root });
-      const resolution = resolveExecPackage(discovery, name);
+      const source = serverPluginCommands({ autoStart: true }, t);
+      const packages: string[] = [];
+      for (const cmd of await source.list()) {
+        if (!packages.includes(cmd.package)) packages.push(cmd.package);
+      }
+      const resolution = resolveExecPackage(packages, name);
       if ("unknown" in resolution) {
-        const pkgs: string[] = [];
-        for (const cmd of discovery.commands) if (!pkgs.includes(cmd.pkg)) pkgs.push(cmd.pkg);
         process.stderr.write(
-          `${t.exec.unknownPackage(resolution.unknown)}\n${t.exec.candidates(pkgs)}\n`,
+          `${t.exec.unknownPackage(resolution.unknown)}\n${t.exec.candidates(packages)}\n`,
         );
         process.exitCode = 1;
         return;
@@ -92,32 +63,13 @@ export function registerExecCommand(
         process.exitCode = 1;
         return;
       }
-
-      // The package's commands alone, on a fresh program with the host's settings: what
-      // runs is the package's own parse, so its nesting and errors read exactly as they do
-      // behind plain `penguin` — and no other package can be reached from here.
-      const pkg = resolution.pkg;
-      const matches = matchingCommands(discovery.commands, args).filter((m) => m.pkg === pkg);
-      const sub = new Command();
-      sub
-        .name(`penguin exec ${name}`)
-        .exitOverride()
-        .configureOutput({ outputError: () => {} });
-      await registerPackageCommands(discovery, pkg, matches[0]?.entry.key, sub, ctx);
-      sub.action(() => {
-        sub.outputHelp();
-      });
-      try {
-        await sub.parseAsync(args, { from: "user" });
-      } catch (err) {
-        // Same contract as the host's catch: a commander failure is reported localized
-        // (its own output channel was silenced above), anything else propagates to the
-        // host's catch untouched.
-        if (err instanceof CommanderError) {
-          process.exitCode = reportCommanderError(err, sub, args, t);
-          return;
-        }
-        throw err;
-      }
+      process.exitCode = writeRun(
+        await source.run({
+          package: resolution.pkg,
+          args,
+          language: opts.language,
+          prog: `penguin exec ${name}`,
+        }),
+      );
     });
 }

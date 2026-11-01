@@ -10,9 +10,7 @@ import { resolveConnection, ServerClient } from "../client.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
-export function registerProjectCommand(program: Command, t: Messages): void {
-  const project = program.command("project");
-
+export function registerProjectCommand(project: Command, t: Messages): void {
   project
     .command("ls")
     .description(t.project.lsDesc)

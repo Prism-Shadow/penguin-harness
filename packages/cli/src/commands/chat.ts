@@ -120,9 +120,8 @@ function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
   return `\x1b]133;${kind}${exitCode === undefined ? "" : `;${exitCode}`}\x07`;
 }
 
-export function registerChatCommand(program: Command, t: Messages): void {
-  program
-    .command("chat")
+export function registerChatCommand(chat: Command, t: Messages): void {
+  chat
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)

@@ -81,7 +81,7 @@ async function driveChat(
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, t);
+    registerChatCommand(program.command("chat"), t);
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([waitForPrompt(i + 1), done]);
@@ -116,7 +116,7 @@ function startTerminalChat() {
   });
   const program = new Command();
   program.exitOverride();
-  registerChatCommand(program, t);
+  registerChatCommand(program.command("chat"), t);
   const done = program.parseAsync(["node", "penguin", "chat"]).finally(() => {
     Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
   });

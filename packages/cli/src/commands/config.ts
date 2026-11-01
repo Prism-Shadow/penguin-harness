@@ -400,8 +400,7 @@ async function removeGroupConnection(
   process.stdout.write(`${t.providerRemoved(group, models)}\n`);
 }
 
-export function registerConfigCommand(program: Command, t: Messages): void {
-  const config = program.command("config");
+export function registerConfigCommand(config: Command, t: Messages): void {
   const model = config.command("model").description(t.config.modelDesc);
 
   model

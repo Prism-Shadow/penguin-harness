@@ -23,10 +23,8 @@ import { buildInfo, resolveRoot } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import type { Messages } from "../i18n.js";
 
-export function registerVersionCommand(program: Command, t: Messages): void {
-  program
-    .command("version")
-    .description(t.version.description)
+export function registerVersionCommand(version: Command, t: Messages): void {
+  version
     .option("--json", t.version.json)
     .option("--root <dir>", t.common.root)
     .action(async (options: { json?: boolean; root?: string }) => {

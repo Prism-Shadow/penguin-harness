@@ -1,75 +1,168 @@
 /**
- * The CLI package's own command contributions — the same shape every package contributes
- * with. Each `@Module` class COLLECTS its command's declaration: the
- * `contributes["cli.commands"]` entry IS the help line, the one-line summary in each
- * language living only there. The classes are pure data — no methods, nothing
- * implemented; the code half is the register map below, keyed by entry id, and the
- * class's key loads it lazily on a dispatch hit. The read is cheap on purpose: the
- * classes import no command code, so discovery (which lists these summaries for help)
- * executes only the declarations.
+ * The CLI's own commands, as contributions: one `@Component` per command, whose
+ * `contributes["CliCommandsModule.commands"]` entry is the command's data half (its key and
+ * one-line summary) and whose `@Bind(entry.id)` field is its code half. `CliCommandsModule`
+ * owns the slot and collects them.
  *
- * The host reads this package's classes in process — its bundle is the running host, the
- * meta is on the classes under `Symbol.for` keys, no table read needed — and the default
- * export is the module list the generated table's plugin declaration names, the same
- * `Plugin` shape every contributing package declares.
+ * This table is fixed by the build. The CLI bundle a push carries is the same code that
+ * starts the server, so the CLI process and the server process see the same commands. A
+ * plugin's commands are not here: they are contributions to the server's tree, and the CLI
+ * lists and runs them through the server (plugin-cli-commands.ts).
+ *
+ * The host boots this module once per invocation, turns each key into its command node,
+ * writes the summary as the node's description, then calls the bound register with that
+ * node. A register never names its own path.
  */
-import { Module } from "@prismshadow/penguin-core/kernel";
-import type { Command } from "commander";
-import {
-  commandOnChain,
-  type CliCommandEntry,
-  type CliCommandProgram,
-  type CliCommandRegisters,
-  type CliContext,
-  type Plugin,
+import { Bind, Component, Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type {
+  ClassCtx,
+  IfaceTable,
+  ManifestTable,
+  Resources,
+  Slot,
+} from "@prismshadow/penguin-core/kernel";
+import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
+import type {
+  CliCommandCode,
+  CliCommandContext,
+  CliCommandData,
+  CliCommandProgram,
+  CliCommandSummary,
 } from "@prismshadow/penguin-core/plugin";
+import type { Command } from "commander";
 import { getMessages } from "./i18n.js";
+import table from "./ifaces.json" with { type: "json" };
+import { registerAuthCommand } from "./commands/auth.js";
+import { registerConfigCommand } from "./commands/config.js";
+import { registerRunCommand } from "./commands/run.js";
+import { registerChatCommand } from "./commands/chat.js";
+import { registerSessionCommand } from "./commands/session.js";
+import { registerAgentCommand } from "./commands/agent.js";
+import { registerProjectCommand } from "./commands/project.js";
+import { registerPluginCommand } from "./commands/plugin.js";
+import { registerCostCommand } from "./commands/cost.js";
+import { registerScheduleCommand } from "./commands/schedule.js";
+import { registerOrgCommand } from "./commands/org.js";
+import { registerBrowserCommand } from "./commands/browser.js";
+import { registerServerCommand, registerWebCommand } from "./commands/serve.js";
+import { registerResetPasswordCommand } from "./commands/reset-password.js";
+import { registerStatusCommand } from "./commands/server-status.js";
+import { registerStopCommand } from "./commands/server-stop.js";
+import { registerExecCommand } from "./commands/exec.js";
+import { registerUpdateCommand } from "./commands/update.js";
+import { registerVersionCommand } from "./commands/version.js";
 
-/** The host's program, as this package's command modules type it. */
-const asCommand = (program: CliCommandProgram): Command => program as Command;
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
+/** `penguin auth`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.auth",
+        key: "auth",
+        summary: {
+          en: "Sign in to a PenguinHarness server from the terminal",
+          zh: "在终端里登录 PenguinHarness 服务",
+        },
+      },
+    ],
+  },
+})
+export class AuthCommand {
+  @Bind("cli.auth") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAuthCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin config`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.config",
         key: "config",
-        summary: { en: "Manage Project configuration", zh: "管理 Project 配置" },
+        summary: {
+          en: "Manage Project configuration",
+          zh: "管理 Project 配置",
+        },
       },
     ],
   },
 })
-export class ConfigCommand {}
+export class ConfigCommand {
+  @Bind("cli.config") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerConfigCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin run`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
-      { id: "cli.run", key: "run", summary: { en: "Run a single Task", zh: "单次运行一个 Task" } },
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.run",
+        key: "run",
+        summary: {
+          en: "Run a single Task",
+          zh: "单次运行一个 Task",
+        },
+      },
     ],
   },
 })
-export class RunCommand {}
+export class RunCommand {
+  @Bind("cli.run") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerRunCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin chat`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.chat",
         key: "chat",
-        summary: { en: "Open the interactive REPL", zh: "打开交互式 REPL" },
+        summary: {
+          en: "Open the interactive REPL",
+          zh: "打开交互式 REPL",
+        },
       },
     ],
   },
 })
-export class ChatCommand {}
+export class ChatCommand {
+  @Bind("cli.chat") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerChatCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin session`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.session",
         key: "session",
@@ -81,40 +174,99 @@ export class ChatCommand {}
     ],
   },
 })
-export class SessionCommand {}
+export class SessionCommand {
+  @Bind("cli.session") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerSessionCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin agent`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.agent",
         key: "agent",
-        summary: { en: "Manage the project's agents", zh: "管理 Project 的 Agent" },
+        summary: {
+          en: "Manage the project's agents",
+          zh: "管理 Project 的 Agent",
+        },
       },
     ],
   },
 })
-export class AgentCommand {}
+export class AgentCommand {
+  @Bind("cli.agent") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAgentCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin project`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.project",
         key: "project",
-        summary: { en: "Manage projects", zh: "管理 Project" },
+        summary: {
+          en: "Manage projects",
+          zh: "管理 Project",
+        },
       },
     ],
   },
 })
-export class ProjectCommand {}
+export class ProjectCommand {
+  @Bind("cli.project") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerProjectCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin plugin`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.plugin",
+        key: "plugin",
+        summary: {
+          en: "Manage the plugins installed on the server (admin)",
+          zh: "管理服务端安装的插件（管理员）",
+        },
+      },
+    ],
+  },
+})
+export class PluginCommand {
+  @Bind("cli.plugin") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerPluginCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin cost`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.cost",
         key: "cost",
@@ -126,26 +278,47 @@ export class ProjectCommand {}
     ],
   },
 })
-export class CostCommand {}
+export class CostCommand {
+  @Bind("cli.cost") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerCostCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin schedule`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.schedule",
         key: "schedule",
-        summary: { en: "Manage scheduled tasks", zh: "管理定时任务" },
+        summary: {
+          en: "Manage scheduled tasks",
+          zh: "管理定时任务",
+        },
       },
     ],
   },
 })
-export class ScheduleCommand {}
+export class ScheduleCommand {
+  @Bind("cli.schedule") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerScheduleCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin org`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.org",
         key: "org",
@@ -157,12 +330,21 @@ export class ScheduleCommand {}
     ],
   },
 })
-export class OrgCommand {}
+export class OrgCommand {
+  @Bind("cli.org") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerOrgCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
 /** `penguin browser`. */
-@Module({
+@Component({
   contributes: {
-    "cli.commands": [
+    "CliCommandsModule.commands": [
       {
         id: "cli.browser",
         key: "browser",
@@ -174,79 +356,314 @@ export class OrgCommand {}
     ],
   },
 })
-export class BrowserCommand {}
+export class BrowserCommand {
+  @Bind("cli.browser") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerBrowserCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
-/**
- * The code half: every entry's register, keyed by its id — one line per entry, checkable
- * against the declarations above. The register imports its command module lazily (a
- * dispatch hit alone loads it), sets the description from the entry it was handed, and
- * does nothing else at registration time.
- */
-export const register: CliCommandRegisters["register"] = {
-  "cli.config": async (program, ctx, entry) => {
-    const { registerConfigCommand } = await import("./commands/config.js");
-    registerConfigCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
+/** `penguin server`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server",
+        key: "server",
+        summary: {
+          en: "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
+          zh: "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
+        },
+      },
+    ],
   },
-  "cli.run": async (program, ctx, entry) => {
-    const { registerRunCommand } = await import("./commands/run.js");
-    registerRunCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.chat": async (program, ctx, entry) => {
-    const { registerChatCommand } = await import("./commands/chat.js");
-    registerChatCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.session": async (program, ctx, entry) => {
-    const { registerSessionCommand } = await import("./commands/session.js");
-    registerSessionCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.agent": async (program, ctx, entry) => {
-    const { registerAgentCommand } = await import("./commands/agent.js");
-    registerAgentCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.project": async (program, ctx, entry) => {
-    const { registerProjectCommand } = await import("./commands/project.js");
-    registerProjectCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.cost": async (program, ctx, entry) => {
-    const { registerCostCommand } = await import("./commands/cost.js");
-    registerCostCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.schedule": async (program, ctx, entry) => {
-    const { registerScheduleCommand } = await import("./commands/schedule.js");
-    registerScheduleCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.org": async (program, ctx, entry) => {
-    const { registerOrgCommand } = await import("./commands/org.js");
-    registerOrgCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-  "cli.browser": async (program, ctx, entry) => {
-    const { registerBrowserCommand } = await import("./commands/browser.js");
-    registerBrowserCommand(asCommand(program), getMessages(ctx.language));
-    (commandOnChain(program, entry.key) as Command).description(entry.summary[ctx.language]);
-  },
-};
+})
+export class ServerCommand {
+  @Bind("cli.server") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerServerCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
 
-/** The package's module list: what the generated table names, what a dispatch hit loads. */
-export default {
-  modules: [
+/** `penguin server reset-admin-password`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.reset-admin-password",
+        key: "server.reset-admin-password",
+        summary: {
+          en: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
+          zh: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
+        },
+      },
+    ],
+  },
+})
+export class ServerResetAdminPasswordCommand {
+  @Bind("cli.server.reset-admin-password") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerResetPasswordCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin server status`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.status",
+        key: "server.status",
+        summary: {
+          en: "Print this data root's server state and machine id as one line of JSON",
+          zh: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
+        },
+      },
+    ],
+  },
+})
+export class ServerStatusCommand {
+  @Bind("cli.server.status") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerStatusCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin server stop`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.stop",
+        key: "server.stop",
+        summary: {
+          en: "Stop the server running on this data root and report the outcome as JSON",
+          zh: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
+        },
+      },
+    ],
+  },
+})
+export class ServerStopCommand {
+  @Bind("cli.server.stop") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerStopCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin web`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.web",
+        key: "web",
+        summary: {
+          en: "Start the Web service and open the UI in a browser once it is ready",
+          zh: "启动 Web 服务，就绪后用浏览器打开界面",
+        },
+      },
+    ],
+  },
+})
+export class WebCommand {
+  @Bind("cli.web") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerWebCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin exec`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.exec",
+        key: "exec",
+        summary: {
+          en: "Run a plugin's command on the server by naming the plugin (the unambiguous form when two plugins contribute the same command)",
+          zh: "点名插件，在服务端执行它的命令（两个插件贡献同一命令时的无歧义形式）",
+        },
+      },
+    ],
+  },
+})
+export class ExecCommand {
+  @Bind("cli.exec") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerExecCommand(node(command), getMessages(ctx.language), { language: ctx.language });
+      },
+    };
+  }
+}
+
+/** `penguin update`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.update",
+        key: "update",
+        summary: {
+          en: "Upgrade this PenguinHarness install in place",
+          zh: "原地升级当前的 PenguinHarness 安装",
+        },
+      },
+    ],
+  },
+})
+export class UpdateCommand {
+  @Bind("cli.update") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerUpdateCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** `penguin version`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.version",
+        key: "version",
+        summary: {
+          en: "Show which build is running",
+          zh: "显示当前运行的是哪个构建",
+        },
+      },
+    ],
+  },
+})
+export class VersionCommand {
+  @Bind("cli.version") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerVersionCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
+}
+
+/** One collected command: its data half and the code half its class bound. */
+export interface BuiltinCommand {
+  readonly id: string;
+  readonly key: string;
+  readonly summary: CliCommandSummary;
+  readonly code: CliCommandCode;
+}
+
+/** The collector's face: the CLI's commands, in contribution order (the order help lists them in). */
+@Interface()
+export abstract class CliCommands {
+  abstract list(): readonly BuiltinCommand[];
+}
+
+/** The slot `CliCommandsModule` owns: a command's key and summary, and the code half it binds. */
+export interface CliCommandsSlots {
+  commands: Slot<CliCommandData, CliCommandCode>;
+}
+
+/** Owns the `commands` slot; its children are the CLI's commands. */
+@Module({
+  children: [
+    AuthCommand,
     ConfigCommand,
     RunCommand,
     ChatCommand,
     SessionCommand,
     AgentCommand,
     ProjectCommand,
+    PluginCommand,
     CostCommand,
     ScheduleCommand,
     OrgCommand,
     BrowserCommand,
+    ServerCommand,
+    ServerResetAdminPasswordCommand,
+    ServerStatusCommand,
+    ServerStopCommand,
+    WebCommand,
+    ExecCommand,
+    UpdateCommand,
+    VersionCommand,
   ],
-} satisfies Plugin;
+})
+export class CliCommandsModule {
+  @Provide() cliCommands!: CliCommands;
+  setup({ contributions }: ClassCtx) {
+    // The kernel checked each entry against the slot's data type at boot, and resolved
+    // every code half by its id.
+    const commands: BuiltinCommand[] = (contributions.commands ?? []).map((c) => ({
+      id: c.id,
+      key: c.data.key as string,
+      summary: c.data.summary as unknown as CliCommandSummary,
+      code: c.code as CliCommandCode,
+    }));
+    this.cliCommands = { list: () => commands };
+  }
+}
+
+/** The commands hold no live resources, so the registry holds nothing. */
+const noResources: Resources = {
+  register: () => () => {},
+  claim: () => undefined,
+};
+
+/** Boots `CliCommandsModule` against this package's generated table and returns what it collected. */
+export async function bootBuiltinCommands(): Promise<readonly BuiltinCommand[]> {
+  const ifaces = table as unknown as IfaceTable & { modules: ManifestTable };
+  const root = moduleDefOf(CliCommandsModule, { manifests: ifaces.modules });
+  const tree = await bootModules(root, { ifaces, resources: noResources });
+  try {
+    return tree.api<CliCommands>("CliCommandsModule", "cliCommands").list();
+  } finally {
+    tree.dispose();
+  }
+}
+
+/** The context a builtin command runs with: this process's own output and exit code. */
+export function builtinContext(language: "en" | "zh"): CliCommandContext {
+  return {
+    language,
+    write: (text) => {
+      process.stdout.write(`${text}\n`);
+    },
+    writeErr: (text) => {
+      process.stderr.write(`${text}\n`);
+    },
+    setExitCode: (code) => {
+      process.exitCode = code;
+    },
+  };
+}

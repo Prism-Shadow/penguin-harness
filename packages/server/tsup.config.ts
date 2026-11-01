@@ -42,15 +42,6 @@ export default defineConfig({
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
     "plugin/index": "src/plugin/index.ts",
-    // "./plugin/loader": the module resolver the CLI host shares — the plugin bases, the
-    // Project closure and the table reader its `cli.commands` discovery reads plugins'
-    // data halves through, without importing a package.
-    "plugin/loader": "src/plugin/loader.ts",
-    // "./cli/serve": the server package's command module table — the @Module classes the
-    // CLI host loads on a dispatch hit (its data halves the host reads from the package's
-    // generated ifaces.json, never importing this code). Light on purpose: nothing but the
-    // kernel decorators, so help never loads the service.
-    "cli/serve": "src/cli/serve.ts",
   },
   format: ["esm"],
   target: "node24",

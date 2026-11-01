@@ -12,16 +12,10 @@
  * same call on every platform this runs on.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
-import path from "node:path";
-import { liveServerLock, readServerLock } from "../lock.js";
+import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import { Module } from "@prismshadow/penguin-core/kernel";
-import {
-  commandOnChain,
-  type CliCommandProgram,
-  type CliCommandRegister,
-} from "@prismshadow/penguin-core/plugin";
-import { serveMessages } from "./messages.js";
+import type { Messages } from "../i18n.js";
+import { resolveRootOption } from "../root-option.js";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -45,44 +39,13 @@ interface StopResult {
   detail?: string;
 }
 
-/**
- * Attaches the subcommand to the `penguin server` command (see serve.ts's
- * commandOnChain). The data root is the CLI's documented priority — `--root` >
- * PENGUIN_HOME > the default — resolved through the context the host hands down.
- */
-/** The command's data half — the one place the summary lives. A pure collector: the code
- * half is `register["server-cli.stop"]` in serve.ts. */
-@Module({
-  contributes: {
-    "cli.commands": [
-      {
-        id: "server-cli.stop",
-        key: "server.stop",
-        summary: {
-          en: "Stop the server running on this data root and report the outcome as JSON",
-          zh: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
-        },
-      },
-    ],
-  },
-})
-export class ServerStopCommand {}
-
-/** The command's code half: attaches the subcommand to the `penguin server` chain (the
- * parent's entry declares that key's subtree open), its description read off the entry
- * the host hands in. */
-export const registerStop: CliCommandRegister = async (program, ctx, entry) => {
-  const m = serveMessages(ctx.language);
-  (commandOnChain(program, entry.key) as Command)
-    .description(entry.summary[ctx.language])
-    .option("--root <dir>", m.root)
-    .action(async (opts: { root?: string }) => {
-      const root = opts.root !== undefined ? path.resolve(opts.root) : ctx.root;
-      const result = await stop(root);
-      process.stdout.write(JSON.stringify(result) + "\n");
-      if (!result.ok) process.exitCode = 1;
-    });
-};
+export function registerStopCommand(stop: Command, t: Messages): void {
+  stop.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    const result = await stopServer(resolveRootOption(opts.root));
+    process.stdout.write(JSON.stringify(result) + "\n");
+    if (!result.ok) process.exitCode = 1;
+  });
+}
 
 const realEffects: StopEffects = {
   kill: (pid, signal) => process.kill(pid, signal),
@@ -97,7 +60,7 @@ function codeOf(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-export async function stop(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
+export async function stopServer(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
   // Already stopped is the outcome asked for, not a failure: the caller wants nothing serving
   // this root, and nothing is.
   const lock = await liveServerLock(root);

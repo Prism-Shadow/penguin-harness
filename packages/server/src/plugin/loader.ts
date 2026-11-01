@@ -275,12 +275,8 @@ function packageEntry(dir: string, manifest: string): string | null {
   return file;
 }
 
-/**
- * Where a specifier resolves from — the entry file and the base that found it — or null.
- * Exported for the CLI host, which resolves a plugin the same way this loader does to read
- * its `cli.commands` data half without importing the package.
- */
-export function resolvePlugin(
+/** Where a specifier resolves from — the entry file and the base that found it — or null. */
+function resolvePlugin(
   specifier: string,
   bases: readonly PluginBase[],
 ): { file: string; base: PluginBase } | null {
@@ -410,11 +406,8 @@ export async function readPluginDeclaration(
  * every interface they name. A package is a plugin by being listed; the table is its
  * MODULE payload, and a package without one ships no modules (`manifests` empty). Null
  * only when no `package.json` is above the file at all.
- *
- * Exported for the CLI host, whose `cli.commands` discovery reads a listed plugin's table
- * the way `readPluginDeclaration` does — never importing the package.
  */
-export async function readPackageTable(file: string | null): Promise<{
+async function readPackageTable(file: string | null): Promise<{
   where: string;
   ifaces: IfaceTable;
   manifests: ManifestTable;
