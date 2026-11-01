@@ -17,7 +17,7 @@
  *   - a package whose table contributes nothing to the slot is no Agent package; an upload
  *     is refused when the package is a plugin by neither half.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
