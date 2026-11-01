@@ -652,7 +652,7 @@ export async function loadPlugins(
   if (loaded.length > 0) {
     const projects = await listProjectIds(root);
     for (const { specifier, file } of loaded) {
-      const dir = file === null ? null : path.dirname(file);
+      const dir = file == null ? null : path.dirname(file);
       if (dir === null) continue;
       let definitions: AgentDefinition[];
       try {
