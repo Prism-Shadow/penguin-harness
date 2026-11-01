@@ -166,7 +166,7 @@ export function agentEvaluationPlugin(): PluginItem {
     skill(
       "benchmark-design",
       "Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.",
-      "2026.10.29.2",
+      "2026.11.01.1",
     ),
   ]);
 }
