@@ -7,7 +7,7 @@
 
 [中文版](2026-10-22-gepa-rsi-toolkit.zh.md)
 
-A sixth RSI toolkit, `gepa-rsi-toolkit` (GEPA RSI Toolkit, category `rsi`, preinstalled), joined the plugin library. Its one Skill, `gepa-rsi-toolkit` (`2026.10.22.1`), ran GEPA ([Agrawal et al., 2025](https://arxiv.org/abs/2507.19457)) against `gepa-ai/gepa` at `8f287de942f41a6d1e0e7e5b2d576247c4bedee9`, with `optimize`'s defaults on a system of one instruction: a parent drawn from the per-case Pareto front, a minibatch of 3 feedback cases, a reflection model that read the parent's Traces and scores and wrote a new instruction, admission only on a strictly higher minibatch total, a full measurement of every admitted child, and the best average kept. The Optimize tab's **Method** field offered it with no Web App change, since that list is read from the library's `rsi` category.
+A new RSI toolkit, `gepa-rsi-toolkit` (GEPA RSI Toolkit, category `rsi`, preinstalled), joined the plugin library. Its one Skill, `gepa-rsi-toolkit` (`2026.10.22.1`), ran GEPA ([Agrawal et al., 2025](https://arxiv.org/abs/2507.19457)) against `gepa-ai/gepa` at `8f287de942f41a6d1e0e7e5b2d576247c4bedee9`, with `optimize`'s defaults on a system of one instruction: a parent drawn from the per-case Pareto front, a minibatch of 3 feedback cases, a reflection model that read the parent's Traces and scores and wrote a new instruction, admission only on a strictly higher minibatch total, a full measurement of every admitted child, and the best average kept. The Optimize tab's **Method** field offered it with no Web App change, since that list is read from the library's `rsi` category.
 
 ## Details
 
