@@ -277,9 +277,10 @@ describe("agent definitions as plugin packages", () => {
     await fs.mkdir(path.join(dir, "agent_state"), { recursive: true });
     await fs.writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name: "@acme/bare", version: "1.0.0" }),
+      JSON.stringify({ name: "@acme/bare", version: "1.0.0", main: "./index.mjs" }),
       "utf8",
     );
+    await fs.writeFile(path.join(dir, "index.mjs"), "export default { modules: [] };\n", "utf8");
     await fs.writeFile(
       path.join(dir, "ifaces.json"),
       JSON.stringify({
