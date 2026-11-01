@@ -41,16 +41,20 @@ export interface ManifestPackage {
   name?: string;
   version?: string;
   description?: string;
+  /** Overrides the install label when a release wants one shorter than "PenguinHarness". */
+  penguin?: { shortName?: string };
 }
 
 /**
- * The manifest for the web package: user-facing `name` is the product's (the package name
- * carries the npm scope), everything else is the package's own, verbatim.
+ * The manifest for the web package: the user-facing `name` is the product's (the package name
+ * carries the npm scope), `short_name` is the launcher label a phone shows under the icon —
+ * "Penguin" — unless the package declares `penguin.shortName` itself; everything else is the
+ * package's own, verbatim.
  */
 export function appManifest(pkg: ManifestPackage): AppManifest {
   return {
     name: "PenguinHarness",
-    short_name: "PenguinHarness",
+    short_name: pkg.penguin?.shortName ?? "Penguin",
     description: pkg.description ?? "",
     version: pkg.version ?? "0.0.0",
     start_url: "/",

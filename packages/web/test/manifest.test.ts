@@ -27,7 +27,12 @@ describe("the main app's manifest", () => {
     expect(manifest.version).toBe(pkg.version);
     expect(manifest.description).toBe(pkg.description);
     expect(manifest.name).toBe("PenguinHarness");
-    expect(manifest.short_name).toBe("PenguinHarness");
+    // The launcher label a phone shows under the icon — not the full product name.
+    expect(manifest.short_name).toBe("Penguin");
+    // A release can override the launcher label from the package it builds.
+    expect(appManifest({ ...pkg, penguin: { shortName: "PenguinDev" } }).short_name).toBe(
+      "PenguinDev",
+    );
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url).toBe("/");
     expect(manifest.scope).toBe("/");
