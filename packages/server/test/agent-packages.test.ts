@@ -67,8 +67,8 @@ describe("agent definitions as plugin packages", () => {
           ifaces: {},
           types: {},
           modules: {
-            agent: {
-              name: "agent",
+            Agent: {
+              name: "Agent",
               kind: "component",
               requires: {},
               provides: {},
@@ -78,7 +78,7 @@ describe("agent definitions as plugin packages", () => {
               children: [],
             },
           },
-          plugin: { modules: ["agent"], replaces: [] },
+          plugin: { modules: ["Agent"], replaces: [] },
         }),
         "utf8",
       );
