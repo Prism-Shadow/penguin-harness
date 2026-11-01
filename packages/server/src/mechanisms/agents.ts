@@ -1,7 +1,7 @@
 /**
  * The agents mechanisms: what a node may require, declared apart from what implements it.
  */
-import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Interface, Slot } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "../services/agent-config-service.js";
 import type {
   AgentConfigUpdateRequest,
@@ -32,6 +32,23 @@ import type {
   BenchmarkCreateInput,
   BenchmarkImportOptions,
 } from "../services/benchmark-service.js";
+
+/**
+ * The static half of an Agent-definition contribution: a display name, an optional
+ * description, and the package-relative paths of the definition's files — the
+ * contributor's `agent_state/` content as the manifest lists it. The code half is
+ * nothing to run: installing copies the listed files into the Project, as data.
+ */
+export interface AgentDefinitionContribution {
+  name: string;
+  description?: string;
+  agentState: string[];
+}
+
+/** The slots the agents mechanism opens to plugin packages: an Agent definition is one. */
+export interface AgentConfigSlots {
+  definitions: Slot<AgentDefinitionContribution>;
+}
 
 /** AgentConfig: the mechanism AgentConfigService implements. */
 @Interface()

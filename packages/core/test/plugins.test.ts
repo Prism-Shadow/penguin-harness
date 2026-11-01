@@ -64,7 +64,6 @@ import {
   parseSkillFrontmatter,
   readLibraryPackage,
   readPluginIcon,
-  readPluginPackage,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
@@ -654,21 +653,6 @@ describe("packages the operator installed on the server", () => {
     expect(plugin.skills.map((s) => s.name)).toEqual(["notes"]);
     expect(plugin.hooks).toBeUndefined();
     expect(logged(warn)).toContain("hooks/ is present but package.json declares no penguin.hooks");
-  });
-
-  it("reads a manifest's registered Agent definition (penguin.agent), and ignores a form that is not one", async () => {
-    await setUp(["@acme/registered", "@acme/misforme"], {
-      "@acme/registered": { ...notes("@acme/registered", { agent: true }) },
-      "@acme/misforme": { ...notes("@acme/misforme", { agent: { a: 1 } }) },
-    });
-    // The registration is the manifest's own declaration; the definition content is found by
-    // the convention (agent_state/), not listed here.
-    const registered = readPluginPackage(libraryPluginPackage("registered")!.dir);
-    expect(registered.manifest.penguin.agent).toBe(true);
-    expect(registered.warnings).toEqual([]);
-    const misforme = readPluginPackage(libraryPluginPackage("misforme")!.dir);
-    expect(misforme.manifest.penguin.agent).toBeUndefined();
-    expect(misforme.warnings).toContain("penguin.agent must be true; ignored");
   });
 
   it("reads a skill without a version as unversioned, which its installed copy is never behind", async () => {

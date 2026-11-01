@@ -8,8 +8,8 @@
  *                                 to that machine's own table — and apply (admin). The specifier
  *                                 is a registry name, or an https link to a git repository or a
  *                                 tarball (plugin/source.ts), which installs here only. A
- *                                 package that registers an Agent definition (its package.json
- *                                 `penguin.agent`) has that part copied into this Project
+ *                                 package that contributes an Agent definition (its ifaces.json)
+ *                                 has that part copied into this Project
  *   POST   /archive               install an uploaded package zip on this server (admin); 409
  *          { dataBase64,          plugin_exists when another version is installed, unless
  *            overwrite? }         `overwrite`; an Agent definition in the zip is copied into
@@ -21,8 +21,8 @@
  *
  * WHAT A TABLE LISTS is server modules: a package of Skills, hooks or MCP servers alone is the
  * library's (core lists every package of the prefix that carries them), installed into Agents
- * rather than loaded, so installing one writes no table — and a package may register an Agent
- * definition besides (`penguin.agent` in its package.json, agents/package.ts), which installing
+ * rather than loaded, so installing one writes no table — and a package may contribute an Agent
+ * definition besides (its ifaces.json, agents/package.ts), which installing
  * copies into this Project the same way. And a package from a link or a zip is listed in THIS machine's own
  * table, never the shared one: another machine handed its name would fetch whatever the
  * registry has under that name.
@@ -96,13 +96,13 @@ import {
   type InstalledPackage,
 } from "../../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
-import { parsePluginArchive } from "../../services/plugin-archive.js";
+import { parsePluginArchive, unscopedName } from "../../services/plugin-archive.js";
 import {
   AgentCopyError,
+  agentDefinitionsFromFiles,
   copyAgentDefinition,
+  contributedAgentDefinitions,
   packageFiles,
-  registersAgent,
-  registeredAgent,
 } from "../../agents/package.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
@@ -283,18 +283,22 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 
   /**
    * An installed package can stand in for an Agent whose directory was deleted by hand: if
-   * it registers an Agent definition (`penguin.agent` in its package.json), that part is
-   * re-copied into the Project (as data, never executed). Null when it registers none.
+   * it contributes an Agent definition (its ifaces.json contributes to the agents
+   * mechanism's `definitions` slot), that part is re-copied into the Project (as data,
+   * never executed). Null when it contributes none.
    */
   const installedAgentPackage = async (name: string, projectId: string) => {
     const dir = installedPackageDir(pluginsPrefix(deps.root), name);
-    if (!(await registeredAgent(dir))) return null;
+    const definitions = await contributedAgentDefinitions(dir, unscopedName(name));
+    const definition = definitions[0];
+    if (definition === undefined) return null;
     try {
       return await copyAgentDefinition({
         root: deps.root,
         projectId,
         packageName: name,
         files: await packageFiles(dir),
+        definition,
       });
     } catch (err) {
       if (err instanceof AgentCopyError) {
@@ -416,17 +420,21 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
     }
     const kinds = kindsOf(installed.name);
-    // A registered Agent definition (`penguin.agent`) is a plugin contribution like the
-    // library's: a package that declares only it is a plugin package all the same.
-    const agent = await registeredAgent(
-      installedPackageDir(pluginsPrefix(deps.root), installed.name),
-    );
+    // A contributed Agent definition is a plugin contribution like the library's: a package
+    // whose whole content is one is a plugin package all the same.
+    const agent =
+      (
+        await contributedAgentDefinitions(
+          installedPackageDir(pluginsPrefix(deps.root), installed.name),
+          unscopedName(installed.name),
+        )
+      ).length > 0;
     if (!kinds.library && !agent && !kinds.modules) {
       return refuseInstalled(
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor a registered Agent definition (\`penguin.agent\`) nor the ifaces.json of server modules.`,
+        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor a contributed Agent definition (its ifaces.json) nor the ifaces.json of server modules.`,
       );
     }
     return { ...kinds, agent };
@@ -451,9 +459,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const source = sourceOf(body.specifier);
     const machineId = machineOf(body.machineId);
     const runsHere = machineId === null || machineId === deps.machineId;
-    // A package that registers an Agent definition has that part copied into this Project
+    // A package that contributes an Agent definition has that part copied into this Project
     // on every install — as data, nothing executed, nothing loaded, no table written for it.
-    // A registration without content copies nothing (and reports nothing in the answer).
+    // A contribution without content copies nothing (and reports nothing in the answer).
     const agentCopy = async (installed: InstalledPackage) => {
       const copy = await installedAgentPackage(installed.name, projectId);
       return copy === null || copy.copied.length === 0 ? {} : { agent: copy };
@@ -541,16 +549,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const installed = await viaNpm(() =>
       deps.packages.installFiles(deps.root, Object.fromEntries(archive.files)),
     );
-    // A registered definition part travels with the package, wherever it came from: copied
-    // into this Project as data, on top of whatever else the package is (and a registration
+    // A contributed definition part travels with the package, wherever it came from: copied
+    // into this Project as data, on top of whatever else the package is (and a contribution
     // without content — agent_state/ holds nothing copyable — lands as nothing).
     let agent: PluginInstallOutcome["agent"];
     if (archive.agent) {
+      const definition = agentDefinitionsFromFiles(archive.files, unscopedName(archive.name))[0]!;
       const copy = await copyAgentDefinition({
         root: deps.root,
         projectId,
         packageName: archive.name,
         files: archive.files,
+        definition,
       });
       if (copy.copied.length > 0) agent = copy;
     }

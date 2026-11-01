@@ -1,17 +1,19 @@
 /**
- * The Agent definition a plugin package registers (`penguin.agent` in its package.json), and
- * what the install surface does with it. The three rules under test (proposal: an Agent may
- * be a plugin, the package registering the contribution in its own manifest; a package that
- * is an Agent is downloaded through the plugin channels; what follows the download is a COPY
- * into the Project — nothing executes):
+ * The Agent definition a plugin package contributes (`ifaces.json`), and what the install
+ * surface does with it. The three rules under test (proposal: an Agent may be a plugin, the
+ * package contributing the definition through its own module manifest; a package that is an
+ * Agent is downloaded through the plugin channels; what follows the download is a COPY into
+ * the Project — nothing executes):
  *
- *   - the registration is the manifest's one line — `penguin.agent === true` — not a scan the
- *     server performs; the definition's content is the `agent_state/` convention, minus the
- *     Agent's lived history (memory, traces, snapshots, workspaces, scratchpad, the vault);
+ *   - the contribution is the package's own module manifest — a module in its entry file
+ *     whose generated table (`ifaces.json`) contributes to the agents mechanism's
+ *     `definitions` slot; the server reads that table without importing anything, and the
+ *     definition's content is the `agent_state/` convention, minus the Agent's lived
+ *     history (memory, traces, snapshots, workspaces, scratchpad, the vault);
  *   - installing copies that part into the Project, as data: named by the package's unscoped
  *     name, nothing run, no table written;
  *   - reinstalling updates the copy in place, and re-fills an Agent directory deleted by
- *     hand; a package without a registration is no Agent install.
+ *     hand; a package that contributes no definition is no Agent install.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -22,9 +24,10 @@ import type { PluginInstallOutcome } from "../src/api/types.js";
 import { PluginInstallError } from "../src/plugin/install.js";
 import {
   agentDefinitionEntry,
+  agentDefinitionsFromFiles,
+  agentDefinitionsFromTable,
   copyAgentDefinition,
-  registeredAgent,
-  registersAgent,
+  AGENT_DEFINITIONS_SLOT,
   packageFiles,
 } from "../src/agents/package.js";
 import { parsePluginArchive } from "../src/services/plugin-archive.js";
@@ -43,9 +46,40 @@ const skill = (name: string, body: string) =>
 
 const asFiles = (files: Files) => new Map(Object.entries(files).map(([k, v]) => [k, bytes(v)]));
 
-/** A package.json that registers the Agent definition, with the definition files beside it. */
+/**
+ * The table an Agent-definition package's entry file generates into `ifaces.json`: one
+ * module whose manifest contributes the definition to the agents mechanism's slot. Written
+ * the way `gen-ifaces` emits it — the manifest is data, read without importing anything.
+ */
+const agentTable = (definition: { name: string; agentState: string[] }): string =>
+  JSON.stringify({
+    ifaces: {},
+    types: {},
+    modules: {
+      agent: {
+        name: "agent",
+        kind: "component",
+        requires: {},
+        provides: {},
+        contributes: { [AGENT_DEFINITIONS_SLOT]: [definition] },
+        children: [],
+      },
+    },
+    plugin: { modules: ["agent"], replaces: [] },
+  });
+
+/** A package that contributes the Agent definition: entry file, its table, and the definition files. */
 const registered = (name: string): Files => ({
-  "package.json": JSON.stringify({ name, version: "1.0.0", penguin: { agent: true } }),
+  "package.json": JSON.stringify({ name, version: "1.0.0", main: "index.js" }),
+  "index.js": `export class Agent { contributes = { "${AGENT_DEFINITIONS_SLOT}": [{ id: "agent.definition", name: "reviewer" }] } }\n`,
+  "ifaces.json": agentTable({
+    name: "reviewer",
+    agentState: [
+      "agent_state/skills/review/SKILL.md",
+      "agent_state/system_config.yaml",
+      "agent_state/AGENTS.md",
+    ],
+  }),
   "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
   "agent_state/system_config.yaml": "version: 1\n",
   "agent_state/AGENTS.md": "# guidance\n",
@@ -103,33 +137,33 @@ describe("agent definitions as plugin packages", () => {
     for (const app of apps.splice(0)) await app.cleanup();
   });
 
-  it("the registration is the manifest's own declaration: penguin.agent === true, nothing else reads as one", async () => {
-    expect(registersAgent({ penguin: { agent: true } })).toBe(true);
-    // Any other form is the manifest reader's to warn about; it reads as no registration.
-    expect(registersAgent({ penguin: { agent: { some: "field" } } })).toBe(false);
-    expect(registersAgent({ penguin: { agent: false } })).toBe(false);
-    expect(registersAgent({ penguin: {} })).toBe(false);
-    expect(registersAgent({})).toBe(false);
-    expect(registersAgent("package.json")).toBe(false);
-  });
-
-  it("a directory registers a definition when its package.json declares one; an agent_state/ alone does not", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-def-"));
-    try {
-      const dir = await installedPackage(root, "reviewer", registered("reviewer"));
-      expect(await registeredAgent(dir)).toBe(true);
-      // A package whose manifest registers nothing is not an Agent package, whatever its
-      // directories look like: the server does not scan for parts, it reads registrations.
-      const scanned = await installedPackage(root, "bare", {
-        "package.json": JSON.stringify({ name: "bare", version: "1.0.0" }),
-        "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
-      });
-      expect(await registeredAgent(scanned)).toBe(false);
-      // A registration is nothing without a readable manifest of its own.
-      expect(await registeredAgent(root)).toBe(false);
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
+  it("the definition is read from the table the package's entry generates: the slot's contribution is the whole registration", async () => {
+    const definitions = agentDefinitionsFromFiles(
+      asFiles(registered("@acme/reviewer")),
+      "reviewer",
+    );
+    expect(definitions).toEqual([
+      {
+        agentId: "reviewer",
+        name: "reviewer",
+        files: [
+          "agent_state/skills/review/SKILL.md",
+          "agent_state/system_config.yaml",
+          "agent_state/AGENTS.md",
+        ],
+      },
+    ]);
+    // A package without a table, or whose table carries no contribution to the slot,
+    // contributes no definition — and a malformed entry reads as none.
+    expect(agentDefinitionsFromFiles(asFiles({ "package.json": "{}" }), "x")).toEqual([]);
+    expect(agentDefinitionsFromTable({}, "x")).toEqual([]);
+    expect(agentDefinitionsFromTable({ modules: { agent: {} } }, "x")).toEqual([]);
+    expect(
+      agentDefinitionsFromTable(
+        { modules: { agent: { contributes: { [AGENT_DEFINITIONS_SLOT]: ["nope"] } } } },
+        "x",
+      ),
+    ).toEqual([]);
   });
 
   it("a definition entry is an agent_state/ file only, and the lived history is never part of it", () => {
@@ -156,7 +190,7 @@ describe("agent definitions as plugin packages", () => {
     }
   });
 
-  it("installing copies the registered definition as data, named by the package's unscoped name — nothing else lands", async () => {
+  it("installing copies the contributed definition as data, named by the package's unscoped name — nothing else lands", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-agent-copy-"));
     try {
       const out = await copyAgentDefinition({
@@ -164,13 +198,21 @@ describe("agent definitions as plugin packages", () => {
         projectId: "default_project",
         packageName: "@acme/reviewer",
         files: asFiles({
-          "package.json": JSON.stringify({ name: "@acme/reviewer", penguin: { agent: true } }),
+          "package.json": JSON.stringify({ name: "@acme/reviewer", main: "index.js" }),
           "skills/notes/SKILL.md": skill("notes", "the package's own plugin part"),
           ...registered("reviewer"),
           "agent_state/.vault.toml": 'TOKEN = "secret"\n',
           "agent_state/memory/user/MEMORY.md": "# memory\n",
           "agent_state/traces/t.jsonl": "{}\n",
         }),
+        definition: {
+          name: "reviewer",
+          agentState: [
+            "agent_state/skills/review/SKILL.md",
+            "agent_state/system_config.yaml",
+            "agent_state/AGENTS.md",
+          ],
+        },
       });
       expect(out.agentId).toBe("reviewer");
       const dir = path.join(root, "default_project", "agents", "reviewer");
@@ -205,6 +247,7 @@ describe("agent definitions as plugin packages", () => {
           projectId: "default_project",
           packageName: "@acme/not a name",
           files: asFiles(registered("reviewer")),
+          definition: { name: "reviewer", agentState: ["agent_state/AGENTS.md"] },
         }),
       ).rejects.toThrow(/cannot name an Agent directory/);
     } finally {
@@ -227,6 +270,10 @@ describe("agent definitions as plugin packages", () => {
           "agent_state/system_config.yaml": "version: 8\n",
           "agent_state/skills/review/SKILL.md": skill("review", "reviews code"),
         }),
+        definition: {
+          name: "reviewer",
+          agentState: ["agent_state/system_config.yaml", "agent_state/skills/review/SKILL.md"],
+        },
       });
       await expect(fs.readFile(path.join(dir, "system_config.yaml"), "utf8")).resolves.toBe(
         "version: 8\n",
@@ -249,6 +296,14 @@ describe("agent definitions as plugin packages", () => {
         projectId: "default_project",
         packageName: "reviewer",
         files: before,
+        definition: {
+          name: "reviewer",
+          agentState: [
+            "agent_state/skills/review/SKILL.md",
+            "agent_state/system_config.yaml",
+            "agent_state/AGENTS.md",
+          ],
+        },
       });
       expect(Object.fromEntries(before)).toEqual(Object.fromEntries(await packageFiles(prefix)));
     } finally {
@@ -256,7 +311,7 @@ describe("agent definitions as plugin packages", () => {
     }
   });
 
-  it("an uploaded zip that registers an Agent definition installs as a plugin package, and the definition is copied", async () => {
+  it("an uploaded zip that contributes an Agent definition installs as a plugin package, and the definition is copied", async () => {
     const npm = fakeNpm();
     const admin = await boot(npm);
     const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
@@ -291,12 +346,11 @@ describe("agent definitions as plugin packages", () => {
     expect(list.plugins).toEqual([]);
   });
 
-  it("a registration beside skills lands in both places: the library and the Project", async () => {
+  it("a contribution beside skills lands in both places: the library and the Project", async () => {
     const admin = await boot(fakeNpm());
     const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
       dataBase64: Buffer.from(
         zip({
-          // The manifest registers the definition; the package carries library parts besides.
           ...registered("@acme/notes"),
           "skills/notes/SKILL.md": skill("notes", "takes notes"),
         }),
@@ -317,17 +371,26 @@ describe("agent definitions as plugin packages", () => {
     ).resolves.toBe("# guidance\n");
   });
 
-  it("a bare agent_state/ is no registration, and a package with neither any contribution nor a registration is refused", async () => {
+  it("an ifaces.json that contributes nothing to the slot is no registration, and a package with neither any contribution nor a table is refused", async () => {
     const admin = await boot(fakeNpm());
     const bare = await admin.post("/api/projects/default_project/plugins/installed/archive", {
       dataBase64: Buffer.from(
         zip({
           "package.json": JSON.stringify({ name: "@acme/bare", version: "1.0.0" }),
+          "index.js": "export {};\n",
+          // A table whose modules contribute nothing to the definitions slot: the module
+          // load is the surface that would use it — the install surface reads contributions.
+          "ifaces.json": JSON.stringify({
+            ifaces: {},
+            types: {},
+            modules: { util: { name: "util", kind: "component" } },
+            plugin: { modules: ["util"], replaces: [] },
+          }),
           "agent_state/AGENTS.md": "# guidance\n",
         }),
       ).toString("base64"),
     });
-    // The server does not scan packages for parts: without the manifest's registration this
+    // The server does not scan packages for parts: without the manifest's contribution this
     // is not an Agent contribution, and nothing else makes it a plugin.
     expect(bare.status).toBe(400);
     const body = (await bare.json()) as { error: { code: string; message: string } };
@@ -335,7 +398,7 @@ describe("agent definitions as plugin packages", () => {
     expect(body.error.message).toMatch(/Not a PenguinHarness plugin/);
   });
 
-  it("an install whose package registers an Agent definition copies it, and lists nothing", async () => {
+  it("an install whose package contributes an Agent definition copies it, and lists nothing", async () => {
     const npm = fakeNpm();
     const files = registered("reviewer");
     npm.links.set("https://example.com/reviewer-1.0.0.tgz", files);
@@ -382,7 +445,7 @@ describe("agent definitions as plugin packages", () => {
     ).resolves.toBe("# guidance\n");
   });
 
-  it("a package without a registration is refused on install, and taken back", async () => {
+  it("a package that contributes no definition is refused on install, and taken back", async () => {
     const npm = fakeNpm();
     npm.links.set("https://example.com/left-pad-1.0.0.tgz", {
       "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }),
@@ -399,7 +462,7 @@ describe("agent definitions as plugin packages", () => {
     expect(npm.removed).toEqual(["left-pad"]);
   });
 
-  it("a zip parses the registration it holds; the whole package travels as its files", async () => {
+  it("a zip parses the contribution its table holds; the whole package travels as its files", async () => {
     const archive = await parsePluginArchive(zip(registered("@acme/reviewer")));
     expect(archive).toMatchObject({
       name: "@acme/reviewer",
@@ -412,22 +475,20 @@ describe("agent definitions as plugin packages", () => {
     expect(archive.files.has("agent_state/AGENTS.md")).toBe(true);
   });
 
-  it("a registration without any definition content installs, copies nothing, and the answer carries no Agent", async () => {
+  it("a contribution without any definition content installs, copies nothing, and the answer carries no Agent", async () => {
     const admin = await boot(fakeNpm());
     const res = await admin.post("/api/projects/default_project/plugins/installed/archive", {
       dataBase64: Buffer.from(
         zip({
-          "package.json": JSON.stringify({
-            name: "@acme/empty",
-            version: "1.0.0",
-            penguin: { agent: true },
-          }),
+          "package.json": JSON.stringify({ name: "@acme/empty", version: "1.0.0" }),
+          "index.js": "export {};\n",
+          "ifaces.json": agentTable({ name: "empty", agentState: [] }),
         }),
       ).toString("base64"),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { installed?: PluginInstallOutcome };
-    // The registration holds, but the package's agent_state/ carries nothing copyable: the
+    // The contribution holds, but the package's agent_state/ carries nothing copyable: the
     // answer does not invent an Agent (the install surface never lies about a copy).
     expect(body.installed?.agent).toBeUndefined();
   });

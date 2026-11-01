@@ -3,8 +3,7 @@
  * (`name`, `version`, `description`, `keywords`, `author`, `homepage`, `repository`, `license`)
  * and one namespaced block, `penguin`, holding every field that is this product's — the display
  * name, the Chinese and the card's descriptions, the category, the icon, whether default_agent
- * preinstalls it, the quick start, the hook package, the MCP servers and the Agent definition
- * (`penguin.agent`) it contributes. A namespaced block tells a reader (and
+ * preinstalls it, the quick start, the hook package and the MCP servers it contributes. A namespaced block tells a reader (and
  * this reader) exactly which keys are ours, the way `prettier` or `eslintConfig` sit in a
  * package.json, and lets the npm-standard fields keep their npm meaning. A package without the
  * block reads as one with an empty block.
@@ -125,8 +124,6 @@ export interface PluginPackageFields {
   hooks?: PluginHooksDeclaration;
   /** The MCP servers the package contributes (`mcp_servers`); absent when it declares none. */
   mcpServers?: PluginMcpServer[];
-  /** The package registers an Agent definition (`agent`): its content lives in the package's `agent_state/`. */
-  agent?: boolean;
 }
 
 /** A plugin's package.json, read and checked. */
@@ -337,13 +334,6 @@ export function parsePluginPackage(
   if (hooks !== undefined) penguin.hooks = hooks;
   const mcpServers = readMcpServers(block.mcp_servers, warnings);
   if (mcpServers.length > 0) penguin.mcpServers = mcpServers;
-  // The Agent definition is a declaration like the hooks are: the package registers it, and
-  // the definition itself lives in the package's `agent_state/` — the reader only reads the
-  // registration.
-  if (block.agent !== undefined) {
-    if (block.agent === true) penguin.agent = true;
-    else warnings.push("penguin.agent must be true; ignored");
-  }
 
   return {
     manifest: {
