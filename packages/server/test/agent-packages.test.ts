@@ -254,21 +254,21 @@ describe("agent definition packages on the install surface", () => {
       }),
       "index.mjs": "export default { modules: [] };\n",
       "ifaces.json": JSON.stringify({
-        ifaces: {},
+        ifaces: { "@acme/reviewer#Agent": { name: "Agent", methods: {} } },
         types: {},
         modules: {
-          agent: {
-            name: "agent",
+          Agent: {
+            name: "Agent",
             kind: "component",
             requires: {},
-            provides: {},
+            provides: { Agent: "@acme/reviewer#Agent" },
             contributes: {
               [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
             },
             children: [],
           },
         },
-        plugin: { modules: ["agent"], replaces: [] },
+        plugin: { modules: ["Agent"], replaces: [] },
       }),
       "agent_state/AGENTS.md": "# guidance\n",
     };
@@ -311,21 +311,21 @@ describe("agent definition packages on the install surface", () => {
       }),
       "index.mjs": "export default { modules: [] };\n",
       "ifaces.json": JSON.stringify({
-        ifaces: {},
+        ifaces: { "@acme/reviewer#Agent": { name: "Agent", methods: {} } },
         types: {},
         modules: {
-          agent: {
-            name: "agent",
+          Agent: {
+            name: "Agent",
             kind: "component",
             requires: {},
-            provides: {},
+            provides: { Agent: "@acme/reviewer#Agent" },
             contributes: {
               [AGENT_DEFINITIONS_SLOT]: [{ id: "agent.definition", agentId: "reviewer" }],
             },
             children: [],
           },
         },
-        plugin: { modules: ["agent"], replaces: [] },
+        plugin: { modules: ["Agent"], replaces: [] },
       }),
       "agent_state/AGENTS.md": "# guidance\n",
     };
