@@ -38,6 +38,7 @@ import { registerVersionCommand } from "./commands/version.js";
 import { reportCommanderError } from "./usage-error.js";
 import { defaultMessages, resolveLanguage } from "./i18n.js";
 import { cliContext } from "./context.js";
+import { commandOnChain } from "@prismshadow/penguin-core/plugin";
 import {
   cliSummary,
   discoverCliCommands,
@@ -59,18 +60,7 @@ function registerPhantoms(
     // that gets reported, and a doubled help line helps nobody.
     if (listed.has(entry.key)) continue;
     listed.add(entry.key);
-    let node = program;
-    let prefix = "";
-    const segments = entry.key.split(".");
-    for (const segment of segments) {
-      prefix = prefix === "" ? segment : `${prefix}.${segment}`;
-      let child = node.commands.find((c) => c.name() === segment);
-      if (child === undefined) child = node.command(segment);
-      // The leaf carries the summary; an intermediate node stands for its own entry when
-      // one exists (a shorter key found earlier in the same walk).
-      if (prefix === entry.key) child.description(cliSummary(entry, language));
-      node = child;
-    }
+    (commandOnChain(program, entry.key) as Command).description(cliSummary(entry, language));
   }
 }
 

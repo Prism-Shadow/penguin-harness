@@ -46,12 +46,10 @@ export default defineConfig({
     // Project closure and the table reader its `cli.commands` discovery reads plugins'
     // data halves through, without importing a package.
     "plugin/loader": "src/plugin/loader.ts",
-    // "./cli/manifest": the server package's `cli.commands` data half — the declarations
-    // the CLI host reads on every start to list and dispatch the serve group. Light on
-    // purpose: nothing but the kernel decorators, so help never loads the service.
-    "cli/module": "src/cli/module.ts",
-    // "./cli/serve": the serve group's code half — `registerCliCommands`, imported by the
-    // host only when a dispatch names one of the package's keys.
+    // "./cli/serve": the server package's command module table — the @Module classes the
+    // CLI host loads on a dispatch hit (its data halves the host reads from the package's
+    // generated ifaces.json, never importing this code). Light on purpose: nothing but the
+    // kernel decorators, so help never loads the service.
     "cli/serve": "src/cli/serve.ts",
   },
   format: ["esm"],

@@ -62,11 +62,17 @@ export type {
   CliCommandEntry,
   CliCommandProgram,
   CliCommandRegister,
+  CliCommandRegisters,
   CliCommandSummary,
   CliContext,
   CliLoginSession,
 } from "./cli-commands.js";
-export { CLI_COMMANDS_SLOT, CLI_REGISTER_EXPORT, cliCommandKeyFault } from "./cli-commands.js";
+export {
+  CLI_COMMANDS_SLOT,
+  cliCommandKeyFault,
+  commandOnChain,
+  moduleCliCommandEntries,
+} from "./cli-commands.js";
 
 /**
  * What a plugin package's default export is.

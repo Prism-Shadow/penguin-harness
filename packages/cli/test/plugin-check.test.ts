@@ -97,8 +97,13 @@ async function writePlugin(
     }),
     "utf8",
   );
-  // The code half is never imported by the review; the entry exists for completeness.
-  await fs.promises.writeFile(entry, "export default { modules: [] };\n", "utf8");
+  // The code half is never imported by the review; the entry names the table's class and
+  // carries the register map shape for completeness.
+  await fs.promises.writeFile(
+    entry,
+    "export class Main {}\nexport const register = {};\nexport default { modules: [Main] };\n",
+    "utf8",
+  );
   for (const [rel, text] of Object.entries(skills)) {
     const file = path.join(pkgDir, rel);
     await fs.promises.mkdir(path.dirname(file), { recursive: true });

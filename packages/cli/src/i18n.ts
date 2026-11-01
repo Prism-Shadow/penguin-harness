@@ -63,7 +63,6 @@ export interface Messages {
     hint(command: string, usage: string): string;
   };
   config: {
-    desc: string;
     modelDesc: string;
     addDesc: string;
     addModelId: string;
@@ -106,7 +105,6 @@ export interface Messages {
     vaultValue: string;
   };
   run: {
-    desc: string;
     message: string;
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
@@ -127,8 +125,6 @@ export interface Messages {
   };
   /** `penguin session`: the group that lists, reads, messages and renames sessions. */
   session: {
-    /** Group description. */
-    desc: string;
     /** `penguin session rename`'s own description. */
     renameDesc: string;
     /** rename's optional session_id argument. */
@@ -139,7 +135,6 @@ export interface Messages {
     renamed(sessionId: string, title: string): string;
   };
   chat: {
-    desc: string;
     resume: string;
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
@@ -180,7 +175,6 @@ export interface Messages {
   };
   /** `penguin agent`: agent listing and creation. */
   agent: {
-    desc: string;
     lsDesc: string;
     createDesc: string;
     createId: string;
@@ -248,7 +242,6 @@ export interface Messages {
   };
   /** `penguin project`: project listing. */
   project: {
-    desc: string;
     lsDesc: string;
     colId(): string;
     colName(): string;
@@ -301,7 +294,6 @@ export interface Messages {
   };
   /** `penguin cost`: token/cost aggregates. */
   cost: {
-    desc: string;
     days: string;
     from: string;
     to: string;
@@ -322,7 +314,6 @@ export interface Messages {
   };
   /** `penguin schedule`: scheduled-task listing and management (a validated writer over the schedules API; the TOML file stays the single source of truth). */
   schedule: {
-    desc: string;
     lsDesc: string;
     addDesc: string;
     updateDesc: string;
@@ -367,7 +358,6 @@ export interface Messages {
   };
   /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
   org: {
-    desc: string;
     lsDesc: string;
     createDesc: string;
     showDesc: string;
@@ -655,7 +645,6 @@ export interface Messages {
   };
   /** `penguin browser`: the desktop app's built-in browser (commands/browser.ts, browser-output.ts). */
   browser: {
-    desc: string;
     statusDesc: string;
     tabsDesc: string;
     openDesc: string;
@@ -1245,7 +1234,6 @@ const en: Messages = {
       `Usage: ${command} ${usage}  (run \`${command} --help\` for every option)`,
   },
   config: {
-    desc: "Manage Project configuration",
     modelDesc: "Manage models, their groups' connections and the default model",
     addDesc:
       "Add or update a model; without --model-id, set a group's connection (API key, base URL, protocol)",
@@ -1301,7 +1289,6 @@ const en: Messages = {
     vaultValue: "Variable value, written to the Agent's agent_state/.vault.toml",
   },
   run: {
-    desc: "Run a single Task",
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
@@ -1318,7 +1305,6 @@ const en: Messages = {
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
   chat: {
-    desc: "Open the interactive REPL",
     resume:
       "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session (/switch-model changes the model inside the chat, compacting first)",
     verbose:
@@ -1345,7 +1331,6 @@ const en: Messages = {
     noReplyYet: () => "(no assistant reply yet)",
   },
   session: {
-    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
     renameDesc:
       "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
     renameSessionId:
@@ -1362,7 +1347,6 @@ const en: Messages = {
       "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
-    desc: "Manage the project's agents",
     lsDesc: "List the project's agents",
     createDesc: "Create an agent",
     createId: "Agent id (directory name; letters, digits, underscores)",
@@ -1424,7 +1408,6 @@ const en: Messages = {
       "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
   },
   project: {
-    desc: "Manage projects",
     lsDesc: "List the projects this account can reach",
     colId: () => "ID",
     colName: () => "NAME",
@@ -1471,7 +1454,6 @@ const en: Messages = {
     removed: (name) => `Removed ${name}.`,
   },
   cost: {
-    desc: "Show token usage and cost (summary card by default; --by prints a grouped table)",
     days: "Trailing window in days (sets --from/--to)",
     from: "Range start (yyyy-mm-dd); requires --to",
     to: "Range end (yyyy-mm-dd); requires --from",
@@ -1490,7 +1472,6 @@ const en: Messages = {
     colGroup: (dimension) => dimension.toUpperCase(),
   },
   schedule: {
-    desc: "Manage scheduled tasks",
     lsDesc: "List the project's scheduled tasks (all agents unless --agent-id is given)",
     addDesc:
       "Create a scheduled task (writes the schedule file through the API; enabled by default — use --disabled to opt out)",
@@ -1526,7 +1507,6 @@ const en: Messages = {
     colStatus: () => "STATUS",
   },
   org: {
-    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
     lsDesc: "List the project's organizations",
     createDesc:
       "Create an organization: its CEO Agent, the CEO's desk session and the initialization run",
@@ -1797,7 +1777,6 @@ const en: Messages = {
     colPrincipal: () => "PRINCIPAL",
   },
   browser: {
-    desc: "The agent browser: read pages, run JavaScript, click and type, import sign-ins",
     statusDesc: "Whether the agent browser is available, which backend it is, and its tabs",
     tabsDesc: "List the open tabs (* marks the active one)",
     openDesc:
@@ -2374,7 +2353,6 @@ const zh: Messages = {
       `用法：${command} ${usage}（运行 \`${command} --help\` 查看全部选项）`,
   },
   config: {
-    desc: "管理 Project 配置",
     modelDesc: "管理模型、分组连接信息与默认模型",
     addDesc: "新增或更新一个模型；不带 --model-id 即设置分组的连接信息（API key、base URL、协议）",
     addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）；不给即设置分组的连接信息",
@@ -2422,7 +2400,6 @@ const zh: Messages = {
     vaultValue: "变量值，写入该 Agent 的 agent_state/.vault.toml",
   },
   run: {
-    desc: "单次运行一个 Task",
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
@@ -2438,7 +2415,6 @@ const zh: Messages = {
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
-    desc: "打开交互式 REPL",
     resume:
       "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session（会话内可用 /switch-model 切换模型，会先压缩上下文）",
     verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
@@ -2464,7 +2440,6 @@ const zh: Messages = {
     noReplyYet: () => "（还没有助手回复）",
   },
   session: {
-    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
     renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
     renameSessionId:
       "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
@@ -2479,7 +2454,6 @@ const zh: Messages = {
     timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
-    desc: "管理 Project 的 Agent",
     lsDesc: "列出 Project 的 Agent",
     createDesc: "创建 Agent",
     createId: "Agent id（即目录名；字母、数字、下划线）",
@@ -2540,7 +2514,6 @@ const zh: Messages = {
       "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
   },
   project: {
-    desc: "管理 Project",
     lsDesc: "列出当前账号可用的 Project",
     colId: () => "ID",
     colName: () => "名称",
@@ -2583,7 +2556,6 @@ const zh: Messages = {
     removed: (name) => `已移除 ${name}。`,
   },
   cost: {
-    desc: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
     days: "最近 n 天（自动换算为 --from/--to）",
     from: "起始日期（yyyy-mm-dd）；须与 --to 成对",
     to: "结束日期（yyyy-mm-dd）；须与 --from 成对",
@@ -2602,7 +2574,6 @@ const zh: Messages = {
     colGroup: (dimension) => dimension.toUpperCase(),
   },
   schedule: {
-    desc: "管理定时任务",
     lsDesc: "列出 Project 的定时任务（未指定 --agent-id 时覆盖全部 Agent）",
     addDesc: "创建定时任务（经 API 写入任务文件；缺省即启用——用 --disabled 关闭）",
     updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
@@ -2636,7 +2607,6 @@ const zh: Messages = {
     colStatus: () => "状态",
   },
   org: {
-    desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
     lsDesc: "列出 Project 的组织",
     createDesc: "创建组织：生成 CEO Agent、开 CEO 的工位会话并发起初始化会话",
     showDesc: "概览：员工与状态、看板计数、预算占用、待处理事项",
@@ -2882,7 +2852,6 @@ const zh: Messages = {
     colPrincipal: () => "主体",
   },
   browser: {
-    desc: "Agent 浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
     statusDesc: "Agent 浏览器是否可用、使用哪种后端，以及它的标签页",
     tabsDesc: "列出打开的标签页（* 标出当前标签页）",
     openDesc: "在当前标签页打开 URL（没有标签页时新开一个）；--new-tab 则在新标签页打开",

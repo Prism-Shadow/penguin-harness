@@ -392,7 +392,7 @@ function pngSize(png: Buffer): string | null {
 // ---------------------------------------------------------------------------
 
 export function registerBrowserCommand(program: Command, t: Messages): void {
-  const browser = program.command("browser").description(t.browser.desc);
+  const browser = program.command("browser");
   /** `--json` and `--server`, which every leaf takes, after its own options. */
   const leaf = (cmd: Command): Command =>
     cmd.option("--json", t.common.json).option("--server <url>", t.common.server);

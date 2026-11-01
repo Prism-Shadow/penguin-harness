@@ -36,7 +36,7 @@ import { registerLsCommand } from "./ls.js";
 import type { Messages } from "../i18n.js";
 
 export function registerSessionCommand(program: Command, t: Messages): void {
-  const session = program.command("session").description(t.session.desc);
+  const session = program.command("session");
   registerLsCommand(session, t);
   registerLogCommand(session, t);
   registerInputCommand(session, t);

@@ -11,7 +11,7 @@ import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
 export function registerProjectCommand(program: Command, t: Messages): void {
-  const project = program.command("project").description(t.project.desc);
+  const project = program.command("project");
 
   project
     .command("ls")

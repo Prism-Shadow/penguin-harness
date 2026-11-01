@@ -3,7 +3,7 @@
  *
  * These commands moved into the server package, so their text moved with them — the
  * descriptions a listing prints live in the package's `cli.commands` declaration
- * (module.ts); everything the commands themselves print lives here. The shapes are the
+ * (each command class's own entry); everything the commands themselves print lives here. The shapes are the
  * ones the CLI's own i18n module used, so the moved code reads the same way it always did,
  * keyed by the language the host resolved (`CliContext.language`) instead of a host
  * message table.
@@ -13,7 +13,7 @@
 export type WebProbeFailureKind =
   "timeout" | "refused" | "reset" | "permission" | "dns" | "unknown";
 
-/** The serve group's runtime text (the one-line descriptions live in module.ts). */
+/** The serve group's runtime text (one-line descriptions live in each command class's entry). */
 export interface ServeMessages {
   /** The `--root` option of `server status` / `server stop`. */
   root: string;

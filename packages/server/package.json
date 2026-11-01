@@ -64,11 +64,8 @@
     },
     "./plugin/loader": {
       "types": "./dist/plugin/loader.d.ts",
-      "import": "./dist/plugin/loader.js"
-    },
-    "./cli/manifest": {
-      "types": "./dist/cli/module.d.ts",
-      "import": "./dist/cli/module.js"
+      "import": "./dist/plugin/loader.js",
+      "require": "./dist/plugin/loader.js"
     },
     "./cli/serve": {
       "types": "./dist/cli/serve.d.ts",
@@ -86,7 +83,7 @@
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup && cp src/ifaces.json ifaces.json"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
@@ -121,6 +118,7 @@
   },
   "files": [
     "dist",
+    "ifaces.json",
     "web-dist",
     "LICENSE"
   ],

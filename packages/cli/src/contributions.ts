@@ -1,12 +1,16 @@
 /**
  * The CLI host's command contribution surface: discovery, ownership and dispatch.
  *
- * DISCOVERY collects the `cli.commands` data halves from the resolved module set — the
- * server package's declaration module (builtin, imported for its data alone), the CLI
- * package's own table, and the plugin closure of the data root, each package's generated
- * table read the way the server's plugin host reads it. Nothing here imports a command's
- * code: help and completion answer from the data halves alone, and the code half loads
- * only when a dispatch names one of its keys (registerPackageCommands).
+ * A command is ONE `@Module` class: its `contributes["cli.commands"]` entry is the data
+ * half, its own `register` method the code half, and the package's default export names
+ * the classes (the `Plugin` shape). DISCOVERY collects the data halves from the resolved
+ * module set — the CLI package's own classes read in process (its bundle is the running
+ * host), the server package's generated table read WITHOUT importing its code (the table
+ * ships beside its package.json, read through the loader the plugins use), and the plugin
+ * closure of the data root the same way. Only the classes a package's default export
+ * lists contribute — the same list the server's plugin host boots. Nothing here imports a
+ * command's code: help and completion answer from the data halves alone, and the code
+ * half loads only when a dispatch names one of its keys (registerPackageCommands).
  *
  * OWNERSHIP rules what a package may register. The key's root segment decides: the host
  * reserves help, version, exec, update, auth and plugin for itself, another package's key
@@ -17,19 +21,27 @@
  * invocation is the moment that says which one (the ambiguity report, exit code 2).
  */
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import type { Command } from "commander";
 import {
   CLI_COMMANDS_SLOT,
-  CLI_REGISTER_EXPORT,
   cliCommandKeyFault,
+  moduleCliCommandEntries,
   type CliCommandEntry,
+  type CliCommandRegisters,
   type CliContext,
+  type ModuleClass,
+  type Plugin,
 } from "@prismshadow/penguin-core/plugin";
-import { OWN_CLI_PACKAGE, ownCliEntries, registerOwnCliCommand } from "./own-commands.js";
 
-/** The server package: the builtin whose declaration module the host reads on every start. */
+import ownPlugin, { register as ownRegister } from "./cli-commands.js";
+
+/** The CLI package: its command classes ride in this bundle and are read in process. */
+export const OWN_PACKAGE = "@prismshadow/penguin-cli";
+
+/** The server package: the builtin whose generated table the host reads on every start. */
 export const SERVER_PACKAGE = "@prismshadow/penguin-server";
 
 /** The root segments the host keeps for itself; no package may contribute under them. */
@@ -247,12 +259,11 @@ export function matchingPackages(matches: readonly CliDiscovered[]): string[] {
 }
 
 /**
- * Collects the `cli.commands` data halves from the resolved module set. The builtin
- * server package's declarations import (data alone — the module pulls nothing but the
- * kernel decorators); the CLI's own table is read in-process; the plugin closure is read
- * from the data root with the server's own resolver, each package's generated table
- * imported NEVER — a broken plugin cannot break help. An unreadable source is a fault,
- * not a failure: the rest still dispatches, and review reports it.
+ * Collects the `cli.commands` data halves from the resolved module set. The CLI package's
+ * own classes are read in process; the server package's generated table is read through
+ * the loader without importing its code; the plugin closure is read the same way, only
+ * the classes each package's default export lists contributing. An unreadable source is a
+ * fault, not a failure: the rest still dispatches, and review reports it.
  */
 /**
  * A plugin's identity for the CLI's surfaces: the name its own package.json declares —
@@ -268,19 +279,41 @@ async function packageNameAt(manifestPath: string, fallback: string): Promise<st
   }
 }
 
+/** The `cli.commands` entries one @Module class declares, or [] for a class without the slot. */
+function classEntries(cls: ModuleClass): readonly CliCommandEntry[] {
+  return moduleCliCommandEntries(cls) ?? [];
+}
+
 export async function discoverCliCommands(opts: { root: string }): Promise<CliDiscovery> {
   const perPackage = new Map<string, CliCommandEntry[]>();
   const pluginPackages = new Map<string, { dir: string; entry: string }>();
   const faults: string[] = [];
 
-  perPackage.set(OWN_CLI_PACKAGE, ownCliEntries());
+  // The CLI's own classes: the meta is already on them (this bundle decorated them).
+  const ownEntries = (ownPlugin.modules ?? []).flatMap(classEntries);
+  if (ownEntries.length > 0) perPackage.set(OWN_PACKAGE, [...ownEntries]);
 
+  // The server package's table, read without importing its code: resolve the package's
+  // own entry (import.meta.resolve is the ESM answer to "where is this package installed",
+  // external in the CLI bundle exactly like the runtime import of its code), then walk up
+  // to the package root and read the table the loader reads for plugins. An older server
+  // install (mid-upgrade) ships no table: the host still comes up, the missing group is
+  // review's to report.
   try {
-    const { serverCliCommands } = await import("@prismshadow/penguin-server/cli/manifest");
-    perPackage.set(SERVER_PACKAGE, [...serverCliCommands()]);
+    // The package exports no root specifier — its loader subpath is the walk anchor.
+    // import.meta.resolve is the ESM answer; the test runner's SSR transform does not
+    // provide it, so the require form (over the same loader subpath) covers that runner.
+    const loaderSpecifier = "@prismshadow/penguin-server/plugin/loader";
+    const entryFile = await (async () => {
+      try {
+        return fileURLToPath(import.meta.resolve(loaderSpecifier));
+      } catch {
+        return createRequire(import.meta.url).resolve(loaderSpecifier);
+      }
+    })();
+    const table = await readTableAt(entryFile);
+    if (table !== null) perPackage.set(SERVER_PACKAGE, table);
   } catch (err) {
-    // A server package older than this contribution point (an install mid-upgrade) ships
-    // no commands: the host still comes up, the missing group is review's to report.
     faults.push(
       `the server package's command declarations could not be read: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -303,7 +336,12 @@ export async function discoverCliCommands(opts: { root: string }): Promise<CliDi
         entry: resolved.file,
       });
       const entries: CliCommandEntry[] = [];
-      for (const manifest of Object.values(table.manifests)) {
+      // Only the classes the package's default export lists contribute — the same list
+      // the server's plugin host boots; a decorated class it does not name is table data
+      // nothing in this package runs.
+      for (const name of table.plugin.modules) {
+        const manifest = table.manifests[name];
+        if (manifest === undefined) continue; // named but ungenerated: the load reports it
         const contributed = manifest.contributes?.[CLI_COMMANDS_SLOT];
         if (Array.isArray(contributed)) {
           entries.push(...(contributed as unknown as CliCommandEntry[]));
@@ -327,12 +365,56 @@ export async function discoverCliCommands(opts: { root: string }): Promise<CliDi
   };
 }
 
+/** The `cli.commands` entries of a package's generated table (its default export's classes), or null when none. */
+async function readTableAt(entryPath: string): Promise<CliCommandEntry[] | null> {
+  const { readPackageTable } = await import("@prismshadow/penguin-server/plugin/loader");
+  // The entry file is only a walk anchor for the reader: it looks for the nearest
+  // package.json above it, and the package root carries the table beside its manifest.
+  const table = await readPackageTable(entryPath);
+  if (table === null) return null;
+  const entries: CliCommandEntry[] = [];
+  for (const name of table.plugin.modules) {
+    const manifest = table.manifests[name];
+    if (manifest === undefined) continue;
+    const contributed = manifest.contributes?.[CLI_COMMANDS_SLOT];
+    if (Array.isArray(contributed)) entries.push(...(contributed as unknown as CliCommandEntry[]));
+  }
+  return entries;
+}
+
 /**
- * Loads one package's code half and registers it: the lazy command modules for the CLI's
- * own keys (`undefined` = every one of them — what `penguin exec <own package>` with no
- * further words registers), the server package's register, or the plugin's entry — the
- * contract's `registerCliCommands`. Called only on a dispatch hit, so a package's code
- * first runs when one of its commands is actually named.
+ * Registers every entry one package's collected declarations carry: the code half is the
+ * register map the package unit exports — keyed by entry id — so the binding between the
+ * data half (the generated table) and the code half is one explicit line per command. An
+ * id the map does not name is a programming error named by the id.
+ */
+async function registerEntries(
+  entries: readonly CliCommandEntry[],
+  registers: CliCommandRegisters["register"],
+  pkg: string,
+  program: Command,
+  ctx: CliContext,
+): Promise<void> {
+  for (const entry of entries) {
+    const register = registers[entry.id];
+    if (typeof register !== "function") {
+      throw new Error(
+        `${pkg} declares the command id '${entry.id}' but its register map names no such key`,
+      );
+    }
+    await register(program, ctx, entry);
+  }
+}
+
+/**
+ * Loads one package's collected declarations and code half and registers every command:
+ * the CLI's own declaration in process, the server package's `./cli/serve` unit, or the
+ * plugin's entry (each a default export naming @Module classes — the Plugin shape — plus
+ * a `register` map keyed by entry id). The package registers as a whole — a parent
+ * command and its subcommands are separate entries, and a dispatch that names
+ * `server.status` needs the parent's node too; the matched key decided only WHICH
+ * package. Called only on a dispatch hit, so a package's code first runs when one of its
+ * commands is actually named.
  */
 export async function registerPackageCommands(
   discovery: CliDiscovery,
@@ -341,21 +423,40 @@ export async function registerPackageCommands(
   program: Command,
   ctx: CliContext,
 ): Promise<void> {
-  if (pkg === OWN_CLI_PACKAGE) {
-    await registerOwnCliCommand(key, program, ctx);
-    return;
+  void key; // the package registers as a whole; the key only picked the package
+  let entries: readonly CliCommandEntry[];
+  let registers: CliCommandRegisters["register"] | undefined;
+  if (pkg === OWN_PACKAGE) {
+    entries = discovery.commands.filter((c) => c.pkg === pkg).map((c) => c.entry);
+    registers = ownRegister;
+  } else if (pkg === SERVER_PACKAGE) {
+    const serve = (await import("@prismshadow/penguin-server/cli/serve")) as unknown as {
+      default?: Plugin;
+      register?: CliCommandRegisters["register"];
+    };
+    entries = discovery.commands.filter((c) => c.pkg === pkg).map((c) => c.entry);
+    registers = serve.register;
+  } else {
+    const entry = discovery.pluginPackages.get(pkg)?.entry;
+    if (entry === undefined) throw new Error(`no entry file resolved for ${pkg}`);
+    const mod = (await import(pathToFileURL(entry).href)) as {
+      default?: Plugin;
+      register?: CliCommandRegisters["register"];
+    };
+    const plugin = mod.default ?? (mod as unknown as Plugin);
+    if (plugin === null || typeof plugin !== "object" || !Array.isArray(plugin.modules)) {
+      throw new Error(
+        `${pkg} contributes commands but its default export is not a Plugin ({ modules: [<@Module class>, …] })`,
+      );
+    }
+    entries = (plugin.modules as ModuleClass[]).flatMap(
+      (cls) => moduleCliCommandEntries(cls) ?? [],
+    );
+    registers = mod.register;
   }
-  if (pkg === SERVER_PACKAGE) {
-    const { registerCliCommands } = await import("@prismshadow/penguin-server/cli/serve");
-    registerCliCommands(program, ctx);
-    return;
+  if (registers === undefined) {
+    throw new Error(`${pkg} contributes commands but exports no register map`);
   }
-  const entry = discovery.pluginPackages.get(pkg)?.entry;
-  if (entry === undefined) throw new Error(`no entry file resolved for ${pkg}`);
-  const mod = (await import(pathToFileURL(entry).href)) as Record<string, unknown>;
-  const register = mod[CLI_REGISTER_EXPORT];
-  if (typeof register !== "function") {
-    throw new Error(`${pkg} contributes commands but exports no ${CLI_REGISTER_EXPORT}`);
-  }
-  await (register as (program: Command, ctx: CliContext) => void | Promise<void>)(program, ctx);
+  if (entries.length === 0) throw new Error(`${pkg} contributes commands but collects no entries`);
+  await registerEntries(entries, registers, pkg, program, ctx);
 }

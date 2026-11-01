@@ -14,22 +14,38 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
-import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { moduleCliCommandEntries, type CliContext } from "@prismshadow/penguin-core/plugin";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  ServerServeCommand,
+  ServerWebCommand,
   browserCommand,
   appPagePath,
   browserUrl,
   cliEntryFor,
   describeReadinessFailure,
-  registerCliCommands,
   resolvePort,
   supervisorDecision,
   waitForReady,
 } from "../src/cli/serve.js";
 import { serveMessages } from "../src/cli/messages.js";
-import { serverCliCommands } from "../src/cli/module.js";
+import { ServerStatusCommand } from "../src/cli/server-status.js";
+import { ServerStopCommand } from "../src/cli/server-stop.js";
+import { ServerResetAdminPasswordCommand } from "../src/cli/reset-password.js";
+import serveModules, { register as serveRegister } from "../src/cli/serve.js";
+
+/** The registration the host performs on a dispatch hit: the whole package's entries,
+ * each resolved through the register map by its id. */
+async function registerAll(program: Command, ctx: CliContext): Promise<void> {
+  for (const cls of serveModules.modules) {
+    for (const entry of moduleCliCommandEntries(cls as never) ?? []) {
+      const one = serveRegister[entry.id];
+      if (one === undefined) throw new Error(`${entry.id}: no register in the map`);
+      await one(program, ctx, entry);
+    }
+  }
+}
 
 /** A CliContext for registration: the serve group reads the language and the root; nothing else is touched here. */
 function fakeCtx(root: string, language: "en" | "zh" = "en"): CliContext {
@@ -98,34 +114,56 @@ describe("browserUrl (wildcard listen addresses map to 127.0.0.1)", () => {
   });
 });
 
-describe("registerCliCommands (the code half the host dispatches into)", () => {
+describe("the serve group's command modules (the code half the host dispatches into)", () => {
   // The registration reads the context's language alone — the actions that would touch
   // the root never run here, so the root can be a path nothing created.
   const root = path.join(os.tmpdir(), "penguin-cli-serve-root");
-  it("registers the server and web top-level commands; web defaults to open=true (--no-open turns it off)", () => {
+  it("registers the server and web top-level commands; web defaults to open=true (--no-open turns it off)", async () => {
     const program = new Command();
-    registerCliCommands(program, fakeCtx(root));
+    await registerAll(program, fakeCtx(root));
     const names = program.commands.map((c) => c.name());
     expect(names).toContain("server");
     expect(names).toContain("web");
     const web = program.commands.find((c) => c.name() === "web")!;
     expect(web.opts().open).toBe(true);
   });
-  it("the `server` command carries its subcommands (status / stop / reset-admin-password)", () => {
+  it("each class carries exactly one cli.commands entry, keyed to what it registers", () => {
+    for (const cls of [
+      ServerServeCommand,
+      ServerWebCommand,
+      ServerStatusCommand,
+      ServerStopCommand,
+      ServerResetAdminPasswordCommand,
+    ]) {
+      const entries = moduleCliCommandEntries(cls);
+      expect(entries).toHaveLength(1);
+      expect(typeof entries![0]!.id).toBe("string");
+      expect(typeof entries![0]!.summary.en).toBe("string");
+      expect(typeof entries![0]!.summary.zh).toBe("string");
+    }
+  });
+  it("the `server` command carries its subcommands (status / stop / reset-admin-password)", async () => {
     const program = new Command();
-    registerCliCommands(program, fakeCtx(root));
+    await registerAll(program, fakeCtx(root));
     const server = program.commands.find((c) => c.name() === "server")!;
     expect(server.commands.map((c) => c.name())).toEqual(
       expect.arrayContaining(["status", "stop", "reset-admin-password"]),
     );
   });
-  it("the registered descriptions are the package's cli.commands summaries, in the context's language", () => {
+  it("the registered descriptions come from the entry the class declares, in the context's language", async () => {
     const program = new Command();
-    registerCliCommands(program, fakeCtx(root, "zh"));
+    await registerAll(program, fakeCtx(root, "zh"));
     const server = program.commands.find((c) => c.name() === "server")!;
-    expect(server.description()).toBe(
-      serverCliCommands().find((entry) => entry.key === "server")!.summary.zh,
-    );
+    expect(server.description()).toBe(moduleCliCommandEntries(ServerServeCommand)![0]!.summary.zh);
+  });
+  it("the module table names exactly the classes the serve entry ships", () => {
+    expect(serveModules.modules).toEqual([
+      ServerServeCommand,
+      ServerWebCommand,
+      ServerStatusCommand,
+      ServerStopCommand,
+      ServerResetAdminPasswordCommand,
+    ]);
   });
 });
 

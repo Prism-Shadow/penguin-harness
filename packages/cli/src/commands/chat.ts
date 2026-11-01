@@ -123,7 +123,6 @@ function promptMark(kind: "A" | "B" | "C" | "D", exitCode?: number): string {
 export function registerChatCommand(program: Command, t: Messages): void {
   program
     .command("chat")
-    .description(t.chat.desc)
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)

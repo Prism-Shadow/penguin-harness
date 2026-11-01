@@ -558,7 +558,7 @@ function renderChannelDetail(d: OrgChannelDetail, t: Messages): string {
 // ---------------------------------------------------------------------------
 
 export function registerOrgCommand(program: Command, t: Messages): void {
-  const org = program.command("org").description(t.org.desc);
+  const org = program.command("org");
 
   org
     .command("ls")

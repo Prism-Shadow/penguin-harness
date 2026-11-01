@@ -11,20 +11,43 @@
 import path from "node:path";
 import { readMachineStatus } from "../machine-status.js";
 import type { Command } from "commander";
-import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { Module } from "@prismshadow/penguin-core/kernel";
+import {
+  commandOnChain,
+  type CliCommandProgram,
+  type CliCommandRegister,
+} from "@prismshadow/penguin-core/plugin";
 import { serveMessages } from "./messages.js";
-import { serverCliSummary } from "./module.js";
 
-/**
- * Attaches the subcommand to the `penguin server` command (see serve.ts's
- * registerCliCommands). The data root is the CLI's documented priority — `--root` >
- * PENGUIN_HOME > the default — resolved through the context the host hands down.
- */
-export function registerStatusCommand(server: Command, ctx: CliContext): void {
+/** The command's data half — the one place the summary lives. A pure collector: the code
+ * half is `register["server-cli.status"]` in serve.ts, which attaches the subcommand to
+ * the `penguin server` chain (the parent's entry declares that key's subtree open). The
+ * data root is the CLI's documented priority — `--root` > PENGUIN_HOME > the default —
+ * resolved through the context the host hands down. */
+@Module({
+  contributes: {
+    "cli.commands": [
+      {
+        id: "server-cli.status",
+        key: "server.status",
+        summary: {
+          en: "Print this data root's server state and machine id as one line of JSON",
+          zh: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
+        },
+      },
+    ],
+  },
+})
+export class ServerStatusCommand {}
+
+/** The command's code half: attaches the subcommand to the `penguin server` chain (the
+ * parent's entry declares that key's subtree open), its description read off the entry
+ * the host hands in. The data root is the CLI's documented priority — `--root` >
+ * PENGUIN_HOME > the default — resolved through the context the host hands down. */
+export const registerStatus: CliCommandRegister = async (program, ctx, entry) => {
   const m = serveMessages(ctx.language);
-  server
-    .command("status")
-    .description(serverCliSummary("server.status", ctx.language))
+  (commandOnChain(program, entry.key) as Command)
+    .description(entry.summary[ctx.language])
     .option("--root <dir>", m.root)
     .action(async (opts: { root?: string }) => {
       const root = opts.root !== undefined ? path.resolve(opts.root) : ctx.root;
@@ -33,4 +56,4 @@ export function registerStatusCommand(server: Command, ctx: CliContext): void {
       const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
       process.stdout.write(JSON.stringify(await readMachineStatus(root, dbPath)) + "\n");
     });
-}
+};

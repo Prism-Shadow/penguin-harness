@@ -14,16 +14,39 @@
 import path from "node:path";
 import { resetAdminPassword } from "../reset-admin-password.js";
 import type { Command } from "commander";
-import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { Module } from "@prismshadow/penguin-core/kernel";
+import {
+  commandOnChain,
+  type CliCommandProgram,
+  type CliCommandRegister,
+} from "@prismshadow/penguin-core/plugin";
 import { serveMessages } from "./messages.js";
-import { serverCliSummary } from "./module.js";
 
-/** Attaches the subcommand to the `penguin server` command (see serve.ts's registerCliCommands). */
-export function registerResetPasswordCommand(server: Command, ctx: CliContext): void {
+/** The command's data half — the one place the summary lives. A pure collector: the code
+ * half is `register["server-cli.reset-admin-password"]` in serve.ts. */
+@Module({
+  contributes: {
+    "cli.commands": [
+      {
+        id: "server-cli.reset-admin-password",
+        key: "server.reset-admin-password",
+        summary: {
+          en: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
+          zh: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
+        },
+      },
+    ],
+  },
+})
+export class ServerResetAdminPasswordCommand {}
+
+/** The command's code half: attaches the subcommand to the `penguin server` chain (the
+ * parent's entry declares that key's subtree open), its description read off the entry
+ * the host hands in. */
+export const registerResetAdminPassword: CliCommandRegister = async (program, ctx, entry) => {
   const m = serveMessages(ctx.language);
-  server
-    .command("reset-admin-password")
-    .description(serverCliSummary("server.reset-admin-password", ctx.language))
+  (commandOnChain(program, entry.key) as Command)
+    .description(entry.summary[ctx.language])
     .action(async () => {
       const root = ctx.root;
       const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
@@ -48,4 +71,4 @@ export function registerResetPasswordCommand(server: Command, ctx: CliContext): 
           process.stdout.write(m.resetPassword.next() + "\n");
       }
     });
-}
+};

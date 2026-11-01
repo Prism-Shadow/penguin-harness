@@ -24,10 +24,9 @@
  * cannot be re-spawned by node and runs in-process as before, where the server reports
  * that a restart must be done by hand.
  *
- * This module is the server package's `cli.commands` CODE half (the data half is
- * module.ts): the CLI host imports `registerCliCommands` only when a dispatch names one
- * of the package's keys, and receives everything else — the language, the data root — on
- * the `CliContext` it is handed.
+ * The module table (this file's default export) is what a dispatch hit loads: the CLI
+ * host resolves the dispatched key to the class whose data half owns it and calls that
+ * class's `register` with the program, the context and the entry as declared.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import { spawn } from "node:child_process";
@@ -36,13 +35,20 @@ import path from "node:path";
 import { DEFAULT_SERVER_PORT, SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { liveServerLock } from "../lock.js";
 import type { Command } from "commander";
-import type { CliContext, CliCommandRegister } from "@prismshadow/penguin-core/plugin";
+import { Module } from "@prismshadow/penguin-core/kernel";
+import {
+  commandOnChain,
+  type CliCommandProgram,
+  type CliCommandRegister,
+  type CliCommandRegisters,
+  type CliContext,
+  type Plugin,
+} from "@prismshadow/penguin-core/plugin";
 import { serveMessages, type WebProbeFailureKind } from "./messages.js";
-import { serverCliSummary } from "./module.js";
-import { registerResetPasswordCommand } from "./reset-password.js";
-import { registerStatusCommand } from "./server-status.js";
-import { registerStopCommand } from "./server-stop.js";
 import { serverStartEntry } from "./server-entry.js";
+import { registerResetAdminPassword, ServerResetAdminPasswordCommand } from "./reset-password.js";
+import { registerStatus, ServerStatusCommand } from "./server-status.js";
+import { registerStop, ServerStopCommand } from "./server-stop.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -353,21 +359,61 @@ function openBrowser(url: string): void {
 }
 
 /**
- * The serve group's code half: registers `server` (with its subcommands) and `web` on the
- * host's program. Descriptions come from the package's `cli.commands` declaration
- * (module.ts) so help and the registered commands cannot drift; everything else the
- * commands print comes from cli/messages.ts in the context's language.
+ * `penguin server` — starts the Web service, and owns the subtree its subcommands hang
+ * under (declared `subtree: "open"`: a plugin may contribute `server.*`). The data half
+ * is the entry below; the code half is `register["server-cli.server"]` further down.
  */
-export const registerCliCommands: CliCommandRegister = (rawProgram, ctx): void => {
-  // The host passes commander; keep its version opaque at the package contract seam.
-  const program = rawProgram as Command;
-  const m = serveMessages(ctx.language);
-  const server = program
-    .command("server")
-    .description(serverCliSummary("server", ctx.language))
-    .option("--port <port>", m.serve.port)
-    .option("--host <host>", m.serve.host)
-    .action(async (opts: { port?: string; host?: string }) => {
+@Module({
+  contributes: {
+    "cli.commands": [
+      {
+        id: "server-cli.server",
+        key: "server",
+        subtree: "open",
+        summary: {
+          en: "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
+          zh: "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
+        },
+      },
+    ],
+  },
+})
+export class ServerServeCommand {}
+
+/** `penguin web` — starts the service and opens the UI in a browser once it is ready. */
+@Module({
+  contributes: {
+    "cli.commands": [
+      {
+        id: "server-cli.web",
+        key: "web",
+        summary: {
+          en: "Start the Web service and open the UI in a browser once it is ready",
+          zh: "启动 Web 服务，就绪后用浏览器打开界面",
+        },
+      },
+    ],
+  },
+})
+export class ServerWebCommand {}
+
+/**
+ * The code half: every entry's register, keyed by its id — one line per entry, checkable
+ * against the declarations above and in the sibling files. Each register attaches its
+ * command (lazily imported here where the file is not this one), its description read
+ * off the entry the host hands in — help, the registered command and the dispatch key
+ * answer one declaration.
+ */
+export const register: CliCommandRegisters["register"] = {
+  "server-cli.server": async (program, ctx, entry) => {
+    const m = serveMessages(ctx.language);
+    const server = (commandOnChain(program, entry.key) as Command)
+      .description(entry.summary[ctx.language])
+      .option("--port <port>", m.serve.port)
+      .option("--host <host>", m.serve.host);
+    // Bare `penguin server` still starts the service (commander runs the action when no
+    // subcommand is named); the subcommand registers only dispatch on an exact name match.
+    server.action(async (opts: { port?: string; host?: string }) => {
       const existing = await existingInstanceUrl(ctx.root);
       if (existing !== null) {
         process.stderr.write(m.serverAlreadyRunning(existing) + "\n");
@@ -376,42 +422,55 @@ export const registerCliCommands: CliCommandRegister = (rawProgram, ctx): void =
       }
       await startServer(opts, ctx);
     });
-  // Bare `penguin server` still starts the service (commander runs the action when no
-  // subcommand is named); the subcommand only dispatches on an exact name match.
-  registerResetPasswordCommand(server, ctx);
-  registerStatusCommand(server, ctx);
-  registerStopCommand(server, ctx);
-
-  program
-    .command("web")
-    .description(serverCliSummary("web", ctx.language))
-    .option("--port <port>", m.serve.port)
-    .option("--host <host>", m.serve.host)
-    .option("--no-open", m.serve.noOpen)
-    .option("--app <spec>", m.serve.app)
-    .action(async (opts: { port?: string; host?: string; open: boolean; app?: string }) => {
-      // Resolved first so a malformed spec fails before anything starts.
-      const page = opts.app === undefined ? "" : appPagePath(opts.app);
-      const existing = await existingInstanceUrl(ctx.root);
-      if (existing !== null) {
-        process.stdout.write(m.webAlreadyRunning(existing) + "\n");
-        // Nothing is printed when attaching to a server that is already up: a server with
-        // no admin password yet prints a first-login LINK, and that link's token lives only
-        // in the running server's memory — this terminal cannot reproduce it, and should
-        // not. Its own console has it; restarting reissues it.
-        if (opts.open) openBrowser(existing + page);
-        return;
-      }
-      const { host, port } = await startServer(opts, ctx);
-      const url = browserUrl(host, port);
-      const readiness = await waitForReady(url);
-      if (!readiness.ready) {
-        process.stderr.write(
-          `${m.webProbeFailed(url, readiness.failure.detail, readiness.failure.kind, port)}\n`,
-        );
-        return;
-      }
-      process.stdout.write(`${m.webReady(url + page)}\n`);
-      if (opts.open) openBrowser(url + page);
-    });
+  },
+  "server-cli.web": async (program, ctx, entry) => {
+    const m = serveMessages(ctx.language);
+    (commandOnChain(program, entry.key) as Command)
+      .description(entry.summary[ctx.language])
+      .option("--port <port>", m.serve.port)
+      .option("--host <host>", m.serve.host)
+      .option("--no-open", m.serve.noOpen)
+      .option("--app <spec>", m.serve.app)
+      .action(async (opts: { port?: string; host?: string; open: boolean; app?: string }) => {
+        // Resolved first so a malformed spec fails before anything starts.
+        const page = opts.app === undefined ? "" : appPagePath(opts.app);
+        const existing = await existingInstanceUrl(ctx.root);
+        if (existing !== null) {
+          process.stdout.write(m.webAlreadyRunning(existing) + "\n");
+          // Nothing is printed when attaching to a server that is already up: a server with
+          // no admin password yet prints a first-login LINK, and that link's token lives only
+          // in the running server's memory — this terminal cannot reproduce it, and should
+          // not. Its own console has it; restarting reissues it.
+          if (opts.open) openBrowser(existing + page);
+          return;
+        }
+        const { host, port } = await startServer(opts, ctx);
+        const url = browserUrl(host, port);
+        const readiness = await waitForReady(url);
+        if (!readiness.ready) {
+          process.stderr.write(
+            `${m.webProbeFailed(url, readiness.failure.detail, readiness.failure.kind, port)}\n`,
+          );
+          return;
+        }
+        process.stdout.write(`${m.webReady(url + page)}\n`);
+        if (opts.open) openBrowser(url + page);
+      });
+  },
+  "server-cli.status": registerStatus,
+  "server-cli.stop": registerStop,
+  "server-cli.reset-admin-password": registerResetAdminPassword,
 };
+
+/** The server package's command module table: what a dispatch hit loads, and what the
+ * generated table's plugin declaration names — one list, so discovery, help and dispatch
+ * answer the same five classes. */
+export default {
+  modules: [
+    ServerServeCommand,
+    ServerWebCommand,
+    ServerStatusCommand,
+    ServerStopCommand,
+    ServerResetAdminPasswordCommand,
+  ],
+} satisfies Plugin;

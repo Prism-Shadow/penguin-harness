@@ -205,7 +205,7 @@ interface FixturePlugin {
   name: string;
   /** The `cli.commands` data half, raw (malformed entries included, as review sees them). */
   contributes: unknown[];
-  /** The entry's code: `registerCliCommands` (plain JS — the code half needs no decorators). */
+  /** The module class's code: the register method's body (`ctx`/`entry` in scope, plain JS). */
   register: string;
   /** Skill files to write under `skills/`, relative path → text. */
   skills?: Record<string, string>;
@@ -239,9 +239,27 @@ async function writePlugin(dir: string, plugin: FixturePlugin): Promise<string> 
     }),
     "utf8",
   );
+  // The meta is attached by hand (the decorator's own effect): a fixture cannot import
+  // the workspace's core, and the runtime reads the meta off the class either way. The
+  // code half is the register map keyed by entry id, each entry's body in scope.
   await fs.promises.writeFile(
     entry,
-    `export function registerCliCommands(program, ctx) {\n${plugin.register}\n}\nexport default { modules: [] };\n`,
+    `const SLOT = Symbol.for("@prismshadow/penguin-core/kernel:meta");
+export class Main {}
+Reflect.defineProperty(Main, SLOT, {
+  value: { name: "Main", kind: "module", contributes: { "cli.commands": ${JSON.stringify(plugin.contributes)} } },
+  enumerable: false, configurable: true,
+});
+export const register = {
+${plugin.contributes
+  .map(
+    (one) =>
+      `  ${JSON.stringify((one as { id: string }).id)}: async (program, ctx, entry) => {\n${plugin.register}\n  },`,
+  )
+  .join("\n")}
+};
+export default { modules: [Main] };
+`,
     "utf8",
   );
   for (const [rel, text] of Object.entries(plugin.skills ?? {})) {

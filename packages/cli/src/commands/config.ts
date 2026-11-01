@@ -401,7 +401,7 @@ async function removeGroupConnection(
 }
 
 export function registerConfigCommand(program: Command, t: Messages): void {
-  const config = program.command("config").description(t.config.desc);
+  const config = program.command("config");
   const model = config.command("model").description(t.config.modelDesc);
 
   model

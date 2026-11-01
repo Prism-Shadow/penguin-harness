@@ -15,9 +15,13 @@
 import path from "node:path";
 import { liveServerLock, readServerLock } from "../lock.js";
 import type { Command } from "commander";
-import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { Module } from "@prismshadow/penguin-core/kernel";
+import {
+  commandOnChain,
+  type CliCommandProgram,
+  type CliCommandRegister,
+} from "@prismshadow/penguin-core/plugin";
 import { serveMessages } from "./messages.js";
-import { serverCliSummary } from "./module.js";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -43,14 +47,34 @@ interface StopResult {
 
 /**
  * Attaches the subcommand to the `penguin server` command (see serve.ts's
- * registerCliCommands). The data root is the CLI's documented priority — `--root` >
+ * commandOnChain). The data root is the CLI's documented priority — `--root` >
  * PENGUIN_HOME > the default — resolved through the context the host hands down.
  */
-export function registerStopCommand(server: Command, ctx: CliContext): void {
+/** The command's data half — the one place the summary lives. A pure collector: the code
+ * half is `register["server-cli.stop"]` in serve.ts. */
+@Module({
+  contributes: {
+    "cli.commands": [
+      {
+        id: "server-cli.stop",
+        key: "server.stop",
+        summary: {
+          en: "Stop the server running on this data root and report the outcome as JSON",
+          zh: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
+        },
+      },
+    ],
+  },
+})
+export class ServerStopCommand {}
+
+/** The command's code half: attaches the subcommand to the `penguin server` chain (the
+ * parent's entry declares that key's subtree open), its description read off the entry
+ * the host hands in. */
+export const registerStop: CliCommandRegister = async (program, ctx, entry) => {
   const m = serveMessages(ctx.language);
-  server
-    .command("stop")
-    .description(serverCliSummary("server.stop", ctx.language))
+  (commandOnChain(program, entry.key) as Command)
+    .description(entry.summary[ctx.language])
     .option("--root <dir>", m.root)
     .action(async (opts: { root?: string }) => {
       const root = opts.root !== undefined ? path.resolve(opts.root) : ctx.root;
@@ -58,7 +82,7 @@ export function registerStopCommand(server: Command, ctx: CliContext): void {
       process.stdout.write(JSON.stringify(result) + "\n");
       if (!result.ok) process.exitCode = 1;
     });
-}
+};
 
 const realEffects: StopEffects = {
   kill: (pid, signal) => process.kill(pid, signal),

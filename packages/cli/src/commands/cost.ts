@@ -36,7 +36,6 @@ function formatCost(cost: number | null, hasUncosted: boolean, t: Messages): str
 export function registerCostCommand(program: Command, t: Messages): void {
   program
     .command("cost")
-    .description(t.cost.desc)
     .option("--days <n>", t.cost.days)
     .option("--from <date>", t.cost.from)
     .option("--to <date>", t.cost.to)
