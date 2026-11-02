@@ -34,6 +34,8 @@
  *   Session pin them); a preload loads without running, a Session with no Trace included;
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
+ * - Given an idle parent with a running child, when credentials invalidate and replace the
+ *   parent runtime, the child's later output still streams and is recorded once.
  *
  * Titles:
  * - Title generation fires at Task start, before any model output, from the user's input
@@ -452,6 +454,49 @@ describe("session-manager", () => {
     expect(events.some((e) => e.data.includes("child progress"))).toBe(true);
     // Usage recording rode along (same recorder drive uses).
     expect(recorded).toContain(child);
+  });
+
+  it("a running child's output still streams and is recorded once after its parent runtime reloads", async () => {
+    let forward: ((msg: AmspRecord) => void) | null = null;
+    let disposed = false;
+    let loads = 0;
+    const manager = makeManager({
+      load: async () => {
+        loads++;
+        return fakeSession(ROW.sessionId);
+      },
+    });
+    manager.adopt(
+      ROW,
+      fakeSession(ROW.sessionId, {
+        onBackgroundMessage: (cb) => {
+          forward = cb;
+        },
+        hasRunningBackgroundSubagents: () => true,
+        dispose: () => {
+          disposed = true;
+        },
+      }),
+    );
+    const events = capture(ROW.sessionId);
+    try {
+      const before = withOrigin(assistantText("child before reload"), "session-child-1");
+      forward!(before);
+      manager.invalidateProjectRuntimes(ROW.projectId);
+      await manager.preload(ROW.sessionId);
+      expect(loads).toBe(1);
+      expect(disposed).toBe(false);
+      expect(sessions.findById(ROW.sessionId)).not.toBeNull();
+      const after = withOrigin(assistantText("child after reload"), "session-child-1");
+      forward!(after);
+      expect(events.filter((e) => !e.event).map((e) => JSON.parse(e.data))).toEqual([
+        before,
+        after,
+      ]);
+      expect(recorded).toEqual([before, after]);
+    } finally {
+      await manager.shutdown();
+    }
   });
 
   it("adopt registers the notice listener too (a freshly created session, no loader involved)", async () => {
@@ -1253,6 +1298,55 @@ describe("session-manager", () => {
     await manager.shutdown();
     expect(disposed).toBe(1);
   });
+
+  // An idle main Session may still own a child writing cancellation records. Each destructive
+  // lifecycle operation must return a wait that includes that child's asynchronous disposal.
+  it.each(["session", "agent", "project", "shutdown"] as const)(
+    "%s cleanup waits for an idle Session's background disposal",
+    async (scope) => {
+      let release!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let cleaned = false;
+      const fake = fakeSession("session-1", {
+        async dispose() {
+          await cleanup;
+          cleaned = true;
+        },
+      });
+      const manager = makeManager(loaderOf(fake));
+      manager.adopt(ROW, fake);
+      const waiting =
+        scope === "shutdown"
+          ? manager.shutdown()
+          : Promise.all(
+              scope === "session"
+                ? manager.beginSessionDeletion("session-1")
+                : scope === "agent"
+                  ? manager.beginAgentDeletion("p1", ROW.agentId)
+                  : manager.abortProject("p1"),
+            );
+      try {
+        // Drain already-resolved promises without a timer: cleanup remains explicitly gated.
+        const finished = await Promise.race([
+          waiting.then(() => true),
+          Promise.resolve()
+            .then(() => undefined)
+            .then(() => false),
+        ]);
+        expect(finished).toBe(false);
+        expect(cleaned).toBe(false);
+      } finally {
+        release();
+        await waiting;
+        manager.endSessionDeletion("session-1");
+        manager.endAgentDeletion("p1", ROW.agentId);
+        await manager.shutdown();
+      }
+      expect(cleaned).toBe(true);
+    },
+  );
 
   it("shutdown denies a call parked on a person, lets the run wind down, and disposes after it", async () => {
     // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody

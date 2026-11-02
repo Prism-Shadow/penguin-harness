@@ -1338,6 +1338,8 @@ export class Session {
    * Subscribes the host to live-forwarded background-subagent messages (origin-tagged, the
    * same stream a foreground collect window would relay): the server publishes them to the
    * session's event channel so the frontend sees a background child working in real time.
+   * Accounting records can arrive during disposal; hosts must stop publishing after removal
+   * while still recording usage for the original Session.
    * One listener; a later call replaces the earlier one.
    */
   onBackgroundMessage(listener: (msg: AmspRecord) => void): void {
@@ -1348,9 +1350,10 @@ export class Session {
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web
    * session close) to avoid leaking background processes into the host process's lifetime.
-   * Optional, idempotent.
+   * Idempotent. Await the result before deleting the Session's files: background children
+   * may still be writing their cancellation records after receiving the abort signal.
    */
-  dispose(): void {
-    this.environment.dispose?.();
+  dispose(): void | Promise<void> {
+    return this.environment.dispose?.();
   }
 }

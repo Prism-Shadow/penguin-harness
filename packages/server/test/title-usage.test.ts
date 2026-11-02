@@ -9,6 +9,7 @@ import type { SessionTitleResult } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import { UsageRepo } from "../src/db/repos/usage.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import { TitleGenerator } from "../src/runtime/title-generator.js";
@@ -37,7 +38,18 @@ it.each(["main", "child"])(
       lastActiveAt: "2026-10-26T00:00:00Z",
     });
     const usage = wire(UsageRepo, { db });
-    const recorder = wire(UsageRecorder, { usage, clock: { now: () => new Date() } });
+    const projects = wire(ProjectsRepo, { db });
+    db.prepare("INSERT INTO users (user_id, password_hash, created_at) VALUES (?, ?, ?)").run(
+      "owner",
+      "unused",
+      "2026-10-26T00:00:00Z",
+    );
+    projects.insert({
+      projectId: ctx.projectId,
+      ownerUserId: "owner",
+      createdAt: "2026-10-26T00:00:00Z",
+    });
+    const recorder = wire(UsageRecorder, { usage, projects, clock: { now: () => new Date() } });
     let finishModel!: (result: SessionTitleResult) => void;
     const model = new Promise<SessionTitleResult>((resolve) => (finishModel = resolve));
     let titleFinished!: () => void;
