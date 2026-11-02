@@ -21,6 +21,7 @@ import { MachineAnswers, keepable, keptResponse } from "./answer-cache.js";
 import type { AnswerReader, KeptAnswer } from "./answer-cache.js";
 import { ASKED_ENCODINGS, decodableEncoding, decodedBody } from "./answer-decoding.js";
 import type { MachineEventHub } from "./event-hub.js";
+import { isHistoryRead } from "./history-paths.js";
 import type { HistoryCaller, MachineHistory } from "./history-routes.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 import type { MachineSockets } from "./machine-sockets.js";
@@ -145,12 +146,14 @@ const brokenOff = (machineId: string, err: unknown): Response =>
 
 /**
  * The machine's answer as this server relays it: decoded (answer-decoding.ts), and for a read
- * this server keeps, answered from the kept body on a 304 and kept anew on a 200.
+ * this server keeps, answered from the kept body on a 304 and kept anew on a 200. `encoded`: as
+ * it crossed instead, its encoding and length kept, for a reader that decodes it itself.
  */
 async function relayAnswer(
   res: http.IncomingMessage,
   machineId: string,
   read: KeptRead | null,
+  encoded: boolean,
 ): Promise<Response> {
   const status = res.statusCode ?? 502;
   if (status === 304 && read?.kept != null) {
@@ -165,7 +168,7 @@ async function relayAnswer(
   if (res.headers.location !== undefined) {
     out.set("location", rewriteLocation(res.headers.location, machineId));
   }
-  if (decodableEncoding(res) !== null) {
+  if (!encoded && decodableEncoding(res) !== null) {
     // These described the bytes that crossed, not the ones relayed.
     out.delete("content-encoding");
     out.delete("content-length");
@@ -174,7 +177,7 @@ async function relayAnswer(
     res.resume();
     return new Response(null, { status, headers: out });
   }
-  const body = decodedBody(res);
+  const body = encoded ? res : decodedBody(res);
   if (read !== null && keepable(status, out)) {
     const bytes = new Uint8Array(await buffer(body));
     read.answers.keep(read.key, { etag: out.get("etag")!, headers: [...out], body: bytes });
@@ -201,6 +204,12 @@ export function proxyThroughSession(
   target: ProxyTarget,
   report?: ProxyReport,
   reader?: AnswerReader,
+  /**
+   * The answer as it crossed the link — still encoded, its `Content-Encoding` and length kept —
+   * for a reader that counts the link's bytes against that length and decodes the body itself
+   * (answer-decoding.ts decodedWhole; history-sync.ts's `/messages` over HTTP). Nothing is kept.
+   */
+  encoded = false,
 ): Promise<Response> {
   const { agent, port, cookie } = target;
   // Given up on before it left: nothing to dial for.
@@ -216,7 +225,7 @@ export function proxyThroughSession(
     if (target.adoptedAt !== null) headers[ADOPTED_AT_HEADER] = target.adoptedAt;
     headers["accept-encoding"] = ASKED_ENCODINGS;
     let read: KeptRead | null = null;
-    if (request.method === "GET" && reader !== undefined) {
+    if (request.method === "GET" && reader !== undefined && !encoded) {
       const key = MachineAnswers.key(
         path.machineId,
         reader.readerId,
@@ -237,7 +246,7 @@ export function proxyThroughSession(
       },
       (res) => {
         report?.(path.machineId, { ok: true });
-        relayAnswer(res, path.machineId, read).then(resolve, (err: unknown) =>
+        relayAnswer(res, path.machineId, read, encoded).then(resolve, (err: unknown) =>
           resolve(cancelled ? cancelledResponse() : brokenOff(path.machineId, err)),
         );
       },
@@ -350,7 +359,10 @@ export async function forwardToMachine(
   target: ProxyTarget,
   relay: MachineSocketRelay,
   report?: ProxyReport,
-  /** Who asks, for a read whose last answer this server keeps (answer-cache.ts); none keeps nothing. */
+  /**
+   * Who asks, for a read whose last answer this server keeps (answer-cache.ts); none keeps
+   * nothing, and neither does a Session's history read.
+   */
   reader?: AnswerReader,
 ): Promise<Response> {
   // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
@@ -370,5 +382,7 @@ export async function forwardToMachine(
     if (relayed.status < 500) report?.(path.machineId, { ok: true });
     return relayed;
   }
-  return proxyThroughSession(request, path, target, report, reader);
+  // A Session's history read is the hub's copy's to keep (history-paths.ts), never this cache's.
+  const keeps = isHistoryRead(path.remotePath) ? undefined : reader;
+  return proxyThroughSession(request, path, target, report, keeps);
 }

@@ -17,6 +17,7 @@ import type http from "node:http";
 import { PassThrough } from "node:stream";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import zlib from "node:zlib";
 
 /** What the hub asks a machine for on every forwarded request. */
@@ -50,4 +51,22 @@ export function decodedBody(res: http.IncomingMessage): Readable {
     out.destroy(err instanceof Error ? err : new Error(String(err)));
   });
   return out;
+}
+
+const WHOLE_DECODERS: Record<string, (bytes: Buffer) => Promise<Buffer>> = {
+  br: promisify(zlib.brotliDecompress),
+  gzip: promisify(zlib.gunzip),
+  "x-gzip": promisify(zlib.gunzip),
+  deflate: promisify(zlib.inflate),
+};
+
+/**
+ * A body read whole as it crossed the link, decoded as {@link decodedBody} decodes a stream: by
+ * its `Content-Encoding`, left as it is for none or one this side cannot undo. For a reader that
+ * counts the link's own bytes as they come (history-sync.ts's `/messages` over HTTP) and decodes
+ * once they are all in.
+ */
+export async function decodedWhole(bytes: Buffer, encoding: string | null): Promise<Buffer> {
+  const decode = WHOLE_DECODERS[(encoding ?? "").trim().toLowerCase()];
+  return decode === undefined ? bytes : decode(bytes);
 }

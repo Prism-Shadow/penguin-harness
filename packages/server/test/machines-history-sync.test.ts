@@ -15,7 +15,8 @@
  *   it waits — the attempt, and when the next one is — and the window arrives once it is back.
  * - Given a machine on an older build (its socket answers `history-lines` 421), then the window
  *   is read from its `/messages` over HTTP inside the same stream, the bytes counted as they come;
- *   so is one this server holds no socket to.
+ *   so is one this server holds no socket to. One that compresses its answer is counted in the
+ *   bytes that cross, against the length that crossed, known from the start.
  * - Given a machine that turns this server's session away at the handshake, then the stream ends
  *   with `machine_refused`; given one being brought onto this hub's build, the reader is told it
  *   waits; given one this server no longer lists, the stream ends with `machine_not_found`.
@@ -37,6 +38,7 @@ import http from "node:http";
 import net from "node:net";
 import type { Socket } from "node:net";
 import path from "node:path";
+import zlib from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
@@ -1079,6 +1081,57 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       doneBytes: Buffer.byteLength(body),
       totalBytes: Buffer.byteLength(body),
     });
+    expect(windowRecords(history.events)).toEqual(messages);
+  });
+
+  it("counts an older machine's compressed window in the bytes that cross, its total known at once", async () => {
+    const messages = Array.from({ length: 40 }, (_, ordinal) => ({
+      ...(JSON.parse(traceLine(ordinal, `line ${ordinal} `.repeat(40))) as object),
+      tracePosition: { fileIndex: 1, ordinal },
+    }));
+    const prior = {
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    };
+    const body = JSON.stringify({ messages, page: { earlierTurns: 0, prior } });
+    // A build that compresses its JSON answers and has no history-lines: brotli when asked for.
+    const packed = zlib.brotliCompressSync(body);
+    const asked: (string | undefined)[] = [];
+    const machine = await scriptedMachine(
+      (ws, id) =>
+        send(ws, {
+          id,
+          status: 421,
+          headers: {},
+          body: { error: { code: "not_on_socket", message: "HTTP only." } },
+        }),
+      (req, res) => {
+        asked.push(req.headers["accept-encoding"]);
+        res.setHeader("content-type", "application/json");
+        res.setHeader("content-encoding", "br");
+        res.setHeader("content-length", packed.byteLength);
+        res.end(packed);
+      },
+    );
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => history.has("done"));
+
+    // Every reading of the window's amount names the same whole: what crossed, not what it held.
+    const readings = progressOf(history.events).filter(
+      (p) => p.phase === "window" && p.totalBytes > 0,
+    );
+    expect(asked).toEqual(["br, gzip"]);
+    expect(packed.byteLength).toBeLessThan(Buffer.byteLength(body) / 4);
+    expect(readings.map((p) => p.totalBytes)).toEqual(readings.map(() => packed.byteLength));
+    expect(readings.at(-1)?.doneBytes).toBe(packed.byteLength);
     expect(windowRecords(history.events)).toEqual(messages);
   });
 
