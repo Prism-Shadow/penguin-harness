@@ -134,15 +134,45 @@ function leaderboardSummary(board) {
   };
 }
 
-/** The site routes of the hub pages, for the static shells and the sitemap. */
+/**
+ * The site routes of the hub pages, for the static shells and the sitemap, each with the English
+ * title and description its shell carries for crawlers and link previews.
+ */
 export function hubRoutes(hub) {
-  const { index } = hub;
+  const { index, details } = hub;
+  const page = (route, title, description) => ({
+    route,
+    title: `${title} | PenguinHarness`,
+    description,
+  });
   return [
-    "/plugins/",
-    ...index.plugins.map((plugin) => `/plugins/${plugin.id}/`),
-    "/benchmarks/",
-    ...index.benchmarks.map((benchmark) => `/benchmarks/${benchmark.id}/`),
-    "/leaderboards/",
-    ...index.leaderboards.map((board) => `/leaderboards/${board.id}/`),
+    page(
+      "/plugins/",
+      "Plugins",
+      "The PenguinHarness plugin library: self-evolution toolkits, Skills, Hooks and workbenches.",
+    ),
+    ...index.plugins.map((plugin) =>
+      page(`/plugins/${plugin.id}/`, plugin.title, details.plugin[plugin.id].short),
+    ),
+    page(
+      "/benchmarks/",
+      "Benchmarks",
+      "PenguinHarness benchmarks: the tasks and rubrics agents are measured on.",
+    ),
+    ...index.benchmarks.map((benchmark) =>
+      page(`/benchmarks/${benchmark.id}/`, benchmark.title, benchmark.description),
+    ),
+    page(
+      "/leaderboards/",
+      "Leaderboards",
+      "PenguinHarness leaderboards: agents compared by score and cost on the benchmarks.",
+    ),
+    ...index.leaderboards.map((board) =>
+      page(
+        `/leaderboards/${board.id}/`,
+        board.title,
+        `${board.title}: agents compared by score and cost on the benchmarks.`,
+      ),
+    ),
   ];
 }

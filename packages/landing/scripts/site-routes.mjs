@@ -86,10 +86,13 @@ export function pageRoutes() {
 /**
  * The Plugins, Benchmarks and Leaderboards pages: each list and one page per entry, read from the
  * same files the build read (the benchmark repository's clone the build just made, or
- * PENGUIN_BENCHMARK_REPO).
+ * PENGUIN_BENCHMARK_REPO). Each shell names its page; the share image is the site's own.
  */
 export function hubRoutes() {
-  return hubRouteList(loadHub()).map((route) => ({ route }));
+  return hubRouteList(loadHub()).map(({ route, title, description }) => ({
+    route,
+    meta: { title, description, image: "/og-cover.png", imageAlt: "PenguinHarness" },
+  }));
 }
 
 /** Blog routes, one per post plus the list page. */

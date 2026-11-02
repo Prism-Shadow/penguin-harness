@@ -25,4 +25,6 @@ export declare function loadHub(options?: {
   placeholderDir?: string;
 }): Hub;
 
-export declare function hubRoutes(hub: Hub): string[];
+export declare function hubRoutes(
+  hub: Hub,
+): { route: string; title: string; description: string }[];
