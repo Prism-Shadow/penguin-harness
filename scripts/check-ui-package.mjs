@@ -12,13 +12,14 @@
  *    no CSS.
  * 2. Every export, `main` and `types` names a file in the tarball.
  * 3. LICENSE is there, and each bundled font's licence beside the fonts.
- * 4. Installed into a project, a TSX file passing a component a valid prop compiles under `tsc`
- *    and one passing a wrong prop fails with TS2322; the rolled-up declarations themselves check,
- *    and none names `@prismshadow/penguin-core`.
+ * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
+ *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
+ *    with TS2322; the rolled-up declarations themselves check, and none names
+ *    `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
- *    map does not resolve, and its types give the same two `tsc` results with the options the
- *    server compiles a page with.
+ *    map does not resolve, every module its declarations import is in its types tree, and those
+ *    types give the same `tsc` results with the options the server compiles a page with.
  *
  * Run after `pnpm --filter @prismshadow/penguin-ui build`, with the root LICENSE copied into
  * packages/ui/ as the release does before it publishes. Linux and macOS (it unpacks with `tar`).
@@ -27,6 +28,7 @@
  */
 import { execFileSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -159,14 +161,20 @@ try {
     mkdirSync(dirname(join(modules, name)), { recursive: true });
     symlinkSync(realpathSync(join(ui, "node_modules", name)), join(modules, name), "dir");
   }
+  // A prop typed by the package itself, and one typed by a dependency's declarations (Prose's
+  // `components` is react-markdown's `Components`): each wrong line must be refused.
   const fixtures = {
     "valid.tsx":
-      'import { Badge, Button } from "@prismshadow/penguin-ui";\n' +
-      'export const view = <Button variant="primary" size="sm"><Badge tone="success">ok</Badge></Button>;\n',
+      'import { Badge, Button, Prose } from "@prismshadow/penguin-ui";\n' +
+      'export const view = <Button variant="primary" size="sm"><Badge tone="success">ok</Badge></Button>;\n' +
+      'export const md = <Prose text="hi" components={{ p: "span" }} />;\n',
     "wrong.tsx":
-      'import { Button } from "@prismshadow/penguin-ui";\n' +
-      'export const view = <Button variant="loud">Save</Button>;\n',
+      'import { Button, Prose } from "@prismshadow/penguin-ui";\n' +
+      'export const view = <Button variant="loud">Save</Button>;\n' +
+      'export const md = <Prose text="hi" components={{ p: 42 }} />;\n',
   };
+  /** The 0-based lines of wrong.tsx that pass a wrong prop. */
+  const WRONG_LINES = [1, 2];
 
   /** Compiles the fixtures in `dir` and returns the diagnostics of each, and of `alsoCheck`. */
   const compile = (dir, options, alsoCheck = []) => {
@@ -196,11 +204,18 @@ try {
   const verdict = (result) => [
     ...result.global.map((d) => `options: ${say(d)}`),
     ...result.valid.map((d) => `the valid fixture fails: ${say(d)}`),
-    ...(result.wrong.some((d) => d.code === 2322)
-      ? []
-      : [
-          `the wrong prop is not refused with TS2322 (got: ${result.wrong.map(say).join("; ") || "nothing"})`,
-        ]),
+    ...WRONG_LINES.filter(
+      (line) =>
+        !result.wrong.some(
+          (d) =>
+            d.code === 2322 &&
+            d.file !== undefined &&
+            d.file.getLineAndCharacterOfPosition(d.start ?? 0).line === line,
+        ),
+    ).map(
+      (line) =>
+        `wrong.tsx line ${line + 1} is not refused with TS2322 (got: ${result.wrong.map(say).join("; ") || "nothing"})`,
+    ),
     ...result.extra.map((d) => say(d)),
   ];
 
@@ -341,12 +356,14 @@ try {
           .map((spec) => `${file} imports ${spec}, which the import map does not resolve`),
       ),
   ];
+  // A copy, as the server's `.harness/ui/` is: through a link, TypeScript would resolve from the
+  // tree's real path and climb into this checkout's node_modules for whatever the tree lacks.
   const page = join(work, "page");
   mkdirSync(page);
-  symlinkSync(runtimeTypes, join(page, "node_modules"), "dir");
+  cpSync(runtimeTypes, join(page, "node_modules"), { recursive: true });
   writeFileSync(join(page, "package.json"), '{ "type": "module" }\n');
   // The options the server compiles a page's `ui/` with.
-  const pageResult = compile(page, {
+  const pageOptions = {
     strict: true,
     noEmit: true,
     target: ts.ScriptTarget.ES2022,
@@ -358,9 +375,29 @@ try {
     skipLibCheck: true,
     isolatedModules: true,
     forceConsistentCasingInFileNames: true,
-  });
+  };
+  const pageResult = compile(page, pageOptions);
+  // Every module the package's declarations import resolves inside the tree; one that does not
+  // would type its props as `any` without a word, as the page compile skips library checks. The
+  // package is "type": "module", so they import as ES modules.
+  const ownTypes = join(page, "node_modules/@prismshadow/penguin-ui/index.d.ts");
+  const resolves = (spec) =>
+    ts.resolveModuleName(
+      spec,
+      ownTypes,
+      pageOptions,
+      ts.sys,
+      undefined,
+      undefined,
+      ts.ModuleKind.ESNext,
+    ).resolvedModule !== undefined;
+  const unresolved = [...new Set(importsOf(readFileSync(ownTypes, "utf8")))]
+    .filter((spec) => !spec.startsWith("."))
+    .filter((spec) => !resolves(spec))
+    .map((spec) => `index.d.ts imports ${spec}, which types/node_modules does not carry`);
   check(6, "the runtime's manifest, imports and types", [
     ...runtimeProblems,
+    ...unresolved,
     ...verdict(pageResult),
   ]);
 } finally {

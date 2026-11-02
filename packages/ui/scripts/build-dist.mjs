@@ -30,6 +30,7 @@
  */
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -39,7 +40,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { build as esbuild } from "esbuild";
@@ -56,6 +57,7 @@ const PKG = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(PKG, "dist");
 const RUNTIME = join(DIST, "workbench");
 const require = createRequire(join(PKG, "package.json"));
+const ts = require("typescript");
 const { version } = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
 
 const ENTRIES = {
@@ -75,7 +77,11 @@ const REACT_SPECIFIERS = Object.keys(RUNTIME_IMPORTS).filter(
   (s) => s !== "@prismshadow/penguin-ui",
 );
 
-/** The type packages a page is checked against, beside the package's own declarations. */
+/**
+ * The type packages a page is checked against whole, beside the package's own declarations: React
+ * for the page's own code and JSX. The declarations the package's types reach beyond them are
+ * added file by file (`declarationClosure`).
+ */
 const RUNTIME_TYPE_PACKAGES = ["@types/react", "@types/react-dom", "csstype"];
 
 const isBare = (spec) => !spec.startsWith(".") && !isAbsolute(spec) && !spec.startsWith("\0");
@@ -331,6 +337,49 @@ async function buildRuntimeModules() {
 const packageDir = (name, from) =>
   dirname(createRequire(join(from, "package.json")).resolve(`${name}/package.json`));
 
+/** The nearest directory holding `file` whose package.json names a package. */
+function packageRoot(file) {
+  for (let dir = dirname(file); dir !== dirname(dir); dir = dirname(dir)) {
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest) && JSON.parse(readFileSync(manifest, "utf8")).name) return dir;
+  }
+  throw new Error(`${file} belongs to no package`);
+}
+
+/**
+ * The packages the declarations of `entry` reach, resolved as a page's compile resolves them
+ * (NodeNext, no ambient types), each with the declaration files TypeScript loads from it. A
+ * component's props name react-markdown's and zustand's types, and those the unified packages',
+ * so a page needs them too or those props check as `any`. The tree they are copied into is flat,
+ * so a name reached in two versions fails the build rather than picking one. `seed` maps the
+ * packages copied whole to their directories, which the closure must agree with.
+ */
+function declarationClosure(entry, seed) {
+  const program = ts.createProgram([entry], {
+    noEmit: true,
+    types: [],
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    jsx: ts.JsxEmit.ReactJSX,
+    lib: ["lib.es2022.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
+  });
+  const packages = new Map(Object.entries(seed).map(([name, dir]) => [name, { dir, files: null }]));
+  for (const source of program.getSourceFiles()) {
+    if (resolve(source.fileName) === resolve(entry)) continue;
+    if (program.isSourceFileDefaultLibrary(source)) continue;
+    const dir = packageRoot(source.fileName);
+    const { name } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const known = packages.get(name);
+    if (known !== undefined && resolve(known.dir) !== resolve(dir)) {
+      throw new Error(`the package's types reach ${name} twice: ${known.dir} and ${dir}`);
+    }
+    if (known === undefined) packages.set(name, { dir, files: new Set() });
+    packages.get(name).files?.add(relative(dir, source.fileName));
+  }
+  return [...packages].filter(([, { files }]) => files !== null);
+}
+
 /** The stylesheet, the types tree and the manifest, once the published files exist. */
 function assembleRuntime() {
   cpSync(join(DIST, "styles.css"), join(RUNTIME, "penguin-ui.css"));
@@ -360,13 +409,24 @@ function assembleRuntime() {
     "@types/react-dom": PKG,
     csstype: packageDir("@types/react", PKG),
   };
-  for (const name of RUNTIME_TYPE_PACKAGES) {
-    const source = packageDir(name, from[name]);
+  const whole = Object.fromEntries(
+    RUNTIME_TYPE_PACKAGES.map((name) => [name, packageDir(name, from[name])]),
+  );
+  for (const [name, source] of Object.entries(whole)) {
     cpSync(source, join(modules, name), {
       recursive: true,
       dereference: true,
       filter: (path) => !/\.(?:md|flow)$/.test(path),
     });
+  }
+  // The rest of what the package's declarations reach: the files TypeScript loads, the manifest
+  // that resolves them, and the licence beside them.
+  for (const [name, { dir, files }] of declarationClosure(join(DIST, "index.d.ts"), whole)) {
+    const licences = readdirSync(dir).filter((file) => /^licen[cs]e/i.test(file));
+    for (const file of ["package.json", ...licences, ...files]) {
+      mkdirSync(dirname(join(modules, name, file)), { recursive: true });
+      cpSync(join(dir, file), join(modules, name, file));
+    }
   }
 
   const manifest = {

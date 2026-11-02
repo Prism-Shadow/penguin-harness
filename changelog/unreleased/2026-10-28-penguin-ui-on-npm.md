@@ -20,7 +20,7 @@
 
 ## The Workbench runtime
 
-- The build also writes `dist/workbench/`: the components for a browser with every dependency but React bundled in, ES module wrappers of React's production builds, the stylesheet, a `manifest.json` naming them, and the declarations a page is type-checked against.
+- The build also writes `dist/workbench/`: the components for a browser with every dependency but React bundled in, ES module wrappers of React's production builds, the stylesheet, a `manifest.json` naming them, and the declarations a page is type-checked against: the package's own, React's, and those its props reach in react-markdown, zustand and the unified packages behind them.
 - `penguinUi({ workbenchRuntime: true })` in the Web App's Vite config copies it into the Web App's dist as `workbench-runtime/`, and fails the build when it is missing. `scripts/deploy.mjs`, the `Dockerfile`, CI's packed-app job and the browser extension's e2e script build the UI package before the Web App.
 
 ## Release and CI

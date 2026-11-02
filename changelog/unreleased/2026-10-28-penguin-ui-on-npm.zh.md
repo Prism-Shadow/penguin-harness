@@ -20,7 +20,7 @@
 
 ## Workbench 运行时
 
-- 构建同时产出 `dist/workbench/`：面向浏览器的组件包（除 React 外的依赖全部打入）、React 生产构建的 ES 模块包装、样式表、列出这些文件的 `manifest.json`，以及页面做类型检查用的声明文件。
+- 构建同时产出 `dist/workbench/`：面向浏览器的组件包（除 React 外的依赖全部打入）、React 生产构建的 ES 模块包装、样式表、列出这些文件的 `manifest.json`，以及页面做类型检查用的声明文件：包自身的、React 的，以及组件属性用到的 react-markdown、zustand 和其背后 unified 系列包的声明。
 - Web App 的 Vite 配置以 `penguinUi({ workbenchRuntime: true })` 把它复制为 Web 产物下的 `workbench-runtime/`，缺少时构建失败。`scripts/deploy.mjs`、`Dockerfile`、CI 打包应用的作业和浏览器扩展的 e2e 脚本，都先构建 UI 包再构建 Web App。
 
 ## 发布与 CI
