@@ -14,10 +14,13 @@
  * key-shaped strings redacted (`redactSecrets`) and the Workspace's path replaced; what the
  * dialog shows is exactly what would be shared.
  *
- * The bug form (`.github/ISSUE_TEMPLATE/bug_report.yml`) is opened prefilled by its field ids
- * (`title`, `summary`, `version`, `install`, `os`, `output`; a dropdown by its option's text).
- * The URL is kept under {@link ISSUE_URL_CAP} characters, well under what GitHub answers before
- * refusing a URL as too long: the provider's message is cut to fit, and says so.
+ * The bug form (`.github/ISSUE_TEMPLATE/bug_report.yml`) is opened prefilled by its field ids:
+ * `title`; `summary`, the failure's facts; `system-info`, the version, how it is installed and the
+ * OS, one per line, "unknown" for one not read yet; and `output`, the provider's message. The two
+ * fields the form requires (`summary`, `system-info`) are always filled, so the form can be
+ * submitted as it opens. The URL is kept under {@link ISSUE_URL_CAP} characters, well under what
+ * GitHub answers before refusing a URL as too long: the provider's message is cut to fit, and says
+ * so.
  */
 import { redactSecrets } from "../../lib/redact-secrets";
 import { httpStatusOf, requestIdOf } from "./provider-error";
@@ -46,7 +49,7 @@ export interface RequestFailure {
   atMs?: number;
 }
 
-/** How this PenguinHarness is installed, as the bug form's dropdown names it. */
+/** How this PenguinHarness is installed, in the words the report and the bug form use. */
 export type InstallKind = "desktop" | "server" | "source";
 
 const INSTALL_OPTION: Readonly<Record<InstallKind, string>> = {
@@ -130,17 +133,30 @@ function facts(f: RequestFailure, env: ReportEnvironment, http: number | null, i
     ],
     ["PenguinHarness", env.version],
     ["Installed as", env.install === null ? null : INSTALL_OPTION[env.install]],
-    [
-      "OS",
-      env.os === null
-        ? null
-        : env.remote
-          ? `${env.os}, the remote machine the Session runs on${env.remote.version ? ` (PenguinHarness ${env.remote.version})` : ""}`
-          : env.os,
-    ],
+    ["OS", osLine(env)],
   ];
   return lines.filter((line): line is [string, string] => line[1] !== null);
 }
+
+/** The OS fact: the machine's, and whose it is when the Session runs on another machine. */
+function osLine(env: ReportEnvironment): string | null {
+  if (env.os === null) return null;
+  if (!env.remote) return env.os;
+  const version = env.remote.version ? ` (PenguinHarness ${env.remote.version})` : "";
+  return `${env.os}, the remote machine the Session runs on${version}`;
+}
+
+/** The bug form's System info: the three facts, each line present, "unknown" for one not read yet. */
+function systemInfo(env: ReportEnvironment): string {
+  return [
+    `Version: ${env.version ?? "unknown"}`,
+    `Installed as: ${env.install === null ? "unknown" : INSTALL_OPTION[env.install]}`,
+    `OS: ${osLine(env) ?? "unknown"}`,
+  ].join("\n");
+}
+
+/** The facts the bug form's System info carries, left out of its summary. */
+const SYSTEM_FACTS: ReadonlySet<string> = new Set(["PenguinHarness", "Installed as", "OS"]);
 
 /** A fence longer than any run of backticks in the text, so the text cannot close it. */
 function fenced(text: string): string {
@@ -187,7 +203,8 @@ export function requestFailureReport(f: RequestFailure, env: ReportEnvironment):
   const http = httpStatusOf(f.message);
   const id = requestIdOf(f.message);
   const message = shareable(f.message, id, env.workspace);
-  const lines = facts(f, env, http, id).map(([name, value]) => `- ${name}: ${value}`);
+  const all = facts(f, env, http, id);
+  const lines = all.map(([name, value]) => `- ${name}: ${value}`);
   const markdown = [
     "### PenguinHarness model request failure",
     "",
@@ -199,7 +216,10 @@ export function requestFailureReport(f: RequestFailure, env: ReportEnvironment):
   ].join("\n");
   const model = f.model ? ` (${f.model.provider} / ${f.model.modelId})` : "";
   const title = `Model request failed: ${f.errorCode ?? f.status}${http === null ? "" : `, HTTP ${http}`}${model}`;
-  const summary = ["A model request failed in a conversation.", "", ...lines].join("\n");
+  const failure = all
+    .filter(([name]) => !SYSTEM_FACTS.has(name))
+    .map(([name, value]) => `- ${name}: ${value}`);
+  const summary = ["A model request failed in a conversation.", "", ...failure].join("\n");
   return {
     markdown,
     issueUrl: issueUrl(
@@ -207,9 +227,7 @@ export function requestFailureReport(f: RequestFailure, env: ReportEnvironment):
         ["template", "bug_report.yml"],
         ["title", title],
         ["summary", summary],
-        ["version", env.version],
-        ["install", env.install === null ? null : INSTALL_OPTION[env.install]],
-        ["os", env.os],
+        ["system-info", systemInfo(env)],
       ],
       message ?? "(the provider sent no message)",
     ),

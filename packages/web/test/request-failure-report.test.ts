@@ -8,10 +8,12 @@
  *   how it is installed and the OS — then the provider's message itself.
  * - Given a provider's message holding a key, a bearer token or the Workspace's path, the report
  *   and the link hold none of them, and keep the request id.
- * - Given a fact nobody knows yet (the version not read), its line is left out, not guessed.
+ * - Given a fact nobody knows yet (the version not read), the report leaves its line out and the
+ *   form's System info says "unknown", so the form's required fields are never empty.
  * - Given a Session on another machine, the OS line says it is that machine's.
- * - The link opens the project's bug form, its fields prefilled by their ids, the install by its
- *   option's own words.
+ * - The link opens the project's bug form with the fields it requires filled — the failure in
+ *   What happened, the version, install and OS in System info — and the provider's message in
+ *   Error output; nothing else is asked of the person before submitting.
  * - Given a provider's message too long for a link, the link stays under the cap and says the
  *   message was cut; the copied report keeps it whole.
  * - How it is installed: a source build says so whatever started it, else the desktop app's
@@ -93,7 +95,9 @@ describe("a failed request's report", () => {
     const unknown = requestFailureReport(failure(), { ...ENV, version: null, os: null });
     expect(unknown.markdown).not.toContain("PenguinHarness:");
     expect(unknown.markdown).not.toContain("- OS:");
-    expect(fieldsOf(unknown.issueUrl)).not.toHaveProperty("version");
+    expect(fieldsOf(unknown.issueUrl)["system-info"]).toBe(
+      "Version: unknown\nInstalled as: Desktop app\nOS: unknown",
+    );
     const remote = requestFailureReport(failure(), {
       ...ENV,
       os: "Linux (x64)",
@@ -104,19 +108,26 @@ describe("a failed request's report", () => {
     );
   });
 
-  it("opens the project's bug form with its fields prefilled", () => {
+  it("opens the project's bug form with the fields it requires filled, and the provider's message as its output", () => {
     const { issueUrl } = requestFailureReport(failure(), ENV);
     expect(issueUrl.startsWith(`${ISSUE_FORM_URL}?`)).toBe(true);
     const fields = fieldsOf(issueUrl);
+    expect(Object.keys(fields).sort()).toEqual([
+      "output",
+      "summary",
+      "system-info",
+      "template",
+      "title",
+    ]);
     expect(fields).toMatchObject({
       template: "bug_report.yml",
       title: "Model request failed: network, HTTP 503 (custom / claude-4-8)",
-      version: "v0.2.18",
-      install: "Desktop app",
-      os: "macOS (arm64)",
+      "system-info": "Version: v0.2.18\nInstalled as: Desktop app\nOS: macOS (arm64)",
       output: MESSAGE,
     });
+    expect(fields.summary).toContain("- What happened: 6 attempts failed (at most 10)");
     expect(fields.summary).toContain("- Model: claude-4-8");
+    expect(fields.summary).not.toContain("Installed as");
   });
 
   it("keeps a long message's link under the cap and says it was cut, while the report keeps it whole", () => {

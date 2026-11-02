@@ -155,8 +155,9 @@ describe("a failed request's details", () => {
       "https://github.com/Prism-Shadow/penguin-harness/issues/new",
     );
     expect(url.searchParams.get("template")).toBe("bug_report.yml");
-    expect(url.searchParams.get("install")).toBe("Desktop app");
-    expect(url.searchParams.get("version")).toBe("v0.2.18");
+    expect(url.searchParams.get("system-info")).toBe(
+      "Version: v0.2.18\nInstalled as: Desktop app\nOS: macOS (arm64)",
+    );
     expect(url.searchParams.get("output")).not.toContain(KEY);
   });
 
