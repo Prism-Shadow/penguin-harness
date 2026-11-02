@@ -3,6 +3,7 @@
 - **Date:** 2026-11-02
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#1421](https://github.com/Prism-Shadow/penguin-harness/pull/1421)
 
 [English](2026-11-02-interrupt-send.md)
 
