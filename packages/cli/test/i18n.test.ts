@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getMessages, maskApiKey, resolveLanguage } from "../src/i18n.js";
+import { getMessages, maskApiKey, resolveLanguage } from "@prismshadow/penguin-server/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 
 describe("resolveLanguage (env PENGUIN_LANG, default en)", () => {

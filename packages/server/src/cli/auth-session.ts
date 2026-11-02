@@ -18,7 +18,7 @@ import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
-import { writeSecretFile } from "@prismshadow/penguin-server/secret-file";
+import { writeSecretFile } from "../secret-file.js";
 
 /** Where a login is remembered, beside the data root it belongs to. */
 export function sessionFile(root: string): string {

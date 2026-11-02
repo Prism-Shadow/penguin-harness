@@ -14,7 +14,7 @@
  * that is not running is started, as for any command that needs one.
  */
 import type { Command } from "commander";
-import type { Language, Messages } from "../i18n.js";
+import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 import { packageShortName, serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
 
 /** What name resolution decided: the package, or the error to report. */

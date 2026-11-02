@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyLanguageToRc, resolveShellRc, upsertBlock } from "../src/lang-config.js";
+import { applyLanguageToRc, resolveShellRc, upsertBlock } from "../../src/cli/lang-config.js";
 
 describe("resolveShellRc", () => {
   // rcPath is built with path.join, so the expectations join too (backslashes on Windows —

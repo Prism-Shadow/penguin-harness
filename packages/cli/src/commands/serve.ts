@@ -35,7 +35,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages, WebProbeFailureKind } from "../i18n.js";
+import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/cli";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {

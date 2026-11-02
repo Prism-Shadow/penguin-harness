@@ -15,7 +15,7 @@ import {
   type OmniMessage,
 } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");
