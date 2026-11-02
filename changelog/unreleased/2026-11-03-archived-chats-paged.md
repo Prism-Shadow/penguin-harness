@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1426](https://github.com/Prism-Shadow/penguin-harness/pull/1426)
 
 [中文版](2026-11-03-archived-chats-paged.zh.md)
 
