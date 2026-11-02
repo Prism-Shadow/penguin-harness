@@ -180,7 +180,7 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in amsp core server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
       - name: Pack the publishable packages
@@ -189,6 +189,12 @@ jobs:
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done
+      # The UI package is packed with pnpm, the only packer that applies its publishConfig (its
+      # exports point at src/ in the repository, at dist/ in the tarball). The check installs that
+      # tarball into a project and compiles and renders against it, and checks the Workbench
+      # runtime the Web UI build copied in.
+      - name: The UI package's tarball and Workbench runtime
+        run: node scripts/check-ui-package.mjs
       # A tarball that lost web-dist/ serves no Web UI from an npm install, and the failure is a
       # blank page at runtime rather than anything the pack step reports.
       - name: The server tarball carries the Web UI and the license
@@ -465,8 +471,9 @@ jobs:
         with:
           # The web package is not a dependency of the desktop package (the app carries its
           # build by an electron-builder file mapping, not an import), so `desktop...` alone
-          # leaves it unbuilt — and the mapping then silently packs nothing.
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-web"
+          # leaves it unbuilt — and the mapping then silently packs nothing. The web's build
+          # copies in the UI package's Workbench runtime, so that package builds first.
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-ui,@prismshadow/penguin-web"
 
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs

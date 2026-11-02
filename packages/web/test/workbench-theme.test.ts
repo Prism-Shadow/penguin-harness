@@ -7,6 +7,7 @@ import { TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import {
   applyWorkbenchTheme,
   collectFontFaces,
+  PENGUIN_UI_ATTR,
   readAppTheme,
   readDocumentTheme,
   WORKBENCH_FONTS_ATTR,
@@ -124,6 +125,28 @@ describe("workbench theme", () => {
     expect(doc.writes).toEqual({ properties: 3, fonts: 1 });
   });
 
+  it("gives a page carrying the components' stylesheet no base stylesheet, and still themes it", () => {
+    const doc = fakeDocument();
+    const components = new FakeElement("link", () => undefined);
+    components.setAttribute(PENGUIN_UI_ATTR, "");
+    doc.head.push(components);
+    const theme: WorkbenchTheme = {
+      dark: false,
+      fontSize: "15px",
+      attrs: { "data-theme": "geek" },
+      vars: { "--ui-accent": "#e32a01" },
+      fontFaces: '@font-face { font-family: "MiSans"; }',
+    };
+    applyWorkbenchTheme(doc.document, theme);
+    expect(doc.head.map((el) => el.tag)).toEqual(["style", "link"]);
+    expect(doc.head[1]).toBe(components);
+    expect(doc.head[0]!.textContent).toBe(theme.fontFaces);
+    expect(doc.classes).toEqual({ dark: false, light: true });
+    expect(doc.attributes).toEqual(theme.attrs);
+    expect(doc.properties).toEqual(theme.vars);
+    expect(doc.root.style.fontSize).toBe("15px");
+  });
+
   it("collects the app's font faces with absolute URLs", () => {
     const face = (src: string) => ({
       type: 5,
@@ -206,12 +229,17 @@ function fakeDocument() {
     },
   };
   const headNode = {
-    querySelector: (selector: string) =>
-      head.find((el) =>
-        el.tag === "link"
-          ? selector.startsWith("link") && selector.includes(el.href)
-          : selector.startsWith("style") && WORKBENCH_FONTS_ATTR in el.attrs,
-      ) ?? null,
+    // `tag[attr]` and `tag[attr="value"]`, the only selectors applyWorkbenchTheme uses.
+    querySelector: (selector: string) => {
+      const [, tag, attr, value] = /^(\w+)\[([\w-]+)(?:="([^"]*)")?\]$/.exec(selector) ?? [];
+      return (
+        head.find((el) => {
+          if (el.tag !== tag) return false;
+          const has = attr === "href" ? el.href : el.attrs[attr!];
+          return value === undefined ? has !== undefined : has === value;
+        }) ?? null
+      );
+    },
     prepend: (el: FakeElement) => void head.unshift(el),
   };
   const document = {

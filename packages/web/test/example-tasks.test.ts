@@ -170,12 +170,12 @@ describe("short example prompts", () => {
       id: "benchmarkImport",
       zhMarkers: [
         "`benchmark-design`",
-        "packages/penguinharness-benchmark-gdpevo-crm-train",
+        "packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train",
         "不要覆盖",
       ],
       enMarkers: [
         "`benchmark-design`",
-        "packages/penguinharness-benchmark-gdpevo-crm-train",
+        "packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train",
         "leave them as they are",
       ],
     },

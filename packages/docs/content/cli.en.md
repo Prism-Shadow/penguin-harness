@@ -109,7 +109,7 @@ On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
 | `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); before the first message, the Session is created pinned to it. The level is never written back to the agent config. |
 | `/switch-model` | Shows this Session's current model. |
-| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model. When the current model is unavailable or the compaction fails, the new model gets the path of the conversation's Trace file instead of a summary, and a line names that file; a compaction you interrupt keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
@@ -904,7 +904,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth token
 
-`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. Use it where there is no password to give:
+`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. If a server is still starting there, with its port answering but its accounts not yet created, `token` waits up to 20 seconds for them instead of failing. Use it where there is no password to give:
 
 - A machine whose admin password someone set by hand.
 - A script that must not hold a password.
