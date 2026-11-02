@@ -16,6 +16,9 @@
  * - No row names a thinking level, not even where the round switched it.
  * - As the panel scrolls, the button follows the first round fully under the toolbar; scrolled
  *   to the end, it names the last round drawn.
+ *
+ * The view makes its file whole on this server first (the history stream's `fill` read), which a
+ * Session on this server answers at once: the suite's socket answers it so.
  */
 import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,8 +27,15 @@ import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin
 import { TraceFileView } from "../src/features/traces/trace-file-view";
 import { S } from "../src/lib/strings";
 import { ThemeProvider } from "../src/state/theme";
-import { click, field, mount, pressEscape, type, unmountAll, waitFor } from "./helpers/dom";
+import { click, field, mount, pressEscape, run, type, unmountAll, waitFor } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";
+import { socketWorld } from "./helpers/api-socket-world";
+
+vi.mock("../test/socket-stand-in", async (importActual) => {
+  const actual = await importActual<typeof import("../src/api/socket")>();
+  const { socketWorld } = await import("./helpers/api-socket-world");
+  return { ...actual, apiSocket: socketWorld.apiSocket };
+});
 
 const ROUNDS = 60;
 /** Events per round: the prompt and the reply. */
@@ -163,9 +173,13 @@ describe("the round navigator", () => {
         ),
       ),
     );
+    await run(() => socketWorld.emit("/history?fill=only&file=1&agent=a", "filled", {}));
     await waitFor(() => document.querySelector('[data-slot="nav-button"]') !== null);
   });
-  afterEach(() => unmountAll());
+  afterEach(async () => {
+    await unmountAll();
+    socketWorld.reset();
+  });
 
   it("names the round in view, and opens on every round with that one current and focused", async () => {
     expect(navButton().textContent).toContain(S.traces.task(60));

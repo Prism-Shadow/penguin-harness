@@ -10,13 +10,15 @@
  * package's vite 7 plugin types, hence the separate file to avoid the clash).
  *
  * `penguinUi()` emits the licence texts of the shared UI package's bundled fonts beside the build
- * (`fonts-licenses/`). It is imported by relative path on purpose — see its module doc.
+ * (`fonts-licenses/`) and copies the package's built Workbench runtime in as `workbench-runtime/`,
+ * which the server serves to TSX Workbench pages: build `@prismshadow/penguin-ui` before this
+ * package. It is imported by relative path on purpose — see its module doc.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
-import { penguinUi } from "../ui/src/vite-plugin";
+import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -64,22 +66,8 @@ export function devProxy(env: Record<string, string | undefined> = process.env) 
   };
 }
 
-/**
- * Drops the `woff` and `truetype` fallbacks from a KaTeX stylesheet, leaving each `@font-face` with
- * its woff2 source alone.
- *
- * KaTeX ships twenty faces in three formats and lists all three in every `src`, so Vite — which
- * emits an asset for each URL a stylesheet references — copies sixty font files into the bundle.
- * The forty non-woff2 ones are ~800KB that nothing can request: woff2 has been supported by every
- * browser this SPA runs in since 2016, and the desktop shell is Chromium. A browser somehow without
- * it now falls back to the `serif` at the end of KaTeX's own font stack rather than failing.
- *
- * Exported for the unit test: a silent miss here (a Vite id format change, a KaTeX release that
- * reorders `src`) costs bundle size without breaking anything, so nothing would otherwise notice.
- */
-export function dropNonWoff2FontSources(css: string): string {
-  return css.replace(/\s*,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, "");
-}
+// The gallery's config and this package's tests import it from here.
+export { dropNonWoff2FontSources };
 
 /**
  * Applies {@link dropNonWoff2FontSources} to KaTeX's stylesheet before Vite resolves the `url()`s
@@ -99,7 +87,7 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [penguinUi(), react(), tailwindcss(), katexWoff2Only()],
+  plugins: [penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every

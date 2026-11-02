@@ -109,7 +109,7 @@ penguin chat [options]
 | `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
 | `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；在第一条消息之前输入时，Session 创建时即固定为该等级。等级不会写回 Agent 配置。 |
 | `/switch-model` | 显示这个 Session 当前的模型。 |
-| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
+| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话。当前模型不可用或压缩失败时，新模型拿到的是对话 Trace 文件的路径而不是摘要，并打印一行写明这个文件；你中断压缩则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
 | `/verbose` | 在折叠和完整工具输出之间切换。 |
 | `/exit`、`/quit` | 退出。 |
 
@@ -904,7 +904,7 @@ penguin auth token                      # no password: minted from this data roo
 
 ### penguin auth token
 
-`token` 完全不需要密码。它直接往数据根目录的 `web.db` 里写一条会话记录，授权依据是：你能读写这个数据根目录，而它本来就保存着 token 能触达的全部凭证。因此 `token` 是**数据根目录所有者**的工具：多用户部署时，数据根目录属于运行服务器的操作系统账号，其他人一律用 `auth login` 登录。数据根目录上从未运行过服务器时命令会失败，因为还没有 `web.db` 可写。在拿不出密码的场合使用它：
+`token` 完全不需要密码。它直接往数据根目录的 `web.db` 里写一条会话记录，授权依据是：你能读写这个数据根目录，而它本来就保存着 token 能触达的全部凭证。因此 `token` 是**数据根目录所有者**的工具：多用户部署时，数据根目录属于运行服务器的操作系统账号，其他人一律用 `auth login` 登录。数据根目录上从未运行过服务器时命令会失败，因为还没有 `web.db` 可写；服务器正在启动、端口已能连上而账号尚未创建时，命令会等它创建完成，最多等 20 秒。在拿不出密码的场合使用它：
 
 - 管理员密码由人手动设置过的机器。
 - 不能保存密码的脚本。

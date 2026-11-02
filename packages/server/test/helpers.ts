@@ -85,6 +85,9 @@ import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machineSessionForward } from "../src/machines/session-forward.js";
+import { machineHistory } from "../src/machines/history-routes.js";
+import type { HistorySync } from "../src/machines/history-sync.js";
+import { TraceCache } from "../src/machines/trace-cache.js";
 import type { Access } from "../src/mechanisms/projects.js";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
@@ -364,6 +367,9 @@ export interface TestAppOptions {
   durableDatabase?: boolean;
 }
 
+/** The history sync of each replaced machines node, by data root, closed with its App. */
+const replacedHistorySyncs = new Map<string, HistorySync>();
+
 /** The node each option stands in for. */
 /** A stand-in Project gate for a replaced machines node: every test that supplies one is an admin's. */
 function accessDouble(): Access {
@@ -373,7 +379,11 @@ function accessDouble(): Access {
   } as unknown as Access;
 }
 
-export function replacementsFor(o: TestAppOptions): Replacements {
+export function replacementsFor(
+  o: TestAppOptions,
+  /** The data root, where a replaced machines node keeps its copy of the machines' history. */
+  root?: string,
+): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
@@ -438,13 +448,26 @@ export function replacementsFor(o: TestAppOptions): Replacements {
     // (machines/service.ts): the proxy's streams and the aggregate event stream share both.
     const sockets = new MachineSockets(() => undefined);
     const events = new MachineEventHub(sockets, () => undefined);
+    // The history answers over the same sockets, as the module's own setup builds them.
+    const wired =
+      root === undefined
+        ? null
+        : machineHistory({
+            cache: new TraceCache(path.join(root, "machines", "traces")),
+            sockets,
+            target: (machineId) => machines.proxyTarget(machineId),
+            log: () => undefined,
+          });
+    const history = wired?.history;
+    // Closed with the App, as the module's own generation closes it (test cleanup).
+    if (wired !== null && root !== undefined) replacedHistorySyncs.set(root, wired.sync);
     out.push([
       MachinesModule,
       {
         machines,
         routes: machinesRoutes({ machines, access: accessDouble(), events }),
-        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events }),
-        sessionForward: machineSessionForward(machines, { sockets, events }),
+        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events, history }),
+        sessionForward: machineSessionForward(machines, { sockets, events, history }),
       },
     ]);
   }
@@ -504,14 +527,17 @@ async function bootTestApp(
   try {
     boot = await bootAppDeps(
       config,
-      replacementsFor({
-        log: () => {},
-        passwordHashCost: TEST_PASSWORD_HASH_COST,
-        // The bridge's per-line pace is a real wait in production; every test but the one
-        // about the pacing itself collapses it to nothing.
-        messagingLineDelayMs: 0,
-        ...overrides,
-      }),
+      replacementsFor(
+        {
+          log: () => {},
+          passwordHashCost: TEST_PASSWORD_HASH_COST,
+          // The bridge's per-line pace is a real wait in production; every test but the one
+          // about the pacing itself collapses it to nothing.
+          messagingLineDelayMs: 0,
+          ...overrides,
+        },
+        config.root,
+      ),
       undefined,
       plugins,
     );
@@ -533,6 +559,8 @@ async function bootTestApp(
     root,
     adminPassword,
     cleanup: async () => {
+      replacedHistorySyncs.get(config.root)?.close();
+      replacedHistorySyncs.delete(config.root);
       // Terminals are real child processes owned by the platform: disposing the hot host
       // sweeps its resource registry, which is where every live pty is registered.
       deps.hmr.dispose();

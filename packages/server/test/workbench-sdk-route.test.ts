@@ -8,6 +8,8 @@
  *   `/server/<machineId>/api` for a machine's workbench.
  * - Both are answered only under an existing workbench of a Project the caller can read, and
  *   only to a signed-in caller.
+ * - The page runtime TSX pages import (`…/sdk/ui/*`) is served the same way, and never the
+ *   server's own files of it — its manifest and declarations — nor anything outside it.
  * - The browser build travels inside a bundled server, which has no node_modules to read it from.
  */
 import { createHash } from "node:crypto";
@@ -19,6 +21,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type * as Amsp from "@prismshadow/amsp";
 import { agentDir } from "@prismshadow/penguin-core";
 import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
+import { webDistWithUiRuntime } from "./fixtures/workbench-runtime.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -61,9 +64,11 @@ const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 describe("the workbench page SDK", () => {
   let t: TestApp;
   let cookie: string;
+  let web: string;
 
   beforeAll(async () => {
-    t = await createTestApp();
+    web = await webDistWithUiRuntime(await makeTempRoot());
+    t = await createTestApp({ config: { webDist: web } });
     const owner = await provisionUser(t.app, "owner");
     cookie = owner.cookie;
     const created = await apiClient(t.app, cookie).post("/api/projects", {
@@ -172,6 +177,34 @@ describe("the workbench page SDK", () => {
         credentials: "same-origin",
       },
     ]);
+  });
+
+  it("serves the page runtime revalidated by ETag, under a workbench that exists, and none of its own files", async () => {
+    const res = await t.app.request(`${SDK}/ui/react.js`, asModuleScript(cookie));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    const etag = res.headers.get("etag");
+    expect(etag).toMatch(/^"[\w-]+"$/);
+    expect(await res.text()).toBe(
+      await fs.readFile(path.join(web, "workbench-runtime", "react.js"), "utf8"),
+    );
+    const again = await t.app.request(
+      `${SDK}/ui/react.js`,
+      asModuleScript(cookie, { "if-none-match": etag! }),
+    );
+    expect(again.status).toBe(304);
+
+    const gone = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches/gone/sdk/ui/react.js`;
+    expect((await t.app.request(gone, asModuleScript(cookie))).status).toBe(404);
+    for (const rel of [
+      "manifest.json",
+      "types/node_modules/@types/react/index.d.ts",
+      // `../workbench-runtime/manifest.json` once decoded: the manifest by way of the parent.
+      "..%2Fworkbench-runtime%2Fmanifest.json",
+    ]) {
+      expect((await t.app.request(`${SDK}/ui/${rel}`, asModuleScript(cookie))).status).toBe(404);
+    }
   });
 
   it("answers only a signed-in reader of the Project, under a workbench that exists", async () => {

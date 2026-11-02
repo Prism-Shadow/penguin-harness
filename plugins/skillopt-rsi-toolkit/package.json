@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/skillopt-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "SkillOpt RSI Toolkit: evolve a reusable Skill through bounded edits, candidate evaluation and cross-epoch reflection, then compare frozen baseline and final States.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/skillopt-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "penguin": {
+    "description_zh": "SkillOpt RSI 工具包：通过有界文本编辑、候选评测和跨轮反思优化可复用 Skill，再比较冻结的 baseline 与 final。",
+    "short_description": "SkillOpt RSI Toolkit: bounded Skill edits with score-based selection.",
+    "short_description_zh": "SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。",
+    "category": "rsi",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Read skillopt-rsi-toolkit and run a SkillOpt experiment on the selected Benchmarks with the requested model and budget.",
+      "prompt_zh": "读取 skillopt-rsi-toolkit，按指定模型和预算，在选定的 Benchmark 上完成 SkillOpt 实验。",
+      "skills": [
+        "skillopt-rsi-toolkit"
+      ]
+    }
+  }
+}

@@ -7,6 +7,7 @@
  * The shipped library, as it is in the repo:
  * - Every shipped package.json reads with no warning: a description, both short descriptions, a
  *   known category, a safe icon — and no plugin.json is shipped or left on disk.
+ * - Each shipped skill's source frontmatter parses as YAML and carries a dated version.
  *
  * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
  * - A plugin's version is the npm version of its package.json.
@@ -69,7 +70,7 @@ import {
   workspacePluginRoot,
   type LibraryPlugin,
 } from "../src/plugins/index.js";
-import { formatFrontmatter } from "@prismshadow/skills";
+import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
 
 const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
@@ -89,7 +90,14 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBeGreaterThan(0);
+    const { dependencies } = JSON.parse(
+      await fs.readFile(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    expect(plugins.map((plugin) => plugin.packageName).sort()).toEqual(
+      Object.keys(dependencies)
+        .filter((name) => name.startsWith("@penguinharness/"))
+        .sort(),
+    );
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -170,7 +178,7 @@ describe("loadLibraryPlugins", () => {
         expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
           /^(short_description|short_description_zh):/m,
         );
-        expect(parseSkillFrontmatter(file)!.version, `${plugin.name}/${skill.name}`).toMatch(
+        expect(parseFrontmatter(file).data.version, `${plugin.name}/${skill.name}`).toMatch(
           PLUGIN_VERSION_PATTERN,
         );
         // The installable content regenerates the frontmatter with the plugin's fields, keeps
@@ -194,8 +202,8 @@ describe("loadLibraryPlugins", () => {
     }
   });
 
-  // Whether each SKILL.md parses is each plugin's own test, through the @prismshadow/skills
-  // package; this one is the library's: it installs into one flat skills/
+  // Plugins' own tests validate complete SKILL.md files through @prismshadow/skills.
+  // This one is the library's: it installs into one flat skills/
   // directory, so a second skill of the same name would silently overwrite the first.
   it("ships no skill name from two plugins", () => {
     const owner = new Map<string, string>();
@@ -217,12 +225,15 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
-  it("every RSI toolkit other than the default ships the same evaluation reference", () => {
-    // Each algorithm toolkit evaluates through its own copy of one reference, so that it needs
-    // no other plugin; the copies must not drift apart.
-    const toolkits = loadLibraryPlugins().filter(
-      (p) => p.category === "rsi" && p.name !== "default-rsi-toolkit",
-    );
+  it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
+    // These four methods share one evaluation protocol. Continuous-training methods have
+    // their own worker instructions; keep this check on the copies that must stay identical.
+    const toolkits = [
+      "ace-rsi-toolkit",
+      "ape-rsi-toolkit",
+      "awm-rsi-toolkit",
+      "opro-rsi-toolkit",
+    ].map((name) => libraryPlugin(name)!);
     expect(toolkits.length).toBeGreaterThan(1);
     const references = toolkits.map((plugin) => {
       // One Skill per algorithm toolkit, named like the plugin.
@@ -339,7 +350,11 @@ describe("groupPlugins / loadPluginGroups", () => {
       "ape-rsi-toolkit",
       "awm-rsi-toolkit",
       "default-rsi-toolkit",
+      "openskill-rsi-toolkit",
       "opro-rsi-toolkit",
+      "skilladam-rsi-toolkit",
+      "skillopt-rsi-toolkit",
+      "trace-rsi-toolkit",
     ]);
     expect(names("office-productivity")).toEqual([
       "a2ui",
