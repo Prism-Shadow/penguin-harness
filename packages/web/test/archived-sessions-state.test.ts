@@ -4,12 +4,22 @@
  *
  * - Given archived Sessions in several groups, the groups load first, then each shown group's
  *   first ten rows; twenty groups show, and "more groups" loads the next ones' rows.
- * - Given a group of more than ten, "more" shows ten more — asking for the page below the last
- *   row held only when the reveal runs past what is held — and "less" folds back to ten.
- * - Given a new query or filter, the page starts over (no rows, no reveal, no choice), and the
- *   filters ride on every request.
+ * - Given a group of more than ten, the next page is read below the last row of the page shown,
+ *   and a page already read turns with no request.
+ * - Given the next page on its way, the page shown stays and the pager waits until it lands; a
+ *   second press meanwhile reads nothing more.
+ * - Given a page turned while the group reads itself again, the turn waits for that read and
+ *   continues below what it brought; the read itself changes nothing shown until it lands.
+ * - Given a group turned past what one request may ask for, reading it again reaches its page
+ *   in more than one request, none above the route's cap.
+ * - Given a new query or filter, the page starts over (no rows, every group on its first page,
+ *   no choice), and the filters ride on every request.
  * - Given rows chosen across groups, unarchiving them takes them off the page at once, then
- *   reads the counts and every shown group again, keeping each group's reveal.
+ *   reads the counts and every shown group again, keeping each group's page.
+ * - Given rows chosen on two pages of a group, they stay chosen through page turns and a read
+ *   again, and one action takes both.
+ * - Given an action that empties the page shown, the group falls back at once to the last page
+ *   that has rows, before the page reads itself again, and its page count follows its count.
  * - Given Select all on a group, every Session of it is chosen, loaded or not, and the action
  *   names the group through a filter carrying the current query and the time its count was read
  *   at — the time of the Select all, even when the page has read itself again since.
@@ -49,6 +59,7 @@ import {
   wholeGroupChosen,
 } from "../src/features/settings/archived-sessions-state";
 import type { ArchiveFilters } from "../src/features/settings/archived-sessions-state";
+import { pageCountOf } from "../src/features/settings/archived-sessions-paging";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FakeFetch, FetchRequest } from "./helpers/fetch";
 
@@ -229,6 +240,18 @@ const machineRun = (prefix: string, workspace: string, n: number, from = 0) =>
     return s;
   });
 
+const ids = (list: SessionInfo[]) => list.map((s) => s.sessionId);
+/** The group pages this server's listing was asked for, oldest first. */
+const rowReads = () => fetch.requests.filter((r) => r.path === "/api/me/archived-sessions");
+/** A gate a fake answer waits on, and the call that opens it. */
+const gate = () => {
+  let open!: () => void;
+  const shut = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { shut, open };
+};
+
 const paths = () => fetch.requests.map((r) => r.path);
 /** Which side each read of the groups asked: this server's (`here`) or the machines'. */
 const groupReads = () =>
@@ -251,25 +274,98 @@ describe("the archive page", () => {
     expect(shownIds(store, "/b")).toHaveLength(3);
   });
 
-  it("shows ten more on more, asking only past what it holds, and folds back on less", async () => {
+  it("reads the next page below the last row of the page shown, and turns to a page read before with no request", async () => {
     rows = run("a", "/a", 25);
     const store = createArchiveStore();
     await store.getState().load(ALL);
     const key = groupKey({ projectId: "p", workspace: "/a" });
     fetch.requests.length = 0;
-    await store.getState().showMoreRows(key);
-    // The next page continues below the tenth row held.
+    await store.getState().turnPage(key, 1);
+    // The next page continues below the tenth row.
     expect(fetch.requests).toHaveLength(1);
     const tenth = rows[9]!;
     expect(fetch.requests[0]!.query.get("before")).toBe(`${tenth.lastActiveAt},${tenth.sessionId}`);
-    expect(shownIds(store, "/a")).toEqual(rows.slice(0, 20).map((s) => s.sessionId));
-    store.getState().showLessRows(key);
-    expect(shownIds(store, "/a")).toHaveLength(10);
-    // Revealing again spends no request: those rows are held.
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10, 20)));
+    // Back, and forward again: both pages are held.
     fetch.requests.length = 0;
-    await store.getState().showMoreRows(key);
+    await store.getState().turnPage(key, 0);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(0, 10)));
+    await store.getState().turnPage(key, 1);
     expect(fetch.requests).toEqual([]);
-    expect(shownIds(store, "/a")).toHaveLength(20);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10, 20)));
+    // The last page holds what is left.
+    await store.getState().turnPage(key, 2);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(20)));
+  });
+
+  it("keeps the page shown, with the pager waiting, until the next page lands", async () => {
+    rows = run("a", "/a", 15);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const key = groupKey({ projectId: "p", workspace: "/a" });
+    const next = gate();
+    fetch.answer(async (request) => {
+      if (request.query.has("before")) await next.shut;
+      return serve(request);
+    });
+    fetch.requests.length = 0;
+    const turned = store.getState().turnPage(key, 1);
+    await vi.waitFor(() => expect(rowReads()).toHaveLength(1));
+    expect(store.getState().rows.get(key)!.turning).toBe(true);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(0, 10)));
+    // A second press while it waits reads nothing more.
+    await store.getState().turnPage(key, 1);
+    expect(rowReads()).toHaveLength(1);
+
+    next.open();
+    await turned;
+    expect(store.getState().rows.get(key)!.turning).toBe(false);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10)));
+  });
+
+  it("turns a page only once the group's read in flight lands, continuing below what it brought", async () => {
+    rows = run("a", "/a", 25);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const key = groupKey({ projectId: "p", workspace: "/a" });
+    const before = ids(rows.slice(0, 10));
+    const top = gate();
+    fetch.answer(async (request) => {
+      if (request.path === "/api/me/archived-sessions" && !request.query.has("before")) {
+        await top.shut;
+      }
+      return serve(request);
+    });
+    // Elsewhere, the group's newest Session leaves the archive; the page reads itself again.
+    rows = rows.slice(1);
+    fetch.requests.length = 0;
+    const refreshed = store.getState().refresh();
+    await vi.waitFor(() => expect(rowReads()).toHaveLength(1));
+    // While it reads, nothing shown changes and the pager stays open.
+    expect(shownIds(store, "/a")).toEqual(before);
+    expect(store.getState().rows.get(key)!.turning).toBe(false);
+
+    const turned = store.getState().turnPage(key, 1);
+    top.open();
+    await Promise.all([refreshed, turned]);
+    // The second page starts right below the first as read again: nothing skipped, nothing twice.
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10, 20)));
+  });
+
+  it("reads a group turned past one request's reach again as far as its page, in requests the route accepts", async () => {
+    rows = run("a", "/a", 115);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const key = groupKey({ projectId: "p", workspace: "/a" });
+    for (let page = 1; page <= 11; page++) await store.getState().turnPage(key, page);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(110)));
+    rows = rows.slice(1);
+    fetch.requests.length = 0;
+    await store.getState().refresh();
+    expect(rowReads().length).toBeGreaterThan(1);
+    for (const read of rowReads()) expect(Number(read.query.get("limit"))).toBeLessThanOrEqual(100);
+    expect(store.getState().rows.get(key)!.page).toBe(11);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(110)));
   });
 
   it("shows twenty groups, and loads the next ones' rows when more groups are shown", async () => {
@@ -285,50 +381,99 @@ describe("the archive page", () => {
     expect(store.getState().rows.size).toBe(ARCHIVE_GROUP_PAGE + 3);
   });
 
-  it("starts over on a new query, carrying the filters on every request", async () => {
+  it("starts over on a new query, every group on its first page, carrying the filters on every request", async () => {
     rows = [...run("a", "/a", 12, 100), row("deploy-docs", "/b", 1, "Deploy the docs")];
     const store = createArchiveStore();
     await store.getState().load(ALL);
     const key = groupKey({ projectId: "p", workspace: "/a" });
-    await store.getState().showMoreRows(key);
     store.getState().toggle(key, "a-00");
+    await store.getState().turnPage(key, 1);
     fetch.requests.length = 0;
-    await store.getState().load({ q: "deploy", source: "cli", projectId: "p" });
+    await store.getState().load({ q: "a-", source: "cli", projectId: "p" });
     expect(selectedCount(store.getState())).toBe(0);
-    expect(shownGroups(store.getState()).map((g) => g.workspace)).toEqual(["/b"]);
-    expect(shownIds(store, "/b")).toEqual(["deploy-docs"]);
+    expect(shownGroups(store.getState()).map((g) => g.workspace)).toEqual(["/a"]);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(0, 10)));
     for (const request of fetch.requests) {
-      expect(request.query.get("q")).toBe("deploy");
+      expect(request.query.get("q")).toBe("a-");
       expect(request.query.get("source")).toBe("cli");
       expect(request.query.get("projectId")).toBe("p");
     }
   });
 
-  it("takes unarchived rows off at once, then reads the counts and the groups again, keeping each reveal", async () => {
+  it("takes unarchived rows off at once, then reads the counts and the groups again, keeping each group's page", async () => {
     rows = [...run("a", "/a", 25, 100), ...run("b", "/b", 2)];
     const store = createArchiveStore();
     await store.getState().load(ALL);
     const a = groupKey({ projectId: "p", workspace: "/a" });
-    await store.getState().showMoreRows(a);
     store.getState().toggle(a, "a-00");
     store.getState().toggle(groupKey({ projectId: "p", workspace: "/b" }), "b-01");
+    await store.getState().turnPage(a, 1);
     fetch.requests.length = 0;
     const ok = await store.getState().unarchive({ kind: "selection" });
     expect(ok).toBe(true);
     expect(fetch.requests[0]!.body).toEqual({ sessionIds: ["a-00", "b-01"] });
     expect(selectedCount(store.getState())).toBe(0);
-    // Read again: the counts, then each group as far as it was revealed.
+    // Read again: the counts, then each group on the page it stood on.
     expect(store.getState().groups?.map((g) => [g.workspace, g.count])).toEqual([
       ["/a", 24],
       ["/b", 1],
     ]);
     expect(shownIds(store, "/a")).toEqual(
-      rows
-        .filter((s) => s.workspace === "/a")
-        .slice(0, 20)
-        .map((s) => s.sessionId),
+      ids(rows.filter((s) => s.workspace === "/a").slice(10, 20)),
     );
     expect(shownIds(store, "/b")).toEqual(["b-00"]);
+  });
+
+  it("keeps rows chosen on two pages of a group through page turns and a read again, and acts on both", async () => {
+    rows = run("a", "/a", 15);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    store.getState().toggle(a, "a-02");
+    await store.getState().turnPage(a, 1);
+    store.getState().toggle(a, "a-12");
+    await store.getState().turnPage(a, 0);
+    await store.getState().refresh();
+    expect(isChosen(store.getState(), a, "a-02")).toBe(true);
+    expect(isChosen(store.getState(), a, "a-12")).toBe(true);
+    expect(selectedCount(store.getState())).toBe(2);
+    fetch.requests.length = 0;
+    await store.getState().unarchive({ kind: "selection" });
+    expect(fetch.requests[0]!.body).toEqual({ sessionIds: ["a-02", "a-12"] });
+    expect(rows).toHaveLength(13);
+  });
+
+  it("falls back to the last page with rows once an action empties the page shown, its page count following its count", async () => {
+    rows = run("a", "/a", 21);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    const pages = () => {
+      const group = store.getState().groups!.find((g) => groupKey(g) === a)!;
+      return pageCountOf(group.count, store.getState().rows.get(a)!.page);
+    };
+    await store.getState().turnPage(a, 1);
+    await store.getState().turnPage(a, 2);
+    expect(shownIds(store, "/a")).toEqual(["a-20"]);
+    expect(pages()).toBe(3);
+    const top = gate();
+    fetch.answer(async (request) => {
+      if (request.path === "/api/me/archived-sessions" && !request.query.has("before")) {
+        await top.shut;
+      }
+      return serve(request);
+    });
+    fetch.requests.length = 0;
+    const removed = store.getState().remove({ kind: "ids", ids: ["a-20"] });
+    // At once, before the page has read itself again: the page before, from the rows held.
+    await vi.waitFor(() => expect(rowReads()).toHaveLength(1));
+    expect(store.getState().rows.get(a)!.page).toBe(1);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10, 20)));
+    top.open();
+    await removed;
+    expect(store.getState().rows.get(a)!.page).toBe(1);
+    expect(shownIds(store, "/a")).toEqual(ids(rows.slice(10, 20)));
+    expect(pages()).toBe(2);
   });
 
   it("chooses every Session of a group with Select all, loaded or not, and acts on it through a filter", async () => {

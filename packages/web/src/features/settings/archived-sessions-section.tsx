@@ -8,7 +8,9 @@
  *   chosen, the batch bar: both stay put while the list scrolls in its own box below, so a batch
  *   chosen far down the list is still in reach. The list holds the groups, one per Workspace of
  *   a Project, newest first, each with its count and Select all, which chooses every Session of
- *   the group, loaded or not (Deselect all once all of it is chosen).
+ *   the group, loaded or not (Deselect all once all of it is chosen). A group shows ten rows a
+ *   page, with a pager under them once it has more than one page; while the next page loads,
+ *   the page shown stays and the pager waits.
  * - A row: a box to choose it (shown while the row is hovered or the box has keyboard focus,
  *   always on touch, and on every row while anything is chosen), the title and the time, the
  *   source as a word in a pill (on every row, a person's conversation included), a busy glyph
@@ -31,6 +33,7 @@ import {
   ICONS,
   ICON_SIZE,
   MoreRow,
+  Pager,
   SearchInput,
   Select,
   SettingsEmpty,
@@ -41,14 +44,14 @@ import {
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
 import { subscribeUserEvents } from "../../lib/amsp/user-events";
-import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
+import { workspaceLabel } from "../../lib/session-grouping";
 import { programSource } from "../../lib/session-source-mark";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
+import { pageCountOf } from "./archived-sessions-paging";
 import {
-  ARCHIVE_ROW_PAGE,
   createArchiveStore,
   groupKey,
   isChosen,
@@ -238,8 +241,7 @@ export function ArchivedSessionsSection() {
                 chosen={(id) => isChosen(state, groupKey(group), id)}
                 choosing={choosing}
                 busy={state.busy}
-                onMore={() => void store.getState().showMoreRows(groupKey(group))}
-                onLess={() => store.getState().showLessRows(groupKey(group))}
+                onPage={(page) => void store.getState().turnPage(groupKey(group), page)}
                 onToggle={(id) => store.getState().toggle(groupKey(group), id)}
                 onToggleAll={() => store.getState().toggleGroup(groupKey(group))}
                 onUnarchive={(target) => void store.getState().unarchive(target)}
@@ -282,7 +284,7 @@ export function ArchivedSessionsSection() {
   );
 }
 
-/** One group: its header (Project › Workspace, the count, Select all) and its rows. */
+/** One group: its header (Project › Workspace, the count, Select all), its page of rows, and the pager. */
 function ArchiveGroup({
   group,
   rows,
@@ -290,8 +292,7 @@ function ArchiveGroup({
   chosen,
   choosing,
   busy,
-  onMore,
-  onLess,
+  onPage,
   onToggle,
   onToggleAll,
   onUnarchive,
@@ -305,8 +306,7 @@ function ArchiveGroup({
   chosen: (sessionId: string) => boolean;
   choosing: boolean;
   busy: boolean;
-  onMore: () => void;
-  onLess: () => void;
+  onPage: (page: number) => void;
   onToggle: (sessionId: string) => void;
   onToggleAll: () => void;
   onUnarchive: (target: ArchiveTarget) => void;
@@ -323,14 +323,8 @@ function ArchiveGroup({
     ids: [sessionId],
     ...(group.machineId !== undefined ? { machineId: group.machineId } : {}),
   });
-  // The sidebar's own reveal rule: what the row still hides counts what is held past the cap
-  // and what the group's count says is not fetched yet.
-  const plan = revealPlan({
-    cap: rows?.cap ?? ARCHIVE_ROW_PAGE,
-    loaded: rows?.sessions.length ?? 0,
-    total: group.count,
-    fullyLoaded: rows !== undefined && !rows.hasMore,
-  });
+  const page = rows?.page ?? 0;
+  const pageCount = pageCountOf(group.count, page);
   return (
     <section>
       <div className="flex items-center gap-2 pb-1.5">
@@ -391,21 +385,13 @@ function ArchiveGroup({
           ))}
         </ul>
       )}
-      {plan.hidden > 0 && (
-        <MoreRow
-          label={S.chat.expandRestSessions(plan.hidden)}
-          ariaLabel={S.chat.expandRestSessions(plan.hidden)}
-          pending={rows?.loading === true}
-          onClick={onMore}
+      {pageCount > 1 && (
+        <Pager
+          page={page}
+          pageCount={pageCount}
+          onChange={onPage}
+          disabled={rows?.turning === true}
           className="mt-1"
-        />
-      )}
-      {plan.canCollapse && (
-        <MoreRow
-          label={S.chat.showLess}
-          ariaLabel={S.chat.showLess}
-          onClick={onLess}
-          {...(plan.hidden > 0 ? {} : { className: "mt-1" })}
         />
       )}
     </section>
