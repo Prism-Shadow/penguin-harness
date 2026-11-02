@@ -47,6 +47,7 @@ import {
 import type { HistoryOut } from "../services/history-stream.js";
 import { historyFileKey } from "../services/history-wire.js";
 import { traceRecordImage } from "../services/trace-images.js";
+import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
 import { GenerationClosed, HistorySync } from "./history-sync.js";
 import type { HistoryReader, HistorySyncDeps } from "./history-sync.js";
 import type { MachineSockets } from "./machine-sockets.js";
@@ -54,10 +55,6 @@ import { proxyThroughSession } from "./proxy.js";
 import type { ProxyPath, ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
-const SESSION_READ = /^\/api\/sessions\/([^/]+)\/(history|trace-body|trace-image)$/;
-const SESSION_EVENTS = /^\/api\/sessions\/([^/]+)\/traces\/([1-9]\d{0,5})(\/analysis)?$/;
-const AGENT_EVENTS =
-  /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/traces\/([^/]+)\/([1-9]\d{0,5})(\/analysis)?$/;
 /** How many Sessions' Projects are remembered for the Project-scoped Trace path. */
 const PROJECTS_KEPT = 10_000;
 
@@ -145,6 +142,20 @@ export function machineHistory(deps: {
     | "observe"
   >;
 }): { history: MachineHistory; sync: HistorySync } {
+  /** A GET of the machine's API over the forward; `encoded`: its answer as it crossed the link. */
+  const get =
+    (encoded: boolean) =>
+    (machineId: string, target: ProxyTarget, remote: string, signal: AbortSignal) => {
+      const url = new URL(remote, "http://localhost");
+      return proxyThroughSession(
+        new Request(url, { signal }),
+        { machineId, remotePath: url.pathname },
+        target,
+        undefined,
+        undefined,
+        encoded,
+      );
+    };
   const sync = new HistorySync({
     ...deps.tuning,
     cache: deps.cache,
@@ -152,14 +163,8 @@ export function machineHistory(deps: {
     ...(deps.known !== undefined ? { known: deps.known } : {}),
     ...(deps.heardAt !== undefined ? { heardAt: deps.heardAt } : {}),
     socket: (machineId, target) => deps.sockets.socketFor(machineId, target),
-    http: (machineId, target, remote, signal) => {
-      const url = new URL(remote, "http://localhost");
-      return proxyThroughSession(
-        new Request(url, { signal }),
-        { machineId, remotePath: url.pathname },
-        target,
-      );
-    },
+    http: get(false),
+    wire: get(true),
     log: deps.log,
   });
   return {

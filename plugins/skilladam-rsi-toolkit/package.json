@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/skilladam-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "SkillAdam RSI Toolkit: organize benchmark experiments and evolve a target Skill through trajectory feedback, an evolving issue tracker, paired evaluation and a variance-controlled edit budget.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/skilladam-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "penguin": {
+    "description_zh": "SkillAdam RSI 工具包：组织 benchmark 实验，结合执行轨迹、持续更新的问题记录、配对评测和按方差调整的编辑预算，迭代优化目标 Agent 的技能。",
+    "short_description": "SkillAdam RSI Toolkit: evolve a Skill from execution feedback.",
+    "short_description_zh": "SkillAdam RSI 工具包：根据执行反馈迭代技能。",
+    "category": "rsi",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Read skilladam-rsi-toolkit and run a SkillAdam experiment on the selected benchmark with the requested model and budget.",
+      "prompt_zh": "读取 skilladam-rsi-toolkit，按指定模型和预算，在选定的 benchmark 上完成 SkillAdam 实验。",
+      "skills": [
+        "skilladam-rsi-toolkit"
+      ]
+    }
+  }
+}

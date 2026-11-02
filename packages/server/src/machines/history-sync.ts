@@ -60,6 +60,7 @@ import type { MessagesPageRequest } from "../services/trace-service.js";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
+import { decodedWhole } from "./answer-decoding.js";
 import type { MachineSocket, Sink } from "./machine-sockets.js";
 import { withWindowUnits } from "./older-window-units.js";
 import type { ProxyTarget } from "./proxy.js";
@@ -118,8 +119,19 @@ export interface HistorySyncDeps {
     machineId: string,
     target: ProxyTarget,
   ): Promise<{ socket: MachineSocket } | { answer: Response }>;
-  /** A GET of the machine's API over the forward (an older build's `/messages`). */
+  /** A GET of the machine's API over the forward, its answer decoded (the Session's own read). */
   http(
+    machineId: string,
+    target: ProxyTarget,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<Response>;
+  /**
+   * The same GET, its answer as it crossed the link: still encoded, with the length that crossed
+   * (proxy.ts proxyThroughSession's `encoded`), so an older build's `/messages` is counted in the
+   * link's own bytes against a total known up front. Absent: `http` (a suite's plain machine).
+   */
+  wire?(
     machineId: string,
     target: ProxyTarget,
     path: string,
@@ -1219,14 +1231,21 @@ class HistoryJob {
       prev();
       abort.abort();
     };
-    const res = await this.deps.http(
+    const res = await (this.deps.wire ?? this.deps.http)(
       this.machineId,
       target,
       `/api/sessions/${encodeURIComponent(this.sessionId)}/messages${messagesQuery(op.read)}`,
       abort.signal,
     );
+    // The answer as it crossed: its length is the link's, and so is every count below.
+    const encoding = res.headers.get("content-encoding");
     if (!res.ok) {
-      stream.answer = { status: res.status, body: await res.json().catch(() => null) };
+      const said = await res
+        .arrayBuffer()
+        .then((bytes) => decodedWhole(Buffer.from(bytes), encoding))
+        .then((bytes) => JSON.parse(bytes.toString("utf8")) as unknown)
+        .catch(() => null);
+      stream.answer = { status: res.status, body: said };
       if (this.#outcome(stream) !== null) throw new Error(`the machine answered ${res.status}`);
       return;
     }
@@ -1244,9 +1263,8 @@ class HistoryJob {
     }
     if (stream.cancelled) return;
     // An older build's page has no `units`: counted here, as a newer machine's cut counts it.
-    const response = await withWindowUnits(
-      JSON.parse(Buffer.concat(chunks).toString("utf8")) as MessagesResponse,
-    );
+    const page = await decodedWhole(Buffer.concat(chunks), encoding);
+    const response = await withWindowUnits(JSON.parse(page.toString("utf8")) as MessagesResponse);
     if (stream.cancelled) return;
     const date = Date.parse(res.headers.get("date") ?? "");
     stream.delivered = true;

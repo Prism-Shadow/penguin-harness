@@ -1024,8 +1024,8 @@ export interface ModelProtocolDetectResponse {
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
  * the protocol `/detect` reported, returns every model id the endpoint serves (MMSP's
- * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
- * whole listing in one go; the ids come back in the endpoint's own order.
+ * `listModels()` on the routed client). Used by the add-group dialog to fill the list the
+ * user picks the models to import from; the ids come back in the endpoint's own order.
  */
 export interface EndpointModelListRequest {
   /** Endpoint base URL (as typed in the add-group dialog). */
@@ -2863,17 +2863,23 @@ export interface GoalResponse {
  *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
  *   summarize); one without — just compacted, or its first request never finished — has
  *   nothing to summarize and streams no pair. Then come the new context's opener records
- *   and, last, its `session_meta`: its `provider` / `model_id` name the model the Session now
- *   runs on, the Session reads report that pair from this record on, and `task_state` turns
- *   idle after it.
- *   A compaction that ends other than `completed` means no switch — no `session_meta` follows
- *   and the Session keeps its model.
+ *   and its `session_meta`: its `provider` / `model_id` name the model the Session now runs
+ *   on, the Session reads report that pair from this record on, and `task_state` turns idle
+ *   after the switch.
+ *   When the summary cannot be had — the model the Session is on is no longer configured or
+ *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
+ *   other than `completed` or `aborted` — the switch still completes, by Trace handoff: right
+ *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
+ *   whose `session` is this Session, naming the Trace file of the context it left. Only a
+ *   stopped compaction (`aborted`) means no switch: no `session_meta` follows and the Session
+ *   keeps its model.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
  * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
- *   `same_model`, `model_not_configured` (the target is not in the Project config),
- *   `model_unavailable` (its client cannot be constructed, e.g. no credential), and
- *   `compaction_not_configured`.
+ *   `same_model`, `model_not_configured` (the target is not in the Project config), and
+ *   `model_unavailable` (its client cannot be constructed, e.g. no credential). Both are about
+ *   the target: a Session whose own model can no longer be reached is loaded for the switch
+ *   anyway, and hands its history over.
  */
 export interface SessionSwitchModelRequest {
   /** Provider group of the target model. */

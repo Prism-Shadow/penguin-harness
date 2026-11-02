@@ -127,6 +127,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
+import { MachineAnswers } from "./answer-cache.js";
 import type { ProxyTarget } from "./proxy.js";
 import { machineHistory } from "./history-routes.js";
 import type { MachineHistory } from "./history-routes.js";
@@ -402,6 +403,11 @@ export interface MachinesEffects {
    * machine leaves this server's list or its data is removed. Null where nothing is kept.
    */
   historyCache: Pick<TraceCache, "dropMachine" | "dropUnknown"> | null;
+  /**
+   * The answers the proxy keeps of each machine's reads (answer-cache.ts): a machine's go when it
+   * is taken out of a Project or uninstalled. Null where nothing is kept.
+   */
+  answers: Pick<MachineAnswers, "dropMachine"> | null;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -611,6 +617,7 @@ export class MachinesService {
       lateSweepMs: 20_000,
       socketFact: () => null,
       historyCache: null,
+      answers: null,
       ...effects,
     };
     this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
@@ -1953,6 +1960,9 @@ export class MachinesService {
    */
   stopUsing(projectId: string, addresses: readonly string[]): void {
     for (const address of new Set(addresses)) {
+      // What the proxy kept of its answers goes with it: the next read there asks afresh.
+      const machineId = this.repo.get(address)?.machineId ?? null;
+      if (machineId !== null) this.#effects.answers?.dropMachine(machineId);
       this.disconnect(address);
       this.release(projectId, address);
       // No Project here uses it any more: the password it signed in with goes with it.
@@ -3382,6 +3392,7 @@ export class MachinesService {
     if (removeData && machine.machineId !== null) {
       void this.#effects.historyCache?.dropMachine(machine.machineId).catch(() => undefined);
     }
+    if (machine.machineId !== null) this.#effects.answers?.dropMachine(machine.machineId);
     closeConnectionTo(address);
     this.#changed();
     return { ok: true, uninstalled: true, dataRemoved: removeData };
@@ -3692,6 +3703,9 @@ export class MachinesModule {
     // (trace-cache.ts): a cache under this data root, kept across generations and restarts.
     // One per directory for the whole process: generations share it (traceCacheAt).
     const historyCache = traceCacheAt(path.join(this.paths.root, "machines", "traces"));
+    // The last answer of each machine read the proxy relayed, to revalidate (answer-cache.ts):
+    // this generation's, in memory, as the sockets are.
+    const answers = new MachineAnswers();
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3703,6 +3717,7 @@ export class MachinesModule {
         socketFact: (machineId) => sockets.fact(machineId),
         announce: () => toAdmins({ type: "machines_changed" }),
         historyCache,
+        answers,
       },
       () => this.hmr.assetsDir(),
     );
@@ -3730,11 +3745,14 @@ export class MachinesModule {
       sockets,
       events,
       history,
+      answers,
       revocation: (c) =>
         streamRevocation(c, c.var.user, { liveStreams: this.liveStreams, auth: this.auth }),
     });
-    this.sessionForward = machineSessionForward(machines, { sockets, events, history }, (line) =>
-      console.log(line),
+    this.sessionForward = machineSessionForward(
+      machines,
+      { sockets, events, history, answers },
+      (line) => console.log(line),
     );
     // A Session deleted on its machine takes the hub's copy of it along (history-routes.ts).
     const untap = events.tap((machineId, data) => history.hear(machineId, data));
@@ -3762,6 +3780,7 @@ export function machinesServerProxyRoutes(
     sockets?: MachineSockets;
     events?: MachineEventHub;
     history?: Pick<MachineHistory, "answer">;
+    answers?: MachineAnswers;
     /** The sign-in behind a request, for a history stream to be held against (http/sse.ts). */
     revocation?: (c: Context<AppEnv>) => SseRevocation;
   } = {},

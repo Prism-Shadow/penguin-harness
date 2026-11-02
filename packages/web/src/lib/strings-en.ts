@@ -444,6 +444,8 @@ export const en: Strings = {
     status: {
       connecting: "connecting",
       ready: "ready",
+      /** The pty is fine; this page's socket dropped and is being reattached. */
+      reconnecting: "reconnecting",
       exited: "exited",
       error: "error",
     },
@@ -2018,21 +2020,30 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go — the base URL, API key and protocol you enter are saved once as the group\'s settings, and every imported model follows them; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, fetches the models it serves and imports the ones you tick — the base URL, API key and protocol you enter are saved once as the group\'s settings, and every imported model follows them; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
     groupModeCreate: "Create only",
     groupModeImport: "Import models",
-    groupImportAll: "Import all models",
+    groupImportFetch: "Fetch model list",
+    groupImportPicked: (n: number): string => (n === 1 ? "Import 1 model" : `Import ${n} models`),
+    groupImportPickTitle: "Models to import",
+    groupImportPickCount: (picked: number, total: number): string =>
+      `${picked} of ${total} selected`,
+    groupImportSelectAll: "Select all",
+    groupImportSelectNone: "Select none",
+    groupImportFilter: "Filter by model id",
     groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
     groupImportKeyHint: "The endpoint's API key (required unless the URL is the vendor's own)",
     groupImportListing: "Fetching model list…",
-    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportSaving: (n: number): string =>
+      n === 1 ? "Importing 1 model…" : `Importing ${n} models…`,
     groupImportUnsupported: "This protocol cannot list models — add them manually",
     groupImportFailed: "Fetching the model list failed",
     groupImportEmpty: "No models to import from this endpoint",
-    groupImported: (added: number, skipped: number): string =>
-      skipped > 0
-        ? `Imported ${added} models, skipped ${skipped} entries`
-        : `Imported ${added} models`,
+    groupImported: (added: number, skipped: number): string => {
+      const models = added === 1 ? "1 model" : `${added} models`;
+      if (skipped === 0) return `Imported ${models}`;
+      return `Imported ${models}, skipped ${skipped === 1 ? "1 entry" : `${skipped} entries`}`;
+    },
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -3211,7 +3222,9 @@ export const en: Strings = {
     /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
     modelSwitchInSessionDirectConfirm: "Switch",
     modelSwitchInSessionBody: (from: string, to: string): string =>
-      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, it stays on "${from}".`,
+      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, "${to}" gets this conversation's Trace file path instead.`,
+    modelSwitchInSessionHandoverBody: (from: string, to: string): string =>
+      `"${from}" is unavailable right now, so nothing is summarized: "${to}" gets this conversation's Trace file path and reads the earlier history from it when it needs to.`,
     modelSwitchInSessionDirectBody: (to: string): string =>
       `This conversation has no context yet, so it switches to "${to}" right away.`,
     modelSwitchInSessionCompactedBody: (to: string): string =>
@@ -3516,11 +3529,11 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       benchmarkImport: {
-        label: "Import GDPEVO-CRM",
-        desc: "Import GDPEVO-CRM's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
+        label: "Import GDPEVO Essential-Service Ticket Resolution",
+        desc: "Import GDPEVO Essential-Service Ticket Resolution's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
         prompt:
-          "Use the `benchmark-design` Skill to import the GDPEVO-CRM benchmark: " +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-crm-train, " +
+          "Use the `benchmark-design` Skill to import the GDPEVO Essential-Service Ticket Resolution benchmark: " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train, " +
           "together with its paired test set. If this Project already has them, just tell me " +
           "and leave them as they are.",
       },
@@ -4081,6 +4094,12 @@ Scenarios:
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
     compactionResult: "Result",
     modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
+    modelChangedByTrace: (from: string, to: string): string =>
+      `Model switched · ${from} → ${to} · handed over by Trace`,
+    modelChangedByTraceHint: (tracePath?: string): string =>
+      tracePath
+        ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
+        : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -4749,9 +4768,8 @@ Scenarios:
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "Wrap",
     unsaved: "Unsaved changes",
-    saveConfirmTitle: "Save file",
-    saveConfirm: (name: string): string =>
-      `Save changes to ${name}? The file in the Workspace will be overwritten.`,
+    /** The editor's ✓: writes the draft and goes back to the preview (the save shortcut saves and stays). */
+    saveAndClose: "Save and close",
     editTooLarge: (kb: number): string =>
       `The file is larger than ${kb}KB and cannot be edited here — download it instead`,
     saveTooLarge: (mb: number): string =>
@@ -4760,8 +4778,8 @@ Scenarios:
     discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
     discard: "Discard",
     unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
-    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
-    stopEditing: "Stop editing",
+    /** The editor's ×: drops what was typed and goes back to the preview, without asking — the button is the discard. */
+    discardChanges: "Discard changes",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:

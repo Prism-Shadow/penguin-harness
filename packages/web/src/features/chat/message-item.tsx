@@ -411,11 +411,23 @@ export function MessageItem({
       const sameId = item.from.modelId === item.to.modelId;
       const name = (m: { provider: string; modelId: string }): string =>
         sameId ? `${m.provider} / ${m.modelId}` : m.modelId;
+      // A switch that handed the history over by Trace path says so, and names the file on hover.
+      const handover = item.handover;
       return (
         <div className="anim-msg my-3 flex items-center gap-3 text-xs text-fg-muted">
           <span aria-hidden className="h-px flex-1 bg-line" />
-          <span className="min-w-0 break-words text-center">
-            {S.chat.modelChanged(name(item.from), name(item.to))}
+          <span
+            className="min-w-0 break-words text-center"
+            {...(handover
+              ? {
+                  "data-tooltip": S.chat.modelChangedByTraceHint(handover.tracePath),
+                  "data-tooltip-extra": true,
+                }
+              : {})}
+          >
+            {handover
+              ? S.chat.modelChangedByTrace(name(item.from), name(item.to))
+              : S.chat.modelChanged(name(item.from), name(item.to))}
           </span>
           <span aria-hidden className="h-px flex-1 bg-line" />
         </div>

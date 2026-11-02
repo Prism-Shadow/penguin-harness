@@ -12,6 +12,11 @@
  * HTML, or uses the `--wb-*` (or `--ui-*`) names, follows the app through a theme, mode, accent
  * or font change.
  *
+ * A page the server compiled from TSX arrives with the shared components' own stylesheet
+ * (`link[data-penguin-ui]`) and gets no base stylesheet: its unlayered rules for bare buttons,
+ * inputs and tables would beat the components' layered ones. Everything else is stamped as
+ * for any page — the fonts included, which that stylesheet does not carry.
+ *
  * Reading the app's theme is cached per appearance (the root's class, attributes and font size),
  * and a frame that already carries a theme is not stamped with it again, so re-applying on every
  * appearance change and every frame load costs a lookup, not a style resolution.
@@ -26,6 +31,9 @@ import {
 
 /** Where the base stylesheet is served from (packages/web/public). */
 export const WORKBENCH_THEME_HREF = "/workbench-ui.css";
+
+/** Marks the shared components' stylesheet the server writes into a page compiled from TSX. */
+export const PENGUIN_UI_ATTR = "data-penguin-ui";
 
 /** Marks the frame's `<style>` that holds the copied `@font-face` rules. */
 export const WORKBENCH_FONTS_ATTR = "data-workbench-fonts";
@@ -283,7 +291,10 @@ export function applyWorkbenchTheme(doc: Document, theme: WorkbenchTheme): void 
     fonts.textContent = theme.fontFaces;
   }
   // First in the head, so the page's own rules come after it and win.
-  if (head.querySelector(`link[href="${WORKBENCH_THEME_HREF}"]`) === null) {
+  if (
+    head.querySelector(`link[${PENGUIN_UI_ATTR}]`) === null &&
+    head.querySelector(`link[href="${WORKBENCH_THEME_HREF}"]`) === null
+  ) {
     const link = doc.createElement("link");
     link.rel = "stylesheet";
     link.href = WORKBENCH_THEME_HREF;

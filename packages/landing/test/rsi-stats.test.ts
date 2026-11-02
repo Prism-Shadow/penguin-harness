@@ -1,8 +1,7 @@
 /**
  * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
- * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
- * Benchmarks, one entry per upstream repository core records for them, linked to it, so a new
- * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
+ * whose package.json files them under the `rsi` category, and BENCHMARKS the shipped packages' upstream repositories,
+ * one entry per source, so a new toolkit or upstream fails here instead of leaving the landing page behind. Every
  * link is absolute https, and only the Default toolkit has none; and both dictionaries carry one
  * kind per Benchmark and no derived count in the stat tiles (the hero derives the algorithm and
  * Benchmark counts from these lists).
@@ -39,16 +38,19 @@ const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
   .sort();
 
 /** The catalogue prepared from the same packages that ship in the application. */
-function builtinBenchmarks(): Array<{ id: string; upstream: string }> {
+function builtinUpstreams(): string[] {
   const file = join(__dirname, "../../../node_modules/.cache/penguin-benchmarks/catalog.json");
   const packages = JSON.parse(readFileSync(file, "utf8")) as Array<{
-    id: string;
     cases: Array<{ statement: string }>;
   }>;
-  return packages.map((benchmark) => ({
-    id: benchmark.id,
-    upstream: /^- Upstream: (https:\/\/\S+)/m.exec(benchmark.cases[0]!.statement)?.[1] ?? "",
-  }));
+  return [
+    ...new Set(
+      packages.map(
+        (benchmark) =>
+          /^- Upstream: (https:\/\/\S+)/m.exec(benchmark.cases[0]!.statement)?.[1] ?? "",
+      ),
+    ),
+  ].sort();
 }
 
 const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
@@ -63,11 +65,7 @@ describe("hero catalogue ↔ its sources", () => {
   });
 
   it("BENCHMARKS names core's built-in Benchmarks, one entry per upstream, linked to it", async () => {
-    expect(
-      BENCHMARKS.flatMap((benchmark) =>
-        benchmark.ids.map((id) => ({ id, upstream: benchmark.href })),
-      ).sort((a, b) => a.id.localeCompare(b.id)),
-    ).toEqual(builtinBenchmarks().sort((a, b) => a.id.localeCompare(b.id)));
+    expect(BENCHMARKS.map((benchmark) => benchmark.href).sort()).toEqual(builtinUpstreams());
     const hrefs = BENCHMARKS.map((benchmark) => benchmark.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });

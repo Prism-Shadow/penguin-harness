@@ -11,6 +11,7 @@ PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他�
 - 存储：SQLite（内置的 `node:sqlite`，WAL 模式）只保存索引和聚合数据：用户、认证会话、Project 授权、Agent 与 Session 索引、用量、UI 偏好、错误记录和定时任务状态。所有 Agent、Trace 和 Workspace 数据都以文件形式存放在 `~/.penguin/data` 下，与 CLI 和 SDK 共享；参见[配置参考](/configuration)。
 - 绑定地址：默认 `127.0.0.1:7364`，可通过 `PORT` / `HOST` 环境变量调整。
 - 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体大小上限并非固定值，而是由附件额度推导出来的。附件以 base64 `data:` URL 的形式随请求传输，体积会膨胀 4/3，所以上限按 `base64(attachmentTotalMb)` 计算，再为一张内嵌图片和 JSON 封装留出余量。按默认 120MB 的总量计，约为 190MB；管理员调低总量，上限也会随之下降。服务器边读请求体边统计字节数，因此不声明长度（chunked）的请求同样受此限制。
+- JSON 应答：`/api` 与 `/server` 下 1 KiB 及以上的 JSON 应答，按调用方的接受情况压缩——接受 brotli 即用 brotli，否则 gzip，两者都不接受即原文（`q=0` 视为拒绝）。`GET` 的 `200` JSON 应答带一枚由其字节算出的弱 `ETag`（路由自己设了的除外），请求的 `If-None-Match` 与之相符即答 `304`、不带正文。
 - 所有错误共用同一种结构：
 
 ```text
@@ -285,6 +286,8 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只存在于某个配置文件里，若以别名为准，主机一改名，机器的 URL 就会跟着变。id 采用 base64url 编码，放进路径无需百分号转义。
 
 该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
+
+到机器的链路可能很慢，所以经它传送的内容要尽量少。本服务器转发每个请求时都以自己的名义向机器询问 `br, gzip`，并在交给调用方之前先解码；调用方的 `Accept-Encoding`、`If-None-Match` 与 `If-Modified-Since` 不会转交，调用方收到的应答按本服务器对 JSON 应答的规则处理（见[概览](#概览)）。本服务器还在内存中保留每项读取最近一次带 `ETag` 的 `GET` `200` JSON 应答（标了 `no-store` 的除外），按机器、发起请求的用户和带查询的路径分开存放。Session 的历史读取——历史流、折叠的正文、记录的图片、Trace 文件的事件与分析——不在其列，即使本服务器的副本答不了、转而询问机器也是如此：这些字节由副本保存。下一次转发同一读取时，`If-None-Match` 带上这枚 `ETag`；机器答 `304`，即以保留的正文逐字节作答——对调用方是一个 `200`。新的应答替换保留的那份。每次读取仍要问机器：机器连不上时，读取照旧失败。超过 2 MiB 的应答不保留，保留总量超过 16 MiB 时最久未用的先丢；机器被移出 Project 或卸载时它的应答一并丢弃；重启或热推送之后从空开始。不发送编码与 `ETag` 的机器，其应答原样转交。
 
 **机器上的 Session 也可以只凭 id 访问。** 管理员发出的 `/api/sessions/:sessionId/…` 请求，若本服务器自己的索引里没有该 Session，就会转发到持有它的机器，转发方式、身份与请求头规则都与 `/server/<machineId>/api/sessions/:sessionId/…` 相同，流也同样只走 socket。本服务器从内存中的索引查出机器：索引由各机器的 `session_created` 与 `session_deleted` 事件填充；遇到没见过的 id，则同时询问调用方各 Project 的每台已连接机器（`GET /api/sessions/:sessionId`），先答 `200` 的机器即持有该 Session。所有机器都否认的 id 会被记为未知 10 秒。本服务器自己索引里的 Session 一律在本地应答，非管理员调用方照常得到 `404` `session_not_found`。除机器自己的应答外，还有五种结果：
 
@@ -958,7 +961,7 @@ interface MessagesResponse {
 - `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
 - `POST /retry` 对应运行出错或被用户中断后的**重试**按钮。运行以 `fatal` 结束、放弃重连或被中断后，没跑完的那一轮输入会连同模型已产出的内容一起留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
 - `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
-- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。压缩以非 `completed` 结束即没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）和 `compaction_not_configured`。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
+- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。拿不到摘要时切换照样完成，改为交接 Trace 路径：紧跟 `session_meta` 的是一条整条为 `[model_switch_from]` 块的用户文本，其 `session` 为本 Session，点名被离开的上下文的 Trace 文件。压缩以 `completed` 与 `aborted` 之外的状态结束，或当前模型已不在配置中、缺少凭据时都是如此；后一种情形不推压缩事件对，也不向该模型发任何请求。只有压缩以 `aborted` 结束才没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）。这两个码都只针对目标：本 Session 自己的模型已不在配置中或缺少凭据时，服务器照样为切换加载它，交接其历史。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
 
 ### 请求体
 
@@ -988,7 +991,7 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-换模型有两条路。会话内切换走上面的 `POST /switch-model`：同一个 Session 先压缩，再在另一个模型上继续，会话 id 与历史不变。Web App 的 `/model` 交接则是用另一个模型开一个新会话，没有专用端点。和 `/agent` 交接一样，它把几条普通路由组合起来：
+换模型有两条路。会话内切换走上面的 `POST /switch-model`：同一个 Session 先压缩（或交接 Trace 路径），再在另一个模型上继续，会话 id 与历史不变。Web App 的 `/model` 交接则是用另一个模型开一个新会话，没有专用端点。和 `/agent` 交接一样，它把几条普通路由组合起来：
 
 1. 创建 Session：为同一个 Agent 打开新 Session，沿用所选模型和源 Workspace。
 2. `POST /tasks` 发送第一条消息，开头是 `[model_switch_from]` 来源块，写明源 session id、它的 `tracePath`、Workspace 以及之前的模型组合。

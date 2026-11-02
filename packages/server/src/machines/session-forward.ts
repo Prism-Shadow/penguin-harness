@@ -31,6 +31,7 @@ import type { SseRevocation } from "../http/sse.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { MachineAnswers } from "./answer-cache.js";
 import type { MachineEventHub } from "./event-hub.js";
 import type { HistoryCaller, MachineHistory } from "./history-routes.js";
 import type { MachineSockets } from "./machine-sockets.js";
@@ -125,6 +126,8 @@ export class SessionForward {
        * the machine says the Session is gone, so its copy goes too.
        */
       history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
+      /** The answers this generation keeps of its machines' reads (answer-cache.ts). */
+      answers?: MachineAnswers;
     },
   ) {}
 
@@ -139,10 +142,13 @@ export class SessionForward {
     request: Request,
     sessionId: string,
     projectIds: readonly string[],
-    /** Who asks: the hub's history answers bind a held window to its reader and its sign-in. */
+    /**
+     * Who asks: the hub's history answers bind a held window to its reader and its sign-in, and
+     * a read's kept answer is this reader's own (answer-cache.ts).
+     */
     caller?: Omit<HistoryCaller, "projectId">,
   ): Promise<Response | null> {
-    const { index, machines, relay } = this.deps;
+    const { index, machines, relay, answers } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
     const { place, silent, refused } = await index.resolve(sessionId, fleetOf);
@@ -182,6 +188,9 @@ export class SessionForward {
       target,
       relay,
       (id, outcome) => machines.noteApiSeen(id, outcome),
+      answers !== undefined && caller !== undefined
+        ? { answers, readerId: caller.userId }
+        : undefined,
     );
 
     if (answer.status === 401 || answer.status === 403) {
@@ -247,6 +256,7 @@ export function machineSessionForward(
     sockets: MachineSockets;
     events: MachineEventHub;
     history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
+    answers?: MachineAnswers;
   },
   log: (line: string) => void = () => undefined,
 ): SessionForward {
@@ -257,6 +267,7 @@ export function machineSessionForward(
     index,
     relay: new MachineSocketRelay(log, shared),
     ...(shared.history !== undefined ? { history: shared.history } : {}),
+    ...(shared.answers !== undefined ? { answers: shared.answers } : {}),
   });
 }
 
