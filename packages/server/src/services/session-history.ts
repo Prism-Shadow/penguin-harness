@@ -6,10 +6,21 @@
  * Agent API's (`/api/amsp/v1/sessions/:id/…`, amsp/routes.ts). Each door has already decided the
  * caller may read the Session; the only difference between them is where a page's image
  * references point, which is each door's own `trace-image` route (`imageBase`).
+ *
+ * The answer's assembly — the envelope captured before the read, the held inputs merged, images
+ * by reference — is exported on its own (`captureHistoryEnvelope`, `historyResponse`): the
+ * `history` stream (http/routes/history.ts) sends the same records, and a hub assembles a
+ * machine Session's from its copy of the machine's lines (machines/history-sync.ts).
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
-import type { MessagesLiveTail, MessagesPageInfo, MessagesResponse } from "../api/types.js";
+import type {
+  HistoryMessage,
+  SessionStatus,
+  MessagesLiveTail,
+  MessagesPageInfo,
+  MessagesResponse,
+} from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
@@ -17,7 +28,7 @@ import type { Traces } from "../mechanisms/traces.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { decodeCursor } from "./message-window.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { MessagesPageRequest } from "./trace-service.js";
+import type { MessagesPageRequest, MessagesPageResult } from "./trace-service.js";
 
 export interface SessionHistoryDeps {
   traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;
@@ -29,11 +40,11 @@ export interface SessionHistoryDeps {
 }
 
 /** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
-const MESSAGES_PAGE_LIMIT_MAX = 1000;
-const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
+export const MESSAGES_PAGE_LIMIT_MAX = 1000;
+export const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
 
-/** Parse one windowed-read unit-count param (positive integer, capped). */
-function pageLimit(raw: string, name: string): number {
+/** Parse one windowed-read unit-count param (positive integer, capped); a 400 otherwise. */
+export function pageLimit(raw: string, name: string): number {
   if (!/^\d{1,4}$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
   const v = Number.parseInt(raw, 10);
   if (v < 1 || v > MESSAGES_PAGE_LIMIT_MAX) {
@@ -67,11 +78,14 @@ export function appendPendingInputs(messages: AmspRecord[], pending: AmspRecord[
  * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
  * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
  * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
+ * `query` reads one query parameter (the `history` stream takes the same grammar).
  */
-function messagesPageQuery(c: Context): MessagesPageRequest | null {
-  const rawTail = c.req.query("tailLimit");
-  const rawBefore = c.req.query("before");
-  const rawLimit = c.req.query("limit");
+export function messagesPageQuery(
+  query: (name: string) => string | undefined,
+): MessagesPageRequest | null {
+  const rawTail = query("tailLimit");
+  const rawBefore = query("before");
+  const rawLimit = query("limit");
   if (rawTail === undefined && rawBefore === undefined) {
     if (rawLimit !== undefined) throw badRequest("limit requires before.");
     return null;
@@ -93,17 +107,31 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
 }
 
 /**
- * `GET …/sessions/:id/messages` for a Session the door has resolved. `imageBase` is where the
- * door serves a Session's routes (`/api/sessions`, `/api/amsp/v1/sessions`): a windowed page's
- * image references point at that door's own `trace-image` route.
+ * What a history read answers beside its records, captured before the read starts: the
+ * running Task's live tail and its held inputs (see the comment in `captureHistoryEnvelope`),
+ * the Session's status, and this server's clock.
  */
-export async function sessionMessages(
-  c: Context,
-  deps: SessionHistoryDeps,
-  row: SessionRow,
-  imageBase: string,
-): Promise<Response> {
-  const page = messagesPageQuery(c);
+export interface HistoryEnvelope {
+  live?: MessagesLiveTail;
+  pendingInputs: AmspRecord[];
+  status: SessionStatus;
+  serverNowMs: number;
+}
+
+/**
+ * The envelope of a read of `sessionId`, captured now — `/messages`, the `history` stream and a
+ * machine's `history-lines` all take it from here. Call it synchronously before the Trace read
+ * starts, with no await in between: the live-tail contract rests on that order. `kind` is the
+ * read's: a tail or the whole transcript ends at the live edge; a `before` window, or a read that
+ * is no window at all (`none`: a body, the fill), carries neither the live tail nor held inputs.
+ */
+export function captureHistoryEnvelope(
+  deps: Pick<SessionHistoryDeps, "manager" | "channels">,
+  sessionId: string,
+  kind: "tail" | "before" | "full" | "none",
+): HistoryEnvelope {
+  const status = deps.manager.statusOf(sessionId);
+  const serverNowMs = Date.now();
   // Live tail (running/compacting sessions only): capture the channel cursor and the
   // open-fragment snapshot together, synchronously — no await between the two, and both
   // BEFORE the trace read starts. That ordering is what makes the client contract safe
@@ -119,68 +147,108 @@ export async function sessionMessages(
   // transcript's live edge, so the attachment's semantics are identical. A `before`
   // page is immutable history — attaching in-flight fragments to it would seed them at
   // the wrong position — so it never carries `live`.
+  if (kind === "before" || kind === "none") return { pendingInputs: [], status, serverNowMs };
   let live: MessagesLiveTail | undefined;
-  let pendingInputs: AmspRecord[] = [];
-  if (page?.kind !== "before") {
-    if (deps.manager.statusOf(row.sessionId) !== "idle") {
-      live = {
-        cursor: deps.channels.get(row.sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(row.sessionId),
-      };
-    }
-    // The Task's inputs (published at launch) and its streamed bootstrap records
-    // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
-    // only after the first run's connect, so a client rebuilding during that window
-    // would otherwise see neither its own message nor the connecting status — a
-    // silent blank while a slow MCP server times out. Appended below when the trace
-    // read hasn't caught up; `before` pages are immutable history and never carry
-    // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
-    // wrote nothing to the Trace, and its held input is the only copy a reload can
-    // show until the next run persists it (the holds survive idle for exactly that
-    // case — see the manager's request_begin clear).
-    pendingInputs = [
-      ...deps.manager.pendingInputs(row.sessionId),
-      ...deps.manager.pendingBootstrap(row.sessionId),
-    ];
+  if (status !== "idle") {
+    live = {
+      cursor: deps.channels.get(sessionId).lastEventId,
+      fragments: deps.manager.liveFragments(sessionId),
+    };
   }
+  // The Task's inputs (published at launch) and its streamed bootstrap records
+  // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
+  // only after the first run's connect, so a client rebuilding during that window
+  // would otherwise see neither its own message nor the connecting status — a
+  // silent blank while a slow MCP server times out. Appended below when the trace
+  // read hasn't caught up; `before` pages are immutable history and never carry
+  // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
+  // wrote nothing to the Trace, and its held input is the only copy a reload can
+  // show until the next run persists it (the holds survive idle for exactly that
+  // case — see the manager's request_begin clear).
+  const pendingInputs = [
+    ...deps.manager.pendingInputs(sessionId),
+    ...deps.manager.pendingBootstrap(sessionId),
+  ];
+  return { ...(live !== undefined ? { live } : {}), pendingInputs, status, serverNowMs };
+}
+
+/** A windowed read's page facts as `MessagesResponse.page` carries them. */
+export function messagesPageInfo(result: Omit<MessagesPageResult, "messages">): MessagesPageInfo {
+  return {
+    ...(result.before !== undefined ? { before: result.before } : {}),
+    earlierTurns: result.prior.turns,
+    units: result.units,
+    prior: {
+      subagentTokens: result.prior.subagentTokens,
+      elapsedMs: result.prior.elapsedMs,
+      apiMs: result.prior.apiMs,
+      toolMs: result.prior.toolMs,
+      sessionTokens: result.prior.sessionTokens,
+      contextTokens: result.prior.contextTokens,
+    },
+    ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
+    ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
+  };
+}
+
+/**
+ * The answer of one history read, from its records and the envelope captured before it: the
+ * held inputs the Trace has not caught up to appended, and — on a windowed read (`page`) —
+ * images by reference under `imageBase`. `/messages` answers it as it is; the `history` stream
+ * sends the same records, elided. Records keep their order, so the first `messages.length` of
+ * the answer are the read's own.
+ */
+export function historyResponse(
+  read: { messages: HistoryMessage[]; page?: MessagesPageInfo },
+  envelope: Pick<HistoryEnvelope, "live" | "pendingInputs">,
+  sessionId: string,
+  imageBase: string,
+): MessagesResponse {
+  const live = envelope.live !== undefined ? { live: envelope.live } : {};
+  const merged = appendPendingInputs(read.messages, envelope.pendingInputs);
+  if (read.page === undefined) return { messages: merged, ...live };
+  // Images by reference, after the held inputs were merged: the dedup compares raw
+  // envelopes, and a held input carries its image inline exactly as its Trace copy does.
+  return {
+    messages: merged.map((m) => withImagesByReference(sessionId, m, imageBase)),
+    ...live,
+    page: read.page,
+  };
+}
+
+/**
+ * `GET …/sessions/:id/messages` for a Session the door has resolved. `imageBase` is where the
+ * door serves a Session's routes (`/api/sessions`, `/api/amsp/v1/sessions`): a windowed page's
+ * image references point at that door's own `trace-image` route.
+ */
+export async function sessionMessages(
+  c: Context,
+  deps: SessionHistoryDeps,
+  row: SessionRow,
+  imageBase: string,
+): Promise<Response> {
+  const page = messagesPageQuery((name) => c.req.query(name));
+  const envelope = captureHistoryEnvelope(deps, row.sessionId, page?.kind ?? "full");
   if (page !== null) {
-    const result = await deps.traceService.readMessagesPage(
+    const { messages, ...result } = await deps.traceService.readMessagesPage(
       row.projectId,
       row.agentId,
       row.sessionId,
       page,
     );
-    const info: MessagesPageInfo = {
-      ...(result.before !== undefined ? { before: result.before } : {}),
-      earlierTurns: result.prior.turns,
-      units: result.units,
-      prior: {
-        subagentTokens: result.prior.subagentTokens,
-        elapsedMs: result.prior.elapsedMs,
-        apiMs: result.prior.apiMs,
-        toolMs: result.prior.toolMs,
-        sessionTokens: result.prior.sessionTokens,
-        contextTokens: result.prior.contextTokens,
-      },
-      ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
-      ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
-    };
-    // Images by reference, after the held inputs were merged: the dedup compares raw
-    // envelopes, and a held input carries its image inline exactly as its Trace copy does.
-    const messages = appendPendingInputs(result.messages, pendingInputs).map((m) =>
-      withImagesByReference(row.sessionId, m, imageBase),
+    return c.json(
+      historyResponse(
+        { messages, page: messagesPageInfo(result) },
+        envelope,
+        row.sessionId,
+        imageBase,
+      ) satisfies MessagesResponse,
     );
-    return c.json({
-      messages,
-      ...(live !== undefined ? { live } : {}),
-      page: info,
-    } satisfies MessagesResponse);
   }
   const messages = await deps.traceService.readMessages(row.projectId, row.agentId, row.sessionId);
-  return c.json({
-    messages: appendPendingInputs(messages, pendingInputs),
-    ...(live !== undefined ? { live } : {}),
-  } satisfies MessagesResponse);
+  return c.json(
+    historyResponse({ messages }, envelope, row.sessionId, imageBase) satisfies MessagesResponse,
+  );
 }
 
 /**
