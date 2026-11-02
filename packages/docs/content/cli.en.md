@@ -904,7 +904,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth token
 
-`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. Use it where there is no password to give:
+`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. If a server is still starting there, with its port answering but its accounts not yet created, `token` waits up to 20 seconds for them instead of failing. Use it where there is no password to give:
 
 - A machine whose admin password someone set by hand.
 - A script that must not hold a password.
