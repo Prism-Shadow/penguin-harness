@@ -10,3 +10,6 @@
 
 将 OPRO 和 APE 技能描述改为 YAML 块标量，保留原有文本。
 两个 Skill 的版本均更新为 `2026.10.31.1`。
+
+UI gallery 的演示库同步列出两个 Skill 的新版本；其库测试改用 core 的 frontmatter 解析器读取
+每个 SKILL.md，块标量和带引号的值都按其实际描述文本比较。

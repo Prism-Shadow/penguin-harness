@@ -104,6 +104,7 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "ape-rsi-toolkit",
         "Reproduce APE (Large Language Models are Human-Level Prompt Engineers, Zhou et al. 2022) on an agent and a frozen Benchmark, or on the house-style brief demo task shipped with this Skill: induce instructions from input/output examples, measure each one, keep the best.",
+        "2026.10.31.1",
       ),
     ]),
     libraryPlugin(awmPkg, awmIcon, [
@@ -121,7 +122,7 @@ export function rsiToolkitPlugins(): PluginItem[] {
     libraryPlugin(openskillPkg, openskillIcon, [
       skill(
         "openskill-rsi-toolkit",
-        '"Run OpenSkill on selected Project Benchmarks: research domain knowledge, refine reusable Skills with independent virtual tests, freeze the last revision, then evaluate baseline and final."',
+        "Run OpenSkill on selected Project Benchmarks: research domain knowledge, refine reusable Skills with independent virtual tests, freeze the last revision, then evaluate baseline and final.",
         "2026.10.29.4",
       ),
     ]),
@@ -129,12 +130,13 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "opro-rsi-toolkit",
         "Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.",
+        "2026.10.31.1",
       ),
     ]),
     libraryPlugin(skilladamPkg, skilladamIcon, [
       skill(
         "skilladam-rsi-toolkit",
-        '"Run a SkillAdam experiment on the Project\'s selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."',
+        "Run a SkillAdam experiment on the Project's selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks.",
         "2026.10.29.4",
       ),
     ]),

@@ -10,3 +10,7 @@
 
 Converted the OPRO and APE skill descriptions to YAML block scalars, preserving their text.
 Advanced both Skill versions to `2026.10.31.1`.
+
+The UI gallery's demo library lists both Skills at the new version, and its library test reads
+each SKILL.md through core's frontmatter parser, so block scalars and quoted values compare as
+the descriptions they hold.
