@@ -7,6 +7,7 @@
  * The shipped library, as it is in the repo:
  * - Every shipped package.json reads with no warning: a description, both short descriptions, a
  *   known category, a safe icon — and no plugin.json is shipped or left on disk.
+ * - Each shipped skill's source frontmatter parses as YAML and carries a dated version.
  *
  * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
  * - A plugin's version is the npm version of its package.json.
@@ -69,7 +70,7 @@ import {
   workspacePluginRoot,
   type LibraryPlugin,
 } from "../src/plugins/index.js";
-import { formatFrontmatter } from "@prismshadow/skills";
+import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
 
 const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
@@ -177,7 +178,7 @@ describe("loadLibraryPlugins", () => {
         expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
           /^(short_description|short_description_zh):/m,
         );
-        expect(parseSkillFrontmatter(file)!.version, `${plugin.name}/${skill.name}`).toMatch(
+        expect(parseFrontmatter(file).data.version, `${plugin.name}/${skill.name}`).toMatch(
           PLUGIN_VERSION_PATTERN,
         );
         // The installable content regenerates the frontmatter with the plugin's fields, keeps
@@ -201,8 +202,8 @@ describe("loadLibraryPlugins", () => {
     }
   });
 
-  // Whether each SKILL.md parses is each plugin's own test, through the @prismshadow/skills
-  // package; this one is the library's: it installs into one flat skills/
+  // Plugins' own tests validate complete SKILL.md files through @prismshadow/skills.
+  // This one is the library's: it installs into one flat skills/
   // directory, so a second skill of the same name would silently overwrite the first.
   it("ships no skill name from two plugins", () => {
     const owner = new Map<string, string>();
