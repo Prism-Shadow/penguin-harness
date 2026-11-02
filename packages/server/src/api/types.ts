@@ -2593,12 +2593,13 @@ export interface TaskCreateRequest {
   queueIfBusy?: boolean;
   /**
    * Interrupt, then send: when a Task/compaction is in progress, the input goes to the head of
-   * the follow-up queue (behind any earlier interrupt still waiting, outside the queue cap)
-   * and the run is aborted the way POST /abort aborts it, so this input is the first thing to
-   * start once the run settles; the response then carries `queued: true`. The abort leaves its
-   * carry-over, which core sends ahead of this input, so the message lands right after the
-   * turn it cut. Undelivered steering goes along, ahead of this input, as plain user input.
-   * An idle Session just starts the Task. Exclusive with `queueIfBusy` and `goal` (400).
+   * the follow-up queue (behind any earlier interrupt still waiting; the queue's one cap
+   * applies) and the run is aborted the way POST /abort aborts it, so this input is the first
+   * thing to start once the run settles; the response then carries `queued: true`. The abort
+   * leaves its carry-over, which core sends ahead of this input, so the message lands right
+   * after the turn it cut. Undelivered steering meets the abort as it meets a Stop: it is
+   * handed back to the composer. An idle Session just starts the Task. Exclusive with
+   * `queueIfBusy` and `goal` (400).
    */
   interrupt?: boolean;
   /**
@@ -2668,15 +2669,13 @@ export interface TaskCreateResponse {
 }
 
 /**
- * POST /api/sessions/:id/interrupt: turn what is already waiting into an interrupt — the
- * queued follow-up named by `followUpId`, or, without it, every undelivered steering message
- * merged into one entry — placed at the head of the follow-up queue, then the run is aborted
- * (see TaskCreateRequest.interrupt). 202; 409 `follow_up_started` when the follow-up already
- * started, 409 `not_pending` when no steering is left to deliver.
+ * POST /api/sessions/:id/interrupt: send one waiting message now — the queued follow-up
+ * `followUpId` names, or the undelivered steering message `steerId` names (exactly one; 400
+ * otherwise). It goes to the head of the follow-up queue and the run is aborted (see
+ * TaskCreateRequest.interrupt); a follow-up keeps its id. 202; 409 `follow_up_started` when
+ * the follow-up already started, 409 `not_pending` when the steering already reached the model.
  */
-export interface InterruptRequest {
-  followUpId?: string;
-}
+export type InterruptRequest = { followUpId: string } | { steerId: string };
 
 /**
  * Mid-run steering (POST /api/sessions/:id/steer): a user message for the **running** Task,

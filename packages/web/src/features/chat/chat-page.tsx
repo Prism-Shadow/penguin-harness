@@ -23,6 +23,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   CostParts,
+  InterruptRequest,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
@@ -1615,15 +1616,15 @@ export function ChatPage() {
     [selected, discardSessionDraft, syncHealedSessionId],
   );
 
-  // The Interrupt link on a queued line: the server turns that follow-up — or, from the
-  // steering lines, all the undelivered steering — into an interrupt. A 409 (already started,
-  // already delivered) is a toast in its own words — the recall's sentences talk about taking
-  // a message back; the line retires on its own via the next task_state.
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
   const interruptWaiting = useCallback(
-    async (followUpId?: string): Promise<boolean> => {
+    async (target: InterruptRequest): Promise<boolean> => {
       if (!selected) return false;
       try {
-        await api.postInterrupt(selected.sessionId, followUpId !== undefined ? { followUpId } : {});
+        await api.postInterrupt(selected.sessionId, target);
         return true;
       } catch (e) {
         toastError(
@@ -1637,10 +1638,13 @@ export function ChatPage() {
     [selected],
   );
   const onInterruptFollowUp = useCallback(
-    (followUpId: string) => interruptWaiting(followUpId),
+    (followUpId: string) => interruptWaiting({ followUpId }),
     [interruptWaiting],
   );
-  const onInterruptSteering = useCallback(() => interruptWaiting(), [interruptWaiting]);
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
+  );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
   // standalone `[user_steering]` user message followed by its images (visible once they

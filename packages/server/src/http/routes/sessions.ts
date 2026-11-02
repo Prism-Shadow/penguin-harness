@@ -1346,15 +1346,21 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
-  // Turn what is already waiting into an interrupt: the queued follow-up `followUpId` names,
-  // or every undelivered steering message when it names none. The entry goes to the head of
-  // the queue and the run is aborted, so it starts as soon as the run settles. 409
-  // follow_up_started / not_pending when there is nothing left to send that way.
+  // Send one waiting message now: the queued follow-up `followUpId` names, or the undelivered
+  // steering message `steerId` names, goes to the head of the queue and the run is aborted,
+  // so it starts as soon as the run settles. Exactly one of the two ids (400 otherwise); 409
+  // follow_up_started / not_pending when that message is no longer waiting.
   app.post("/:sessionId/interrupt", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const followUpId = typeof body.followUpId === "string" ? body.followUpId : undefined;
-    deps.manager.interruptQueued(row.sessionId, followUpId);
+    const { followUpId, steerId } = body;
+    if (typeof followUpId === "string" && steerId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { followUpId });
+    } else if (typeof steerId === "string" && followUpId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { steerId });
+    } else {
+      throw badRequest("Name exactly one waiting message: followUpId or steerId (a string).");
+    }
     return c.body(null, 202);
   });
 

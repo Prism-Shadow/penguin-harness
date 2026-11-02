@@ -709,22 +709,6 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
 }
 
 /**
- * One recall store for several messages sent as one input (an interrupt carrying the steering
- * it took along): texts joined by a blank line, images and files in order, so a recall puts
- * all of it back in the composer.
- */
-function mergeRecallStores(stores: RecallStore[]): RecallStore {
-  return {
-    text: stores
-      .map((r) => r.text)
-      .filter((t) => t.trim() !== "")
-      .join("\n\n"),
-    images: stores.flatMap((r) => r.images),
-    files: stores.flatMap((r) => r.files),
-  };
-}
-
-/**
  * The recall store of a queued input whose caller supplied none: everything recallable is
  * already in the input itself — the user's text and the inline image URLs, the only two
  * shapes a task input is ever built from.
@@ -1215,8 +1199,8 @@ export class SessionManager {
    * its content whichever path queued it.
    *
    * With `interrupt`, a busy session aborts its run and the input waits at the head of the
-   * queue instead, taking the undelivered steering with it (see enqueueInterrupt); an idle
-   * one starts the Task as usual.
+   * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
+   * so that the interrupt cannot overtake an earlier one still waiting to start.
    */
   async startTask(
     sessionId: string,
@@ -1233,19 +1217,17 @@ export class SessionManager {
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
-      if (entry.status !== "idle" && opts?.interrupt) {
-        this.enqueueInterrupt(entry, input, opts.recall ?? recallStoreOf(input));
+      if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
+        this.assertQueueRoom(entry);
+        this.enqueueInterrupt(entry, {
+          id: randomUUID(),
+          input,
+          recall: opts.recall ?? recallStoreOf(input),
+        });
         return { sessionId: entry.sessionId, queued: true };
       }
       if (entry.status !== "idle" && opts?.queueIfBusy) {
-        // The cap refuses the overflow rather than enqueuing it: see FOLLOW_UP_QUEUE_LIMIT.
-        if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
-          throw new HttpError(
-            429,
-            "queue_full",
-            `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
-          );
-        }
+        this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
           input,
@@ -1837,17 +1819,16 @@ export class SessionManager {
   }
 
   /**
-   * Turn what is already waiting into an interrupt (POST /interrupt): the queued follow-up
-   * `followUpId` names, or — without one — every undelivered steering message, merged into
-   * one entry. Either way the entry goes to the head of the queue and the run is aborted, as
-   * startTask's `interrupt` does for a new message. 409 `follow_up_started` when the follow-up
-   * is no longer queued, 409 `not_pending` when no steering is left to take (all of it was
-   * delivered, or the run already ended and handed it back).
+   * Send one waiting message now (POST /interrupt): the queued follow-up `followUpId` names,
+   * or the undelivered steering message `steerId` names, becomes an interrupt (see
+   * enqueueInterrupt). A follow-up keeps its id, so it stays recallable by it; one that is an
+   * interrupt already is left where it is. 409 `follow_up_started` when the follow-up is no
+   * longer queued, 409 `not_pending` when the steering message already reached the model.
    */
-  interruptQueued(sessionId: string, followUpId?: string): void {
+  interruptQueued(sessionId: string, target: { followUpId: string } | { steerId: string }): void {
     const entry = this.entries.get(sessionId);
-    if (followUpId !== undefined) {
-      const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
+    if ("followUpId" in target) {
+      const i = entry?.followUps.findIndex((f) => f.id === target.followUpId) ?? -1;
       if (!entry || i < 0) {
         throw new HttpError(
           409,
@@ -1855,48 +1836,41 @@ export class SessionManager {
           "This follow-up message already started; there is nothing left to interrupt with.",
         );
       }
+      if (entry.followUps[i]!.interrupt) return;
       const [queued] = entry.followUps.splice(i, 1);
-      this.enqueueInterrupt(entry, queued!.input, queued!.recall);
+      this.enqueueInterrupt(entry, queued!);
       return;
     }
-    if (!entry || !this.enqueueInterrupt(entry, [], null)) {
-      throw new HttpError(409, "not_pending", "No steering message is waiting to be delivered.");
+    const i = entry?.pendingSteering.findIndex((p) => p.info.id === target.steerId) ?? -1;
+    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
+    if (entry && pending) this.assertQueueRoom(entry); // before core lets go of the message
+    // Core decides, as for a recall: the mirror can lag a delivery the stream has not shown.
+    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
+      throw new HttpError(
+        409,
+        "not_pending",
+        "This steering message was already delivered to the model.",
+      );
     }
+    entry.pendingSteering.splice(i, 1);
+    this.enqueueInterrupt(entry, {
+      id: pending.info.id,
+      input: pending.input,
+      recall: pending.recall,
+    });
   }
 
   /**
-   * The shared half of every interrupt. Takes the undelivered steering off core's queue and
-   * the mirror (core's `unsteer` decides, exactly as a recall does — what it already delivered
-   * stays delivered) and puts it, unwrapped and in order, ahead of `input` as one queued entry
-   * at the head of the queue: behind earlier interrupts, ahead of every ordinary follow-up,
-   * and outside the queue cap, since it starts as soon as the run settles. Then aborts the run
-   * the way POST /abort does; the drive's finally auto-starts the head entry, and core sends
-   * the abort's carry-over ahead of it. Taken steering is never returned to the composer: it
-   * goes out with the interrupt. A run that ended just now has already scheduled the queue's
-   * next start, which picks up the head entry. Returns false, queueing nothing, when there is
-   * neither input nor steering to send.
+   * The shared half of every interrupt: puts `item` at the head of the follow-up queue, behind
+   * earlier interrupts and ahead of every ordinary follow-up, then aborts the run the way
+   * POST /abort does. The drive's finally starts the head of the queue, and core sends the
+   * abort's carry-over ahead of it, so the message lands right after the turn it cut. Steering
+   * still undelivered meets the abort as it would meet a Stop: it goes back to the composer.
    */
-  private enqueueInterrupt(
-    entry: RuntimeEntry,
-    input: AmspRecord[],
-    recall: RecallStore | null,
-  ): boolean {
-    const taken: PendingSteeringEntry[] = [];
-    entry.pendingSteering = entry.pendingSteering.filter((p) => {
-      if (!(entry.session.unsteer?.(p.input) ?? false)) return true;
-      taken.push(p);
-      return false;
-    });
-    const merged = [...taken.flatMap((p) => p.input), ...input];
-    if (merged.length === 0) return false;
+  private enqueueInterrupt(entry: RuntimeEntry, item: QueuedFollowUp): void {
     const head = entry.followUps.findIndex((f) => !f.interrupt);
     entry.followUps.splice(head < 0 ? entry.followUps.length : head, 0, {
-      id: randomUUID(),
-      input: merged,
-      recall: mergeRecallStores([
-        ...taken.map((p) => p.recall),
-        ...(recall !== null ? [recall] : []),
-      ]),
+      ...item,
       interrupt: true,
     });
     entry.lastActivityMs = Date.now();
@@ -1905,7 +1879,20 @@ export class SessionManager {
       entry.approvals.denyMain();
       entry.abort.abort();
     }
-    return true;
+  }
+
+  /**
+   * One cap for everything waiting in the queue, interrupts included (429 queue_full): see
+   * FOLLOW_UP_QUEUE_LIMIT.
+   */
+  private assertQueueRoom(entry: RuntimeEntry): void {
+    if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
+      throw new HttpError(
+        429,
+        "queue_full",
+        `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
+      );
+    }
   }
 
   /**

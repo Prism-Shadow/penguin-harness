@@ -4,14 +4,13 @@
  * - Given an idle Session the flag is a no-op: the Task starts at once (`queued: false`).
  * - Given a busy one the run is aborted and the message starts as soon as it settles, ahead of
  *   every follow-up queued before it; interrupts keep their own order among themselves.
- * - An interrupt takes the undelivered steering along, ahead of its own message and in order,
- *   as plain user input, and nothing is handed back to the composer; steering core already
- *   delivered leaves nothing to take (the 409 case below).
+ * - Undelivered steering meets the abort as it meets a Stop: it is handed back to the composer.
  * - While the aborted run winds down, the interrupt waits in the queue mirror flagged as one,
- *   and a recall hands back its content with the steering it took.
- * - `interrupt` with `queueIfBusy` or `goal` is a 400.
- * - POST /interrupt turns a queued follow-up, or the pending steering, into an interrupt; with
- *   nothing of the kind left it is a 409 (`follow_up_started` / `not_pending`).
+ *   and a recall hands back its content.
+ * - `interrupt` with `queueIfBusy` or `goal` is a 400; the queue's one cap holds interrupts too.
+ * - POST /interrupt sends one waiting message now: a queued follow-up (keeping its id; one
+ *   already interrupting stays where it is) or an undelivered steering message. It names
+ *   exactly one of them (400 otherwise), and one no longer waiting is a 409.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
@@ -147,42 +146,39 @@ describe("interrupt, then send", () => {
     await finish();
   });
 
-  it("takes the undelivered steering along, ahead of its message, and returns none of it", async () => {
+  it("hands undelivered steering back to the composer, as a Stop does", async () => {
     await busy();
     await api.post(`/api/sessions/${SID}/steer`, { text: "steer 1" });
-    await api.post(`/api/sessions/${SID}/steer`, { text: "steer 2" });
 
     await post("now", { interrupt: true });
 
     await waitFor(() => runs.length === 2);
-    expect(runs[1]).toEqual(["steer 1", "steer 2", "now"]);
-    expect(t.deps.manager.returnedSteeringOf(SID)).toEqual([]);
+    expect(runs[1]).toEqual(["now"]);
+    expect(t.deps.manager.returnedSteeringOf(SID)).toMatchObject([{ text: "steer 1" }]);
     await finish();
   });
 
-  it("waits in the queue mirror as an interrupt, and a recall hands back what it carries", async () => {
+  it("waits in the queue mirror as an interrupt, and a recall hands back its content", async () => {
     let release!: () => void;
     windDown = new Promise((r) => (release = r));
     await busy();
-    await api.post(`/api/sessions/${SID}/steer`, { text: "steer" });
     await post("now", { interrupt: true });
     await waitFor(() => aborted === 1);
 
     const [waiting] = t.deps.manager.pendingFollowUpsOf(SID);
     expect(waiting).toEqual({
       id: expect.any(String),
-      text: "steer\n\nnow",
+      text: "now",
       images: 0,
       files: 0,
       interrupt: true,
     });
     const res = await api.delete(`/api/sessions/${SID}/follow-ups/${waiting!.id}`);
-    expect(await res.json()).toEqual({ text: "steer\n\nnow", images: [], files: [] });
+    expect(await res.json()).toEqual({ text: "now", images: [], files: [] });
 
     release();
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
     expect(runs).toHaveLength(1);
-    expect(t.deps.manager.returnedSteeringOf(SID)).toEqual([]);
   });
 
   it("cannot be combined with queueIfBusy or goal", async () => {
@@ -191,17 +187,34 @@ describe("interrupt, then send", () => {
     expect(runs).toEqual([]);
   });
 
-  it("POST /interrupt turns a queued follow-up into an interrupt", async () => {
+  it("is held to the queue's cap like any queued message", async () => {
+    await busy();
+    for (let n = 0; n < 16; n += 1) await post(`follow-up ${n}`, { queueIfBusy: true });
+
+    const res = await post("now", { interrupt: true });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("queue_full");
+    expect(aborted).toBe(0);
+  });
+
+  it("POST /interrupt turns a queued follow-up into an interrupt that keeps its id", async () => {
+    let release!: () => void;
+    windDown = new Promise((r) => (release = r));
     await busy();
     await post("follow-up 1", { queueIfBusy: true });
     await post("follow-up 2", { queueIfBusy: true });
-    const second = t.deps.manager.pendingFollowUpsOf(SID)[1]!;
+    const [first, second] = t.deps.manager.pendingFollowUpsOf(SID);
 
-    const res = await api.post(`/api/sessions/${SID}/interrupt`, { followUpId: second.id });
+    const res = await api.post(`/api/sessions/${SID}/interrupt`, { followUpId: second!.id });
     expect(res.status).toBe(202);
+    await waitFor(() => aborted === 1);
+    expect(t.deps.manager.pendingFollowUpsOf(SID).map((f) => [f.id, f.interrupt])).toEqual([
+      [second!.id, true],
+      [first!.id, undefined],
+    ]);
 
+    release();
     await waitFor(() => runs.length === 2);
-    expect(aborted).toBe(1);
     expect(runs[1]).toEqual(["follow-up 2"]);
     await allow();
     await waitFor(() => runs.length === 3);
@@ -209,35 +222,75 @@ describe("interrupt, then send", () => {
     await finish();
 
     // Started already: nothing left to interrupt with.
-    const again = await api.post(`/api/sessions/${SID}/interrupt`, { followUpId: second.id });
+    const again = await api.post(`/api/sessions/${SID}/interrupt`, { followUpId: second!.id });
     expect(again.status).toBe(409);
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
       "follow_up_started",
     );
   });
 
-  it("POST /interrupt without a follow-up delivers the pending steering now", async () => {
+  it("POST /interrupt on a message already interrupting leaves the order as it is", async () => {
+    let release!: () => void;
+    windDown = new Promise((r) => (release = r));
     await busy();
-    await api.post(`/api/sessions/${SID}/steer`, { text: "steer 1" });
-    await api.post(`/api/sessions/${SID}/steer`, { text: "steer 2" });
+    await post("first", { interrupt: true });
+    await post("second", { interrupt: true });
+    await waitFor(() => aborted === 1);
+    const [first, second] = t.deps.manager.pendingFollowUpsOf(SID);
 
-    expect((await api.post(`/api/sessions/${SID}/interrupt`, {})).status).toBe(202);
+    expect(
+      (await api.post(`/api/sessions/${SID}/interrupt`, { followUpId: second!.id })).status,
+    ).toBe(202);
+    expect(t.deps.manager.pendingFollowUpsOf(SID).map((f) => f.id)).toEqual([
+      first!.id,
+      second!.id,
+    ]);
 
+    release();
     await waitFor(() => runs.length === 2);
-    expect(aborted).toBe(1);
-    expect(runs[1]).toEqual(["steer 1", "steer 2"]);
-    expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([]);
+    expect(runs[1]).toEqual(["first"]);
+    await allow();
+    await waitFor(() => runs.length === 3);
     await finish();
   });
 
-  it("POST /interrupt with no steering left to deliver is a 409 not_pending", async () => {
+  it("POST /interrupt sends one undelivered steering message now; the rest come back", async () => {
+    await busy();
+    await api.post(`/api/sessions/${SID}/steer`, { text: "steer 1" });
+    await api.post(`/api/sessions/${SID}/steer`, { text: "steer 2" });
+    const [, second] = t.deps.manager.pendingSteeringOf(SID);
+
+    expect((await api.post(`/api/sessions/${SID}/interrupt`, { steerId: second!.id })).status).toBe(
+      202,
+    );
+
+    await waitFor(() => runs.length === 2);
+    expect(aborted).toBe(1);
+    expect(runs[1]).toEqual(["steer 2"]);
+    expect(t.deps.manager.returnedSteeringOf(SID)).toMatchObject([{ text: "steer 1" }]);
+    await finish();
+  });
+
+  it("POST /interrupt on steering the model already took is a 409 not_pending", async () => {
     await busy();
     await api.post(`/api/sessions/${SID}/steer`, { text: "delivered" });
-    steered.splice(0);
+    const [delivered] = t.deps.manager.pendingSteeringOf(SID);
+    steered.splice(0); // core took it at a boundary
 
-    const res = await api.post(`/api/sessions/${SID}/interrupt`, {});
+    const res = await api.post(`/api/sessions/${SID}/interrupt`, { steerId: delivered!.id });
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+    expect(aborted).toBe(0);
+    await finish();
+  });
+
+  it("POST /interrupt names exactly one waiting message", async () => {
+    await busy();
+    const interrupt = (body: Record<string, unknown>) =>
+      api.post(`/api/sessions/${SID}/interrupt`, body);
+    expect((await interrupt({})).status).toBe(400);
+    expect((await interrupt({ followUpId: null })).status).toBe(400);
+    expect((await interrupt({ followUpId: "a", steerId: "b" })).status).toBe(400);
     expect(aborted).toBe(0);
     await finish();
   });

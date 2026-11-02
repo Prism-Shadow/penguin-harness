@@ -1391,8 +1391,8 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     { method: "DELETE" },
   );
 
-/** Turn what is waiting into an interrupt: the follow-up `followUpId` names, or all undelivered steering without one; the run stops and it goes out first (202; 409 follow_up_started / not_pending when nothing is left to send that way). */
-export const postInterrupt = (sessionId: string, body: InterruptRequest = {}) =>
+/** Send one waiting message now — the follow-up `followUpId` names or the steering `steerId` names: the run stops and it goes out first (202; 409 follow_up_started / not_pending once it is no longer waiting). */
+export const postInterrupt = (sessionId: string, body: InterruptRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
     method: "POST",
     body,

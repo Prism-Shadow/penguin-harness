@@ -673,14 +673,15 @@ export function ChatInput({
   onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
   /**
    * Interrupt, then send (session state only): posts the full input with `interrupt` — a busy
-   * session stops its run and sends this right after the turn it cut, the undelivered steering
-   * going along ahead of it. Offered as the "interrupt" choice of the mid-run mode switch.
+   * session stops its run and sends this right after the turn it cut; undelivered steering
+   * comes back to the draft as it does on Stop. Offered as the "interrupt" choice of the
+   * mid-run mode switch.
    */
   onInterruptSend?: (input: TaskInputPart[]) => Promise<boolean>;
   /** Turns one queued follow-up into an interrupt (the Interrupt link on its line); false when it failed. */
   onInterruptFollowUp?: (followUpId: string) => Promise<boolean>;
-  /** Turns the undelivered steering into an interrupt (the Interrupt link on the last steering line). */
-  onInterruptSteering?: () => Promise<boolean>;
+  /** Turns one undelivered steering message into an interrupt (the Interrupt link on its line). */
+  onInterruptSteering?: (steerId: string) => Promise<boolean>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -1213,17 +1214,17 @@ export function ChatInput({
   };
 
   /**
-   * The Interrupt link on a queued line: the server stops the run and sends that message (or,
-   * on the steering lines, all the undelivered steering) as soon as the run settles. Shares
-   * the recall's one-at-a-time flag, since both act on the same queue.
+   * The Interrupt link on a queued line: the server stops the run and sends that message as
+   * soon as the run settles. Shares the recall's one-at-a-time flag, since both act on the
+   * same queue.
    */
-  const interruptQueued = async (id: string, interrupt: () => Promise<boolean>) => {
+  const interruptQueued = async (id: string, interrupt: (id: string) => Promise<boolean>) => {
     if (recallingId !== null || busy) return;
     setRecallingId(id);
     try {
-      // The steering it took leaves the mirror without a delivery; drop the post-202 bridge
-      // flag too, or the bare "steering queued" hint would come back.
-      if (await interrupt()) setSteerPending(false);
+      // A steering message it took leaves the mirror without a delivery; drop the post-202
+      // bridge flag too, or the bare "steering queued" hint would come back.
+      if (await interrupt(id)) setSteerPending(false);
     } finally {
       setRecallingId(null);
     }
@@ -2290,9 +2291,9 @@ export function ChatInput({
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
           #140) — plus a recall button that takes the message back into this input for
-          editing and resending (#287), and on the last line an Interrupt link that sends all
-          of them now. The local steerPending flag only bridges the gap between the 202 and
-          the first task_state that carries the mirror. */}
+          editing and resending (#287), and an Interrupt link that sends it now. The local
+          steerPending flag only bridges the gap between the 202 and the first task_state
+          that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
@@ -2303,8 +2304,8 @@ export function ChatInput({
               {...(onRecallSteering && p.id
                 ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
                 : {})}
-              {...(onInterruptSteering && i === pendingSteering.length - 1
-                ? { onInterrupt: () => void interruptQueued("steering", onInterruptSteering) }
+              {...(onInterruptSteering && p.id
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptSteering) }
                 : {})}
             />
           ))}
@@ -2337,7 +2338,7 @@ export function ChatInput({
                 ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
                 : {})}
               {...(onInterruptFollowUp && !p.interrupt
-                ? { onInterrupt: () => void interruptQueued(p.id, () => onInterruptFollowUp(p.id)) }
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptFollowUp) }
                 : {})}
             />
           ))}

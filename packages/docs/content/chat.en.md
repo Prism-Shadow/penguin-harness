@@ -117,7 +117,7 @@ When you type while a Task runs, the button sends according to the **Mid-run sen
 
 - **Steer** (the default): the button reads **Send to the running agent**. Your text, images and files reach the agent with its next turn, and the message shows as **User steering**.
 - **Queue**: the button reads **Queue as the next message**. The server holds the message and sends it as an ordinary new message when the run finishes. Until then, a line above the composer shows each queued message ("Follow-up queued — sent when this run finishes: …"). The queue survives a page reload.
-- **Interrupt**: the button reads **Interrupt and send**. The run stops at once and the message goes out right after the turn it cut, carrying whatever the agent had done and written so far. Steering that had not been delivered yet goes out with it instead of coming back to the composer. While the run winds down, a line above the composer reads "Interrupting — sent next: …".
+- **Interrupt**: the button reads **Interrupt and send**. The run stops at once and the message goes out right after the turn it cut, carrying whatever the agent had done and written so far. Steering that had not been delivered yet comes back to the composer, as it does on **Stop**. While the run winds down, a line above the composer reads "Interrupting — sent next: …".
 
 Some drafts cannot be steered:
 
@@ -129,7 +129,7 @@ Some drafts cannot be steered:
 
 A steering message that has not reached the agent yet ("Steering queued — delivered with the next turn: …") and each queued follow-up end in a **Recall** button, a curved arrow. It puts the message back into the composer, in front of what you have typed, attachments included, so you can edit and send it again.
 
-Before the Recall button sits an **Interrupt** text link. It works like sending in Interrupt mode: the run stops and the message goes out right away. Steering messages are always delivered together, so only the last one carries the link.
+Before the Recall button sits an **Interrupt** text link. It works like sending in Interrupt mode: the run stops and the message goes out right away.
 
 - A steering message that already reached the agent cannot be recalled, and neither can a follow-up that has started.
 - When the run ends before a steering message is delivered, for example because you pressed **Stop** while a tool was running, the message returns to the composer by itself, attachments and all.
