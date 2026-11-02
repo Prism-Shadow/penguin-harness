@@ -12,8 +12,9 @@
  *   (served from its `ui/` folder) calls.
  *
  * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
- * serve a UI file, and the version history every successful load appends to — which is
- * what makes an Agent's own edits to its workbench reversible.
+ * serve a UI file (and the page runtime compiled pages import), and the version history
+ * every successful load appends to — which is what makes an Agent's own edits to its
+ * workbench reversible.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
@@ -178,6 +179,33 @@ export interface WorkbenchInfo {
   hints: string[];
 }
 
+/**
+ * What the HTML of a compiled page is served with: the page runtime's import map and its
+ * stylesheet, each a file of the runtime (`…/workbenches/:id/sdk/ui/<file>`).
+ */
+export interface WorkbenchUiRuntime {
+  /** Bare specifier → the runtime file it loads. */
+  imports: Record<string, string>;
+  stylesheet: string;
+}
+
+/** A file of a workbench's pages, as `uiFile` finds it. */
+export interface WorkbenchUiFile {
+  /** Absolute path: a file under `ui/`, or the `.js` a TSX page compiled to under `.build/`. */
+  path: string;
+  /**
+   * Set on an HTML page of a workbench whose pages are compiled: the runtime its import map
+   * names. Null on every file served exactly as it is on disk.
+   */
+  compiled: WorkbenchUiRuntime | null;
+}
+
+/** A file of this server's page runtime, with a strong validator of its bytes. */
+export interface WorkbenchUiRuntimeFile {
+  body: Uint8Array;
+  etag: string;
+}
+
 export interface WorkbenchVersion {
   revision: string;
   savedAt: string;
@@ -198,13 +226,26 @@ export abstract class Workbenches {
     workbenchId: string,
     request: WorkbenchRequest,
   ): Promise<WorkbenchResponse>;
-  /** Absolute path of a file under the workbench's `ui/`, or null when absent/unsafe. */
+  /**
+   * A file of the workbench's `ui/`: the one on disk, else — for a `.js` a TSX page compiles
+   * to — what the serving instance emitted. Null when absent or unsafe.
+   */
   abstract uiFile(
     projectId: string,
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<string | null>;
+  ): Promise<WorkbenchUiFile | null>;
+  /**
+   * A file of the page runtime this server serves compiled pages with (React and the shared
+   * components), under a workbench that exists; null otherwise.
+   */
+  abstract uiRuntimeFile(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    rel: string,
+  ): Promise<WorkbenchUiRuntimeFile | null>;
   abstract history(
     projectId: string,
     agentId: string,

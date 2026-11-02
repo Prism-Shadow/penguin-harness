@@ -17,12 +17,14 @@
  * Any diagnostic fails the load. A clean program is emitted into
  * `<workbench>/.build/<revision>/` — inside the folder, so the emitted code resolves the
  * workbench's own dependencies the way its source does; a dot-directory, so it is no part
- * of the revision, the recorded versions or what the watcher reacts to.
+ * of the revision, the recorded versions or what the watcher reacts to. Pages written in TSX
+ * are a second program of the same load, emitted beside it into `ui/` (./compile-ui.ts).
  */
 import fs from "node:fs";
 import path from "node:path";
 import type { TypeScript } from "../plugin/typescript.js";
 import { harnessTypesFile } from "./harness-types.js";
+import { UI_DIR } from "./store.js";
 
 export const ENTRY = "index.ts";
 export const BUILD_DIR = ".build";
@@ -101,7 +103,17 @@ export function compileWorkbench(ts: TypeScript, dir: string, revision: string):
   const diagnostics = authored.length > 0 ? authored : all;
   if (diagnostics.length > 0) throw new WorkbenchCompileError(describe(ts, dir, diagnostics));
 
-  fs.rmSync(outDir, { recursive: true, force: true });
+  // Everything but the pages' emit (./compile-ui.ts), which replaces itself only once a load
+  // succeeds: a failed reload of this same revision leaves the serving pages in place.
+  let previous: string[] = [];
+  try {
+    previous = fs.readdirSync(outDir);
+  } catch {
+    // Nothing emitted for this revision yet.
+  }
+  for (const name of previous) {
+    if (name !== UI_DIR) fs.rmSync(path.join(outDir, name), { recursive: true, force: true });
+  }
   for (const source of program.getSourceFiles()) {
     if (source.isDeclarationFile || same(source.fileName)) continue;
     if (program.isSourceFileFromExternalLibrary(source)) continue;
@@ -171,7 +183,8 @@ function briefly(chain: string): string {
   return kept.join("\n    ");
 }
 
-function describe(
+/** The compiler's diagnostics as a load error: `<file>:<line>:<col> TS<code> <message>`, capped. */
+export function describe(
   ts: TypeScript,
   dir: string,
   diagnostics: readonly import("typescript").Diagnostic[],
