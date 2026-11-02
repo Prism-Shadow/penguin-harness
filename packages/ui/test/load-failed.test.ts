@@ -33,7 +33,7 @@ describe("the could-not-load notice", () => {
     });
     expect(textIn(html, "h2")).toBe("Could not load the message history");
     expect(textIn(html, "p")).toBe("Network error, please check your connection");
-    expect(textIn(html, "button")).toBe("Retry");
+    expect(html.match(/<button\b[^>]*>/g)).toEqual([expect.stringContaining('aria-label="Retry"')]);
   });
 
   it("draws nothing but the title when that is all it is given", () => {

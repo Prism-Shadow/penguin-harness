@@ -1,15 +1,14 @@
 /**
  * The press that reads as text (src/components/actions/text-action/), as it first renders.
  *
- * - Given either look, it is a real button the keyboard reaches, named by its word alone: the
- *   bracket look's brackets are drawn but hidden from that name.
+ * - It is a real button the keyboard reaches, showing its word in brackets ("[Retry]") and named
+ *   by its word alone: the brackets are drawn but hidden from that name.
  * - Given a press in flight, it says it is busy and takes no press; given a disabled one, it
  *   takes none either.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { TextAction } from "../src/components/actions/text-action/text-action";
-import type { TextActionLook } from "../src/components/actions/text-action/text-action";
 import { renderStatic } from "../src/testing";
 
 const press = (props: Parameters<typeof TextAction>[0]) =>
@@ -19,13 +18,10 @@ const words = (html: string) => html.replace(/<[^>]*>/g, "");
 const heard = (html: string) => words(html.replace(/<span aria-hidden="true">[^<]*<\/span>/g, ""));
 
 describe("a text action", () => {
-  it.each<[TextActionLook, string]>([
-    ["link", "Retry"],
-    ["bracket", "[Retry]"],
-  ])("in the %s look is a button showing %s, named by its word alone", (look, shown) => {
-    const html = press({ look, children: "Retry" });
+  it("is a button showing its word in brackets, named by its word alone", () => {
+    const html = press({ children: "Retry" });
     expect(html.startsWith('<button type="button"')).toBe(true);
-    expect(words(html)).toBe(shown);
+    expect(words(html)).toBe("[Retry]");
     expect(heard(html)).toBe("Retry");
     expect(html).not.toMatch(/\sdisabled=""/);
   });

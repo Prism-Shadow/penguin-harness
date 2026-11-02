@@ -90,6 +90,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
+import { RequestFailureDialog } from "./request-failure-dialog";
+import type { RequestFailure } from "./request-failure-report";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
@@ -294,6 +296,8 @@ export function ChatPage() {
   const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** A failed model request whose details are on show (「[详情]」 on its line); null for none. */
+  const [failureShown, setFailureShown] = useState<RequestFailure | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
   /** This server's model configuration for the Project (the page's own while it acts here). */
   const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
@@ -2077,6 +2081,7 @@ export function ChatPage() {
     // Retry after a failed or stopped run: offered only while the composer could send — a
     // Session on screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
+    onShowFailure: setFailureShown,
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
@@ -2766,6 +2771,13 @@ export function ChatPage() {
                           {/* The right dock's floating launcher: rides this body's right edge
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
+                          <RequestFailureDialog
+                            failure={failureShown}
+                            sessionId={selected?.sessionId ?? null}
+                            sessionModel={activeModelRef}
+                            workspace={selected?.workspace ?? null}
+                            onClose={() => setFailureShown(null)}
+                          />
                         </div>
                         {/* Measured: the bottom dock's docked height stops where this box would
                             be covered, and gives way as it grows. */}

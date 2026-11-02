@@ -14,8 +14,9 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
-  RetryStatus,
+  MessageBubble,
   Spinner,
+  TextAction,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
@@ -23,6 +24,7 @@ import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { TaskStats } from "../../lib/amsp/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import type { RequestFailure } from "./request-failure-report";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
@@ -85,6 +87,12 @@ export interface StreamRenderContext {
    * the route does not target. The button does not render if this isn't wired up.
    */
   onRetry?: () => Promise<void>;
+  /**
+   * Opens a failed or retrying model request's details — 「[详情]」 on its line: a report to copy
+   * or to file as a GitHub issue. On every level (a subagent's request fails the same way). The
+   * action does not render if this isn't wired up.
+   */
+  onShowFailure?: (failure: RequestFailure) => void;
   /**
    * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
    * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
@@ -384,14 +392,6 @@ export function MessageStream({
     );
   };
 
-  /**
-   * Presses of the earlier-messages Retry, the key of its row. The shared row holds a press until
-   * its next attempt begins, but a press that starts no load (the stream is rebuilding after a
-   * reconnect) brings no new attempt and leaves the failure as it was; a fresh row per press keeps
-   * Retry pressable, while a load that does start replaces the row with its spinner anyway.
-   */
-  const [olderPresses, setOlderPresses] = useState(0);
-
   /** Held refs for prepend scroll anchoring (see the layout effect below). */
   const olderRef = useRef(older);
   olderRef.current = older;
@@ -630,8 +630,8 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
-          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
-              row after a failure, and — once at least one window was backfilled — a quiet
+          {/* Top-of-history affordance: spinner while the previous window loads, a notice with
+              Retry after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
               nothing — scrolling near the top triggers the fetch by itself — but the row keeps
               its height the moment there IS history above: a spinner that took space only
@@ -645,22 +645,15 @@ export function MessageStream({
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
-                // The shared retry row, stopped: the cross, the sentence, the error after it in
-                // the muted ink, and Retry — not a red sentence that is itself the button.
-                <RetryStatus
-                  key={olderPresses}
-                  phase="gaveUp"
-                  label={S.chat.loadEarlierFailed}
-                  reason={older.error}
-                  reasonPlacement="inline"
-                  retry={{
-                    label: S.common.retry,
-                    onClick: () => {
-                      setOlderPresses((n) => n + 1);
-                      older.onLoad();
-                    },
-                  }}
-                />
+                // A notice line like the transcript's others, the error in it and Retry after it
+                // — not a red sentence that is itself the button. A press that starts no load
+                // (the stream is rebuilding after a reconnect) leaves Retry pressable.
+                <MessageBubble
+                  variant="notice"
+                  actions={<TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>}
+                >
+                  {S.chat.loadEarlierFailed(older.error)}
+                </MessageBubble>
               ) : !older.hasMore && older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}

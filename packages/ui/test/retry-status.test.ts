@@ -1,6 +1,5 @@
 /**
- * The retry row every retrying surface shares (src/components/feedback/retry-status/), as it
- * first renders. How it moves — the seconds ticking down, a press holding the actions until the
+ * The machine's retry row (src/components/feedback/retry-status/), as it first renders. How it moves — the seconds ticking down, a press holding the actions until the
  * next attempt — is an interaction across renders, and the web app's jsdom suite drives it
  * (packages/web/test/retry-status-live.test.ts).
  *
@@ -9,17 +8,10 @@
  * - Given a wait, the row's sentence carries the seconds to the next attempt, rounding up so it
  *   reaches none only when the moment has come; once it has, or without words for seconds, the
  *   plain sentence shows. Only a wait counts down.
- * - Given a reason, it is not on screen: a circled "?" after the sentence, named for it, holds
- *   it; without one there is no "?". Placed inline (a conversation's retry), it is on the row
- *   after the sentence instead, and there is no "?"; in a note it is the note's detail, never its
- *   label, so no theme recases the provider's words.
+ * - Given a reason, it is on the row after the sentence, in sight; there is never a "?" to
+ *   hover for it, with a reason or without.
  * - Given actions, each is a button with its words, and a row without any has none; an action
  *   the caller says is in flight spins and takes no press.
- * - Given the transcript's note frame, the row is the transcript's event note, which each theme
- *   draws as its other notes: running to the theme while an attempt is live, settled otherwise,
- *   and never in the error state, whose recipes set the words in the danger ink. Its mark is
- *   drawn outside the slot a theme may hide, and its sentence, presses and "?" are the plain
- *   row's.
  * - The countdown's seconds: none without a target, never below nothing; their place in the
  *   caller's sentence is found wherever its language puts them, so they can keep their width.
  */
@@ -53,7 +45,7 @@ afterEach(() => {
 });
 
 describe("the retry row", () => {
-  it.each<RetryPhase>(["trying", "waiting", "retried", "gaveUp", "cancelled", "blocked"])(
+  it.each<RetryPhase>(["trying", "waiting", "gaveUp", "cancelled", "blocked"])(
     "%s: says where things stand, names its phase, and spins only while an attempt runs",
     (phase) => {
       const html = render({ phase, label: "Where things stand" });
@@ -81,40 +73,16 @@ describe("the retry row", () => {
     expect(textOf(stopped)).toBe("Failed");
   });
 
-  it("keeps the reason behind a circled ? after the sentence, named for it, and has no ? without one", () => {
+  it("says its reason after the sentence, in sight, and has no ? with a reason or without", () => {
     const html = render({
       phase: "gaveUp",
       label: "Reconnect failed after 5 attempts",
-      reason: "Last failure: nas refused the connection.",
+      reason: "nas refused the connection.",
     });
-    expect(textOf(html)).toBe("Reconnect failed after 5 attempts");
-    expect(html).toContain('aria-label="More info: Reconnect failed after 5 attempts"');
-    expect(render({ phase: "gaveUp", label: "Failed" })).not.toContain("More info");
-  });
-
-  it("with its reason placed inline, says it after the sentence and has no ?", () => {
-    const html = render({
-      phase: "waiting",
-      label: "Retrying (attempt 4/10)",
-      reason: "Connection timed out: upstream request timeout after 60s",
-      reasonPlacement: "inline",
-    });
-    expect(textOf(html)).toBe(
-      "Retrying (attempt 4/10) · Connection timed out: upstream request timeout after 60s",
-    );
+    expect(textOf(html)).toBe("Reconnect failed after 5 attempts · nas refused the connection.");
     expect(html).not.toContain("More info");
-  });
-
-  it("in a note, keeps the inline reason out of the label a theme may recase", () => {
-    const html = render({
-      phase: "trying",
-      label: "Retrying (attempt 4/10)",
-      reason: "503 upstream overloaded",
-      reasonPlacement: "inline",
-      frame: "note",
-    });
-    expect(/data-slot="label">([^<]*)</.exec(html)?.[1]).toBe("Retrying (attempt 4/10)");
-    expect(/data-slot="detail"[^>]*>([^<]*)</.exec(html)?.[1]).toBe(" · 503 upstream overloaded");
+    expect(html).not.toContain("<button");
+    expect(render({ phase: "gaveUp", label: "Failed" })).not.toContain("<button");
   });
 
   it("draws a button for each action it is given, and none without", () => {
@@ -139,47 +107,6 @@ describe("the retry row", () => {
     const button = /<button[^>]*>/.exec(html)![0];
     expect(button).toContain('aria-busy="true"');
     expect(button).toMatch(/\sdisabled=""/);
-  });
-});
-
-describe("the retry row as a transcript note", () => {
-  /** The note's head: the activity row a theme dresses. */
-  const headOf = (html: string) => /<\w+\b[^>]*\sdata-slot="head"[^>]*>/.exec(html)?.[0] ?? "";
-
-  it.each<[RetryPhase, "running" | "done"]>([
-    ["trying", "running"],
-    ["waiting", "running"],
-    ["retried", "done"],
-    ["gaveUp", "done"],
-    ["cancelled", "done"],
-    ["blocked", "done"],
-  ])(
-    "%s: is the transcript's event note, %s to its theme, and keeps its mark in sight",
-    (phase, state) => {
-      const html = render({ phase, label: "Where things stand", frame: "note" });
-      expect(textOf(html)).toBe("Where things stand");
-      expect(html).toContain(`data-retry-phase="${phase}"`);
-      const head = headOf(html);
-      expect(head).toContain('data-kind="event"');
-      expect(head).toContain(`data-state="${state}"`);
-      // The mark is drawn, and not in the activity hook's mark slot, which a theme may hide.
-      expect(html).not.toContain('data-slot="mark"');
-      expect(html.includes('data-live="spinner"') || html.includes("<svg")).toBe(true);
-    },
-  );
-
-  it("keeps its press and the reason behind the ? as the plain row does", () => {
-    const html = render({
-      phase: "gaveUp",
-      label: "Request failed after 6 attempts",
-      reason: "upstream request timeout after 60s",
-      reasonTitle: "Connection timed out",
-      retry: { label: "Retry", onClick: noop },
-      frame: "note",
-    });
-    expect(textOf(html)).toBe("Request failed after 6 attemptsRetry");
-    expect(html).toContain('aria-label="More info: Request failed after 6 attempts"');
-    expect(html.match(/<button/g)).toHaveLength(2);
   });
 });
 

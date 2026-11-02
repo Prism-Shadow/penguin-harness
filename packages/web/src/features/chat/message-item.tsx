@@ -7,20 +7,22 @@
  * The drawing is the UI package's (MessageRow / MessageBubble / MessageAttachments / MessageMeta
  * and the attachment tiles for what the person sent and the run's notice lines, AssistantText for
  * a reply); what stays here is which item becomes what, the text parsing that collapses harness
- * blocks into banners, what the model request's retry row says and offers (the UI package's
- * shared retry row), and the Retry a failed or stopped run's last line offers.
+ * blocks into banners, what a model request's retry or failure line says and offers, and the
+ * Retry a failed or stopped run's last line offers.
  */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import {
   AssistantText,
   AttachmentFile,
   AttachmentImage,
   AttachmentList,
+  CountdownText,
   MessageAttachments,
   MessageBubble,
   MessageMeta,
   MessageRow,
-  RetryStatus,
+  RetryActions,
   TextAction,
   useCountdown,
 } from "@prismshadow/penguin-ui";
@@ -32,7 +34,7 @@ import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
-import { requestFailedNotice, requestRetryRow } from "./request-retry-row";
+import { fatalFailure, ladderFailure, llmErrorNotice, requestNotice } from "./request-notice";
 import { SessionThinking } from "./thinking-block";
 import { SessionToolCall } from "./tool-call-card";
 import { SessionSubagentChip } from "./subagent-chip";
@@ -151,12 +153,32 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
 }
 
 /**
- * The model request's retry row, one per ladder (request-retry-row.ts says what it reads): a live
- * countdown when the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
- * exponential ladder a wait can reach 30s, and a static line reads as a hang), anchored on the
- * CLIENT arrival time of the event (skew-free), whole seconds on the page's one second-aligned
- * clock. While it runs, two presses: "Retry now" (skips the remaining backoff server-side; the
- * row flips once the request_begin arrives — no optimistic state beyond holding the presses) and
+ * The presses after a line a run ended on, or a retry line: the line's own (the retry's two, a
+ * Retry), then 「[详情]」 when the page can show the failure's details. Undefined for none, so a
+ * line with nothing to press is plain text.
+ */
+function lineActions(own: ReactNode, details: (() => void) | undefined): ReactNode {
+  if (own === null && details === undefined) return undefined;
+  return (
+    <>
+      {own}
+      {details !== undefined && (
+        <TextAction data-failure-details="" onClick={details}>
+          {S.chat.failureReport.open}
+        </TextAction>
+      )}
+    </>
+  );
+}
+
+/**
+ * A model request's retry ladder, one line per ladder (request-notice.ts says what it reads), in
+ * the stop marker's shape: a live countdown when the engine announced its planned wait
+ * (request_end.retry_in_ms ≥ 2s — with the exponential ladder a wait can reach 30s, and a static
+ * line reads as a hang), anchored on the CLIENT arrival time of the event (skew-free), whole
+ * seconds on the page's one second-aligned clock, in a slot that keeps its width as they count
+ * down. While it runs, two presses: "Retry now" (skips the remaining backoff server-side; the
+ * line flips once the request_begin arrives — no optimistic state beyond holding the presses) and
  * "Stop retrying" (the ordinary session abort; the engine's abort-during-backoff path ends the
  * turn and re-enables the composer). The presses belong to ONE attempt: a ladder reuses this
  * component across all of them (the item keeps its id through the collapse, see stream-model's
@@ -166,10 +188,8 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
  * render for replayed items; the presses are additionally main-session-only (a subagent's
  * backoff belongs to the child session, which the retry-now route does not target).
  *
- * A ladder that gave up ended the run, so it is said the way every line a run ended on is — the
- * stop marker's and the error banner's notice: a bracketed label, the attempts and their cause,
- * the provider's own words in sight (clamped, with Expand), and, as the stream's last item, the
- * same Retry (see retryOffer).
+ * A ladder that gave up ended the run, and as the stream's last item it offers the same Retry as
+ * the stop marker and the error line (see retryOffer). Every state offers its details.
  */
 function ReconnectLine({
   item,
@@ -190,27 +210,40 @@ function ReconnectLine({
       : null;
   const left = useCountdown(target);
   const main = ctx.origin.length === 0;
-  if (item.gaveUp === true) {
-    const retry = retryOffer(ctx, last);
-    return (
+  const counting = target !== null && left !== null && left > 0;
+  const notice = requestNotice(item, counting ? target : null, {
+    onRetryNow: main ? ctx.onRetryNow : undefined,
+    onStop: main ? ctx.onGiveUp : undefined,
+  });
+  const retry = notice.phase === "gaveUp" ? retryOffer(ctx, last) : undefined;
+  const show = ctx.onShowFailure;
+  const own =
+    notice.retryNow !== null || notice.stop !== null ? (
+      <RetryActions
+        retry={notice.retryNow}
+        secondary={notice.stop}
+        attemptKey={`${item.attempt}:${notice.nextAt ?? ""}`}
+      />
+    ) : retry !== undefined ? (
+      <RetryRunButton onRetry={retry} />
+    ) : null;
+  // A status region, so a change of phase is announced; the seconds are not (CountdownText).
+  return (
+    <div role="status" data-retry-phase={notice.phase}>
       <MessageBubble
         variant="notice"
-        actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+        actions={lineActions(
+          own,
+          show === undefined ? undefined : () => show(ladderFailure(item, notice.phase)),
+        )}
       >
-        {requestFailedNotice(item)}
+        {notice.countdown !== null && target !== null && left !== null && left > 0 ? (
+          <CountdownText sentence={notice.countdown} seconds={left} wait={target} />
+        ) : (
+          <span>{notice.text}</span>
+        )}
       </MessageBubble>
-    );
-  }
-  // A note between the messages, spaced like the transcript's other notes.
-  return (
-    <RetryStatus
-      {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
-        onRetryNow: main ? ctx.onRetryNow : undefined,
-        onStop: main ? ctx.onGiveUp : undefined,
-      })}
-      frame="note"
-      className="anim-msg my-2"
-    />
+    </div>
   );
 }
 
@@ -404,12 +437,16 @@ export function MessageItem({
     }
     case "llm_error": {
       const retry = retryOffer(ctx, last);
+      const show = ctx.onShowFailure;
       return (
         <MessageBubble
           variant="notice"
-          actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+          actions={lineActions(
+            retry ? <RetryRunButton onRetry={retry} /> : null,
+            show === undefined ? undefined : () => show(fatalFailure(item)),
+          )}
         >
-          {S.chat.llmError(item.errorMessage)}
+          {llmErrorNotice(item)}
         </MessageBubble>
       );
     }

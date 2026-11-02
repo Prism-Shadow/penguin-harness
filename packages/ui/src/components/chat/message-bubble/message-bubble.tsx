@@ -8,10 +8,10 @@
  * - `MessageBubble` is the chrome, in three variants: `user`, the prompt's text in a bubble
  *   tinted by the accent; `steering`, a smaller bordered chip on the same tint for a steer, marked
  *   by the person glyph and a short label, with the images and files it carried inside it; and
- *   `notice`, a quiet mono line — an abort, a failed request, a retry ladder that gave up — in
- *   the muted ink or, for a reconnect, the attention ink: a bracketed label and its cause
- *   ("[Aborted]: …"), the provider's words kept in sight but clamped to three lines with an
- *   Expand, and its presses as text actions after it. The person's own words sit on the
+ *   `notice`, a quiet mono line — an abort, a model request retrying or failed — in the muted
+ *   ink: a bracketed label and its cause ("[Aborted]: …"), a long text clamped to three lines
+ *   with an Expand, and its presses as bracketed text actions after it ("[Retry]"). A line the
+ *   caller composes (a countdown in it) stays one run of text. The person's own words sit on the
  *   accent's tint, so they follow the accent the person chose; with the theme's own accent that
  *   tint is a gray.
  * - `MessageAttachments` holds what a prompt carried, above its text: the images and the files,
@@ -111,7 +111,12 @@ export function MessageBubble({
             tone === "attention" ? "text-tone-attention-fg" : "text-fg-muted"
           } ${actions !== undefined ? "flex flex-wrap items-center gap-x-2 gap-y-1" : ""}`}
         >
-          {typeof children === "string" ? <ClampedText>{children}</ClampedText> : children}
+          {typeof children === "string" ? (
+            <ClampedText>{children}</ClampedText>
+          ) : (
+            // One flex item, so the parts of a composed line do not take the row's gaps.
+            <span className="min-w-0">{children}</span>
+          )}
           {actions !== undefined && (
             <span className="flex shrink-0 items-center gap-3">{actions}</span>
           )}

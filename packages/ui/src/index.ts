@@ -92,6 +92,7 @@ export * from "./components/overlays/tooltip/tooltip";
 export * from "./components/overlays/esc-layers/esc-layers";
 export * from "./components/overlays/modal/modal";
 export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/report-dialog/report-dialog";
 export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
@@ -162,6 +163,7 @@ export * from "./components/feedback/duration-slot/duration-slot";
 // gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
 export * from "./components/feedback/retry-status/countdown";
 export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/countdown-text";
 export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";

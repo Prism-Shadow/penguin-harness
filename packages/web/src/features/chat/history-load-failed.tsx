@@ -5,8 +5,8 @@
  * machine, so the failure is the machine's state and is said as such: the machine by its alias
  * and where its link stands; while the server brings it back or has stopped trying, the Machines
  * page's own retry row (the attempt and the countdown to it with Retry now and Stop retrying, or
- * where it stopped with Retry, the last failure behind its "?"); and in every state one press to
- * the Machines page, where everything else that can be done about the machine lives. The history
+ * where it stopped with Retry, the last failure after its sentence); and in every state one press
+ * to the Machines page, where everything else that can be done about the machine lives. The history
  * loads again on its own once the machine is connected. The transport's error — the machine's
  * internal id, a SOCKS port — is kept one fold away for whoever has to diagnose it, never the
  * headline.

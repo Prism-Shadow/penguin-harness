@@ -5,14 +5,21 @@
  * carries no handlers, so replyLinkBehavior is wrapped rather than replaced: every call still
  * returns the real behaviour, and the test keeps what the link adapter spread onto each rendered
  * anchor in order to click it.
- * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
- * The line a run ended on — that banner, the marker of a run the user stopped, or a retry ladder
- * that gave up — offers Retry while it is the stream's last item and no Task runs. A ladder that
- * gave up says so on that same notice, with the provider's own words in sight.
+ * It also draws a run-ending LLM failure as its error line. The line a run ended on — that line,
+ * the marker of a run the user stopped, or a retry ladder that gave up — offers Retry while it is
+ * the stream's last item and no Task runs.
+ *
+ * A model request that failed:
+ * - Given each state of a retry ladder (waiting, going out, sent, given up) and a fatal error,
+ *   it is one notice line with its presses after it — Retry now and Stop retrying while it waits,
+ *   Retry on the last line, and Details on every one — and no "?" anywhere; the provider's own
+ *   words are not on the line.
+ * - Given Details pressed, the page is handed the failure: the provider's words, the attempts so
+ *   far and the model the request went to.
  *
  * Older history above the transcript:
- * - Given the previous window failed to load, the top says so on the shared retry row with a
- *   Retry, the error in sight after the sentence.
+ * - Given the previous window failed to load, the top says so on a notice line with a Retry, the
+ *   error in it.
  * - Given the window is being loaded again, the failure is gone and the loading line shows.
  * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
  *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
@@ -67,9 +74,11 @@ const WS = "/home/user/workspaces/tmp-1";
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
-/** The words of every rendered button, tags dropped. */
-const buttonWords = (html: string) =>
-  [...html.matchAll(/<button\b[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]*>/g, ""));
+/** The names of every rendered button: its label, or its words with the tags dropped. */
+const pressNames = (html: string) =>
+  [...html.matchAll(/<button\b([^>]*)>(.*?)<\/button>/g)].map(
+    (m) => /aria-label="([^"]*)"/.exec(m[1]!)?.[1] ?? m[2]!.replace(/<[^>]*>/g, ""),
+  );
 
 describe("MessageStream links", () => {
   it("a reply's link to a Workspace file renders without a target, and its click opens the file", () => {
@@ -141,7 +150,7 @@ describe("MessageStream error banner", () => {
         onAddExcerpt: () => {},
       }),
     );
-  const offersRetry = (html: string) => buttonWords(html).includes(S.chat.retryRun);
+  const offersRetry = (html: string) => pressNames(html).includes(S.chat.retryRun);
   // A Retry run's reply lands right after the line: the held input has been sent again.
   const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
   const gaveUp: ChatItem = {
@@ -165,10 +174,74 @@ describe("MessageStream error banner", () => {
     expect(offersRetry(stream([ended], true))).toBe(false);
   });
 
-  it("a ladder that gave up is the run's last line, its provider's words in sight, not a retry row", () => {
-    const html = stream([gaveUp]);
-    expect(html).toContain("503 upstream overloaded");
-    expect(html).not.toContain("data-retry-phase");
+  const t = S.chat.requestRetry;
+  const ladder = (over: Partial<Extract<ChatItem, { kind: "reconnect" }>>): ChatItem => ({
+    ...(gaveUp as Extract<ChatItem, { kind: "reconnect" }>),
+    attempt: 2,
+    gaveUp: false,
+    ...over,
+  });
+  const failures = (items: ChatItem[]) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items,
+        version: 1,
+        ctx: {
+          ...ctx,
+          onRetry: async () => {},
+          onRetryNow: () => {},
+          onGiveUp: () => {},
+          onShowFailure: () => {},
+        },
+        onAddExcerpt: () => {},
+      }),
+    );
+
+  it.each<[string, ChatItem, string[]]>([
+    [
+      "a ladder waiting for its next attempt",
+      ladder({ plannedDelayMs: 30_000, arrivedAtMs: Date.now() }),
+      [t.retryNow, t.stop, S.chat.failureReport.open],
+    ],
+    ["a ladder sending its next attempt", ladder({}), [S.chat.failureReport.open]],
+    ["a ladder whose attempt went out", ladder({ retrying: true }), [S.chat.failureReport.open]],
+    ["a ladder that gave up", gaveUp, [S.chat.retryRun, S.chat.failureReport.open]],
+    [
+      "a fatal error",
+      { kind: "llm_error", id: 1, errorCode: "auth", errorMessage: "401 invalid x-api-key" },
+      [S.chat.retryRun, S.chat.failureReport.open],
+    ],
+  ])(
+    "%s is one notice line with its presses and Details, no ?, and no provider words",
+    (_, item, presses) => {
+      const html = failures([item]);
+      expect(pressNames(html)).toEqual(presses);
+      expect(html).not.toContain("upstream overloaded");
+      expect(html).not.toContain("invalid x-api-key");
+    },
+  );
+
+  it("Details hands the page the failure: the provider's words, the attempts and the model", async () => {
+    const onShowFailure = vi.fn();
+    await mount(
+      createElement(MessageStream, {
+        items: [{ ...gaveUp, model: { provider: "custom", modelId: "claude-4-8" } } as ChatItem],
+        version: 1,
+        ctx: { ...ctx, onShowFailure },
+        onAddExcerpt: () => {},
+      }),
+    );
+    await click(button(S.chat.failureReport.open));
+    expect(onShowFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        phase: "gaveUp",
+        attempt: 6,
+        errorCode: "network",
+        message: "503 upstream overloaded",
+        model: { provider: "custom", modelId: "claude-4-8" },
+      }),
+    );
+    await unmountAll();
   });
 });
 
@@ -198,17 +271,15 @@ describe("MessageStream older history", () => {
       }),
     );
 
-  it("a window that failed to load is said at the top with a Retry, its error in sight", () => {
+  it("a window that failed to load is said at the top on a notice line with a Retry, its error in it", () => {
     const html = top({ error: "socket closed: ECONNRESET" });
-    expect(html).toContain('data-retry-phase="gaveUp"');
-    expect(html).toContain(S.chat.loadEarlierFailed);
-    expect(html).toContain("socket closed: ECONNRESET");
-    expect(buttonWords(html)).toContain(S.common.retry);
+    expect(html).toContain(S.chat.loadEarlierFailed("socket closed: ECONNRESET"));
+    expect(pressNames(html)).toEqual([S.common.retry]);
   });
 
   it("while the window loads again, the failure is gone and the loading line shows", () => {
     const html = top({ loading: true, error: "socket closed: ECONNRESET" });
-    expect(html).not.toContain("data-retry-phase");
+    expect(html).not.toContain("ECONNRESET");
     expect(html).toContain(S.chat.loadingEarlier);
   });
 

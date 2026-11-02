@@ -1820,21 +1820,19 @@ export const zh = {
     retry: {
       phases: "五个阶段",
       phasesHint:
-        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明收在句末的带圈问号里，只有标记带色；句子不加粗，尝试与等待时为正文色，停下后转为淡色。",
+        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明接在句子后面，用淡色写出，过长时折成两行并可展开；只有标记带色；句子不加粗，尝试与等待时为正文色，停下后转为淡色。",
       blocks: "正文字号",
       blocksHint:
-        "详情弹窗的分节与加载失败的提示里：同样一行，正文字号，操作是同一行里的链接样式文字。",
+        "详情弹窗的分节与加载失败的提示里：同样一行，正文字号，操作是同一行里的中括号文字。",
       inCard: "在机器卡片中",
       inCardHint:
         "没有任务时占卡片中段；栏窄时两个操作一起换到句子下面；按下即置灰，下一次尝试开始才恢复。",
       inChat: "在对话中",
       inChatHint:
-        "模型请求重试时用同一行，套上对话里一行提示的外框，与 harness 注入、技能调用等提示同一形状：引擎上限内的第几次请求，原因与服务方原话接在句子后面、用淡色写出（过长时折成两行并可展开），等待时带「立即重试」「放弃重试」。更早的对话加载失败时，对话顶部也是这一行。",
-      ended: "结束运行的那一行",
-      endedHint:
-        "重试用尽时，运行就此结束，按结束运行的行写：中括号标签、原因与服务方原话写在同一行里（过长时折成三行并可展开），与「[已中断]」同一样式；「重试」是文字操作，不是按钮。上为链接样式，下为中括号样式。",
-      lookLink: "链接样式",
-      lookBracket: "中括号样式",
+        "模型请求重试时是对话里的一行文字，与「[已中断]」同一样式：中括号标签、第几次请求与倒计时、括号里的简短原因与 HTTP 状态码，再是同一行里的中括号文字操作。等待时有「立即重试」「放弃重试」，每个状态都有「详情」。重试用尽或在等待中被中断时为「[请求失败]」，作为最后一行带「重试」；无法重试的错误为「[错误]」。服务方原话不写在行里，在详情里。更早的对话加载失败时，对话顶部也是这样一行。",
+      report: "失败详情",
+      reportHint:
+        "「详情」打开的对话框：报告按发送时的样子显示（英文、等宽、只读），已去掉密钥一类的内容；「复制」复制成 Markdown，「到 GitHub 提交 issue」打开预填好的 bug 表单。",
       loadFailed: "加载失败",
       loadFailedHint:
         "内容加载不出来时占据它的位置：标记、一句标题、其下淡色一行原因或接下来会怎样，自动重试时加上重试行，再是一个文字操作，原始报错收在「技术细节」里。不写红字，标记说明失败。",
@@ -1846,7 +1844,6 @@ export const zh = {
       details: "技术细节",
       transportError:
         "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
-      chatEarlierFailed: "更早的对话加载失败",
       narrow: "窄屏",
       narrowHint: "手机宽度下状态行在名称下方换行，操作不截断。",
       trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
@@ -1856,7 +1853,6 @@ export const zh = {
       cancelled: "已放弃重试",
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       stoppedPassword: "登录被拒，已停止重连",
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -1874,14 +1870,23 @@ export const zh = {
       chatWaiting: (s: number, n: number, m: number) => `${s} 秒后发起第 ${n}/${m} 次请求`,
       chatSending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
       chatSent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      chatWhy: (cause: string, message: string) => `${cause}：${message}`,
-      chatFailed: (n: number, cause: string, message: string) =>
-        `[请求失败]：${n} 次请求均失败（${cause}）：${message}`,
+      chatRetrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      chatRetried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
+      chatFailed: (n: number, why: string) => `[请求失败]：${n} 次请求均失败（${why}）`,
+      chatFailedOnce: (why: string) => `[请求失败]：${why}`,
+      chatError: (why: string) => `[错误]：模型请求错误（${why}）`,
       chatAborted: "[已中断]：重试等待中被中断",
-      chatLongError:
-        '503 {"type":"error","error":{"type":"overloaded_error","message":"upstream connect error or disconnect/reset before headers. reset reason: overflow; retried 6 times across 3 regions, last region ap-southeast-1, request id 7f3c2a9e-0d41-4b8f-9a6e-2c1d5e8f0a37, see the provider status page for the incident"}}',
-      chatCause: "连接超时或网络中断",
-      chatError: "upstream request timeout after 60s (request id 7f3c…)",
+      chatWhy: "网络或服务暂时不可用，HTTP 503",
+      chatFatalWhy: "凭据被拒绝，HTTP 401",
+      chatEarlierFailed: "[加载失败]：未能加载更早的对话（网络错误，请检查连接）",
+      openDetails: "详情",
+      reportTitle: "请求失败详情",
+      reportLead:
+        "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      reportCheck: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+      reportLabel: "失败报告",
+      copy: "复制",
+      fileIssue: "到 GitHub 提交 issue",
     },
     attachments: {
       composer: "输入框",

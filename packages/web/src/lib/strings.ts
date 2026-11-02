@@ -346,12 +346,10 @@ export const zh = {
       gaveUp: (m: number) => `${m} 次重连均失败`,
       /** A person stopped retrying. */
       cancelled: "已放弃重试",
-      /** ssh refused in a way no retry mends; the "?" says the fix. */
+      /** ssh refused in a way no retry mends; the reason after it says the fix. */
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
-      /** The title over the last attempt's failure behind the "?". */
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -3851,8 +3849,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream retry row after a backfill failure: what failed; its Retry fetches the previous window again. */
-    loadEarlierFailed: "更早的对话加载失败",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) => `[加载失败]：未能加载更早的对话（${error}）`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3925,57 +3923,88 @@ Benchmark：
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
-     * The model request's retry row, one per ladder: `n` is the attempt it is about — the next
-     * one while it waits, the one sent after — of the turn's `m` at most (the engine counts the
-     * first request as attempt 1).
+     * A model request's retry ladder, one line per ladder, in the shape of the stop marker
+     * 「[已中断]：…」: a bracketed label, where it stands, and why in parentheses. `n` is the attempt
+     * the line is about — the next one while it waits, the one sent after — of the turn's `m` at
+     * most (the engine counts the first request as attempt 1).
      */
     requestRetry: {
       waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后发起第 ${n}/${m} 次请求`,
       /** The wait is over (or there was none) and the request is going out. */
       sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
-      /** The request went out; the row now only records it. */
+      /** The request went out; the line now only records it. */
       sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
+      /** The line while it waits, or while the attempt goes out. */
+      retrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      /** The line once the attempt went out: it stays as the record of a ladder that recovered. */
+      retried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
       /**
-       * The ladder gave up and the run ended: said as the line a run ended on is, beside
-       * 「[已中断]」 and 「[错误]」 — how many attempts failed and why in words, then the
-       * provider's own message when it gave one.
+       * The ladder ended the run — it gave up, or a stop came during a wait — said as the line a
+       * run ended on is, beside 「[已中断]」 and 「[错误]」: how many attempts failed, and why.
        */
-      failed: (attempts: number, cause: string, message?: string) =>
-        `[请求失败]：${attempts > 1 ? `${attempts} 次请求均失败（${cause}）` : cause}${message ? `：${message}` : ""}`,
-      /** Why it is retrying, after the row's sentence: the cause, then the provider's own words. */
-      why: (cause: string, message?: string) => (message ? `${cause}：${message}` : cause),
+      failed: (attempts: number, why: string) =>
+        attempts > 1 ? `[请求失败]：${attempts} 次请求均失败（${why}）` : `[请求失败]：${why}`,
       /**
-       * Why it retried, in words. The live protocol carries the classified cause on
-       * `error_code`; the legacy status spellings (failed/timeout/malformed) say the same thing
-       * for pre-convergence Traces.
+       * Why, in short: the cause in words, and the HTTP status when the provider's message names
+       * one. The provider's own words are the failure details' (「[详情]」), never the line's.
        */
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}，HTTP ${status}`,
+      /**
+       * The cause in words, from `error_code` (the legacy status spellings failed/timeout/malformed
+       * say the same thing for pre-convergence Traces); null for a code it has no words for.
+       */
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
           ? "连接超时或网络中断"
           : kind === "malformed"
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "image_rejected"
-                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "output_truncated"
-                  ? "模型输出达到输出上限，被截断"
-                  : kind === "failed"
-                    ? "模型服务返回错误"
-                    : "请求失败";
-      },
+              : kind === "rate_limited"
+                ? "触发限流或额度已用尽"
+                : kind === "auth"
+                  ? "凭据被拒绝"
+                  : kind === "rejected"
+                    ? "模型服务拒绝了请求"
+                    : kind === "image_rejected"
+                      ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
+                      : kind === "output_truncated"
+                        ? "模型输出达到输出上限，被截断"
+                        : kind === "unsupported"
+                          ? "当前模型不支持该请求"
+                          : kind === "invalid_input"
+                            ? "输入无法组成请求"
+                            : kind === "failed"
+                              ? "模型服务返回错误"
+                              : null,
+      /** A retry whose cause has no words (an unknown code). */
+      unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
       retryNow: "立即重试",
       /** The ordinary session abort. */
       stop: "放弃重试",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+    /**
+     * Run-ending LLM failure line (request_end status fatal): why in short when it is known; the
+     * provider's own words are in the failure details.
+     */
+    llmError: (why: string | null) => `[错误]：模型请求错误${why === null ? "" : `（${why}）`}`,
+    /**
+     * The details of a failed or retrying model request: 「[详情]」 on its line opens a dialog
+     * with a report to copy or to file as a GitHub issue.
+     */
+    failureReport: {
+      open: "详情",
+      title: "请求失败详情",
+      lead: "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      check: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+      reportLabel: "失败报告",
+      copy: "复制",
+      copied: "已复制报告",
+      copyFailed: "没能复制，请选中报告手动复制",
+      fileIssue: "到 GitHub 提交 issue",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
