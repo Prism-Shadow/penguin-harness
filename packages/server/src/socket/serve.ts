@@ -66,6 +66,8 @@ function callable(path: string): boolean {
 }
 
 export interface ApiSocketDeps {
+  /** The handshake's original login must remain valid; checking never extends its expiry. */
+  sessionIsLive: () => boolean;
   /** The platform's routes, entered as the socket's user (Http.fetchAs). */
   fetch: (request: Request) => Promise<Response>;
   /** The same routes, for a call that asks for an event stream: its answer rides the Request in (stream-answer.ts). */
@@ -97,8 +99,18 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   /** In-flight calls by id; a streaming call stays here until its answer is over. */
   const inflight = new Map<number, AbortController>();
   let alive = true;
+  let revoked = false;
+  const authorized = (): boolean => {
+    if (revoked) return false;
+    if (deps.sessionIsLive()) return true;
+    revoked = true;
+    for (const controller of inflight.values()) controller.abort();
+    ws.close(1008, "login expired or revoked");
+    return false;
+  };
 
   const send = (frame: ServerFrame): void => {
+    if (!authorized()) return;
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
 
@@ -113,6 +125,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   // connection that used to hold an SSE slot forever is exactly what this exists for. And a
   // heartbeat FRAME: a browser cannot see pings, so this is what its own watchdog hears.
   const heartbeat = setInterval(() => {
+    if (!authorized()) return;
     if (!alive) {
       ws.terminate();
       return;
@@ -127,6 +140,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   });
 
   ws.on("message", (data, isBinary) => {
+    if (!authorized()) return;
     alive = true; // traffic is proof of life too
     if (isBinary) return ws.close(1003, "binary frames are reserved");
     const parsed = parseClientFrame(data.toString());

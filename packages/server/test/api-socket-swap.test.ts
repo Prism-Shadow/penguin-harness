@@ -49,7 +49,7 @@ function fakeSocket() {
   return socket;
 }
 
-const REF: ApiSocketRef = { apiSocket: true, ownerUserId: "admin" };
+const REF: ApiSocketRef = { apiSocket: true, ownerUserId: "admin", sessionIsLive: () => true };
 const URL_ = new URL("http://localhost:7364/api/socket");
 
 describe("the API socket across a swap", () => {

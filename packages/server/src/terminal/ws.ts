@@ -105,25 +105,28 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
 
     const authed =
       sessionCookies(parseCookieHeader(req.headers.cookie), target)
-        .map(({ token }) => deps.authService.authenticateWithMeta(token))
-        .find((a) => a !== null) ?? null;
-    if (!authed) return refuse(socket, 401, "Unauthorized");
+        .map(({ token }) => ({ token, auth: deps.authService.authenticateWithMeta(token) }))
+        .find((a) => a.auth !== null) ?? null;
+    if (!authed?.auth) return refuse(socket, 401, "Unauthorized");
+    const userId = authed.auth.user.userId;
+    const sessionIsLive = () => deps.authService.sessionIsLive(authed.token);
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
     // terminals right now, which is also the one whose protocol should serve this socket.
     void deps.hmr
       .ensure()
       .then((platform) => {
+        if (!sessionIsLive()) return refuse(socket, 401, "Unauthorized");
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
-          const ref = apiSocketRef(authed.user.userId);
+          const ref = apiSocketRef(userId, sessionIsLive);
           return wss.handleUpgrade(req, socket, head, (ws) => {
             platform.api.attachStream?.(ws, ref, streamUrl, deps.log);
           });
         }
         const manager = platform.api.terminals?.();
         const session = manager?.get(match![1] as string);
-        if (!session || session.ownerUserId !== authed.user.userId) {
+        if (!session || session.ownerUserId !== userId) {
           return refuse(socket, 404, "Not Found");
         }
         wss.handleUpgrade(req, socket, head, (ws) => {
