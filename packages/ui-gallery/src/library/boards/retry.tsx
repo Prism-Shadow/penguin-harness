@@ -39,7 +39,7 @@ const MAX = 5;
 /** A report as the failure details show it: English whatever the interface's language. */
 const REPORT = `### PenguinHarness model request failure
 
-- What happened: failed: 6 attempts failed (at most 10), and the run ended
+- What happened: 6 attempts failed (at most 10), and the run ended
 - Error code: network (status retryable)
 - HTTP status: 503
 - Provider: anthropic

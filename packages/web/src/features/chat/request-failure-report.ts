@@ -103,15 +103,15 @@ function happened(f: RequestFailure): string {
   const of = `attempt ${n} of at most ${f.maxAttempts} failed`;
   switch (f.phase) {
     case "waiting":
-      return `retrying: ${of}, waiting to send attempt ${n + 1}`;
+      return `${of}, waiting to send attempt ${n + 1}`;
     case "trying":
-      return `retrying: ${of}, sending attempt ${n + 1}`;
+      return `${of}, sending attempt ${n + 1}`;
     case "retried":
-      return `retried: ${of}, attempt ${n + 1} was sent`;
+      return `${of}, attempt ${n + 1} was sent`;
     case "gaveUp":
-      return `failed: ${n} ${n === 1 ? "attempt" : "attempts"} failed (at most ${f.maxAttempts}), and the run ended`;
+      return `${n} ${n === 1 ? "attempt" : "attempts"} failed (at most ${f.maxAttempts}), and the run ended`;
     case "fatal":
-      return `failed: an error no retry can fix ended the run${n > 1 ? ` at attempt ${n}` : ""}`;
+      return `an error no retry can fix ended the run${n > 1 ? ` at attempt ${n}` : ""}`;
   }
 }
 

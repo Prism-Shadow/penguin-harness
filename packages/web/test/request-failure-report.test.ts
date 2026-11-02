@@ -60,7 +60,7 @@ describe("a failed request's report", () => {
   it("says what happened, where and on what, then the provider's own message", () => {
     const { markdown } = requestFailureReport(failure(), ENV);
     expect(markdown).toContain(
-      "- What happened: failed: 6 attempts failed (at most 10), and the run ended",
+      "- What happened: 6 attempts failed (at most 10), and the run ended",
     );
     expect(markdown).toContain("- Error code: network (status retryable)");
     expect(markdown).toContain("- HTTP status: 503");
@@ -74,7 +74,7 @@ describe("a failed request's report", () => {
     expect(markdown).toContain(`\`\`\`text\n${MESSAGE}\n\`\`\``);
     const waiting = requestFailureReport(failure({ phase: "waiting", attempt: 2 }), ENV).markdown;
     expect(waiting).toContain(
-      "- What happened: retrying: attempt 2 of at most 10 failed, waiting to send attempt 3",
+      "- What happened: attempt 2 of at most 10 failed, waiting to send attempt 3",
     );
   });
 
