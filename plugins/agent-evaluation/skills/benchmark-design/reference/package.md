@@ -6,6 +6,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 <id>/
 ├── benchmark_config.toml
 └── CASE-<nnn>-<semantic-name>/
+    ├── task_config.toml
     ├── statement/
     │   ├── README.md
     │   └── <optional public materials>
@@ -14,8 +15,9 @@ A package is how a Benchmark travels between Projects and servers: a folder name
         └── <optional private grading files>
 ```
 
-- `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (a date version, `"YYYY.MM.DD.N"`), `status`, `runs`, and an `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
-- Every `CASE-*` folder holds `statement/README.md` and `rubric/README.md`. After `CASE-` come letters, digits, `_` and `-` only.
+- `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (`"x.y.z"`; existing `"YYYY.MM.DD.N"` versions are also accepted), `status`, optional `runs`, and an optional `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
+- Benchmark manifests include `last_update` (ISO 8601) and `[author]` (`name`, with optional `email` and `homepage`). Preserve `title_zh` and `description_zh` when supplied.
+- Every `CASE-*` folder holds `statement/README.md`, `rubric/README.md` and `task_config.toml` for the case's metadata and optional budget; older packages may omit `task_config.toml`. After `CASE-` come letters, digits, `_` and `-` only.
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
 - No large originals. A case whose task needs large files names their repository and full 40-character lowercase commit in its statement, the way the built-in Benchmarks' `## How this case is run` sections do. For Harbor tasks, the Task link, run-rules link and checkout instruction use that same commit. This pins task execution; the display package may be fetched from `main`.
 
@@ -50,7 +52,7 @@ A Benchmark's files are the source of truth. Import it by copying its manifest a
    printf 'evaluations: []\n' > "$DEST/scoreboard.yaml"
    ```
 
-   Preserve the package's title, description, version and cases. Set the manifest's `id` if it was absent. Replace its `[origin]` table (do not append a second table): for a repository source, use `kind = "git"`, `url` (the supplied link), `ref` (the pinned commit), `path` (the repository folder) and `imported_at` (the import time in ISO 8601). For a local source, use `kind = "zip"` and `imported_at`. Never bring over `scoreboard.yaml` or `.jobs/` from the source.
+   Preserve the package's metadata, including its version, localized text, `last_update` and `[author]`, and all case files, including `task_config.toml`. Set the manifest's `id` if it was absent. Replace its `[origin]` table (do not append a second table): for a repository source, use `kind = "git"`, `url` (the supplied link), `ref` (the pinned commit), `path` (the repository folder) and `imported_at` (the import time in ISO 8601). For a local source, use `kind = "zip"` and `imported_at`. Never bring over `scoreboard.yaml` or `.jobs/` from the source.
 6. **Verify and report.** Read the copied manifest, count the case folders and check their files against the source. Confirm the scoreboard contains `evaluations: []`. Report the id, title, version, case count, destination and recorded source, including any companion package. Remove the temporary directory you created. Importing does not start an evaluation; run one only if the user requests it.
 
 ## Exporting a package

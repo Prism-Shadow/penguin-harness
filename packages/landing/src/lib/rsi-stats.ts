@@ -6,7 +6,7 @@
  * benchmark is shown by its kind, which lives in the dictionaries, index-aligned with BENCHMARKS.
  *
  * test/rsi-stats.test.ts pins RSI_TOOLKITS to the library's `rsi` plugins and BENCHMARKS to
- * core's built-in Benchmarks, ids and upstream links alike, so neither list can ship behind its
+ * the shipped Benchmark packages' upstream links, so neither list can ship behind its
  * source.
  */
 import type { ModelProvider } from "../components/icons";
@@ -40,45 +40,26 @@ export const RSI_TOOLKITS = [
 ] as const satisfies ReadonlyArray<{ plugin: string; label: string; href: string | null }>;
 
 /**
- * One entry per benchmark the built-ins are drawn from, in core's order, with the ids of the
- * built-ins drawn from it: GDPEVO's six domains share one upstream and one entry.
+ * One entry per upstream benchmark, in display order. GDPEVO Essential's six scenarios
+ * share one upstream and one entry; package ids are owned by the Benchmark repository.
  */
 export const BENCHMARKS = [
   {
-    ids: ["penguinharness-benchmark-sec-a"],
     href: "https://github.com/Prism-Shadow/rag-bench-essential",
   },
   {
-    ids: ["penguinharness-benchmark-sec-b"],
     href: "https://github.com/datacurve-ai/deep-swe",
   },
   {
-    ids: ["penguinharness-benchmark-sec-c"],
     href: "https://github.com/zapier/AutomationBench",
   },
   {
-    ids: ["penguinharness-benchmark-sec-d"],
     href: "https://github.com/harbor-framework/terminal-bench-science",
   },
   {
-    ids: ["penguinharness-benchmark-sec-e"],
     href: "https://github.com/harbor-framework/terminal-bench",
   },
   {
-    ids: [
-      "penguinharness-benchmark-gdpevo-crm-train",
-      "penguinharness-benchmark-gdpevo-crm-test",
-      "penguinharness-benchmark-gdpevo-erp-train",
-      "penguinharness-benchmark-gdpevo-erp-test",
-      "penguinharness-benchmark-gdpevo-finance-train",
-      "penguinharness-benchmark-gdpevo-finance-test",
-      "penguinharness-benchmark-gdpevo-healthcare-train",
-      "penguinharness-benchmark-gdpevo-healthcare-test",
-      "penguinharness-benchmark-gdpevo-legal-train",
-      "penguinharness-benchmark-gdpevo-legal-test",
-      "penguinharness-benchmark-gdpevo-data-analysis-train",
-      "penguinharness-benchmark-gdpevo-data-analysis-test",
-    ],
     href: "https://github.com/Prism-Shadow/GDPevo",
   },
 ] as const;
