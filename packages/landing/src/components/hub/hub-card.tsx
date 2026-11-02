@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { InlineText } from "./inline-text";
 
 export function HubCard({
   to,
@@ -31,7 +32,7 @@ export function HubCard({
         </h2>
         {summary && (
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-            {summary}
+            <InlineText>{summary}</InlineText>
           </p>
         )}
         <p className="mt-auto flex flex-wrap gap-x-3 gap-y-1 pt-2 text-xs text-gray-500 dark:text-gray-400">

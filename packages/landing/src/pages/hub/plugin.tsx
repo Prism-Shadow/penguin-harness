@@ -11,6 +11,7 @@ import {
   useHubDetail,
 } from "../../components/hub/hub-detail";
 import { HubMarkdown } from "../../components/hub/hub-markdown";
+import { InlineText } from "../../components/hub/inline-text";
 import { ExternalLink } from "../../components/external-link";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { pick, titleOf } from "../../lib/hub/text";
@@ -57,13 +58,15 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
     >
       {description !== short && (
         <HubSection title={S.hub.plugins.about}>
-          <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">{description}</p>
+          <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">
+            <InlineText>{description}</InlineText>
+          </p>
         </HubSection>
       )}
       {quickStart && (
         <HubSection title={S.hub.plugins.quickStart}>
           <p className="text-sm leading-7 whitespace-pre-line text-gray-700 dark:text-gray-300">
-            {pick(locale, quickStart.prompt, quickStart.promptZh)}
+            <InlineText>{pick(locale, quickStart.prompt, quickStart.promptZh)}</InlineText>
           </p>
           {quickStart.skills.length > 0 && (
             <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
@@ -85,7 +88,11 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
               return (
                 <li key={skill.name} className="text-sm leading-6">
                   <span className="font-medium">{skill.name}</span>
-                  {text && <p className="text-gray-600 dark:text-gray-400">{text}</p>}
+                  {text && (
+                    <p className="text-gray-600 dark:text-gray-400">
+                      <InlineText>{text}</InlineText>
+                    </p>
+                  )}
                 </li>
               );
             })}

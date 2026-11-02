@@ -97,7 +97,7 @@ export function HubList<T>({
     return (
       <div key={facet.id} role="group" aria-label={facet.label}>
         <p className="text-xs text-gray-500 dark:text-gray-400">{facet.label}</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-1.5 lg:flex-col lg:items-start lg:gap-0.5">
           {ordered.map(({ value, count }) => {
             const on = chosen.includes(value);
             return (
@@ -105,11 +105,12 @@ export function HubList<T>({
                 key={value}
                 type="button"
                 aria-pressed={on}
+                disabled={count === 0 && !on}
                 onClick={() => toggle(facet.id, value, selection)}
                 className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm whitespace-nowrap transition-colors ${
                   on
                     ? "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200"
-                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                    : "text-gray-700 hover:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:disabled:text-gray-600"
                 }`}
               >
                 {facet.valueLabel(value)}
@@ -145,9 +146,10 @@ export function HubList<T>({
           </p>
         </header>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
-          {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
-          <div className={offered.length > 0 ? "min-w-0" : "min-w-0 lg:col-span-2"}>
+        <div className="mt-8 grid gap-x-8 gap-y-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
+          <div
+            className={`min-w-0 lg:row-start-1 ${offered.length > 0 ? "lg:col-start-2" : "lg:col-span-2"}`}
+          >
             <div className="flex flex-wrap items-center gap-3">
               <label className="relative min-w-0 flex-1 basis-60">
                 <span className="sr-only">{S.hub.searchPlaceholder}</span>
@@ -202,9 +204,17 @@ export function HubList<T>({
                 </div>
               )}
             </div>
-
+          </div>
+          {offered.length > 0 && (
+            <aside className="flex flex-col gap-5 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+              {facetGroups}
+            </aside>
+          )}
+          <div
+            className={`min-w-0 lg:row-start-2 ${offered.length > 0 ? "lg:col-start-2" : "lg:col-span-2"}`}
+          >
             {shown.length === 0 ? (
-              <div className="mt-6 py-16 text-center text-sm text-gray-600 dark:text-gray-400">
+              <div className="py-16 text-center text-sm text-gray-600 dark:text-gray-400">
                 <p>{S.hub.empty}</p>
                 {filtered && (
                   <button
@@ -217,7 +227,7 @@ export function HubList<T>({
                 )}
               </div>
             ) : (
-              <ul className="mt-4 grid gap-3 md:grid-cols-2">
+              <ul className="grid gap-3 md:grid-cols-2">
                 {shown.map((item) => (
                   <li key={keyOf(item)} className="flex">
                     {renderItem(item)}

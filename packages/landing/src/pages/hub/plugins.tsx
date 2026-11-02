@@ -22,6 +22,12 @@ const CATEGORY_ORDER = [
 
 const categoryLabel = (id: string) => S.hub.plugins.categories[id] ?? id;
 
+/** Position in CATEGORY_ORDER; an unknown category sorts with "other". */
+const rank = (category: string) => {
+  const index = CATEGORY_ORDER.indexOf(category);
+  return index === -1 ? CATEGORY_ORDER.length - 1 : index;
+};
+
 export function PluginsPage() {
   const { locale } = useSiteLocale();
   useDocumentMeta(S.hub.pageTitle(S.hub.plugins.title), S.hub.plugins.description);
@@ -70,9 +76,11 @@ export function PluginsPage() {
       facets={facets}
       sorts={[
         {
-          id: "name",
-          label: S.hub.sortName,
-          compare: (a, b) => titleOf(locale, a).localeCompare(titleOf(locale, b), locale),
+          id: "category",
+          label: S.hub.plugins.facetCategory,
+          compare: (a, b) =>
+            rank(a.category) - rank(b.category) ||
+            titleOf(locale, a).localeCompare(titleOf(locale, b), locale),
         },
       ]}
       renderItem={(plugin) => (

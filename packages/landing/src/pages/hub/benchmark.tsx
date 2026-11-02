@@ -15,6 +15,7 @@ import {
   useHubDetail,
 } from "../../components/hub/hub-detail";
 import { HubMarkdown } from "../../components/hub/hub-markdown";
+import { InlineText } from "../../components/hub/inline-text";
 import { ExternalLink } from "../../components/external-link";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { formatDay, pick, titleOf } from "../../lib/hub/text";
@@ -87,7 +88,9 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
       ]}
     >
       <HubSection title={S.hub.benchmarks.about}>
-        <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">{description}</p>
+        <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">
+          <InlineText>{description}</InlineText>
+        </p>
       </HubSection>
       <HubSection title={S.hub.benchmarks.tasks}>
         <ul className="divide-y divide-gray-200 border-y border-gray-200 dark:divide-gray-800 dark:border-gray-800">
@@ -146,9 +149,11 @@ function TaskRow({
         className="flex w-full items-start gap-3 py-3 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{titleOf(locale, task)}</span>
+          <span className="block text-sm font-medium">
+            <InlineText>{titleOf(locale, task)}</InlineText>
+          </span>
           <span className="mt-0.5 block text-sm text-gray-600 dark:text-gray-400">
-            {pick(locale, task.description, task.descriptionZh)}
+            <InlineText>{pick(locale, task.description, task.descriptionZh)}</InlineText>
           </span>
         </span>
         <ChevronDownIcon
