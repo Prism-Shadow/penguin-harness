@@ -3,6 +3,7 @@
 - **Date:** 2026-10-28
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ci`, `tooling`
+- **PR:** [#1417](https://github.com/Prism-Shadow/penguin-harness/pull/1417)
 
 [中文版](2026-10-28-penguin-ui-on-npm.zh.md)
 
