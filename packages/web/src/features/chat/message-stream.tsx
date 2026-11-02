@@ -9,24 +9,20 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
-import {
-  A2uiActionsProvider,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  Spinner,
-} from "@prismshadow/penguin-ui";
+import { A2uiActionsProvider, EmptyState, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { TaskStats } from "../../lib/amsp/task-stats";
-import type { PendingApproval } from "./use-session-stream";
+import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
+import { ElidedBodiesContext } from "./elided-body";
+import { HistoryTransferLine } from "./history-loading";
 import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -117,6 +113,11 @@ export interface StreamRenderContext {
    * Markdown, so a fresh object per render would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
+  /**
+   * Unfolds the values a history window carried folded (a tool's output, a long argument, a
+   * thinking block) when their row is opened. Absent, a folded row keeps its preview.
+   */
+  bodies?: ElidedBodies;
 }
 
 /**
@@ -293,6 +294,17 @@ export interface OlderHistoryControls {
   /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
   prependedCount: number;
   onLoad: () => void;
+  /**
+   * Reads running behind the transcript: an older window coming over (its progress replaces the
+   * spinner), and the rest of the conversation syncing behind the first paint (a line in the
+   * row while nothing else is in it). Absent or null for a Session on this server.
+   */
+  transfer?: Pick<HistoryTransfer, "older" | "fill">;
+  /**
+   * A window was loaded because the reader scrolled up past the Tasks the conversation opened
+   * on: only then does reaching the beginning say so. Absent = true (every window counts).
+   */
+  beyondTail?: boolean;
 }
 
 /** Distance from the top (px) at which scrolling starts fetching the previous history window. */
@@ -591,6 +603,13 @@ export function MessageStream({
     syncJump();
   };
 
+  // A read behind the transcript says so in the row (an older window loading, or the sync behind
+  // the first paint); a failure keeps the row's retry. The row itself stands only where there
+  // is history above, so a conversation that fits one window never gains or loses it.
+  const reading =
+    older !== undefined &&
+    (older.loading || (older.error === null && (older.transfer?.fill ?? null) !== null));
+
   return (
     <div className="relative h-full min-h-0">
       <div
@@ -630,11 +649,12 @@ export function MessageStream({
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
             <div className="flex h-7 items-center justify-center">
-              {older.loading ? (
-                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <Spinner size="sm" label={S.common.loading} />
-                  {S.chat.loadingEarlier}
-                </span>
+              {reading ? (
+                <HistoryTransferLine
+                  loading={older.loading}
+                  older={older.transfer?.older ?? null}
+                  fill={older.transfer?.fill ?? null}
+                />
               ) : older.error !== null ? (
                 <button
                   type="button"
@@ -643,7 +663,7 @@ export function MessageStream({
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
+              ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>
@@ -657,7 +677,9 @@ export function MessageStream({
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <FindRevealContext.Provider value={revealedForFind}>
-                <MessageItems items={items} ctx={ctx} />
+                <ElidedBodiesContext.Provider value={ctx.bodies ?? null}>
+                  <MessageItems items={items} ctx={ctx} />
+                </ElidedBodiesContext.Provider>
               </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}

@@ -210,11 +210,30 @@ interface SessionsContextValue {
    */
   machinesUnreachable: boolean;
   /**
-   * The Project's machines that did not answer this round, by machine id. Their rows on
-   * screen come from the cache (lib/machine-cache.ts), so a caller that has to decide whether
-   * a Session is REACHABLE — not merely whether it is listed — asks this.
+   * The Project's machines that did not answer this round, by machine id: no connection is held
+   * to them, or the list's last round asked and got no answer. Their rows on screen come from
+   * the cache (lib/machine-cache.ts), so a caller that has to decide whether a Session is
+   * REACHABLE — not merely whether it is listed — asks this.
    */
   offlineMachineIds: string[];
+  /**
+   * Among `offlineMachineIds`, the machines no connection is held to; the others are connected
+   * and gave the list's last round no answer. What a page says about a machine out of reach —
+   * not connected, or not answering — follows this.
+   */
+  disconnectedMachineIds: string[];
+  /**
+   * The machines the list is asking right now and has no answer from yet. Neither reachable nor
+   * out of reach so far: a routed id missing from the list is not settled while one of them may
+   * still name it, and is not yet a machine's to be "out of reach" either.
+   */
+  askingMachineIds: string[];
+  /**
+   * Bumped each time a list round has every machine's answer in (or its silence): what the page
+   * compares against to know that what it heard about a machine elsewhere — the hub naming one
+   * that did not answer it — has been asked again since.
+   */
+  listRound: number;
   reload: () => Promise<void>;
   /** Fetches the first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
@@ -359,6 +378,16 @@ interface SessionsStoreState {
    * from the list (features/chat/chat-page.tsx). Their rows come from the cache.
    */
   offlineMachineIds: string[];
+  /**
+   * The machines the last list round asked and got no answer from — one whose server went
+   * quiet behind a connection still held, or one resting after such a round — and the ones it
+   * is asking still. Set with each list the round puts on screen; the context reports the first
+   * as out of reach and the second as being asked.
+   */
+  silentMachineIds: string[];
+  askingMachineIds: string[];
+  /** Rounds whose machine answers are all in (see the context's `listRound`). */
+  listRound: number;
   /**
    * machineId → the Agents THAT machine runs, which are not this Project's.
    *
@@ -776,6 +805,9 @@ export function createSessionsStore() {
       agentIds: [],
       machineIds: [],
       offlineMachineIds: [],
+      silentMachineIds: [],
+      askingMachineIds: [],
+      listRound: 0,
       agentIdsByMachine: {},
 
       sessions: [],
@@ -1109,6 +1141,14 @@ export function createSessionsStore() {
           );
           set({
             sessions: [...nextSessions, ...held],
+            // Who could not say whether they hold a Session: the chat page must not take this
+            // server's "no such Session" for the answer while one of them is silent or asked.
+            // A resting machine being probed again stays silent until it answers: a page that
+            // said it is out of reach must not flip back to "still asking" on every retry.
+            silentMachineIds: machineIds.filter(
+              (m) => silent.has(m) && (!pending.has(m) || rested.has(m)),
+            ),
+            askingMachineIds: machineIds.filter((m) => pending.has(m) && !rested.has(m)),
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
@@ -1155,7 +1195,10 @@ export function createSessionsStore() {
           retries = 0;
           applyAnswers(here, new Set(machineSources.map(([source]) => source)));
           applied = true;
-          if (machineSources.length === 0) return;
+          if (machineSources.length === 0) {
+            set({ listRound: get().listRound + 1 });
+            return;
+          }
           set({ loading: false });
           const there = (
             await Promise.all(machineSources.map(([source, wanted]) => ask(source, wanted)))
@@ -1171,6 +1214,7 @@ export function createSessionsStore() {
           }
           if (!current()) return;
           applyAnswers([...here, ...there], new Set());
+          set({ listRound: get().listRound + 1 });
         } finally {
           reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
@@ -1905,6 +1949,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             workspaceCountsByAgent: new Map(),
             workspaceLatestByAgent: new Map(),
             workspaceLatestActiveByAgent: new Map(),
+            silentMachineIds: [],
+            askingMachineIds: [],
             // The pages were just cleared, so the list is loading from this instant —
             // including the window where the Agent set itself is still being refetched (a
             // Project switch empties it, which makes reload() below return without fetching
@@ -2073,6 +2119,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [machineLabelsJson]);
 
   const value = useMemo<SessionsContextValue>(() => {
+    // Out of reach: no connection held, or asked this round and silent.
+    const unreachable = [...new Set([...state.offlineMachineIds, ...state.silentMachineIds])];
     return {
       sessions: listed.sessions,
       byAgent,
@@ -2087,8 +2135,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       hasMoreFor,
       activityWatermarkFor,
       loading: listed.loading,
-      machinesUnreachable: state.offlineMachineIds.length > 0,
-      offlineMachineIds: state.offlineMachineIds,
+      machinesUnreachable: unreachable.length > 0,
+      offlineMachineIds: unreachable,
+      disconnectedMachineIds: state.offlineMachineIds,
+      askingMachineIds: state.askingMachineIds,
+      listRound: state.listRound,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,
