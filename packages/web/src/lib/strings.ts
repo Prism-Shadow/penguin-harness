@@ -3486,6 +3486,21 @@ export const zh = {
       columnModified: "修改日期",
       /** Tooltip on a file row: files are listed for context but cannot be picked. */
       fileNotSelectable: "只能选择文件夹",
+      /** The new-folder row's field: what an empty field asks for. */
+      newFolderPlaceholder: "输入名称，按 Enter 新建",
+      /** Accessible name of the × that closes the new-folder row. */
+      newFolderCancel: "取消新建文件夹",
+      /** The toolbar's New folder while the folder on screen could not be read. */
+      newFolderDenied: "无法读取此文件夹，不能在这里新建",
+      /** Under the new-folder field: a character this machine does not allow in a name. */
+      newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
+      newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",
+      newFolderExists: (name: string): string => `这里已有名为「${name}」的项目`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "名称不能以空格或「.」结尾",
+      newFolderReserved: (name: string): string => `「${name}」是 Windows 保留的名称`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string => `已新建「${name}」，但这里的列表里找不到它`,
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",
@@ -3892,12 +3907,25 @@ Benchmark：
     steerQueuedItem: (content: string) => `插话已排队，将随下一轮送达：${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
     steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
     steerModeFollowUp: "排队",
     steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    steerModeInterrupt: "打断",
+    steerModeInterruptHint: "打断本轮：停止运行，消息接在被打断的那一轮之后立即发送",
+    interruptPlaceholder: "打断本轮并发送，消息接在被打断的那一轮之后",
+    interruptPlaceholderShort: "打断并发送…",
+    interruptSend: "打断并发送",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `正在打断，随后发送：${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "打断",
+    /** Its tooltip. */
+    interruptQueuedTitle: "停止本轮，立即发送这条消息",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "这条消息已经发出，无需打断。",
     followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
     followUpPlaceholderShort: "排队为下一条消息…",
     followUpSend: "排队为下一条消息",
@@ -6403,6 +6431,7 @@ Benchmark：
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       dir_permission_denied: "没有读取该目录的权限。",
+      dir_write_denied: "没有在该目录中新建的权限。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       reveal_failed: "无法打开文件夹。",
