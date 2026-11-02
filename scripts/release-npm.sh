@@ -51,7 +51,7 @@ case "$cmd" in
     for dir in plugins/*/; do
       (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    for p in amsp core server cli; do
+    for p in amsp core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
     # The server embeds an index of the sandbox backends it ships, each at the version its
