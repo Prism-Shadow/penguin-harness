@@ -6,7 +6,9 @@
  *   GET    /:id/history            recorded versions, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
- *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name)
+ *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
+ *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
+ *   GET    /:id/sdk/ui/*           the page runtime compiled pages import (see ui-runtime.ts)
  *   GET    /:id/sdk/amsp.js        the page SDK: AMSP's browser build (see page-sdk.ts)
  *   GET    /:id/sdk/workbench.js   the page SDK: that build plus this server's signed-in door
  *   *      /:id/api/*              handed to the workbench's WorkbenchMain.handle: JSON by default, any
@@ -29,6 +31,7 @@ import type {
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
+import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchNotFound } from "./service.js";
 
@@ -272,11 +275,42 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const file = await deps.workbenches.uiFile(projectId, agentId, id, decodeURIComponent(rel));
     if (file === null)
       throw new HttpError(404, "not_found", "No such file in the workbench's ui/.");
-    const body = await fs.readFile(file);
-    return c.body(body, 200, {
-      "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream",
+    const body = await fs.readFile(file.path);
+    const headers = {
+      "content-type": MIME[path.extname(file.path).toLowerCase()] ?? "application/octet-stream",
       "cache-control": "no-cache",
-    });
+    };
+    if (file.compiled === null) return c.body(body, 200, headers);
+    // The page's own folder depth as the browser sees it: the path segments it was asked by.
+    const depth = rel.split("/").length - 1;
+    return c.body(withUiRuntime(body.toString("utf8"), depth, file.compiled), 200, headers);
+  });
+
+  // This server's page runtime, under a workbench that exists — what a compiled page's import
+  // map names relative to it — revalidated like the page SDK below.
+  app.get("/:id/sdk/ui/*", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const rel = c.req.path.split(`/workbenches/${id}/sdk/ui/`)[1] ?? "";
+    let decoded: string | null;
+    try {
+      decoded = decodeURIComponent(rel);
+    } catch {
+      decoded = null;
+    }
+    const file =
+      decoded === null
+        ? null
+        : await deps.workbenches.uiRuntimeFile(projectId, agentId, id, decoded);
+    if (file === null)
+      throw new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/ui/.");
+    const headers = {
+      "content-type": MIME[path.extname(rel).toLowerCase()] ?? "application/octet-stream",
+      "cache-control": "no-cache",
+      etag: file.etag,
+    };
+    if (etagMatches(c.req.header("if-none-match"), file.etag)) return c.body(null, 304, headers);
+    return new Response(file.body, { status: 200, headers });
   });
 
   // The same files for every workbench, but only under one that exists: a page of another
