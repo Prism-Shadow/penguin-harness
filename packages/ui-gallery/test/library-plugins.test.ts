@@ -14,6 +14,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PLUGIN_CATEGORIES } from "@prismshadow/penguin-core";
+import { parseFrontmatter } from "@prismshadow/skills";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { IDS } from "../src/app/mock/ids";
 
@@ -26,7 +27,11 @@ const categoryOf = (plugin: string): string | undefined =>
     }
   ).penguin?.category;
 
-/** A plugin's Skills as their SKILL.md frontmatter has them, by name. */
+/**
+ * A plugin's Skills as their SKILL.md frontmatter has them, by name, read as YAML by the
+ * repository's SKILL.md parser (`parseFrontmatter`, vendored from vercel-labs/skills); a shipped
+ * SKILL.md that is not valid YAML fails the test.
+ */
 function shippedSkills(
   plugin: string,
 ): Array<{ name: string; description: string; version: string }> {
@@ -35,9 +40,11 @@ function shippedSkills(
     .filter((name) => existsSync(join(dir, name, "SKILL.md")))
     .sort()
     .map((name) => {
-      const head =
-        /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, name, "SKILL.md"), "utf8"))?.[1] ?? "";
-      const field = (key: string) => new RegExp(`^${key}: (.*)$`, "m").exec(head)?.[1] ?? "";
+      const { data } = parseFrontmatter(readFileSync(join(dir, name, "SKILL.md"), "utf8"));
+      const field = (key: string) => {
+        const value = data[key];
+        return typeof value === "string" ? value : "";
+      };
       return { name: field("name"), description: field("description"), version: field("version") };
     });
 }
