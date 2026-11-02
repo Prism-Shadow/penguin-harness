@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in its own `workbenches/` folder inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.10.26.1
+version: 2026.11.01.1
 ---
 
 # Agent Workbench with Penguin Plugins
@@ -125,10 +125,10 @@ Layout, under `<root>/<project_id>/agents/<agent_id>/workbenches/<workbench_id>/
 ```
 package.json    "type": "module" and "penguin": { "modules": [ …manifests ] } — no dependency to install
 index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfies WorkbenchPackage — TypeScript only
-ui/             the workbench's pages and their assets; which of them are tabs is what the manifest contributes
+ui/             the workbench's pages and their assets, plain JS or TSX (see Pages in TSX); which of them are tabs is what the manifest contributes
 state.json      the workbench's own document, kept by the server across reloads and rollbacks
-.harness/       the server's: the types this workbench was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it
-.build/         the server's: emitted JavaScript per revision, and status.json — the result of the last load; read it, never edit it
+.harness/       the server's: the types this workbench was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it; ui/ holds the types TSX pages compile against
+.build/         the server's: emitted JavaScript per revision (<revision>/ui/ for TSX pages), and status.json — the result of the last load; read it, never edit it
 ```
 
 ## The manifest and the handler
@@ -227,11 +227,94 @@ successful TypeScript load alone is not UI/UX validation.
 
 ## TypeScript, checked by the server
 
-There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright.
+There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright. When `ui/` holds a `.tsx` file, the pages are a second program, checked and emitted the same way (*Pages in TSX*); a diagnostic in either refuses the whole load. Pages in plain JS are served as written and never checked.
 
 ## Types come from the harness that runs you
 
 One machine can run several harnesses — a release, a checkout, a platform someone pushed with interfaces of its own — and none of them is a version on npm, so `@prismshadow/penguin-server/plugin` is not a package here: the first time the server loads the folder it writes `.harness/plugin.d.ts`, rendered from ITS OWN interface table, and that is what the import resolves to. Create `package.json` and a minimal `index.ts`, let the server load it once, then read `.harness/plugin.d.ts` for the exact `WorkbenchHost` this harness offers. The server then leaves `.harness/` alone: it is the record of what the workbench was written against, and a later generation of the platform is COMPARED with it, by the TypeScript compiler, both for what the workbench requires and what it provides — a host method you rely on that has since gone is a load error naming it, not a failure on the first call. To move a workbench onto the harness that runs it now, delete `.harness/` and fix what the compiler then reports.
+
+## Pages in TSX
+
+Write a new page in TSX with the app's own components; plain-JS pages keep working. There is nothing to install and no bundler: when `ui/` holds a `.tsx` file, the server type-checks every `.ts`/`.tsx` under `ui/`, emits them into `.build/<revision>/ui/`, serves React and `@prismshadow/penguin-ui` beside the workbench, and writes their stylesheet link and an import map into the head of every HTML file under `ui/` (so write neither yourself). A page runs against the copy that checked it, offline too; a version in your `package.json` changes nothing.
+
+`ui/index.html` loads the emitted `app.js`, never `app.tsx`:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
+```
+
+`ui/app.tsx`:
+
+```tsx
+import { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Badge, Button, EmptyState, Spinner } from "@prismshadow/penguin-ui";
+
+type Job = { id: string; title: string; status: "running" | "completed" | "failed" };
+const BADGE = {
+  running: { tone: "success", label: "Running" },
+  completed: { tone: "done", label: "Answered" },
+  failed: { tone: "danger", label: "Failed" },
+} as const;
+
+function App() {
+  const [jobs, setJobs] = useState<Job[] | "failed" | null>(null);
+  const load = () =>
+    fetch("../api/jobs")
+      .then((r) => (r.ok ? (r.json() as Promise<{ jobs: Job[] }>) : Promise.reject(r.status)))
+      .then((body) => setJobs(body.jobs), () => setJobs("failed"));
+  useEffect(() => void load(), []);
+
+  if (jobs === null) return <Spinner label="Loading" />;
+  if (jobs === "failed") {
+    const retry = <Button onClick={() => void load()}>Try again</Button>;
+    return <EmptyState title="The questions could not be loaded" action={retry} />;
+  }
+  if (jobs.length === 0) return <EmptyState title="No questions yet" />;
+  return (
+    <ul className="jobs">
+      {jobs.map((job) => (
+        <li key={job.id}>
+          <span>{job.title}</span>
+          <Badge tone={BADGE[job.status].tone}>{BADGE[job.status].label}</Badge>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+```
+
+`ui/style.css`, for your own elements only (*Theme*):
+
+```css
+.jobs { max-width: 40rem; margin: 2rem auto; padding: 0; list-style: none; }
+.jobs li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.625rem 0; border-bottom: 1px solid var(--ui-line); }
+```
+
+- **Imports.** `react`, `react/jsx-runtime`, `react-dom`, `react-dom/client` and `@prismshadow/penguin-ui` (no subpath), plus your own files under `ui/`, named with `.js` as NodeNext asks (`./list.js` for `list.tsx`). Anything else fails the load, naming the import: another npm package, a source file outside `ui/` (the handler's included: copy a shared type instead), a CSS import (`import "./style.css"`: link it in the HTML), and `x.ts` or `x.tsx` beside an `x.js` of the same name.
+- **Did it load.** A page's error, a broken import rule as much as a type error, lands in `.build/status.json` like the handler's and starts with `ui/<file>:<line>:<col>`, e.g. `ui/app.tsx:14:31 TS2322 …`; the previous version, pages included, keeps serving. The options are the server's (`strict`, ES2022, NodeNext, `jsx: react-jsx`, the DOM's types), so there is still no `tsconfig.json` to write.
+- **Exact props.** On a load with a `.tsx`, the server writes the types pages compile against into `.harness/ui/`: read `.harness/ui/node_modules/@prismshadow/penguin-ui/index.d.ts` for a component's props instead of guessing. The other packages there (`react-markdown`, `zustand`, …) are only what those props name: a page still cannot import them. Unlike `plugin.d.ts`, `.harness/ui/` is no record: the server rewrites it whenever the copy it serves changes, so never edit it. If a load with a `.tsx` leaves no `.harness/ui/` and no error, this harness predates TSX pages; if it fails saying this server has "no page runtime", it has none (a source checkout whose Web App was never built, say). Either way, write the page in plain JS.
+- **One kind per workbench.** Once `ui/` holds a `.tsx` file, every HTML page under it gets the components' stylesheet instead of `/workbench-ui.css`, so plain pages beside it lose their `wb-*` look: convert a workbench's pages together.
+- **The page SDK** (*Follow the Agent live*) is served, not a file under `ui/`, so a literal `import("../sdk/workbench.js")` fails the check. Import it through a variable, which the compiler leaves alone, and type what you call:
+
+```tsx
+const SDK_URL: string = "../sdk/workbench.js";
+type PageSdk = { abortSession(sessionId: string): Promise<boolean> /* followSession, … */ };
+// null: an older server without the page SDK; keep polling.
+const loadSdk = () => import(SDK_URL).then((m) => m as PageSdk, () => null);
+```
 
 ## Tabs are contributions
 
@@ -243,7 +326,7 @@ Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (uniq
 
 ## HTTP
 
-HTTP, all under `/api/projects/:projectId/agents/:agentId/workbenches` (Project members only): `GET /` lists the workbenches with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page); any method on `/:id/api/*` reaches `handle` — JSON by default in both directions (`req.body` parsed, `{ status?, body? }` answered as JSON), and anything else when you say so: a non-JSON request body arrives as `req.bytes` (a `Uint8Array`; `req.headers` has its `content-type`, never the app's cookie), and a response that names a `content-type` in `headers` sends `body` as the string you wrote, or `bytes` for binary, or `stream` — an async iterable (an `async function*`) of strings or `Uint8Array`s, each chunk written to the client as you yield it, which is how server-sent events and a model's token-by-token answer get through without waiting for the end (relay an upstream stream by yielding its chunks; a `finally` in the generator runs when the client goes away — though a generator parked inside an `await` only gets there once that await settles, so give a relay its own timeout rather than trusting the disconnect) — with `location` + a 3xx status for a redirect. That is how a handler serves a page it renders, an upload, a download, or the pages of a program it runs on this machine: fetch `http://127.0.0.1:<port>/…` from the HANDLER and return what came back — never put `127.0.0.1` in a page, because the page runs in the user's browser, which may be on another machine than you are; `GET /:id/sdk/workbench.js` and `GET /:id/sdk/amsp.js` serve the page SDK (the `@prismshadow/amsp` browser build of the server answering, see *Follow the Agent live*); `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workbench together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")` and import the page SDK with `import("../sdk/workbench.js")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
+HTTP, all under `/api/projects/:projectId/agents/:agentId/workbenches` (Project members only): `GET /` lists the workbenches with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page), or, for a `.js` with no such file, what the server emitted from the `.tsx` of that name; `GET /:id/sdk/ui/*` serves React, the components and their stylesheet to TSX pages, through the import map the server writes into them; any method on `/:id/api/*` reaches `handle` — JSON by default in both directions (`req.body` parsed, `{ status?, body? }` answered as JSON), and anything else when you say so: a non-JSON request body arrives as `req.bytes` (a `Uint8Array`; `req.headers` has its `content-type`, never the app's cookie), and a response that names a `content-type` in `headers` sends `body` as the string you wrote, or `bytes` for binary, or `stream` — an async iterable (an `async function*`) of strings or `Uint8Array`s, each chunk written to the client as you yield it, which is how server-sent events and a model's token-by-token answer get through without waiting for the end (relay an upstream stream by yielding its chunks; a `finally` in the generator runs when the client goes away — though a generator parked inside an `await` only gets there once that await settles, so give a relay its own timeout rather than trusting the disconnect) — with `location` + a 3xx status for a redirect. That is how a handler serves a page it renders, an upload, a download, or the pages of a program it runs on this machine: fetch `http://127.0.0.1:<port>/…` from the HANDLER and return what came back — never put `127.0.0.1` in a page, because the page runs in the user's browser, which may be on another machine than you are; `GET /:id/sdk/workbench.js` and `GET /:id/sdk/amsp.js` serve the page SDK (the `@prismshadow/amsp` browser build of the server answering, see *Follow the Agent live*); `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workbench together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")` and import the page SDK with `import("../sdk/workbench.js")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 
 ## Undoing, reverting, removing (撤销 / 还原 / 清掉界面)
 
@@ -260,7 +343,11 @@ Your handler's responses are served from the app's own origin, so anything you e
 
 ## Theme
 
-A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps the app's look onto the page's root on every load and every appearance change: `light`/`dark`, `data-theme` (`modern`, `geek` or `github`), `data-accent` (only when the theme paints that accent), `data-font-latin` and `data-font-cjk`, the root font size, every `--ui-*` token of the app's token contract resolved as an inline style, and the app's bundled fonts. It injects `/workbench-ui.css` first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one). Pick the tone the way the app does: there is no busy tone, so a running item is `success` with the word "Running", waiting or queued is `attention`, failed is `danger`, and finished is `done` or `neutral`, e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. Write plain markup, take every colour and font from those variables, and the page follows the user through every theme, accent, font and light/dark change; hardcode them and it clashes in one theme or another. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
+A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps the app's look onto the page's root on every load and every appearance change: `light`/`dark`, `data-theme` (`modern`, `geek` or `github`), `data-accent` (only when the theme paints that accent), `data-font-latin` and `data-font-cjk`, the root font size, every `--ui-*` token of the app's token contract resolved as an inline style, and the app's bundled fonts. Take every colour and font from the variables below and the page follows the user through every theme, accent, font and light/dark change; hardcode them and it clashes in one theme or another. Pick a status tone the way the app does: there is no busy tone, so a running item is `success` with the word "Running", waiting or queued is `attention`, failed is `danger`, and finished is `done` or `neutral`.
+
+**A TSX page** (*Pages in TSX*) gets the components' stylesheet from the server, and the Web App leaves `/workbench-ui.css` out of it: no `--wb-*` variables, no `wb-*` classes. The components follow the theme by themselves and take their look from props such as `variant`, `tone` and `size` (`<Badge tone="done">Resolved</Badge>`). Style your own elements in a stylesheet of your own, under class names of your own, reading the tokens the components paint with: `--ui-canvas`, `--ui-surface`, `--ui-fg`, `--ui-fg-muted`, `--ui-line`, `--ui-accent`, `--ui-accent-fg`, `--ui-radius-md`, `--ui-font-mono`, and `--ui-tone-<tone>-fg`, `-bg` and `-line`. No Tailwind classes on your own elements: only the classes the components use are compiled, so some would work by chance and the rest silently do nothing. No rules on bare elements (`button`, `input`, `table`): yours would beat the components' own, which sit in cascade layers, and for the same reason never link `/workbench-ui.css` into a TSX page.
+
+**A plain-JS page** gets `/workbench-ui.css` injected first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one), e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
 
 Keep empty alerts hidden. A component rule such as `.notice { display: flex }` overrides the browser's default `[hidden]` styling; the shared stylesheet preserves `[hidden]`, and standalone custom CSS should do the same. Check both empty and populated states.
 

@@ -242,6 +242,10 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | | `ape-rsi-toolkit` | APE, from [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910) (Zhou et al., 2022): induces candidate instructions from input/output demonstrations and keeps the best. Self-contained: ships its own initialization and evaluation references, plus a demo task |
 | | `ace-rsi-toolkit` | ACE, from [Agentic Context Engineering](https://arxiv.org/abs/2510.04618) (Zhang et al., 2025): evolves a playbook of rules from training Traces. Self-contained: ships its own initialization and evaluation references |
 | | `awm-rsi-toolkit` | AWM, from [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) (Wang et al., 2024): induces workflows from successful trajectories into the agent's memory. Self-contained: ships its own initialization and evaluation references |
+| | `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944) |
+| | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904): bounded Skill edits, score-based selection and cross-epoch reflection |
+| | `openskill-rsi-toolkit` | Research and independent virtual verification build a library; freeze it before baseline/final Benchmark evaluation. |
+| | `trace-rsi-toolkit` | TRACE, from [TRACE](https://arxiv.org/abs/2608.22793) (Wu et al., 2026): groups successful and failed trajectories by skill, refines a modular bank and measures repeat-run consistency. Ships benchmark, initialization, training, evaluation and source-bundle references; declares instruction-driven selection and retained context as adaptations |
 | Office Productivity | `a2ui` | Rich reply blocks — a choice, a form, steps, a callout, a Mermaid diagram, a chart drawn from data (line, area, bar, pie, scatter, histogram or gauge), or a weather, clock, countdown, metrics or system-resource widget, written as a fenced block inside ordinary Markdown, rendered by the Web App with its own components (a pick fills the composer as plain text) and shown as readable text elsewhere — with STE-style writing rules for Chinese and English, scripts that turn a weather lookup or a system snapshot into a block, and a checker script that validates and scores a draft before it is sent (preinstalled) |
 | | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `use-firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
@@ -456,6 +460,29 @@ Installing the plugin copies the workbench into the Agent's `workbenches/<id>/` 
 
 A workbench can follow the Sessions it starts while the agent works. Its page imports `../sdk/workbench.js`, a page SDK the server serves beside every workbench, and `followSession(sessionId)` reads that Session's [AMSP records](/amsp-records) with the signed-in user's access, so the answer appears as the agent writes it; `abortSession(sessionId)` stops the turn. The workbench's server code gets the same records from `host.subscribe(sessionId, listener)`. Starting turns and saving results stay in the workbench's own handler; reading results with `host.sessionResult` and polling still work. A workbench never needs an Agent API key for this.
 
-Workbench pages take the app's look through `/workbench-ui.css`: its `--wb-*` variables and `wb-*` classes follow the user's theme, accent, font and light or dark mode, and `wb-badge` with a `data-tone` attribute colours a status. The `--wb-*` names are only ever added to; to restyle a page, redeclare them on `:root`.
+Workbench pages can be written in TSX with the app's own components. Put `app.tsx` beside `index.html` under `ui/`, load it in the page as `app.js`, and import from `react`, `react-dom/client` and `@prismshadow/penguin-ui`. There is nothing to install: the server type-checks the page as strictly as the workbench's server code, compiles it, and serves React and the components itself, so a page runs against the same copy that checked it, offline too. A type error, or an import of anything else, fails the load with the file and line named, and the previous version keeps serving. The exact props of every component are in `.harness/ui/`, which the server writes when it compiles the pages.
+
+```tsx
+// ui/app.tsx; ui/index.html has <div id="root"> and <script type="module" src="app.js">
+import { useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Badge, Button } from "@prismshadow/penguin-ui";
+
+function App() {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="status">
+      <Badge tone={done ? "done" : "success"}>{done ? "Done" : "Running"}</Badge>
+      <Button variant="primary" onClick={() => setDone(true)}>Mark done</Button>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+```
+
+The components follow the user's theme, accent, font and light or dark mode by themselves. Style the page's own elements with a stylesheet of your own that reads the `--ui-*` variables; Tailwind classes on your own markup are not available.
+
+Pages written in plain HTML and JavaScript keep working and take the app's look through `/workbench-ui.css`: its `--wb-*` variables and `wb-*` classes follow the user's theme, accent, font and light or dark mode, and `wb-badge` with a `data-tone` attribute colours a status. The `--wb-*` names are only ever added to; to restyle a page, redeclare them on `:root`. Once a workbench has a TSX page, all of its pages get the components' stylesheet instead, so convert its pages together.
 
 The built-in `penguin-support` plugin provides the default Project's support Agent with the `penguin-support` Skill and a customer support workbench: a centered question list, a new-question dialog and conversation details with follow-ups. While a question runs, its dialog shows the answer as it is written and what the agent is doing, with a **Stop** button. A new version arrives as a plugin update; an installed copy is only replaced when you update it. It can also be installed on other Agents.

@@ -23,6 +23,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   CostParts,
+  InterruptRequest,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
@@ -119,9 +120,12 @@ import {
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
-import { RouteProbe } from "./route-probe";
-import { machineForSession } from "../../lib/session-machines";
+import { useRouteLookup } from "./use-route-lookup";
+import { RouteOfflineNotice } from "./route-offline-notice";
+import { RouteRefusedNotice } from "./route-refused-notice";
+import { machineForSession, sessionKnownHere } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
+import { HistoryLoading } from "./history-loading";
 import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
@@ -276,8 +280,10 @@ export function ChatPage() {
     sessions,
     loading: sessionsLoading,
     machineLabels,
-    machinesUnreachable,
     offlineMachineIds,
+    disconnectedMachineIds,
+    askingMachineIds,
+    listRound,
     reload: reloadSessions,
     add: addSession,
     remove: removeSession,
@@ -480,15 +486,50 @@ export function ChatPage() {
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
-  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
-  /** The probe that failed did so with a 404: the server has no such Session for this user. */
-  const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
+  /** A row the lookup found while the Session list was still loading, to add once it settles. */
+  const addWhenListed = useRef<SessionInfo | null>(null);
+  /**
+   * The direct lookup of the routed Session (use-route-lookup.ts). The list is paged: a
+   * deep-linked Session (old bookmark, cross-page jump) may sit beyond the loaded pages, so it is
+   * looked up directly and inserted before the auto-select effect below concludes it doesn't
+   * exist. It is NOT gated on `sessionsLoading`: the lookup is what opens the conversation, and
+   * holding it behind the sidebar's list fan-out put seconds of sidebar work in front of the
+   * conversation the reader asked for. Read from `listed`, never from `selected`: the held Session
+   * below keeps the conversation on screen through a refetch, but must not tell the lookup that
+   * the row is loaded.
+   */
+  const routeLookup = useRouteLookup<SessionInfo>({
+    key: draft ? null : probeKey,
+    listLoading: sessionsLoading,
+    listed: listed !== null,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    owner: routeSessionId ? machineForSession(routeSessionId) : null,
+    local: routeSessionId !== null && sessionKnownHere(routeSessionId),
+    offline: offlineMachineIds,
+    asking: askingMachineIds,
+    disconnected: disconnectedMachineIds,
+    listRound,
+    lookup: async () =>
+      sessionForProject((await api.getSession(routeSessionId!)).session, projectId!),
+    onFound: (session, listLoading) => {
+      setFetchedSession(session);
+      // add() invalidates a reload in flight. During the sidebar's first load that threw the
+      // whole load away, leaving the list on this one row and still loading; the conversation
+      // needs only the fetched row, so the list gets it once it has settled.
+      if (listLoading) addWhenListed.current = session;
+      else addSession(session);
+      // A Session of an Agent the list has not loaded (company mode creates Agents
+      // server-side): fetch the list, or the page has no Agent to render under.
+      if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
+    },
+    onMachinesSilent: () => void reloadSessions(),
+  });
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
     listed,
     routeSessionId ?? null,
-    probeKey !== null && probeFailedKey === probeKey,
+    routeLookup.failed,
     projectId,
   );
   const routed = draft ? null : heldSession.current;
@@ -845,28 +886,7 @@ export function ChatPage() {
     [projectId, selectedAgentId, selectedAgentMachine],
   );
 
-  // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
-  // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
-  // below concludes it doesn't exist; only a failed probe releases that redirect. `probeKey`
-  // and `probeFailedKey` are declared up with `selected`, which needs them to know when to
-  // let the held Session go.
-  /**
-   * The route names a Session we cannot answer for YET: not in the loaded pages, and the
-   * direct lookup that settles it has not failed. Ordinary with a paged list — a deep link,
-   * a Session just created, a row beyond the first page. Shared by the probe effect, the
-   * auto-select effect and the render, so the three cannot disagree about what "pending"
-   * means — their disagreeing is what once painted "no Sessions yet" over a conversation
-   * that was about to appear.
-   */
-  /**
-   * Nobody who could answer for this Session is answering, so a failed lookup settles nothing.
-   *
-   * Two shapes of that. Either no owner is recorded and some machine is out of reach — the
-   * probe then asks THIS server (lib/session-machines.ts: absence means here), which 404s
-   * about a Session that is alive THERE. Or the owner IS recorded and is itself one of the
-   * machines not answering, which is every row restored from the cache. Reading either as
-   * "gone" is what drops the reader into the draft page mid-conversation.
-   */
+  /** The machine the routed Session is on record as living on, or null (this server, or unknown). */
   const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
 
   /**
@@ -878,96 +898,21 @@ export function ChatPage() {
     const machineId = machineForSession(sessionId);
     return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   };
-  const routeSessionUnowned =
-    !!routeSessionId &&
-    // Except one we deleted ourselves. That is the one case where a failed lookup settles it
-    // whoever is out of reach — nobody is going to answer differently — and leaving it open
-    // held the page on a skeleton for as long as some machine stayed down, on the ordinary
-    // act of deleting the conversation you are looking at.
-    !isSessionDeleted(routeSessionId) &&
-    (routeSessionOwner === null
-      ? machinesUnreachable
-      : offlineMachineIds.includes(routeSessionOwner));
-  // Read from `listed`, never from `selected`: the held Session above keeps the conversation
-  // on screen through a refetch, but it must not tell the probe that the row is loaded — a
-  // Session that really is gone has to keep probing until the lookup fails and releases both.
-  const routeSessionPending =
-    !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+  /**
+   * The route names a Session we cannot answer for YET: not in the loaded pages, and the lookup
+   * has settled nothing (use-route-lookup.ts). Shared by the auto-select effect and the render,
+   * so the two cannot disagree about what "pending" means — their disagreeing is what once
+   * painted "no Sessions yet" over a conversation that was about to appear.
+   */
+  const routeSessionPending = routeLookup.pending;
   /**
    * The lookup has failed and the only servers that could still answer for this Session are
    * out of reach. It is not gone — so the redirect must not fire and the row must not be
    * dropped — but it is not loading either, and a skeleton that never resolves reads as a
-   * hung page. Say what is actually the matter instead, and let the machine list open it when
-   * the connection is back — the server says so the moment it is (state/machines.tsx).
+   * hung page. Say what is actually the matter instead; the lookup is made again once the
+   * machines answer (use-route-lookup.ts).
    */
-  const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
-  /** The direct lookup of the routed Session, one per page (route-probe.ts). */
-  const [routeProbe] = useState(() => new RouteProbe());
-  /** A row the lookup found while the Session list was still loading, to add once it settles. */
-  const addWhenListed = useRef<SessionInfo | null>(null);
-  useEffect(() => {
-    routeProbe.track(draft ? null : probeKey, sessionsLoading);
-    // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
-    // holding it behind the sidebar's list fan-out (one first page per Agent per machine)
-    // put seconds of sidebar work in front of the conversation the reader asked for. The
-    // failure path below is the one place the list still matters, and it is handled there.
-    if (draft || !projectId || !routeSessionId || !probeKey) return;
-    // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
-    // key must not be re-probed just because the list's identity churned.
-    if (!routeSessionPending) return;
-    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
-    // lookup below could only 404 (and the server would record that as an error). Deleting
-    // the conversation you are looking at is the normal way to discard a Session fork, so
-    // this path runs on every such delete. Treat it as an already-failed probe, which
-    // releases the redirect effect below to move on to another conversation.
-    if (isSessionDeleted(routeSessionId)) {
-      setProbeFailedKey(probeKey);
-      return;
-    }
-    // Deliberately NOT cancelled on re-run: this lookup is keyed by the routed Session, and
-    // its answer stays valid across the list churn that re-runs this effect. Tying its
-    // lifetime to one run is what made a deep link issue a dozen identical requests. One
-    // lookup per Session in flight, the list's loading read when it settles, and an answer
-    // about a Session the route has left dropped: see route-probe.ts.
-    routeProbe.run(
-      probeKey,
-      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
-      {
-        found: (session, listLoading) => {
-          setFetchedSession(session);
-          // add() invalidates a reload in flight. During the sidebar's first load that threw
-          // the whole load away, leaving the list on this one row and still loading; the
-          // conversation needs only the fetched row, so the list gets it once it has settled.
-          if (listLoading) addWhenListed.current = session;
-          else addSession(session);
-          // A Session of an Agent the list has not loaded (company mode creates Agents
-          // server-side): fetch the list, or the page has no Agent to render under.
-          if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
-        },
-        // Only once the list has settled: a failure while it loads is not a verdict, and
-        // this effect re-runs when it settles and asks again.
-        gone: (cause) => {
-          setProbeFailedKey(probeKey);
-          // Only an answer that the Session does not exist settles it as missing; a failure to
-          // get any answer is not that, and keeps the old way on.
-          if (cause instanceof ApiError && cause.status === 404) setProbeMissingKey(probeKey);
-        },
-      },
-    );
-    // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
-    // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
-    // depending on the array identity cancelled and re-issued it on every user event.
-  }, [
-    draft,
-    projectId,
-    routeSessionId,
-    probeKey,
-    sessionsLoading,
-    routeSessionPending,
-    selected,
-    addSession,
-    isSessionDeleted,
-  ]);
+  const routeSessionOffline = routeLookup.outOfReach;
   // The row found during the list's first load, added once the list has settled and only if
   // it did not bring the row itself (one beyond the first page, or an organization's row,
   // which no list page serves and whose status and title events reach only listed rows).
@@ -990,7 +935,8 @@ export function ChatPage() {
     pending: routeSessionPending,
     routeSessionId,
     deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
-    missing: probeKey !== null && probeMissingKey === probeKey,
+    missing: routeLookup.missing,
+    refused: routeLookup.refused !== null,
   });
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
@@ -1600,6 +1546,56 @@ export function ChatPage() {
     [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
+  // Interrupt, then send: post the full input with `interrupt` — a busy session stops its run
+  // and sends this right after the turn it cut (the abort's carry-over goes out ahead of it,
+  // with the undelivered steering), an idle one just starts it. Same success contract as the
+  // queue: the input area clears the draft on true.
+  const onInterruptSend = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
+  const interruptWaiting = useCallback(
+    async (target: InterruptRequest): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postInterrupt(selected.sessionId, target);
+        return true;
+      } catch (e) {
+        toastError(
+          e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
+            ? S.chat.interruptAlreadySent
+            : apiErrorText(e),
+        );
+        return false;
+      }
+    },
+    [selected],
+  );
+  const onInterruptFollowUp = useCallback(
+    (followUpId: string) => interruptWaiting({ followUpId }),
+    [interruptWaiting],
+  );
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
+  );
+
   // Mid-run steering: the message is queued on the server and delivered between turns as a
   // standalone `[user_steering]` user message followed by its images (visible once they
   // arrive over SSE / from the Trace); file attachments land in the Session scratchpad and
@@ -1924,18 +1920,23 @@ export function ChatPage() {
   // a new conversation instead). Re-picking the current model does nothing, and neither does a
   // pick that raced a Task starting (the picker is disabled then, and the server would refuse
   // it anyway); any other pick asks first, worded for what the switch will do: compact the
-  // context on the current model before moving on, or — right after a compaction or a switch,
-  // when there is nothing to compact — continue on the picked model from what is already held.
+  // context on the current model before moving on, hand the picked model the Trace path when
+  // the current one is unavailable, or — right after a compaction or a switch, when there is
+  // nothing to compact — continue on the picked model from what is already held.
   const onPickSessionModel = useCallback(
     (ref: ModelRefDto) => {
       if (!selected || sameModelRef(ref, selected)) return;
       if (sessionModelPickerDisabled(stream.taskState)) return;
       // Read at pick time: the model's items mutate in place. The live tail decides, behind
       // whatever window was backfilled above it.
-      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      const shape = switchContextShape(
+        [...stream.prefixItems, ...stream.model.items],
+        selected,
+        models,
+      );
       setModelSwitchAsk({ to: ref, shape });
     },
-    [selected, stream.taskState, stream.prefixItems, stream.model],
+    [selected, stream.taskState, stream.prefixItems, stream.model, models],
   );
 
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
@@ -1943,8 +1944,7 @@ export function ChatPage() {
   // the Session row once the new context's session_meta names the new model. 200 = the Session
   // never ran and switched inside the request: the row comes back with the response — under a
   // new id when the server had to rebuild a Session that left no Trace, which the page follows.
-  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
-  // is a toast.
+  // A refusal (409 busy / same model / target not configured / target unavailable) is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;
@@ -1962,8 +1962,8 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.session.sessionId);
         return;
       }
-      // Only a switch that compacts may say so; one that continues from a held summary runs
-      // no compaction and must not promise one.
+      // Only a switch that compacts may say so; one that continues from what is held, or hands
+      // over by Trace path, runs no compaction and must not promise one.
       toastInfo(
         ask.shape === "compact"
           ? S.chat.modelSwitchInSessionStarted(from, to)
@@ -2061,6 +2061,7 @@ export function ChatPage() {
   const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
+    bodies: stream.bodies,
     onApprove,
     onSendToBackground,
     origin: [],
@@ -2245,6 +2246,9 @@ export function ChatPage() {
       queuedFollowUps={stream.queuedFollowUps}
       pendingFollowUps={stream.pendingFollowUps}
       onRecallFollowUp={onRecallFollowUp}
+      onInterruptSend={onInterruptSend}
+      onInterruptFollowUp={onInterruptFollowUp}
+      onInterruptSteering={onInterruptSteering}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}
@@ -2306,6 +2310,18 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
+  /**
+   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
+   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
+   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
+   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
+   * leading edge), and each of them showed through the page — the handle as a line that lit up
+   * under the pointer, took the cursor and resized the hidden dock.
+   */
+  const coveredByWorkbench =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
+      ? "invisible"
+      : "";
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -2315,8 +2331,9 @@ export function ChatPage() {
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
     <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
-          chat (which stays mounted, so its state survives a look at the page) below the
-          strip; the strip is absent when the Agent has no workbench with a UI. */}
+          chat (which stays mounted, so its state survives a look at the page, but is not
+          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
+          no workbench with a UI. */}
       <WorkbenchTabStrip
         tabs={workbenchTabs.tabs}
         notices={workbenchTabs.notices}
@@ -2343,7 +2360,9 @@ export function ChatPage() {
       {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
           nothing of the conversation is read until it is unarchived. */}
       {archivedRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
@@ -2351,7 +2370,9 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
@@ -2652,7 +2673,7 @@ export function ChatPage() {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
@@ -2714,11 +2735,14 @@ export function ChatPage() {
                         onRetry={stream.retry}
                       />
                     ) : stream.loading ? (
-                      <div className="space-y-3 p-6">
-                        <Skeleton className="h-5 w-1/3" />
-                        <Skeleton className="h-5 w-2/3" />
-                        <Skeleton className="h-5 w-1/2" />
-                      </div>
+                      // The skeleton, and past a second, for a conversation on a machine, how far
+                      // its newest messages have come over and how the link stands.
+                      <HistoryLoading
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        progress={stream.transfer.window}
+                        onRetryNow={stream.retryNow}
+                      />
                     ) : (
                       // The empty state shares the same structure as the message stream (message
                       // area + bottom input area): only the message area's content differs, and
@@ -2754,6 +2778,8 @@ export function ChatPage() {
                                 error: stream.older.error,
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
+                                transfer: stream.transfer,
+                                beyondTail: stream.older.beyondTail,
                               }}
                               // Tick-rail minimap over the stream's left gutter (zero layout
                               // width; hides itself when the gutter is too narrow or the
@@ -2805,15 +2831,19 @@ export function ChatPage() {
                       </>
                     )
                   ) : routeSessionOffline ? (
-                    <EmptyState
-                      title={
-                        routeSessionOwner === null
-                          ? S.chat.sessionOnOfflineMachineUnknown
-                          : S.chat.sessionOnOfflineMachine(
-                              machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                            )
-                      }
-                      description={S.chat.sessionOfflineHint}
+                    <RouteOfflineNotice
+                      owner={routeSessionOwner}
+                      offline={routeLookup.silent}
+                      disconnected={routeLookup.disconnected}
+                      labels={machineLabels}
+                    />
+                  ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
+                    // The machine holding it will not show it to this server: said in place,
+                    // neither gone nor out of reach.
+                    <RouteRefusedNotice
+                      machineId={routeLookup.refused.machineId}
+                      alias={routeLookup.refused.alias}
+                      labels={machineLabels}
                     />
                   ) : !sessionsLoading && routeOutcome === "notFound" ? (
                     // A dead link: said in place, with the one way on that fits the mode —
@@ -2945,12 +2975,13 @@ export function ChatPage() {
 
       {/* In-conversation model switch confirmation (the session toolbar's model picker), two
           choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
-          always compacts on the current model first, and a failed compaction keeps it. The two
-          shapes with nothing to compact read "switch" instead: an empty transcript (the switch
-          is immediate) and a transcript ending in a completed compaction or a model switch (no
-          compaction runs; the conversation continues from what is already held). The session
-          can start running while the dialog is up (a queued follow-up, a schedule): the confirm
-          is then disabled and the body says why, exactly like the thinking dialog. */}
+          compacts on the current model first, and a failed compaction hands the history over
+          by Trace path. The shapes that compact nothing read "switch" instead: an empty
+          transcript (the switch is immediate), a transcript ending in a completed compaction or
+          a model switch (the conversation continues from what is already held), and a current
+          model that is unavailable (the picked model gets the Trace path). The session can
+          start running while the dialog is up (a queued follow-up, a schedule): the confirm is
+          then disabled and the body says why, exactly like the thinking dialog. */}
       <ConfirmModal
         open={modelSwitchAsk !== null}
         title={S.chat.modelSwitchInSessionTitle}
@@ -2975,7 +3006,9 @@ export function ChatPage() {
               ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
               : modelSwitchAsk.shape === "compacted"
                 ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
-                : S.chat.modelSwitchInSessionBody(
+                : (modelSwitchAsk.shape === "handover"
+                    ? S.chat.modelSwitchInSessionHandoverBody
+                    : S.chat.modelSwitchInSessionBody)(
                     modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
                     modelDisplay(modelSwitchAsk.to),
                   )}

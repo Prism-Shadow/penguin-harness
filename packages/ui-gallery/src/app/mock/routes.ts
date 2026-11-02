@@ -1330,6 +1330,13 @@ router
         ? {
             page: {
               earlierTurns: 0,
+              // The mock's transcripts are plain prompt-and-answer Tasks: one per user prompt.
+              units: messages.filter(
+                (m) =>
+                  m.type === "model_msg" &&
+                  (m.payload as { type?: string; role?: string }).type === "text" &&
+                  (m.payload as { role?: string }).role === "user",
+              ).length,
               prior: {
                 subagentTokens: 0,
                 elapsedMs: 0,
@@ -1358,6 +1365,8 @@ router
           .filter((t) => t !== "")
           .join("\n")
       : "";
+    // Interrupt, then send: the demo run stops the way Stop stops it, and the task starts.
+    if (row.status !== "idle" && record(body).interrupt === true) store.abort(sessionId);
     if (row.status !== "idle") {
       if (record(body).queueIfBusy === true) {
         row.pendingFollowUpCount += 1;
@@ -1441,6 +1450,10 @@ router
   )
   .delete("/api/sessions/:sessionId/follow-ups/:followUpId", () =>
     fail(409, "follow_up_started", "Already started."),
+  )
+  // The demo never holds a queued message, so there is nothing to interrupt with.
+  .post("/api/sessions/:sessionId/interrupt", () =>
+    fail(409, "not_pending", "This steering message was already delivered to the model."),
   )
   .post("/api/sessions/:sessionId/compact", ({ store, params }): unknown => {
     const sessionId = params.sessionId!;

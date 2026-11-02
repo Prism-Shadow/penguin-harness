@@ -20,7 +20,8 @@
  * Older history above the transcript:
  * - Given the previous window failed to load, the top says so on a notice line with a Retry, the
  *   error in it.
- * - Given the window is being loaded again, the failure is gone and the loading line shows.
+ * - Given the window is being loaded again, the failure and its Retry are gone (the transfer
+ *   line takes the row; its own words are history-loading's).
  * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
  *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
  *
@@ -277,10 +278,10 @@ describe("MessageStream older history", () => {
     expect(pressNames(html)).toEqual([S.common.retry]);
   });
 
-  it("while the window loads again, the failure is gone and the loading line shows", () => {
+  it("while the window loads again, the failure and its Retry are gone", () => {
     const html = top({ loading: true, error: "socket closed: ECONNRESET" });
     expect(html).not.toContain("ECONNRESET");
-    expect(html).toContain(S.chat.loadingEarlier);
+    expect(pressNames(html)).not.toContain(S.common.retry);
   });
 
   it("a Retry that started no load stays pressable, and the next press asks again", async () => {

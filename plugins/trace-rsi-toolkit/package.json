@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/trace-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "The TRACE RSI Toolkit: organize container training and evaluation, refine a modular skill bank from contrasting trajectories, and test the checkpoint selected by training scores.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/trace-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "penguin": {
+    "description_zh": "TRACE RSI 工具包：组织容器内训练与独立评测，对比轨迹修订技能库，按训练分数选择版本后测试。",
+    "short_description": "TRACE RSI Toolkit: evolve skills from contrasting trajectories.",
+    "short_description_zh": "TRACE RSI 工具包：对比轨迹，进化技能库。",
+    "category": "rsi",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Use TRACE on the selected Project Benchmarks with the requested model and budget.",
+      "prompt_zh": "使用 TRACE，按指定模型和预算完成选定 Project Benchmark 的实验。",
+      "skills": [
+        "trace-rsi-toolkit"
+      ]
+    }
+  }
+}

@@ -1,11 +1,12 @@
 /**
  * @prismshadow/penguin-ui — the shared UI package: token contract, themes, fonts and the
- * component set. Source-only: a consumer's `workspace:*` dependency is linked to this directory,
- * so Vite, vitest and tsc read `src/` through the `exports` map in package.json, never a build.
+ * component set. Inside the repository it is read as source: a consumer's `workspace:*` dependency
+ * is linked to this directory, so Vite, vitest and tsc read `src/` through the `exports` map in
+ * package.json, never a build. The npm package and the Workbench runtime are built from this
+ * module (scripts/build-dist.mjs), so everything exported here is public there.
  *
  * Every component is exported from here, one line per module, grouped by the wave that moved it
- * in. A barrel costs no bundle bytes in a source-only package: the bundlers tree-shake it by
- * module.
+ * in. A barrel costs no bundle bytes: the bundlers tree-shake it by module.
  */
 export * from "./hooks";
 export * from "./tokens";
@@ -175,6 +176,8 @@ export * from "./components/feedback/retry-status/countdown";
 export * from "./components/feedback/retry-status/use-countdown";
 export * from "./components/feedback/retry-status/countdown-text";
 export * from "./components/feedback/retry-status/retry-status";
+// A transfer under way: what comes over, the amount against the whole, and a thin bar.
+export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
 export * from "./components/data/stat-tile/stat-tile";

@@ -13,7 +13,8 @@
  * types the harness wrote into the folder when the workbench was new (./harness-types.ts,
  * ./compile.ts); those are compared with this platform's, both ways, by the compiler
  * (../plugin/iface-check.ts); and the tree is checked like any other — wiring, slots,
- * contribution shapes.
+ * contribution shapes. A `ui/` with TSX pages adds one more: the pages are type-checked
+ * against the page runtime this server serves them with (./compile-ui.ts).
  *
  * Loading is by content: the folder's revision (store.ts) names the directory the source
  * is emitted into, so an edited workbench is a new import URL rather than a hit in the ESM
@@ -36,7 +37,7 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
-import type { Channels, Clock, Hmr, Log, Paths } from "../hmr/capabilities.js";
+import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { Traces } from "../mechanisms/traces.js";
@@ -49,16 +50,21 @@ import type {
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchTab,
+  WorkbenchUiFile,
+  WorkbenchUiRuntime,
+  WorkbenchUiRuntimeFile,
   WorkbenchVersion,
   Workbenches,
 } from "../mechanisms/workbenches.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
-import { compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
+import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import {
   historyDir,
   isSafeRelPath,
@@ -97,6 +103,11 @@ interface Loaded {
   tabs: WorkbenchTab[];
   loadedAt: string;
   error: string | null;
+  /**
+   * The revision whose `.build/<revision>/ui/` holds the SERVING instance's compiled pages —
+   * the previous one's while `error` is set — or null when its pages are served as written.
+   */
+  uiBuild: string | null;
 }
 
 function key(projectId: string, agentId: string, workbenchId: string): string {
@@ -105,6 +116,14 @@ function key(projectId: string, agentId: string, workbenchId: string): string {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+async function isFile(file: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(file)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** Reads `package.json`: the manifests, and that the package is an ES module. */
@@ -237,6 +256,7 @@ async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<
 @Component()
 export class WorkbenchService implements Workbenches {
   @Use() private readonly paths!: Paths;
+  @Use() private readonly config!: Config;
   @Use() private readonly clock!: Clock;
   @Use() private readonly log!: Log;
   @Use() private readonly channels!: Channels;
@@ -355,23 +375,39 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<string | null> {
+  ): Promise<WorkbenchUiFile | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
     // No default document: which page a tab shows is what its contribution says.
-    const file = rel;
-    if (!isSafeRelPath(file)) return null;
-    const abs = path.join(
-      workbenchesDir(this.paths.root, projectId, agentId),
-      workbenchId,
-      UI_DIR,
-      file,
-    );
-    try {
-      return (await fs.promises.stat(abs)).isFile() ? abs : null;
-    } catch {
-      return null;
+    if (!isSafeRelPath(rel)) return null;
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    const onDisk = path.join(dir, UI_DIR, rel);
+    if (await isFile(onDisk)) {
+      // Only a page needs to know whether it is compiled; every other file is served as it is.
+      if (!/\.html?$/i.test(rel)) return { path: onDisk, compiled: null };
+      const build = await this.uiBuild(projectId, agentId, workbenchId);
+      return { path: onDisk, compiled: build === null ? null : this.runtimeLinks() };
     }
+    // What a TSX page compiled to, from the instance that is serving.
+    if (!rel.endsWith(".js")) return null;
+    const build = await this.uiBuild(projectId, agentId, workbenchId);
+    if (build === null) return null;
+    const emitted = path.join(dir, BUILD_DIR, build, UI_DIR, rel);
+    return (await isFile(emitted)) ? { path: emitted, compiled: null } : null;
+  }
+
+  async uiRuntimeFile(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    rel: string,
+  ): Promise<WorkbenchUiRuntimeFile | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    // A folder without package.json is not a workbench (./store.ts).
+    if (!(await isFile(path.join(dir, "package.json")))) return null;
+    return (await this.runtime()?.file(rel)) ?? null;
   }
 
   async history(
@@ -467,6 +503,49 @@ export class WorkbenchService implements Workbenches {
     return folder;
   }
 
+  /** The Web App's files this server serves, where the page runtime travels (./ui-runtime.ts). */
+  private webFiles(): WebFiles {
+    return this.hmr.resolveWebSource() ?? { kind: "dir", dir: this.config.webDist };
+  }
+
+  /** The page runtime, or null when this server has none or cannot read it. */
+  private runtime(): UiRuntime | null {
+    try {
+      return openUiRuntime(this.webFiles());
+    } catch (err) {
+      this.log.line(`[workbenches] ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /** What a compiled page's import map names; null leaves the page as written. */
+  private runtimeLinks(): WorkbenchUiRuntime | null {
+    const manifest = this.runtime()?.manifest;
+    return manifest === undefined
+      ? null
+      : { imports: manifest.imports, stylesheet: manifest.stylesheet };
+  }
+
+  /**
+   * The serving instance's compiled-pages revision. A page can be asked for before anything
+   * in this process listed its workbench (a frame reloading after a restart), so an instance
+   * not yet loaded is loaded first.
+   */
+  private async uiBuild(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<string | null> {
+    const loaded = this.loaded.get(key(projectId, agentId, workbenchId));
+    if (loaded) return loaded.uiBuild;
+    try {
+      return (await this.current(projectId, agentId, workbenchId)).uiBuild;
+    } catch (err) {
+      if (err instanceof WorkbenchNotFound) return null;
+      throw err;
+    }
+  }
+
   private async current(projectId: string, agentId: string, workbenchId: string): Promise<Loaded> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     const k = key(projectId, agentId, workbenchId);
@@ -535,6 +614,8 @@ export class WorkbenchService implements Workbenches {
     let booted: { dispose: () => void } | null = null;
     /** Its handler's subscriptions (./subscribe.ts): they end with the tree, or here if it never serves. */
     let subscriptions: WorkbenchSubscriptions | null = null;
+    /** Its compiled pages, emitted aside until the load has succeeded. */
+    let pages: UiBuild | null = null;
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -548,6 +629,11 @@ export class WorkbenchService implements Workbenches {
         this.clock.now(),
       );
       const entry = compileWorkbench(ts, folder.dir, folder.revision);
+      // Pages in TSX are the same load's second program, checked against the runtime this
+      // server serves them with; a folder of plain pages never touches the runtime.
+      if (hasTsxPages(folder.files)) {
+        pages = compileWorkbenchUi(ts, folder, requireUiRuntime(this.webFiles()));
+      }
       const written = readHarnessTable(folder.dir);
       if (typeof written === "string") throw new Error(written);
       const fit = checkIfaces(
@@ -598,8 +684,18 @@ export class WorkbenchService implements Workbenches {
         ([, ref]) => ref === MAIN_IFACE,
       )![0];
       const main = tree.api<Loaded["main"]>(ROOT_MODULE, alias);
-      next = { folder, tree, main, tabs, loadedAt, error: null };
       booted = tree;
+      // In place before this tree serves, and before anything the old one served is let go.
+      pages?.commit();
+      next = {
+        folder,
+        tree,
+        main,
+        tabs,
+        loadedAt,
+        error: null,
+        uiBuild: pages === null ? null : folder.revision,
+      };
       // Recording the version is bookkeeping around a load that has already succeeded, so it
       // cannot be inside the try that decides whether the load failed: a copy that ENOENTs on
       // a file rewritten since it was hashed would hand the caller back the tree disposed
@@ -625,6 +721,11 @@ export class WorkbenchService implements Workbenches {
       // disposed, because that only happens once the new one is in place.
       booted?.dispose();
       subscriptions?.close();
+      try {
+        pages?.discard();
+      } catch {
+        // Left aside; the next load of this revision clears it.
+      }
       next = {
         folder,
         tree: previous?.tree ?? null,
@@ -632,6 +733,7 @@ export class WorkbenchService implements Workbenches {
         tabs: previous?.tabs ?? [],
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,
+        uiBuild: previous?.uiBuild ?? null,
       };
     }
     if (this.disposed) {

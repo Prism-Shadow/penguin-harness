@@ -67,6 +67,7 @@ export function ProtocolSuffixMenu({
   detecting,
   tone,
   follow,
+  disabled = false,
   onPick,
 }: {
   /**
@@ -87,6 +88,8 @@ export function ProtocolSuffixMenu({
   /** `warn` paints the trigger amber (nothing matched / detection failed); the wording lives below the field. */
   tone: ProtocolDetectTone;
   follow?: ProtocolFollowOption | undefined;
+  /** Closed to picks: a request that speaks the current protocol is running (the add-group import's fetch or save). */
+  disabled?: boolean;
   onPick: (clientType: ProtocolClientType) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -114,9 +117,11 @@ export function ProtocolSuffixMenu({
           aria-label={`${S.models.protocol}: ${name}`}
           data-tooltip={S.models.protocolTriggerTitle(name)}
           data-tooltip-extra
+          disabled={disabled}
           onClick={() => setOpen((v) => !v)}
           className={
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +
+            "disabled:pointer-events-none disabled:opacity-60 " +
             "hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:hover:bg-gray-800 " +
             (tone === "warn"
               ? `${toneInk.attention} hover:text-amber-700 dark:hover:text-amber-300`
