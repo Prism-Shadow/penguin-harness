@@ -3715,13 +3715,27 @@ Scenarios:
       `Steering queued — delivered with the next turn: ${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "User steering",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "Mid-run send mode",
     steerModeSteer: "Steer",
     steerModeSteerHint: "Steer now: delivered to the running agent with the next turn",
     steerModeFollowUp: "Queue",
     steerModeFollowUpHint:
       "Queue a follow-up: sent automatically as a new message when this run finishes",
+    steerModeInterrupt: "Interrupt",
+    steerModeInterruptHint:
+      "Interrupt this run: stop it and send the message right after the turn it cut",
+    interruptPlaceholder: "Interrupt and send — the message follows the turn it cuts",
+    interruptPlaceholderShort: "Interrupt and send…",
+    interruptSend: "Interrupt and send",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `Interrupting — sent next: ${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "Interrupt",
+    /** Its tooltip. */
+    interruptQueuedTitle: "Stop this run and send this message now",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "That message already went out; there is nothing to interrupt.",
     followUpPlaceholder: "Queue as the next message — sent automatically when this run finishes",
     followUpPlaceholderShort: "Queue as the next message…",
     followUpSend: "Queue as the next message",

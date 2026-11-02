@@ -23,6 +23,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   CostParts,
+  InterruptRequest,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
@@ -1595,6 +1596,56 @@ export function ChatPage() {
     [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
+  // Interrupt, then send: post the full input with `interrupt` — a busy session stops its run
+  // and sends this right after the turn it cut (the abort's carry-over goes out ahead of it,
+  // with the undelivered steering), an idle one just starts it. Same success contract as the
+  // queue: the input area clears the draft on true.
+  const onInterruptSend = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
+  const interruptWaiting = useCallback(
+    async (target: InterruptRequest): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postInterrupt(selected.sessionId, target);
+        return true;
+      } catch (e) {
+        toastError(
+          e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
+            ? S.chat.interruptAlreadySent
+            : apiErrorText(e),
+        );
+        return false;
+      }
+    },
+    [selected],
+  );
+  const onInterruptFollowUp = useCallback(
+    (followUpId: string) => interruptWaiting({ followUpId }),
+    [interruptWaiting],
+  );
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
+  );
+
   // Mid-run steering: the message is queued on the server and delivered between turns as a
   // standalone `[user_steering]` user message followed by its images (visible once they
   // arrive over SSE / from the Trace); file attachments land in the Session scratchpad and
@@ -2243,6 +2294,9 @@ export function ChatPage() {
       queuedFollowUps={stream.queuedFollowUps}
       pendingFollowUps={stream.pendingFollowUps}
       onRecallFollowUp={onRecallFollowUp}
+      onInterruptSend={onInterruptSend}
+      onInterruptFollowUp={onInterruptFollowUp}
+      onInterruptSteering={onInterruptSteering}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}

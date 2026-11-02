@@ -1151,6 +1151,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
+    // the queue or open a goal, which never queues.
+    const interrupt = body.interrupt === true;
+    if (interrupt && (goal || body.queueIfBusy === true)) {
+      throw badRequest("interrupt cannot be combined with queueIfBusy or goal.");
+    }
     // A person starting a run is who it acts for; the API token is an agent (or a tool) on
     // somebody's behalf, and leaves the Session's driver as it was.
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
@@ -1196,7 +1202,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // running, without queueIfBusy — never writes bytes it would then have to take back. The
     // authoritative check still runs under the Session lock inside startTask; this one is
     // lock-free and may pass on a race, which the cleanup below covers.
-    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy });
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
@@ -1214,6 +1220,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
+        interrupt,
         // Original content, kept while the input waits in the follow-up queue so a recall
         // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
@@ -1337,6 +1344,24 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const { recall } = deps.manager.recallFollowUp(row.sessionId, pathParam(c, "followUpId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Send one waiting message now: the queued follow-up `followUpId` names, or the undelivered
+  // steering message `steerId` names, goes to the head of the queue and the run is aborted,
+  // so it starts as soon as the run settles. Exactly one of the two ids (400 otherwise); 409
+  // follow_up_started / not_pending when that message is no longer waiting.
+  app.post("/:sessionId/interrupt", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const { followUpId, steerId } = body;
+    if (typeof followUpId === "string" && steerId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { followUpId });
+    } else if (typeof steerId === "string" && followUpId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { steerId });
+    } else {
+      throw badRequest("Name exactly one waiting message: followUpId or steerId (a string).");
+    }
+    return c.body(null, 202);
   });
 
   // The Session's most recent goal run, read from the goal plugin's file in its scratchpad

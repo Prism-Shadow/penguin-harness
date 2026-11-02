@@ -78,7 +78,7 @@ Drag files onto the conversation or the composer, on the chat page or the draft 
 
 - While the drag is over that area, a "Drop files to attach" overlay covers it. Dragging text, or anything that is not a file, is ignored.
 - Release to attach the whole batch. Images go the same way as pasted images and everything else becomes an attachment, with the same checks and messages as the + menu.
-- Dropping works while a Task runs; the attachments then follow the [mid-run send mode](#steer-or-queue-a-message).
+- Dropping works while a Task runs; the attachments then follow the [mid-run send mode](#steer-queue-or-interrupt).
 - In goal mode, dropped images are attached and files are refused with a notice.
 
 Only the chat area attaches. Dropping a file on the sidebar, the top bar, another panel or a page without a composer does nothing, and the browser does not navigate away to the file. The Files panel is the other drop target, and it uploads into the Workspace instead; see [Files panel](/files). The Files panel can also add a file, a directory or a selected passage to your message as a chip.
@@ -111,12 +111,13 @@ See [Goal mode](/goal-mode).
 
 While a Task runs, the composer stays live and the toolbar keeps a single action button. With an empty composer it is **Stop**, which ends the Task; it also stops a running compaction.
 
-### Steer or queue a message
+### Steer, queue or interrupt
 
 When you type while a Task runs, the button sends according to the **Mid-run send mode** at the bottom of the + menu. The choice is remembered in this browser.
 
 - **Steer** (the default): the button reads **Send to the running agent**. Your text, images and files reach the agent with its next turn, and the message shows as **User steering**.
 - **Queue**: the button reads **Queue as the next message**. The server holds the message and sends it as an ordinary new message when the run finishes. Until then, a line above the composer shows each queued message ("Follow-up queued — sent when this run finishes: …"). The queue survives a page reload.
+- **Interrupt**: the button reads **Interrupt and send**. The run stops at once and the message goes out right after the turn it cut, carrying whatever the agent had done and written so far. Steering that had not been delivered yet comes back to the composer, as it does on **Stop**. While the run winds down, a line above the composer reads "Interrupting — sent next: …".
 
 Some drafts cannot be steered:
 
@@ -124,9 +125,11 @@ Some drafts cannot be steered:
 - With a staged `/agent` pick, sending opens the new conversation right away.
 - With a staged `/model` pick, sending waits until the turn finishes. The button stays **Stop**, and a line above the composer explains the wait.
 
-### Recall a message
+### Recall a message or send it now
 
 A steering message that has not reached the agent yet ("Steering queued — delivered with the next turn: …") and each queued follow-up end in a **Recall** button, a curved arrow. It puts the message back into the composer, in front of what you have typed, attachments included, so you can edit and send it again.
+
+Before the Recall button sits an **Interrupt** text link. It works like sending in Interrupt mode: the run stops and the message goes out right away.
 
 - A steering message that already reached the agent cannot be recalled, and neither can a follow-up that has started.
 - When the run ends before a steering message is delivered, for example because you pressed **Stop** while a tool was running, the message returns to the composer by itself, attachments and all.
