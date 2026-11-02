@@ -11,7 +11,10 @@ alongside the application inside the release archives. The fonts are part of the
 the build takes the MiSans files from this repository and copies every other font out of an npm
 dependency. The web assets ship wherever the Web App does, and that includes npm:
 `@prismshadow/penguin-cli` depends on `@prismshadow/penguin-server`, whose package carries them as
-`web-dist/`. Installing from npm therefore bundles the fonts, but none of those programs.
+`web-dist/`. Installing from npm therefore bundles the fonts, but none of those programs. The UI
+package, `@prismshadow/penguin-ui`, carries the same font files on npm too: KaTeX's in
+`dist/assets/` beside its stylesheet, the others in `dist/fonts/` for its optional `fonts.css`,
+each with its licence text in a `LICENSES/` directory beside it.
 
 What earns an entry is a third-party work redistributed **as its own file**, or third-party code
 **adapted into this repository's own source**, whose license asks for its notice to go with every
