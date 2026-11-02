@@ -3722,12 +3722,12 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入 GDPEVO-CRM 评测集",
-        desc: "导入 GDPEVO-CRM 的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
+        label: "导入 GDPEVO Essential 服务工单处理评测集",
+        desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
-          "使用 `benchmark-design` 技能导入 GDPEVO-CRM 评测集：" +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-crm-train ，" +
-          "配对的测试集一并导入。本 Project 已经有了就直接告诉我，不要覆盖。",
+          "用 `benchmark-design` 导入训练集及配对测试集：" +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train ，" +
+          "本项目已有则告知，不要覆盖。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",

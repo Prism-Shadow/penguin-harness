@@ -5,8 +5,8 @@
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  * A new Project also starts with its Benchmarks — the example and the shipped packages, written
- * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
- * as builtin, each with a date version and each case statement saying how the case is run. A
+ * once when it is created — which the Benchmark API lists with their packaged metadata
+ * and each case statement saying how the case is run. A
  * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
  * missing ones.
  */
@@ -17,6 +17,7 @@ import {
   benchmarksDir,
   libraryPlugin,
   loadPreinstalledPlugins,
+  readBenchmarkManifest,
   readBuiltinBenchmarks,
 } from "@prismshadow/penguin-core";
 import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
@@ -144,7 +145,7 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the shipped packages, listed as plain published Benchmarks whose statements say how each case is run", async () => {
+  it("a new Project, initial or created, comes with the example and the shipped packages, keeping their metadata and statements", async () => {
     // The one scenario that reads the shipped catalog whole, on an app that writes it as
     // production does (createTestApp leaves the built-ins out unless asked).
     const packages = await readBuiltinBenchmarks();
@@ -167,17 +168,16 @@ describe("built-in Agent provisioning", () => {
           "example-benchmark",
           ...builtins.map((b) => b.id),
         ]);
-        for (const bench of [example, ...builtins]) {
-          // Seeded, at a revision of their own.
-          expect(bench.origin, bench.id).toEqual({ kind: "builtin" });
-          expect(bench.version, bench.id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-        }
+        expect(example.origin).toEqual({ kind: "builtin" });
+        expect(example.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
         for (const bench of builtins) {
-          // Read like any Benchmark: nothing in the summary sets a built-in apart.
-          expect(Object.keys(bench).sort(), bench.id).toEqual(Object.keys(example).sort());
-          // Ready to evaluate, and never evaluated: no baseline ships with them.
-          expect(bench.status).toBe("published");
-          expect(bench.runs).toBe(1);
+          const source = packages.find((p) => p.id === bench.id)!;
+          const manifest = (await readBenchmarkManifest(source.directory))!;
+          expect(bench.origin, bench.id).toEqual(manifest.origin);
+          expect(bench.version, bench.id).toBe(manifest.version);
+          expect(bench.status, bench.id).toBe(manifest.status);
+          expect(bench.runs, bench.id).toBe(manifest.runs);
+          // No baseline ships with a package.
           expect(bench.evaluations).toEqual([]);
           expect(bench.caseCount).toBeGreaterThan(0);
           const cases = (await (
@@ -192,7 +192,6 @@ describe("built-in Agent provisioning", () => {
             const statement = await (
               await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
             ).text();
-            const source = packages.find((p) => p.id === bench.id)!;
             expect(statement, c.id).toBe(
               await fs.readFile(path.join(source.directory, c.id, "statement/README.md"), "utf8"),
             );
