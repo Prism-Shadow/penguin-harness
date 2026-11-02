@@ -14,7 +14,7 @@
  * The session lands in `<root>/cli-session.json` (0600) rather than a shell's history.
  * Docs: /docs/cli § "penguin auth".
  */
-import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
+import { mintApiTokenOnceSeeded } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import {
@@ -224,9 +224,11 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       }
       const root = resolveRootOption(opts.root);
       // A session row written straight into web.db (auth-token.ts); no server needed, and safe
-      // while one runs. PENGUIN_WEB_DB honored as everywhere else, or the token would be
-      // minted into a file the live server never reads.
-      const result = mintApiToken(root, {
+      // while one runs. A server still starting is waited for (bounded) until it has seeded
+      // its accounts: a controller sends this the moment that machine's port answers, which
+      // is before the admin exists. PENGUIN_WEB_DB honored as everywhere else, or the token
+      // would be minted into a file the live server never reads.
+      const result = await mintApiTokenOnceSeeded(root, {
         userId: opts.userId,
         ...(process.env.PENGUIN_WEB_DB ? { dbPath: process.env.PENGUIN_WEB_DB } : {}),
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),

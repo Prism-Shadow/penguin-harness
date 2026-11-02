@@ -26,6 +26,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { errorBody } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { MachineAnswers } from "./answer-cache.js";
 import type { MachineEventHub } from "./event-hub.js";
 import type { MachineSockets } from "./machine-sockets.js";
 import { forwardToMachine } from "./proxy.js";
@@ -76,6 +77,8 @@ export class SessionForward {
       machines: SessionForwardMachines;
       index: SessionMachineIndex;
       relay: MachineSocketRelay;
+      /** The answers this generation keeps of its machines' reads (answer-cache.ts). */
+      answers?: MachineAnswers;
     },
   ) {}
 
@@ -89,8 +92,10 @@ export class SessionForward {
     request: Request,
     sessionId: string,
     projectIds: readonly string[],
+    /** Who asks: a read's kept answer is this caller's own (answer-cache.ts). */
+    caller?: { userId: string },
   ): Promise<Response | null> {
-    const { index, machines, relay } = this.deps;
+    const { index, machines, relay, answers } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
     const place = await index.resolve(sessionId, fleetOf);
@@ -116,6 +121,9 @@ export class SessionForward {
       target,
       relay,
       (id, outcome) => machines.noteApiSeen(id, outcome),
+      answers !== undefined && caller !== undefined
+        ? { answers, readerId: caller.userId }
+        : undefined,
     );
 
     if (answer.status === 401 || answer.status === 403) {
@@ -168,12 +176,17 @@ export abstract class MachineSessionForward extends Interface<Pick<SessionForwar
  */
 export function machineSessionForward(
   machines: SessionForwardMachines,
-  shared: { sockets: MachineSockets; events: MachineEventHub },
+  shared: { sockets: MachineSockets; events: MachineEventHub; answers?: MachineAnswers },
   log: (line: string) => void = () => undefined,
 ): SessionForward {
   const index = new SessionMachineIndex();
   shared.events.tap((machineId, data) => index.hear(machineId, data));
-  return new SessionForward({ machines, index, relay: new MachineSocketRelay(log, shared) });
+  return new SessionForward({
+    machines,
+    index,
+    relay: new MachineSocketRelay(log, shared),
+    ...(shared.answers !== undefined ? { answers: shared.answers } : {}),
+  });
 }
 
 /**
@@ -194,6 +207,7 @@ export function sessionForwardRoutes(deps: {
       c.req.raw,
       sessionId,
       deps.access.accessibleProjectIds(user.userId),
+      { userId: user.userId },
     );
     return answer ?? next();
   });
