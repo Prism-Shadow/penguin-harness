@@ -46,7 +46,12 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isModelMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -63,6 +68,7 @@ import type {
   PartialToolCallOutputPayload,
   PartialToolCallPayload,
   RequestEndPayload,
+  SessionMetaPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
@@ -486,6 +492,8 @@ export class StreamRenderer {
   private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
+  /** The Session the stream is of, as its last main-session session_meta named it: what tells a model switch's Trace handoff (it names this Session) from any other origin block. */
+  private sessionId: string | undefined;
 
   constructor(
     out: NodeJS.WritableStream = process.stdout,
@@ -732,6 +740,9 @@ export class StreamRenderer {
       const ms = Date.parse(msg.timestamp);
       if (Number.isFinite(ms)) this.taskFirstTsMs = ms;
     }
+    if (msg.type === "session_meta") {
+      this.sessionId = (msg.payload as SessionMetaPayload).session_id;
+    }
     if (isModelMessage(msg)) {
       const payload = msg.payload;
       switch (payload.type) {
@@ -765,6 +776,14 @@ export class StreamRenderer {
             if (steering !== null) {
               this.finishLine();
               writeSteeringLines(this.out, steering, this.t, this.c);
+              this.lastLineKey = null;
+            }
+            // And a model switch's Trace handoff (it streams right after the new context's
+            // session_meta): one line naming the file the new model reads the history from.
+            const handover = parseInPlaceModelSwitch(p.text, this.sessionId);
+            if (handover !== null) {
+              this.finishLine();
+              this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
           }

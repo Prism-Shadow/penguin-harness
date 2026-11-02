@@ -1919,18 +1919,23 @@ export function ChatPage() {
   // a new conversation instead). Re-picking the current model does nothing, and neither does a
   // pick that raced a Task starting (the picker is disabled then, and the server would refuse
   // it anyway); any other pick asks first, worded for what the switch will do: compact the
-  // context on the current model before moving on, or — right after a compaction or a switch,
-  // when there is nothing to compact — continue on the picked model from what is already held.
+  // context on the current model before moving on, hand the picked model the Trace path when
+  // the current one is unavailable, or — right after a compaction or a switch, when there is
+  // nothing to compact — continue on the picked model from what is already held.
   const onPickSessionModel = useCallback(
     (ref: ModelRefDto) => {
       if (!selected || sameModelRef(ref, selected)) return;
       if (sessionModelPickerDisabled(stream.taskState)) return;
       // Read at pick time: the model's items mutate in place. The live tail decides, behind
       // whatever window was backfilled above it.
-      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      const shape = switchContextShape(
+        [...stream.prefixItems, ...stream.model.items],
+        selected,
+        models,
+      );
       setModelSwitchAsk({ to: ref, shape });
     },
-    [selected, stream.taskState, stream.prefixItems, stream.model],
+    [selected, stream.taskState, stream.prefixItems, stream.model, models],
   );
 
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
@@ -1938,8 +1943,7 @@ export function ChatPage() {
   // the Session row once the new context's session_meta names the new model. 200 = the Session
   // never ran and switched inside the request: the row comes back with the response — under a
   // new id when the server had to rebuild a Session that left no Trace, which the page follows.
-  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
-  // is a toast.
+  // A refusal (409 busy / same model / target not configured / target unavailable) is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;
@@ -1957,8 +1961,8 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.session.sessionId);
         return;
       }
-      // Only a switch that compacts may say so; one that continues from a held summary runs
-      // no compaction and must not promise one.
+      // Only a switch that compacts may say so; one that continues from what is held, or hands
+      // over by Trace path, runs no compaction and must not promise one.
       toastInfo(
         ask.shape === "compact"
           ? S.chat.modelSwitchInSessionStarted(from, to)
@@ -2300,6 +2304,18 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
+  /**
+   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
+   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
+   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
+   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
+   * leading edge), and each of them showed through the page — the handle as a line that lit up
+   * under the pointer, took the cursor and resized the hidden dock.
+   */
+  const coveredByWorkbench =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
+      ? "invisible"
+      : "";
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -2309,8 +2325,9 @@ export function ChatPage() {
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
     <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
-          chat (which stays mounted, so its state survives a look at the page) below the
-          strip; the strip is absent when the Agent has no workbench with a UI. */}
+          chat (which stays mounted, so its state survives a look at the page, but is not
+          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
+          no workbench with a UI. */}
       <WorkbenchTabStrip
         tabs={workbenchTabs.tabs}
         notices={workbenchTabs.notices}
@@ -2337,7 +2354,9 @@ export function ChatPage() {
       {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
           nothing of the conversation is read until it is unarchived. */}
       {archivedRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
@@ -2345,7 +2364,9 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
@@ -2646,7 +2667,7 @@ export function ChatPage() {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
@@ -2931,12 +2952,13 @@ export function ChatPage() {
 
       {/* In-conversation model switch confirmation (the session toolbar's model picker), two
           choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
-          always compacts on the current model first, and a failed compaction keeps it. The two
-          shapes with nothing to compact read "switch" instead: an empty transcript (the switch
-          is immediate) and a transcript ending in a completed compaction or a model switch (no
-          compaction runs; the conversation continues from what is already held). The session
-          can start running while the dialog is up (a queued follow-up, a schedule): the confirm
-          is then disabled and the body says why, exactly like the thinking dialog. */}
+          compacts on the current model first, and a failed compaction hands the history over
+          by Trace path. The shapes that compact nothing read "switch" instead: an empty
+          transcript (the switch is immediate), a transcript ending in a completed compaction or
+          a model switch (the conversation continues from what is already held), and a current
+          model that is unavailable (the picked model gets the Trace path). The session can
+          start running while the dialog is up (a queued follow-up, a schedule): the confirm is
+          then disabled and the body says why, exactly like the thinking dialog. */}
       <ConfirmModal
         open={modelSwitchAsk !== null}
         title={S.chat.modelSwitchInSessionTitle}
@@ -2961,7 +2983,9 @@ export function ChatPage() {
               ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
               : modelSwitchAsk.shape === "compacted"
                 ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
-                : S.chat.modelSwitchInSessionBody(
+                : (modelSwitchAsk.shape === "handover"
+                    ? S.chat.modelSwitchInSessionHandoverBody
+                    : S.chat.modelSwitchInSessionBody)(
                     modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
                     modelDisplay(modelSwitchAsk.to),
                   )}

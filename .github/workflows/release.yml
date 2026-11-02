@@ -684,6 +684,7 @@ jobs:
           V="${TAG#v}"
           cp LICENSE packages/amsp/LICENSE
           cp LICENSE packages/core/LICENSE
+          cp LICENSE packages/ui/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
           for dir in plugins/*/; do
@@ -712,8 +713,11 @@ jobs:
             pnpm --filter "$name" publish --access public --no-git-checks
           done
           # Full names, in dependency order: @prismshadow/amsp is not a penguin-* name, and the
-          # server depends on it, so it goes first.
-          for name in @prismshadow/amsp @prismshadow/penguin-core @prismshadow/penguin-server @prismshadow/penguin-cli; do
+          # server depends on it, so it goes first. penguin-ui depends on none of them at run time
+          # (it bundles the part of core it uses); it goes before the server, which carries its
+          # Workbench runtime inside web-dist/. Only pnpm applies its publishConfig, which points
+          # its exports at dist/ instead of src/.
+          for name in @prismshadow/amsp @prismshadow/penguin-core @prismshadow/penguin-ui @prismshadow/penguin-server @prismshadow/penguin-cli; do
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue

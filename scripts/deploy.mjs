@@ -422,17 +422,22 @@ async function main() {
     log("reusing the existing web dist");
   } else {
     log("building the web dist…");
+    // The web build copies in the UI package's Workbench runtime, so that package builds first;
+    // on its own, because the extra args below are the web's.
+    const ui = ["--filter", "@prismshadow/penguin-ui", "build"];
     // Extra args reach the package's own `vite build`. Outside the package, vite would leave
     // the directory as it found it and warn; it is this run's own, so it is emptied.
     const build = ["--filter", "@prismshadow/penguin-web", "build"];
     if (webDist !== WEB_DIST) build.push("--outDir", webDist, "--emptyOutDir");
     const windows = process.platform === "win32";
-    execFileSync("pnpm", windows ? build.map(quoteForCmd) : build, {
-      cwd: ROOT,
-      stdio: "inherit",
-      // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
-      shell: windows,
-    });
+    for (const args of [ui, build]) {
+      execFileSync("pnpm", windows ? args.map(quoteForCmd) : args, {
+        cwd: ROOT,
+        stdio: "inherit",
+        // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
+        shell: windows,
+      });
+    }
   }
 
   log("compiling platform + cli…");

@@ -508,6 +508,8 @@ export const zh = {
     status: {
       connecting: "连接中",
       ready: "已连接",
+      /** The pty is fine; this page's socket dropped and is being reattached. */
+      reconnecting: "重连中",
       exited: "已退出",
       error: "连接错误",
     },
@@ -2158,10 +2160,22 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后获取其模型列表，只导入你勾选的模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
     groupModeCreate: "仅新增分组",
     groupModeImport: "导入模型",
-    groupImportAll: "批量导入模型",
+    /** The import's first action: list the endpoint's models into the pick list. */
+    groupImportFetch: "获取模型列表",
+    /** The import's second action, once the list is on screen: import the ticked models. */
+    groupImportPicked: (n: number): string => `导入 ${n} 个模型`,
+    /** The pick list's title, and the name of its rows. */
+    groupImportPickTitle: "选择要导入的模型",
+    /** Beside the title: ticked out of listed. */
+    groupImportPickCount: (picked: number, total: number): string => `已选 ${picked} / ${total}`,
+    /** The pick list's bulk actions; both act on the rows the filter leaves on screen. */
+    groupImportSelectAll: "全选",
+    groupImportSelectNone: "全不选",
+    /** The filter box over a long pick list: its placeholder and its accessible name. */
+    groupImportFilter: "按模型 id 筛选",
     groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
     groupImportKeyHint: "该端点的 API key（URL 不是厂商官方地址时必填）",
     groupImportListing: "正在获取模型列表…",
@@ -3379,13 +3393,16 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
-    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch always compacts on the current model first, and a failed compaction keeps it. */
+    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch compacts on the current model first while that model is available; a failed compaction, or a current model that is unavailable, hands the history over by Trace path instead. */
     modelSwitchInSessionTitle: "切换模型",
     modelSwitchInSessionConfirm: "压缩并切换",
     /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
     modelSwitchInSessionDirectConfirm: "切换",
     modelSwitchInSessionBody: (from: string, to: string): string =>
-      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则保持「${from}」。`,
+      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则改为把本对话的 Trace 文件路径交给「${to}」。`,
+    /** Body when the current model is unavailable (not configured, or no key): nothing is summarized, and the target gets the Trace path. */
+    modelSwitchInSessionHandoverBody: (from: string, to: string): string =>
+      `「${from}」当前不可用，不做摘要：将把本对话的 Trace 文件路径交给「${to}」，由它按需读取此前的历史。`,
     /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
     modelSwitchInSessionDirectBody: (to: string): string =>
       `当前上下文没有内容，将直接切换到「${to}」。`,
@@ -3720,12 +3737,12 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入 GDPEVO-CRM 评测集",
-        desc: "导入 GDPEVO-CRM 的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
+        label: "导入 GDPEVO Essential 服务工单处理评测集",
+        desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
-          "使用 `benchmark-design` 技能导入 GDPEVO-CRM 评测集：" +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-crm-train ，" +
-          "配对的测试集一并导入。本 Project 已经有了就直接告诉我，不要覆盖。",
+          "用 `benchmark-design` 导入训练集及配对测试集：" +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train ，" +
+          "本项目已有则告知，不要覆盖。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -4220,6 +4237,14 @@ Benchmark：
     compactionResult: "压缩结果",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
+    /** The same marker when the switch handed the history over by Trace path instead of a summary. */
+    modelChangedByTrace: (from: string, to: string): string =>
+      `模型已切换 · ${from} → ${to} · 经 Trace 交接`,
+    /** Its hover: why there is no summary, and the file the new model reads the history from. */
+    modelChangedByTraceHint: (tracePath?: string): string =>
+      tracePath
+        ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
+        : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -4905,16 +4930,16 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveConfirmTitle: "保存文件",
-    saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
+    /** The editor's ✓: writes the draft and goes back to the preview (the save shortcut saves and stays). */
+    saveAndClose: "保存并退出",
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
     saveTooLarge: (mb: number): string => `内容超过 ${mb}MB 写入上限，未保存`,
     discardTitle: "放弃未保存的修改",
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
-    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
-    stopEditing: "退出编辑",
+    /** The editor's ×: drops what was typed and goes back to the preview, without asking — the button is the discard. */
+    discardChanges: "放弃更改",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",

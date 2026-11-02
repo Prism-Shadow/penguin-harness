@@ -63,7 +63,11 @@ import {
   isTaskRecord,
   normalizeSessionSource,
 } from "@prismshadow/amsp";
-import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
+import {
+  parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -392,6 +396,12 @@ export interface ModelChangeItem {
   to: { provider: string; modelId: string };
   /** The timestamp of the `session_meta` that named the new model (ms). */
   tsMs?: number;
+  /**
+   * The switch handed the history over by its Trace path instead of a summary: the
+   * `[model_switch_from]` handoff naming this Session that followed the meta (folded into this
+   * marker rather than shown as a message), with the file it named.
+   */
+  handover?: { tracePath?: string };
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -1322,6 +1332,21 @@ function handleComplete(
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // The Trace handoff an in-session model switch opened the context with instead of a
+        // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
+        // conversation's names its source): no bubble and no Task either; it marks the switch.
+        const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
+        if (handover !== null) {
+          touchTask(model, timestamp);
+          const marker = model.items.findLast(
+            (i): i is ModelChangeItem => i.kind === "model_change",
+          );
+          if (marker) {
+            marker.handover =
+              handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
+          }
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):

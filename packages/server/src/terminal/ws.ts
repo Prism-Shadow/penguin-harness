@@ -30,21 +30,6 @@ import { API_SOCKET_DEFLATE, compressesApiSocket } from "../socket/compression.j
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
-/**
- * Per-viewer backpressure watermarks. `ws.send` queues without limit when the peer cannot
- * drain, so a viewer more than HIGH_WATER behind stops receiving live output — the bytes
- * keep feeding the server emulator, nothing of the session is lost — and once its socket
- * drains below LOW_WATER it is repainted with one fresh Restore frame (the same
- * self-contained repaint an attach uses) and live output resumes. Skipping ahead beats
- * both alternatives: replaying megabytes the viewer could only fast-forward through, or
- * disconnecting it (the client treats a closed stream as a dead pane, not a retry). The
- * high watermark is therefore a LAG bound — how far behind a viewer may fall before it is
- * fast-forwarded — and doubles as the per-viewer memory bound.
- */
-const BACKPRESSURE_HIGH_WATER = 1024 * 1024;
-const BACKPRESSURE_LOW_WATER = 64 * 1024;
-const BACKPRESSURE_POLL_MS = 250;
-
 export interface TerminalWebSocketDeps {
   /** The booted platform owns the terminals; the runtime asks it per upgrade. */
   hmr: ServerHmrHost;
@@ -57,10 +42,31 @@ export interface TerminalWebSocketDeps {
 }
 
 export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSocketDeps): void {
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  const wss = new WebSocketServer({
+    noServer: true,
+    /**
+     * Terminal output is the most compressible traffic this server has — repeated prompts,
+     * repeated SGR runs, whole repainted screens — and on a phone the bytes are the scarce
+     * thing, so it is worth a little CPU here. The settings keep that little: the window is
+     * capped so a per-socket deflate context costs kilobytes rather than the default's
+     * hundreds, and the client's context is not kept, because a browser's uplink here is a
+     * keystroke at a time and has nothing to reuse. Small frames are left uncompressed by
+     * the sender itself, per message (terminal/stream.ts), not by a threshold here: ws only
+     * applies a config `threshold` to a direction that negotiated no_context_takeover, and
+     * this server keeps its context — a shared context is what compresses repeated output
+     * best.
+     */
+    perMessageDeflate: {
+      clientNoContextTakeover: true,
+      serverMaxWindowBits: 13,
+      zlibDeflateOptions: { level: 3, memLevel: 7 },
+      concurrencyLimit: 10,
+    },
+  });
   // The API socket between servers, or to a browser on another computer, compresses its
-  // frames (socket/compression.ts); a terminal's stream and this computer's browser do not.
+  // frames, each on its own (socket/compression.ts); this computer's browser does not.
   const compressed = new WebSocketServer({ noServer: true, perMessageDeflate: API_SOCKET_DEFLATE });
+  const plain = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -116,7 +122,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(authed.user.userId);
-          const server = compressesApiSocket(req.headers.origin) ? compressed : wss;
+          const server = compressesApiSocket(req.headers.origin) ? compressed : plain;
           return server.handleUpgrade(req, socket, head, (ws) => {
             platform.api.attachStream?.(ws, ref, streamUrl, deps.log);
           });
