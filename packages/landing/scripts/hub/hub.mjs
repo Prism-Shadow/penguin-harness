@@ -1,0 +1,148 @@
+/**
+ * The whole hub as the pages see it: the readers' records joined across sources (a leaderboard
+ * names its algorithms by plugin, a benchmark lists the leaderboards that measure on it), split
+ * into the list pages' summaries and one record per detail page (src/lib/hub/types.ts).
+ */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readBenchmarks, readLeaderboards, readPlugins } from "./read.mjs";
+import { benchmarkRepo } from "./source.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+export const PLUGINS_DIR = join(HERE, "..", "..", "..", "..", "plugins");
+/** Leaderboards written to RFC-0005 that stand in until penguin-harness-benchmark has its own. */
+export const PLACEHOLDER_DIR = join(HERE, "..", "..", "hub-placeholder", "leaderboards");
+
+const link = ({ id, title, titleZh }) => (titleZh ? { id, title, titleZh } : { id, title });
+
+/** Read every source and join them. `refresh` re-clones the benchmark repository. */
+export function loadHub({
+  refresh = false,
+  repo = benchmarkRepo({ refresh }),
+  pluginsDir = PLUGINS_DIR,
+  placeholderDir = PLACEHOLDER_DIR,
+} = {}) {
+  const plugins = readPlugins(pluginsDir);
+  const benchmarks = readBenchmarks(repo);
+  const leaderboards = readLeaderboards(repo, placeholderDir);
+  const pluginById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const benchmarkById = new Map(benchmarks.map((benchmark) => [benchmark.id, benchmark]));
+
+  const pluginDetails = Object.fromEntries(
+    plugins.map((plugin) => [plugin.id, { ...pluginSummary(plugin), ...plugin }]),
+  );
+
+  const leaderboardDetails = Object.fromEntries(
+    leaderboards.map((board) => {
+      const entries = Object.values(board.charts).flatMap((chart) => chart.entries);
+      const algorithms = [...new Set(entries.map((entry) => entry.algorithm).filter(Boolean))].map(
+        (id) => link(pluginById.get(id) ?? { id, title: id }),
+      );
+      const taskTitles = {};
+      for (const { benchmarkId, taskIds } of board.charts.waffle?.tasks ?? []) {
+        for (const taskId of taskIds) {
+          const task = benchmarkById
+            .get(benchmarkId)
+            ?.tasks.find((candidate) => candidate.id === taskId);
+          if (task) taskTitles[`${benchmarkId}/${taskId}`] = task.title;
+        }
+      }
+      const { charts, benchmarks: used, ...rest } = board;
+      return [
+        board.id,
+        {
+          ...rest,
+          entryCount: new Set(entries.map((entry) => entry.key)).size,
+          benchmarkCount: used.length,
+          charts,
+          benchmarks: used.map((id) => link(benchmarkById.get(id) ?? { id, title: id })),
+          algorithms,
+          taskTitles,
+        },
+      ];
+    }),
+  );
+
+  const benchmarkDetails = Object.fromEntries(
+    benchmarks.map((benchmark) => [
+      benchmark.id,
+      {
+        ...benchmarkSummary(benchmark),
+        ...benchmark,
+        leaderboards: leaderboards
+          .filter((board) => board.benchmarks.includes(benchmark.id))
+          .map(link),
+      },
+    ]),
+  );
+
+  return {
+    index: {
+      plugins: plugins.map(pluginSummary),
+      benchmarks: benchmarks.map(benchmarkSummary),
+      leaderboards: Object.values(leaderboardDetails).map(leaderboardSummary),
+    },
+    details: {
+      plugin: pluginDetails,
+      benchmark: benchmarkDetails,
+      leaderboard: leaderboardDetails,
+    },
+  };
+}
+
+function pluginSummary(plugin) {
+  const {
+    description,
+    descriptionZh,
+    license,
+    references,
+    quickStart,
+    readme,
+    sourceUrl,
+    ...rest
+  } = plugin;
+  const { skills, hooks, workbenches, ...summary } = rest;
+  return {
+    ...summary,
+    skillCount: skills.length,
+    hookCount: hooks.length,
+    workbenchCount: workbenches.length,
+  };
+}
+
+function benchmarkSummary(benchmark) {
+  const { references, tasks, sourceUrl, ...summary } = benchmark;
+  const limits = tasks.map((task) => task.budget.timeout);
+  return {
+    ...summary,
+    taskCount: tasks.length,
+    maxTimeout: limits.every((limit) => typeof limit === "number") ? Math.max(...limits) : null,
+  };
+}
+
+function leaderboardSummary(board) {
+  return {
+    id: board.id,
+    title: board.title,
+    ...(board.titleZh ? { titleZh: board.titleZh } : {}),
+    author: board.author,
+    kinds: Object.keys(board.charts),
+    benchmarks: board.benchmarks.map((benchmark) => benchmark.id),
+    entryCount: board.entryCount,
+    benchmarkCount: board.benchmarkCount,
+    updated: board.updated,
+  };
+}
+
+/** The site routes of the hub pages, for the static shells and the sitemap. */
+export function hubRoutes(hub) {
+  const { index } = hub;
+  return [
+    "/plugins/",
+    ...index.plugins.map((plugin) => `/plugins/${plugin.id}/`),
+    "/benchmarks/",
+    ...index.benchmarks.map((benchmark) => `/benchmarks/${benchmark.id}/`),
+    "/leaderboards/",
+    ...index.leaderboards.map((board) => `/leaderboards/${board.id}/`),
+  ];
+}

@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -33,6 +37,11 @@
       "skills": [
         "skilladam-rsi-toolkit"
       ]
-    }
+    },
+    "title": "SkillAdam RSI Toolkit",
+    "title_zh": "SkillAdam 自进化工具包",
+    "references": [
+      "https://arxiv.org/abs/2609.08944"
+    ]
   }
 }

@@ -26,6 +26,7 @@ import {
   blogRoutes,
   docsRoutes,
   galleryRoutes,
+  hubRoutes,
   pageRoutes,
 } from "../packages/landing/scripts/site-routes.mjs";
 
@@ -133,6 +134,7 @@ const routes = [
   { route: "/" },
   ...pageRoutes(),
   ...blogRoutes(),
+  ...hubRoutes(),
   ...docsRoutes(),
   ...galleryRoutes(),
 ];
