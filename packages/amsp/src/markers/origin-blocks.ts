@@ -360,14 +360,11 @@ export interface ModelSwitchOrigin {
  * payloads and provider `fidelity` byte-for-byte when history is replayed, which cannot cross
  * models — so the model reads the Trace file itself when it needs the context.
  *
- * `inPlace` words the same block for an in-session switch that could not summarize (core's
- * Trace handoff): the conversation is this one, and `session` names it — which is how a reader
- * tells the two apart, since the fields are the same.
+ * An in-session switch that could not summarize (core's Trace handoff) opens its next context
+ * with this same block, word for word: there `session` names the Session itself, which is how a
+ * reader tells the two apart (see `parseInPlaceModelSwitch`).
  */
-export function buildModelSwitchMessage(
-  origin: ModelSwitchOrigin,
-  opts: { inPlace?: boolean } = {},
-): string {
+export function buildModelSwitchMessage(origin: ModelSwitchOrigin): string {
   const title = origin.sessionTitle ? ` (${origin.sessionTitle})` : "";
   const lines = [`session: ${origin.sessionId}${title}`];
   if (origin.tracePath) lines.push(`trace: ${origin.tracePath}`);
@@ -377,9 +374,7 @@ export function buildModelSwitchMessage(
   return markerBlock(
     MARKER_TAGS.modelSwitchFrom,
     [
-      opts.inPlace
-        ? "The user switched this conversation to a different model without a summary of what came before: the earlier part of this conversation is NOT in your context. When you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results); the conversation's earlier trace files sit beside it, numbered before it."
-        : "The user switched models: this conversation continues an earlier conversation, now on a different model. Its origin is listed below and the user's message, if any, follows. The earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results).",
+      "The user switched models: you continue the conversation listed below, now on a different model. Its earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results). Earlier trace files of that conversation, if any, have the same name with a lower number, in the same or an earlier date folder. The user's message, if any, follows.",
       ...lines,
     ].join("\n"),
   );
@@ -412,9 +407,9 @@ export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null 
 }
 
 /**
- * The origin of an in-session model switch's Trace handoff (see `buildModelSwitchMessage`'s
- * `inPlace`) when `text` is one, for the Session `sessionId`: a whole `[model_switch_from]`
- * block naming that Session itself. A `/model` new conversation's block names the Session it
+ * The origin of an in-session model switch's Trace handoff (see `buildModelSwitchMessage`)
+ * when `text` is one, for the Session `sessionId`: a whole `[model_switch_from]` block naming
+ * that Session itself. A `/model` new conversation's block names the Session it
  * came from instead, so it is null here. Render and outline layers read the handoff as part of
  * the switch rather than as a Prompt.
  */

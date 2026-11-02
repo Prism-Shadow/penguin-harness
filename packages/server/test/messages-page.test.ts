@@ -907,10 +907,12 @@ describe("messages windowed reads", () => {
         compactionEnd({ reason: "manual", mode: "summarize", status: "fatal" }),
       ),
     ]);
-    const handoff = buildModelSwitchMessage(
-      { sessionId: S, tracePath: shard1, prevProvider: "custom", prevModelId: "m1" },
-      { inPlace: true },
-    );
+    const handoff = buildModelSwitchMessage({
+      sessionId: S,
+      tracePath: shard1,
+      prevProvider: "custom",
+      prevModelId: "m1",
+    });
     await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
       sessionMeta(metaPayload({ provider: "other", model_id: "m2" })),
       at("2026-07-20T10:02:05.000Z", userText(handoff)),

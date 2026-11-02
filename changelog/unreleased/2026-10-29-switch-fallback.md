@@ -7,7 +7,7 @@
 
 [中文版](2026-10-29-switch-fallback.zh.md)
 
-The in-session model switch kept compacting on the current model first and continuing on the target with the summary. When the summary could not be had, the switch completed by Trace handoff instead of staying on the old model: the next context opened on the target with a user message that was one `[model_switch_from]` block, the one the `/model` handoff uses, naming the Session itself, the absolute path of the left context's Trace file, the Workspace and the previous model pair, and telling the model to read that file when it needed the history. Only a stopped compaction kept the old model.
+The in-session model switch kept compacting on the current model first and continuing on the target with the summary. When the summary could not be had, the switch completed by Trace handoff instead of staying on the old model: the next context opened on the target with a user message that was one `[model_switch_from]` block, the `/model` handoff's block word for word, naming the Session itself, the absolute path of the left context's Trace file, the Workspace and the previous model pair, and telling the model to read that file, and the conversation's earlier files, when it needed the history; both switches now use that one wording. Only a stopped compaction kept the old model.
 
 ## When the switch hands over
 

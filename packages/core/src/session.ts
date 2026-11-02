@@ -1075,23 +1075,20 @@ export class Session {
 
   /**
    * The handoff a model switch opens the next context with when it cannot summarize: the
-   * `/model` origin block, worded for this same conversation, naming the Trace file of the
-   * context being left (the running file, on the machine the Session runs on), the Workspace
-   * and the model left behind. A Session without a Trace sink has no file to name.
+   * `/model` origin block, word for word, naming this Session, the Trace file of the context
+   * being left (the running file, on the machine the Session runs on), the Workspace and the
+   * model left behind. A Session without a Trace sink has no file to name.
    */
   private switchHandoff(from: ModelRef): AmspRecord {
     const tracePath = this.trace?.currentPath?.();
     return userText(
-      buildModelSwitchMessage(
-        {
-          sessionId: this.sessionId,
-          ...(tracePath !== undefined ? { tracePath } : {}),
-          workspace: this.workspaceDir,
-          prevProvider: from.provider,
-          prevModelId: from.model_id,
-        },
-        { inPlace: true },
-      ),
+      buildModelSwitchMessage({
+        sessionId: this.sessionId,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        workspace: this.workspaceDir,
+        prevProvider: from.provider,
+        prevModelId: from.model_id,
+      }),
     );
   }
 

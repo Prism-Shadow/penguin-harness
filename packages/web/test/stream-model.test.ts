@@ -555,10 +555,11 @@ describe("approvals and events", () => {
     const onModel = (modelId: string) => sessionMeta({ ...meta("s1").payload, model_id: modelId });
     const handoff = (sessionId: string) =>
       userText(
-        buildModelSwitchMessage(
-          { sessionId, tracePath: "/data/traces/s1_001.jsonl", prevModelId: "a-1" },
-          { inPlace: true },
-        ),
+        buildModelSwitchMessage({
+          sessionId,
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: "a-1",
+        }),
       );
     const m = createStreamModel();
     pushMessage(m, onModel("a-1"));

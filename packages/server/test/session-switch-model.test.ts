@@ -170,10 +170,11 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
         // No summary: the handoff names this Session's file instead.
         if (status !== "completed") {
           yield userText(
-            buildModelSwitchMessage(
-              { sessionId: SID, tracePath: "/tmp/traces/a.jsonl", ...prev(model) },
-              { inPlace: true },
-            ),
+            buildModelSwitchMessage({
+              sessionId: SID,
+              tracePath: "/tmp/traces/a.jsonl",
+              ...prev(model),
+            }),
           );
         }
         return "completed";

@@ -743,16 +743,13 @@ describe("session fork", () => {
       "2026-08-14",
       `${SID}_001.jsonl`,
     );
-    const handoff = buildModelSwitchMessage(
-      {
-        sessionId: SID,
-        tracePath: sourceFile,
-        workspace,
-        prevProvider: "custom",
-        prevModelId: "fork-model",
-      },
-      { inPlace: true },
-    );
+    const handoff = buildModelSwitchMessage({
+      sessionId: SID,
+      tracePath: sourceFile,
+      workspace,
+      prevProvider: "custom",
+      prevModelId: "fork-model",
+    });
     await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 2, [
       at(
         "2026-08-14T10:01:05.000Z",

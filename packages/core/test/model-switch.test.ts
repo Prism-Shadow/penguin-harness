@@ -1556,7 +1556,7 @@ describe("in-session model switch", () => {
     });
     const resumed = resumeTrace([sessionMeta(metaFor(MODEL_A)), userText(sourceBlock)]);
     expect(resumed.openingSummary).toBeUndefined();
-    const inPlace = buildModelSwitchMessage({ sessionId: SESSION_ID }, { inPlace: true });
+    const inPlace = buildModelSwitchMessage({ sessionId: SESSION_ID });
     const handedOver = resumeTrace([sessionMeta(metaFor(MODEL_A)), userText(inPlace)]);
     expect(handedOver.openingSummary).toBe(handedOver.carryOver[0]);
 

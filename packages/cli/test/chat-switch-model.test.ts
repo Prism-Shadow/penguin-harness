@@ -133,10 +133,7 @@ function streamedSwitch(status: "completed" | "fatal" | "aborted", errorMessage?
         ...(status === "fatal"
           ? [
               userText(
-                buildModelSwitchMessage(
-                  { sessionId: session.sessionId, tracePath: TRACE_FILE },
-                  { inPlace: true },
-                ),
+                buildModelSwitchMessage({ sessionId: session.sessionId, tracePath: TRACE_FILE }),
               ),
             ]
           : []),
