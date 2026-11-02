@@ -14,8 +14,12 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { buffer } from "node:stream/consumers";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { answerOf } from "../socket/stream-answer.js";
+import { MachineAnswers, keepable, keptResponse } from "./answer-cache.js";
+import type { AnswerReader, KeptAnswer } from "./answer-cache.js";
+import { ASKED_ENCODINGS, decodableEncoding, decodedBody } from "./answer-decoding.js";
 import type { MachineEventHub } from "./event-hub.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 import type { MachineSockets } from "./machine-sockets.js";
@@ -91,8 +95,25 @@ const DROP_REQUEST_HEADERS = new Set([
   "keep-alive",
   "upgrade",
   ADOPTED_AT_HEADER,
+  // The caller's link is not this one: the encoding asked of the machine is this server's own
+  // (answer-decoding.ts), and so is the validator (answer-cache.ts). What the caller holds is
+  // answered here, by this server's own rule (http/json-validators.ts).
+  "accept-encoding",
+  "if-none-match",
+  "if-modified-since",
 ]);
-const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "keep-alive"]);
+/**
+ * `transfer-encoding` among them: it framed the hop from the machine, and a body relayed whole (a
+ * kept answer, a decoded one) is framed anew by this server — sending both it and a length is a
+ * malformed answer.
+ */
+const DROP_RESPONSE_HEADERS = new Set([
+  "set-cookie",
+  "location",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+]);
 
 /** What a forward the caller gave up on answers; nobody reads it, but a Response is owed. */
 const cancelledResponse = (): Response =>
@@ -101,18 +122,84 @@ const cancelledResponse = (): Response =>
     { status: 499 },
   );
 
+/** A GET this forward may answer from, or keep, a machine's last answer for (answer-cache.ts). */
+interface KeptRead {
+  answers: MachineAnswers;
+  key: string;
+  /** What was kept when the request left: a 304 is answered with this, whatever happens meanwhile. */
+  kept: KeptAnswer | null;
+}
+
+/** What answers a forward whose answer broke off mid-body. */
+const brokenOff = (machineId: string, err: unknown): Response =>
+  Response.json(
+    {
+      error: {
+        code: "server_unreachable",
+        message: `The answer from ${machineId} broke off: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    },
+    { status: 502 },
+  );
+
+/**
+ * The machine's answer as this server relays it: decoded (answer-decoding.ts), and for a read
+ * this server keeps, answered from the kept body on a 304 and kept anew on a 200.
+ */
+async function relayAnswer(
+  res: http.IncomingMessage,
+  machineId: string,
+  read: KeptRead | null,
+): Promise<Response> {
+  const status = res.statusCode ?? 502;
+  if (status === 304 && read?.kept != null) {
+    res.resume();
+    return keptResponse(read.kept);
+  }
+  const out = new Headers();
+  for (const [name, value] of Object.entries(res.headers)) {
+    if (value === undefined || DROP_RESPONSE_HEADERS.has(name.toLowerCase())) continue;
+    out.set(name, Array.isArray(value) ? value.join(", ") : value);
+  }
+  if (res.headers.location !== undefined) {
+    out.set("location", rewriteLocation(res.headers.location, machineId));
+  }
+  if (decodableEncoding(res) !== null) {
+    // These described the bytes that crossed, not the ones relayed.
+    out.delete("content-encoding");
+    out.delete("content-length");
+  }
+  if (status === 204 || status === 304) {
+    res.resume();
+    return new Response(null, { status, headers: out });
+  }
+  const body = decodedBody(res);
+  if (read !== null && keepable(status, out)) {
+    const bytes = new Uint8Array(await buffer(body));
+    read.answers.keep(read.key, { etag: out.get("etag")!, headers: [...out], body: bytes });
+    return new Response(bytes, { status, headers: out });
+  }
+  // Not one to keep (any longer): what was kept for it no longer describes it.
+  if (read !== null) read.answers.drop(read.key);
+  return new Response(Readable.toWeb(body) as ReadableStream, { status, headers: out });
+}
+
 /**
  * Forwards one request to the machine's server and streams the answer back — both
  * directions are pipes, so SSE and long downloads flow as they arrive. The socket is the
  * agent's: a dial through the machine's session (transport/connection.ts). node:http rather
  * than fetch: the Host header must be the canonical app host (`localhost:<port>`), and the
  * socket is not one fetch could be handed.
+ *
+ * Every request asks for a compressed answer (answer-decoding.ts). A GET from a known reader
+ * also revalidates the answer kept for it, if any (answer-cache.ts).
  */
 function proxyThroughSession(
   request: Request,
   path: ProxyPath,
   target: ProxyTarget,
   report?: ProxyReport,
+  reader?: AnswerReader,
 ): Promise<Response> {
   const { agent, port, cookie } = target;
   // Given up on before it left: nothing to dial for.
@@ -126,6 +213,17 @@ function proxyThroughSession(
     headers["host"] = `localhost:${port}`;
     headers["cookie"] = cookie;
     if (target.adoptedAt !== null) headers[ADOPTED_AT_HEADER] = target.adoptedAt;
+    headers["accept-encoding"] = ASKED_ENCODINGS;
+    let read: KeptRead | null = null;
+    if (request.method === "GET" && reader !== undefined) {
+      const key = MachineAnswers.key(
+        path.machineId,
+        reader.readerId,
+        `${path.remotePath}${url.search}`,
+      );
+      read = { answers: reader.answers, key, kept: reader.answers.get(key) };
+      if (read.kept !== null) headers["if-none-match"] = read.kept.etag;
+    }
 
     const upstream = http.request(
       {
@@ -138,21 +236,8 @@ function proxyThroughSession(
       },
       (res) => {
         report?.(path.machineId, { ok: true });
-        const out = new Headers();
-        for (const [name, value] of Object.entries(res.headers)) {
-          if (value === undefined || DROP_RESPONSE_HEADERS.has(name.toLowerCase())) continue;
-          out.set(name, Array.isArray(value) ? value.join(", ") : value);
-        }
-        if (res.headers.location !== undefined) {
-          out.set("location", rewriteLocation(res.headers.location, path.machineId));
-        }
-        resolve(
-          new Response(
-            res.statusCode === 204 || res.statusCode === 304
-              ? null
-              : (Readable.toWeb(res) as ReadableStream),
-            { status: res.statusCode ?? 502, headers: out },
-          ),
+        relayAnswer(res, path.machineId, read).then(resolve, (err: unknown) =>
+          resolve(cancelled ? cancelledResponse() : brokenOff(path.machineId, err)),
         );
       },
     );
@@ -212,11 +297,15 @@ export function machinesProxy(
   resolve: (machineId: string) => Promise<ProxyTarget | null>,
   report?: ProxyReport,
   log: (line: string) => void = () => undefined,
-  /** The shared socket cache and event hub, so this generation's routes read the facts the relay writes. */
-  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
-): (request: Request) => Promise<Response | null> {
+  /**
+   * The shared socket cache and event hub, so this generation's routes read the facts the relay
+   * writes; and the answers this generation keeps of its machines (answer-cache.ts).
+   */
+  shared: { sockets?: MachineSockets; events?: MachineEventHub; answers?: MachineAnswers } = {},
+): (request: Request, caller?: { userId: string }) => Promise<Response | null> {
   const relay = new MachineSocketRelay(log, shared);
-  return async (request) => {
+  const { answers } = shared;
+  return async (request, caller) => {
     const url = new URL(request.url);
     const path = parseProxyPath(url.pathname);
     if (path === null) return null;
@@ -232,7 +321,11 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return forwardToMachine(request, path, target, relay, report);
+    const reader =
+      answers !== undefined && caller !== undefined
+        ? { answers, readerId: caller.userId }
+        : undefined;
+    return forwardToMachine(request, path, target, relay, report, reader);
   };
 }
 
@@ -246,6 +339,8 @@ export async function forwardToMachine(
   target: ProxyTarget,
   relay: MachineSocketRelay,
   report?: ProxyReport,
+  /** Who asks, for a read whose last answer this server keeps (answer-cache.ts); none keeps nothing. */
+  reader?: AnswerReader,
 ): Promise<Response> {
   // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
   // forwarded over HTTP is a channel held open for good, and across many machines those
@@ -264,5 +359,5 @@ export async function forwardToMachine(
     if (relayed.status < 500) report?.(path.machineId, { ok: true });
     return relayed;
   }
-  return proxyThroughSession(request, path, target, report);
+  return proxyThroughSession(request, path, target, report, reader);
 }
