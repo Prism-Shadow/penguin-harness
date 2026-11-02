@@ -57,10 +57,29 @@ const POLICY: DeslopPolicy = {
  * wave that moves or rebuilds the file (A-architecture §7: W1 marks and actions, W2 forms, W3
  * overlays, W4 layout, navigation, notices and data display, W5 content, W6 chat, W7 files, shell
  * and dock, W8 charts). `Wn+Wm` splits an entry between two.
- * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight;
+ * it also takes rule 24's middle-dot separators, which were counted when the rule arrived.
  */
 const ALLOWLIST: DeslopAllowlist = {
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
+  "components/layout/project-dialogs.tsx": { 24: [1, "W10"] },
+  "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
+  "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
+  "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
+  "features/company/channel-view.tsx": { 24: [1, "W10"] },
+  "features/company/employee-dialogs.tsx": { 24: [1, "W10"] },
+  "features/company/finance-page.tsx": { 24: [1, "W10"] },
+  "features/company/overview-page.tsx": { 24: [1, "W10"] },
+  "features/company/ticket-dialog.tsx": { 24: [3, "W10"] },
+  "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
+  "features/models/group-balance.tsx": { 24: [2, "W10"] },
+  "features/models/preset-sync.tsx": { 24: [1, "W10"] },
+  "features/plugins/plugin-detail.tsx": { 24: [2, "W10"] },
+  "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
+  "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
+  "lib/strings-en.ts": { 24: [34, "W10"] },
+  "lib/strings.ts": { 24: [34, "W10"] },
 };
 
 /**

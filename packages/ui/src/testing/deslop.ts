@@ -58,6 +58,8 @@ export const DESLOP_RULES = {
   20: "colour is tokens",
   21: "no emoji in copy",
   22: "a page header has no eyebrow",
+  23: "no text below 12px",
+  24: "no middle dot between items",
 } as const;
 
 export type DeslopRule = keyof typeof DESLOP_RULES;
@@ -733,9 +735,33 @@ const spacingToken: TokenPredicate = (token) => {
 const textSizeToken: TokenPredicate = (token) =>
   /^text-\[(?:length:)?\d*\.?\d+(?:px|rem)\]$/.test(token.utility) ? token.raw : null;
 
-/** Rule 14: `uppercase` and `tracking-wide|wider|widest`. */
+/**
+ * Rule 14: `uppercase`, `tracking-wide|wider|widest`, and a positive literal tracking
+ * (`tracking-[0.08em]`): the letter-spaced half of an eyebrow, whatever it is spelled as.
+ */
 const uppercaseToken: TokenPredicate = (token) =>
-  /^(?:uppercase|tracking-(?:wide|wider|widest))$/.test(token.utility) ? token.raw : null;
+  /^(?:uppercase|tracking-(?:wide|wider|widest))$/.test(token.utility) ||
+  /^tracking-\[(?:0?\.\d*[1-9]\d*|[1-9]\d*(?:\.\d+)?)(?:em|rem|px)\]$/.test(token.utility)
+    ? token.raw
+    : null;
+
+/**
+ * Rule 23: the smallest text is 12px — `text-[11px]`, `text-[0.6875rem]`. A size in `em` follows
+ * its parent and is not judged here.
+ */
+const SMALLEST_TEXT_PX = 12;
+const ROOT_PX = 16;
+function textPx(value: string): number | null {
+  const match = /^(\d*\.?\d+)(px|rem)$/.exec(value.trim());
+  if (match === null) return null;
+  return Number(match[1]) * (match[2] === "rem" ? ROOT_PX : 1);
+}
+const tinyTextToken: TokenPredicate = (token) => {
+  const match = /^text-\[(?:length:)?([^\]]+)\]$/.exec(token.utility);
+  if (match === null) return null;
+  const px = textPx(match[1]!);
+  return px !== null && px < SMALLEST_TEXT_PX ? token.raw : null;
+};
 
 /** Rule 19: a shadow other than `shadow-sm|lg|xl|none` or `shadow-[var(--ui-shadow-*)]`; any `drop-shadow`. */
 const shadowToken: TokenPredicate = (token) => {
@@ -826,13 +852,21 @@ const tintedIconCheck: Check = (analysis) =>
         ];
   });
 
-/** Rule 8: a 2 or 4 px left border in a tone, the accent or a chromatic hue. */
+/**
+ * Rule 8: a left (or inline-start) border of any width — `border-l`, `border-l-2`,
+ * `border-s-[3px]` — in a tone, the accent, the brand scale or a chromatic hue: the coloured bar
+ * down a card's edge. A neutral line there (`border-line`, a gray) is a rule, not an accent.
+ */
 const leftBorderCheck: Check = (analysis) => {
   const colour = new RegExp(
-    `^border-(?:[ls]-)?(?:tone-[a-z]+-(?:line|fg|emphasis|bg)|accent(?:-[a-z]+)?|${CHROMA}-${STEP}${ALPHA})$`,
+    `^border-(?:[ls]-)?(?:tone-[a-z]+-(?:line|fg|emphasis|bg)|accent(?:-[a-z]+)?|brand-${STEP}${ALPHA}|${CHROMA}-${STEP}${ALPHA})$`,
   );
   return analysis.units.flatMap((unit) => {
-    const width = unit.tokens.find((t) => /^border-[ls]-(?:2|4)$/.test(t.utility));
+    const width = unit.tokens.find(
+      (t) =>
+        /^border-[ls](?:-(?:[1-9]\d*|\[[^\]]+\]|\([^)]+\)))?$/.test(t.utility) &&
+        !/^border-[ls]-\[0(?:px)?\]$/.test(t.utility),
+    );
     if (width === undefined || !unit.tokens.some((t) => colour.test(t.utility))) return [];
     return [{ line: width.line, found: `${width.raw} in a colour` }];
   });
@@ -1016,6 +1050,40 @@ const emojiCheck: Check = (analysis) => {
     .map((chunk) => ({ line: chunk.line, found: chunk.text.match(EMOJI)![0] }));
 };
 
+/** Rule 23 in markup: an SVG `fontSize` (or `font-size`) attribute below 12. */
+const tinySvgTextCheck: Check = (analysis) =>
+  analysis.elements.flatMap((element) =>
+    ["fontSize", "font-size"].flatMap((name) => {
+      const value = element.attributes.get(name);
+      if (typeof value !== "string") return [];
+      const px = textPx(/^\d*\.?\d+$/.test(value.trim()) ? `${value}px` : value);
+      return px !== null && px < SMALLEST_TEXT_PX
+        ? [{ line: element.line, found: `<${element.tag} ${name}=${value}>` }]
+        : [];
+    }),
+  );
+
+/**
+ * Rule 24: a middle dot standing between two items — `Linux · Windows · macOS`, a date `·` a
+ * category. In a `strings*.ts` dictionary, any dot set off by spaces; in markup, a text child
+ * that is the dot alone (`{" · "}`, `<span>·</span>`). Items sit apart by space or by the
+ * sentence's own punctuation.
+ */
+const MIDDLE_DOT = /(?:^|\s)[·•](?:\s|$)/;
+const middleDotCheck: Check = (analysis) => {
+  const dictionary = /^strings.*\.ts$/.test(analysis.file.name)
+    ? analysis.strings
+        .filter((chunk) => MIDDLE_DOT.test(chunk.text))
+        .map((chunk) => ({ line: chunk.line, found: chunk.text.trim().slice(0, 60) }))
+    : [];
+  const children = analysis.elements.flatMap((element) =>
+    element.children.some((child) => child.kind === "text" && /^[·•]$/.test(child.text.trim()))
+      ? [{ line: element.line, found: `<${element.tag}> holds a lone middle dot` }]
+      : [],
+  );
+  return [...dictionary, ...children];
+};
+
 /** Rule 22: a page header that takes or renders an eyebrow. */
 const pageHeaderCheck: Check = (analysis) =>
   analysis.components
@@ -1164,8 +1232,51 @@ const cssUppercaseCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) =>
     decl.name === "text-transform" &&
     decl.value === "uppercase" &&
-    !/\.ui-(?:eyebrow|display|activity|chart)\b/.test(fullSelector(rule))
+    !uppercaseHook(fullSelector(rule))
       ? [{ line: decl.line, found: `${rule.selector} { text-transform: uppercase }` }]
+      : [],
+  );
+
+/**
+ * Whether a selector is one of the hooks a theme may uppercase through. A public-site rule
+ * (`.site-*`) is never one, even when it carries the hook's class: the sites have no theme
+ * recipe, so the hook's door is the app's alone.
+ */
+const uppercaseHook = (selector: string) =>
+  /\.ui-(?:eyebrow|display|activity|chart)\b/.test(selector) && !/\.site-[a-z]/.test(selector);
+
+/** Rule 14: a positive `letter-spacing` off the hooks — the tracked half of an eyebrow. */
+const cssTrackingCheck: Check = (analysis) =>
+  declarations(analysis).flatMap(({ rule, decl }) => {
+    if (decl.name !== "letter-spacing" || uppercaseHook(fullSelector(rule))) return [];
+    const match = /^(\d*\.?\d+)(?:em|rem|px)$/.exec(decl.value.trim());
+    return match !== null && Number(match[1]) > 0
+      ? [{ line: decl.line, found: `${rule.selector} { letter-spacing: ${decl.value} }` }]
+      : [];
+  });
+
+/** Rule 23: a `font-size` declaration below 12px (a rem is read at 16px). */
+const cssTinyTextCheck: Check = (analysis) =>
+  declarations(analysis).flatMap(({ rule, decl }) => {
+    if (decl.name !== "font-size") return [];
+    const px = textPx(decl.value);
+    return px !== null && px < SMALLEST_TEXT_PX
+      ? [{ line: decl.line, found: `${rule.selector} { font-size: ${decl.value} }` }]
+      : [];
+  });
+
+/**
+ * Rule 8: a `border-left` / `border-inline-start` (or its colour) drawn in a tone, the accent or
+ * the brand scale — the stylesheet spelling of the coloured edge bar.
+ */
+const COLOURED_VAR =
+  /var\(\s*--(?:ui-(?:tone-|accent)|site-(?:brand|teal|amber|green)-|color-(?:brand|tone|accent)-)/;
+const cssLeftBorderCheck: Check = (analysis) =>
+  declarations(analysis).flatMap(({ rule, decl }) =>
+    /^border-(?:left|inline-start)(?:-color)?$/.test(decl.name) &&
+    COLOURED_VAR.test(decl.value) &&
+    !/^(?:0|none)\b/.test(decl.value.trim())
+      ? [{ line: decl.line, found: `${rule.selector} { ${decl.name}: ${decl.value} }` }]
       : [],
   );
 
@@ -1266,6 +1377,7 @@ export const DESLOP_CHECKS: readonly DeslopCheck[] = [
   sheet(6, cssAnimationCheck(/\b(?:pulse|ping)\b/, /\.ui-live\b/)),
   markup(7, tintedIconCheck),
   ...both(8, leftBorderCheck),
+  sheet(8, cssLeftBorderCheck),
   ...both(9, oneHueCheck),
   markup(10, moodBadgeCheck),
   ...both(11, tokenCheck(spinnerToken)),
@@ -1275,6 +1387,7 @@ export const DESLOP_CHECKS: readonly DeslopCheck[] = [
   ...both(14, tokenCheck(uppercaseToken)),
   markup(14, eyebrowSiblingCheck),
   sheet(14, cssUppercaseCheck),
+  sheet(14, cssTrackingCheck),
   markup(15, tabularCheck),
   markup(16, monoLabelCheck),
   sheet(16, cssHookMonoCheck),
@@ -1286,6 +1399,10 @@ export const DESLOP_CHECKS: readonly DeslopCheck[] = [
   markup(20, hexCheck),
   markup(21, emojiCheck),
   markup(22, pageHeaderCheck),
+  ...both(23, tokenCheck(tinyTextToken)),
+  markup(23, tinySvgTextCheck),
+  sheet(23, cssTinyTextCheck),
+  markup(24, middleDotCheck),
 ];
 
 /**
