@@ -201,9 +201,12 @@ export function DraftView({
   /**
    * The machine that workspace is on (null = this one). Carried beside the path because a
    * path alone does not identify a directory: `/srv/app` exists on many machines and means
-   * a different one on each.
+   * a different one on each. So a cached machine is only taken with a cached path: one left
+   * without it (a draft an earlier version stripped of its path alone) is not a Workspace.
    */
-  const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
+  const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(
+    cached.workspace === undefined ? null : (cached.machineId ?? null),
+  );
   /** The Agents actually offerable for this draft: the target machine's, or this one's. */
   const agents = workspaceMachine === null ? localAgents : remoteAgents;
   /**
@@ -436,6 +439,9 @@ export function DraftView({
         setChatDefaults(d);
         touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
+        // The default Workspace is on this server, as on a fresh mount, whose cache no longer
+        // holds a machine either.
+        setWorkspaceMachine(null);
         setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
         // The Agent a fresh mount would now start on (the new block's default while it names
         // an Agent, then default_agent, then the first).
