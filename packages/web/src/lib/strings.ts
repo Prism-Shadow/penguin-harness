@@ -2160,10 +2160,22 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后获取其模型列表，只导入你勾选的模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
     groupModeCreate: "仅新增分组",
     groupModeImport: "导入模型",
-    groupImportAll: "批量导入模型",
+    /** The import's first action: list the endpoint's models into the pick list. */
+    groupImportFetch: "获取模型列表",
+    /** The import's second action, once the list is on screen: import the ticked models. */
+    groupImportPicked: (n: number): string => `导入 ${n} 个模型`,
+    /** The pick list's title, and the name of its rows. */
+    groupImportPickTitle: "选择要导入的模型",
+    /** Beside the title: ticked out of listed. */
+    groupImportPickCount: (picked: number, total: number): string => `已选 ${picked} / ${total}`,
+    /** The pick list's bulk actions; both act on the rows the filter leaves on screen. */
+    groupImportSelectAll: "全选",
+    groupImportSelectNone: "全不选",
+    /** The filter box over a long pick list: its placeholder and its accessible name. */
+    groupImportFilter: "按模型 id 筛选",
     groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
     groupImportKeyHint: "该端点的 API key（URL 不是厂商官方地址时必填）",
     groupImportListing: "正在获取模型列表…",

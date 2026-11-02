@@ -1,10 +1,11 @@
 /**
- * Add-group bulk import: turns an endpoint's model listing (POST models/list) into new rows
- * for the user-defined group being created. The endpoint's base URL, the detected protocol and
- * the typed key are written ONCE, as the group's connection (`[providers.<name>]`, see
+ * Add-group import: turns an endpoint's model listing (POST models/list) into the ids the pick
+ * list offers (see pickableModelIds), and the ids the user ticked into new rows for the
+ * user-defined group being created. The endpoint's base URL, the detected protocol and the typed
+ * key are written ONCE, as the group's connection (`[providers.<name>]`, see
  * groupImportConnection), and every imported row is bare: it stores nothing but its id and
  * follows the group. The listing arrives in the endpoint's own order and is kept in it; entries
- * that produce no row are counted for the toast (see buildImportedRows).
+ * that produce no row are counted for the toast (see pickableModelIds and buildImportedRows).
  */
 import type { ProviderConnectionUpdate } from "@prismshadow/penguin-server/api";
 import type { RowState } from "./models-page";
@@ -74,16 +75,39 @@ function importedRow(provider: string, modelId: string): RowState {
 }
 
 /**
- * Builds the rows to append for an imported listing. Nothing but the id is taken from the
- * endpoint: pricing, context window and display name stay empty, because those are
- * hand-curated fields and a provider-reported number written into them would silently
- * disagree with the catalog's own pricing convention.
+ * The listing as the pick list offers it: each usable id once, in the endpoint's order, all of
+ * them ticked to start with. `dropped` counts the entries that offer nothing — an unusable id
+ * (empty, over the config's length bound, or carrying control characters), or a repeat of an id
+ * already offered — and joins the result toast's skipped count, since they were in the listing
+ * and were not imported.
+ */
+export function pickableModelIds(listing: readonly string[]): { ids: string[]; dropped: number } {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  let dropped = 0;
+  for (const entry of listing) {
+    const modelId = usableModelId(entry);
+    if (modelId === null || seen.has(modelId)) {
+      dropped += 1;
+      continue;
+    }
+    seen.add(modelId);
+    ids.push(modelId);
+  }
+  return { ids, dropped };
+}
+
+/**
+ * Builds the rows to append for the ids being imported (the ticked part of a listing, in the
+ * listing's order). Nothing but the id is taken from the endpoint: pricing, context window and
+ * display name stay empty, because those are hand-curated fields and a provider-reported number
+ * written into them would silently disagree with the catalog's own pricing convention.
  *
- * `skipped` counts the listing entries that produced no row — an unusable id (empty, over
- * the config's length bound, or carrying control characters), or a duplicate of one
- * already taken, whether earlier in the same listing or by a row already configured under
- * the same `(provider, modelId)` key (the group-name check normally guarantees the group
- * is empty; this keeps the merge correct if that ever loosens).
+ * `skipped` counts the ids that produced no row — an unusable id (empty, over the config's
+ * length bound, or carrying control characters), or a duplicate of one already taken, whether
+ * earlier in the same list or by a row already configured under the same `(provider, modelId)`
+ * key (the group-name check normally guarantees the group is empty; this keeps the merge
+ * correct if that ever loosens).
  */
 export function buildImportedRows(
   existing: RowState[],

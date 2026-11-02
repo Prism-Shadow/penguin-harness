@@ -72,17 +72,21 @@ The group appears in the list once its first model is saved.
 
 ### Import models from an endpoint
 
-**Import models** fills a new group with every model an OpenAI-compatible or Anthropic-compatible endpoint lists.
+**Import models** fills a new group with the models you pick from the list an OpenAI-compatible or Anthropic-compatible endpoint serves.
 
 1. Select **Import models**.
 2. In **API key**, enter the endpoint's key. The server's `OPENAI_*` / `ANTHROPIC_*` variables are not used for an endpoint that is not the vendor's own (see [Set API keys](#set-api-keys)), so a listing without a key is refused.
 3. In **Custom base URL**, enter the endpoint's base URL.
 4. Select **Detect** at the top-right of the field, or pick the protocol from the menu at the right edge of the field. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
-5. Select **Import all models**. PenguinHarness asks the endpoint for its model list and saves every model into the new group, in the endpoint's order.
+5. Select **Fetch model list**. PenguinHarness asks the endpoint for its model list and shows it under the fields, one model id per row, in the endpoint's order, every model ticked.
+6. Untick the models you do not want. **Select all** and **Select none** act on the rows the filter matches; a list of more than 10 models also has a filter box, and filtering never changes a tick on a row it hides.
+7. Select **Import {n} models**. Only the ticked models are saved into the new group. The button is unavailable while no model is ticked.
+
+The list belongs to the API key, base URL and protocol it was fetched with: it is hidden while any of them differs from what it was fetched with, and comes back with its ticks when all three match again. While the list is being fetched or the models saved, those three fields cannot be edited.
 
 The base URL, the protocol and the key you entered are saved once, as the group's settings; the imported models carry none of them and follow the group. Only the model id comes from the endpoint: prices, context window, and display name stay empty, and vision stays off until you detect it or turn it on. That is the same starting point as a model you add by hand.
 
-Some ids are skipped, and the result says how many: "Imported {added} models, skipped {skipped} entries". An id is skipped when it is empty, longer than 200 characters, contains control characters, or is already taken.
+Some ids are never offered in the list, and the result says how many: "Imported {added} models, skipped {skipped} entries". An id is skipped when it is empty, longer than 200 characters, contains control characters, or repeats an id already listed. Models you untick are not counted as skipped.
 
 If the protocol cannot list models ("This protocol cannot list models — add them manually") or the list is empty, nothing is saved and the dialog stays open. A failed detection only turns the protocol suffix amber; you can still pick the protocol by hand or switch back to **Create only**.
 
