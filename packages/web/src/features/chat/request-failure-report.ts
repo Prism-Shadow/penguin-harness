@@ -1,32 +1,20 @@
 /**
- * The report a failed model request hands the person to share, and the GitHub bug form it can be
- * sent through — what the conversation's 「[详情]」 dialog shows, copies and opens.
+ * The problem report for a failed model request — what the conversation's 「[详情]」 opens: the
+ * UI package's report (`ErrorReport`), filled with what the transcript knows of the request.
  *
- * The report is English whatever the interface's language: it is written for the project's issue
- * tracker. It holds what a maintainer needs to tell a provider's outage from a bug here — what
+ * Its facts are what a maintainer needs to tell a provider's outage from a defect here: what
  * happened (the attempts so far, of how many), the error code and the request's status, the HTTP
- * status and the request id where the provider's message names them, the provider and the model,
- * when it happened, the PenguinHarness version, how it is installed, and the OS of the machine
- * the Session runs on — then the provider's message itself.
+ * status and the request id where the provider's message names them (`provider-error.ts`), the
+ * provider and the model, and when it happened. The report ends with the provider's message, kept
+ * as it came but redacted like every report, the request id spared. The Session's Workspace is
+ * kept out of it, and a Session on another machine names that machine's OS. The host's
+ * environment (version, how it is installed, OS) and the link to the bug form are the kit's.
  *
- * It never holds the API key, the provider's base URL, the prompt or any of the conversation,
- * or the Workspace's path. The provider's message is the one free text in it, so it is shown with
- * key-shaped strings redacted (`redactSecrets`) and the Workspace's path replaced; what the
- * dialog shows is exactly what would be shared.
- *
- * The bug form (`.github/ISSUE_TEMPLATE/bug_report.yml`) is opened prefilled by its field ids:
- * `title`; `summary`, the failure's facts; `system-info`, the version, how it is installed and the
- * OS, one per line, "unknown" for one not read yet; and `output`, the provider's message. The two
- * fields the form requires (`summary`, `system-info`) are always filled, so the form can be
- * submitted as it opens. The URL is kept under {@link ISSUE_URL_CAP} characters, well under what
- * GitHub answers before refusing a URL as too long: the provider's message is cut to fit, and says
- * so.
+ * A provider's failure is not usually PenguinHarness's defect, so its dialog keeps a title and a
+ * lead of its own (the chat's dictionary) in place of the kit's.
  */
-import { redactSecrets } from "../../lib/redact-secrets";
+import type { ErrorReport, ReportFact } from "@prismshadow/penguin-ui";
 import { httpStatusOf, requestIdOf } from "./provider-error";
-
-export const ISSUE_FORM_URL = "https://github.com/Prism-Shadow/penguin-harness/issues/new";
-export const ISSUE_URL_CAP = 6000;
 
 /** Where the failed request stands: the retry line's phases, and a failure that ended the run. */
 export type RequestFailurePhase = "waiting" | "trying" | "retried" | "gaveUp" | "fatal";
@@ -49,55 +37,14 @@ export interface RequestFailure {
   atMs?: number;
 }
 
-/** How this PenguinHarness is installed, in the words the report and the bug form use. */
-export type InstallKind = "desktop" | "server" | "source";
-
-const INSTALL_OPTION: Readonly<Record<InstallKind, string>> = {
-  desktop: "Desktop app",
-  server: "Server (penguin server / penguin web)",
-  source: "From a source checkout (pnpm dev)",
-};
-
-/**
- * How the server this window talks to was installed: a build from a source checkout says so
- * whatever started it; otherwise the desktop shell's server, or a server started by hand.
- */
-export function installKindOf(server: {
-  channel: "release" | "source";
-  desktopMode: boolean;
-}): InstallKind {
-  if (server.channel === "source") return "source";
-  return server.desktopMode ? "desktop" : "server";
-}
-
-const PLATFORM_NAME: Readonly<Record<string, string>> = {
-  darwin: "macOS",
-  win32: "Windows",
-  linux: "Linux",
-};
-
-/** A machine's OS as people name it, from a version report's runtime ("Linux (x64)"). */
-export function osName(runtime: { platform: string; arch: string }): string {
-  return `${PLATFORM_NAME[runtime.platform] ?? runtime.platform} (${runtime.arch})`;
-}
-
-export interface ReportEnvironment {
-  /** The running build's identity (`describe`: "v0.2.18"); null while unknown. */
-  version: string | null;
-  install: InstallKind | null;
-  /** The OS of the machine the Session runs on; null while unknown. */
-  os: string | null;
-  /** Set when the Session runs on another machine: that machine's own version, when known. */
-  remote?: { version: string | null } | null;
-  /** The Session's Workspace path, kept out of the provider's message. */
+/** Where the request ran, beyond what the app's own environment says. */
+export interface RequestFailurePlace {
+  /** The Session's Workspace path, kept out of the report. */
   workspace?: string | null;
-}
-
-export interface RequestReport {
-  /** The report as the dialog shows it and Copy copies it. */
-  markdown: string;
-  /** The bug form, prefilled. */
-  issueUrl: string;
+  /** The Session runs on another machine: its OS and version, when known. */
+  remote?: { os: string | null; version: string | null } | null;
+  /** The dialog's own title and lead (a provider's failure is rarely the app's defect). */
+  dialog?: ErrorReport["dialog"];
 }
 
 /** What happened, in one line. */
@@ -118,9 +65,13 @@ function happened(f: RequestFailure): string {
   }
 }
 
-/** The facts as bullet lines, in the report's order; a fact nobody knows is left out. */
-function facts(f: RequestFailure, env: ReportEnvironment, http: number | null, id: string | null) {
-  const lines: [string, string | null][] = [
+export function requestFailureReport(
+  f: RequestFailure,
+  place: RequestFailurePlace = {},
+): ErrorReport {
+  const http = httpStatusOf(f.message);
+  const id = requestIdOf(f.message);
+  const facts: [string, string | null][] = [
     ["What happened", happened(f)],
     ["Error code", `${f.errorCode ?? "none"} (status ${f.status})`],
     ["HTTP status", http === null ? null : String(http)],
@@ -131,105 +82,23 @@ function facts(f: RequestFailure, env: ReportEnvironment, http: number | null, i
       "Time (UTC)",
       f.atMs === undefined ? null : new Date(f.atMs).toISOString().replace(/\.\d+Z$/, "Z"),
     ],
-    ["PenguinHarness", env.version],
-    ["Installed as", env.install === null ? null : INSTALL_OPTION[env.install]],
-    ["OS", osLine(env)],
   ];
-  return lines.filter((line): line is [string, string] => line[1] !== null);
-}
-
-/** The OS fact: the machine's, and whose it is when the Session runs on another machine. */
-function osLine(env: ReportEnvironment): string | null {
-  if (env.os === null) return null;
-  if (!env.remote) return env.os;
-  const version = env.remote.version ? ` (PenguinHarness ${env.remote.version})` : "";
-  return `${env.os}, the remote machine the Session runs on${version}`;
-}
-
-/** The bug form's System info: the three facts, each line present, "unknown" for one not read yet. */
-function systemInfo(env: ReportEnvironment): string {
-  return [
-    `Version: ${env.version ?? "unknown"}`,
-    `Installed as: ${env.install === null ? "unknown" : INSTALL_OPTION[env.install]}`,
-    `OS: ${osLine(env) ?? "unknown"}`,
-  ].join("\n");
-}
-
-/** The facts the bug form's System info carries, left out of its summary. */
-const SYSTEM_FACTS: ReadonlySet<string> = new Set(["PenguinHarness", "Installed as", "OS"]);
-
-/** A fence longer than any run of backticks in the text, so the text cannot close it. */
-function fenced(text: string): string {
-  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((run) => (run[0] ?? "").length));
-  const fence = "`".repeat(longest + 1);
-  return `${fence}text\n${text}\n${fence}`;
-}
-
-/** The provider's message as it may be shared: secrets out, the Workspace's path out. */
-function shareable(message: string | undefined, keep: string | null, workspace?: string | null) {
-  if (message === undefined || message.trim() === "") return null;
-  let text = redactSecrets(message, keep === null ? [] : [keep]);
-  if (workspace) text = text.split(workspace).join("<workspace>");
-  return text;
-}
-
-const TRUNCATED = "\n… (cut short to fit the link; the full message is in the copied report)";
-
-function query(fields: readonly [string, string | null][]): string {
-  return fields
-    .filter((field): field is [string, string] => field[1] !== null && field[1] !== "")
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join("&");
-}
-
-/** The bug form's URL, its `output` cut until the whole fits under the cap. */
-function issueUrl(base: readonly [string, string | null][], output: string): string {
-  const head = `${ISSUE_FORM_URL}?${query(base)}`;
-  const whole = `${head}&output=${encodeURIComponent(output)}`;
-  if (whole.length <= ISSUE_URL_CAP) return whole;
-  // The longest beginning of the message whose encoded form still fits beside the note.
-  const room = ISSUE_URL_CAP - head.length - "&output=".length;
-  let low = 0;
-  let high = output.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (encodeURIComponent(output.slice(0, mid) + TRUNCATED).length <= room) low = mid;
-    else high = mid - 1;
-  }
-  return `${head}&output=${encodeURIComponent(output.slice(0, low) + TRUNCATED)}`;
-}
-
-export function requestFailureReport(f: RequestFailure, env: ReportEnvironment): RequestReport {
-  const http = httpStatusOf(f.message);
-  const id = requestIdOf(f.message);
-  const message = shareable(f.message, id, env.workspace);
-  const all = facts(f, env, http, id);
-  const lines = all.map(([name, value]) => `- ${name}: ${value}`);
-  const markdown = [
-    "### PenguinHarness model request failure",
-    "",
-    ...lines,
-    "",
-    "Provider message:",
-    "",
-    message === null ? "(the provider sent no message)" : fenced(message),
-  ].join("\n");
   const model = f.model ? ` (${f.model.provider} / ${f.model.modelId})` : "";
-  const title = `Model request failed: ${f.errorCode ?? f.status}${http === null ? "" : `, HTTP ${http}`}${model}`;
-  const failure = all
-    .filter(([name]) => !SYSTEM_FACTS.has(name))
-    .map(([name, value]) => `- ${name}: ${value}`);
-  const summary = ["A model request failed in a conversation.", "", ...failure].join("\n");
   return {
-    markdown,
-    issueUrl: issueUrl(
-      [
-        ["template", "bug_report.yml"],
-        ["title", title],
-        ["summary", summary],
-        ["system-info", systemInfo(env)],
-      ],
-      message ?? "(the provider sent no message)",
-    ),
+    heading: "PenguinHarness model request failure",
+    title: `Model request failed: ${f.errorCode ?? f.status}${http === null ? "" : `, HTTP ${http}`}${model}`,
+    intro: "A model request failed in a conversation.",
+    facts: facts.filter((fact): fact is [string, string] => fact[1] !== null) as ReportFact[],
+    output: {
+      label: "Provider message",
+      text: f.message ?? null,
+      missing: "(the provider sent no message)",
+    },
+    ...(id !== null ? { keep: [id] } : {}),
+    ...(place.workspace ? { privatePaths: [place.workspace] } : {}),
+    ...(place.remote
+      ? { environment: { os: place.remote.os, remote: { version: place.remote.version } } }
+      : {}),
+    ...(place.dialog !== undefined ? { dialog: place.dialog } : {}),
   };
 }

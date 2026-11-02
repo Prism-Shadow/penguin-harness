@@ -1,5 +1,6 @@
 /**
- * What a shared provider message loses before it leaves the app (lib/redact-secrets.ts).
+ * What a shared text — a provider's message, an exception's stack — loses before it leaves the
+ * app (src/components/report/redact.ts).
  *
  * - Given a key, whole or masked, a bearer token, a secret named in a query, a header or a JSON
  *   body, a URL's credentials, a UUID or a long random token, none of it is left, and
@@ -7,9 +8,11 @@
  * - Given the words around them — the error, a model id, a URL's host and path, a status, a basic
  *   scheme named in prose — they stay as they were.
  * - Given a value the caller keeps (the provider's request id), it stays though it looks random.
+ * - Given a path through a home directory on macOS, Linux or Windows, the account name is gone and
+ *   the rest of the path stays.
  */
 import { describe, expect, it } from "vitest";
-import { REDACTED, redactSecrets } from "../src/lib/redact-secrets";
+import { REDACTED, redactHomePaths, redactSecrets } from "../src/components/report/redact";
 
 const SECRETS: [string, string, string][] = [
   [
@@ -59,5 +62,14 @@ describe("redacting a shared message", () => {
       `overloaded (request_id: ${id})`,
     );
     expect(redactSecrets(`overloaded (request_id: ${id})`)).not.toContain(id);
+  });
+
+  it.each([
+    ["/Users/alice/penguin/src/a.ts:12:5", "/Users/<user>/penguin/src/a.ts:12:5"],
+    ["at f (/home/bob/work/x.js:1:2)", "at f (/home/<user>/work/x.js:1:2)"],
+    ["C:\\Users\\carol\\AppData\\x.js", "C:\\Users\\<user>\\AppData\\x.js"],
+    ["file:///C:/Users/dave/app/y.js", "file:///C:/Users/<user>/app/y.js"],
+  ])("takes the account name out of %s", (path, shared) => {
+    expect(redactHomePaths(path)).toBe(shared);
   });
 });

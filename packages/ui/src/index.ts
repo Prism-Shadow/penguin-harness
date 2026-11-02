@@ -93,6 +93,16 @@ export * from "./components/overlays/esc-layers/esc-layers";
 export * from "./components/overlays/modal/modal";
 export * from "./components/overlays/confirm-modal/confirm-modal";
 export * from "./components/overlays/report-dialog/report-dialog";
+// The problem report kit: a report, its redaction and its GitHub link, the one rule for which
+// errors offer one, where reports open from, and the crash notice.
+export * from "./components/report/redact";
+export * from "./components/report/error-report";
+export * from "./components/report/seriousness";
+export * from "./components/report/report-store";
+export * from "./components/report/report-host";
+export * from "./components/report/report-action";
+export * from "./components/report/exception-report";
+export * from "./components/report/crash-boundary";
 export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";

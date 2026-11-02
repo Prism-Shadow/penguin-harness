@@ -47,12 +47,10 @@ import {
   Skeleton,
   StatusIcon,
   UpdateDot,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
-import { apiErrorText } from "../../lib/api-error";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
@@ -80,6 +78,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
@@ -240,7 +239,7 @@ export function PluginCard(props: PluginCardProps) {
     try {
       await downloadArchive(url, row.name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

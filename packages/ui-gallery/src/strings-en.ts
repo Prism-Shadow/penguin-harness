@@ -529,7 +529,12 @@ export const en: GalleryStrings = {
       retry: {
         title: "Retry",
         description:
-          "The one status line every reconnect shares: trying, waiting for the next attempt (a countdown, Retry now and Stop retrying), failed, stopped and not worth retrying (Retry), why behind a circled ? — and how it sits in a machine card, a dialog and a conversation.",
+          "A machine reconnect's status line: trying, waiting for the next attempt (a countdown, Retry now and Stop retrying), failed, stopped and not worth retrying (Retry), why after the sentence; a model request's retry and failure lines in a conversation, the failure details dialog, and the could-not-load notice.",
+      },
+      report: {
+        title: "Report a problem",
+        description:
+          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
@@ -1947,6 +1952,27 @@ export const en: GalleryStrings = {
       reportLabel: "Failure report",
       copy: "Copy",
       fileIssue: "File an issue on GitHub",
+    },
+    report: {
+      crash: "Crash notice",
+      crashHint:
+        'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
+      toast: "Error toast",
+      toastHint:
+        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
+      fireSerious: "Serious error",
+      fireExpected: "Expected error",
+      seriousText: "Internal server error",
+      expectedText: "You do not have access to this Project",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+      loadTitle: "Could not load the message history",
+      retry: "Retry",
+      dialog: "Report dialog",
+      dialogHint:
+        "The report as it would be sent (English, mono, read-only): what happened, the page, the error and the time, the version, how it is installed and the OS, then the stack. Copy copies it as Markdown; File an issue on GitHub opens the bug form prefilled.",
+      open: "Open the report",
     },
     attachments: {
       composer: "Composer",

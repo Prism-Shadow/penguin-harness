@@ -29,9 +29,9 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
@@ -118,7 +118,7 @@ export function TraceImportRow() {
       toastSuccess(S.settings.importTraceDone(target));
     } catch (e: unknown) {
       // Transient action failure → toast (the app's one notification rule).
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setImporting(false);
     }

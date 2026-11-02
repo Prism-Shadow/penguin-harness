@@ -10,6 +10,8 @@
  * - Given a live status of the caller's and technical detail, the status sits between the words
  *   and the press, and the detail comes last, under its own title. (That the detail stays folded
  *   until opened is the fold's behaviour, driven in the web app's history-load-failed suite.)
+ * - Given a serious failure's report, 「[报告问题]」 stands beside the press; without one, it does
+ *   not.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -34,6 +36,20 @@ describe("the could-not-load notice", () => {
     expect(textIn(html, "h2")).toBe("Could not load the message history");
     expect(textIn(html, "p")).toBe("Network error, please check your connection");
     expect(html.match(/<button\b[^>]*>/g)).toEqual([expect.stringContaining('aria-label="Retry"')]);
+  });
+
+  it("offers Report beside its press for a serious failure's report, and not without one", () => {
+    const report = {
+      heading: "PenguinHarness error report",
+      title: "Unexpected error",
+      intro: "An unexpected error happened.",
+      facts: [],
+    };
+    const names = (html: string) =>
+      [...html.matchAll(/<button\b[^>]*aria-label="([^"]*)"/g)].map((m) => m[1]);
+    const action = { label: "Retry", onClick: noop };
+    expect(names(render({ title: "Could not load", action, report }))).toEqual(["Retry", "Report"]);
+    expect(names(render({ title: "Could not load", action }))).toEqual(["Retry"]);
   });
 
   it("draws nothing but the title when that is all it is given", () => {

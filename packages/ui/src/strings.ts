@@ -135,6 +135,30 @@ export interface ReaderStrings {
   noResults: string;
 }
 
+/** The problem report's words (components/report): its action, its dialog, the crash notice. */
+export interface ReportStrings {
+  /** The text action that opens a report. */
+  action: string;
+  /** The report dialog's title. */
+  title: string;
+  /** The dialog's lead: what an error like this usually is, and what reporting it does. */
+  lead: string;
+  /** The line under it: what was taken out, and to check before sending. */
+  check: string;
+  /** The report block's accessible name. */
+  label: string;
+  /** The press that copies the report, and what it says once it did or could not. */
+  copy: string;
+  copied: string;
+  copyFailed: string;
+  /** The link to the project's bug form. */
+  fileIssue: string;
+  /** The crash notice's line, in the transcript marker's shape ("[Error]: …"). */
+  crashed: string;
+  /** The crash notice's press that reloads the page. */
+  reload: string;
+}
+
 export interface UiStrings {
   /** The close cross's accessible name (`CloseButton`). */
   close: string;
@@ -176,6 +200,8 @@ export interface UiStrings {
   a2ui: A2uiStrings;
   /** The Markdown reader's words. */
   reader: ReaderStrings;
+  /** The problem report's words. */
+  report: ReportStrings;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -283,6 +309,20 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     nextMatch: "Next match",
     closeFind: "Close find",
     noResults: "No results",
+  },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
   },
 };
 

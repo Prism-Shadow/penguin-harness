@@ -53,7 +53,6 @@ import {
   Switch,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -92,6 +91,7 @@ import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -231,7 +231,7 @@ export function TicketsPage() {
       // organization summaries all refetch off it.
       company.ticketsChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -641,7 +641,7 @@ function CreateTicketForm({
       discardUnsaved(form.scope);
       onCreated(detail.ticketId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

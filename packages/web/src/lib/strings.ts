@@ -3999,11 +3999,6 @@ Benchmark：
       title: "请求失败详情",
       lead: "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
       check: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
-      reportLabel: "失败报告",
-      copy: "复制",
-      copied: "已复制报告",
-      copyFailed: "没能复制，请选中报告手动复制",
-      fileIssue: "到 GitHub 提交 issue",
     },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
@@ -6342,6 +6337,23 @@ Benchmark：
       /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "手册加载失败",
     },
+  },
+  /**
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * report dialog it opens, and the notice a crashed part of the page shows.
+   */
+  report: {
+    action: "报告问题",
+    title: "报告问题",
+    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
+    label: "报告",
+    copy: "复制",
+    copied: "已复制报告",
+    copyFailed: "没能复制，请选中报告手动复制",
+    fileIssue: "到 GitHub 提交 issue",
+    crashed: "[出错了]：这部分页面没能显示",
+    reload: "重新加载",
   },
   errors: {
     networkError: "网络错误，请检查连接",

@@ -1,6 +1,6 @@
 /**
- * The report a failed model request hands the person, and the GitHub bug form it opens
- * (features/chat/request-failure-report.ts).
+ * The report a failed model request hands the person (features/chat/request-failure-report.ts),
+ * as the UI package's report kit builds it in the app's environment, and the bug form it opens.
  *
  * - Given a failure and where it ran, the report says what happened (the attempts so far, of how
  *   many), the error code and the request's status, the HTTP status and the request id the
@@ -16,20 +16,14 @@
  *   Error output; nothing else is asked of the person before submitting.
  * - Given a provider's message too long for a link, the link stays under the cap and says the
  *   message was cut; the copied report keeps it whole.
- * - How it is installed: a source build says so whatever started it, else the desktop app's
- *   server, else a server started by hand; an OS is named as people name it.
  */
 import { describe, expect, it } from "vitest";
-import {
-  ISSUE_FORM_URL,
-  ISSUE_URL_CAP,
-  installKindOf,
-  osName,
-  requestFailureReport,
-} from "../src/features/chat/request-failure-report";
+import { ISSUE_FORM_URL, ISSUE_URL_CAP, buildReport } from "@prismshadow/penguin-ui";
+import type { ReportEnvironment } from "@prismshadow/penguin-ui";
+import { requestFailureReport } from "../src/features/chat/request-failure-report";
 import type {
   RequestFailure,
-  ReportEnvironment,
+  RequestFailurePlace,
 } from "../src/features/chat/request-failure-report";
 
 const ID = "req_011CUz3tF8eJ2dQx6Q9pY7Ln";
@@ -48,19 +42,21 @@ const failure = (over: Partial<RequestFailure> = {}): RequestFailure => ({
   ...over,
 });
 
-const ENV: ReportEnvironment = {
-  version: "v0.2.18",
-  install: "desktop",
-  os: "macOS (arm64)",
-  workspace: WORKSPACE,
-};
+const ENV: ReportEnvironment = { version: "v0.2.18", install: "desktop", os: "macOS (arm64)" };
+
+/** The failure's report as the app builds it: in the app's environment, its Workspace kept out. */
+const reportOf = (
+  f: RequestFailure,
+  env: ReportEnvironment = ENV,
+  place: RequestFailurePlace = { workspace: WORKSPACE },
+) => buildReport(requestFailureReport(f, place), env);
 
 /** The bug form's prefilled fields, read back off the link. */
 const fieldsOf = (url: string) => Object.fromEntries(new URL(url).searchParams);
 
 describe("a failed request's report", () => {
   it("says what happened, where and on what, then the provider's own message", () => {
-    const { markdown } = requestFailureReport(failure(), ENV);
+    const { markdown } = reportOf(failure());
     expect(markdown).toContain(
       "- What happened: 6 attempts failed (at most 10), and the run ended",
     );
@@ -74,7 +70,7 @@ describe("a failed request's report", () => {
     expect(markdown).toContain("- Installed as: Desktop app");
     expect(markdown).toContain("- OS: macOS (arm64)");
     expect(markdown).toContain(`\`\`\`text\n${MESSAGE}\n\`\`\``);
-    const waiting = requestFailureReport(failure({ phase: "waiting", attempt: 2 }), ENV).markdown;
+    const waiting = reportOf(failure({ phase: "waiting", attempt: 2 })).markdown;
     expect(waiting).toContain(
       "- What happened: attempt 2 of at most 10 failed, waiting to send attempt 3",
     );
@@ -82,7 +78,7 @@ describe("a failed request's report", () => {
 
   it("holds no key, token or Workspace path from the provider's message, and keeps its request id", () => {
     const leaky = `401 Incorrect API key provided: sk-proj-Ab3dEf6hIj9kLm2nOp5q (Authorization: Bearer 9f8e7d6c5b4a39281706f5e4d3c2b1a0) reading ${WORKSPACE}/notes.md; request_id: ${ID}`;
-    const report = requestFailureReport(failure({ message: leaky }), ENV);
+    const report = reportOf(failure({ message: leaky }));
     for (const shared of [report.markdown, decodeURIComponent(report.issueUrl)]) {
       expect(shared).not.toContain("sk-proj-Ab3dEf6hIj9kLm2nOp5q");
       expect(shared).not.toContain("9f8e7d6c5b4a39281706f5e4d3c2b1a0");
@@ -92,16 +88,15 @@ describe("a failed request's report", () => {
   });
 
   it("leaves out what nobody knows yet, and names a remote machine's OS as that machine's", () => {
-    const unknown = requestFailureReport(failure(), { ...ENV, version: null, os: null });
+    const unknown = reportOf(failure(), { ...ENV, version: null, os: null });
     expect(unknown.markdown).not.toContain("PenguinHarness:");
     expect(unknown.markdown).not.toContain("- OS:");
     expect(fieldsOf(unknown.issueUrl)["system-info"]).toBe(
       "Version: unknown\nInstalled as: Desktop app\nOS: unknown",
     );
-    const remote = requestFailureReport(failure(), {
-      ...ENV,
-      os: "Linux (x64)",
-      remote: { version: "v0.2.16" },
+    const remote = reportOf(failure(), ENV, {
+      workspace: WORKSPACE,
+      remote: { os: "Linux (x64)", version: "v0.2.16" },
     });
     expect(remote.markdown).toContain(
       "- OS: Linux (x64), the remote machine the Session runs on (PenguinHarness v0.2.16)",
@@ -109,7 +104,7 @@ describe("a failed request's report", () => {
   });
 
   it("opens the project's bug form with the fields it requires filled, and the provider's message as its output", () => {
-    const { issueUrl } = requestFailureReport(failure(), ENV);
+    const { issueUrl } = reportOf(failure());
     expect(issueUrl.startsWith(`${ISSUE_FORM_URL}?`)).toBe(true);
     const fields = fieldsOf(issueUrl);
     expect(Object.keys(fields).sort()).toEqual([
@@ -132,27 +127,11 @@ describe("a failed request's report", () => {
 
   it("keeps a long message's link under the cap and says it was cut, while the report keeps it whole", () => {
     const long = `503 ${"upstream overloaded; ".repeat(600)}`;
-    const report = requestFailureReport(failure({ message: long }), ENV);
+    const report = reportOf(failure({ message: long }));
     expect(report.issueUrl.length).toBeLessThanOrEqual(ISSUE_URL_CAP);
     const output = fieldsOf(report.issueUrl).output!;
     expect(output.startsWith("503 upstream overloaded")).toBe(true);
     expect(output).toContain("cut short");
     expect(report.markdown).toContain(long);
-  });
-});
-
-describe("where a report says it ran", () => {
-  it.each<[{ channel: "release" | "source"; desktopMode: boolean }, string]>([
-    [{ channel: "source", desktopMode: true }, "source"],
-    [{ channel: "release", desktopMode: true }, "desktop"],
-    [{ channel: "release", desktopMode: false }, "server"],
-  ])("%o is installed as %s", (server, kind) => {
-    expect(installKindOf(server)).toBe(kind);
-  });
-
-  it("names an OS as people name it", () => {
-    expect(osName({ platform: "darwin", arch: "arm64" })).toBe("macOS (arm64)");
-    expect(osName({ platform: "win32", arch: "x64" })).toBe("Windows (x64)");
-    expect(osName({ platform: "freebsd", arch: "x64" })).toBe("freebsd (x64)");
   });
 });

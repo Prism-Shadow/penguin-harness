@@ -1,35 +1,24 @@
 /**
  * The details of a failed model request — what 「[详情]」 on its line in the conversation opens:
- * the report (request-failure-report.ts) as it would be shared, a press to copy it, and a link to
- * the project's bug form on GitHub, prefilled with it.
+ * the UI package's report dialog (`ErrorReportDialog`) for the request's report
+ * (request-failure-report.ts), with Copy and the link to the prefilled bug form.
  *
- * The report's environment comes from what the app already reads: the version report the sidebar
- * footer and Settings show (`useVersionInfo`) for the version and how it is installed — a source
- * build says so, otherwise the desktop shell's server or a server started by hand — and the OS
- * of the machine the Session runs on: this server's own, or, for a Session on another machine,
- * that machine's version report, asked for when the dialog opens. A fact that has not arrived is
- * left out of the report until it does.
+ * The version and how PenguinHarness is installed are the app's own (the report store's
+ * environment, set at the app's root). The OS is the machine's the Session runs on: this
+ * server's, or, for a Session on another machine, that machine's version report, asked for when
+ * the dialog opens; until it answers the report goes without it.
  *
- * The link opens in a new tab; in the desktop app the shell hands any page outside the app to
- * the system browser, so it lands there.
+ * Its title and lead are the chat's own: most such failures are the provider's or the network's,
+ * which the kit's shared lead (an error like this is likely a defect) would misstate.
  */
 import { useEffect, useState } from "react";
-import {
-  Button,
-  ReportDialog,
-  buttonClass,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
+import { ErrorReportDialog, osName } from "@prismshadow/penguin-ui";
 import type { VersionResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { writeClipboard } from "../../lib/clipboard";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
-import { useVersionInfo } from "../../lib/use-version-info";
-import { useAuth } from "../../state/auth";
-import { installKindOf, osName, requestFailureReport } from "./request-failure-report";
-import type { RequestFailure, ReportEnvironment } from "./request-failure-report";
+import { requestFailureReport } from "./request-failure-report";
+import type { RequestFailure } from "./request-failure-report";
 
 /** The version report of the machine a Session runs on, asked for while `machine` is set. */
 function useMachineVersion(machine: string | null): VersionResponse | null {
@@ -68,63 +57,31 @@ export function RequestFailureDialog({
   workspace: string | null;
   onClose: () => void;
 }) {
-  const { version } = useVersionInfo(true);
-  const { desktopMode } = useAuth();
   const machine = sessionId === null ? null : machineForSession(sessionId);
   const remote = useMachineVersion(failure === null ? null : machine);
-  if (failure === null) return null;
-
-  const env: ReportEnvironment = {
-    version: version?.describe ?? null,
-    install: version === null ? null : installKindOf({ channel: version.channel, desktopMode }),
-    os:
-      machine === null
-        ? version === null
-          ? null
-          : osName(version.runtime)
-        : remote === null
-          ? null
-          : osName(remote.runtime),
-    remote: machine === null ? null : { version: remote?.describe ?? null },
-    workspace,
-  };
-  const model = failure.model ?? sessionModel;
-  const report = requestFailureReport(model === null ? failure : { ...failure, model }, env);
   const t = S.chat.failureReport;
-  const copy = () => {
-    void writeClipboard(report.markdown).then((ok) =>
-      ok ? toastSuccess(t.copied) : toastError(t.copyFailed),
-    );
-  };
-  return (
-    <ReportDialog
-      open
-      onClose={onClose}
-      title={t.title}
-      description={
-        <>
-          <p>{t.lead}</p>
-          <p>{t.check}</p>
-        </>
-      }
-      report={report.markdown}
-      reportLabel={t.reportLabel}
-      actions={
-        <>
-          <Button size="sm" onClick={copy}>
-            {t.copy}
-          </Button>
-          <a
-            href={report.issueUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-file-issue=""
-            className={buttonClass("primary", "sm")}
-          >
-            {t.fileIssue}
-          </a>
-        </>
-      }
-    />
-  );
+  const model = failure?.model ?? sessionModel;
+  const report =
+    failure === null
+      ? null
+      : requestFailureReport(model === null ? failure : { ...failure, model }, {
+          workspace,
+          remote:
+            machine === null
+              ? null
+              : {
+                  os: remote === null ? null : osName(remote.runtime),
+                  version: remote?.describe ?? null,
+                },
+          dialog: {
+            title: t.title,
+            lead: (
+              <>
+                <p>{t.lead}</p>
+                <p>{t.check}</p>
+              </>
+            ),
+          },
+        });
+  return <ErrorReportDialog report={report} onClose={onClose} />;
 }

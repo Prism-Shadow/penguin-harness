@@ -132,8 +132,8 @@ export interface StreamControllerDeps {
   /** Live subagent children carried on task_state events (absent = none): the panel's structural running marks — no tool-output text parsing for live sessions. */
   onSubagents?: (items: SubagentRuntimeInfo[]) => void;
   onLoading: (loading: boolean) => void;
-  /** History load failure message (null = clear). */
-  onError: (message: string | null) => void;
+  /** History load failure message (null = clear), and what was thrown, for judging how serious it is. */
+  onError: (message: string | null, cause?: unknown) => void;
   /** View model content changed (triggers a re-render). */
   onModelChange: () => void;
   /** Pending-approvals table changed. */
@@ -509,7 +509,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       if (disposed || currentEpoch !== epoch) return;
       failed = true;
       deps.onLoading(false);
-      deps.onError(e instanceof Error ? e.message : String(e));
+      deps.onError(e instanceof Error ? e.message : String(e), e);
     }
   };
 

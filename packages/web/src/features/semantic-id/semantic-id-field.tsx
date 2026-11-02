@@ -37,14 +37,13 @@ import {
   ICON_SIZE,
   InfoPopover,
   Input,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
 import type { IdSuggestNotice } from "./id-suggest-notice";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function SemanticIdField({
   projectId,
@@ -117,7 +116,7 @@ export function SemanticIdField({
     } catch (e) {
       // The request itself failed (offline, no permission, the mode switched off): the id is
       // unchanged and there is nothing to say under the field.
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

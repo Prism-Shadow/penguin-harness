@@ -3788,11 +3788,6 @@ Scenarios:
       lead: "Most of these failures come from the model provider or the network. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
       check:
         "Key-shaped strings are taken out of the report; still check it for anything private before you send it.",
-      reportLabel: "Failure report",
-      copy: "Copy",
-      copied: "Report copied",
-      copyFailed: "Could not copy; select the report and copy it by hand",
-      fileIssue: "File an issue on GitHub",
     },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "Retry",
@@ -6090,6 +6085,20 @@ Scenarios:
       /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "Could not load the handbook",
     },
+  },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
   },
   errors: {
     networkError: "Network error, please check your connection",

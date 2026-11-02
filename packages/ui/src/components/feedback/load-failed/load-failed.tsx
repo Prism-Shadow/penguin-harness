@@ -15,6 +15,9 @@
  * cross in the danger tone by default; a caller whose failure is another thing's state (a machine
  * out of reach) passes that thing's glyph instead, in the subtle ink.
  *
+ * When the failure is a defect rather than the person's to fix (`isSeriousError`), the caller
+ * passes a `report`, and 「[报告问题]」 stands beside the press.
+ *
  * Props only: every word is the caller's, and so is what the press does.
  */
 import type { ReactNode } from "react";
@@ -23,6 +26,8 @@ import { TextAction } from "../../actions/text-action/text-action";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { HelpFold } from "../../overlays/info-popover/help-fold";
+import { ReportIssueAction } from "../../report/report-action";
+import type { ErrorReport } from "../../report/error-report";
 
 export interface LoadFailedAction {
   label: string;
@@ -45,6 +50,8 @@ export interface LoadFailedProps {
   action?: LoadFailedAction | null;
   /** The raw technical detail, folded under its own title and set in mono; null for none. */
   details?: { title: string; text: string } | null;
+  /** A serious failure's report, opened from 「[报告问题]」 beside the press; null for none. */
+  report?: ErrorReport | (() => ErrorReport) | null;
 }
 
 export function LoadFailed({
@@ -54,6 +61,7 @@ export function LoadFailed({
   children,
   action = null,
   details = null,
+  report = null,
 }: LoadFailedProps) {
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto px-4 py-10">
@@ -68,11 +76,12 @@ export function LoadFailed({
           <p className="max-w-full break-words text-sm text-fg-muted">{description}</p>
         )}
         {children}
-        {action !== null && (
-          // At the reason's size, under it: a word to press, not a box.
-          <TextAction className="text-sm" onClick={action.onClick}>
-            {action.label}
-          </TextAction>
+        {(action !== null || report !== null) && (
+          // At the reason's size, under it: words to press, not boxes.
+          <span className="flex flex-wrap items-baseline justify-center gap-x-3 text-sm">
+            {action !== null && <TextAction onClick={action.onClick}>{action.label}</TextAction>}
+            {report !== null && <ReportIssueAction report={report} />}
+          </span>
         )}
         {details !== null && (
           <HelpFold title={details.title} className="mt-2 max-w-full text-left">

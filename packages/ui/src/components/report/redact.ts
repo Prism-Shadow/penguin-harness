@@ -1,6 +1,7 @@
 /**
  * Takes what looks like a secret out of a text the person is about to share — a provider's error
- * message on its way into a bug report — and puts `[redacted]` in its place.
+ * message, an exception's stack, on its way into a bug report — and puts `[redacted]` in its
+ * place; and takes the person's name out of the home directories a stack's paths run through.
  *
  * A provider sometimes echoes what it was sent: a key it refused (whole, or masked with a few
  * characters left), the request's Authorization header, a URL with credentials or a key in its
@@ -20,6 +21,10 @@
  * `keep` names strings that look random but are safe to share and useful to whoever reads the
  * report (the provider's request id). Erring on the side of removing: a removed hash costs a
  * reader a detail, a kept key costs the person their account.
+ *
+ * A home directory (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) keeps its shape and
+ * loses its name (`/home/<user>/…`), so a stack still says where a file sits without saying whose
+ * machine it was.
  */
 
 export const REDACTED = "[redacted]";
@@ -71,4 +76,11 @@ export function redactSecrets(text: string, keep: readonly string[] = []): strin
     .replace(URL_CREDENTIALS, (_, scheme: string) => `${scheme}${REDACTED}@`)
     .replace(UUID, unlessKept)
     .replace(TOKEN_RUN, (run) => (kept.has(run) || !looksRandom(run) ? run : REDACTED));
+}
+
+/** The account names in home-directory paths: macOS, Linux, Windows (either slash). */
+const HOME_PATHS = /(\/Users\/|\/home\/|[A-Za-z]:[\\/]+Users[\\/]+)([^\\/\s:"'`<>|]+)/g;
+
+export function redactHomePaths(text: string): string {
+  return text.replace(HOME_PATHS, (_, root: string) => `${root}<user>`);
 }
