@@ -1559,7 +1559,7 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -2776,6 +2776,7 @@ export function ChatPage() {
                                 hasMore: stream.older.hasMore,
                                 loading: stream.older.loading,
                                 error: stream.older.error,
+                                errorCause: stream.older.errorCause,
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
                                 transfer: stream.transfer,

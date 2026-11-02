@@ -137,6 +137,7 @@ const IDLE_OLDER: OlderHistoryState = {
   hasMore: false,
   loading: false,
   error: null,
+  errorCause: null,
   beyondTail: false,
 };
 const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };

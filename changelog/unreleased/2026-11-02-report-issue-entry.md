@@ -19,7 +19,7 @@ An error that is a defect rather than something the person can fix now offers "[
 - The report is in English and holds what happened, the page as its route's pattern (never its ids), the error and when it happened, the PenguinHarness version, how it is installed and the OS. It ends with the error's stack and the components it crashed in. Keys, tokens and the account name in home-directory paths (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) are taken out; nothing leaves the app until the person copies the report or opens the form.
 - Where it appears:
   - error toasts for an action that failed on a serious error, which then stay 10 seconds;
-  - the could-not-load notice when a conversation's history failed on a serious error;
+  - the could-not-load notice when a conversation's history failed on a serious error, and the earlier-messages line at the top of a conversation. A history read the server failed with its converged error counts, and so does a history stream that kept breaking its own framing; a code the server named does not;
   - the crash notice around the page body (the sidebar keeps working, and going to another page tries again), around each dock panel (a broken panel leaves the conversation alone), and around the whole router.
 - The conversation's request-failure details work as before, now built on the same kit.
 - The UI package holds the kit: the report and its redaction, the bug-form link, the seriousness rule (`isSeriousError`), "[Report]" (`ReportIssueAction`), the one dialog (`ReportHost`), and the crash notice (`CrashBoundary`, `CrashNotice`). Error toasts and `LoadFailed` take an optional report. The app sets the version, install and OS once at its root.

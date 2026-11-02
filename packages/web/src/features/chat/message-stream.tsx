@@ -15,7 +15,10 @@ import {
   GlyphIcon,
   ICONS,
   MessageBubble,
+  ReportIssueAction,
   TextAction,
+  exceptionReport,
+  isSeriousError,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
@@ -305,6 +308,8 @@ export interface OlderHistoryControls {
   loading: boolean;
   /** The last backfill failed (retry row); null = fine. */
   error: string | null;
+  /** What the failed backfill threw: a defect (not the reader's to fix) offers 「[报告问题]」. */
+  errorCause?: unknown;
   /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
   prependedCount: number;
   onLoad: () => void;
@@ -675,7 +680,20 @@ export function MessageStream({
                 // (the stream is rebuilding after a reconnect) leaves Retry pressable.
                 <MessageBubble
                   variant="notice"
-                  actions={<TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>}
+                  actions={
+                    <>
+                      <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
+                      {isSeriousError(older.errorCause) && (
+                        <ReportIssueAction
+                          report={() =>
+                            exceptionReport(older.errorCause, {
+                              what: "earlier messages of the conversation could not be loaded",
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  }
                 >
                   {S.chat.loadEarlierFailed(older.error)}
                 </MessageBubble>
