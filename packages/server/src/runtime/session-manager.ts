@@ -1791,8 +1791,9 @@ export class SessionManager {
    * and outside the queue cap, since it starts as soon as the run settles. Then aborts the run
    * the way POST /abort does; the drive's finally auto-starts the head entry, and core sends
    * the abort's carry-over ahead of it. Taken steering is never returned to the composer: it
-   * goes out with the interrupt. An idle entry (the run ended just now) starts the head entry
-   * itself. Returns false, queueing nothing, when there is neither input nor steering to send.
+   * goes out with the interrupt. A run that ended just now has already scheduled the queue's
+   * next start, which picks up the head entry. Returns false, queueing nothing, when there is
+   * neither input nor steering to send.
    */
   private enqueueInterrupt(
     entry: RuntimeEntry,
@@ -1822,8 +1823,6 @@ export class SessionManager {
     if (entry.abort) {
       entry.approvals.denyMain();
       entry.abort.abort();
-    } else if (entry.status === "idle") {
-      void this.startQueuedFollowUp(entry.sessionId);
     }
     return true;
   }
