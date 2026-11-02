@@ -186,6 +186,9 @@ import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
+import { Telemetry } from "./mechanisms/telemetry.js";
+import { TelemetryService } from "./telemetry/service.js";
+import { TelemetryRoutes } from "./telemetry/routes.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
@@ -214,6 +217,7 @@ export class Startup {
   @Use() private readonly errors!: Errors;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly agents!: AgentLifecycle;
+  @Use() private readonly telemetry?: Telemetry;
 
   async setup() {
     // Every Project's config through the server's read path once, before anything opens one:
@@ -238,7 +242,7 @@ export class Startup {
     });
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
-    void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
+    const adoption = this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
     });
     // Deleted Agents whose files a stopped process had not finished removing: removed now, in
@@ -253,9 +257,11 @@ export class Startup {
     // restart leaves each machine disconnected until someone connects it by hand.
     // Fire-and-forget for the same reason as the adoption sweep: a host that is slow to
     // answer must not hold up the App that serves everything else.
-    void this.machines.start().catch((err: unknown) => {
+    const machines = this.machines.start().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "machines_reconnect_failed" });
     });
+    // Telemetry's boot.quiet: until both sweeps have settled (each already catches its own).
+    void this.telemetry?.span("boot.quiet", {}, () => Promise.all([adoption, machines]));
   }
 }
 
@@ -425,6 +431,13 @@ export class PluginConfigModule {}
 })
 export class SandboxSettingsModule {}
 
+/** Telemetry (PRFC-0008): the switch, the in-memory sample buffer and its admin read route. */
+@Module({
+  children: [TelemetryService, TelemetryRoutes],
+  exports: [Telemetry],
+})
+export class TelemetryModule {}
+
 @Module({
   children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
@@ -524,6 +537,7 @@ export class WorkbenchesModule {}
   children: [
     RuntimeModule,
     SettingsModule,
+    TelemetryModule,
     AccountDataModule,
     PluginConfigModule,
     IdentityModule,
