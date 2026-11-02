@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** process
 - **Scope:** `web`
+- **PR:** [#1422](https://github.com/Prism-Shadow/penguin-harness/pull/1422)
 
 [中文版](2026-11-03-reloaded-followup-e2e-on-the-socket.zh.md)
 
