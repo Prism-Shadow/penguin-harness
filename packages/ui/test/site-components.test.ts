@@ -22,7 +22,7 @@
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { SiteCodeCard } from "../src/components/site/site-code";
+import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
 import { SiteNavLinks } from "../src/components/site/site-header";
 import type { SiteLinkProps } from "../src/components/site/site-header";
