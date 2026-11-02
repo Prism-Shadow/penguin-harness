@@ -15,6 +15,7 @@
 - `dist/index.js` 与 `dist/highlighter.js` 是 ES 模块：React 是 peer 依赖，其余 npm 依赖保留为 import，不引入任何 CSS。每个入口各有一份汇总的类型声明，内联了 a2ui 的类型，包因此不再依赖 `@prismshadow/penguin-core`。
 - `dist/styles.css` 用 Web App 的管线（Vite 加 `@tailwindcss/vite`）编译，包含 Tailwind 的基础重置、令牌桥、三套主题、组件用到的工具类、组件自身的 CSS，以及 KaTeX 的样式和它的 woff2 字体。
 - `dist/fonts.css` 与 `dist/fonts/` 以可选方式提供界面字体，并附带许可文本。
+- 组件引用的动画和 `no-scrollbar` 规则从 Web App 的样式表移入包内（`src/animations.css`，由 `theme.css` 引入）：`anim-pop`、`anim-fade`、`anim-msg`，提示条、抽屉与启动器扇形展开的类，以及它们的 keyframes。Web App 经 `theme.css` 得到同样的规则；`styles.css` 与运行时里的对话框、菜单、提示条和抽屉因此和应用一样有进场动画，减少动态效果时一并停止。
 - 新增面向 npm 页面的 README，介绍安装、样式表、根元素上的主题属性、`UiStringsProvider`、代码高亮器和版本约定。
 
 ## Workbench 运行时

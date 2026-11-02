@@ -15,6 +15,7 @@
 - `dist/index.js` and `dist/highlighter.js` are ES modules with React as a peer dependency and the other npm dependencies left as imports. They import no CSS. Each entry has one rolled-up declaration file, with the a2ui types inlined, so the package no longer depends on `@prismshadow/penguin-core`.
 - `dist/styles.css` is compiled with the Web App's pipeline (Vite and `@tailwindcss/vite`): Tailwind's base reset, the token bridge, the three themes, the utilities the components use, the components' CSS and KaTeX's with its woff2 fonts.
 - `dist/fonts.css` and `dist/fonts/` carry the interface typefaces as an opt-in, with their licence texts.
+- The animations and the `no-scrollbar` rule the components name moved from the Web App's stylesheet into the package (`src/animations.css`, imported by `theme.css`): `anim-pop`, `anim-fade`, `anim-msg`, the toast, drawer and launcher-fan classes, and their keyframes. The Web App gets the same rules through `theme.css`; `styles.css` and the runtime now animate dialogs, menus, toasts and drawers as the app does, and both stop them under reduced motion.
 - A README for the npm page covers installing, the stylesheet, the root element's theme attributes, `UiStringsProvider`, the highlighter and the versioning.
 
 ## The Workbench runtime
