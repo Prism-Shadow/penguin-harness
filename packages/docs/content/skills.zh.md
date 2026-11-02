@@ -461,6 +461,29 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 
-工作台页面通过 `/workbench-ui.css` 获得与应用一致的外观：其中的 `--wb-*` 变量和 `wb-*` 类跟随用户的主题、强调色、字体与明暗模式，`wb-badge` 加上 `data-tone` 属性即可按状态着色。`--wb-*` 只会新增、不会改名；要调整页面样式，在 `:root` 上重新声明它们即可。
+工作台页面也可以用 TSX 编写，直接使用应用自己的组件。在 `ui/` 下的 `index.html` 旁边放一个 `app.tsx`，页面里按 `app.js` 加载它，从 `react`、`react-dom/client` 和 `@prismshadow/penguin-ui` 导入即可。不用安装任何东西：服务端会像检查工作台的服务端代码一样严格地检查页面类型，再编译它，React 和组件也由服务端自己提供，所以页面运行的就是检查它的那一份，离线也一样。类型出错，或者导入了这几个之外的模块，加载会失败并指出文件和行号，上一个版本继续运行。每个组件的确切属性都在 `.harness/ui/` 里，由服务端在编译页面时写入。
+
+```tsx
+// ui/app.tsx；ui/index.html 里放 <div id="root"> 和 <script type="module" src="app.js">
+import { useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Badge, Button } from "@prismshadow/penguin-ui";
+
+function App() {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="status">
+      <Badge tone={done ? "done" : "success"}>{done ? "已完成" : "运行中"}</Badge>
+      <Button variant="primary" onClick={() => setDone(true)}>标记完成</Button>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+```
+
+组件会自动跟随用户的主题、强调色、字体与明暗模式。页面上你自己写的元素，用自己的样式表设置样式，颜色和字体取自 `--ui-*` 变量；在这些元素上写 Tailwind 类不会生效。
+
+用纯 HTML 和 JavaScript 写的页面照常可用，通过 `/workbench-ui.css` 获得与应用一致的外观：其中的 `--wb-*` 变量和 `wb-*` 类跟随用户的主题、强调色、字体与明暗模式，`wb-badge` 加上 `data-tone` 属性即可按状态着色。`--wb-*` 只会新增、不会改名；要调整页面样式，在 `:root` 上重新声明它们即可。一个工作台只要有了 TSX 页面，它的所有页面都会改用组件的样式表，所以要把这些页面一起改写。
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
