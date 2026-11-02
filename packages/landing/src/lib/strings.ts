@@ -60,7 +60,7 @@ export const zh = {
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
-      { value: "跨平台部署", label: "Linux · Windows · macOS" },
+      { value: "跨平台部署", label: "Linux、Windows、macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
@@ -105,7 +105,6 @@ export const zh = {
   },
 
   download: {
-    eyebrow: "下载",
     title: "下载桌面端",
     recommended: "当前系统",
     platforms: {
@@ -189,7 +188,6 @@ export const zh = {
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
-    trendsNote: "记分板会记录每个版本的分数、成本和耗时。",
     demo: {
       caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
       cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
@@ -337,13 +335,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     dataTitle: "复杂数据分析",
     dataDesc:
       "三者中准确率最高（66.67%，另两者均为 53.33%），成本只有 OpenAI Codex 的 1/35、Claude Code 的 1/70。",
-    dataFootnote:
-      "15 道复杂数据分析任务 · 单次运行 · Token 与成本为全套题目合计 · 按官方计价估算。",
+    dataFootnote: "15 道复杂数据分析任务，单次运行；Token 与成本为全套题目合计，按官方计价估算。",
     codeTitle: "代码任务",
     codeDesc:
       "准确率与 OpenAI Codex 持平（71.25%）、低于 Claude Code（86.25%），但成本只有前者的 1/58、后者的 1/39。",
     codeFootnote:
-      "40 道代码任务 × 2 次运行（准确率取全部 80 次结果）· Token 与成本为全套题目合计 · 按官方计价估算。",
+      "40 道代码任务，每道运行 2 次，准确率取全部 80 次结果；Token 与成本为全套题目合计，按官方计价估算。",
     colFramework: "实验框架",
     colModel: "模型名称",
     colAccuracy: "准确率（%）",
@@ -387,7 +384,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     docs: "文档",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
   },
 
   blog: {

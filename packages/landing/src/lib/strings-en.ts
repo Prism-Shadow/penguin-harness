@@ -59,7 +59,7 @@ export const en: Strings = {
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
-      { value: "Cross-platform", label: "Linux · Windows · macOS" },
+      { value: "Cross-platform", label: "Linux, Windows, macOS" },
       { value: "100% open source", label: "Apache 2.0 licensed" },
       {
         value: "First self-improving harness",
@@ -107,7 +107,6 @@ export const en: Strings = {
   },
 
   download: {
-    eyebrow: "Download",
     title: "Download the desktop app",
     recommended: "Your system",
     platforms: {
@@ -192,7 +191,6 @@ export const en: Strings = {
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
-    trendsNote: "The scoreboard records each version's score, cost and duration.",
     demo: {
       caption:
         "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
@@ -346,12 +344,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     dataDesc:
       "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
-      "15 complex data-analysis tasks · single run · Tokens and cost are suite totals · estimated at official pricing.",
+      "15 complex data-analysis tasks, one run each. Tokens and cost are suite totals, estimated at official pricing.",
     codeTitle: "Coding tasks",
     codeDesc:
       "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
     codeFootnote:
-      "40 coding tasks × 2 runs (accuracy over all 80 outcomes) · Tokens and cost are suite totals · estimated at official pricing.",
+      "40 coding tasks, two runs each, with accuracy over all 80 outcomes. Tokens and cost are suite totals, estimated at official pricing.",
     colFramework: "Framework",
     colModel: "Model",
     colAccuracy: "Accuracy (%)",
@@ -395,7 +393,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     docs: "Documentation",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
   },
 
   blog: {
