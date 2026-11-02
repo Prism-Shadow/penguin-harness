@@ -70,7 +70,7 @@ export const zh = {
     repo: "GitHub 仓库",
     license: "Apache-2.0 License",
     site: "产品主页",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
   },
 };
 

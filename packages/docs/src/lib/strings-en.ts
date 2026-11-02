@@ -64,6 +64,6 @@ export const en: Strings = {
     repo: "GitHub repository",
     license: "Apache-2.0 License",
     site: "Website",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
   },
 };
