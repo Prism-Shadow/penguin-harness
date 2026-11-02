@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `web`, `landing`
+- **PR:** [#1424](https://github.com/Prism-Shadow/penguin-harness/pull/1424)
 
 [中文版](2026-11-03-benchmark-card-title-first.zh.md)
 
