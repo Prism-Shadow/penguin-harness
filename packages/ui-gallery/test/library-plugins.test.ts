@@ -13,7 +13,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PLUGIN_CATEGORIES, parseSkillFrontmatter } from "@prismshadow/penguin-core";
+import { parse as parseYaml } from "yaml";
+import { PLUGIN_CATEGORIES } from "@prismshadow/penguin-core";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { IDS } from "../src/app/mock/ids";
 
@@ -26,6 +27,21 @@ const categoryOf = (plugin: string): string | undefined =>
     }
   ).penguin?.category;
 
+/**
+ * A SKILL.md's frontmatter, read as the YAML it is: the block between the opening `---` lines,
+ * parsed by the `yaml` package, so a block scalar or a quoted value comes out as its string.
+ * A shipped SKILL.md whose block is missing or is not a YAML mapping fails the test here.
+ */
+function frontmatter(file: string): Record<string, unknown> {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(readFileSync(file, "utf8"))?.[1];
+  if (block === undefined) throw new Error(`${file}: no frontmatter block`);
+  const data: unknown = parseYaml(block);
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(`${file}: frontmatter is not a YAML mapping`);
+  }
+  return data as Record<string, unknown>;
+}
+
 /** A plugin's Skills as their SKILL.md frontmatter has them, by name. */
 function shippedSkills(
   plugin: string,
@@ -35,14 +51,12 @@ function shippedSkills(
     .filter((name) => existsSync(join(dir, name, "SKILL.md")))
     .sort()
     .map((name) => {
-      // The parser the server reads SKILL.md with, so a YAML block scalar or a quoted value
-      // reaches the card as the Plugins page would show it.
-      const meta = parseSkillFrontmatter(readFileSync(join(dir, name, "SKILL.md"), "utf8"));
-      return {
-        name: meta?.name ?? "",
-        description: meta?.description ?? "",
-        version: meta?.version ?? "",
+      const meta = frontmatter(join(dir, name, "SKILL.md"));
+      const field = (key: string) => {
+        const value = meta[key];
+        return typeof value === "string" ? value : "";
       };
+      return { name: field("name"), description: field("description"), version: field("version") };
     });
 }
 
