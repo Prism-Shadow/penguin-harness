@@ -2830,6 +2830,17 @@ export interface TaskCreateRequest {
    */
   queueIfBusy?: boolean;
   /**
+   * Interrupt, then send: when a Task/compaction is in progress, the input goes to the head of
+   * the follow-up queue (behind any earlier interrupt still waiting; the queue's one cap
+   * applies) and the run is aborted the way POST /abort aborts it, so this input is the first
+   * thing to start once the run settles; the response then carries `queued: true`. The abort
+   * leaves its carry-over, which core sends ahead of this input, so the message lands right
+   * after the turn it cut. Undelivered steering meets the abort as it meets a Stop: it is
+   * handed back to the composer. An idle Session just starts the Task. Exclusive with
+   * `queueIfBusy` and `goal` (400).
+   */
+  interrupt?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2891,9 +2902,18 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` enqueued the input as a follow-up instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
 }
+
+/**
+ * POST /api/sessions/:id/interrupt: send one waiting message now — the queued follow-up
+ * `followUpId` names, or the undelivered steering message `steerId` names (exactly one; 400
+ * otherwise). It goes to the head of the follow-up queue and the run is aborted (see
+ * TaskCreateRequest.interrupt); a follow-up keeps its id. 202; 409 `follow_up_started` when
+ * the follow-up already started, 409 `not_pending` when the steering already reached the model.
+ */
+export type InterruptRequest = { followUpId: string } | { steerId: string };
 
 /**
  * Mid-run steering (POST /api/sessions/:id/steer): a user message for the **running** Task,
@@ -2954,6 +2974,8 @@ export interface PendingFollowUpInfo {
   images: number;
   /** Number of file attachments in the queued input. */
   files: number;
+  /** An interrupt waiting for the run it aborted to settle: it starts first, and no other interrupt can move it. */
+  interrupt?: true;
 }
 
 /**
