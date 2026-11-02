@@ -3,6 +3,7 @@
 - **Date:** 2026-11-02
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1420](https://github.com/Prism-Shadow/penguin-harness/pull/1420)
 
 [中文版](2026-11-02-magpie-blog.zh.md)
 
