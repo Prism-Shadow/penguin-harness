@@ -31,4 +31,4 @@ The handoff was written where the summary would have been, carried to the next f
 
 ## SDK
 
-`ContextEngine.switchContext` took an optional second argument, `{ handoff, summarize }`; without it a failed summary still ended the switch as before. `ModelSwitchRefusal` kept `compaction_not_configured`, which `switchModel` no longer produced, so callers that branch on it still compile; it can be removed at the next breaking release (0.3.0).
+`ContextEngine.switchContext` took an optional second argument, the handoff to fall back to: given one, a summary that ended short of completed, unless stopped, handed the context over with it; without one, a failed summary still ended the switch as before. The new `ContextEngine.handOverContext(handoff)` handed the context over without a summary request. `ModelSwitchRefusal` kept `compaction_not_configured`, which `switchModel` no longer produced, so callers that branch on it still compile; it can be removed at the next breaking release (0.3.0).

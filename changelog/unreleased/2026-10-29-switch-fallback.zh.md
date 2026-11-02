@@ -31,4 +31,4 @@
 
 ## SDK
 
-`ContextEngine.switchContext` 增加可选的第二个参数 `{ handoff, summarize }`；不传时，摘要失败仍像以前一样结束切换。`ModelSwitchRefusal` 保留 `compaction_not_configured`——`switchModel` 已不再产生它，保留是为了让以它分支的调用方仍能编译；可在下一个破坏性版本（0.3.0）删除。
+`ContextEngine.switchContext` 增加可选的第二个参数，即拿不到摘要时改用的交接消息：传入时，摘要以完成之外的方式结束且不是被中断，就带着它交接上下文；不传时，摘要失败仍像以前一样结束切换。新增的 `ContextEngine.handOverContext(handoff)` 不发摘要请求，直接交接上下文。`ModelSwitchRefusal` 保留 `compaction_not_configured`——`switchModel` 已不再产生它，保留是为了让以它分支的调用方仍能编译；可在下一个破坏性版本（0.3.0）删除。

@@ -446,7 +446,7 @@ Ctrl+F（Mac 上为 ⌘F）在焦点所在的区域打开查找栏：对话、�
 
 你在对话中的一些操作会以结构化文本的形式写进对话，查看 Trace 时可能会注意到：
 
-- `/model` 开的新 Session，第一条消息以 `[model_switch_from]` 块开头，写明原 Session、它的标题、Trace 文件、Workspace，以及原来的供应商和模型，后面跟着你的消息。新对话把这个块显示为「换模型新开的会话」横幅。在本对话内切换模型不写这个块：它记录为一次普通压缩，新上下文的 `session_meta` 记录新模型。
+- `/model` 开的新 Session，第一条消息以 `[model_switch_from]` 块开头，写明原 Session、它的标题、Trace 文件、Workspace，以及原来的供应商和模型，后面跟着你的消息。新对话把这个块显示为「换模型新开的会话」横幅。在本对话内切换模型记录为一次普通压缩，新上下文的 `session_meta` 记录新模型；只有经 Trace 交接时才写同一个块，块里写明的是本对话自己。
 - 插话以 `[user_steering]` 用户消息的形式，随 Agent 的下一轮送达。
 - 选中的 Skill 放在 `[use_skills]` 块里随消息发送。
 - 每个附件会在消息里加一行 `[attached file: <path>]`。

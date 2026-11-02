@@ -185,15 +185,9 @@ function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
  * cannot reach (see `RuntimeEntry.stranded`), with the ordinary load's own refusal.
  */
 function assertNotStranded(entry: RuntimeEntry): void {
-  const stranded = entry.stranded;
-  if (
-    stranded &&
-    entry.provider === stranded.on.provider &&
-    entry.modelId === stranded.on.modelId
-  ) {
-    const { status, code, message } = stranded.refusal;
-    throw new HttpError(status, code, message);
-  }
+  if (!entry.stranded) return;
+  const { status, code, message } = entry.stranded;
+  throw new HttpError(status, code, message);
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
@@ -587,12 +581,12 @@ export interface RuntimeEntry {
   modelId: string;
   session: RuntimeSession;
   /**
-   * Set when the ordinary load refused this Session and it was loaded for a model switch alone
-   * (see `SessionLoader.load`'s `switchTo`): `refusal` is what the ordinary load answered, and
-   * `on` the model the runtime came up on — one it cannot reach. Until the Session moves off
-   * it, no Task or compaction runs here; each is answered with `refusal` instead.
+   * The ordinary load's refusal, while this runtime — loaded for a model switch alone, because
+   * the ordinary load refused it (see `SessionLoader.load`'s `switchTo`) — is still on the model
+   * it cannot reach: no Task or compaction runs here, each is answered with it instead. Cleared
+   * when the Session moves off that model (see `syncEntryModel`).
    */
-  stranded?: { refusal: { status: number; code: string; message: string }; on: ModelRefDto };
+  stranded?: { status: number; code: string; message: string };
   status: SessionStatus;
   approvals: Approvals;
   abort: AbortController | null;
@@ -1605,7 +1599,6 @@ export class SessionManager {
       // nothing holds it: the next access loads it the ordinary way.
       const dropUnmoved = (): void => {
         if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
-        if (entry.provider !== from.provider || entry.modelId !== from.modelId) return;
         if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
         this.entries.delete(entry.sessionId);
       };
@@ -1668,6 +1661,8 @@ export class SessionManager {
     if (entry.provider === model.provider && entry.modelId === model.modelId) return;
     entry.provider = model.provider;
     entry.modelId = model.modelId;
+    // Off the model it could not reach, a runtime loaded for a switch alone is an ordinary one.
+    delete entry.stranded;
     const ctx = { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId };
     try {
       this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
@@ -2235,18 +2230,15 @@ export class SessionManager {
     const generation = this.generationOf(row.projectId, row.agentId);
     // A switch first loads the Session the ordinary way; only a Session the ordinary load
     // refuses is loaded for the switch alone, and stays stranded on its model until it moves.
+    const switchTo = loadOpts?.switchTo;
     let session: RuntimeSession;
-    let stranded: RuntimeEntry["stranded"];
+    let refusal: HttpError | undefined;
     try {
       session = await this.deps.loader.load(row);
     } catch (err) {
-      const switchTo = loadOpts?.switchTo;
       if (switchTo === undefined || !(err instanceof HttpError)) throw err;
       session = await this.deps.loader.load(row, { switchTo });
-      const on = runtimeModelOf(session) ?? { provider: row.provider, modelId: row.modelId };
-      if (on.provider !== switchTo.provider || on.modelId !== switchTo.modelId) {
-        stranded = { refusal: { status: err.status, code: err.code, message: err.message }, on };
-      }
+      refusal = err;
     }
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
@@ -2271,7 +2263,6 @@ export class SessionManager {
       provider: row.provider,
       modelId: row.modelId,
       session,
-      ...(stranded ? { stranded } : {}),
       status: "idle",
       approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
@@ -2294,6 +2285,11 @@ export class SessionManager {
     // crashed between the Trace write and the row update resumes (from the Trace) on the new
     // model, and the row is brought back in step here.
     this.syncEntryModel(entry);
+    // Loaded for the switch alone and not on the target by now: stranded until it moves off.
+    const onTarget = entry.provider === switchTo?.provider && entry.modelId === switchTo?.modelId;
+    if (refusal && !onTarget) {
+      entry.stranded = { status: refusal.status, code: refusal.code, message: refusal.message };
+    }
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);

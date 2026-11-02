@@ -1004,19 +1004,17 @@ export class Session {
    *
    * When the summary cannot be had — the model the Session is on can no longer be reached
    * (no longer configured, or its client cannot be built: it is then sent nothing), or the
-   * compaction ends other than `completed` or `aborted` — the switch hands the history over
-   * by its Trace path instead, the way `/model` does: the next context opens on the target
-   * with a `[model_switch_from]` block naming this Session, the Trace file of the context it
-   * leaves, its Workspace and the model it was on, in the place the summary would have taken,
-   * and that block follows the meta on the stream. Only a stop keeps the Session where it was.
+   * compaction ends other than `completed` or `aborted` — the switch hands the history over by
+   * Trace path instead: the next context opens on the target with the `/model` block naming
+   * this Session (see `switchHandoff`) where the summary would be. Only a stop keeps the model.
    *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
    * (anything else thrown is a failure). A Session that never ran has no context to close:
    * its first context is re-assembled on the target, silently, and the first run opens it.
    * One resumed after a restart builds its engine first, as `compact()` does. How the context
-   * is then closed and the next one opened is `ContextEngine.switchContext`; on which model,
-   * the opener is told here.
+   * is then closed and the next one opened is `ContextEngine.switchContext` (with a summary) or
+   * `handOverContext` (without); on which model, the opener is told here.
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
    * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
@@ -1047,7 +1045,7 @@ export class Session {
     if (!this.engineDeps.openNextContext) throw unavailable();
     // The model the Session is on, asked the target's question: one that is no longer
     // configured, or whose client cannot be built, is sent nothing.
-    const summarize = await this.modelSwitch.validate(from).then(
+    const reachable = await this.modelSwitch.validate(from).then(
       () => true,
       (err: unknown) => {
         if (err instanceof ModelSwitchRefusedError) return false;
@@ -1059,7 +1057,10 @@ export class Session {
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      const status = yield* this.engine!.switchContext(opts.signal, { handoff, summarize });
+      // Summary first, handing over on any end but a stop; an unreachable model, at once.
+      const status = reachable
+        ? yield* this.engine!.switchContext(opts.signal, handoff)
+        : yield* this.engine!.handOverContext(handoff);
       // Input an aborted bootstrap left with the Session rides on like the engine's pending
       // input: its text alone, in memory (the original stays where the abort wrote it).
       if (status === "completed") {

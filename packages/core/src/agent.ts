@@ -107,7 +107,6 @@ import type {
   ApproveFn,
   CommandPolicyConfig,
   GenerativeModelConfig,
-  LLMInterface,
   ProxyEnvPolicy,
   SpawnConfiner,
   SubagentHandle,
@@ -880,18 +879,18 @@ export class Agent {
     const ref: ModelRef = { provider: meta.provider, model_id: meta.model_id };
     const configured = getModel(this.projectConfig, ref);
     let unreachable: string | undefined;
-    if (!configured) {
-      unreachable = `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`;
-      if (!opts.allowUnreachableModel) throw new Error(unreachable);
-    } else {
+    try {
+      if (!configured) {
+        throw new Error(
+          `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
+        );
+      }
       // Same check as createSession (see checkEntryClient): a key deleted since the Session was
       // created surfaces here, at resume.
-      try {
-        checkEntryClient(configured, this.projectConfig, opts);
-      } catch (err) {
-        if (!opts.allowUnreachableModel) throw err;
-        unreachable = err instanceof Error ? err.message : String(err);
-      }
+      checkEntryClient(configured, this.projectConfig, opts);
+    } catch (err) {
+      if (!opts.allowUnreachableModel) throw err;
+      unreachable = err instanceof Error ? err.message : String(err);
     }
     // An unconfigured model's context is assembled on what its own Trace recorded of it.
     const modelEntry: ModelEntry = configured ?? {
@@ -940,9 +939,8 @@ export class Agent {
     // throw a raw SyntaxError during conversion, and the message must indicate Trace
     // history corruption rather than a regular runtime error. With the bootstrap being
     // lazy, that corruption now surfaces on the first run instead of at resume time —
-    // the price of a resume that no longer blocks on MCP connects. A model that cannot be
-    // reached opens nothing at all: its context gets the stand-in that sends nothing.
-    const replayed: typeof rt.bootstrap = async (opts) => {
+    // the price of a resume that no longer blocks on MCP connects.
+    const bootstrap: typeof rt.bootstrap = async (opts) => {
       const r = await rt.bootstrap(opts);
       if (resumed.history.length > 0) {
         try {
@@ -956,9 +954,6 @@ export class Agent {
       }
       return r;
     };
-    const reason = unreachable;
-    const bootstrap: SessionConfig["bootstrap"] =
-      reason === undefined ? replayed : async () => ({ llm: unreachableModel(reason) });
 
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
@@ -987,19 +982,22 @@ export class Agent {
       }
     }
 
-    // Nor does any other request reach it: a bare request (a title) asked of the Session
-    // before it moves gets the stand-in too, and the ordinary one once it is on another model.
-    let session: Session | undefined;
-    const bareOffTheUnreachable =
-      (r: string): (() => LLMInterface) =>
-      () =>
-        session !== undefined &&
-        !sameModelRef({ provider: session.provider, model_id: session.modelId }, ref)
-          ? rt.createBareLLM()
-          : unreachableModel(r);
-    session = this.newSession(spec, context, rt, trace, {
+    // A model that cannot be reached is sent nothing: its context opens on the stand-in (no MCP
+    // connect, no history), and so does a bare request (a title) until the Session moves off it.
+    const reason = unreachable;
+    const standIn: Partial<SessionConfig> =
+      reason === undefined
+        ? {}
+        : {
+            bootstrap: async () => ({ llm: unreachableModel(reason) }),
+            createBareLLM: () =>
+              sameModelRef({ provider: session.provider, model_id: session.modelId }, ref)
+                ? unreachableModel(reason)
+                : rt.createBareLLM(),
+          };
+    const session = this.newSession(spec, context, rt, trace, {
       bootstrap,
-      ...(reason !== undefined ? { createBareLLM: bareOffTheUnreachable(reason) } : {}),
+      ...standIn,
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {

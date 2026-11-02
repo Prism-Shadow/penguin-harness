@@ -400,7 +400,9 @@ describe("prompt-cache invariants of request assembly", () => {
         openNextContext: () => ({ llm: second.model }),
       });
       await collect(engine.run([userText("task one")], { approve: allowAll }));
-      await collect(engine.switchContext(undefined, { handoff: HANDOFF, summarize }));
+      await collect(
+        summarize ? engine.switchContext(undefined, HANDOFF) : engine.handOverContext(HANDOFF),
+      );
       await collect(engine.run([userText("task two")], { approve: allowAll }));
       return { first: first.requests, second: second.requests };
     };
@@ -453,7 +455,7 @@ describe("prompt-cache invariants of request assembly", () => {
     });
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await expect(collect(engine.switchContext(undefined, { handoff: HANDOFF }))).rejects.toThrow(
+    await expect(collect(engine.switchContext(undefined, HANDOFF))).rejects.toThrow(
       "the target's context could not be assembled",
     );
     await collect(engine.run([userText("task two")], { approve: allowAll }));

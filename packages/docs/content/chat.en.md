@@ -446,7 +446,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S, Ctrl+F, Ctrl+Shift+F and in the
 
 Some of what you do in the chat travels as structured text in the conversation, which you may notice in the Trace:
 
-- `/model` starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "New conversation on another model" banner. A switch inside a conversation writes no block: it is recorded as an ordinary compaction, and the new context's `session_meta` names the new model.
+- `/model` starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "New conversation on another model" banner. A switch inside a conversation is recorded as an ordinary compaction, and the new context's `session_meta` names the new model; it writes the same block only when it hands over by Trace path, and the block then names this conversation itself.
 - A steering message is sent as a `[user_steering]` user message with the agent's next turn.
 - Selected Skills travel with the message in a `[use_skills]` block.
 - Each attached file adds an `[attached file: <path>]` line to the message.

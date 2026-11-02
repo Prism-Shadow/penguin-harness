@@ -1,5 +1,6 @@
 /**
- * In-session model switch (`Session.switchModel` over `ContextEngine.switchContext`).
+ * In-session model switch (`Session.switchModel` over `ContextEngine.switchContext` and
+ * `handOverContext`).
  *
  * A switch is a compaction whose new context opens on the model the user picked: the running
  * context is summarized on the model it is on — always summarize, whatever the configured mode —
@@ -1096,6 +1097,28 @@ describe("in-session model switch", () => {
     },
   );
 
+  it("an unreachable model whose context has not answered yet is replaced as any such context is: nothing sent, no handoff, its text rides on", async () => {
+    const llmA = new ScriptedLLM([], "A");
+    const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "B");
+    const h = harness(traces, {
+      llmA,
+      llms: { [MODEL_B.model_id]: [llmB] },
+      unreachable: [MODEL_A.model_id],
+    });
+    sessions.push(h.session);
+    const controller = new AbortController();
+    controller.abort();
+    await collect(h.session.run([userText("task one")], { signal: controller.signal }));
+
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+
+    expect(result).toBe("completed");
+    expect(payloadTypes(all)).toEqual(["tool_list_ready", "session_meta"]);
+    expect(llmA.calls).toHaveLength(0);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmB.calls[0]!.map(textOf)).toEqual(["task one", "task two"]);
+  });
+
   it("a model the Session can no longer reach is sent nothing: no pair, and the target's context opens with the handoff at once", async () => {
     const llmA = new ScriptedLLM([{ messages: [assistantText("answer one"), usage(50, 50)] }], "A");
     const llmB = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 70)] }], "B");
@@ -1144,7 +1167,7 @@ describe("in-session model switch", () => {
       });
       await collect(engine.run([userText("task one")], { approve: allowAll }));
 
-      const { all, result } = await collectWithReturn(engine.switchContext(undefined, { handoff }));
+      const { all, result } = await collectWithReturn(engine.switchContext(undefined, handoff));
 
       expect(result).toBe("completed");
       expect(compactionEvents(all)[1]).toMatchObject({
@@ -1664,7 +1687,7 @@ describe("in-session model switch", () => {
     await collect(engine.run([userText("task one")], { approve: allowAll }));
     await collect(engine.run([userText("task two, unanswered")], { approve: allowAll }));
 
-    const { result } = await collectWithReturn(engine.switchContext(undefined, { handoff }));
+    const { result } = await collectWithReturn(engine.switchContext(undefined, handoff));
     await collect(engine.run([userText("task three")], { approve: allowAll }));
 
     expect(result).toBe("completed");
