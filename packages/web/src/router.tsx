@@ -13,7 +13,7 @@
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { useLayoutEffect, useState } from "react";
+import { lazy, useLayoutEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -32,43 +32,80 @@ import { MachinesProvider } from "./state/machines";
 import { SessionsProvider } from "./state/sessions";
 import { CompanyProvider } from "./state/company";
 import { AppLayout } from "./components/layout/app-layout";
-import { LoginPage } from "./pages/login";
-import { ChatPage } from "./features/chat/chat-page";
-import { AgentsPage } from "./features/agents/agents-page";
-import { AgentSettingsPage } from "./features/agents/agent-settings-page";
-import { PluginsPage } from "./features/plugins/plugins-page";
-import { ModelsPage } from "./features/models/models-page";
-import { UsagePage } from "./features/usage/usage-page";
-import { BenchmarkPage } from "./features/benchmark/benchmark-page";
-import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
-import { TerminalPage } from "./features/terminal/terminal-page";
-import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
-import { OverviewPage } from "./features/company/overview-page";
-import { OrgChartPage } from "./features/company/org-chart-page";
-import { CalendarPage } from "./features/company/calendar-page";
-import { TicketsPage } from "./features/company/tickets-page";
-import { FinancePage } from "./features/company/finance-page";
-import { ChannelView } from "./features/company/channel-view";
-import { HandbookPage } from "./features/company/handbook-page";
-import { MachinesPage } from "./features/machines/machines-page";
-import { WorkbenchAppPage } from "./features/workbenches/workbench-app-page";
 import { PAGES } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 
+/**
+ * A page behind a dynamic import, so the entry chunk does not carry it.
+ *
+ * A first paint needs the login page and the app shell. Every other page is reached from
+ * somewhere else: a chat by typing /chat, a benchmark by picking a case, the terminal by
+ * its own URL. Shipping all of them in the entry meant every visitor downloaded the
+ * terminal runtime and the benchmark runner before the sidebar could appear.
+ *
+ * The name is passed through so the chunk Vite emits, a stack frame and a network-panel line
+ * all say which page it is, rather than an anonymous chunk.
+ *
+ * No `Suspense` is added here or above: with none anywhere, React holds the root's paint — the
+ * shell included — until the reached page's chunk lands, so the entry stays small and only the
+ * route the visitor asked for is fetched. A boundary per route would let the shell paint first
+ * and leave the page's own area blank until it arrives.
+ */
+function lazyPage(load: () => Promise<Record<string, unknown>>, name: string): React.ComponentType {
+  return lazy(async () => {
+    const mod = await load();
+    const picked = mod[name] ?? Object.values(mod).find((v) => typeof v === "function");
+    if (typeof picked !== "function") {
+      throw new Error("lazy page module has no component export: " + name);
+    }
+    return { default: picked as React.ComponentType };
+  });
+}
+
+const LazyLoginPage = lazyPage(() => import("./pages/login"), "LoginPage");
+const LazyTerminalPage = lazyPage(
+  () => import("./features/terminal/terminal-page"),
+  "TerminalPage",
+);
+const LazyWorkbenchAppPage = lazyPage(
+  () => import("./features/workbenches/workbench-app-page"),
+  "WorkbenchAppPage",
+);
+const LazyOrgIndexRedirect = lazyPage(
+  () => import("./features/company/org-layout"),
+  "OrgIndexRedirect",
+);
+const LazyOrgLayout = lazyPage(() => import("./features/company/org-layout"), "OrgLayout");
+const LazyOverviewPage = lazyPage(() => import("./features/company/overview-page"), "OverviewPage");
+const LazyOrgChartPage = lazyPage(
+  () => import("./features/company/org-chart-page"),
+  "OrgChartPage",
+);
+const LazyCalendarPage = lazyPage(() => import("./features/company/calendar-page"), "CalendarPage");
+const LazyTicketsPage = lazyPage(() => import("./features/company/tickets-page"), "TicketsPage");
+const LazyFinancePage = lazyPage(() => import("./features/company/finance-page"), "FinancePage");
+const LazyHandbookPage = lazyPage(() => import("./features/company/handbook-page"), "HandbookPage");
+const LazyChannelView = lazyPage(() => import("./features/company/channel-view"), "ChannelView");
 /**
  * The renderers the manifest may name. A page is a module.json entry plus one line here;
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
-  ChatPage,
-  AgentsPage,
-  AgentSettingsPage,
-  PluginsPage,
-  ModelsPage,
-  MachinesPage,
-  UsagePage,
-  BenchmarkPage,
-  BenchmarkDetailPage,
+  ChatPage: lazyPage(() => import("./features/chat/chat-page"), "ChatPage"),
+  AgentsPage: lazyPage(() => import("./features/agents/agents-page"), "AgentsPage"),
+  AgentSettingsPage: lazyPage(
+    () => import("./features/agents/agent-settings-page"),
+    "AgentSettingsPage",
+  ),
+  PluginsPage: lazyPage(() => import("./features/plugins/plugins-page"), "PluginsPage"),
+  ModelsPage: lazyPage(() => import("./features/models/models-page"), "ModelsPage"),
+  MachinesPage: lazyPage(() => import("./features/machines/machines-page"), "MachinesPage"),
+  UsagePage: lazyPage(() => import("./features/usage/usage-page"), "UsagePage"),
+  BenchmarkPage: lazyPage(() => import("./features/benchmark/benchmark-page"), "BenchmarkPage"),
+  BenchmarkDetailPage: lazyPage(
+    () => import("./features/benchmark/benchmark-detail-page"),
+    "BenchmarkDetailPage",
+  ),
 };
 
 function renderPage(page: PageEntry): React.ReactNode {
@@ -119,7 +156,7 @@ function RequireAuthBare({ children }: { children: React.ReactNode }) {
 function LoginRoute() {
   const { user } = useAuth();
   if (user) return <Navigate to="/chat" replace />;
-  return <LoginPage />;
+  return <LazyLoginPage />;
 }
 
 /**
@@ -151,7 +188,7 @@ function appRoutes() {
         path="/terminal"
         element={
           <RequireAuthBare>
-            <TerminalPage />
+            <LazyTerminalPage />
           </RequireAuthBare>
         }
       />
@@ -166,7 +203,7 @@ function appRoutes() {
           path={appPath}
           element={
             <RequireAuthBare>
-              <WorkbenchAppPage />
+              <LazyWorkbenchAppPage />
             </RequireAuthBare>
           }
         />
@@ -183,16 +220,16 @@ function appRoutes() {
             organization opens on its overview — the page that says what the whole
             organization is doing; its channels are the sidebar's own list beside it. Both
             fall back to /chat while company mode is unavailable (see OrgLayout). */}
-        <Route path="/org" element={<OrgIndexRedirect />} />
-        <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
+        <Route path="/org" element={<LazyOrgIndexRedirect />} />
+        <Route path="/org/:projectId/:orgId" element={<LazyOrgLayout />}>
           <Route index element={<Navigate to="overview" replace />} />
-          <Route path="overview" element={<OverviewPage />} />
-          <Route path="chart" element={<OrgChartPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="tickets" element={<TicketsPage />} />
-          <Route path="finance" element={<FinancePage />} />
-          <Route path="handbook" element={<HandbookPage />} />
-          <Route path="channels/:channelId" element={<ChannelView />} />
+          <Route path="overview" element={<LazyOverviewPage />} />
+          <Route path="chart" element={<LazyOrgChartPage />} />
+          <Route path="calendar" element={<LazyCalendarPage />} />
+          <Route path="tickets" element={<LazyTicketsPage />} />
+          <Route path="finance" element={<LazyFinancePage />} />
+          <Route path="handbook" element={<LazyHandbookPage />} />
+          <Route path="channels/:channelId" element={<LazyChannelView />} />
           <Route path="*" element={<Navigate to="overview" replace />} />
         </Route>
         {/* Settings and user management live in the settings dialog now (see

@@ -47,7 +47,7 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { FindBar } from "../find/find-bar";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { DRAFT_SESSION_ID } from "../../features/chat/draft-session-id";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
