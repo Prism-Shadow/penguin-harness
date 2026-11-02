@@ -1254,6 +1254,55 @@ describe("session-manager", () => {
     expect(disposed).toBe(1);
   });
 
+  // An idle main Session may still own a child writing cancellation records. Each destructive
+  // lifecycle operation must return a wait that includes that child's asynchronous disposal.
+  it.each(["session", "agent", "project", "shutdown"] as const)(
+    "%s cleanup waits for an idle Session's background disposal",
+    async (scope) => {
+      let release!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let cleaned = false;
+      const fake = fakeSession("session-1", {
+        async dispose() {
+          await cleanup;
+          cleaned = true;
+        },
+      });
+      const manager = makeManager(loaderOf(fake));
+      manager.adopt(ROW, fake);
+      const waiting =
+        scope === "shutdown"
+          ? manager.shutdown()
+          : Promise.all(
+              scope === "session"
+                ? manager.beginSessionDeletion("session-1")
+                : scope === "agent"
+                  ? manager.beginAgentDeletion("p1", ROW.agentId)
+                  : manager.abortProject("p1"),
+            );
+      try {
+        // Drain already-resolved promises without a timer: cleanup remains explicitly gated.
+        const finished = await Promise.race([
+          waiting.then(() => true),
+          Promise.resolve()
+            .then(() => undefined)
+            .then(() => false),
+        ]);
+        expect(finished).toBe(false);
+        expect(cleaned).toBe(false);
+      } finally {
+        release();
+        await waiting;
+        manager.endSessionDeletion("session-1");
+        manager.endAgentDeletion("p1", ROW.agentId);
+        await manager.shutdown();
+      }
+      expect(cleaned).toBe(true);
+    },
+  );
+
   it("shutdown denies a call parked on a person, lets the run wind down, and disposes after it", async () => {
     // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody
     // in this process will ever give.

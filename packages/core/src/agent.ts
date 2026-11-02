@@ -1305,7 +1305,7 @@ export class Agent {
           childSession.thinkingLevel = level;
         },
         dispose() {
-          childSession.dispose();
+          return childSession.dispose();
         },
       };
     }
