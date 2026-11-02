@@ -16,6 +16,4 @@ title: Agent definitions as plugin packages
   definition into every Project that lists the package: nothing runs at copy time, no
   credentials are written, nothing is loaded for the definition's sake. Reinstalling
   updates the copy in place, and a directory deleted by hand is re-filled by the next
-  assembly. The Agent's lived history (`memory/`, `traces/`, `snapshots/`, `workspaces/`,
-  `scratchpad/`, the vault) is runtime state and never travels in a package; a bare
-  `agent_state/` without the table is not a plugin.
+  assembly. A bare `agent_state/` without the table is not a plugin.

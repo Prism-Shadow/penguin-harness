@@ -52,7 +52,7 @@ export type AgentDefinitionSource = (opts: {
   projectId: string;
   /** The definition's target: `agents/<agentId>/agent_state/…`. */
   agentId: string;
-}) => Promise<string[]>;
+}) => Promise<void>;
 
 /** The slot the agents mechanism opens to plugin packages: an Agent definition is one. */
 export interface AgentConfigSlots {
