@@ -3,7 +3,7 @@
 - **Date:** 2026-10-31
 - **Type:** fix
 - **Scope:** `skills`
-- **PR:** [#1411](https://github.com/Prism-Shadow/penguin-harness/pull/1411)
+- **PR:** [#1419](https://github.com/Prism-Shadow/penguin-harness/pull/1419)
 - **Issue:** [#1410](https://github.com/Prism-Shadow/penguin-harness/issues/1410)
 
 [中文版](2026-10-31-rsi-toolkit-frontmatter.zh.md)
