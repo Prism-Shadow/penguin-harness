@@ -1442,6 +1442,10 @@ router
   .delete("/api/sessions/:sessionId/follow-ups/:followUpId", () =>
     fail(409, "follow_up_started", "Already started."),
   )
+  // The demo never holds a queued message, so there is nothing to interrupt with.
+  .post("/api/sessions/:sessionId/interrupt", () =>
+    fail(409, "not_pending", "Nothing is waiting to be sent."),
+  )
   .post("/api/sessions/:sessionId/compact", ({ store, params }): unknown => {
     const sessionId = params.sessionId!;
     if (!store.session(sessionId)) notFound("Session");

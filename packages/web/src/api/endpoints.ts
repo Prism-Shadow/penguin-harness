@@ -163,6 +163,7 @@ import type {
   QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
+  InterruptRequest,
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
@@ -1389,6 +1390,13 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
     { method: "DELETE" },
   );
+
+/** Turn what is waiting into an interrupt: the follow-up `followUpId` names, or all undelivered steering without one; the run stops and it goes out first (202; 409 follow_up_started / not_pending when nothing is left to send that way). */
+export const postInterrupt = (sessionId: string, body: InterruptRequest = {}) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+    method: "POST",
+    body,
+  });
 
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).

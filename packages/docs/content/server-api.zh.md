@@ -927,10 +927,11 @@ interface MessagesResponse {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, goal?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
+| POST | `/interrupt` | 把一个排队的后续 Task 或待投递的插话改为打断：`{followUpId?}` → 202 |
 | POST | `/approvals/:toolCallId` | 审批决定：`{decision}`，`allow` 或 `deny` → 204 |
 | POST | `/tool-calls/:toolCallId/background` | 把一个执行中的工具调用移入后台 → 204 |
 | POST | `/subagents/:childSessionId/message` | 向一个子 Agent 会话发送消息：`{text}` → `{outcome}` |
@@ -942,10 +943,12 @@ interface MessagesResponse {
 | POST | `/switch-model` | 在本 Session 内切换模型：202；从未运行过的 Session 返回 200 与更新后的 Session |
 
 - `POST /tasks` 响应 `{sessionId, queued?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
+- `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，不计入队列上限），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话作为普通用户输入排在这条消息之前一起发出，不会退回。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
+- `POST /interrupt` 对已在等待的消息做 `interrupt: true` 的事：带 `followUpId` 时针对那个排队的后续 Task，不带时把全部尚未投递的插话合并为一条。后续 Task 已经启动时返回 409 `follow_up_started`，没有可投递的插话时返回 409 `not_pending`。
 - `POST /tool-calls/:toolCallId/background` 把一个执行中的工具调用转成后台任务交回，当前轮次得以收尾，对话得以继续。调用以 `completed` 结束并附带 `process_id` 或 `subagent_id`，进程一律不终止，结果稍后通过常规的后台任务通知送达。没有这个 id 的调用在执行时返回 404 `tool_call_not_found`（id 未知、调用已结束、或运行时已不存在）；调用还在运行、但它的工具没有后台形态时返回 409 `tool_not_detachable`。只有 `exec_command` 和 `run_subagent` 有后台形态。
 - `POST /subagents/:childSessionId/message` 无论子 Agent 处于什么状态，都把文本作为用户输入投递给它。子 Agent 正在运行、消息作为插话排队时，`outcome` 为 `steered`；空闲的子 Agent 启动一次后续运行时为 `started`；已释放的子 Agent 重新拉起并开始下一轮时为 `resumed`。子 Agent 以自己上下文的思考等级运行，可以用子 Session 上的 `PATCH` 固定它。空 `text` 返回 400；404 `subagent_gone` 表示子 Agent 的记录不存在或无法复活；409 `subagent_busy` 表示子 Agent 目前无法接收消息。
 - `POST /subagents/:childSessionId/abort` 只停止子 Agent 当前的运行；子 Session 仍可用于插话和后续 Task。成功停止一次运行时返回 202；子 Agent 已空闲或未知时返回 204。

@@ -3877,12 +3877,25 @@ Benchmark：
     steerQueuedItem: (content: string) => `插话已排队，将随下一轮送达：${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
     steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
     steerModeFollowUp: "排队",
     steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    steerModeInterrupt: "打断",
+    steerModeInterruptHint: "打断本轮：停止运行，消息接在被打断的那一轮之后立即发送",
+    interruptPlaceholder: "打断本轮并发送，消息接在被打断的那一轮之后",
+    interruptPlaceholderShort: "打断并发送…",
+    interruptSend: "打断并发送",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `正在打断，随后发送：${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "打断",
+    /** Its tooltip. */
+    interruptQueuedTitle: "停止本轮，立即发送这条消息",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "这条消息已经发出，无需打断。",
     followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
     followUpPlaceholderShort: "排队为下一条消息…",
     followUpSend: "排队为下一条消息",

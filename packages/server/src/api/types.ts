@@ -2592,6 +2592,16 @@ export interface TaskCreateRequest {
    */
   queueIfBusy?: boolean;
   /**
+   * Interrupt, then send: when a Task/compaction is in progress, the input goes to the head of
+   * the follow-up queue (behind any earlier interrupt still waiting, outside the queue cap)
+   * and the run is aborted the way POST /abort aborts it, so this input is the first thing to
+   * start once the run settles; the response then carries `queued: true`. The abort leaves its
+   * carry-over, which core sends ahead of this input, so the message lands right after the
+   * turn it cut. Undelivered steering goes along, ahead of this input, as plain user input.
+   * An idle Session just starts the Task. Exclusive with `queueIfBusy` and `goal` (400).
+   */
+  interrupt?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2647,8 +2657,19 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` enqueued the input as a follow-up instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+}
+
+/**
+ * POST /api/sessions/:id/interrupt: turn what is already waiting into an interrupt — the
+ * queued follow-up named by `followUpId`, or, without it, every undelivered steering message
+ * merged into one entry — placed at the head of the follow-up queue, then the run is aborted
+ * (see TaskCreateRequest.interrupt). 202; 409 `follow_up_started` when the follow-up already
+ * started, 409 `not_pending` when no steering is left to deliver.
+ */
+export interface InterruptRequest {
+  followUpId?: string;
 }
 
 /**
@@ -2710,6 +2731,8 @@ export interface PendingFollowUpInfo {
   images: number;
   /** Number of file attachments in the queued input. */
   files: number;
+  /** An interrupt waiting for the run it aborted to settle: it starts first, and no other interrupt can move it. */
+  interrupt?: true;
 }
 
 /**
