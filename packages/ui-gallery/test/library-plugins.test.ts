@@ -13,7 +13,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PLUGIN_CATEGORIES } from "@prismshadow/penguin-core";
+import { PLUGIN_CATEGORIES, parseSkillFrontmatter } from "@prismshadow/penguin-core";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { IDS } from "../src/app/mock/ids";
 
@@ -35,10 +35,14 @@ function shippedSkills(
     .filter((name) => existsSync(join(dir, name, "SKILL.md")))
     .sort()
     .map((name) => {
-      const head =
-        /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, name, "SKILL.md"), "utf8"))?.[1] ?? "";
-      const field = (key: string) => new RegExp(`^${key}: (.*)$`, "m").exec(head)?.[1] ?? "";
-      return { name: field("name"), description: field("description"), version: field("version") };
+      // The parser the server reads SKILL.md with, so a YAML block scalar or a quoted value
+      // reaches the card as the Plugins page would show it.
+      const meta = parseSkillFrontmatter(readFileSync(join(dir, name, "SKILL.md"), "utf8"));
+      return {
+        name: meta?.name ?? "",
+        description: meta?.description ?? "",
+        version: meta?.version ?? "",
+      };
     });
 }
 
