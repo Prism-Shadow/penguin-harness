@@ -1,4 +1,4 @@
-import { MainSidebarBadgesModule } from "@penguinharness/plugin-models/web/main-sidebar-badges.module";
+import { MainSidebarBadgesModule } from "@penguinharness/plugin-models/web";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render

@@ -1,5 +1,4 @@
-import type { PeakWindows } from "./model-peak-windows";
-import type { ModelGroupSort } from "@penguinharness/plugin-models/web/model-sort";
+import type { ModelGroupSort } from "@penguinharness/plugin-models/web";
 
 import type { StartPageSiteId } from "./browser-start-sites";
 
