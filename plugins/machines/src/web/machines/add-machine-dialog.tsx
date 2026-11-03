@@ -313,7 +313,7 @@ export function AddMachineDialog({
       }
       const answer =
         plan.verb === "use"
-          ? await api.useMachines(projectId, plan.machines)
+          ? await api.useMachinesApi(projectId, plan.machines)
           : await api.addMachines(projectId, plan.machines);
       onAdded({ state: answer, verb: plan.verb, count: plan.machines.length });
       onClose();
