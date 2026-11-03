@@ -84,6 +84,11 @@ export const SESSION_CONFIRM_TTL_MS = 30_000;
 export const MACHINE_STREAM_STALL_MS = 60_000;
 /** The most Sessions whose machine's word is kept at once (HistorySync.sessionOn). */
 const FACTS_KEPT = 10_000;
+/**
+ * How often a generation that keeps running deletes the copies past their retention
+ * (TraceCache.expire) — a hub up for weeks, with nothing streamed for days.
+ */
+export const CACHE_SWEEP_MS = 24 * 60 * 60 * 1000;
 /** A window the copy cannot be assembled into is read again this often before it is an error. */
 const ASSEMBLY_ATTEMPTS = 3;
 /**
@@ -402,6 +407,15 @@ function socketVerdict(body: unknown): "older" | "http" | "refused" | "closed" |
   if (code === "machine_incompatible" || code === "machine_socket_unavailable") return "http";
   if (code === "unavailable") return "closed";
   return "wait";
+}
+
+/** The copies past their retention go (TraceCache.expire); a failure is logged, and the next pass tries again. */
+function expireCopies(deps: HistorySyncDeps, held: () => ReadonlySet<string>): Promise<void> {
+  return deps.cache.expire(held).catch((err: unknown) => {
+    deps.log(
+      `[machines] history copy expiry failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 }
 
 /** The `/messages` query of a window read. */
@@ -814,12 +828,16 @@ class HistoryJob {
         this.#whole = true;
         this.#resolveFill();
       }
-      // Evicted after a stream completes: every open job's group (this one's too) is left alone.
-      this.deps.cache.evict(this.held()).catch((err: unknown) => {
-        this.deps.log(
-          `[machines] history copy eviction failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      // Kept in bounds after a stream completes — what was not read within the retention goes,
+      // then, past the cap, the least recently read: every open job's group (this one's too)
+      // is left alone.
+      void expireCopies(this.deps, this.held).then(() =>
+        this.deps.cache.evict(this.held()).catch((err: unknown) => {
+          this.deps.log(
+            `[machines] history copy eviction failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }),
+      );
       return null;
     }
     // Cut short (the socket dropped, the watchdog, an `end` without `done`): asked again, from
@@ -1087,7 +1105,7 @@ class HistoryJob {
         ),
       ];
     }
-    this.deps.cache.touch(this.machineId, this.#group);
+    await this.#cached(() => this.deps.cache.touch(this.machineId, this.#group), undefined);
     const { totals } = window;
     stream.left = {
       window: { ...totals.window },
@@ -1393,7 +1411,10 @@ export class HistoryReader {
   }
 }
 
-/** Every machine Session's job, on one platform generation. */
+/**
+ * Every machine Session's job, on one platform generation, and the copy's retention over them:
+ * the copies not read for a week go as the generation starts, after each stream, and daily.
+ */
 export class HistorySync {
   readonly #jobs = new Map<string, HistoryJob>();
   /** What each machine said of a Session lately (sessionOn), by `<machineId>\0<sessionId>`. */
@@ -1401,9 +1422,22 @@ export class HistorySync {
   readonly #asking = new Map<string, Promise<SessionFact>>();
   readonly #clock: SyncClock;
   #closed = false;
+  /** The next pass over the copies' retention. */
+  #sweep: unknown;
 
   constructor(private readonly deps: HistorySyncDeps) {
     this.#clock = deps.clock ?? realClock;
+    // The copies past their retention go as the generation starts — what an earlier run left
+    // goes on the hub's start — and then about once a day while it runs.
+    this.#sweep = this.#expire();
+  }
+
+  /** One pass over the copies' retention; answers the timer of the next. */
+  #expire(): unknown {
+    void expireCopies(this.deps, () => this.held());
+    return this.#clock.setTimeout(() => {
+      this.#sweep = this.#expire();
+    }, CACHE_SWEEP_MS);
   }
 
   /** A reader of one machine Session's history, until `signal` aborts or it is closed. */
@@ -1556,9 +1590,13 @@ export class HistorySync {
     return out;
   }
 
-  /** The generation is replaced: every job's readers are let go (GenerationClosed), and no new job starts. */
+  /**
+   * The generation is replaced: every job's readers are let go (GenerationClosed), no new job
+   * starts, and the retention's daily pass stops.
+   */
   close(): void {
     this.#closed = true;
+    this.#clock.clearTimeout(this.#sweep);
     for (const job of this.#jobs.values()) job.close();
     this.#jobs.clear();
   }
