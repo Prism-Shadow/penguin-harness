@@ -1044,6 +1044,9 @@ for (const project of projects) {
     return sym && componentKeyBySymbol.has(sym) ? moduleNameBySymbol.get(sym) : undefined;
   };
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
+    // A class named by an earlier project has its manifest built: the map is shared across
+    // projects, and building it twice would read as a module defined twice.
+    if (manifests[meta.name]) continue;
     const m = {
       name: meta.name,
       kind,
