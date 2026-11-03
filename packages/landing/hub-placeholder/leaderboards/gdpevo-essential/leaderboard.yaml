@@ -1,5 +1,9 @@
-subtitle: "Test score against what one run costs"
-subtitle_zh: "测试集得分与单次运行开销"
+leaderboard_id: "gdpevo-essential"
+title: "GDPevo-Essential Leaderboard"
+title_zh: "GDPevo-Essential 排行榜"
+author:
+  name: "Prism-Shadow"
+  homepage: "https://github.com/Prism-Shadow"
 values:
   - op: "mean"
     args:

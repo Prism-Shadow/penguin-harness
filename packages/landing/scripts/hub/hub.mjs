@@ -6,7 +6,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readBenchmarks, readLeaderboards, readPlugins } from "./read.mjs";
-import { benchmarkRepo } from "./source.mjs";
+import { benchmarkRepo, dataFiles } from "./source.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PLUGINS_DIR = join(HERE, "..", "..", "..", "..", "plugins");
@@ -23,7 +23,7 @@ export function loadHub({
   placeholderDir = PLACEHOLDER_DIR,
 } = {}) {
   const plugins = readPlugins(pluginsDir);
-  const benchmarks = readBenchmarks(repo);
+  const benchmarks = readBenchmarks(repo, dataFiles(repo));
   const leaderboards = readLeaderboards(repo, placeholderDir);
   const pluginById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const benchmarkById = new Map(benchmarks.map((benchmark) => [benchmark.id, benchmark]));
@@ -34,12 +34,12 @@ export function loadHub({
 
   const leaderboardDetails = Object.fromEntries(
     leaderboards.map((board) => {
-      const entries = Object.values(board.charts).flatMap((chart) => chart.entries);
+      const entries = board.entries;
       const algorithms = [...new Set(entries.map((entry) => entry.algorithm).filter(Boolean))].map(
         (id) => link(pluginById.get(id) ?? { id, title: id }),
       );
       const taskTitles = {};
-      for (const { benchmarkId, taskIds } of board.charts.waffle?.tasks ?? []) {
+      for (const { benchmarkId, taskIds } of board.waffle.tasks) {
         for (const taskId of taskIds) {
           const task = benchmarkById
             .get(benchmarkId)
@@ -47,14 +47,13 @@ export function loadHub({
           if (task) taskTitles[`${benchmarkId}/${taskId}`] = task.title;
         }
       }
-      const { charts, benchmarks: used, ...rest } = board;
+      const { benchmarks: used, ...rest } = board;
       return [
         board.id,
         {
           ...rest,
-          entryCount: new Set(entries.map((entry) => entry.key)).size,
+          entryCount: entries.length,
           benchmarkCount: used.length,
-          charts,
           benchmarks: used.map((id) => link(benchmarkById.get(id) ?? { id, title: id })),
           algorithms,
           taskTitles,
@@ -111,7 +110,7 @@ function pluginSummary(plugin) {
 }
 
 function benchmarkSummary(benchmark) {
-  const { references, tasks, sourceUrl, ...summary } = benchmark;
+  const { references, tasks, data, sourceUrl, ...summary } = benchmark;
   const limits = tasks.map((task) => task.budget.timeout);
   return {
     ...summary,
@@ -126,7 +125,6 @@ function leaderboardSummary(board) {
     title: board.title,
     ...(board.titleZh ? { titleZh: board.titleZh } : {}),
     author: board.author,
-    kinds: Object.keys(board.charts),
     benchmarks: board.benchmarks.map((benchmark) => benchmark.id),
     entryCount: board.entryCount,
     benchmarkCount: board.benchmarkCount,

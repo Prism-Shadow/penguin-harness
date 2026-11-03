@@ -1,7 +1,7 @@
 /**
  * The page of one hub entry: a header (icon, title, one line under it, a link to its source),
- * then the body beside a column of facts — below 1024 px the facts follow the header. Sections in
- * the body are ruled, not boxed.
+ * then the body's panels beside a column with the facts panel; below 1024 px that column comes
+ * first. Each block is an opaque panel with a title bar, so the blocks read apart at a glance.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -51,24 +51,36 @@ export function HubMissing({ listHref }: { listHref: string }) {
   );
 }
 
+/** The opaque panel every block of a detail page sits in, matching the site's other cards. */
+export const PANEL =
+  "rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900";
+
+export interface HubFact {
+  label: string;
+  value: ReactNode;
+}
+
 export function HubDetail({
   lead,
   title,
   subtitle,
   sourceUrl,
   facts,
+  aside,
   children,
 }: {
   lead?: ReactNode;
   title: string;
   subtitle?: ReactNode;
   sourceUrl?: string;
-  facts: readonly { label: string; value: ReactNode }[];
+  facts: readonly HubFact[];
+  /** More panels under the facts. */
+  aside?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <ExternalLinkScope>
-      <article className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+      <article className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
         <header className="flex flex-wrap items-start gap-x-4 gap-y-3">
           {lead}
           <div className="min-w-0 flex-1 basis-72">
@@ -82,49 +94,83 @@ export function HubDetail({
           {sourceUrl && (
             <ExternalLink
               href={sourceUrl}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm whitespace-nowrap text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900"
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap text-gray-700 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
             >
               <GitHubIcon aria-hidden className="h-4 w-4" />
               {S.hub.viewSource}
             </ExternalLink>
           )}
         </header>
-        <div className="mt-8 grid gap-x-12 gap-y-8 border-t border-gray-200 pt-8 lg:grid-cols-[minmax(0,1fr)_15rem] dark:border-gray-800">
-          <aside className="lg:order-2">
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 lg:grid-cols-1 lg:gap-y-1">
-              {facts.map(({ label, value }) => (
-                <div key={label} className="contents lg:block lg:pb-3">
-                  <dt className="text-xs leading-5 text-gray-500 dark:text-gray-400">{label}</dt>
-                  <dd className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">{value}</dd>
-                </div>
-              ))}
-            </dl>
+        <div className="mt-8 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
+          <aside className="flex flex-col gap-5 lg:order-2">
+            <HubPanel title={S.hub.details} flush>
+              <dl className="divide-y divide-gray-100 dark:divide-gray-800">
+                {facts.map(({ label, value }) => (
+                  <div key={label} className="px-4 py-2.5">
+                    <dt className="text-xs leading-5 text-gray-500 dark:text-gray-400">{label}</dt>
+                    <dd className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </HubPanel>
+            {aside}
           </aside>
-          <div className="flex min-w-0 flex-col gap-8 lg:order-1">{children}</div>
+          <div className="flex min-w-0 flex-col gap-5 lg:order-1">{children}</div>
         </div>
       </article>
     </ExternalLinkScope>
   );
 }
 
-/** A ruled section of a detail page's body. */
-export function HubSection({
+/**
+ * One block of a detail page: an opaque panel with a title bar (and the block's own controls at
+ * its right end) over its content. `flush` drops the content's padding for rows that run edge to
+ * edge.
+ */
+export function HubPanel({
   title,
   id,
+  actions,
+  flush = false,
   children,
 }: {
   title: ReactNode;
   id?: string;
+  actions?: ReactNode;
+  flush?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section
-      id={id}
-      className="scroll-mt-20 border-t border-gray-200 pt-6 first:border-t-0 first:pt-0 dark:border-gray-800"
-    >
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3">{children}</div>
+    <section id={id} className={`scroll-mt-20 min-w-0 ${PANEL}`}>
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {actions}
+      </header>
+      <div className={flush ? "" : "p-4 sm:p-5"}>{children}</div>
     </section>
+  );
+}
+
+/** The References panel: a detail page's last block. */
+export function HubReferences({ links }: { links: readonly string[] }) {
+  if (links.length === 0) return null;
+  return (
+    <HubPanel title={S.hub.references}>
+      <ul className="flex flex-col gap-1.5 text-sm">
+        {links.map((href) => (
+          <li key={href} className="[overflow-wrap:anywhere]">
+            <ExternalLink
+              href={href}
+              className="text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {href}
+            </ExternalLink>
+          </li>
+        ))}
+      </ul>
+    </HubPanel>
   );
 }
 

@@ -7,9 +7,13 @@
  *   description, and lists what it ships.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
  *   naming that file (nothing is silently dropped).
+ * - Given a benchmark with a data folder, when it is read, then each task carries its rubric and
+ *   finds its data folder by the link in its statement or by its id without the CASE prefix, and a
+ *   task with neither has no data.
  * - Given a leaderboard value averaging two experiments of three attempts each, when it is read,
  *   then its score is the mean of their summaries, its std the sample std of the per-attempt
- *   composites, and its cost, time and tokens the sums of one run.
+ *   composites, and its cost, time and tokens the sums of one run; when the attempts do not line
+ *   up, the std is composed from each experiment's score_std instead.
  * - Given a value mixing two algorithms, when it is read, then the build fails.
  * - Given a repository without leaderboards/, when the hub is read, then the placeholder stands in
  *   and finds experiments in the flat layout; given one with leaderboards/, the placeholder is not
@@ -92,8 +96,8 @@ const meta = (id: string, algorithm?: string) =>
     `author: { name: Prism-Shadow }`,
   ].join("\n");
 
-const summary = (mean: number, cost: number) =>
-  `time: "2026-10-31T12:00:00Z"\nscore_mean: ${mean}\nscore_std: 0\nn_attempt: 3\ncost: ${cost}\nduration_ms: 1000\nn_input_tokens: 100\nn_cache_tokens: 50\nn_output_tokens: 10\n`;
+const summary = (mean: number, cost: number, std = 0) =>
+  `time: "2026-10-31T12:00:00Z"\nscore_mean: ${mean}\nscore_std: ${std}\nn_attempt: 3\ncost: ${cost}\nduration_ms: 1000\nn_input_tokens: 100\nn_cache_tokens: 50\nn_output_tokens: 10\n`;
 
 const attempt = (scores: Record<string, number>) =>
   Object.entries(scores)
@@ -111,10 +115,11 @@ function experiment(
   attempts: Record<string, number>[],
   mean: number,
   cost: number,
+  std = 0,
 ) {
   return {
     [`${prefix}/${id}/meta_info.yaml`]: meta(id, algorithm),
-    [`${prefix}/${id}/test/summary.yaml`]: summary(mean, cost),
+    [`${prefix}/${id}/test/summary.yaml`]: summary(mean, cost, std),
     ...Object.fromEntries(
       attempts.map((scores, i) => [`${prefix}/${id}/test/attempt-${i + 1}.yaml`, attempt(scores)]),
     ),
@@ -122,9 +127,7 @@ function experiment(
 }
 
 const board = (dir: string, values: string) => ({
-  [`${dir}/board-a/meta_info.yaml`]:
-    'leaderboard_id: board-a\ntitle: "Board A"\nauthor: { name: Prism-Shadow }\n',
-  [`${dir}/board-a/table.yaml`]: `values:\n${values}`,
+  [`${dir}/board-a/leaderboard.yaml`]: `leaderboard_id: board-a\ntitle: "Board A"\nauthor: { name: Prism-Shadow }\nvalues:\n${values}`,
 });
 
 const leaf = (id: string) => `      - { experiment_id: ${id}, phase: test }\n`;
@@ -196,17 +199,68 @@ describe("the hub readers", () => {
     );
   });
 
+  it("gives each task its rubric and finds its data folder by the statement's link or its id", () => {
+    const withData = repo({
+      "packages/bench-a/t1/rubric/README.md": "# Rubric\n\n100 pts.",
+      "packages/bench-a/t1/statement/README.md":
+        "Task: https://github.com/o/r/tree/abc/data/bench-a/tasks/first-task",
+      "packages/bench-a/CASE-003-third/task_config.toml": task("CASE-003-third"),
+      "data/bench-a/README.md": "# Data",
+      "data/bench-a/tasks/first-task/instruction.md": "Do the first task.",
+      "data/bench-a/tasks/first-task/environment/input.csv": "a,b",
+      "data/bench-a/tasks/third/task.toml": "",
+    });
+    const hub = loadHub({ repo: withData, pluginsDir: tree({}), placeholderDir: tree({}) });
+    const bench = hub.details.benchmark["bench-a"]!;
+    expect(bench.data).toMatchObject({ readme: "# Data", fileCount: 4 });
+    const byId = Object.fromEntries(bench.tasks.map((t) => [t.id, t]));
+    expect(byId["t1"]!.rubric).toBe("# Rubric\n\n100 pts.");
+    expect(byId["t1"]!.data).toMatchObject({
+      instruction: "Do the first task.",
+      files: ["environment/input.csv", "instruction.md"],
+    });
+    expect(byId["CASE-003-third"]!.data?.files).toEqual(["task.toml"]);
+    expect(byId["t2"]!.data).toBeUndefined();
+  });
+
   it("averages a value's experiments, takes the std across attempt composites and sums one run", () => {
     const hub = loadHub({
       repo: repo(),
       pluginsDir: plugins(),
       placeholderDir: tree(board(".", mean2)),
     });
-    const [entry] = hub.details.leaderboard["board-a"]!.charts.table!.entries;
+    const [entry] = hub.details.leaderboard["board-a"]!.entries;
     expect(entry!.value).toBe(65);
     // Attempt composites: mean(70, 40) = 55, mean(80, 50) = 65, mean(90, 60) = 75.
     expect(entry!.std).toBeCloseTo(10);
-    expect(entry).toMatchObject({ cost: 2, durationMs: 2000, tokens: 220, algorithm: "toolkit" });
+    expect(entry).toMatchObject({
+      cost: 2,
+      durationMs: 2000,
+      tokens: 220,
+      algorithm: "toolkit",
+      stdFrom: "attempts",
+    });
+    expect(entry!.parts.map((part) => [part.experimentId, part.value])).toEqual([
+      ["exp-1", 80],
+      ["exp-2", 50],
+    ]);
+  });
+
+  it("composes the std from each experiment's score_std when the attempts do not line up", () => {
+    const uneven = repo({
+      ...experiment("experiments", "exp-4", "toolkit", [{ t1: 10 }, { t1: 30 }], 20, 1, 6),
+      ...experiment("experiments", "exp-5", "toolkit", [{ t1: 50 }], 50, 1, 8),
+    });
+    const values = `  - op: mean\n    args:\n${leaf("exp-4")}${leaf("exp-5")}`;
+    const hub = loadHub({
+      repo: uneven,
+      pluginsDir: tree({}),
+      placeholderDir: tree(board(".", values)),
+    });
+    const [entry] = hub.details.leaderboard["board-a"]!.entries;
+    // sqrt((1/2)^2 * 6^2 + (1/2)^2 * 8^2) = 5
+    expect(entry!.std).toBeCloseTo(5);
+    expect(entry!.stdFrom).toBe("experiments");
   });
 
   it("refuses a value whose experiments use different algorithms", () => {
@@ -223,23 +277,20 @@ describe("the hub readers", () => {
       ...board("leaderboards", `${leaf("exp-9")}`.replace("      - ", "  - ")),
       ...experiment("experiments/board-a", "exp-9", undefined, [{ t1: 90 }], 90, 1),
     });
-    const placeholder = tree({ "other/meta_info.yaml": "leaderboard_id: other\n" });
+    const placeholder = tree({ "other/leaderboard.yaml": "leaderboard_id: other\n" });
     const hub = loadHub({ repo: own, pluginsDir: tree({}), placeholderDir: placeholder });
     expect(hub.index.leaderboards.map((b) => b.id)).toEqual(["board-a"]);
-    expect(hub.details.leaderboard["board-a"]!.charts.table!.entries[0]).toMatchObject({
+    expect(hub.details.leaderboard["board-a"]!.entries[0]).toMatchObject({
       value: 90,
       algorithm: null,
     });
   });
 
   it("orders the waffle's tasks and leaves a task an entry never ran empty", () => {
-    const values = `  - { experiment_id: exp-1, phase: test }\n  - { experiment_id: exp-2, phase: test }\n`;
-    const placeholder = tree({
-      ...board(".", values),
-      "board-a/waffle.yaml": `values:\n${values}`,
-    });
+    const values = `  - { experiment_id: exp-1, phase: test }\n  - { experiment_id: exp-2 }\n`;
+    const placeholder = tree(board(".", values));
     const hub = loadHub({ repo: repo(), pluginsDir: tree({}), placeholderDir: placeholder });
-    const waffle = hub.details.leaderboard["board-a"]!.charts.waffle!;
+    const waffle = hub.details.leaderboard["board-a"]!.waffle;
     expect(waffle.tasks).toEqual([
       { benchmarkId: "bench-a", taskIds: ["t1"] },
       { benchmarkId: "bench-a", taskIds: ["t2"] },

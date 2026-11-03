@@ -76,6 +76,28 @@ export interface BenchmarkTask {
   budget: Partial<Record<"timeout" | "cpus" | "ram" | "disk" | "gpus", number>>;
   /** The statement's README.md (Markdown). */
   statement: string;
+  /** The rubric's README.md (Markdown). */
+  rubric: string;
+  /** The task's folder under `data/`, when it has one. */
+  data?: TaskData;
+}
+
+export interface TaskData {
+  /** The folder on GitHub. */
+  url: string;
+  /** Its instruction.md (Markdown), the prompt the agent is given. */
+  instruction?: string;
+  /** Paths inside the folder, sorted; capped, so `fileCount` can be larger. */
+  files: string[];
+  fileCount: number;
+}
+
+export interface BenchmarkData {
+  /** `data/<benchmark-id>/` on GitHub. */
+  url: string;
+  /** Its README.md (Markdown). */
+  readme?: string;
+  fileCount: number;
 }
 
 export interface HubLink {
@@ -87,6 +109,7 @@ export interface HubLink {
 export interface BenchmarkDetail extends BenchmarkSummary {
   references: string[];
   tasks: BenchmarkTask[];
+  data?: BenchmarkData;
   /** Leaderboards with an entry measured on this benchmark. */
   leaderboards: HubLink[];
   sourceUrl: string;
@@ -94,35 +117,63 @@ export interface BenchmarkDetail extends BenchmarkSummary {
 
 export type ChartKind = "table" | "pareto" | "waffle";
 
-/** One entry of a chart: an expression over experiments sharing harness, model, algorithm, phase. */
+/** One experiment an entry reads: its summary for the phase, and the meta it ran with. */
+export interface LeaderboardPart {
+  experimentId: string;
+  /** The experiment's folder on GitHub. */
+  url: string;
+  phase: string;
+  metric: string;
+  /** The metric's value in the phase summary. */
+  value: number;
+  scoreStd: number | null;
+  attempts: number;
+  /** USD, ms and token counts of one run. */
+  cost: number;
+  durationMs: number;
+  inputTokens: number;
+  cacheTokens: number;
+  outputTokens: number;
+  /** ISO 8601: when the phase finished. */
+  finished: string;
+  /** The benchmark ids the phase ran on. */
+  benchmarks: string[];
+  harnessVersion: string;
+  harnessSetting?: Record<string, unknown>;
+}
+
+/** One entry: an expression over experiments sharing harness, model, algorithm and phase. */
 export interface LeaderboardEntry {
   key: string;
   harness: string;
-  harnessVersion?: string;
+  /** Distinct versions across its experiments, comma-separated. */
+  harnessVersion: string;
   model: string;
   provider?: string;
-  thinking?: string;
+  /** Distinct thinking levels across its experiments, comma-separated. */
+  thinking: string;
   /** The RSI plugin id; null for a run without one (the baseline). */
   algorithm: string | null;
   phase: string;
+  /** The expression's top-level op; null for a single experiment. */
+  op: string | null;
   /** The expression's value (a score, 0–100, for score metrics). */
   value: number;
-  /** Sample standard deviation across attempts; null when there is one attempt. */
+  /** Sample standard deviation; null when it cannot be told. */
   std: number | null;
+  /** Across the attempts' composite scores, or composed from each experiment's score_std. */
+  stdFrom: "attempts" | "experiments" | null;
+  /** Attempts behind the attempts std; 0 when it was not used. */
   attempts: number;
   /** One run's totals across the expression's experiments: USD, ms, input + output tokens. */
   cost: number;
   durationMs: number;
   tokens: number;
-  experiments: string[];
   /** ISO 8601: the latest submission among its experiments. */
   submitted: string;
-}
-
-export interface LeaderboardChart {
-  subtitle?: string;
-  subtitleZh?: string;
-  entries: LeaderboardEntry[];
+  author?: HubAuthor;
+  references: string[];
+  parts: LeaderboardPart[];
 }
 
 /** A task the waffle shows: one, or several when a record scored a batch (a training step). */
@@ -131,9 +182,9 @@ export interface WaffleTask {
   taskIds: string[];
 }
 
-export interface WaffleChart extends LeaderboardChart {
+export interface WaffleGrid {
   tasks: WaffleTask[];
-  /** Per entry, per task (in `tasks` order), the attempts' scores, 0–100; empty when unscored. */
+  /** Per entry (in `entries` order), per task, the attempts' scores, 0–100; empty when unscored. */
   rows: { key: string; scores: number[][] }[];
 }
 
@@ -142,7 +193,6 @@ export interface LeaderboardSummary {
   title: string;
   titleZh?: string;
   author: HubAuthor;
-  kinds: ChartKind[];
   /** The ids of the benchmarks its entries were measured on. */
   benchmarks: string[];
   entryCount: number;
@@ -151,15 +201,18 @@ export interface LeaderboardSummary {
   updated: string;
 }
 
-export interface LeaderboardDetail extends Omit<LeaderboardSummary, "kinds" | "benchmarks"> {
-  charts: { table?: LeaderboardChart; pareto?: LeaderboardChart; waffle?: WaffleChart };
+export interface LeaderboardDetail extends Omit<LeaderboardSummary, "benchmarks"> {
+  entries: LeaderboardEntry[];
+  waffle: WaffleGrid;
   benchmarks: HubLink[];
   /** Titles of the algorithms (RSI plugins) the entries name. */
   algorithms: HubLink[];
-  /** Task titles by `<benchmark-id>/<task-id>`, for the waffle's hover text. */
+  /** Task titles by `<benchmark-id>/<task-id>`, for the waffle's rows. */
   taskTitles: Record<string, string>;
-  /** The leaderboard's folder in penguin-harness-benchmark; absent while it is a placeholder. */
-  sourceUrl?: string;
+  /** The leaderboard.yaml on GitHub. */
+  sourceUrl: string;
+  /** The folder its experiments live in on GitHub. */
+  experimentsUrl: string;
 }
 
 export interface HubIndex {

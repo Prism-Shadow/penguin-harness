@@ -5,22 +5,25 @@
  * this package.
  *
  * File formats: plugins follow the plugin `package.json` (RFC-0003), benchmarks
- * `benchmark_config.toml` / `task_config.toml` (RFC-0001), experiments `meta_info.yaml`,
- * `<phase>/summary.yaml` and `<phase>/attempt-<n>.yaml` (RFC-0002), leaderboards
- * `meta_info.yaml` and the `table.yaml` / `pareto.yaml` / `waffle.yaml` charts (RFC-0005).
+ * `benchmark_config.toml` / `task_config.toml` with their statement and rubric, plus the optional
+ * `data/<benchmark-id>/` folder (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
+ * and `<phase>/attempt-<n>.yaml` (RFC-0002), and leaderboards one `leaderboard.yaml` (RFC-0005).
  * A file that breaks its format fails the build: a page silently missing a benchmark is worse
  * than a deploy that waits for the source to be fixed.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
 export const BENCHMARK_SOURCE = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
+const PLACEHOLDER_SOURCE =
+  "https://github.com/Prism-Shadow/penguin-harness/blob/main/packages/landing/hub-placeholder/leaderboards";
 
 const ID = /^[A-Za-z0-9-]+$/;
-const CHARTS = ["table", "pareto", "waffle"];
+/** The most data files one task lists; the folder link shows the rest. */
+const MAX_TASK_FILES = 200;
 
 /** Sub-directories of `dir` in name order; none when `dir` does not exist. */
 function subdirs(dir) {
@@ -140,8 +143,24 @@ export function readPlugins(pluginsDir) {
   return plugins;
 }
 
-/** Every Benchmark package under `<repo>/packages`, its tasks included. */
-export function readBenchmarks(repo) {
+/**
+ * A task's folder under `data/<benchmark-id>/tasks/`: the one its statement links to, else the
+ * task id without its `CASE-NNN-` prefix, when that folder has files.
+ */
+function taskDataName(benchmarkId, taskId, statement, folders) {
+  const linked = new RegExp(`/data/${benchmarkId}/tasks/([^/\\s)#?]+)`).exec(statement)?.[1];
+  for (const name of [linked, taskId.replace(/^CASE-\d+-/, ""), taskId]) {
+    if (name && folders.has(name)) return name;
+  }
+  return undefined;
+}
+
+/**
+ * Every Benchmark package under `<repo>/packages`, its tasks included. `dataFiles` lists the
+ * repository's files under `data/` (paths from the repository root): a checkout carries only the
+ * small text files, so the listing comes from git rather than the disk.
+ */
+export function readBenchmarks(repo, dataFiles = []) {
   const root = join(repo, "packages");
   const benchmarks = [];
   for (const dirName of subdirs(root)) {
@@ -152,6 +171,13 @@ export function readBenchmarks(repo) {
     if (config.id !== dirName) fail(file, `id "${config.id}" does not match its directory`);
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "[author] name is required");
+    const dataPrefix = `data/${dirName}/`;
+    const ownData = dataFiles.filter((path) => path.startsWith(dataPrefix));
+    const taskFolders = new Map();
+    for (const path of ownData) {
+      const match = /^tasks\/([^/]+)\/(.+)$/.exec(path.slice(dataPrefix.length));
+      if (match) taskFolders.set(match[1], [...(taskFolders.get(match[1]) ?? []), match[2]]);
+    }
     const tasks = subdirs(dir)
       .filter((name) => existsSync(join(dir, name, "task_config.toml")))
       .map((name) => {
@@ -159,6 +185,8 @@ export function readBenchmarks(repo) {
         const task = parseToml(readText(taskFile));
         if (task.id !== name) fail(taskFile, `id "${task.id}" does not match its directory`);
         const budget = task.budget && typeof task.budget === "object" ? task.budget : {};
+        const statement = optionalText(join(dir, name, "statement", "README.md")) ?? "";
+        const dataName = taskDataName(dirName, name, statement, taskFolders);
         return {
           id: name,
           title: requireText(task, "title", taskFile),
@@ -170,7 +198,18 @@ export function readBenchmarks(repo) {
               .filter((key) => typeof budget[key] === "number")
               .map((key) => [key, budget[key]]),
           ),
-          statement: optionalText(join(dir, name, "statement", "README.md")) ?? "",
+          statement,
+          rubric: optionalText(join(dir, name, "rubric", "README.md")) ?? "",
+          data: dataName
+            ? {
+                url: `${BENCHMARK_SOURCE}/tree/main/${dataPrefix}tasks/${dataName}`,
+                instruction: optionalText(
+                  join(repo, dataPrefix, "tasks", dataName, "instruction.md"),
+                ),
+                files: taskFolders.get(dataName).sort().slice(0, MAX_TASK_FILES),
+                fileCount: taskFolders.get(dataName).length,
+              }
+            : undefined,
         };
       });
     benchmarks.push({
@@ -185,6 +224,14 @@ export function readBenchmarks(repo) {
       author,
       references: stringList(config.references),
       tasks,
+      data:
+        ownData.length > 0
+          ? {
+              url: `${BENCHMARK_SOURCE}/tree/main/${dataPrefix.slice(0, -1)}`,
+              readme: optionalText(join(repo, dataPrefix, "README.md")),
+              fileCount: ownData.length,
+            }
+          : undefined,
       sourceUrl: `${BENCHMARK_SOURCE}/tree/main/packages/${dirName}`,
     });
   }
@@ -226,7 +273,8 @@ function readPhase(repo, leaderboardId, experimentId, phase, cache, file) {
     const records = readYaml(join(dir, phase, `attempt-${n}.yaml`));
     attempts.push(Array.isArray(records) ? records : []);
   }
-  const value = { meta, summary, attempts };
+  const path = relative(repo, dir).split(sep).join("/");
+  const value = { meta, summary, attempts, url: `${BENCHMARK_SOURCE}/tree/main/${path}` };
   cache.set(key, value);
   return value;
 }
@@ -279,10 +327,11 @@ function linearWeights(expr, count, file) {
 }
 
 /**
- * Evaluate one chart value: a leaf `{ experiment_id, phase, metric }` or `{ op, args }`.
- * `value` follows the op over the leaves' summary metrics. `series` is the per-attempt composite
- * Y_j (RFC-0005) when every leaf is a score with the same number of attempts; its sample standard
- * deviation is the entry's std. Resource totals add up across the leaves.
+ * Evaluate one value: a leaf `{ experiment_id, phase, metric }` (metric defaults to score_mean) or
+ * `{ op, args }`. `value` follows the op over the leaves' summary metrics. `series` is the
+ * per-attempt composite Y_j when every leaf is a score with the same number of attempts;
+ * `variance` is the composite's variance from each leaf's score_std, taken as independent. RFC-0005
+ * gives both standard deviations; the attempts one is preferred (see `entryFor`).
  */
 function evaluate(expr, ctx) {
   if (expr && typeof expr === "object" && "experiment_id" in expr) {
@@ -298,14 +347,15 @@ function evaluate(expr, ctx) {
     );
     const value = read.summary[metric];
     if (!finite(value)) fail(ctx.file, `${expr.experiment_id}/${phase}: ${metric} is not a number`);
-    const series =
-      metric === "score_mean" && read.attempts.length > 0
-        ? read.attempts.map((records) => mean(records.map((record) => Number(record.score))))
-        : null;
+    const score = metric === "score_mean";
     return {
       value,
-      series,
-      leaves: [{ experimentId: expr.experiment_id, phase, ...read }],
+      series:
+        score && read.attempts.length > 0
+          ? read.attempts.map((records) => mean(records.map((record) => Number(record.score))))
+          : null,
+      variance: score && finite(read.summary.score_std) ? read.summary.score_std ** 2 : null,
+      leaves: [{ experimentId: expr.experiment_id, phase, metric, ...read }],
     };
   }
   if (!expr || typeof expr !== "object" || !Array.isArray(expr.args) || expr.args.length === 0) {
@@ -324,15 +374,32 @@ function evaluate(expr, ctx) {
     series: aligned
       ? Array.from({ length: n }, (_, j) => combine(parts.map((part) => part.series[j])))
       : null,
+    variance:
+      weights !== null && parts.every((part) => part.variance !== null)
+        ? parts.reduce((total, part, i) => total + weights[i] ** 2 * part.variance, 0)
+        : null,
     leaves: parts.flatMap((part) => part.leaves),
   };
 }
 
 const sum = (values) => values.reduce((total, value) => total + (finite(value) ? value : 0), 0);
+const distinct = (values) => [...new Set(values.filter((value) => value !== ""))];
+const metaText = (value) => (value === undefined || value === null ? "" : String(value));
 
-/** One chart entry, named by the (harness, model, algorithm, phase) its leaves share. */
+/**
+ * The std an entry shows: across the attempts' composites when every experiment ran the same
+ * number of attempts (two or more), else composed from each experiment's score_std.
+ */
+function entryStd(series, variance) {
+  const fromAttempts = series !== null ? sampleStd(series) : null;
+  if (fromAttempts !== null) return { std: fromAttempts, stdFrom: "attempts" };
+  if (variance !== null) return { std: Math.sqrt(variance), stdFrom: "experiments" };
+  return { std: null, stdFrom: null };
+}
+
+/** One leaderboard entry, named by the (harness, model, algorithm, phase) its leaves share. */
 function entryFor(expr, ctx) {
-  const { value, series, leaves } = evaluate(expr, ctx);
+  const { value, series, variance, leaves } = evaluate(expr, ctx);
   const first = leaves[0];
   const identity = (leaf) =>
     [leaf.meta.harness_name, leaf.meta.model_name, leaf.meta.algorithm ?? "", leaf.phase].join(
@@ -341,37 +408,56 @@ function entryFor(expr, ctx) {
   if (!leaves.every((leaf) => identity(leaf) === identity(first))) {
     fail(ctx.file, "the experiments of one value must share harness, model, algorithm and phase");
   }
-  const algorithm = optionalString(first.meta.algorithm) ?? null;
+  const tokens = (leaf) => sum([leaf.summary.n_input_tokens, leaf.summary.n_output_tokens]);
   return {
     key: identity(first).replaceAll("\n", "|"),
     harness: String(first.meta.harness_name),
-    harnessVersion: optionalString(String(first.meta.harness_version ?? "")),
+    harnessVersion: distinct(leaves.map((leaf) => metaText(leaf.meta.harness_version))).join(", "),
     model: String(first.meta.model_name),
     provider: optionalString(first.meta.model_provider),
-    thinking: optionalString(first.meta.thinking_level),
-    algorithm,
+    thinking: distinct(leaves.map((leaf) => metaText(leaf.meta.thinking_level))).join(", "),
+    algorithm: optionalString(first.meta.algorithm) ?? null,
     phase: first.phase,
+    op: typeof expr.op === "string" ? expr.op : null,
     value,
-    std: series !== null ? sampleStd(series) : null,
+    ...entryStd(series, variance),
     attempts: series?.length ?? 0,
     cost: sum(leaves.map((leaf) => leaf.summary.cost)),
     durationMs: sum(leaves.map((leaf) => leaf.summary.duration_ms)),
-    tokens: sum(
-      leaves.map((leaf) => sum([leaf.summary.n_input_tokens, leaf.summary.n_output_tokens])),
-    ),
-    experiments: leaves.map((leaf) => leaf.experimentId),
-    benchmarks: [...new Set(leaves.flatMap((leaf) => phaseBenchmarks(leaf.meta, leaf.phase)))],
+    tokens: sum(leaves.map(tokens)),
     submitted:
       leaves
-        .map((leaf) => String(leaf.meta.submit_time ?? ""))
+        .map((leaf) => metaText(leaf.meta.submit_time))
         .sort()
         .at(-1) ?? "",
+    author: readAuthor(first.meta.author),
+    references: distinct(leaves.flatMap((leaf) => stringList(leaf.meta.references))),
+    parts: leaves.map((leaf) => ({
+      experimentId: leaf.experimentId,
+      url: leaf.url,
+      phase: leaf.phase,
+      metric: leaf.metric,
+      value: leaf.summary[leaf.metric],
+      scoreStd: finite(leaf.summary.score_std) ? leaf.summary.score_std : null,
+      attempts: finite(leaf.summary.n_attempt) ? leaf.summary.n_attempt : leaf.attempts.length,
+      cost: finite(leaf.summary.cost) ? leaf.summary.cost : 0,
+      durationMs: finite(leaf.summary.duration_ms) ? leaf.summary.duration_ms : 0,
+      inputTokens: sum([leaf.summary.n_input_tokens]),
+      cacheTokens: sum([leaf.summary.n_cache_tokens]),
+      outputTokens: sum([leaf.summary.n_output_tokens]),
+      finished: metaText(leaf.summary.time),
+      benchmarks: phaseBenchmarks(leaf.meta, leaf.phase),
+      harnessVersion: metaText(leaf.meta.harness_version),
+      ...(leaf.meta.harness_setting && typeof leaf.meta.harness_setting === "object"
+        ? { harnessSetting: leaf.meta.harness_setting }
+        : {}),
+    })),
     leaves,
   };
 }
 
 /**
- * The waffle grid: the tasks the entries' attempts scored (a training step can score several
+ * The per-task grid: the tasks the entries' attempts scored (a training step can score several
  * tasks as one record), in benchmark and task order, and per entry one list of attempt scores
  * per task (empty where the entry has no record of that task).
  */
@@ -405,60 +491,53 @@ function waffle(entries) {
   };
 }
 
-const publicEntry = ({ leaves, benchmarks, ...entry }) => entry;
+const publicEntry = ({ leaves, ...entry }) => entry;
 
 /**
- * Every leaderboard under `<repo>/leaderboards`. While the repository has none, the ones under
- * `placeholderDir` stand in: the same files, written to the RFC, over the repository's real
- * experiments. Delete that directory once the repository carries its own leaderboards.
+ * Every leaderboard under `<repo>/leaderboards`, one `leaderboard.yaml` each. While the repository
+ * has none, the ones under `placeholderDir` stand in: written to the RFC, over the repository's
+ * real experiments. Delete that directory once the repository carries its own leaderboards.
  */
 export function readLeaderboards(repo, placeholderDir) {
-  const root = existsSync(join(repo, "leaderboards")) ? join(repo, "leaderboards") : placeholderDir;
+  const own = existsSync(join(repo, "leaderboards"));
+  const root = own ? join(repo, "leaderboards") : placeholderDir;
   const cache = new Map();
   const leaderboards = [];
   for (const dirName of subdirs(root)) {
-    const dir = join(root, dirName);
-    const file = join(dir, "meta_info.yaml");
+    const file = join(root, dirName, "leaderboard.yaml");
     if (!existsSync(file)) continue;
-    const meta = readYaml(file);
-    if (meta.leaderboard_id !== dirName) fail(file, "leaderboard_id does not match its directory");
-    const author = readAuthor(meta.author);
-    if (author === undefined) fail(file, "author.name is required");
-    const charts = {};
-    const measured = [];
-    for (const kind of CHARTS) {
-      const chartFile = join(dir, `${kind}.yaml`);
-      if (!existsSync(chartFile)) continue;
-      const chart = readYaml(chartFile);
-      if (!Array.isArray(chart?.values) || chart.values.length === 0) {
-        fail(chartFile, "values is required");
-      }
-      const ctx = { repo, leaderboardId: dirName, cache, file: chartFile };
-      const entries = chart.values.map((value) => entryFor(value, ctx));
-      measured.push(...entries);
-      charts[kind] = {
-        subtitle: optionalString(chart.subtitle),
-        subtitleZh: optionalString(chart.subtitle_zh),
-        entries: entries.map(publicEntry),
-        ...(kind === "waffle" ? waffle(entries) : {}),
-      };
+    const config = readYaml(file);
+    if (config?.leaderboard_id !== dirName) {
+      fail(file, "leaderboard_id does not match its directory");
     }
+    if (!ID.test(dirName)) fail(file, 'leaderboard_id may hold only letters, digits and "-"');
+    const author = readAuthor(config.author);
+    if (author === undefined) fail(file, "author.name is required");
+    if (!Array.isArray(config.values) || config.values.length === 0) {
+      fail(file, "values is required");
+    }
+    const ctx = { repo, leaderboardId: dirName, cache, file };
+    const entries = config.values.map((value) => entryFor(value, ctx));
+    const experiments = existsSync(join(repo, "experiments", dirName))
+      ? `experiments/${dirName}`
+      : "experiments";
     leaderboards.push({
       id: dirName,
-      title: requireText(meta, "title", file),
-      titleZh: optionalString(meta.title_zh),
+      title: requireText(config, "title", file),
+      titleZh: optionalString(config.title_zh),
       author,
-      charts,
-      benchmarks: [...new Set(measured.flatMap((entry) => entry.benchmarks))].sort(),
+      entries: entries.map(publicEntry),
+      waffle: waffle(entries),
+      benchmarks: distinct(
+        entries.flatMap((entry) => entry.parts.flatMap((p) => p.benchmarks)),
+      ).sort(),
       updated:
-        measured
+        entries
           .map((entry) => entry.submitted)
           .sort()
           .at(-1) ?? "",
-      sourceUrl:
-        root === placeholderDir
-          ? undefined
-          : `${BENCHMARK_SOURCE}/tree/main/leaderboards/${dirName}`,
+      sourceUrl: `${own ? `${BENCHMARK_SOURCE}/blob/main/leaderboards` : PLACEHOLDER_SOURCE}/${dirName}/leaderboard.yaml`,
+      experimentsUrl: `${BENCHMARK_SOURCE}/tree/main/${experiments}`,
     });
   }
   return leaderboards;
