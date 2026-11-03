@@ -11,8 +11,6 @@ export * from "./plugin/config.js";
 export * from "./plugin/config-page.js";
 export * from "./plugin/cli-commands.js";
 export * from "./plugin/iface-check.js";
-export * from "./plugin/consumer.js";
-export * from "./plugin/platform.js";
 export type {
   Sandbox,
   SandboxSlots,
@@ -24,17 +22,17 @@ export type {
   HttpSlots,
   WebShell,
   WebShellSlots,
-  Terminals,
-  AgentService,
-  AgentConfigService,
+} from "@prismshadow/penguin-server/internal";
+export type { Terminals } from "@penguinharness/plugin-terminal/server";
+export type { AgentService, AgentConfigService } from "@penguinharness/plugin-agents/server";
+export type {
   PluginConfig,
   PluginConfigField,
   PluginConfiguration,
   PluginConfigSlots,
   SettingsGroupDecl,
-  PluginCliCommands,
-  PluginCliCommandsSlots,
-} from "./plugin/index.js";
+} from "./plugin/config.js";
+export type { PluginCliCommands, PluginCliCommandsSlots } from "./plugin/cli-commands.js";
 export { PluginsRouteDeps, pluginLibraryRoutes, agentPluginsRoutes, agentMcpServersRoutes, PluginRoutes, pluginRegistryRoutes, PluginRegistryRoutes } from "./routes/plugins.js";
 export type { PluginsRouteDeps, PluginRoutesOptions } from "./routes/plugins.js";
 export { pluginUiRoutes, PluginUiRoutes } from "./routes/plugin-ui.js";
