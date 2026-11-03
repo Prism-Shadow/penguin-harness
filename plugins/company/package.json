@@ -1,0 +1,34 @@
+{
+  "name": "@penguinharness/plugin-company",
+  "version": "0.2.18",
+  "private": true,
+  "type": "module",
+  "description": "Company mode as one functional group: the organization runtime, its HTTP routes and the company pages — server and web halves in one package, temporarily parked under plugins/ until the group's final home is decided.",
+  "exports": {
+    "./server": "./src/server/index.ts",
+    "./web": "./src/web/index.ts"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "hono": "^4.13.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "react-router": "^8.3.0",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.5.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.0"
+  },
+  "penguin": {
+    "parked": true
+  }
+}

@@ -33,7 +33,7 @@ import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
 import type { Errors } from "../../mechanisms/observability.js";
 import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
 import type { Settings } from "../../mechanisms/settings.js";
-import type { OrgService } from "../../runtime/organization/service.js";
+import type { OrgService } from "@penguinharness/plugin-company/server";
 import type { UtilityCompletion } from "../../services/project-config-service.js";
 import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";

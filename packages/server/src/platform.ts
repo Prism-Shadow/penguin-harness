@@ -80,7 +80,6 @@ import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
-import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "./runtime/session-sources.js";
@@ -118,9 +117,6 @@ import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
-import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
-import { OrgRoutes } from "./http/routes/organizations.js";
-import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
@@ -186,6 +182,7 @@ import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
+import { CompanyModule, OrgRuns, OrgSessions } from "@penguinharness/plugin-company/server";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -438,16 +435,9 @@ export class WorkspaceModule {}
 export class MessagingHubModule {}
 
 /**
- * Company mode: the organization runtime, its routes and the caches they project into.
- * The caches are the group's own store — only the four members the session runtime and
- * Project deletion reach for leave the group, as OrgCache.
+ * Company mode moved to its functional group package (plugins/company): its module is
+ * assembled from there, the caches' mechanism contract (OrgCache) stays a host mechanism.
  */
-@Module({
-  children: [OrgCacheRepo, OrganizationModule, OrgRoutes],
-  exports: [OrgCache, OrgService, OrgScheduler],
-})
-export class CompanyModule {}
-
 @Module({
   children: [
     GlobalFetch,

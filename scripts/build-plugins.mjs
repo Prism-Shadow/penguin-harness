@@ -182,6 +182,9 @@ async function pluginPackages() {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
+    // A parked platform group (penguin.parked) is platform code living here for now, not a
+    // shipped plugin: the platform bundle carries it through its own package's build.
+    if (pkg.penguin?.parked === true) continue;
     // A repository example (plugins/example-*) is not shipped unless asked for (the header). It
     // is known by its directory, not by `private`: several shipped plugins (languages, the
     // company plugins, claude-code, discord-bot) are private packages too, kept off npm.
