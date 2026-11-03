@@ -3,7 +3,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex } from "@penguinharness/plugin-projects/server";
+import type { AgentIndex } from "@prismshadow/penguin-server/internal";
 
 export interface AgentRow {
   projectId: string;
