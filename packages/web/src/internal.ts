@@ -162,3 +162,4 @@ export * from "./state/project.js";
 export * from "./state/sessions.js";
 export * from "./state/theme.js";
 export * from "./state/theme-prefs.js";
+export { ApiError } from "./api/client.js";
