@@ -38,13 +38,13 @@ import {
   MessagingTaskRunner,
   MessagingModule,
   QQScan,
-} from "@penguinharness/plugin-messaging/server/bridge.js";
-import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server/feishu-connector.js";
-import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server/telegram-connector.js";
-import { QQTransportProvider } from "@penguinharness/plugin-messaging/server/qq-connector.js";
-import { QQScanTransportProvider } from "@penguinharness/plugin-messaging/server/qq-scan.js";
-import { WeChatTransportProvider } from "@penguinharness/plugin-messaging/server/wechat-connector.js";
-import { WeChatScanTransportProvider } from "@penguinharness/plugin-messaging/server/wechat-scan.js";
+} from "@penguinharness/plugin-messaging/server";
+import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
+import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
+import { QQTransportProvider } from "@penguinharness/plugin-messaging/server";
+import { QQScanTransportProvider } from "@penguinharness/plugin-messaging/server";
+import { WeChatTransportProvider } from "@penguinharness/plugin-messaging/server";
+import { WeChatScanTransportProvider } from "@penguinharness/plugin-messaging/server";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { PluginSkills, PluginSkillsProvider } from "./plugin/skills.js";

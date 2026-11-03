@@ -111,7 +111,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
-import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server/enabled-channel.js";
+import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
 /**
