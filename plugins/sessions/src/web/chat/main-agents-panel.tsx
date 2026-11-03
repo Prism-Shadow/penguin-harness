@@ -1,6 +1,6 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-import { panelLabel, type PanelId } from "../dock/index";
+import { panelLabel, type PanelId } from "@prismshadow/penguin-web/internalindex";
 
 import { approvalModeChoices } from "./approval-mode";
 import { useChatDock } from "./session/main-dock-context";

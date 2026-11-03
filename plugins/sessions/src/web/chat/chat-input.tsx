@@ -1,3 +1,175 @@
+/**
+ * Chat input area: a unified input card —
+ * a multi-line textarea occupies the card's top area (auto-grows; Enter sends, Shift+Enter
+ * inserts a newline, image paste supported), with all controls collected onto a **single bottom
+ * row** that never shares a line with the text body: attachments + approval mode (saved
+ * immediately on change) + help text (to the right of approval mode) | context usage (ring
+ * indicator) + Model + send (up arrow);
+ * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
+ * selector sits to the left of the send button (provider logo + name; it opens the model-picker
+ * dialog — search, provider-group rail, configured-key-first listing — see ModelCatalogSelect). Once
+ * the Session exists the same selector switches the conversation's model in place (the parent
+ * confirms and compacts on the current model first); the subagent composer shows a read-only
+ * logo + name there instead;
+ * Draft state also renders a thinking-level picker left of the model selector (backed by the
+ * Agent settings: picking a level writes through to the Agent config and applies to the session
+ * created on first send); in session state the level is fixed (llmConfig is assembled once per
+ * session), shown as a read-only tag from session_meta;
+ * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
+ * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
+ * selection without sending). Matching is positional: a slash opens the menu from any caret
+ * position, running a command removes just that token, and Escape only dismisses the menu —
+ * the rest of the draft is never touched;
+ * `/agent` and `/model` are the two **switch** commands, both offered in an active Session
+ * only — a draft has no conversation to switch, and picks its Agent and model in the draft
+ * page's own selectors. Both are staged rather than immediate: running one consumes its token
+ * and opens a picker (agents / models), and the pick becomes a highlighted chip above the text
+ * body instead of switching on the spot. The user
+ * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
+ * a new chat for that agent (the current Session is not sent to), a model chip opens a new
+ * conversation on the picked model that continues this one, which itself stays as it is (the
+ * toolbar's model picker is the in-place switch). A model fork additionally waits for this
+ * Session to be idle (it branches off a Trace that a run or a compaction is still appending
+ * to) and says so above the composer rather than just disabling Send. With an empty text body
+ * the default auto-message is filled in. Only one chip at a time (picking either clears the other, picking
+ * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
+ * removed via backspace at the start of the text or its x button, and both are cached with the
+ * draft so they survive a session switch or reload along with the text they belong to;
+ * The "+" menu carries the input add-ons: image upload, file attachment (any type, several at a
+ * time — they ride the task request as base64 data URLs, and the server writes them into the
+ * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
+ * opens them by path), and goal mode; selected files show as removable chips above the text
+ * body, next to the image thumbnails, and — like images — an attachments-only message is
+ * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
+ * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
+ * with an overlay bounded to that region while the drag is over it.
+ * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
+ * selector: a top search box filtering by name and localized description, plus a checklist;
+ * clicking a row toggles its selection without closing the menu; the button = book icon + label +
+ * selected-count badge, disabled while running/compacting). With skills selected, sending with an
+ * empty text body is allowed — the sent text automatically falls back to S.chat.skillsAutoMessage.
+ * When sent, the text body wraps in a `[use_skills]` block (the handoff's rest-of-message body is
+ * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
+ * initialSkills (read once on mount; once the installed list is ready, names not in that list are
+ * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
+ * selects it. The draft screen's example cards and the scheduled-tasks panel's AI dialog reach
+ * in through `controlRef` to fill the text body — a fill, never a send: the user presses Send.
+ * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
+ * an empty composer shows Stop (abort), and typing turns that same button into Send, which
+ * follows the remembered mid-run send mode — steer (delivered between turns as a
+ * [user_steering] user message) or queue-as-follow-up — chosen from the "+" menu's settings
+ * row (available in draft state too, persisted in localStorage); sending is disabled with a
+ * reason shown while compacting.
+ * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
+ * the card is too narrow), status + model + the action button right (never shrinking), so a
+ * phone viewport never pushes the action button off-screen.
+ * Renders only the card body itself: outer positioning such as bottom-docking or vertical
+ * centering is decided by the page.
+ *
+ * This module is the composer's container: the draft, sending, attachments, slash matching, IME,
+ * paste and drop, history recall and the draft cache live here. What it draws with is the UI
+ * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the `MenuSelect` pickers on
+ * `ToolbarTrigger`s, `SendButton`, `SlashMenu` and `SlashPicker` — and the model picker bound to
+ * the catalog (model-select.tsx) and the context gauge (context-gauge.tsx).
+ */
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import type {
+  AgentSummary,
+  ApprovalMode,
+  ModelInfo,
+  ModelRefDto,
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  RecalledMessageResponse,
+  SessionSandbox,
+  SessionStatus,
+  SkillMetadataItem,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  CheckIcon,
+  ChevronDown,
+  Chip,
+  ChipRow,
+  ComposerCard,
+  ConfirmModal,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  MenuSelect,
+  Notice,
+  PickerList,
+  ProviderLogo,
+  SendButton,
+  SlashMenu,
+  SlashPicker,
+  TagInput,
+  ZoomableImage,
+  noAutofill,
+  toastError,
+  toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
+} from "@prismshadow/penguin-ui";
+
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatBytes, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { fitTextarea } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { PermissionSelect } from "./permission-select";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import { SkillIcon, SkillPickList, toggleSkillName } from "@prismshadow/penguin-web/internal";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
+import { filterAgents, stagedSendRoute } from "./agent-handoff";
+import { employeesLast, isEmployee } from "@penguinharness/plugin-agents/web";
+import {
+  ModelCatalogSelect,
+  ThinkingLevelSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  modelLabel,
+  thinkingLevelLabel,
+} from "@prismshadow/penguin-web/internal";
+import { sessionModelPickerDisabled } from "./model-switch";
+import { matchSlash, removeSlashToken } from "./slash-token";
+import {
+  BOOK_ICON,
+  buildSkillsMessage,
+  localizedShortText,
+  skillSlashItems,
+} from "@prismshadow/penguin-web/internal";
+import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { mergeRecalledDraft } from "./recall-draft";
+import { buildExampleFill } from "./example-fill";
+import {
+  caretOnFirstLine,
+  caretOnLastLine,
+  historyStepBack,
+  historyStepForward,
+  type HistoryStep,
+} from "./input-history";
+
+import { isStopAction, midRunAction } from "./composer-send";
+
+||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
 import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
 
 import { FileDropZone } from "./drop-zone";

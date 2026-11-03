@@ -1,7 +1,6 @@
-import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "@penguinharness/plugin-models/web";
+import { trailingCompaction, type ThinkingSwitchItem } from "@prismshadow/penguin-web/internal";
 
-import { trailingCompaction, type ThinkingSwitchItem } from "../model-picker";
+||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
 
 /**
  * Whether the picker is disabled: a switch compacts, and the server neither starts nor queues a

@@ -26,7 +26,7 @@ import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { Truncated } from "@prismshadow/penguin-web/internal";
 import { OutlineMenuButton } from "../conversation-outline";
 import type { OutlineEntry } from "../outline-model";
-import { DockToggles } from "../dock-toggles";
+import { DockToggles } from "@prismshadow/penguin-web/internal-toggles";
 import type { HeaderStats } from "./session-stats";
 
 export interface ChatToolbarProps {
