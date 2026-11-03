@@ -70,11 +70,11 @@ import {
   toastInfo,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "@penguinharness/penguin-web/internal";
-import { S } from "@penguinharness/penguin-web/internal";
-import { apiErrorText } from "@penguinharness/penguin-web/internal";
-import { formatDateTime } from "@penguinharness/penguin-web/internal";
-import { toneInk, type Tone } from "@penguinharness/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";
 import {

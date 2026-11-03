@@ -11,6 +11,7 @@
     "./web/*": "./src/web/*"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.73.0",
     "@penguinharness/plugin-projects": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
@@ -19,7 +20,11 @@
     "@types/mdast": "^4.0.4",
     "hono": "^4.12.34",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "undici": "^7.29.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
