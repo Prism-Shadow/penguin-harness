@@ -19,7 +19,6 @@ export * from "./http/routes/events.js";
 export * from "./http/validate.js";
 export * from "./mechanisms/agents.js";
 export * from "./mechanisms/identity.js";
-export * from "./mechanisms/messaging.js";
 export * from "./mechanisms/observability.js";
 export * from "./mechanisms/organization.js";
 export * from "./mechanisms/projects.js";
@@ -32,8 +31,8 @@ export * from "./runtime/stream-error-watcher.js";
 export * from "./runtime/usage-recorder.js";
 export * from "./runtime/error-recorder.js";
 export { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
+export type { MessagingBindings, MessagingConversations, MessagingBindingRow } from "@penguinharness/plugin-messaging/server";
 export * from "./services/task-attachments.js";
-export * from "./db/repos/messaging-bindings.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
 // list — the desktop bundle then fails on the names plugins take from here (see the

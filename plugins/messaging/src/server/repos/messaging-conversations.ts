@@ -14,8 +14,8 @@
  * could use it.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { MessagingConversations } from "../../mechanisms/messaging.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { MessagingConversations } from "../mechanism.js";
 
 /** Parses one stored document; null for anything that is not a JSON object. */
 function stateOf(raw: unknown): Record<string, unknown> | null {

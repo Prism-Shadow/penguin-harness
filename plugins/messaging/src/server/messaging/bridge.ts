@@ -1,7 +1,7 @@
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
-import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindingRow } from "../repos/messaging-bindings.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-server/internal";
 import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
 import { attachFilesToInput, removeAttachments } from "@prismshadow/penguin-server/internal";
@@ -51,7 +51,7 @@ import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Errors } from "@prismshadow/penguin-server/internal";
 import type { WorkspaceFiles } from "@prismshadow/penguin-server/internal";
 import type { Settings } from "@prismshadow/penguin-server/internal";
-import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "../mechanism.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under

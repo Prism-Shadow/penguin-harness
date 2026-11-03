@@ -28,8 +28,8 @@
  * channel's connector and route own its shape.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "../mechanism.js";
 
 export interface MessagingBindingRow {
   sessionId: string;

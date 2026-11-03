@@ -72,7 +72,7 @@ import type {
   WeChatTestResponse,
 } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindingRow } from "../repos/messaging-bindings.js";
 import type { SessionRow } from "@prismshadow/penguin-server/internal";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../messaging/telegram-connector.js";
@@ -98,7 +98,7 @@ import { isMessagingChannel } from "../messaging/enabled-channel.js";
 import type { WeChatScanService } from "../messaging/wechat-scan.js";
 import type { MessagingBridge } from "../messaging/bridge.js";
 import type { QQScanService } from "../messaging/qq-scan.js";
-import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "../mechanism.js";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
 

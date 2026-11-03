@@ -2,7 +2,7 @@
  * The messaging mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { MessagingBindingRow } from "../db/repos/messaging-bindings.js";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 
 /** MessagingBindings: the mechanism MessagingBindingsRepo implements. */
 @Interface()
