@@ -22,10 +22,9 @@ import type {
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
 import table from "../ifaces.json" with { type: "json" };
-import { getMessages } from "./i18n.js";
 import { registerBrowserCommand } from "./commands/browser.js";
 
 /** The node the host located for a key, typed with this package's commander. */
@@ -47,11 +46,11 @@ const node = (command: CliCommandProgram): Command => command as Command;
   },
 })
 export class BrowserCommand {
-  @Bind("browser.cli") command!: CliCommandCode;
+  @Bind("browser.cli") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerBrowserCommand(node(command), getMessages(ctx.language));
+        registerBrowserCommand(node(command), ctx.messages);
       },
     };
   }
@@ -73,7 +72,7 @@ export abstract class BrowserCommands {
 
 /** The slot `BrowserModule` owns: a command's key and summary, and the code half it binds. */
 export interface BrowserCommandsSlots {
-  commands: Slot<CliCommandData, CliCommandCode>;
+  commands: Slot<CliCommandData, CliCommandCode<Messages>>;
 }
 
 /** Owns the `commands` slot; its children are the browser's commands. */

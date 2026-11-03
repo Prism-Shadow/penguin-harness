@@ -26,12 +26,11 @@ import {
   sessionFile,
   tokenFromSetCookie,
   writeSession,
-  getMessages,
 } from "@prismshadow/penguin-server/cli";
 import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** Must match the server's SESSION_COOKIE — it is the name a login's Set-Cookie carries. */
 const SESSION_COOKIE = "penguin_session";
@@ -273,11 +272,11 @@ export function registerAuthCommand(auth: Command, t: Messages): void {
   },
 })
 export class AuthCommand {
-  @Bind("cli.auth") command!: CliCommandCode;
+  @Bind("cli.auth") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerAuthCommand(node(command), getMessages(ctx.language));
+        registerAuthCommand(node(command), ctx.messages);
       },
     };
   }

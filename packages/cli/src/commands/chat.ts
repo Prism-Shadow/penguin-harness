@@ -52,7 +52,6 @@ import {
 import {
   parseApprovalAnswer,
   resolveApprovalMode,
-  getMessages,
 } from "@prismshadow/penguin-server/cli";
 import { LineComposer, PasteFilter } from "../input.js";
 import {
@@ -77,7 +76,7 @@ import { listAgentSessions } from "@prismshadow/penguin-server/cli";
 import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
@@ -912,11 +911,11 @@ function clearCurrentLine(rl: Interface, rli: RlInternals, out: NodeJS.WritableS
   },
 })
 export class ChatCommand {
-  @Bind("cli.chat") command!: CliCommandCode;
+  @Bind("cli.chat") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerChatCommand(node(command), getMessages(ctx.language));
+        registerChatCommand(node(command), ctx.messages);
       },
     };
   }

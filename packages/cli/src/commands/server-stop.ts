@@ -15,9 +15,9 @@
 import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
-import { resolveRootOption, getMessages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -138,11 +138,11 @@ export async function stopServer(root: string, fx: StopEffects = realEffects): P
   },
 })
 export class ServerStopCommand {
-  @Bind("cli.server.stop") command!: CliCommandCode;
+  @Bind("cli.server.stop") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerStopCommand(node(command), getMessages(ctx.language));
+        registerStopCommand(node(command), ctx.messages);
       },
     };
   }

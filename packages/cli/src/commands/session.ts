@@ -28,7 +28,6 @@ import {
   resolveProjectId,
   ServerClient,
   shortSessionId,
-  getMessages,
 } from "@prismshadow/penguin-server/cli";
 import { checkSessionTitle, renameSession, resolveSessionTarget } from "../server-session.js";
 import { registerInputCommand } from "./input.js";
@@ -36,7 +35,7 @@ import { registerLogCommand } from "./log.js";
 import { registerLsCommand } from "./ls.js";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
@@ -93,11 +92,11 @@ export function registerSessionCommand(session: Command, t: Messages): void {
   },
 })
 export class SessionCommand {
-  @Bind("cli.session") command!: CliCommandCode;
+  @Bind("cli.session") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerSessionCommand(node(command), getMessages(ctx.language));
+        registerSessionCommand(node(command), ctx.messages);
       },
     };
   }

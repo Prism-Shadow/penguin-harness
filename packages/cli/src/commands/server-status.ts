@@ -12,9 +12,9 @@ import path from "node:path";
 import { readMachineStatus } from "@prismshadow/penguin-server/machine-status";
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
-import { resolveRootOption, getMessages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** Fills in `penguin server status`, on the node the host located by the command's key. */
 
@@ -46,11 +46,11 @@ export function registerStatusCommand(status: Command, t: Messages): void {
   },
 })
 export class ServerStatusCommand {
-  @Bind("cli.server.status") command!: CliCommandCode;
+  @Bind("cli.server.status") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerStatusCommand(node(command), getMessages(ctx.language));
+        registerStatusCommand(node(command), ctx.messages);
       },
     };
   }

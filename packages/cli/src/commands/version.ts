@@ -23,8 +23,7 @@ import { buildInfo, resolveRoot } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
@@ -59,11 +58,11 @@ export function registerVersionCommand(version: Command, t: Messages): void {
   },
 })
 export class VersionCommand {
-  @Bind("cli.version") command!: CliCommandCode;
+  @Bind("cli.version") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerVersionCommand(node(command), getMessages(ctx.language));
+        registerVersionCommand(node(command), ctx.messages);
       },
     };
   }

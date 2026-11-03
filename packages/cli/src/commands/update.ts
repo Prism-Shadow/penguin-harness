@@ -64,8 +64,7 @@ import { VERSION, compareVersions, normalizeVersion, userAgent } from "@prismsha
 import type { Command } from "commander";
 import type { InstallerSource, Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 // The version helpers live in core (internal/version.ts) so the server's update-check
 // endpoint shares them; re-exported because they are part of this module's public,
@@ -726,11 +725,11 @@ async function confirmUpgrade(yes: boolean | undefined, t: Messages): Promise<bo
   },
 })
 export class UpdateCommand {
-  @Bind("cli.update") command!: CliCommandCode;
+  @Bind("cli.update") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerUpdateCommand(node(command), getMessages(ctx.language));
+        registerUpdateCommand(node(command), ctx.messages);
       },
     };
   }
