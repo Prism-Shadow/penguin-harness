@@ -27,7 +27,7 @@ import {
   type ModelRefValue,
   type ModelRowLike,
   type ModelTag,
-} from "../models";
+} from "@penguinharness/plugin-models/web";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is

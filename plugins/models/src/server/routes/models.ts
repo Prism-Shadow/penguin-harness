@@ -23,17 +23,17 @@ import type {
   PresetSyncMode,
   ProviderConnectionUpdate,
   ServerEvent,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
-import { HttpError } from "../errors.js";
-import { isHttpUrl } from "../../services/protocol-detect.js";
-import type { ChannelHub } from "../../runtime/channel.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { badRequest, pathParam, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { isHttpUrl } from "@prismshadow/penguin-server/internal";
+import type { ChannelHub } from "@prismshadow/penguin-server/internal";
+import type { SessionManager } from "@prismshadow/penguin-server/internal";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
-import { ModelBalances } from "../../services/model-balance.js";
+import { ModelBalances } from "../services/model-balance.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {

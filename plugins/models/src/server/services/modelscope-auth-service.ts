@@ -19,15 +19,15 @@ import { randomBytes } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
-import { HttpError } from "../http/errors.js";
-import { normalizeModelScopeBridgeUrl } from "../config.js";
-import { Config } from "../hmr/capabilities.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { normalizeModelScopeBridgeUrl } from "@prismshadow/penguin-server/internal";
+import { Config } from "@prismshadow/penguin-server/internal";
 import type {
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ProjectConfigStore,
-} from "../mechanisms/projects.js";
-import type { ModelScopeAuthFlowStatusResponse } from "../api/types.js";
+} from "@prismshadow/penguin-server/internal";
+import type { ModelScopeAuthFlowStatusResponse } from "@prismshadow/penguin-server/api";
 
 /** Recorded by the bridge alongside the flow; it identifies the App but does not gate it. */
 export const MODELSCOPE_BRIDGE_CLIENT_ID = "penguin-harness";

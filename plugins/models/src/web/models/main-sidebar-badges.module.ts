@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import type { NavBadge } from "../../lib/sidebar-contributions";
+import { navNoteFor, useUpdateBadges } from "@prismshadow/penguin-web/internal";
+import type { NavBadge } from "@prismshadow/penguin-web/internal";
 
 const pageBadge = (path: string): NavBadge => ({
   useNote: () => navNoteFor(useUpdateBadges(), path),

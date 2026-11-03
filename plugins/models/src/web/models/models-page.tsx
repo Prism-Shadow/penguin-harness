@@ -61,19 +61,19 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { USD_TO_CNY, useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { formatDateTime, humanizeTokens } from "../../lib/format";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
@@ -139,8 +139,8 @@ import {
   type ModelGroupPins,
 } from "./model-group-pins";
 
-import { clearDraftModelRef } from "../chat";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
+import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 
 import {
   AddNewModelsButton,
@@ -172,7 +172,7 @@ import {
 
 import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
 import {

@@ -9,8 +9,8 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
-import { modelConfigChanged } from "./models.js";
-import type { ModelsRouteDeps } from "./models.js";
+import { modelConfigChanged } from "@penguinharness/plugin-models/server";
+import type { ModelsRouteDeps } from "@penguinharness/plugin-models/server";
 
 export interface PlatformAuthRouteDeps extends ModelsRouteDeps {
   platformAuth: PlatformAuth;

@@ -1,4 +1,4 @@
-import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.module";
+import { MainSidebarBadgesModule } from "@penguinharness/plugin-models/web/main-sidebar-badges.module";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
@@ -29,7 +29,7 @@ import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "@penguinharness/plugin-agents/web";
-import { ModelsModule } from "./features/models/module";
+import { ModelsModule } from "@penguinharness/plugin-models/web";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "@penguinharness/plugin-machines/web";
 import { UsageModule } from "@penguinharness/plugin-usage/web";

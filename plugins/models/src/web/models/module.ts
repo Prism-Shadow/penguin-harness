@@ -1,6 +1,6 @@
 /** The models page, and the pinned group's balance on the sidebar's account row. */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
-import type { NavBadge } from "../../lib/sidebar-contributions";
+import type { NavBadge } from "@prismshadow/penguin-web/internal";
 import { ModelsPage } from "./models-page";
 import { PinnedBalanceBadge } from "./group-balance";
 

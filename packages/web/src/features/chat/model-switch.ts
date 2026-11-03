@@ -13,7 +13,7 @@
  * on the model it was on.
  */
 import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { trailingCompaction, type ThinkingSwitchItem } from "../model-picker";
 
 /**

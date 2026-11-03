@@ -12,9 +12,9 @@
  */
 import type { ModelsResponse, PresetSyncMode } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** What a catalog action needs from the page. */
 export interface PresetSyncHost {

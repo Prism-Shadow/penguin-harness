@@ -137,10 +137,10 @@ import { Messaging } from "../../runtime/messaging/bridge.js";
 import { agentsRoutes } from "@penguinharness/plugin-agents/server";
 import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
 import { vaultRoutes } from "./vault.js";
-import { modelsRoutes } from "./models.js";
-import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
+import { modelsRoutes } from "@penguinharness/plugin-models/server";
+import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "@penguinharness/plugin-models/server";
 import { platformAuthRoutes } from "./platform-auth.js";
-import { modelScopeAuthRoutes } from "./modelscope-auth.js";
+import { modelScopeAuthRoutes } from "@penguinharness/plugin-models/server";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "@penguinharness/plugin-usage/server";
@@ -155,7 +155,7 @@ import type {
   ProjectEvents,
 } from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
-import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
+import type { ModelScopeAuth } from "@penguinharness/plugin-models/server";
 import type {
   Schedules,
   SessionDrivers,

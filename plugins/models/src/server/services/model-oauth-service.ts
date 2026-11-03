@@ -27,10 +27,10 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ModelOAuth, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";

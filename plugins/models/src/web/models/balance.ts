@@ -21,10 +21,10 @@ import type {
   ModelBalanceResponse,
   PinnedBalance,
 } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatMoney } from "../../lib/format";
-import { USD_TO_CNY, type Currency } from "../../state/theme";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatMoney } from "@prismshadow/penguin-web/internal";
+import { USD_TO_CNY, type Currency } from "@prismshadow/penguin-web/internal";
 
 // —— Formatting (pure) ——
 

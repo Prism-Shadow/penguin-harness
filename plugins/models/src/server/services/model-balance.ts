@@ -30,7 +30,7 @@ import type {
   ModelBalanceFailure,
   ModelBalanceReading,
   ModelBalanceResponse,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 
 /** How long a vendor may take to answer a balance request. */
 export const BALANCE_TIMEOUT_MS = 5_000;
