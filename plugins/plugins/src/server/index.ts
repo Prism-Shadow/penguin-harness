@@ -1,6 +1,41 @@
 /** The plugins group's server half: the plugin system with the plugin routes and the package archive service. */
-export * from "./plugin";
-export { pluginLibraryRoutes, agentPluginsRoutes, agentMcpServersRoutes, PluginRoutes, pluginRegistryRoutes, PluginRegistryRoutes } from "./routes/plugins.js";
+export * from "./plugin/host.js";
+export * from "./plugin/loader.js";
+export * from "./plugin/registry.js";
+export * from "./plugin/install.js";
+export * from "./plugin/skills.js";
+export * from "./plugin/source.js";
+export * from "./plugin/typescript.js";
+export * from "./plugin/unsatisfied.js";
+export * from "./plugin/config.js";
+export * from "./plugin/config-page.js";
+export * from "./plugin/cli-commands.js";
+export * from "./plugin/iface-check.js";
+export * from "./plugin/consumer.js";
+export * from "./plugin/platform.js";
+export type {
+  Sandbox,
+  SandboxSlots,
+  Sessions,
+  SessionServiceIface,
+  Messaging,
+  MessagingSlots,
+  Http,
+  HttpSlots,
+  WebShell,
+  WebShellSlots,
+  Terminals,
+  AgentService,
+  AgentConfigService,
+  PluginConfig,
+  PluginConfigField,
+  PluginConfiguration,
+  PluginConfigSlots,
+  SettingsGroupDecl,
+  PluginCliCommands,
+  PluginCliCommandsSlots,
+} from "./plugin/index.js";
+export { PluginsRouteDeps, pluginLibraryRoutes, agentPluginsRoutes, agentMcpServersRoutes, PluginRoutes, pluginRegistryRoutes, PluginRegistryRoutes } from "./routes/plugins.js";
 export type { PluginsRouteDeps, PluginRoutesOptions } from "./routes/plugins.js";
 export { pluginUiRoutes, PluginUiRoutes } from "./routes/plugin-ui.js";
 export { installedPluginRoutes, InstalledPluginRoutes } from "./routes/plugins-installed.js";
