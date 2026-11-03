@@ -143,6 +143,8 @@ describe("registerExecCommand (through the real commander tree, a stand-in sourc
     return program;
   };
   const run = async (...argv: string[]) => {
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
     await makeProgram().parseAsync(argv, { from: "user" });
     const out = stdoutSpy.mock.calls.map((c) => c[0]).join("");
     const err = stderrSpy.mock.calls.map((c) => c[0]).join("");
