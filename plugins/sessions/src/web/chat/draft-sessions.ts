@@ -1,29 +1,5 @@
-/**
- * Parked draft conversations ("email drafts" for new chats), localStorage-backed like the
- * active draft cache (draft-cache.ts) and keyed per "user × Project" (#68 — same
- * cross-account isolation).
- *
- * Clicking "New chat" while the ACTIVE new-chat draft holds typed text no longer leaves
- * that text invisibly parked in the cache: parkActiveDraft moves it into this list, the
- * sidebar shows it as a draft conversation row (route `/chat/<draft-id>`), and opening
- * the row resumes the full draft — selections included — ready to send anytime. Sending
- * or deleting removes the entry; the ACTIVE draft slot (draftKey) keeps only the model
- * carry-over, so the next new chat starts empty on the same model
- * (switch-becomes-default, exactly like a successful send).
- *
- * Ids are `draft-<8 hex>`: real Session ids start with `session-` and the new-chat route
- * uses the literal `new`, so the chat route dispatches on the prefix alone.
- *
- * The in-memory copy is a module-level store so the sidebar list
- * and the draft page react to every mutation in this tab; parseDraft validates each
- * entry's content field-by-field on load, exactly like the caches it mirrors. Like the active
- * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
- * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
- */
-import { useStore } from "zustand/react";
-import { createStore } from "zustand/vanilla";
-import { randomHex } from "../../lib/random-id";
-import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
+import { randomHex } from "@prismshadow/penguin-web/internal";
+
 import {
   clearDraft,
   draftFromUnknown,

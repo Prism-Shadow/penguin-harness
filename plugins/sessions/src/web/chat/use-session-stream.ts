@@ -1,61 +1,18 @@
-/**
- * Session stream hook (connect-first + dedupe on use): React adapter layer — the protocol state machine lives in
- * lib/amsp/stream-controller.ts (pure logic, unit-testable).
- *
- * 1. On entering a Session, connect SSE first; events are handed to the controller (buffered if
- *    history isn't ready yet);
- * 2. The history stream renders history — the newest Tasks first, older windows and the fill
- *    behind them, with how far the bytes have come (`transfer`) — then replays the buffer
- *    (overlap deduped); on load failure, expose error and a retry entry point;
- * 3. Disconnects are auto-reconnected by the browser (Last-Event-ID built in; server replays from
- *    its buffer), and a connection that went silent is reopened by api/sse.ts from the last id
- *    seen; resync_required → controller rebuilds the model and keeps consuming the same
- *    connection;
- * 4. task_state in the stream is the authoritative run state (server pushes the current snapshot
- *    on subscribe); initialStatus only serves as the first-frame placeholder, driving the input
- *    area state and the Session list badge;
- * 5. The pending-approval table is keyed by `origin + toolCallId` (approvalKey); on reconnect the
- *    server re-sends still-pending requests.
- */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  GoalServerEvent,
-  PendingFollowUpInfo,
-  PendingSteeringInfo,
-  SessionStatus,
-  SubagentRuntimeInfo,
-} from "@prismshadow/penguin-server/api";
-import { getGoal } from "../../api/endpoints";
-import { probeSession } from "../../api/session-probe";
-import { apiSocket } from "../../api/socket";
-import { openHistoryStream, openSessionStream, openTraceBodyStream } from "../../api/sse";
-import { machineForSession } from "../../lib/session-machines";
-import { createStreamController } from "../../lib/amsp/stream-controller";
-import type {
-  HistoryTransfer,
-  OlderHistoryState,
-  PendingApproval,
-  StreamController,
-} from "../../lib/amsp/stream-controller";
-import { createStreamModel } from "../../lib/amsp/stream-model";
-import type {
-  ChatItem,
-  StreamModel,
-  ThinkingItem,
-  ToolCallItem,
-} from "../../lib/amsp/stream-model";
-import type { GoalBannerState } from "./goal-use";
+import { getGoal, getMessages } from "@prismshadow/penguin-web/internal";
+import { probeSession } from "@prismshadow/penguin-web/internal";
+import { openSessionStream } from "@prismshadow/penguin-web/internal";
+import {
+  createStreamController,
+  type OlderHistoryState,
+  type PendingApproval,
+  type StreamController,
+} from "@prismshadow/penguin-web/internal";
 
-export type {
-  HistoryTransfer,
-  OlderHistoryState,
-  PendingApproval,
-} from "../../lib/amsp/stream-controller";
+import { createStreamModel, type ChatItem, type StreamModel } from "@prismshadow/penguin-web/internal";
 
-/** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
-export interface ElidedBodies {
-  load: (item: ToolCallItem | ThinkingItem) => void;
-}
+
+export type { OlderHistoryState, PendingApproval } from "@prismshadow/penguin-web/internal";
+
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;

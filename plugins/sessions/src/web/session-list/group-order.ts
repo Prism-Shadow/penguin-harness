@@ -4,9 +4,9 @@ import {
   readStringArray,
   writeStringArray,
   type SessionOrderStorage,
-} from "../../lib/session-order";
+} from "@prismshadow/penguin-web/internal";
 
-import type { GroupMode } from "../../components/ui/group-list";
+import type { GroupMode } from "@prismshadow/penguin-web/internal";
 
 /**
  * The grouping modes whose groups can be dragged into a manual order. "time" is

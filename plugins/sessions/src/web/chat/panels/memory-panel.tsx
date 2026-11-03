@@ -3,7 +3,7 @@
  * remembers and what this conversation changed, started over per conversation (keyed by Session).
  * Management (add / edit / delete) lives on the agent-settings memory tab.
  */
-import { DraftPanelEmpty } from "../../../lib/dock-panel-empty";
+import { DraftPanelEmpty } from "@prismshadow/penguin-web/internal";
 import { ChatMemoryView } from "../memory-view";
 import { useChatControllerContext } from "../session/chat-session-context";
 

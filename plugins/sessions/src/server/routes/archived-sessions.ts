@@ -24,20 +24,20 @@ import type {
   ArchivedSessionSource,
   ArchivedSessionsBatch,
   ArchivedSessionsQuery,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type {
   ArchiveCaller,
   ArchivedSessionsService,
-} from "../../services/archived-sessions-service.js";
-import { HttpError } from "../errors.js";
+} from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import {
   badRequest,
   listingViewOfRequest,
   parseActivityCursor,
   parseNonNegativeInt,
   readJson,
-} from "../validate.js";
+} from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (routes/sessions.ts SessionApiRoutes). */
 export interface ArchivedSessionsRouteDeps {

@@ -1,9 +1,9 @@
-import { pendingScheduleSessions, useProjectSchedules } from "@penguinharness/plugin-schedules/web";
-import {
-  collapsedGroupsKey,
-  pinnedGroupsKey,
-  NO_SCHEDULED_SESSIONS,
-} from "../../lib/main-sidebar-persistence";
+import { useEffect, useMemo, useRef } from "react";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import { useSessionSeen } from "@prismshadow/penguin-web/internal";
+import { isSidebarRow } from "@prismshadow/penguin-web/internal";
+
+} from "@prismshadow/penguin-web/internal";
 
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";
 

@@ -55,20 +55,20 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
 import { AgentSelect } from "@penguinharness/plugin-agents/web";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
-import { apiErrorText } from "../../../lib/api-error";
-import { rememberSessionMachine } from "../../../lib/session-machines";
-import { cachedMachineAgents, rememberMachineAgents } from "../../../lib/machine-cache";
-import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/machine-link";
-import { useMachines } from "../../../state/machines";
-import { useAuth } from "../../../state/auth";
-import { useProject } from "../../../state/project";
-import { useSessions } from "../../../state/sessions";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { rememberSessionMachine } from "@prismshadow/penguin-web/internal";
+import { cachedMachineAgents, rememberMachineAgents } from "@prismshadow/penguin-web/internal";
+import { machineLink, remoteAgentsEmpty, type MachineLink } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 import { ChatInput, type ComposerControl } from "../chat-input";
 import { APPROVAL_MODES } from "../approval-mode";
-import { adoptDockScope, setDockCwd } from "../../dock";
+import { adoptDockScope, setDockCwd } from "@prismshadow/penguin-web/internal";
 import { StartDashboard } from "../start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
 import {
@@ -83,8 +83,8 @@ import {
   type ChatDefaultsChangedDetail,
 } from "../chat-defaults-event";
 import { newChatAgentId } from "../new-chat";
-import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
-import { effectiveThinkingLevel } from "../../model-picker";
+import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
+import { effectiveThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 
 import { FilesPanelToggle } from "../dock-toggles";

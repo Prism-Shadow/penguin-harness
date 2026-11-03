@@ -7,12 +7,12 @@ import {
   initialSessionSortMode,
   loadSessionOrder,
   type SessionSortMode,
-} from "../../lib/session-order";
+} from "@prismshadow/penguin-web/internal";
 
 import { loadGroupOrder } from "./group-order";
-import { initialGroupMode, type GroupMode } from "../../components/ui/group-list";
+import { initialGroupMode, type GroupMode } from "@prismshadow/penguin-web/internal";
 
-import { loadGroupSet } from "../../lib/main-sidebar-persistence";
+import { loadGroupSet } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarNavCollapsed } from "./main-sidebar-nav-collapsed";
 
 /** Consecutive live main statements 37..48, called once in original hook order. */

@@ -1,15 +1,6 @@
-/**
- * A thinking item of the session's stream, drawn by the shared UI package's `ThinkingBlock`:
- * this binds the item's streaming state to the row's run state and labels. How its Request
- * ended is said by the line that follows the reply, not by the thinking. A thinking block from a
- * history window may come folded: the row shows its head and tail and fetches the whole when it
- * is opened (elided-body.tsx).
- */
-import { ThinkingBlock } from "@prismshadow/penguin-ui";
-import { elidedPreview } from "../../lib/history/elided-preview";
-import { S } from "../../lib/strings";
-import type { ThinkingItem } from "../../lib/amsp/stream-model";
-import { ElidedBodyNote, hasElidedNote } from "./elided-body";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { ThinkingItem } from "@prismshadow/penguin-web/internal";
+
 
 export function SessionThinking({ item }: { item: ThinkingItem }) {
   return (

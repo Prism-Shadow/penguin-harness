@@ -1,22 +1,22 @@
 import { useContext, useState, type DragEvent as ReactDragEvent } from "react";
 import { withEntries, MainRowExtensions } from "./index";
-import { glyphOf } from "../../lib/nav-icons";
+import { glyphOf } from "@prismshadow/penguin-web/internal";
 
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import {
   CONTEXT_MENU_ACTIONS,
   HOVER_ROW_ACTIONS,
   sessionRowActions,
   type SessionRowAction,
-} from "../../components/ui/session-row-menu";
+} from "@prismshadow/penguin-web/internal";
 
 import { SessionRow, toastSuccess } from "@prismshadow/penguin-ui";
-import { Truncated } from "../../components/ui/truncated";
-import { writeClipboard } from "../../lib/clipboard";
-import { sessionActivityLabel, type SessionActivity } from "../../lib/session-activity";
+import { Truncated } from "@prismshadow/penguin-web/internal";
+import { writeClipboard } from "@prismshadow/penguin-web/internal";
+import { sessionActivityLabel, type SessionActivity } from "@prismshadow/penguin-web/internal";
 
-import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { backgroundSourceMark } from "@prismshadow/penguin-web/internal";
 
 export function SidebarSessionRow({
   s,

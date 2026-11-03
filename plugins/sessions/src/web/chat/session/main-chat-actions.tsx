@@ -1,18 +1,12 @@
-import { useCallback, useState } from "react";
-import type { ModelRefDto } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
-import { bucketCostUsd } from "../../../lib/amsp/task-stats";
-import type { StreamRenderContext } from "../message-stream";
-import type { ForkTarget } from "../task-stats-line";
-import type { RequestFailure } from "../request-failure-report";
-import { prepareNewChatDraft } from "../new-chat";
-import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { turnPricing, sameModelRef } from "../../models";
-import { openPanel } from "../../dock";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { createStreamModel, finalizeHistory, pushMessage } from "@prismshadow/penguin-web/internal";
+import { bucketCostUsd } from "@prismshadow/penguin-web/internal";
+
+import { turnPricing, sameModelRef } from "@penguinharness/plugin-models/web";
+import { openPanel } from "@prismshadow/penguin-web/internal";
+
 import type { useMainChatControls } from "./main-chat-controls";
 
 /** Exact consecutive main ChatPage statements 159..164; called once, in original order. */

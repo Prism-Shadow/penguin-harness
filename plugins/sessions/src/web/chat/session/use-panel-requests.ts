@@ -1,12 +1,6 @@
-/**
- * The stream-driven JUMP COMMANDS the dock's panel bodies consume: open a Workspace file, land
- * on a memory, focus a subagent and pin its Task. Each is a fresh object per call
- * (identity-compared, so repeating the same jump still re-triggers the view's effect), and each
- * resets on a Session switch, and when its panel's tab closes.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
-import { openPanel, panelDock } from "../../dock";
+import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import { openPanel, panelDock } from "@prismshadow/penguin-web/internal";
+
 
 export function usePanelRequests(routeSessionId: string | null) {
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */

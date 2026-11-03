@@ -6,11 +6,11 @@ import {
   ICON_SIZE,
   SkeletonList,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { agentDisplayName } from "../../state/project";
-import { Icon } from "../../components/ui/group-list";
+import { S } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { Icon } from "@prismshadow/penguin-web/internal";
 import { employmentsOf } from "@penguinharness/plugin-agents/web";
-import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
+import { GROUP_ACTION_CLASS } from "@prismshadow/penguin-web/internal";
 import { GroupBlock } from "./main-group-block";
 import { GroupPinButton } from "./main-group-pin-button";
 import type { MainSidebarState } from "./main-sidebar-controller";

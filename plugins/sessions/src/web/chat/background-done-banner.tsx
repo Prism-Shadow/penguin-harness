@@ -8,7 +8,7 @@
  * raw marker text as-is.
  */
 import { ActivityGroup, DISCLOSURE_OUTPUT_PRE_CLASS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { BackgroundTaskDone } from "./agent-handoff";
 
 export function BackgroundDoneBanner({ done, body }: { done: BackgroundTaskDone; body: string }) {

@@ -1,11 +1,6 @@
-/**
- * The Project's model config (context windows, pricing, the default model), refetched when the
- * Project's new-chat defaults change in this tab, and the once-per-lifetime credential guide.
- */
-import { useEffect, useState } from "react";
-import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import * as api from "../../../api/endpoints";
-import { hasConfiguredKey, sameModelRef } from "../../models";
+import * as api from "@prismshadow/penguin-web/internal";
+import { hasConfiguredKey, sameModelRef } from "@penguinharness/plugin-models/web";
+
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 
 export function useProjectModels(projectId: string | null) {

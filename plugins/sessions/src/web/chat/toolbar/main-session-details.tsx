@@ -1,26 +1,9 @@
-import { SessionStatsList } from "../session-stats";
-import {
-  ActivityIcon,
-  Dot,
-  Dropdown,
-  GlyphIcon,
-  Heading,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  StatChip,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
-import { formatDateTime } from "../../../lib/format";
-import { sessionActivityLabel } from "../../../lib/session-activity";
-import { Truncated } from "../../../components/ui/truncated";
-import { CostPartsRows, StatHint } from "../../../components/ui/stat-hint";
-import { OutlineMenuButton } from "../conversation-outline";
-import { nameOnMachine } from "../../../lib/workspace-machines";
-import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+
 import { DockToggles } from "../dock-toggles";
-import { toneInk } from "../../../lib/tone";
-import { STAT_ICONS } from "../../../lib/stat-icons";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { SessionIdRow } from "../session/main-chat-helpers";
 import type { MainChatView } from "../body/main-chat-view";
 export function renderMainSessionDetails(scope: MainChatView) {

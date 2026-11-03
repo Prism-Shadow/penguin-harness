@@ -1,37 +1,10 @@
-/**
- * Rendering dispatch for a single view-model item: user prompts are right-aligned bubbles with
- * the images and files they carried above them, thinking collapsible blocks, text streamed as
- * Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task stats lines.
- * Items have a light entrance animation.
- *
- * The drawing is the UI package's (MessageRow / MessageBubble / MessageAttachments / MessageMeta
- * and the attachment tiles for what the person sent and the run's notice lines, AssistantText for
- * a reply); what stays here is which item becomes what, the text parsing that collapses harness
- * blocks into banners, what a model request's retry or failure line says and offers, and the
- * Retry a failed or stopped run's last line offers.
- */
-import { useState } from "react";
-import type { ReactNode } from "react";
-import {
-  AssistantText,
-  AttachmentFile,
-  AttachmentImage,
-  AttachmentList,
-  CountdownText,
-  MessageAttachments,
-  MessageBubble,
-  MessageMeta,
-  MessageRow,
-  RetryActions,
-  TextAction,
-  useCountdown,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { formatMessageTime } from "../../lib/format";
-import { attachmentFileName, splitAttachments } from "../../lib/attachments";
-import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { formatMessageTime } from "@prismshadow/penguin-web/internal";
+import { splitAttachments } from "@prismshadow/penguin-web/internal";
+import { routedUrl } from "@prismshadow/penguin-web/internal";
+import type { ChatItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
+
 import { MessageFilesCard } from "./message-files-card";
 import { ReplyTrailer } from "./reply-files-provider";
 import { MemoryChangesCard } from "./memory-changes-card";
@@ -54,7 +27,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "../../lib/skill-use";
+import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
 

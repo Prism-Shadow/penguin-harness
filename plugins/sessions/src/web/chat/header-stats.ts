@@ -35,7 +35,7 @@
  *     (not $0.00), and a recorded zero-cost session still shows $0 — both unchanged;
  *   - everything resets only on session switch (advanceCostStat re-keys on sessionId).
  */
-import { formatMoney } from "../../lib/format";
+import { formatMoney } from "@prismshadow/penguin-web/internal";
 
 /** The two fields the tracker reads off a getUsage session row (structural subset of UsageGroupRow). */
 export interface UsageCostRow {

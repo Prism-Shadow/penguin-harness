@@ -15,7 +15,7 @@ import type {
   SessionRowMark,
   SessionRowMarkKind,
   WorkspaceGroupEntry,
-} from "../../lib/session-row-contributions";
+} from "@prismshadow/penguin-web/internal";
 import type { RowActionData } from "./iface";
 
 /** What a row's marks say, by kind; an absent kind draws no mark. */

@@ -1,13 +1,13 @@
-import { useMemo, useRef } from "react";
-import type { StreamModel } from "../../../lib/amsp/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../../lib/amsp/memory-changes";
+import type { StreamModel } from "@prismshadow/penguin-web/internal";
+import { aggregateMemoryChanges, sameMemoryChanges } from "@prismshadow/penguin-web/internal";
+
 import { useOutlineRailFit } from "../conversation-outline";
 import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";
 import { useMemoryListing } from "../use-memory-listing";
 import { deletedChangeKeys } from "../memory-nav";
-import { panelDock } from "../../dock";
-import { machineForSession } from "../../../lib/session-machines";
+import { panelDock } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { useSessionDraft } from "../use-session-draft";
 import { useSessionStream } from "../use-session-stream";
 import type { useMainChatRouting } from "./main-chat-routing";

@@ -1,27 +1,15 @@
-import { SessionElapsed, sessionElapsedSplit } from "../session-stats";
-/**
- * The header's three statistics — Tokens, cost, elapsed — as the toolbar's chip row and the
- * details card both render them.
- */
-import { useEffect, useState, type ReactNode } from "react";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeDuration, humanizeDurationLive, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import type { StreamModel } from "@prismshadow/penguin-web/internal";
 
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "../../../lib/strings";
-import { humanizeDuration, humanizeDurationLive, humanizeTokens } from "../../../lib/format";
-import type { StreamModel } from "../../../lib/amsp/stream-model";
-import {
-  bucketCostUsd,
-  liveSessionElapsedMs,
-  sessionElapsedBreakdown,
-  type BucketPricing,
-  type TaskStatsTracker,
-} from "../../../lib/amsp/task-stats";
+} from "@prismshadow/penguin-web/internal";
+
 
 import { advanceCostStat, type CostStatDisplay, type CostStatHold } from "../header-stats";
 
 import { modelTaskStartCount } from "../agent-topology";
 import type { SessionStreamState } from "../use-session-stream";
-import type { Currency } from "../../../state/theme";
+import type { Currency } from "@prismshadow/penguin-web/internal";
 
 /**
  * Elapsed value for the header statistics: while a Task runs it ticks once per second over the

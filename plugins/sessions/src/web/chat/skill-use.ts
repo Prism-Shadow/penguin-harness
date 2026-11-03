@@ -1,1 +1,1 @@
-export * from "../../lib/skill-use";
+export * from "@prismshadow/penguin-web/internal";

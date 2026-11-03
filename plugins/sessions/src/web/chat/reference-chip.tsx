@@ -5,9 +5,9 @@
  * text body.
  */
 import { Chip, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { excerptLabel } from "../../lib/selection-menu";
-import { lineSuffix, type ComposerReference } from "../../lib/workspace-tree";
+import { S } from "@prismshadow/penguin-web/internal";
+import { excerptLabel } from "@prismshadow/penguin-web/internal";
+import { lineSuffix, type ComposerReference } from "@prismshadow/penguin-web/internal";
 
 /**
  * A staged reference, split for display: its name, and the quoted lines as a `:from-to` suffix.

@@ -3,7 +3,7 @@
  * New chat entries and parked drafts use, and the row extensions other modules contributed.
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { createDeps } from "../../lib/module-deps";
+import { createDeps } from "@prismshadow/penguin-web/internal";
 import type { ChatDrafts } from "../chat";
 import type { RowExtensions, RowMarks } from "./row-actions";
 

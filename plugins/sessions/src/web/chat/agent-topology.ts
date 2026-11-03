@@ -1,26 +1,5 @@
-/**
- * Subagent topology of one Task: pure extraction + layout, no React/DOM (unit-tested in
- * test/agent-topology.test.ts; rendering lives in agent-topology-view.tsx — same split as the
- * usage charts' chart-geom.ts / chart-svg.tsx).
- *
- * Extraction walks a single Task's slice of the main model — by default the most recent
- * Task that REFERENCES A SUBAGENT (task boundaries from the "starts a new Task" predicate
- * the reducer uses — user_text / user_image; user_steering never starts one — so a plain
- * user message never wipes the panel), or, for a chip clicked on an older turn, the
- * HISTORICAL Task slice containing that chip's child (extractTopologyForChild). The default
- * view also keeps children the runtime reports running, even when an earlier Task spawned
- * them. It collects children from bound run_subagent tool cards and standalone SubagentItems, then
- * recurses into each child model's own items for deeper spawns. Nodes are deduped by session id
- * (an input_subagent repoll can reference the same child twice). Each child node carries its elapsed-time sources
- * (from the nested model's activity stamps — wall clock of the whole spawn, never a sum of its
- * items).
- *
- * Layout is a simple layered tree: depth = column (left to right), leaves get successive rows
- * and a parent centers on its children; edges are orthogonal elbows between node midlines.
- * Node boxes are fixed-size (labels truncate inside them), which keeps the layout free of any
- * text measurement; graphs are small (≲15 nodes) and the view scrolls horizontally on overflow.
- */
-import type { ChatItem, StreamModel } from "../../lib/amsp/stream-model";
+import type { ChatItem, StreamModel } from "@prismshadow/penguin-web/internal";
+
 import { parseBackgroundTaskDoneMessage } from "./agent-handoff";
 
 /** Marker tag of a harness completion notice; the cheap prefilter before the marker parse. */

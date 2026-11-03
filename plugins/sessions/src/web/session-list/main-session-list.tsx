@@ -1,4 +1,4 @@
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 import type { MainSidebarState } from "./main-sidebar-controller";
 import { renderMainListHeader } from "./main-list-header";

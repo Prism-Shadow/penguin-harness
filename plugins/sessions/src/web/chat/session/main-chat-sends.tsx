@@ -1,19 +1,10 @@
-import { useCallback } from "react";
-import type {
-  AgentSummary,
-  InterruptRequest,
-  ModelRefDto,
-  TaskInputPart,
-} from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
-import { toastApiError } from "../../../lib/toast-api-error";
-import * as api from "../../../api/endpoints";
-import { switchDeskModel } from "@penguinharness/plugin-company/web";
-import { ApiError } from "../../../api/client";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { machineForSession } from "../../../lib/session-machines";
-import { discardUnstartedSession } from "../unstarted-session";
+import * as api from "@prismshadow/penguin-web/internal";
+
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import type { useMainChatLifecycle } from "./main-chat-lifecycle";
 

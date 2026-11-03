@@ -1,21 +1,7 @@
-/**
- * The Agent's memory listing (overview + every scope's files), owned by chat-page and
- * shared by two consumers: the Memory panel's list/detail views, and the memory-changes
- * card's deleted-row filtering (a changed file the loaded listing doesn't carry no longer
- * exists, so the card drops its rows — see memory-nav.ts deletedChangeKeys).
- *
- * Fetches only when wanted (the panel is open, or this conversation has memory changes to
- * mark), and refetches when `changes` moves — the caller passes an identity-stable array
- * (see chat-page's stabilization), so streaming ticks never re-fire this.
- *
- * Read from the server the conversation's Agent lives on: a Session on a machine runs that
- * machine's Agent, whose memory is over there (`machineId`; null for this server). An Agent of
- * the same id here is another Agent, and its memory is not this conversation's.
- */
-import { useEffect, useState } from "react";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
+
 import type { ScopeFiles } from "./memory-nav";
 import { scopeKey } from "../../lib/project-scope";
 

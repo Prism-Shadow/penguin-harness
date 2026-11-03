@@ -1,7 +1,7 @@
-import { sectionWindow, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY } from "../../lib/session-grouping";
+import { sectionWindow, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY } from "@prismshadow/penguin-web/internal";
 import { Fold, GroupHeader, MoreRow, SkeletonList } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { GROUP_MODE_ICONS } from "../../components/ui/group-list";
+import { S } from "@prismshadow/penguin-web/internal";
+import { GROUP_MODE_ICONS } from "@prismshadow/penguin-web/internal";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainGroupByTime(scope: MainSidebarState) {

@@ -1,6 +1,6 @@
-import { SIDEBAR_PAGE_SIZE, revealStep } from "../../lib/session-grouping";
+import { SIDEBAR_PAGE_SIZE, revealStep } from "@prismshadow/penguin-web/internal";
 import { MoreRow } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarRenderRows } from "./main-sidebar-render-rows";
 export function useMainSidebarShowMore(scope: ReturnType<typeof useMainSidebarRenderRows>) {
   const { groupCaps, setGroupCaps, trackedLoadMore, pendingLoads } = scope;

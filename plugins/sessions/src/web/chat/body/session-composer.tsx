@@ -1,25 +1,11 @@
-/**
- * The composer of an open conversation. Agent and Workspace are fixed by the Session; the
- * toolbar's model picker switches this conversation's model in place (confirmed, compacting
- * first); approval mode and the thinking level stay editable; /model opens a NEW conversation on
- * another model and leaves this one as it is.
- */
-import type { ComponentProps, RefObject } from "react";
-import type { NavigateFunction } from "react-router";
-import type {
-  AgentSummary,
-  ModelRefDto,
-  ModelsResponse,
-  SessionInfo,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../../models";
-import { sessionThinkingLevel } from "../../model-picker";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+
 import { ChatInput, type ComposerControl } from "../chat-input";
 
 import { approvalModeChoices } from "../approval-mode";
 import { agentPagePath } from "../session/main-chat-dock";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import type { DraftCache } from "../draft-cache";
 import type { SessionStreamState } from "../use-session-stream";
 

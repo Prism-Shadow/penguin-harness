@@ -1,16 +1,9 @@
-/**
- * The details card the toolbar's statistics open: the Session's Agent and Model, its id, its
- * Workspace on its machine, when it was created, its statistics, and (as children) the background
- * processes it started.
- */
-import type { ReactNode } from "react";
-import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
-import { CopyButton } from "@prismshadow/penguin-ui";
-import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
-import { S } from "../../../lib/strings";
-import { formatDateTime } from "../../../lib/format";
-import { nameOnMachine } from "../../../lib/workspace-machines";
-import { agentDisplayName } from "../../../state/project";
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+
 import type { HeaderStats } from "./session-stats";
 
 /**

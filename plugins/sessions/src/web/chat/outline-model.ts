@@ -1,20 +1,5 @@
-/**
- * Conversation outline data (pure logic, unit-testable): reduces the stream items to one
- * entry per exchange — the user's question plus a truncated plain-text preview of the
- * assistant's reply — for the left quick-jump index. Also owns the outline's display
- * math: the minimum-turns gate both shapes share and the tick rail's sliding window.
- *
- * Entry boundaries: a turn opens at a user prompt (user_text / user_image) and collects
- * every assistant_text that follows until the next prompt. Consecutive user items merge
- * into one entry (a prompt's text and images arrive as separate adjacent items — they are
- * one question, not several). Machine-only texts never open an entry: handoff /
- * model-switch source blocks render as banners with no user prose, and goal rounds past 1
- * are the loop re-sending an objective whose entry (round 1) is already collecting the
- * whole run's replies. Scheduled-trigger prompts DO open one — they are real turns worth
- * jumping to, unlike in input history (which only recalls what was typed here).
- * Steering messages ride inside a running turn and neither open an entry nor end one.
- */
-import type { ChatItem } from "../../lib/amsp/stream-model";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+
 import { parseUserMessageBody } from "./user-message-body";
 
 export interface OutlineEntry {

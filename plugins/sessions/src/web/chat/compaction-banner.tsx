@@ -1,64 +1,8 @@
-/**
- * Compaction row: one ActivityGroup of the event kind across running/done/failed (the activity
- * card, shared with the work group, the MCP connect row and the background and injected-message
- * notices) — the wall time ticks while it runs and settles once finished, failures stay on a
- * single line.
- *
- * **The title names the mode and doubles as the status**, the work-group header's idiom
- * (运行中 → 运行完毕): a `summarize` row reads 压缩中 / "Compacting" while it runs and
- * 压缩完毕 / "Compacted" once it settles; a `discard` row 清空中 → 清空完毕 ("Clearing" →
- * "Cleared") — it drops the old context rather than compacting it, and calling that
- * "compaction" was the confusing part (per maintainer request). With mode and state both in
- * the title neither outcome needs a detail line: a running row is icon + title + ticking wall
- * time (+ chevron on a summarize), a succeeded row the same with the time settled, and the
- * detail slot is left for the one thing a title cannot say — why a compaction failed, under
- * the bare mode word.
- *
- * The body follows the work group: **two stacked disclosure rows, each with its own status
- * icon and wall time exactly like a thinking block** — 「思考」/ "Thinking", what the
- * compaction request thought ahead of its summary (present only once any arrived; a model
- * that does not think leaves no empty row), and 「压缩结果」/ "Result", the summary itself.
- * Both carry the thinking block's own body (`md-body` through the shared `StreamText`) and
- * stream while the request writes them, revealed the way a reply is.
- *
- * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
- * while the compaction runs the banner is open, so the two section rows are on
- * screen with their labels and their ticking times — the reader can see that they are there
- * and how long each is taking — while the sections themselves stay closed (DisclosureRow's
- * default), because their contents are the compaction's raw workings and not what the row is
- * for. Once the compaction settles the banner closes itself again, leaving the one-line
- * summary. The sections arrive in the order the request produces them: the thinking section
- * once any thinking lands, the result section only after that thinking finishes — its first
- * summary token is what settles the thinking section — so a running row never shows a result
- * row beside a thought still being written (compactionResultVisible decides).
- *
- * The header's chevron is there from the moment a summarize compaction starts, so the reader
- * can reopen it to watch the request work, or read the outcome afterwards. A `discard`
- * compaction produces no text at all and stays chevron-less, as does a failed one: a
- * compaction that did not complete wrote no adopted summary, and the reducer discards its
- * half-written drafts (see stream-model's compaction_end handling), so there is nothing left
- * to show.
- *
- * Doesn't show Tokens: the row only needs to state whether compaction happened and whether it
- * succeeded. Compaction's cost lands in different places depending on when it occurs — compaction
- * that happens **mid-turn** counts toward that turn's stats line and cost; compaction **after a
- * turn ends** and manual compaction both go into the Session total (the Trace page lists
- * compaction turns separately); see the task-stats module comments.
- */
-import {
-  ActivityGroup,
-  DISCLOSURE_BODY_MD_CLASS,
-  DisclosureRow,
-  LiveDuration,
-  StatusIcon,
-  StreamText,
-  type ActivityGroupRow,
-} from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeDuration } from "@prismshadow/penguin-web/internal";
+import type { CompactionItem } from "@prismshadow/penguin-web/internal";
+import { compactionResultVisible, compactionSummaryText } from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
-import type { CompactionItem } from "../../lib/amsp/stream-model";
-import { compactionResultVisible, compactionSummaryText } from "../../lib/amsp/compaction-summary";
 
 /**
  * One body section: the thinking block's row (status icon + label + wall time + chevron) over

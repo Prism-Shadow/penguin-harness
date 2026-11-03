@@ -45,17 +45,17 @@ import {
   RuledSection,
   Text,
 } from "@prismshadow/penguin-ui";
-import { VersionStamp } from "../../components/account/version-stamp";
-import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
-import { S } from "../../lib/strings";
-import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
-import { formatMonthDay } from "../../lib/format";
+import { VersionStamp } from "@prismshadow/penguin-web/internal";
+import { PENGUIN_LOGO_URL } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { NAV_ICONS, glyphOf } from "@prismshadow/penguin-web/internal";
+import { formatMonthDay } from "@prismshadow/penguin-web/internal";
 
-import { versionBadgeFor } from "../../lib/update-flow";
-import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
-import { useVersionInfo } from "../../lib/use-version-info";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import { versionBadgeFor } from "@prismshadow/penguin-web/internal";
+import { openAppInfo, useUpdateFlow } from "@prismshadow/penguin-web/internal";
+import { useVersionInfo } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import { EXAMPLE_FOLDERS, type ExampleFolderId, type ExampleTaskId } from "./example-tasks";
 
 import {

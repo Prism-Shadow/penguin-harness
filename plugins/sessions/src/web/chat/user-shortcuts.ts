@@ -22,7 +22,7 @@
  * `test/user-shortcuts.test.ts` fails if the two copies drift apart.
  */
 import type { DraftShortcut } from "@prismshadow/penguin-server/api";
-import { randomHex } from "../../lib/random-id";
+import { randomHex } from "@prismshadow/penguin-web/internal";
 
 /** A saved shortcut, as stored and as rendered. Re-exported from the API type so the two cannot drift. */
 export type UserShortcut = DraftShortcut;

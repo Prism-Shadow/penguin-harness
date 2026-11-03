@@ -6,8 +6,8 @@
  * tab). The task prompt body itself is rendered as usual by the caller.
  */
 import { TranscriptNote } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { formatDateTime } from "../../lib/format";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import type { ScheduledOrigin } from "./agent-handoff";
 
 export function ScheduledBanner({ origin }: { origin: ScheduledOrigin }) {

@@ -43,8 +43,8 @@ import {
   MenuRadioItem,
   MenuSeparator,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import {
   PERMISSION_LEVEL_GLYPH,
   PERMISSION_LEVEL_TONE,
@@ -62,11 +62,11 @@ import {
   type PermissionLevel,
   type PermissionPick,
   type PresetBlock,
-} from "../../lib/permission-level";
+} from "@prismshadow/penguin-web/internal";
 
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import { SettingsDialog } from "@penguinharness/plugin-settings/web";
 
 /**

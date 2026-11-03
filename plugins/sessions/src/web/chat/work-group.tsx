@@ -1,25 +1,7 @@
-/**
- * The session's "Reasoning & Tools" group: binds a run of consecutive thinking and tool-call
- * items to the shared UI package's `ActivityGroup`, which draws it and owns its expand policy.
- *
- * What is decided here is the group's state, from the stream model:
- *
- * - Running vs Done: the group only counts as done once the model stops calling tools. While it
- *   is the last segment and the Task runs, the model could add another step at any moment (with
- *   a brief gap between two steps where no item is active), so it shows "Running"; it flips to
- *   "Done" once a later message pushes it away from the end, or the Task finishes. Following this
- *   rather than the per-item activity is what keeps the group from collapsing between steps.
- * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
- * - So does a search of the region the group is in (lib/find-expand.ts): its rows are unmounted
- *   while it is closed, and a match inside them would otherwise read as no match.
- * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
- */
-import { useContext } from "react";
-import { ActivityGroup, type ActivityGroupProps } from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { FindRevealContext } from "@prismshadow/penguin-web/internal";
+import { approvalKey, type ChatItem } from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
-import { FindRevealContext } from "../../lib/find-expand";
-import { approvalKey, type ChatItem } from "../../lib/amsp/stream-model";
 
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";

@@ -1,20 +1,13 @@
-/**
- * The open conversation's in-place controls: the composer handle the dock's panels write into,
- * the Session row's updates (thinking level, approval mode, sandbox), recalling a queued message,
- * approval decisions, and moving a tool call to the background.
- */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SessionInfo, SessionPatchRequest } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { ApiError } from "../../../api/client";
-import { a2uiDrafts } from "../../../lib/a2ui-drafts";
-import { apiErrorText } from "../../../lib/api-error";
-import type { PermissionPick } from "../../../lib/permission-level";
-import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
-import { approvalKey } from "../../../lib/amsp/stream-model";
-import type { ComposerReference } from "../../../lib/workspace-tree";
-import { useLocale } from "../../../state/locale";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { a2uiDrafts } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
+import { approvalKey } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+
 import type { ComposerControl } from "../chat-input";
 import type { A2uiActions } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";

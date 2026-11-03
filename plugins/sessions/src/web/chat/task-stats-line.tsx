@@ -1,42 +1,5 @@
-/**
- * Task stats line: after each Task finishes, shows "this turn's usage" at the
- * **bottom-left** of the AI reply — input, output, output TPS, elapsed time, and cost (converted
- * in real time from the current Model's pricing, hidden if no pricing is configured); all five
- * share the same basis (this turn's usage), each expressed uniformly as icon + value (no text
- * labels); the reply timestamp and a copy button sit at the end (copies this turn's assistant
- * text, falling back to the stats themselves when there's no text), with the fork action to the
- * right of copy — forking asks for confirmation first (it duplicates the conversation into a new
- * Session up to this reply), while copy stays a plain immediate click. Below sm the row is slimmed
- * to fit the width: the TPS chip is dropped and cost/elapsed lose excess decimals (compact
- * formatter variants); desktop shows all five, formatted as always.
- * At ≥sm the whole line is invisible but takes up space by default, surfacing only on hovering
- * the reply or the line itself — matching the same convention, font size, and color as the user
- * message footer: the AI's footer sits bottom-left, the user's sits bottom-right, symmetric on
- * both sides. Below sm the line is always visible: phones have no hover (Tailwind v4 even gates
- * hover: variants behind `@media (hover: hover)`), so a hover-revealed footer would simply
- * never appear there.
- * Arrow direction reads as "where the tokens go": **up arrow = input** (sent up to the model),
- * **down arrow = output** (returned by the model).
- * This line only answers "how much did this turn cost", **it doesn't break down the cache
- * composition** — how much of the input hit cache is a debugging-level detail that belongs to the
- * Trace page's turn card (which shows cache hits and hit rate); the current **context usage** is
- * likewise not repeated here — it's expressed by the ring below the input box (see ContextGauge
- * in context-gauge), which also discloses what that context is made of.
- * This line sits right below this turn's AI reply and simultaneously **serves as that reply's
- * footer**: it provides the reply timestamp and copy button at the end, so the assistant message
- * itself doesn't render a separate one (otherwise two copy buttons would pop up in the same spot).
- */
-import { useState } from "react";
-import type { TracePosition } from "@prismshadow/penguin-server/api";
-import {
-  ConfirmModal,
-  CopyButton,
-  GlyphIcon,
-  ICONS,
-  Spinner,
-  StatChip,
-} from "@prismshadow/penguin-ui";
-import { formatTaskStats, type TaskStats } from "../../lib/amsp/task-stats";
+import { formatTaskStats, type TaskStats } from "@prismshadow/penguin-web/internal";
+
 
 import {
   formatMessageTime,
@@ -44,11 +7,11 @@ import {
   formatTps,
   humanizeDuration,
   humanizeTokens,
-} from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { S } from "../../lib/strings";
-import { useTheme } from "../../state/theme";
-import { useLocale } from "../../state/locale";
+} from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 
 export interface ForkTarget {
   assistantText: string;

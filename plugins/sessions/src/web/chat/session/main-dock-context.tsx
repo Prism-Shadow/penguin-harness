@@ -1,19 +1,8 @@
-import { ChatSessionContext } from "../../../lib/chat-session";
-/**
- * What the chat page hands its dock panels. A dock renders every panel the same way — the
- * registered Body with its `active` flag and nothing else — but the built-in bodies
- * (builtin-dock-panels.tsx) show the conversation on screen, and that state is the page's:
- * the selected Session, the stream, the jump commands the transcript issues, and the
- * composer's entry points. The page provides it once around both docks; a body reads it with
- * useChatDock.
- */
-import { useContext, type Context, type ReactNode } from "react";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import type { StreamModel } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow, MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 
-import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
-import type { PermissionPick } from "../../../lib/permission-level";
-import type { StreamModel } from "../../../lib/amsp/stream-model";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
-import type { ComposerReference } from "../../../lib/workspace-tree";
 import type { StreamRenderContext } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";
 import type { useMemoryListing } from "../use-memory-listing";

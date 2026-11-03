@@ -1,39 +1,11 @@
-/**
- * A tool call of the session's stream, drawn by the shared UI package's `ToolCallCard`: this
- * binds the stream item, the pending-approval map and the session's callbacks to the card, and
- * holds the tool-specific reading of the call's arguments (the previews below), which is the
- * app's knowledge of its tools, not the card's.
- *
- * Duration accounting = **argument-generation segment + execution segment** (excludes time
- * spent waiting on human approval): the model streaming out arguments token by token is often
- * slower than the tool call itself, so reporting only the execution segment would badly
- * understate this step's cost. While waiting on approval, the already-settled generation
- * segment is shown; the wait itself is marked by the hourglass icon alone, since the approval
- * block below the row is always on screen and names the tool and its arguments.
- *
- * A call from a history window may carry its output, a long argument or a child's inline image
- * folded: the card shows the preview (head, an ellipsis line, tail — inside the argument's own
- * string when an argument was folded) and fetches the whole when it is opened (elided-body.tsx),
- * then shows that instead. An approval never shows a folded value: its block reads the call the
- * pending approval carries, which the server always sends whole.
- */
-import { useMemo } from "react";
-import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-import {
-  ToolCallCard,
-  useElapsedPast,
-  type RunState,
-  type ToolCallDuration,
-} from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toolDisplayName } from "@prismshadow/penguin-web/internal";
+import { stripAnsi } from "@prismshadow/penguin-web/internal";
+import { routedUrl } from "@prismshadow/penguin-web/internal";
+import { approvalKey, type ToolCallItem } from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
-import { toolDisplayName } from "../../lib/tool-alias";
-import { stripAnsi } from "../../lib/strip-ansi";
-import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
-import { routedUrl } from "../../lib/session-machines";
-import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
 
-import { useTheme } from "../../state/theme";
+import { useTheme } from "@prismshadow/penguin-web/internal";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { ElidedBodyNote, hasElidedNote } from "./elided-body";
 import { SessionSubagentChip } from "./subagent-chip";

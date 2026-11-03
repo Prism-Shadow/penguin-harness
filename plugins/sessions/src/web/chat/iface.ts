@@ -13,7 +13,7 @@
 import type { ComponentType } from "react";
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
 
-import type { FileRenderer } from "../../lib/file-renderers";
+import type { FileRenderer } from "@prismshadow/penguin-web/internal";
 
 /** One parked draft as a list shows it: unsent new-chat text set aside for later. */
 export interface ParkedDraft {

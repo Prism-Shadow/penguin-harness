@@ -1,24 +1,7 @@
-/**
- * MCP connect row: between mcp_connect_begin and mcp_connect_end the first run is
- * connecting the configured MCP Servers — without this row the pre-first-request wait
- * reads as a silent hang. One ActivityGroup of the event kind across all states (the activity
- * card, shared with the work group and the compaction row): connecting shows the server list
- * with a live tick; once settled the header leads with the discovered-tool count (failed
- * servers are named, but only named — reasons live in the server rows).
- * Expanding shows ONE ROW PER SERVER, hung off the banner's head as a work group's steps hang
- * off its header — status icon, tool count / per-server connect time — and expanding a row
- * shows that server's tool list, or the full failure detail for a server that could not
- * connect (non-fatal either way, matching core's warn-and-skip stance). A server that was not
- * contacted at all — the Agent's vault lacks a key it needs, or it needs an OAuth sign-in —
- * reads as waiting on the user rather than as a failed connection, with the keys in its detail:
- * its row's mark is the hourglass, and the header names it apart from the failed servers and
- * stays settled rather than failed — an Agent with such a server shows the row at the start of
- * every conversation, and a red mark there would be an alarm about nothing that went wrong.
- */
-import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
-import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/amsp/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeDuration } from "@prismshadow/penguin-web/internal";
+import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "@prismshadow/penguin-web/internal";
+
 
 /**
  * Owner server of a prefixed tool name (`mcp__<server>__<tool>`), matched against the

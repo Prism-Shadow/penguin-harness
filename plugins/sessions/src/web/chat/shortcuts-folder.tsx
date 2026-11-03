@@ -1,43 +1,7 @@
-/**
- * The examples block's last folder: the shortcuts the user saved themselves.
- *
- * It behaves like a built-in folder on the way out — a click FILLS the composer and sends
- * nothing — and differs from one in three ways, each of which is why it lives here rather than in
- * the registry:
- *
- * - **Its rows are server state**, per user (`ui_prefs.draftShortcuts`), fetched on mount and
- *   written back on every change. A delete is optimistic: the list updates first and rolls back
- *   with a toast if the write fails, because the value being written is already on screen. The
- *   create / edit dialog waits instead: it closes once its write landed, and a refused one leaves
- *   it open with what was typed. Its Save is live once the shortcut is valid and (when editing)
- *   changed; closing it with typing of the user's own asks first.
- * - **Its length is the user's**, not the registry's — but bounded to SHORTCUT_MAX_COUNT, chosen
- *   so the folder plus its New-shortcut row stays within a row of a built-in folder's height. The
- *   examples block reserves no scroll area, and rather than pinning a height and scrolling inside
- *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and its
- *   rows never outgrow the folder column they stand beside.
- * - **Its rows carry their own actions.** Edit and delete are plain icon buttons that are always
- *   visible, deliberately not the sidebar's hover-revealed pair: those rows have a long-press menu
- *   behind them on touch, and these have nothing, so hover-gating would put a user's own prompts
- *   out of reach on a phone.
- */
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Button,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  Input,
-  Modal,
-  PlusIcon,
-  Textarea,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+
 import {
   ExampleFolderRow,
   ExampleRowGlyph,

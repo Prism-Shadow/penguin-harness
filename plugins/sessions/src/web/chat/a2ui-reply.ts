@@ -1,16 +1,5 @@
-/**
- * Which assistant reply's rich blocks take input.
- *
- * A reply can end with a choice or a form (```a2ui blocks the UI package draws), and picking an
- * answer fills the composer. Only the conversation's live question may do that: the latest reply,
- * and only while nothing has been said to the model since. A question further up was answered,
- * or overtaken, by what followed it, so its blocks stay on screen read-only, as they do in a
- * subagent's conversation and in the Trace view.
- *
- * Kept free of React so the rule is testable on its own (test/a2ui-reply.test.ts); the
- * transcript applies it in MessageItems.
- */
-import type { ChatItem } from "../../lib/amsp/stream-model";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+
 
 /**
  * Input to the model after a reply: anything the person sent (a prompt, an image, a steer

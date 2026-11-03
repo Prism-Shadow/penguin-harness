@@ -6,12 +6,12 @@ import {
   groupPageSlice,
   groupSessionsByTime,
   matchesSessionQuery,
-} from "../../lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 import { savePinnedSessions, togglePinnedSession } from "./pinned-sessions";
-import { storeSessionSortMode, type SessionSortMode } from "../../lib/session-order";
+import { storeSessionSortMode, type SessionSortMode } from "@prismshadow/penguin-web/internal";
 
-import { GroupPager } from "../../components/ui/group-list";
-import { saveGroupSet } from "../../lib/main-sidebar-persistence";
+import { GroupPager } from "@prismshadow/penguin-web/internal";
+import { saveGroupSet } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarWorkspaceGroupCounts } from "./main-sidebar-workspace-group-counts";
 
 /** Consecutive live main statements 90..106, called once in original hook order. */

@@ -9,11 +9,11 @@ import type {
   SessionProcessInfo,
 } from "@prismshadow/penguin-server/api";
 import { useCompany } from "@penguinharness/plugin-company/web";
-import { useAuth } from "../../../state/auth";
-import { useTheme } from "../../../state/theme";
-import { useProject } from "../../../state/project";
-import { useSessions } from "../../../state/sessions";
-import type { StagedThinkingSwitch } from "../../model-picker";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
 import { createCostStatHold } from "../header-stats";
 import type { SwitchContextShape } from "../model-switch";
 

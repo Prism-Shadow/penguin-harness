@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { agentDisplayName } from "../../state/project";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarOpenSession } from "./main-sidebar-open-session";
 
 /** Consecutive live main statements 134..134, called once in original hook order. */

@@ -12,7 +12,7 @@ import {
   GlyphIcon,
   ICONS,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function HarnessInjectedBanner({ text }: { text: string }) {
   return (

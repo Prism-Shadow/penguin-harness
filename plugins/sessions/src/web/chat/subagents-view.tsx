@@ -1,72 +1,17 @@
-/**
- * Subagents panel content: one Task's call graph on top (root = the main session, one node per
- * spawned child; clicking a node switches the conversation below) and the selected child's
- * live conversation underneath, rendered with the SAME machinery as the main chat
- * (MessageStream over the child StreamModel with ctx.origin set to the child's chain) — so
- * streaming, nested tool cards, chips for deeper spawns, and pending approvals all keep
- * working inside the panel.
- *
- * Which Task: the most recent SUBAGENT-BEARING one by default — a plain user message never
- * wipes the graph; a new Task takes over the moment it spawns its own child (see
- * extractTopology). A chip click pins `taskScope` to that chip's Task instead (the chat
- * page's subagentTaskScope), so a chip on an older turn shows that turn's HISTORICAL graph
- * via extractTopologyForChild — falling back to the default scope when the anchor is no
- * longer referenced (e.g. a resync swapped the model).
- *
- * Selection: an explicit chip click (focusRequest) or a node click wins; with no explicit
- * choice the first child of the displayed Task is auto-focused (so opening the panel while a
- * subagent is spawning immediately shows it). Selecting the root shows a note instead of
- * duplicating the main transcript. A focused child outside the displayed Task keeps its
- * conversation visible (found by walking the origin chain); the graph simply has no
- * highlighted node.
- */
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { NestedSessionMeta, StreamModel } from "@prismshadow/penguin-web/internal";
 
-import { useNavigate } from "react-router";
-import type {
-  ApprovalMode,
-  SessionSandbox,
-  ModelInfo,
-  SessionInfo,
-  SessionPatchRequest,
-  SubagentRuntimeInfo,
-  TaskInputPart,
-} from "@prismshadow/penguin-server/api";
-import {
-  AgentAvatar,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  StatusIcon,
-  Text,
-  toastError,
-} from "@prismshadow/penguin-ui";
-import { ApiError } from "../../api/client";
-import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
-import { ChatInput, type ComposerControl } from "./chat-input";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 
-import type { PermissionPick } from "../../lib/permission-level";
-import { noteSessionSeen } from "../../lib/session-seen";
-import { machineForSession } from "../../lib/session-machines";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import {
-  extractTopology,
-  extractTopologyForChild,
-  modelAtOrigin,
-  resolveAgentLabel,
-  shortSessionId,
-  type TopologyNode,
-} from "./agent-topology";
 
-import { AgentTopologyView } from "./agent-topology-view";
-import { MessageStream, type StreamRenderContext } from "./message-stream";
-import { useAgentSkills } from "./use-agent-skills";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import { toastApiError } from "../../lib/toast-api-error";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+
 
 interface Selection {
   sessionId: string;

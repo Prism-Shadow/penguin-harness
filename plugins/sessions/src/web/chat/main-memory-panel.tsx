@@ -1,6 +1,6 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { machineForSession } from "../../lib/session-machines";
+import { S } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
 
 import { useChatDock } from "./session/main-dock-context";

@@ -1,5 +1,29 @@
-import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
-import { adoptDockScope, isTabShown, openPanel } from "../../dock";
+import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  SessionInfo,
+  SessionStatus,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
+import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { configuredCompactionLimit } from "@prismshadow/penguin-web/internal";
+import { humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
+import { DRAFT_SESSION_ID } from "../draft-sessions";
+import { routeSessionOutcome, sessionForProject } from "../session-project";
+import { RouteProbe } from "../route-probe";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
+import { applyUsageFetch } from "../header-stats";
+import { hasConfiguredKey, sameModelRef } from "@penguinharness/plugin-models/web";
+
+import { adoptDockScope, isTabShown, openPanel } from "@prismshadow/penguin-web/internal";
 
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";

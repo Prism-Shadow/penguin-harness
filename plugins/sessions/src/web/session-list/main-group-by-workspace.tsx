@@ -1,8 +1,8 @@
 import { Fold, GroupHeader, ICONS, ICON_SIZE, SkeletonList } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { Icon } from "../../components/ui/group-list";
-import { GROUP_ACTION_CLASS } from "../../lib/main-sidebar-persistence";
+import { S } from "@prismshadow/penguin-web/internal";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { Icon } from "@prismshadow/penguin-web/internal";
+import { GROUP_ACTION_CLASS } from "@prismshadow/penguin-web/internal";
 import { GroupBlock } from "./main-group-block";
 import { GroupPinButton } from "./main-group-pin-button";
 import { GroupOverflowMenu } from "./main-group-overflow-menu";

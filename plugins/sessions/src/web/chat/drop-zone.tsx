@@ -1,48 +1,14 @@
-/**
- * Drop target for composer attachments (#311), scoped to the chat area: dragging OS files
- * over the conversation + composer column shows a "drop to attach" overlay bounded to that
- * column, and releasing hands the batch to the composer's existing intake (images → the
- * pasted-image pipeline, everything else → the file-attachment pipeline; same validation,
- * same errors).
- *
- * Two pieces, because the region and the composer are not the same element:
- *   - `ChatDropRegion` wraps the chat column (chat-page.tsx) and publishes its DOM node
- *     through context. It is the only element a drop counts on: the sidebar, the mobile top
- *     bar, the chat toolbar and the docked Files/Subagents panels sit outside it and are
- *     inert, and pages with no chat column never render one.
- *   - `FileDropZone` stays mounted by ChatInput, which keeps "dropping works exactly when
- *     there is a composer to attach to" true by construction — chat page and draft page
- *     alike, and while a Task runs just the same. With no region above it (nothing does that
- *     today) it renders nothing and listens for nothing, rather than falling back to the
- *     window.
- *
- * The listeners are on `window` even though the target is a region, because the region only
- * needs to be the *subject* of the hit test, not the receiver: a window listener still sees
- * the drag after it has moved off the chat column — over the sidebar, over a docked panel,
- * out of the window — which is exactly when the overlay has to come down. Every event is
- * tested against the region with `contains`, so where the pointer is decides everything and
- * no state accumulates (see dropRegionAction in lib/file-drop.ts for why that matters).
- *
- * The overlay is the UI package's `DropOverlay` veil, pure feedback: `pointer-events-none` (so
- * it never becomes the drag target itself and the hit test keeps seeing the real element
- * underneath), `aria-hidden` — it exists only during a pointer drag, and the accessible entry
- * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the overlay z
- * tier (z-50).
- *
- * Interplay with the app-shell guard (see lib/file-drop.ts): over the chat area this
- * component claims the drag — preventDefault on dragover plus a copy cursor — so the guard's
- * no-drop fallback stands aside; everywhere else the guard alone runs, silently cancelling
- * the browser's navigate-to-file default so a stray drop is inert instead of destructive,
- * while non-file drags keep their native behavior. Both orders of the two window listeners
- * converge on the same outcome, so mount order cannot matter.
- */
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { DropOverlay } from "@prismshadow/penguin-ui";
+import {
+  dropRegionAction,
+  isFileDrag,
+  type DragSignal,
+  type DropRegionAction,
+} from "@prismshadow/penguin-web/internal";
 
-import { createPortal } from "react-dom";
-import { DropOverlay, ICONS } from "@prismshadow/penguin-ui";
-import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
-import type { DragSignal, DropRegionAction } from "../../lib/file-drop";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
+import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
+
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */
 const ChatDropRegionContext = createContext<HTMLElement | null>(null);

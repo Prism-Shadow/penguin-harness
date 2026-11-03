@@ -1,20 +1,8 @@
-import {
-  Dropdown,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  Menu,
-  MenuLabel,
-  MenuRadioItem,
-  MenuSeparator,
-  SearchInput,
-  SidebarControl,
-  SidebarListHeader,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { GROUP_MODE_ICONS, SORT_MODE_ICONS } from "../../components/ui/group-list";
-import { WorkspaceSelect } from "../internal";
-import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
+import { S } from "@prismshadow/penguin-web/internal";
+import { GROUP_MODE_ICONS, SORT_MODE_ICONS } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+import { NEW_CHAT_ICON } from "@prismshadow/penguin-web/internal";
+
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 export function renderMainListHeader(scope: MainSidebarState) {

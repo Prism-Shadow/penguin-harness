@@ -6,8 +6,8 @@
  * usual below.
  */
 import { Badge, TranscriptNote } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { formatDateTime } from "../../lib/format";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { summarizeOrgTrigger, type OrgTriggerOrigin } from "./org-trigger";
 
 export function OrgTriggerBanner({ origin }: { origin: OrgTriggerOrigin }) {

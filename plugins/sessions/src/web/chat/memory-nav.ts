@@ -1,20 +1,5 @@
-/**
- * Navigation model and list view-model for the Memory side panel (pure; the component in
- * memory-view.tsx just renders these).
- *
- * Two levels: the list (both scopes' topic lists, changed topics marked) and one memory's
- * detail (its content, rendered like the file viewer). Entry routes by where the user came
- * from: a memory-changes card row carries a locate target and lands directly on that
- * memory's detail; entering through the panel toggle (or any entry without a target) lands
- * on the list. Back always returns to the list.
- */
-import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
-import {
-  type MemoryChangeOp,
-  type MemoryChangeRow,
-  type MemoryLocateTarget,
-  memoryRowKey,
-} from "../../lib/amsp/memory-changes";
+} from "@prismshadow/penguin-web/internal";
+
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

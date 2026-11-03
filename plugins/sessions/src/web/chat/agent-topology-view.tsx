@@ -10,7 +10,7 @@
  * activity when done — never a sum of its items); the root carries no stamps and shows none.
  */
 import { AgentAvatar, DurationSlot, StatusIcon } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { layoutTopology, NODE_H, NODE_W, type TopologyNode } from "./agent-topology";
 
 /** A layout length (CSS pixels at the default 16px root) as the rem the canvas renders it in. */

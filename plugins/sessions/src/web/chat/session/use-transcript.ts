@@ -1,14 +1,8 @@
-/**
- * Derivations over the open conversation's transcript: the rendered items (backfilled windows
- * ahead of the live tail), the composer's recall list, the outline and its rail fit, the
- * subagents panel's merged model, and the conversation's memory changes with the Agent's listing.
- */
-import { useMemo, useRef } from "react";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import type { StreamModel } from "../../../lib/amsp/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../../lib/amsp/memory-changes";
-import { panelDock } from "../../dock";
-import { machineForSession } from "../../../lib/session-machines";
+import type { StreamModel } from "@prismshadow/penguin-web/internal";
+import { aggregateMemoryChanges, sameMemoryChanges } from "@prismshadow/penguin-web/internal";
+import { panelDock } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+
 import { useOutlineRailFit } from "../conversation-outline";
 import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";

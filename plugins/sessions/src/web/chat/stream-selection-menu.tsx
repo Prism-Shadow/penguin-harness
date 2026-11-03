@@ -1,71 +1,9 @@
-/**
- * The conversation's own context menu: a secondary click — or Shift+F10, or the keyboard's
- * Menu key — inside the message stream. On a web link it offers Open in built-in browser (the
- * desktop app, with the browser available), Open in system browser (Open in new tab from a
- * browser) and Copy link address; on a selection, Copy and Add to conversation; on a link
- * while text is selected, both, the selection's rows after a divider. The rules (which gestures
- * it takes, which rows it shows, where a keyboard-opened menu hangs, what an excerpt becomes)
- * are pure and live in lib/selection-menu.ts; this half reads the DOM and runs the rows.
- *
- * It is the Files panel preview's selection menu applied to the conversation, and it borrows
- * that menu's parts instead of copying them: `useRowContextMenu` for the anchored open state
- * and its dismissal, the `Dropdown` in `anchorRect` mode for the panel, the small Menu rows,
- * and `restoreSelection` for the highlight. It is also what gives the desktop app a
- * copy menu for conversation text, and a menu for its links, since Electron raises no context
- * menu of its own.
- *
- * Whatever the rules decline is left to the browser untouched: `preventDefault` runs only once
- * the rules have taken the gesture, inside the stream's own handler, so a right-click with no
- * selection and off a web link, on a field, or on a selection that runs out of the stream still
- * gets the native menu. A touch or pen press-and-hold is declined outright — the OS selection
- * and link menus own that gesture — which is why none of the hook's press-and-hold handlers are
- * spread here.
- *
- * Copy writes what ⌘C writes from the same selection: its text as plain text, and nothing else
- * (lib/selection-copy.ts holds that rule for both).
- */
-import {
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+} from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { writeClipboard } from "@prismshadow/penguin-web/internal";
+import { restoreSelection } from "@prismshadow/penguin-web/internal";
 
-import {
-  Dropdown,
-  ICONS,
-  Menu,
-  MenuItem,
-  MenuSeparator,
-  contextMenuAnchor,
-  isContextMenuKey,
-  toastSuccess,
-  useRowContextMenu,
-  type AnchorRect,
-  type ContextMenuEventLike,
-} from "@prismshadow/penguin-ui";
-
-import type { BrowserBackend } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { isDesktopShellWindow } from "../../lib/account-menu";
-import {
-  SELECTION_MENU_ITEMS,
-  excerptReference,
-  linkAnchor,
-  linkMenuItems,
-  menuLinkHref,
-  selectionEndAnchor,
-  streamMenuContent,
-} from "../../lib/selection-menu";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import { useAuth } from "../../state/auth";
-import { writeClipboard } from "../../lib/clipboard";
-import { inEditable, writeSelectionCopy } from "../../lib/selection-copy";
-import { restoreSelection } from "../../components/ui/text-selection";
 import { openLinkInBrowser, browserLinkTarget, subscribeBrowser } from "@penguinharness/plugin-browser/web";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */

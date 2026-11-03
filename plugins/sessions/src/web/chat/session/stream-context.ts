@@ -1,14 +1,9 @@
-/**
- * The message stream's render context for the open conversation: approvals, costs, the reconnect
- * countdown's controls, and the jump commands a card or a link in the transcript issues into the
- * dock's panels. Rebuilt every render, as the stream it reads mutates in place.
- */
-import type { ModelRefDto, SessionInfo } from "@prismshadow/penguin-server/api";
-import * as api from "../../../api/endpoints";
-import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
-import { bucketCostUsd, type BucketPricing } from "../../../lib/amsp/task-stats";
+import * as api from "@prismshadow/penguin-web/internal";
+import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import { bucketCostUsd, type BucketPricing } from "@prismshadow/penguin-web/internal";
 
-import { openPanel } from "../../dock";
+
+import { openPanel } from "@prismshadow/penguin-web/internal";
 import type { StreamRenderContext } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";
 

@@ -1,15 +1,8 @@
-/**
- * The chat page's body: the draft page, or the open conversation — its message stream with the
- * goal banner and the composer below — and the loading, error, offline and empty states between
- * them. The only region a dragged file may be dropped on (#311).
- */
-import type { RefObject } from "react";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
-import type { ComposerReference } from "../../../lib/workspace-tree";
-import type { ChatItem } from "../../../lib/amsp/stream-model";
-import { DockLauncher } from "../../dock";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+import { DockLauncher } from "@prismshadow/penguin-web/internal";
+
 import { MessageStream, type StreamRenderContext } from "../message-stream";
 
 import { ChatDropRegion } from "../drop-zone";

@@ -1,16 +1,9 @@
-/**
- * A spawned child session's row in the parent's stream, drawn by the shared UI package's
- * `SubagentChip`: this resolves the child's agent name from the Project's agents and sessions,
- * finds whether an approval waits anywhere in the child's subtree (so a nested approval stays
- * discoverable with the panel closed, and is announced in the row's name), and opens the
- * subagents panel focused on the child through ctx.onOpenSubagent.
- */
-import { SubagentChip } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { hasPendingWithinOrigin, type StreamModel } from "../../lib/amsp/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { hasPendingWithinOrigin, type StreamModel } from "@prismshadow/penguin-web/internal";
 
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
+
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";
 import type { StreamRenderContext } from "./message-stream";
 

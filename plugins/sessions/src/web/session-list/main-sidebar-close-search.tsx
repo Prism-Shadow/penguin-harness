@@ -1,7 +1,7 @@
 import type { DragEvent as ReactDragEvent } from "react";
-import { applyManualReorder, moveInSequence, saveSessionOrder } from "../../lib/session-order";
+import { applyManualReorder, moveInSequence, saveSessionOrder } from "@prismshadow/penguin-web/internal";
 import { commitGroupOrder, isOrderableGroupMode, saveGroupOrder } from "./group-order";
-import { GROUP_DRAG_MIME, isGroupDrag } from "../../lib/main-sidebar-persistence";
+import { GROUP_DRAG_MIME, isGroupDrag } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarToggleGroup } from "./main-sidebar-toggle-group";
 
 /** Consecutive live main statements 107..110, called once in original hook order. */

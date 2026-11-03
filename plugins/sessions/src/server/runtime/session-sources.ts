@@ -12,10 +12,10 @@
  * Session's index row (`readRecordedSource`), which a head read does not have. An absent entry
  * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
-import type { SessionCategory, SessionSource } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionCategory, SessionSource } from "@prismshadow/penguin-server/api";
+import type { SessionRow } from "@prismshadow/penguin-server/internal";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { SessionOrigins } from "../mechanisms/sessions.js";
+import type { SessionOrigins } from "@prismshadow/penguin-server/internal";
 
 /**
  * What a Session's Trace head records as its source: one of the sources, or `null` for a head

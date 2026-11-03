@@ -1,20 +1,18 @@
-/**
- * An archived Session opened by its URL — a link or a bookmark; archiving the conversation on
- * screen leaves it for a new chat instead — the stub the chat page shows in place of the
- * conversation. An archived conversation shows only its title and its time — the transcript is
- * not read until it is unarchived — so the stub says what it is (the title, when it was last
- * active, who opened it, in the archive page's words) and offers the two ways on: Unarchive,
- * which loads the conversation in place and returns it to the sidebar, and delete, which asks
- * first.
- */
-import { useState } from "react";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { Pill, Button, ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
-import { programSource } from "../../lib/session-source-mark";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import {
+  Pill,
+  Button,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  toastError,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { programSource } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+
 
 export function ArchivedSessionStub({
   session,

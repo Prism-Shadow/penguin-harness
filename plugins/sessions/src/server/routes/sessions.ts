@@ -1,130 +1,65 @@
-import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
-import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
-import { isGoalOutcome } from "../../runtime/goal-events.js";
-import { deleteSessionTree } from "../../services/session-deletion.js";
-import type { SessionDeletionDeps } from "../../services/session-deletion.js";
-import { HttpError } from "../errors.js";
-import { sseEndpoint, streamRevocation } from "../sse.js";
+/**
+ * Session routes.
+ *
+ * Two entry groups:
+ *   - Agent-level: GET|POST /api/projects/:p/agents/:a/sessions (list including run state / create);
+ *   - Session-level: /api/sessions/:sessionId/* (no projectId; looks up project_id via the
+ *     sessions index, then goes through requireProjectAccess; 404 if the index has no such Session).
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { Hono } from "hono";
+import type { Context } from "hono";
 import {
-  badRequest,
-  listingViewOfRequest,
-  optionalEnum,
-  optionalSessionListPagingQuery,
-  optionalString,
-  paginationQuery,
-  parseNonNegativeInt,
-  pathParam,
-  positiveIntParam,
-  readJson,
-  requireEnum,
-  requireString,
-  requireValidId,
-} from "../validate.js";
-import type { ServerConfig } from "../../config.js";
-import { normalizePenguinGoOrigin } from "../../config.js";
-import type { ChannelHub } from "../../runtime/channel.js";
-import type { MessagingBridge } from "@penguinharness/plugin-messaging/server";
-import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
-import type { PreviewTokenSigner } from "../../services/preview-token.js";
+  THINKING_LEVEL_NAMES,
+  imageUrlMessage,
+  isValidId,
+  scratchpadDir,
+  sessionScratchpadDir,
+  stripLeadingMarkerBlocks,
+  userText,
+} from "@prismshadow/penguin-core";
+import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
-  ActivityCursor,
-  SessionListOrder,
-  SessionListPaging,
-  SessionService,
-} from "../../services/session-service.js";
+  ApprovalMode,
+  FilesStatResponse,
+  GoalResponse,
+  GoalStateView,
+  MessagesLiveTail,
+  MessagesPageInfo,
+  MessagesResponse,
+  RecalledMessageResponse,
+  ServerEvent,
+  SessionCategory,
+  SessionBatchResult,
+  SessionContextResponse,
+  SessionCreateResponse,
+  SessionForkResponse,
+  SessionProcessesResponse,
+  SessionResponse,
+  SessionsResponse,
+  SessionsBatchResponse,
+  SubagentMessageResponse,
+  RetryNowResponse,
+  TaskCreateResponse,
+  SessionSandbox,
+} from "@prismshadow/penguin-server/api";
+import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
+import { decodeCursor } from "@prismshadow/penguin-server/internal";
+import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { SessionRow } from "@prismshadow/penguin-server/internal";
 
-/** What this route group reaches — bound by its module (src/modules). */
-export interface SessionsRouteDeps {
-  agentConfigService: AgentConfig;
-  channels: ChannelHub;
-  config: ServerConfig;
-  manager: SessionManager;
-  messaging: MessagingBridge;
-  previewTokens: PreviewTokenSigner;
-  projectConfigService: ProjectConfigStore;
-  access: Access;
-  /** Tells everyone who can see the Project about a change the list could not otherwise learn of. */
-  projectEvents: ProjectEvents;
-  serverSettingsRepo: Settings;
-  sessionService: SessionService;
-  sessionSources: SessionOrigins;
-  sessionsRepo: SessionIndex;
-  traceService: Traces;
-  workspaceFiles: WorkspaceFiles;
-  /** Whether this server was spawned by the desktop shell — half of the reveal route's gate. */
-  desktopMode: boolean;
-  /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
-  fileReveal: FileReveal;
-  /** The registry that ends a Session stream when the session behind it is revoked. */
-  liveStreams: LiveStreams;
-  /** Re-validates the session behind an open stream, once per heartbeat. */
-  auth: Auth;
-  /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
-  drivers?: SessionDrivers;
-}
-import {
-  assertAttachmentBudget,
-  attachFilesToInput,
-  parseAttachmentPart,
-  readRecalledFiles,
-  removeAttachments,
-} from "../../services/task-attachments.js";
-import type { TaskAttachment } from "../../services/task-attachments.js";
-import {
-  INLINE_IMAGE_MAX_BYTES,
-  INLINE_IMAGE_MAX_MB,
-  toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
-import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
-import { Messaging } from "@penguinharness/plugin-messaging/server";
+import { vaultRoutes } from "@prismshadow/penguin-server/internal";
 
+import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { LiveStreams } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
 
-import { agentsRoutes } from "@penguinharness/plugin-agents/server";
-import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
-
-import { vaultRoutes } from "./vault.js";
-import { modelsRoutes } from "@penguinharness/plugin-models/server";
-import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "@penguinharness/plugin-models/server";
-import { platformAuthRoutes } from "./platform-auth.js";
-import { modelScopeAuthRoutes } from "@penguinharness/plugin-models/server";
-import { chatDefaultsRoutes } from "./chat-defaults.js";
-import { commandPolicyRoutes } from "./command-policy.js";
-import { usageRoutes } from "@penguinharness/plugin-usage/server";
-import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "@penguinharness/plugin-projects/server";
-import { archivedSessionsRoutes } from "./archived-sessions.js";
-import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
-import { PreviewTokens } from "./preview.js";
-import type {
-  Access,
-  ModelOAuth,
-  ProjectConfigStore,
-  ProjectEvents,
-} from "../../mechanisms/projects.js";
-import type { PlatformAuth } from "../../services/platform-auth-service.js";
-import type { ModelScopeAuth } from "@penguinharness/plugin-models/server";
-import type {
-  Schedules,
-  SessionDrivers,
-  SessionIndex,
-  SessionOrigins,
-} from "../../mechanisms/sessions.js";
-import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
-import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
-import type { Machines } from "@penguinharness/plugin-machines/server";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
-import type { LiveStreams } from "../../auth/live-streams.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "@penguinharness/plugin-company/server";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */

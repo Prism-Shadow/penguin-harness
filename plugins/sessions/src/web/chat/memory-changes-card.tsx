@@ -1,20 +1,6 @@
-/**
- * Memory-change summary card, rendered right below the file-summary card at the end of a
- * root Task (the same card, the UI package's ChangesCard): one row per memory topic file the
- * Task changed through the structured file tools, derived by the stream model
- * (TaskStatsItem.memoryChanges — see lib/amsp/memory-changes.ts for what qualifies and what is
- * filtered).
- *
- * Clicking a row opens the Memory side panel directly on that memory's content; the header's
- * "Open memory list" text action opens the panel on its list. The action is words, in the rows'
- * own "View content" hint style: a brain glyph there would only repeat the card's own mark beside
- * it, and say nothing of where it leads. A changed file that was deleted in a later turn is
- * filtered out (deletedKeys) — the row disappears here just as it does from the panel's list;
- * the whole card hides when nothing survives.
- */
-import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { type MemoryChangeRow, memoryRowKey } from "../../lib/amsp/memory-changes";
+import { S } from "@prismshadow/penguin-web/internal";
+import { type MemoryChangeRow, memoryRowKey } from "@prismshadow/penguin-web/internal";
+
 
 import { scopeGlyph } from "./memory-view";
 
