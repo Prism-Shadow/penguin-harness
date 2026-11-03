@@ -20,7 +20,7 @@
  * load instead of a remembered one, so the browser sweeps without waiting for a restart.
  */
 import { Hono } from "hono";
-import type { InstallResponse } from "@prismshadow/penguin-server/internal";
+import type { InstallResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { ServerConfig } from "@prismshadow/penguin-server/internal";
 

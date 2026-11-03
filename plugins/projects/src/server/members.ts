@@ -5,7 +5,7 @@
  * Desktop mode rejects the whole surface (single-user; 403 `desktop_single_user`).
  */
 import { Hono } from "hono";
-import type { MemberAddResponse, MembersResponse } from "@prismshadow/penguin-server/internal";
+import type { MemberAddResponse, MembersResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { rejectInDesktopMode } from "@prismshadow/penguin-server/internal";
 import type { DesktopService } from "@prismshadow/penguin-server/internal";

@@ -41,15 +41,7 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type {
-  DirListResponse,
-  MachineDiagnosis,
-  MachineUninstallRequest,
-  MachinesResponse,
-  MachinesUseResponse,
-  SshHostResponse,
-  SshHostsResponse,
-} from "@prismshadow/penguin-server/internal";
+import type { DirListResponse, MachineDiagnosis, MachineUninstallRequest, MachinesResponse, MachinesUseResponse, SshHostResponse, SshHostsResponse } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { requireValidId } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";

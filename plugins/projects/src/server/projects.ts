@@ -2,19 +2,9 @@
  * Project routes: GET|POST /api/projects, PATCH|DELETE /api/projects/:p.
  */
 import { Hono } from "hono";
-import type {
-  ProjectCreateResponse,
-  ProjectUpdateResponse,
-  ProjectsResponse,
-} from "@prismshadow/penguin-server/internal";
+import type { ProjectCreateResponse, ProjectUpdateResponse, ProjectsResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import {
-  badRequest,
-  optionalString,
-  readJson,
-  requireString,
-  requireValidId,
-} from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalString, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop } from "@prismshadow/penguin-server/internal";
 import type { DesktopService } from "@prismshadow/penguin-server/internal";

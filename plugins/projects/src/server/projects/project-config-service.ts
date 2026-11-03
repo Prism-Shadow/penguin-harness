@@ -116,30 +116,13 @@ import type {
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { cacheable } from "@prismshadow/penguin-server/internal";
-import type {
-  PlatformCatalogPricing,
-  PlatformModelApplyResult,
-  PlatformModelCatalog,
-} from "@prismshadow/penguin-server/internal";
+import type { PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog } from "@prismshadow/penguin-server/internal";
 import { detectModelProtocol } from "@prismshadow/penguin-server/internal";
-import {
-  VISION_PROBE_IMAGE,
-  VISION_PROBE_MAX_TOKENS,
-  VISION_PROBE_PROMPT,
-  VISION_PROBE_TIMEOUT_MS,
-  classifyVisionProbe,
-  classifyVisionProbeError,
-} from "@prismshadow/penguin-server/internal";
+import { VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError } from "@prismshadow/penguin-server/internal";
 import type { PricingRates, TieredRates } from "@penguinharness/plugin-usage/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type {
-  ModelPromotion,
-  ModelProviderAuthToken,
-  ModelProviderAuthTokens,
-  ModelPromotions,
-  ProjectConfigStore,
-} from "@prismshadow/penguin-server/internal";
+import type { ModelPromotion, ModelProviderAuthToken, ModelProviderAuthTokens, ModelPromotions, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 export type RawTable = Record<string, unknown>;
 
