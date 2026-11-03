@@ -14,15 +14,23 @@ export * from "./plugin/iface-check.js";
 export type {
   Sandbox,
   SandboxSlots,
+} from "../../../../../packages/server/src/sandbox/service.js";
+export type {
   Sessions,
   SessionServiceIface,
+} from "../../../../../packages/server/src/runtime/session-manager.js";
+export type {
   Messaging,
   MessagingSlots,
+} from "../../../../../packages/server/src/runtime/messaging/bridge.js";
+export type {
   Http,
   HttpSlots,
+} from "../../../../../packages/server/src/http/app.js";
+export type {
   WebShell,
   WebShellSlots,
-} from "@prismshadow/penguin-server/internal";
+} from "../../../../../packages/server/src/http/routes/contributions.js";
 export type { Terminals } from "@penguinharness/plugin-terminal/server";
 export type { AgentService, AgentConfigService } from "@penguinharness/plugin-agents/server";
 export type {
@@ -34,7 +42,7 @@ export type {
 } from "./plugin/config.js";
 export type { PluginCliCommands, PluginCliCommandsSlots } from "./plugin/cli-commands.js";
 export { PluginsRouteDeps, pluginLibraryRoutes, agentPluginsRoutes, agentMcpServersRoutes, PluginRoutes, pluginRegistryRoutes, PluginRegistryRoutes } from "./routes/plugins.js";
-export type { PluginsRouteDeps, PluginRoutesOptions } from "./routes/plugins.js";
+export type { PluginRoutesOptions } from "./routes/plugins.js";
 export { pluginUiRoutes, PluginUiRoutes } from "./routes/plugin-ui.js";
 export { installedPluginRoutes, InstalledPluginRoutes } from "./routes/plugins-installed.js";
 export { adminPluginConfigRoutes } from "./routes/admin-plugin-config.js";
