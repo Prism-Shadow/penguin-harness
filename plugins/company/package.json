@@ -3,7 +3,7 @@
   "version": "0.2.18",
   "private": true,
   "type": "module",
-  "description": "Company mode as one functional group: the organization runtime, its HTTP routes and the company pages — server and web halves in one package, temporarily parked under plugins/ until the group's final home is decided.",
+  "description": "Company mode as one functional group: the organization runtime, its HTTP routes and the company pages \u2014 server and web halves in one package, temporarily parked under plugins/ until the group's final home is decided.",
   "exports": {
     "./server": "./src/server/index.ts",
     "./web": "./src/web/index.ts"
@@ -26,7 +26,8 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vite": "^7.3.6"
   },
   "penguin": {
     "parked": true

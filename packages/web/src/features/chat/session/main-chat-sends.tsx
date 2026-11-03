@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { AgentSummary, ModelRefDto, TaskInputPart } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
-import { switchDeskModel } from "../../company";
+import { switchDeskModel } from "@penguinharness/plugin-company/web";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";
