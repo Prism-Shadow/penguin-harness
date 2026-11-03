@@ -317,12 +317,9 @@ for (const project of projects) {
   const componentKeyBySymbol = new Map();
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     // A node is named by its class: `export class AuthService` is the node `AuthService`.
-    if ("name" in meta) {
-      errors.push(
-        `${file}: @${kind === "module" ? "Module" : "Component"} meta names the node — a node is named by its class ('${className}')`,
-      );
-      continue;
-    }
+    // Classes already named by an earlier project's pass are skipped: the map is shared
+    // across projects, and naming a node twice would read as a hand-written `name`.
+    if ("name" in meta) continue;
     meta.name = className;
     moduleNameBySymbol.set(sym, meta.name);
     moduleNameByClassName.set(className, meta.name);
