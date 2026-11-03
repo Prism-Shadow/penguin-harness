@@ -1132,8 +1132,14 @@ for (const project of projects) {
     if (sym && componentKeyBySymbol.has(sym)) return componentKeyBySymbol.get(sym);
     const decl = sym?.declarations?.find((d) => isInterfaceClassDecl(d));
     if (!decl) {
+      const where =
+        sym === undefined
+          ? "no symbol"
+          : (sym.declarations ?? [])
+              .map((d) => path.relative(process.cwd(), d.getSourceFile().fileName))
+              .join(", ") || "no declarations";
       errors.push(
-        `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}')`,
+        `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}'; resolved: ${where})`,
       );
       return "?";
     }
