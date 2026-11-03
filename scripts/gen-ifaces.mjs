@@ -1048,20 +1048,7 @@ for (const project of projects) {
                     }
                   })(),
                 )}`) +
-            (typeNode?.parent
-              ? ` (import resolved: ${
-                  (() => {
-                    let n = typeNode;
-                    while (n && !ts.isImportDeclaration(n)) n = n.parent;
-                    return (
-                      program.getResolvedModule?.(n.moduleSpecifier)?.resolvedModule
-                        ?.resolvedFileName ??
-                      program.getModuleResolutionResolver?.() ??
-                      "?"
-                    );
-                  })()
-                })`
-              : "");
+
       errors.push(
         `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}'; resolved: ${where})`,
       );
