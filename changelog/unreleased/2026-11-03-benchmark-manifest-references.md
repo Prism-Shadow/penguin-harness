@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1433](https://github.com/Prism-Shadow/penguin-harness/pull/1433)
 
 [中文版](2026-11-03-benchmark-manifest-references.zh.md)
 
