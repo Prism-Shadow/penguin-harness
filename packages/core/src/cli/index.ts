@@ -49,12 +49,13 @@ export type CliCommandProgram = Opaque<"Command">;
 
 /**
  * What every host's message bundle guarantees: the locale the host resolved the invocation
- * into. A command never resolves a locale and never reads an environment variable — it
- * reads the bundle it was handed. Each host fills the rest of its bundle with its own
- * vocabulary; the CLI's is its full `Messages`.
+ * into, as a bare string — the set of locales is the host's to define, not the contract's.
+ * A command never resolves a locale and never reads an environment variable — it reads the
+ * bundle it was handed. Each host fills the rest of its bundle with its own vocabulary;
+ * the CLI's is its full `Messages`.
  */
 export interface CliCommandMessages {
-  language: "en" | "zh";
+  language: string;
 }
 
 /**
