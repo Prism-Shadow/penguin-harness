@@ -59,7 +59,7 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
-import type { SessionManager } from "../runtime/session-manager.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
 import { platformDef } from "../platform.js";
