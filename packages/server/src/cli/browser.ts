@@ -23,6 +23,7 @@ import type {
   CliCommandProgram,
   CliCommandSummary,
 } from "@prismshadow/penguin-core/cli";
+import type { Messages } from "./i18n.js";
 import type { Command } from "commander";
 import table from "../ifaces.json" with { type: "json" };
 import { registerBrowserCommand } from "./commands/browser.js";

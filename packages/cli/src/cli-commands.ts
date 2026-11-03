@@ -96,4 +96,3 @@ export async function bootBuiltinCommands(): Promise<readonly BuiltinCommand[]> 
     tree.dispose();
   }
 }
-

@@ -28,7 +28,6 @@ export interface ServeText {
 
   /** Diagnostic shown after the `penguin web` ready-poll times out (15s). */
   webProbeFailed(url: string, detail: string, kind: WebProbeFailureKind, port: number): string;
-}
 
   /** `penguin server status`: help text. */
   serverStatus: {
@@ -80,7 +79,6 @@ export const serveEn: ServeText = {
     }[kind];
     return `Server readiness check failed for ${url}.\nLast probe error: ${detail}\n${hint}`;
   },
-};
 
   serverStatus: {
     desc: "Print this data root's server state and machine id as one line of JSON",
@@ -122,7 +120,6 @@ export const serveZh: ServeText = {
     }[kind];
     return `服务探活失败：${url}\n最后一次探测错误：${detail}\n${hint}`;
   },
-};
 
   serverStatus: {
     desc: "以单行 JSON 打印本数据根目录的服务状态与本机 id",

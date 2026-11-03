@@ -49,10 +49,7 @@ import {
   switchModelRefusal,
   type ModelTarget,
 } from "../switch-model-command.js";
-import {
-  parseApprovalAnswer,
-  resolveApprovalMode,
-} from "@prismshadow/penguin-server/cli";
+import { parseApprovalAnswer, resolveApprovalMode } from "@prismshadow/penguin-server/cli";
 import { LineComposer, PasteFilter } from "../input.js";
 import {
   ApiError,

@@ -71,12 +71,10 @@ import type { BrowserText } from "./commands/browser.messages.js";
 import { browserEn } from "./commands/browser.messages.js";
 import { browserZh } from "./commands/browser.messages.js";
 import type { OrgText } from "./commands/org.messages.js";
-import { orgEn } from "./commands/org.messages.js";
+import { orgEn } from "./commands/org-en.messages.js";
 import { orgZh } from "./commands/org-zh.messages.js";
 
 import type { CliCommandMessages } from "@prismshadow/penguin-core/cli";
-
-
 
 /** UI language. */
 export type Language = "en" | "zh";
@@ -98,7 +96,31 @@ export function resolveLanguage(): Language {
  * The whole CLI message table, composed from the per-contribution files: the host's own
  * groups below, every contribution's groups spread in from its message file.
  */
-export interface Messages extends SessionRuntimeText, RenderText, AgentText, AuthText, ChatText, ConfigText, CostText, ExecText, InputText, LogText, LsText, PluginText, ProjectText, ResetPasswordText, RunText, ServeText, SessionText, ScheduleText, UpdateText, VersionText, BrowserText, OrgText, CliCommandMessages {
+export interface Messages
+  extends
+    SessionRuntimeText,
+    RenderText,
+    AgentText,
+    AuthText,
+    ChatText,
+    ConfigText,
+    CostText,
+    ExecText,
+    InputText,
+    LogText,
+    LsText,
+    PluginText,
+    ProjectText,
+    ResetPasswordText,
+    RunText,
+    ServeText,
+    SessionText,
+    ScheduleText,
+    UpdateText,
+    VersionText,
+    BrowserText,
+    OrgText,
+    CliCommandMessages {
   // —— Command/option help descriptions ——
   cliDescription: string;
   versionDesc: string;
