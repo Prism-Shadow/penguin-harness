@@ -4,4 +4,3 @@ export * from "./usage/index.js";
 export { TracesModule } from "./traces/module.js";
 export * from "./traces/index.js";
 export { BenchmarkModule } from "./benchmark/module.js";
-export * from "./benchmark/index.js";
