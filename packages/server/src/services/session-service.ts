@@ -51,13 +51,22 @@ import {
   unrunSource,
 } from "../runtime/session-sources.js";
 import type { ListingView } from "../runtime/session-sources.js";
-import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { TraceIndexService, latestShardOnDisk, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
+
+/**
+ * How long a resolved `latestTracePath` answer is reused: a Session's detail view asks for it
+ * more than once in a burst (the page and the `/model` switch), and nothing that a reconcile
+ * would newly find can matter within that window.
+ */
+const LATEST_TRACE_TTL_MS = 3000;
+/** Entries kept before the latest-Trace cache is dropped wholesale (it is a small per-process map). */
+const LATEST_TRACE_CACHE_MAX = 2000;
 
 /** A stored policy's network level as the composer names it. */
 function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
@@ -916,16 +925,49 @@ export class SessionService {
    * source history itself when it needs it.
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {
+    const cacheKey = `${row.projectId}\0${row.agentId}\0${row.sessionId}`;
+    const cached = this.latestTraceCache.get(cacheKey);
+    if (cached !== undefined && Date.now() - cached.at < LATEST_TRACE_TTL_MS) return cached.path;
     await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId);
     let files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     if (files.length === 0) {
-      // Index miss with disk possibly ahead: one forced diff, then retry (the consumers'
-      // rule — a stale index costs one extra scan, never a missing resume shard).
+      // Index miss with disk possibly ahead: the deterministic direct lookup goes FIRST — the
+      // forced reconcile walks the whole Agent trace tree (seconds on a multi-thousand-shard
+      // Agent) and a brand-new Session pays it on every open until its rows land, while a
+      // name-filtered readdir answers in milliseconds. Only when nothing on disk carries the
+      // Session's name does the forced diff run (the consumers' rule — a stale index costs one
+      // extra scan, never a missing resume shard — still holds for anything a name scan cannot
+      // see).
+      const onDisk = await latestShardOnDisk(
+        this.deps.root,
+        row.projectId,
+        row.agentId,
+        row.sessionId,
+      );
+      if (onDisk !== undefined) return this.rememberLatestTrace(cacheKey, onDisk);
       await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId, { force: true });
       files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     }
     const latest = files.at(-1);
-    return latest === undefined ? undefined : traceFilePath(this.deps.root, latest);
+    return this.rememberLatestTrace(
+      cacheKey,
+      latest === undefined ? undefined : traceFilePath(this.deps.root, latest),
+    );
+  }
+
+  /** Resolved latest-Trace answers, freshly computed — see {@link LATEST_TRACE_TTL_MS}. */
+  private readonly latestTraceCache = new Map<string, { at: number; path: string | undefined }>();
+
+  /**
+   * Remembers one answer and returns it: the cache holds misses as well as hits (a Session with
+   * no Trace yet pays the forced reconcile on every open, which is the cost worth amortizing),
+   * and is dropped wholesale once it is bigger than {@link LATEST_TRACE_CACHE_MAX} rather than
+   * evicted entry by entry — entries expire within seconds, so no ordering is worth keeping.
+   */
+  private rememberLatestTrace(cacheKey: string, path: string | undefined): string | undefined {
+    if (this.latestTraceCache.size >= LATEST_TRACE_CACHE_MAX) this.latestTraceCache.clear();
+    this.latestTraceCache.set(cacheKey, { at: Date.now(), path });
+    return path;
   }
 
   /**
