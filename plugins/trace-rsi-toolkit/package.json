@@ -26,6 +26,7 @@
     "short_description": "TRACE RSI Toolkit: evolve skills from contrasting trajectories.",
     "short_description_zh": "TRACE RSI 工具包：对比轨迹，进化技能库。",
     "category": "rsi",
+    "rsi_protocol": "train-test",
     "icon": "icon.svg",
     "quick_start": {
       "prompt": "Use TRACE on the selected Project Benchmarks with the requested model and budget.",

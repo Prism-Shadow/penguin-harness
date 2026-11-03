@@ -9,13 +9,15 @@
  * - Given any other toolkit, then it runs the Skill named like its plugin, else the first Skill
  *   its quick start preselects that it ships, else its only Skill; and a toolkit none of these
  *   settles — several Skills and nothing to choose between them, or none — is not offered.
+ * - Given a toolkit's protocol, then a toolkit declaring `train-test` runs on a Train/Test pair,
+ *   and the default and every toolkit declaring nothing run on one Benchmark.
  * - Given a toolkit's manifest, then its label is its display name in the reader's language,
  *   else its name, and its hint the short description before the full one, Chinese first in zh.
  * - Given the options, when the dialog keeps a pick, then the picked toolkit is used while it is
  *   offered, the first option once it is gone, and nothing when there is no option.
  * - Given the toolkits this repository ships, then every one is offered, the default first, each
- *   running a Skill its own plugin ships, and the evaluator the default loop measures through
- *   ships in the library too.
+ *   running a Skill its own plugin ships, on the protocol its manifest declares, and the evaluator
+ *   the default loop measures through ships in the library too.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -101,6 +103,25 @@ describe("Method options from the plugin library", () => {
     ]);
   });
 
+  it("runs a toolkit declaring train-test on a Train/Test pair, and the rest on one Benchmark", () => {
+    const methods = rsiMethods(
+      [
+        toolkit(DEFAULT_TOOLKIT_PLUGIN, {}, [OPTIMIZATION_SKILL]),
+        toolkit("skillopt-rsi-toolkit", { rsiProtocol: "train-test" }, ["skillopt-rsi-toolkit"]),
+        toolkit("opro-rsi-toolkit", {}, ["opro-rsi-toolkit"]),
+        toolkit("explicit-rsi-toolkit", { rsiProtocol: "benchmark" }, ["explicit-rsi-toolkit"]),
+      ],
+      "en",
+    );
+
+    expect(methods.map((m) => [m.plugin, m.protocol])).toEqual([
+      [DEFAULT_TOOLKIT_PLUGIN, "benchmark"],
+      ["skillopt-rsi-toolkit", "train-test"],
+      ["opro-rsi-toolkit", "benchmark"],
+      ["explicit-rsi-toolkit", "benchmark"],
+    ]);
+  });
+
   it("does not offer a toolkit whose Skill cannot be settled", () => {
     const methods = rsiMethods(
       [
@@ -181,6 +202,7 @@ describe("the toolkits this repository ships", () => {
       description?: string;
       penguin?: {
         category?: string;
+        rsi_protocol?: "benchmark" | "train-test";
         title?: string;
         title_zh?: string;
         short_description?: string;
@@ -198,6 +220,7 @@ describe("the toolkits this repository ships", () => {
         name,
         {
           description: pkg.description ?? "",
+          ...(m.rsi_protocol !== undefined ? { rsiProtocol: m.rsi_protocol } : {}),
           ...(m.title !== undefined ? { title: m.title } : {}),
           ...(m.title_zh !== undefined ? { titleZh: m.title_zh } : {}),
           ...(m.short_description !== undefined ? { shortDescription: m.short_description } : {}),
@@ -219,7 +242,7 @@ describe("the toolkits this repository ships", () => {
     .filter((e) => e.isDirectory() && existsSync(join(PLUGINS, e.name, "package.json")))
     .map((e) => shipped(e.name));
 
-  it("offers every one, the default first, each running a Skill its own plugin ships", () => {
+  it("offers every one, the default first, each running a Skill its own plugin ships on its declared protocol", () => {
     const toolkits = all.filter((p) => p.category === RSI_CATEGORY).map((p) => p.item);
     expect(toolkits.length).toBeGreaterThan(0);
 
@@ -233,7 +256,11 @@ describe("the toolkits this repository ships", () => {
         plugin.skills.map((s) => s.name),
         method.plugin,
       ).toContain(method.skill);
+      expect(method.protocol, method.plugin).toBe(plugin.rsiProtocol ?? "benchmark");
     }
+    // Both protocols are in use: a Train/Test toolkit and a one-Benchmark toolkit ship.
+    expect(methods.some((m) => m.protocol === "train-test")).toBe(true);
+    expect(methods.some((m) => m.kind === "paper" && m.protocol === "benchmark")).toBe(true);
   });
 
   it("ships the evaluator the default loop measures through", () => {

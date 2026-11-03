@@ -5045,6 +5045,13 @@ export interface PluginItem {
   icon?: string;
   /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /**
+   * How an RSI toolkit uses Benchmarks (`penguin.rsi_protocol`): `benchmark`, one frozen Benchmark
+   * it optimizes against and records its candidates on; `train-test`, a Train package it learns on
+   * in one continuous environment and the paired Test package its frozen baseline and final States
+   * are tested on. Absent when the package declares none, which the Optimize tab reads as `benchmark`.
+   */
+  rsiProtocol?: "benchmark" | "train-test";
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }

@@ -5381,6 +5381,38 @@ Scenarios:
         "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
       );
     },
+    testRepetitionsField: "Test repetitions",
+    testRepetitionsHint:
+      "How many complete times the frozen baseline and final States are each tested on the Test package",
+    methodTrainTestHint:
+      "This method trains on the Train package of this Benchmark's Train/Test pair and tests on the Test package, at its own default budget unless Focus says otherwise",
+    rsiTrainTestTail: (p: {
+      skill: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      repetitions: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
+          : "";
+      return (
+        `Use the \`${p.skill}\` Skill to run its method on the Test Agent with this Benchmark's Train/Test packages.\n\n` +
+        `- test_agent_id: \`${p.targetAgentId}\`\n` +
+        `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, one package of a Train/Test pair)\n` +
+        `- test_repetitions: \`${p.repetitions}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "Evaluate with exactly this provider and model. " : "") +
+        "Run the method at the Skill's own default budget unless I set one above; ask me only for inputs the method requires and I have not given. " +
+        "Resolve the paired Train and Test packages from the installed Benchmarks' manifests and Case statements. Train once in the continuous environment the Train package describes, " +
+        "then test the frozen baseline and final States on the complete Test package test_repetitions times each, with a fresh environment and conversation for every case and repetition. " +
+        "Keep the Test Agent's runtime fixed, record each frozen State's complete Test matrix in the Test package's `scoreboard.yaml` and no candidate's, " +
+        "and finish by reporting the baseline and final mean ± std, final_minus_baseline, the learned artifact and the versions."
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
     importChatTitle: "Import with an agent",

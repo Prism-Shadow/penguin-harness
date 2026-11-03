@@ -327,6 +327,7 @@ npm 标准字段：
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
 | `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
 | `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
+| `rsi_protocol` | RSI 工具包使用 Benchmark 的方式，决定评测中心「优化」标签页向它要什么。`benchmark`（不填即此义）在打开标签页的那一个冻结 Benchmark 上优化；`train-test` 在这个 Benchmark 所属 Train/Test 对的 Train 包上学习，再把冻结的 baseline 与 final State 放到 Test 包上测试，所以标签页要的是测试重复次数而不是每题运行次数 |
 | `hooks.version` | 钩子包的日期版本 `YYYY.MM.DD.N`；插件带 `hooks/` 时必填（没有就不列出钩子包），安装时写进 `hooks.json` |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
 | `mcp_servers` | 安装插件时加到 Agent 上的 MCP Server，见[插件中的 MCP Server](#插件中的-mcp-server) |

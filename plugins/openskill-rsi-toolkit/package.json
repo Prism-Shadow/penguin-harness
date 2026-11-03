@@ -26,6 +26,7 @@
     "short_description": "OpenSkill RSI Toolkit: learn skills through research and virtual tests.",
     "short_description_zh": "OpenSkill RSI 工具包：通过检索与虚拟测试学习技能。",
     "category": "rsi",
+    "rsi_protocol": "train-test",
     "icon": "icon.svg",
     "quick_start": {
       "prompt": "Use openskill-rsi-toolkit to run OpenSkill on a published Benchmark in this Project with a fresh Target and the current model, including a baseline comparison; ask which Benchmark if unspecified.",

@@ -26,6 +26,7 @@
     "short_description": "SkillAdam RSI Toolkit: evolve a Skill from execution feedback.",
     "short_description_zh": "SkillAdam RSI 工具包：根据执行反馈迭代技能。",
     "category": "rsi",
+    "rsi_protocol": "train-test",
     "icon": "icon.svg",
     "quick_start": {
       "prompt": "Read skilladam-rsi-toolkit and run a SkillAdam experiment on the selected benchmark with the requested model and budget.",

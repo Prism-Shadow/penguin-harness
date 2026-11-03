@@ -26,6 +26,7 @@
     "short_description": "SkillOpt RSI Toolkit: bounded Skill edits with score-based selection.",
     "short_description_zh": "SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。",
     "category": "rsi",
+    "rsi_protocol": "train-test",
     "icon": "icon.svg",
     "quick_start": {
       "prompt": "Read skillopt-rsi-toolkit and run a SkillOpt experiment on the selected Benchmarks with the requested model and budget.",

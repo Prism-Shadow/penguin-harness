@@ -3,7 +3,8 @@
  * (`name`, `version`, `description`, `keywords`, `author`, `homepage`, `repository`, `license`)
  * and one namespaced block, `penguin`, holding every field that is this product's — the display
  * name, the Chinese and the card's descriptions, the category, the icon, whether default_agent
- * preinstalls it, the quick start, the hook package and the MCP servers it contributes. A namespaced block tells a reader (and
+ * preinstalls it, the quick start, an RSI toolkit's protocol, the hook package and the MCP servers
+ * it contributes. A namespaced block tells a reader (and
  * this reader) exactly which keys are ours, the way `prettier` or `eslintConfig` sit in a
  * package.json, and lets the npm-standard fields keep their npm meaning. A package without the
  * block reads as one with an empty block.
@@ -104,6 +105,16 @@ export interface PluginMcpServer {
   oauth: boolean;
 }
 
+/**
+ * How an RSI toolkit uses Benchmarks (`penguin.rsi_protocol`): `benchmark` optimizes the tested
+ * agent against one frozen Benchmark and records its candidates on that Benchmark's scoreboard;
+ * `train-test` learns on a Train package in one continuous environment, then tests the frozen
+ * baseline and final States on the paired Test package. What the Optimize tab asks a toolkit
+ * for, and tells it, follows this; a toolkit that declares none uses one Benchmark.
+ */
+export const RSI_PROTOCOLS = ["benchmark", "train-test"] as const;
+export type RsiProtocol = (typeof RSI_PROTOCOLS)[number];
+
 /** The `penguin` block of a plugin's package.json, as read: every field optional, unknown keys ignored. */
 export interface PluginPackageFields {
   /** Display name (`title`); absent → the plugin name. */
@@ -120,6 +131,8 @@ export interface PluginPackageFields {
   /** Whether default_agent gets the plugin at creation; a shipped plugin's default is true. */
   preinstall?: boolean;
   quickStart?: QuickStart;
+  /** How an RSI toolkit uses Benchmarks (`rsi_protocol`); absent when the package declares none. */
+  rsiProtocol?: RsiProtocol;
   /** The hook package, declared beside `hooks/`. */
   hooks?: PluginHooksDeclaration;
   /** The MCP servers the package contributes (`mcp_servers`); absent when it declares none. */
@@ -330,6 +343,11 @@ export function parsePluginPackage(
   }
   const quickStart = readQuickStart(block.quick_start, warnings);
   if (quickStart !== undefined) penguin.quickStart = quickStart;
+  if (block.rsi_protocol !== undefined) {
+    const protocol = RSI_PROTOCOLS.find((p) => p === block.rsi_protocol);
+    if (protocol !== undefined) penguin.rsiProtocol = protocol;
+    else warnings.push(`penguin.rsi_protocol must be "benchmark" or "train-test"; ignored`);
+  }
   const hooks = readHooks(block.hooks, warnings);
   if (hooks !== undefined) penguin.hooks = hooks;
   const mcpServers = readMcpServers(block.mcp_servers, warnings);

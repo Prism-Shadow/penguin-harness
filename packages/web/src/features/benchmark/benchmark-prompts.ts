@@ -5,7 +5,8 @@
  * target score — so a novice's one-line wish arrives as a request the Skill can act on without
  * asking anything back. An RSI toolkit other than the default gets a shorter tail: its own Skill,
  * the three inputs every toolkit takes, and its paper's budget left to it rather than a round
- * limit and a target. The two "Ask AI" tails are the same shape pointed the other way: they
+ * limit and a target; one that learns on a Train/Test pair is told so, with how many times each
+ * frozen State is tested instead of runs per case. The two "Ask AI" tails are the same shape pointed the other way: they
  * name no Skill and ask for no change, carrying the facts already on screen — an evaluation's
  * scores and Session ids, or a case's two material paths — so the answer is read out of the
  * files rather than guessed. The wording lives in the dictionaries; this module only assembles it.
@@ -105,6 +106,28 @@ export interface RsiOptimizeParams {
 
 export function rsiOptimizeTail(params: RsiOptimizeParams): string {
   return S.benchmark.rsiOptimizeTail(params);
+}
+
+/** How many complete times a Train/Test toolkit tests each frozen State unless told otherwise: the toolkits' own default. */
+export const DEFAULT_TEST_REPETITIONS = 3;
+
+/** What the Optimize tab hands a toolkit whose protocol is `train-test` (see rsi-methods.ts). */
+export interface RsiTrainTestParams {
+  /** The toolkit's one Skill. */
+  skill: string;
+  /** The Agent under test: its pre-learning State is the baseline, the learned one the final. */
+  targetAgentId: string;
+  /** The Benchmark the dialog was opened on: either package of the pair. */
+  benchmarkId: string;
+  /** Complete tests of the Test package for each frozen State, baseline and final. */
+  repetitions: number;
+  /** The baseline's provider and model, as for {@link RsiOptimizeParams}: pinned only as a pair. */
+  provider?: string;
+  modelId?: string;
+}
+
+export function rsiTrainTestTail(params: RsiTrainTestParams): string {
+  return S.benchmark.rsiTrainTestTail(params);
 }
 
 /** One case's line in the evaluation question: as the dialog prints it, plus every run's Session id. */

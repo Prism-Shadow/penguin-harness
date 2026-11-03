@@ -179,6 +179,7 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
+    ...(plugin.rsiProtocol !== undefined ? { rsiProtocol: plugin.rsiProtocol } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
   };
 }

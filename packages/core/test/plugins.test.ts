@@ -8,6 +8,8 @@
  * - Every shipped package.json reads with no warning: a description, both short descriptions, a
  *   known category, a safe icon — and no plugin.json is shipped or left on disk.
  * - Each shipped skill's source frontmatter parses as YAML and carries a dated version.
+ * - The continuous-training RSI toolkits declare `penguin.rsi_protocol: train-test`; the
+ *   toolkits that optimize against one Benchmark declare nothing, which reads as `benchmark`.
  *
  * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
  * - A plugin's version is the npm version of its package.json.
@@ -28,7 +30,8 @@
  * - Missing is missing: a package.json with only a name and a version lists its skills with no
  *   description, no category (Other), no icon and no quick start.
  * - What a shipped package fails on, an installed one lists through, with the field missing and
- *   one warning: a malformed field, `hooks/` without a hook version (the skills still list), a
+ *   one warning: a malformed field (an `rsi_protocol` that names no protocol among them),
+ *   `hooks/` without a hook version (the skills still list), a
  *   skill without a version (unversioned, never flagged behind), an unsafe or oversized icon, a
  *   skill directory whose name is not a skill name (left out), a binary file in a skill (left
  *   out; the text beside it installs byte for byte). A safe icon is kept from its `<svg>` root on.
@@ -223,6 +226,21 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).length).toBeGreaterThan(0);
     expect(Object.keys(files).every((rel) => rel !== "SKILL.md" && rel !== "icon.svg")).toBe(true);
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
+  });
+
+  it("the continuous-training toolkits declare the train-test protocol, and no other plugin declares one", () => {
+    // The Optimize tab hands a train-test toolkit a Train/Test pair and test repetitions, and
+    // any other toolkit one Benchmark and runs per case: a toolkit on the wrong side of this
+    // line gets a request its Skill contradicts.
+    const declared = loadLibraryPlugins()
+      .filter((plugin) => plugin.rsiProtocol !== undefined)
+      .map((plugin) => [plugin.name, plugin.rsiProtocol]);
+    expect(declared).toEqual([
+      ["openskill-rsi-toolkit", "train-test"],
+      ["skilladam-rsi-toolkit", "train-test"],
+      ["skillopt-rsi-toolkit", "train-test"],
+      ["trace-rsi-toolkit", "train-test"],
+    ]);
   });
 
   it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
@@ -615,7 +633,15 @@ describe("packages the operator installed on the server", () => {
     });
     const bare = libraryPlugin("bare")!;
     expect(bare).toMatchObject({ name: "bare", version: "0.1.0", description: "" });
-    for (const key of ["title", "shortDescription", "category", "icon", "quickStart", "hooks"]) {
+    for (const key of [
+      "title",
+      "shortDescription",
+      "category",
+      "icon",
+      "quickStart",
+      "hooks",
+      "rsiProtocol",
+    ]) {
       expect(bare, key).not.toHaveProperty(key);
     }
     expect(bare.skills.map((s) => s.name)).toEqual(["bare"]);
@@ -635,14 +661,26 @@ describe("packages the operator installed on the server", () => {
         category: ["office-productivity"],
         title: "Notes",
         quick_start: { prompt: "Take a note.", skills: ["notes", "elsewhere"] },
+        rsi_protocol: "continuous",
       }),
     });
     const plugin = libraryPlugin("notes")!;
     expect(plugin.title).toBe("Notes");
     expect(plugin).not.toHaveProperty("category");
     expect(plugin.quickStart).toEqual({ prompt: "Take a note.", skills: ["notes"] });
+    expect(plugin).not.toHaveProperty("rsiProtocol");
     expect(logged(warn)).toContain("penguin.category must be a string; ignored");
     expect(logged(warn)).toContain("names skills the package does not ship (elsewhere)");
+    expect(logged(warn)).toContain(
+      'penguin.rsi_protocol must be "benchmark" or "train-test"; ignored',
+    );
+  });
+
+  it("lists the protocol an installed toolkit declares", async () => {
+    await setUp(["@acme/notes"], {
+      "@acme/notes": notes("@acme/notes", { category: "rsi", rsi_protocol: "train-test" }),
+    });
+    expect(libraryPlugin("notes")?.rsiProtocol).toBe("train-test");
   });
 
   it("lists the skills of a package whose hooks/ has no penguin.hooks.version, and no hook package", async () => {

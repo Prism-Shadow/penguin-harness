@@ -12,6 +12,10 @@
  * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill and the
  *   three inputs every toolkit takes, none of the default loop's Skills or knobs, and pins the
  *   evaluations to the baseline's provider and model only when it is given both.
+ * - A Train/Test toolkit's tail names its Skill, the tested agent, this Benchmark as one package
+ *   of its pair and the test repetitions, asks for the frozen baseline and final States' Test
+ *   matrices and no candidate's, and carries neither runs per case, a smoke budget nor the
+ *   default loop's Skills or knobs; it pins the provider and model as the other tail does.
  * - The Evaluate tail, one for every Benchmark (Harbor or not), takes the model under test from
  *   the evaluator's own Session, since an agent stores none: in both dictionaries it names the
  *   Environment lines that carry the provider and the model id in the system prompt core renders.
@@ -190,6 +194,53 @@ describe("rsiOptimizeTail (a toolkit other than the default)", () => {
       expect(dict.benchmark.rsiOptimizeTail(params)).not.toMatch(/provider|model_id/);
       // Half a pair is no pair: the toolkit stops on one rather than guessing the other half.
       const half = dict.benchmark.rsiOptimizeTail({ ...params, provider: "deepseek" });
+      expect(half).not.toMatch(/provider|model_id/);
+    });
+  }
+});
+
+describe("rsiTrainTestTail (a toolkit that learns on a Train/Test pair)", () => {
+  const params = {
+    skill: "skillopt-rsi-toolkit",
+    targetAgentId: "ticket-agent",
+    benchmarkId: "penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-test",
+    repetitions: 3,
+  };
+  const DEFAULT_LOOP = [
+    "agent-evaluation",
+    "agent-optimization",
+    "run_subagent",
+    "desired_score",
+    "candidate_round_limit",
+  ];
+
+  for (const [locale, dict] of Object.entries({ zh, en })) {
+    it(`${locale}: names the Skill, the tested agent, the Benchmark and the test repetitions`, () => {
+      const tail = dict.benchmark.rsiTrainTestTail(params);
+      expect(tail).toContain("`skillopt-rsi-toolkit`");
+      expect(tail).toContain("`ticket-agent`");
+      expect(tail).toContain(`\`benchmarks/${params.benchmarkId}/\``);
+      expect(tail).toMatch(/test_repetitions[：:] ?`3`/);
+      expect(tail).toContain("Train/Test");
+      expect(tail).toContain("scoreboard.yaml");
+      expect(tail).toContain("final_minus_baseline");
+      // Not the one-Benchmark tail: no runs per case and no smoke budget, which a Train/Test
+      // toolkit does not define, and none of the default loop's Skills or knobs.
+      expect(tail).not.toMatch(/^- runs[：:]/m);
+      expect(tail).not.toMatch(/smoke|冒烟/);
+      for (const marker of DEFAULT_LOOP) expect(tail).not.toContain(marker);
+    });
+
+    it(`${locale}: pins the baseline's provider and model only when given both`, () => {
+      const pinned = dict.benchmark.rsiTrainTestTail({
+        ...params,
+        provider: "deepseek",
+        modelId: "deepseek-v4.1-flash",
+      });
+      expect(pinned).toMatch(/provider[：:] ?`deepseek`/);
+      expect(pinned).toMatch(/model_id[：:] ?`deepseek-v4.1-flash`/);
+      expect(dict.benchmark.rsiTrainTestTail(params)).not.toMatch(/provider|model_id/);
+      const half = dict.benchmark.rsiTrainTestTail({ ...params, modelId: "deepseek-v4.1-flash" });
       expect(half).not.toMatch(/provider|model_id/);
     });
   }

@@ -5617,6 +5617,49 @@ Benchmark：
         "结束时报告基线分、最终分、保留的版本与方法改了什么。"
       );
     },
+    /**
+     * Under a toolkit that learns on a Train/Test pair (`penguin.rsi_protocol: train-test`): it is
+     * not run per case on this Benchmark, so runs per case gives way to how many times each frozen
+     * State is tested, and the budget line says which packages it uses.
+     */
+    testRepetitionsField: "测试重复次数",
+    testRepetitionsHint: "冻结的 baseline 与 final 各在 Test 包上完整测试几次",
+    methodTrainTestHint:
+      "这个方法在本 Benchmark 所属 Train/Test 对的 Train 包上训练、在 Test 包上测试，预算用它自己的默认值，除非在「优化重点」里另行指定",
+    /**
+     * The tail for a toolkit that learns on a Train/Test pair: its own Skill, the tested agent,
+     * this Benchmark as either package of the pair, and the test repetitions. It trains once in
+     * the Train package's continuous environment and records only the frozen baseline and final
+     * States' Test matrices — never a per-candidate evaluation on this Benchmark. The baseline's
+     * provider and model are pinned as in rsiOptimizeTail.
+     */
+    rsiTrainTestTail: (p: {
+      skill: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      repetitions: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
+          : "";
+      return (
+        `请使用 \`${p.skill}\` 技能，用这个 Benchmark 所属的 Train/Test 包对被测智能体运行它的方法。\n\n` +
+        `- test_agent_id：\`${p.targetAgentId}\`\n` +
+        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，Train/Test 对中的一个包）\n` +
+        `- test_repetitions：\`${p.repetitions}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
+        "按技能自己的默认预算运行（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
+        "从已安装 Benchmark 的配置与 Case 说明中找到配对的 Train 包与 Test 包。在 Train 包描述的连续环境中训练一次，" +
+        "再把冻结的 baseline 与 final 两个 State 各在完整的 Test 包上测试 test_repetitions 次，每道题每次都用新的环境与会话。" +
+        "固定被测智能体的运行时，把每个冻结 State 的完整 Test 矩阵记入 Test 包的 scoreboard.yaml，候选版本不记入；" +
+        "结束时报告 baseline 与 final 的均值 ± 标准差、final_minus_baseline、学到的产物与各版本。"
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",

@@ -50,7 +50,13 @@ import {
   readPluginPackage,
   unscopedPackageName,
 } from "./manifest.js";
-import type { HookCommand, PluginMcpServer, QuickStart, UserPromptTrigger } from "./manifest.js";
+import type {
+  HookCommand,
+  PluginMcpServer,
+  QuickStart,
+  RsiProtocol,
+  UserPromptTrigger,
+} from "./manifest.js";
 import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
 import { readLegacyFrontmatter } from "./legacy-skill-frontmatter.js";
@@ -164,6 +170,8 @@ export interface LibraryPlugin {
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`, optional). */
   quickStart?: QuickStart;
+  /** How an RSI toolkit uses Benchmarks (`penguin.rsi_protocol`, see RSI_PROTOCOLS); absent when the package declares none. */
+  rsiProtocol?: RsiProtocol;
 }
 
 /** Category manifest entry: id and titles (Chinese optional, displayed per UI language). */
@@ -889,6 +897,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
+    ...(penguin.rsiProtocol !== undefined ? { rsiProtocol: penguin.rsiProtocol } : {}),
   };
 }
 

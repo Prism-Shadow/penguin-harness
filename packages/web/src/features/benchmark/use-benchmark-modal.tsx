@@ -24,7 +24,11 @@
  * just installed is offered. The default toolkit is the form above. Any other toolkit runs its
  * paper's own loop and budget, so it takes no round limit and no target; its one Skill is the
  * only one preselected, and its tail hands it the baseline's provider and model when there is a
- * baseline. Until the library is read — or when the read fails, or it lists no toolkit — the
+ * baseline. A toolkit whose protocol is `train-test` learns on the Train package of this
+ * Benchmark's pair and tests its frozen baseline and final States on the Test package: runs per
+ * case gives way to how many complete times each is tested, and its tail says so instead of
+ * asking for every candidate on this Benchmark's scoreboard.
+ * Until the library is read — or when the read fails, or it lists no toolkit — the
  * select is disabled and says why, and the tab is the default loop's form: that loop is the
  * product's own and needs nothing from the list.
  *
@@ -59,8 +63,20 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
-import { MAX_RUNS, evaluateTail, optimizeTail, rsiOptimizeTail } from "./benchmark-prompts";
-import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
+import {
+  DEFAULT_TEST_REPETITIONS,
+  MAX_RUNS,
+  evaluateTail,
+  optimizeTail,
+  rsiOptimizeTail,
+  rsiTrainTestTail,
+} from "./benchmark-prompts";
+import type {
+  EvaluateParams,
+  OptimizeParams,
+  RsiOptimizeParams,
+  RsiTrainTestParams,
+} from "./benchmark-prompts";
 import {
   DEFAULT_TOOLKIT_PLUGIN,
   EVALUATION_SKILL,
@@ -146,6 +162,8 @@ export function UseBenchmarkModal({
   const [note, setNote] = useState("");
   const [roundLimit, setRoundLimit] = useState("3");
   const [targetScore, setTargetScore] = useState(String(defaultTarget));
+  /** A Train/Test toolkit's complete tests per frozen State, in place of runs per case. */
+  const [repetitions, setRepetitions] = useState(String(DEFAULT_TEST_REPETITIONS));
   /** The target follows the tested agent's baseline until the field is edited by hand. */
   const [targetTouched, setTargetTouched] = useState(false);
   const [focus, setFocus] = useState("");
@@ -155,6 +173,7 @@ export function UseBenchmarkModal({
   // Null while the select has nothing to offer, which leaves the default loop's form.
   const toolkit = pickRsiMethod(methods, methodPlugin);
   const isDefaultMethod = toolkit === null || toolkit.kind === "default";
+  const isTrainTest = !isDefaultMethod && toolkit.protocol === "train-test";
   const optimizerSkill = toolkit?.skill ?? OPTIMIZATION_SKILL;
   const [skillsByAgent, setSkillsByAgent] = useState<Record<string, string[]>>({});
 
@@ -197,6 +216,7 @@ export function UseBenchmarkModal({
   const runsValue = intIn(runs, 1, MAX_RUNS);
   const roundsValue = intIn(roundLimit, 1, MAX_RUNS);
   const targetValue = intIn(targetScore, 1, 100);
+  const repetitionsValue = intIn(repetitions, 1, MAX_RUNS);
   const evaluateParams: EvaluateParams = {
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
@@ -212,19 +232,33 @@ export function UseBenchmarkModal({
     skill: optimizerSkill,
     ...(baselineRuntime ?? {}),
   };
+  const trainTestParams: RsiTrainTestParams = {
+    skill: optimizerSkill,
+    targetAgentId: testAgentId,
+    benchmarkId: benchmark.id,
+    repetitions: repetitionsValue ?? DEFAULT_TEST_REPETITIONS,
+    ...(baselineRuntime ?? {}),
+  };
   const text =
     tab === "evaluate"
       ? composeAiPrompt(note, evaluateTail(evaluateParams))
       : isDefaultMethod
         ? composeAiPrompt(focus, optimizeTail(optimizeParams))
-        : composeAiPrompt(focus, rsiOptimizeTail(rsiParams));
+        : isTrainTest
+          ? composeAiPrompt(focus, rsiTrainTestTail(trainTestParams))
+          : composeAiPrompt(focus, rsiOptimizeTail(rsiParams));
   const runnerId = tab === "evaluate" ? evaluatorId : optimizerId;
   // A toolkit other than the default takes no round limit and no target: its budget is its own.
-  const ready =
-    runnerId !== null &&
-    testAgentId !== "" &&
-    runsValue !== null &&
-    (tab === "evaluate" || !isDefaultMethod || (roundsValue !== null && targetValue !== null));
+  // A Train/Test toolkit takes test repetitions in place of runs per case.
+  const paramsValid =
+    tab === "evaluate"
+      ? runsValue !== null
+      : isDefaultMethod
+        ? runsValue !== null && roundsValue !== null && targetValue !== null
+        : isTrainTest
+          ? repetitionsValue !== null
+          : runsValue !== null;
+  const ready = runnerId !== null && testAgentId !== "" && paramsValid;
 
   const go = () => {
     if (runnerId === null) return;
@@ -449,7 +483,18 @@ export function UseBenchmarkModal({
                 : S.benchmark.methodMissingSkill(toolkit?.plugin ?? "", optimizerSkill),
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {runsInput(S.benchmark.optimizeRunsHint)}
+              {isTrainTest ? (
+                <Input
+                  label={S.benchmark.testRepetitionsField}
+                  hint={S.benchmark.testRepetitionsHint}
+                  inputMode="numeric"
+                  value={repetitions}
+                  onChange={(e) => setRepetitions(digits(e.target.value))}
+                  {...errorProp(repetitionsValue === null ? S.benchmark.invalidRuns : undefined)}
+                />
+              ) : (
+                runsInput(S.benchmark.optimizeRunsHint)
+              )}
               {isDefaultMethod ? (
                 <>
                   <Input
@@ -474,7 +519,7 @@ export function UseBenchmarkModal({
                 </>
               ) : (
                 <p className="text-xs text-gray-500 sm:col-span-2 sm:self-center dark:text-gray-400">
-                  {S.benchmark.methodBudgetHint}
+                  {isTrainTest ? S.benchmark.methodTrainTestHint : S.benchmark.methodBudgetHint}
                 </p>
               )}
             </div>
