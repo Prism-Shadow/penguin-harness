@@ -8,6 +8,9 @@
       "@penguinharness/plugin-terminal/server": [
         "../../plugins/terminal/src/server/index.ts"
       ],
+      "@penguinharness/plugin-terminal/server/*": [
+        "../../plugins/terminal/src/server/*"
+      ],
       "@prismshadow/penguin-server/internal": [
         "./src/internal.ts"
       ],
