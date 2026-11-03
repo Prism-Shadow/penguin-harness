@@ -2,7 +2,7 @@
  * The agents mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AgentConfigView } from "../services/agent-config-service.js";
+import type { AgentConfigView } from "@penguinharness/plugin-agents/server";
 import type {
   AgentConfigUpdateRequest,
   AgentDeletionInfo,
@@ -26,7 +26,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
 } from "@penguinharness/plugin-projects/server";
-import type { AgentListItem } from "../services/agent-service.js";
+import type { AgentListItem } from "@penguinharness/plugin-agents/server";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,

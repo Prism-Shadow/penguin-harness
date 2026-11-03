@@ -24,9 +24,9 @@ import {
   parseSkillFrontmatter,
   PLUGIN_NAME_PATTERN,
 } from "@prismshadow/penguin-core";
-import type { AgentSkillsResponse } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
+import type { AgentSkillsResponse } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SkillsRouteDeps {
@@ -34,22 +34,14 @@ export interface SkillsRouteDeps {
   config: ServerConfig;
   access: Access;
 }
-import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import { toSkillItem } from "../../services/plugin-library.js";
-import {
-  MAX_ARCHIVE_BYTES,
-  MAX_ARCHIVE_FILES,
-  MAX_FILE_BYTES,
-  MAX_TOTAL_BYTES,
-  assertSafeEntryPath,
-  skillTooLarge,
-  unzipBounded,
-} from "../../services/skill-import-limits.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import { toSkillItem } from "@prismshadow/penguin-server/internal";
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath, skillTooLarge, unzipBounded } from "@prismshadow/penguin-server/internal";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
 
 /** A skill decoded from an uploaded zip: name + file bytes keyed by path relative to the skill directory. */
 interface ArchiveSkill {

@@ -2,8 +2,8 @@
  * ui_prefs table repo (UI preferences): free-form JSON storage.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { UiPrefsStore } from "../../mechanisms/settings.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { UiPrefsStore } from "@prismshadow/penguin-server/internal";
 
 @Component()
 export class UiPrefsRepo implements UiPrefsStore {

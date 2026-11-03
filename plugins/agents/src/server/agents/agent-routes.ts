@@ -1,19 +1,13 @@
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppEnv } from "../auth/middleware.js";
-import type { Hono } from "hono";
-import type { Clock, Config, Paths } from "../hmr/capabilities.js";
-import { memoryRoutes } from "../http/routes/memory.js";
-import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
-import { agentSkillsRoutes } from "../http/routes/skills.js";
-import { agentTransferRoutes } from "../http/routes/agent-transfer.js";
-import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
-import { agentApiRoutes } from "../http/routes/agent-api.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { AgentConfig, Benchmarks, Memory, Snapshots } from "../mechanisms/agents.js";
-import type { Access, ProjectConfigStore } from "../mechanisms/projects.js";
-import type { Settings } from "../mechanisms/settings.js";
-import type { Traces } from "../mechanisms/traces.js";
-import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { Clock, Config } from "@prismshadow/penguin-server/internal";
+import { memoryRoutes } from "@prismshadow/penguin-server/internal";
+
+import { agentApiRoutes } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, Benchmarks, Memory, Snapshots } from "@prismshadow/penguin-server/internal";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { Traces } from "@prismshadow/penguin-server/internal";
+
 
 /**
  * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, transfer,

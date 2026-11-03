@@ -4,19 +4,19 @@
  * GET|POST /api/admin/users, POST /api/admin/users/:userId/password, DELETE /api/admin/users/:userId.
  */
 import { Hono } from "hono";
-import type { AdminUserCreateResponse, AdminUsersResponse } from "../../api/types.js";
-import { HttpError } from "../errors.js";
-import { rejectInDesktopMode } from "./desktop.js";
-import type { DesktopService } from "../../services/desktop-service.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { pathParam, readJson, requireString } from "../validate.js";
+import type { AdminUserCreateResponse, AdminUsersResponse } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { rejectInDesktopMode } from "@prismshadow/penguin-server/internal";
+import type { DesktopService } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { pathParam, readJson, requireString } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Desktop, Proxy } from "../../hmr/capabilities.js";
+import type { Desktop, Proxy } from "@prismshadow/penguin-server/internal";
 import { adminSettingsRoutes } from "./admin-settings.js";
-import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
-import { PluginConfigAdmin } from "../../plugin/config-page.js";
-import type { Admin } from "../../mechanisms/identity.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import { adminPluginConfigRoutes } from "@prismshadow/penguin-server/internal";
+import { PluginConfigAdmin } from "@prismshadow/penguin-server/internal";
+import type { Admin } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AdminRouteDeps {

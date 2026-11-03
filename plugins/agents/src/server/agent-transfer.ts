@@ -1,29 +1,10 @@
-/**
- * Agent State export/import routes:
- *   GET  /api/projects/:p/agents/:a/export (any member; auto-packages if no snapshot exists, downloads tar.gz)
- *   POST /api/projects/:p/agents/:a/import (owner only; version conflicts require a confirm flag)
- */
-import fs from "node:fs/promises";
-import { Hono } from "hono";
-import { agentDir } from "@prismshadow/penguin-core";
-import type { AgentImportResponse } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AgentImportResponse } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 
-/** What this route group reaches — bound by its module (src/modules). */
-export interface AgentTransferRouteDeps {
-  /** The data root, for the Agent's directory the workbench migration works in. */
-  root: string;
-  agentConfigService: AgentConfig;
-  access: Access;
-  snapshots: Snapshots;
-  workbenches: Pick<Workbenches, "whileReleased">;
-}
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { Workbenches } from "../../mechanisms/workbenches.js";
-import { migrateWorkbenches } from "../../workbenches/migrate.js";
-import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, Snapshots } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

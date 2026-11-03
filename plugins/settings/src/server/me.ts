@@ -1,76 +1,21 @@
-/**
- * Current-user routes: GET /api/me, PUT /api/me/password, PUT /api/me/profile,
- * GET|PUT /api/me/prefs, GET|PATCH /api/me/drafts, GET|PUT /api/me/background-image.
- * ui_prefs is free-form JSON (theme / lastProjectId / credentialGuideSeen, etc.): GET reads
- * it whole, PUT shallow-merges (PATCH semantics) — several independent writers each write
- * their own fields without clobbering each other. Free-form does not mean unbounded: a key
- * carrying user-authored text is validated and capped on the way in (draftShortcuts).
- *
- * The profile (nickname + avatar) is a column pair on `users` rather than a prefs key: it is
- * read back by surfaces other than the browser that wrote it (the admin user list names the
- * nickname), and a blob capped at 128 KiB does not belong in a free-form JSON document that
- * every unrelated writer re-serializes whole. The background image is kept apart for the same
- * reason, in a table of its own: ui_prefs carries only its id, which a browser compares with the
- * image it has cached before asking for the image itself.
- *
- * Drafts are rows rather than prefs keys: there are many of them, each is written on its own as
- * someone types, and each must go when the Session or Project it belongs to is deleted.
- */
-import { Hono } from "hono";
-import { setCookie } from "hono/cookie";
-import { createHash } from "node:crypto";
-import { BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
-import type {
-  BackgroundImagePutResponse,
-  BackgroundImageResponse,
-  DraftsResponse,
-  MeResponse,
-  PrefsResponse,
-  UiPrefs,
-  UpdateProfileRequest,
-  UpdateProfileResponse,
-} from "../../api/types.js";
-import { toUserInfo } from "../../auth/service.js";
-import { cookieOptions, sessionCookieName } from "../../auth/middleware.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { badRequest, readJson, requireString } from "../validate.js";
-import { HttpError } from "../errors.js";
-import type { ServerConfig } from "../../config.js";
-import type { DesktopService } from "../../services/desktop-service.js";
+import type { MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "@prismshadow/penguin-server/api";
+import { toUserInfo } from "@prismshadow/penguin-server/internal";
+import { SESSION_COOKIE, cookieOptions } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import type { DesktopService } from "@prismshadow/penguin-server/internal";
 
-/** What this route group reaches — bound by its module (src/modules). */
-export interface MeRouteDeps {
-  authService: Auth;
-  config: ServerConfig;
-  desktop: DesktopService | null;
-  prefsRepo: UiPrefsStore;
-  draftsRepo: UserDraftsStore;
-  backgroundImages: BackgroundImageStore;
-  serverSettingsRepo: Settings;
-  /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
-  usersRepo: Users;
-}
-import { resolvePreviewTarget } from "../../services/preview-token.js";
-import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import { validateKeybindings } from "../../services/keybindings.js";
-import { validateAccountSettings } from "../../services/account-settings.js";
-import {
-  DRAFTS_MAX_COUNT,
-  DRAFTS_MAX_TOTAL_CHARS,
-  parseDraftsPatch,
-} from "../../services/user-drafts.js";
-import {
-  INLINE_IMAGE_MAX_MB,
-  MAX_ATTACHMENT_COUNT,
-  MAX_ATTACHMENT_MB,
-  MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop } from "../../hmr/capabilities.js";
-import type { Auth, Users } from "../../mechanisms/identity.js";
-import type { Settings, UiPrefsStore } from "../../mechanisms/settings.js";
-import type { BackgroundImageStore, UserDraftsStore } from "../../mechanisms/account-data.js";
+import { resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
+import { validateDraftShortcuts } from "@prismshadow/penguin-server/internal";
+import { validateKeybindings } from "@prismshadow/penguin-server/internal";
+import { INLINE_IMAGE_MAX_MB, MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-server/internal";
+
+import { Config, Desktop } from "@prismshadow/penguin-server/internal";
+import type { Auth, Users } from "@prismshadow/penguin-server/internal";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-server/internal";
+
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;

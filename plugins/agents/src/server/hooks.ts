@@ -29,19 +29,13 @@ import {
   replaceSkillDirectory,
 } from "@prismshadow/penguin-core";
 import type { HookCommand, HookManifest } from "@prismshadow/penguin-core";
-import type { AgentHooksResponse, HookItem } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { PluginsRouteDeps } from "./plugins.js";
-import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import { toHookItem } from "../../services/plugin-library.js";
-import {
-  MAX_ARCHIVE_BYTES,
-  MAX_ARCHIVE_FILES,
-  MAX_FILE_BYTES,
-  MAX_TOTAL_BYTES,
-  assertSafeEntryPath,
-} from "../../services/skill-import-limits.js";
+import type { AgentHooksResponse, HookItem } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { PluginsRouteDeps } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import { toHookItem } from "@prismshadow/penguin-server/internal";
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath } from "@prismshadow/penguin-server/internal";
 
 /** The hook points a manifest lists commands for. */
 const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"] as const;

@@ -1,51 +1,15 @@
-/**
- * Agent routes:
- * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only), and
- * GET /api/projects/:p/agent-deletions/:deletionId (owner only), how far a delete's background
- * removal has got.
- * The list is the union of DB entries and directory scan results, including active
- * Session count, total Session count, config last-modified time, whether the Agent's API
- * switch is on, and the organizations of the Project that employ it.
- * An employed Agent is not deleted: DELETE answers 409 `agent_employed`, naming each
- * organization and title, until the employee has left every one of them. The guard is here
- * rather than in the Agent service because the organization runtime already depends on that
- * service; the route consumes both.
- */
-import { Hono } from "hono";
-import type {
-  AgentCreateResponse,
-  AgentDeleteResponse,
-  AgentDeletionInfo,
-  AgentDeletionResponse,
-  AgentsResponse,
-  AgentSummary,
-  Employment,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { OrgService } from "@penguinharness/plugin-company/server";
-import { HttpError } from "../errors.js";
-import { settleWithin } from "../settle.js";
-import {
-  badRequest,
-  optionalString,
-  optionalStringArray,
-  readJson,
-  requireProjectDir,
-  requireString,
-  requireValidId,
-} from "../validate.js";
-import { readArchiveBase64 } from "./agent-transfer.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
-import type { SessionService } from "../../services/session-service.js";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
-import type { Workbenches } from "../../mechanisms/workbenches.js";
-import { refuseBuiltinDeletion } from "../../services/agent-service.js";
+import type { AgentCreateResponse, AgentsResponse, AgentSummary, Employment } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+
+import type { SessionManager } from "@prismshadow/penguin-server/internal";
+import type { SessionService } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
+import type { TraceIndex } from "@prismshadow/penguin-server/internal";
+import type { ErrorLog } from "@prismshadow/penguin-server/internal";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
+
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {

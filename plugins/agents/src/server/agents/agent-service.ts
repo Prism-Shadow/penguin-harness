@@ -1,15 +1,53 @@
-import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
+/**
+ * Agent service.
+ *
+ * The list is the union of "DB index ∪ directory scan": a subdirectory under
+ * `<project>/` containing `agent_state/system_config.yaml` is treated as an Agent;
+ * unmanaged ones found are backfilled into the DB — this handles Agents created
+ * directly via the CLI.
+ * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
+ * then write name/description into system_config.yaml (parseDocument preserves the
+ * template's comments).
+ */
+import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import path from "node:path";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import {
+  agentDir,
+  agentsDir,
+  agentsMdPath,
+  BUILTIN_AGENT_IDS,
+  createAgent as coreCreateAgent,
+  installPlugin,
+  installSkill,
+  McpServerNameTakenError,
+  listInstalledHooks,
+  isValidId,
+  loadAgentVault,
+  memoryDir,
+  scheduleDir,
+  skillsDir,
+  systemConfigPath,
+  comparePluginVersions,
+  libraryPlugin,
+  loadLibraryPlugins,
+  parseSkillFrontmatter,
+  pluginContentVersion,
+  listInstalledWorkbenches,
+} from "@prismshadow/penguin-core";
+import type { LibraryPlugin } from "@prismshadow/penguin-core";
+import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "@prismshadow/penguin-server/internal";
 
-import { isTopicFileName } from "./memory-service.js";
-import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
-import type { PluginLibrary } from "../plugin/library-module.js";
-import { resolveDirectorySkills } from "./directory-skills.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import { isTopicFileName } from "@prismshadow/penguin-server/internal";
+import type { PluginUpdateRef } from "@prismshadow/penguin-server/api";
+import { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
+import { resolveDirectorySkills } from "@prismshadow/penguin-server/internal";
+
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
+import type { AgentIndex } from "@prismshadow/penguin-server/internal";
+
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
