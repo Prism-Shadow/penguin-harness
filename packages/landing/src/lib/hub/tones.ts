@@ -60,3 +60,17 @@ const CATEGORY_TONE: Record<string, HubTone> = {
 
 /** A plugin category's tone; an unknown category is slate. */
 export const categoryTone = (category: string): HubTone => CATEGORY_TONE[category] ?? "slate";
+
+const FAMILY_TONES: readonly HubTone[] = ["emerald", "cyan", "blue", "violet", "amber", "rose"];
+
+/**
+ * A benchmark's tone, shared by its family: the id without the repository's prefix and without
+ * a trailing split (`-test`, `-train`, `-val`), so a scenario's test and train sets match and
+ * different scenarios tell apart in a long list.
+ */
+export function benchmarkTone(id: string): HubTone {
+  const family = id.replace(/^penguinharness-benchmark-/, "").replace(/-(test|train|val)$/, "");
+  let hash = 0;
+  for (const char of family) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return FAMILY_TONES[hash % FAMILY_TONES.length]!;
+}

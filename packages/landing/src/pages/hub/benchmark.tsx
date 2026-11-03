@@ -24,7 +24,7 @@ import { useDocumentMeta } from "../../lib/document-meta";
 import { formatDay, pick, titleOf } from "../../lib/hub/text";
 import type { BenchmarkData, BenchmarkDetail, BenchmarkTask, TaskData } from "../../lib/hub/types";
 import { S } from "../../lib/strings";
-import { KIND_TONE } from "../../lib/hub/tones";
+import { benchmarkTone, KIND_TONE } from "../../lib/hub/tones";
 
 const TONE = KIND_TONE.benchmark;
 
@@ -62,7 +62,7 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
 
   return (
     <HubDetail
-      lead={<HubTile tone={TONE} glyph="target" size="lg" />}
+      lead={<HubTile tone={benchmarkTone(benchmark.id)} glyph="target" size="lg" />}
       title={title}
       subtitle={benchmark.id}
       tags={
