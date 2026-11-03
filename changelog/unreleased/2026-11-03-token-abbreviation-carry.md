@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `web`, `cli`
+- **PR:** [#1448](https://github.com/Prism-Shadow/penguin-harness/pull/1448)
 
 [中文版](2026-11-03-token-abbreviation-carry.zh.md)
 
