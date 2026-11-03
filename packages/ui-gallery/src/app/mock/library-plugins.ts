@@ -163,7 +163,7 @@ export function agentEvaluationPlugin(): PluginItem {
     skill(
       "agent-evaluation",
       "Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.",
-      "2026.10.29.2",
+      "2026.11.03.1",
     ),
     skill(
       "benchmark-design",
