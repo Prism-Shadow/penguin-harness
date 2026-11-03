@@ -123,6 +123,8 @@ const moduleNameByClassName = new Map();
 let moduleNameBySymbol = new Map();
 // Children whose symbol has not resolved yet; finished after every project is read.
 const pendingChildren = [];
+/** Every project's @Module / @Component classes, keyed by class symbol; read after the loop. */
+const moduleClasses = new Map(); // class symbol → { node, meta, file }
 
 for (const project of projects) {
   const configPath = path.resolve(project);
@@ -246,7 +248,6 @@ for (const project of projects) {
   // the @Use / @Provide fields, whose TYPE ANNOTATION names the interface class and whose
   // decorator argument names the providing module class. Identifiers resolve to their
   // declarations — never executed. Pass 1 collects names; pass 2 resolves references.
-  const moduleClasses = new Map(); // class symbol → { node, meta, file }
   const refLiteral = (node, file) => {
     if (ts.isIdentifier(node)) {
       const sym = checker.getSymbolAtLocation(node);
