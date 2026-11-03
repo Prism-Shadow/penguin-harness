@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `skills`, `plugins`, `docs`
+- **PR:** [#1446](https://github.com/Prism-Shadow/penguin-harness/pull/1446)
 
 [English](2026-11-03-workbench-guidance-follows-agent-state.md)
 
