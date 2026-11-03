@@ -83,8 +83,8 @@ import {
   createCoreSessionLoader,
   SessionLoader,
   SessionManager,
-} from "./runtime/session-manager.js";
-import { SessionSources } from "./runtime/session-sources.js";
+} from "@penguinharness/plugin-sessions/server";
+import { SessionSources } from "@penguinharness/plugin-sessions/server";
 import { Scheduler } from "@penguinharness/plugin-schedules/server";
 import { MessagingBridge } from "@penguinharness/plugin-messaging/server";
 import { FeishuConnector } from "@penguinharness/plugin-messaging/server";
@@ -103,7 +103,7 @@ import type { WeChatTransport } from "@penguinharness/plugin-messaging/server";
 import { WeChatScanService, createWeChatScanTransport } from "@penguinharness/plugin-messaging/server";
 import type { WeChatScanTransport } from "@penguinharness/plugin-messaging/server";
 import type { QQScanTransport } from "@penguinharness/plugin-messaging/server";
-import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
+import { TitleGenerator, TitleNotifier } from "@penguinharness/plugin-sessions/server";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { AgentConfigService } from "@penguinharness/plugin-agents/server";
@@ -150,7 +150,7 @@ import { projectsRoutes } from "@penguinharness/plugin-projects/server";
 import { membersRoutes } from "@penguinharness/plugin-projects/server";
 import { modelsRoutes } from "@penguinharness/plugin-models/server";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "@penguinharness/plugin-models/server";
-import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
+import { chatDefaultsRoutes } from "@penguinharness/plugin-sessions/server";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "@penguinharness/plugin-agents/server";
@@ -166,7 +166,7 @@ import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
 import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
 import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
 import { usageRoutes } from "@penguinharness/plugin-usage/server";
-import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { agentSessionsRoutes, sessionsRoutes } from "@penguinharness/plugin-sessions/server";
 import { sessionMessagingRoutes } from "@penguinharness/plugin-messaging/server";
 import { versionRoutes } from "./http/routes/version.js";
 import { machinesRoutes } from "@penguinharness/plugin-machines/server";

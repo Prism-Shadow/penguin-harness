@@ -14,8 +14,8 @@ import type {
   SessionListPaging,
 } from "../services/session-service.js";
 import { HttpError, badRequest } from "./errors.js";
-import { ADOPTED_AT_HEADER, listingViewOf } from "../runtime/session-sources.js";
-import type { ListingView } from "../runtime/session-sources.js";
+import { ADOPTED_AT_HEADER, listingViewOf } from "@penguinharness/plugin-sessions/server";
+import type { ListingView } from "@penguinharness/plugin-sessions/server";
 
 export { badRequest };
 

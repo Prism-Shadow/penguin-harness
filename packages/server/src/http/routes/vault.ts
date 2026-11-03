@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 

@@ -4,7 +4,7 @@
  * policy (mtime gates, head-reads) lives in the service.
  */
 import { normalizeSessionSource } from "@prismshadow/penguin-core";
-import type { RecordedSource } from "../../runtime/session-sources.js";
+import type { RecordedSource } from "@penguinharness/plugin-sessions/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import type { TraceIndexStore } from "../../mechanisms/traces.js";

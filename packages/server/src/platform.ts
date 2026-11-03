@@ -56,7 +56,7 @@ import {
   SessionEnv,
   Sessions,
   SessionServiceIface,
-} from "./runtime/session-manager.js";
+} from "@penguinharness/plugin-sessions/server";
 import {
   GlobalFetch,
   UpdateCheckService,
@@ -82,8 +82,8 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { AgentStateStore } from "./runtime/agent-state.js";
-import { SessionSources } from "./runtime/session-sources.js";
-import { SessionDriverRegistry } from "./runtime/session-drivers.js";
+import { SessionSources } from "@penguinharness/plugin-sessions/server";
+import { SessionDriverRegistry } from "@penguinharness/plugin-sessions/server";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "@penguinharness/plugin-usage/server";
@@ -142,7 +142,7 @@ import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "@penguinharness/plugin-terminal/server";
-import { SessionApiRoutes } from "./http/routes/sessions.js";
+import { SessionApiRoutes } from "@penguinharness/plugin-sessions/server";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {
   Access,

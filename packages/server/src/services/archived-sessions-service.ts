@@ -41,7 +41,7 @@ import type {
 } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import { HttpError, badRequest } from "../http/errors.js";
-import type { ListingView } from "../runtime/session-sources.js";
+import type { ListingView } from "@penguinharness/plugin-sessions/server";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndexStore } from "../mechanisms/traces.js";
 import { compareActivityDesc } from "./session-service.js";

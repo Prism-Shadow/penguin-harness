@@ -42,15 +42,15 @@ import type {
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
-import type { SessionManager } from "../runtime/session-manager.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import {
   listCategory,
   listingMarksOf,
   readRecordedSource,
   sourceSeenBy,
   unrunSource,
-} from "../runtime/session-sources.js";
-import type { ListingView } from "../runtime/session-sources.js";
+} from "@penguinharness/plugin-sessions/server";
+import type { ListingView } from "@penguinharness/plugin-sessions/server";
 import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/server";
 import { matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
