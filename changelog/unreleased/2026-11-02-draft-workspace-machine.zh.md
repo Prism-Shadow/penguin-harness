@@ -3,6 +3,7 @@
 - **Date:** 2026-11-02
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1428](https://github.com/Prism-Shadow/penguin-harness/pull/1428)
 - **Issue:** [#1414](https://github.com/Prism-Shadow/penguin-harness/issues/1414)
 
 [English](2026-11-02-draft-workspace-machine.md)
