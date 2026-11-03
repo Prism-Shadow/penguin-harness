@@ -10,6 +10,7 @@ export * from "./api/client";
 export * from "./api/session-probe";
 export * from "./api/endpoints";
 export * from "./components/ui/avatar-crop-dialog";
+export * from "./components/account/version-stamp";
 export * from "./components/ui/group-list";
 export * from "./components/ui/session-row-menu";
 export * from "./components/ui/truncated";

@@ -1,6 +1,27 @@
-import { DockToggles } from "@prismshadow/penguin-web/internal-toggles";
+import { renderMainSessionDetails } from "./main-session-details";
+import {
+  ActivityIcon,
+  Dot,
+  Dropdown,
+  GlyphIcon,
+  Heading,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  StatChip,
+} from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { sessionActivityLabel } from "@prismshadow/penguin-web/internal";
+import { Truncated } from "@prismshadow/penguin-web/internal";
+import { CostPartsRows, StatHint } from "@prismshadow/penguin-web/internal";
+import { OutlineMenuButton } from "../conversation-outline";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { DockToggles } from "../dock-toggles";
 
 ||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
+||||||| parent of f96bcb0c45 (sessions: fix mangled dock imports and expose VersionStamp via internal)
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { SessionIdRow } from "../session/main-chat-helpers";
