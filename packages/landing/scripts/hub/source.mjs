@@ -40,6 +40,9 @@ export function benchmarkRepo({ refresh = false } = {}) {
     const git = (args) => execFileSync("git", args, { stdio: "pipe" });
     git([
       "clone",
+      // Task paths in that repository run past Windows' 260-character limit; `--config` keeps
+      // the setting in the clone, so the sparse checkout below reads it too.
+      "--config=core.longpaths=true",
       "--depth=1",
       "--filter=blob:none",
       "--sparse",
