@@ -4,7 +4,7 @@ import path from "node:path";
 import { readHarnessMeta } from "./harness-meta.js";
 import { layCarriedStore, readCarriedStore } from "./carried-store.js";
 import type { CarriedSource } from "./carried-store.js";
-export { carriedStore as carriedBody } from "./machines/install-server.js";
+export { carriedStore as carriedBody } from "@penguinharness/plugin-machines/server";
 
 export type SyncOutcome =
   | { kind: "copied"; source: CarriedSource }

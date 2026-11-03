@@ -17,7 +17,7 @@
  */
 import { Hono } from "hono";
 import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
-import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
+import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
 import type { Context } from "hono";
 import type {
   AgentApiKeyCreateResponse,

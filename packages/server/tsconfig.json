@@ -23,6 +23,15 @@
       "@penguinharness/plugin-schedules/server": [
         "../../plugins/schedules/src/server/index.ts"
       ],
+      "@penguinharness/plugin-machines/server": [
+        "../../plugins/machines/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../../plugins/projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
       "@prismshadow/penguin-server/internal": [
         "./src/internal.ts"
       ],

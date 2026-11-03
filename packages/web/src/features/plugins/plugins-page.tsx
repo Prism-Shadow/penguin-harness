@@ -67,7 +67,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { MachinePicker, type MachineChoice } from "../machines";
+import { MachinePicker, type MachineChoice } from "@penguinharness/plugin-machines/web";
 import {
   DRAFT_SESSION_ID,
   draftKey,

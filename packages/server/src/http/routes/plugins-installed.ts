@@ -97,7 +97,7 @@ import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/ho
 import type { PluginSkills } from "../../plugin/skills.js";
 import { toSkillItem } from "../../services/plugin-library.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "../../db/repos/machines.js";
 
 export interface InstalledPluginsDeps {

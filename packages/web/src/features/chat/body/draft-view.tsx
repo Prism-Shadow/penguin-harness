@@ -85,7 +85,7 @@ import {
 import { newChatAgentId } from "../new-chat";
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "../../model-picker";
-import { WorkspaceSelect } from "../../workspace";
+import { WorkspaceSelect } from "../../internal";
 import { FilesPanelToggle } from "../dock-toggles";
 import { sameModelRef } from "../../models";
 

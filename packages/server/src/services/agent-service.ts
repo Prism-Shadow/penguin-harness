@@ -38,7 +38,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
-import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
+import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
 import { isTopicFileName } from "./memory-service.js";
 import type { PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";

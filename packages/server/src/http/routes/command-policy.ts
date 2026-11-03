@@ -12,7 +12,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface CommandPolicyRouteDeps {

@@ -52,7 +52,7 @@ import {
 } from "../runtime/session-sources.js";
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/server";
-import { matchesWorkspaceGroup } from "./workspace-group.js";
+import { matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";

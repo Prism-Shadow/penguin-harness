@@ -87,38 +87,38 @@ import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "@penguinharness/plugin-usage/server";
-import { ProjectConfigService } from "./services/project-config-service.js";
+import { ProjectConfigService } from "@penguinharness/plugin-projects/server";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "@penguinharness/plugin-usage/server";
 import { TraceService } from "@penguinharness/plugin-usage/server";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { RevealService } from "./services/reveal-path.js";
-import { ProjectAccess } from "./services/project-access.js";
-import { ProjectNotifier } from "./services/project-events.js";
+import { WorkspaceFilesService } from "@penguinharness/plugin-projects/server";
+import { RevealService } from "@penguinharness/plugin-projects/server";
+import { ProjectAccess } from "@penguinharness/plugin-projects/server";
+import { ProjectNotifier } from "@penguinharness/plugin-projects/server";
 import {
   ProjectService,
   ProjectRuns,
   ShippedBuiltinBenchmarkSeeds,
-} from "./services/project-service.js";
+} from "@penguinharness/plugin-projects/server";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import { AgentConfigService } from "./services/agent-config-service.js";
-import { SnapshotService } from "./services/snapshot-service.js";
+import { SnapshotService } from "@penguinharness/plugin-projects/server";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "@penguinharness/plugin-usage/server";
-import { ProjectsRoutes } from "./http/routes/dirs.js";
+import { ProjectsRoutes } from "@penguinharness/plugin-projects/server";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "@penguinharness/plugin-schedules/server";
-import { Machines, MachinesModule } from "./machines/service.js";
+import { Machines, MachinesModule } from "@penguinharness/plugin-machines/server";
 import { TerminalRelay } from "@penguinharness/plugin-terminal/server";
-import { ProjectAdminRoutes } from "./http/routes/projects.js";
+import { ProjectAdminRoutes } from "@penguinharness/plugin-projects/server";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
@@ -129,7 +129,7 @@ import {
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
 } from "./http/routes/desktop.js";
-import { InstallRoutes } from "./http/routes/install.js";
+import { InstallRoutes } from "@penguinharness/plugin-projects/server";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
@@ -162,8 +162,8 @@ import {
   SessionOrigins,
 } from "./mechanisms/sessions.js";
 import { Workbenches } from "./mechanisms/workbenches.js";
-import { WorkbenchService } from "./workbenches/service.js";
-import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
+import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
 import {
   ErrorLog,
   Errors,

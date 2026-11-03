@@ -25,7 +25,7 @@ import type { AmspEvent, RunStarted } from "@prismshadow/amsp";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { Channels, Log } from "../hmr/capabilities.js";
-import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
+import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson } from "../http/validate.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";

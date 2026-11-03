@@ -32,7 +32,7 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
 import { ModelBalances } from "../../services/model-balance.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
