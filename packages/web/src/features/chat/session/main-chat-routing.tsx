@@ -13,7 +13,7 @@ import {
 import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
 import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
-import { terminalApiSupported, subscribeTerminals } from "../../terminal";
+import { terminalApiSupported, subscribeTerminals } from "@penguinharness/plugin-terminal/web";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */

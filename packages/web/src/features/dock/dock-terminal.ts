@@ -14,7 +14,7 @@ import {
   liveTerminals,
   noteTerminalCreated,
   refreshTerminals,
-} from "../terminal";
+} from "@penguinharness/plugin-terminal/web";
 import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,

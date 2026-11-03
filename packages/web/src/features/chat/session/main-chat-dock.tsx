@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { sessionThinkingLevel } from "../../model-picker";
 import { useDockMount, closedDockView, dockViews } from "../../dock";
 import type { ChatDockState } from "./main-dock-context";
-import { terminalApiSupported } from "../../terminal";
+import { terminalApiSupported } from "@penguinharness/plugin-terminal/web";
 import type { useMainChatActions } from "./main-chat-actions";
 
 /**

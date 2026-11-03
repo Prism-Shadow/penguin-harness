@@ -117,7 +117,7 @@ import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
-import { TerminalRelay } from "./machines/terminal-relay.js";
+import { TerminalRelay } from "@penguinharness/plugin-terminal/server";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -139,7 +139,7 @@ import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
-import { TerminalModule } from "./terminal/manager.js";
+import { TerminalModule } from "@penguinharness/plugin-terminal/server";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {

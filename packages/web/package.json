@@ -9,12 +9,13 @@
     "build": "pnpm gen:ifaces && vite build",
     "preview": "vite preview",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "test:e2e": "bash e2e/run.sh"
   },
   "dependencies": {
     "@penguinharness/plugin-company": "workspace:*",
+    "@penguinharness/plugin-terminal": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",

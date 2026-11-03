@@ -55,7 +55,7 @@ import {
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { toneInk } from "../../lib/tone";
-import { subscribeTerminals, terminalApiSupported } from "../terminal";
+import { subscribeTerminals, terminalApiSupported } from "@penguinharness/plugin-terminal/web";
 import { openTerminalInDock } from "./dock-terminal";
 import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";

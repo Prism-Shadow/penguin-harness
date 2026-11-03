@@ -90,7 +90,7 @@ import {
   terminalViewState,
   subscribeTerminalCloseRequests,
   type TerminalInfo,
-} from "../terminal";
+} from "@penguinharness/plugin-terminal/web";
 
 import { invalidateSlotClips } from "../builtin-browser";
 import { confirmClose } from "./close-guard";

@@ -7,6 +7,7 @@
  * Deliberately a re-export hub and nothing more: no logic, no defaults.
  */
 export * from "./api/client";
+export * from "./api/session-probe";
 export * from "./api/endpoints";
 export * from "./components/ui/avatar-crop-dialog";
 export * from "./components/ui/group-list";
@@ -35,10 +36,18 @@ export * from "./lib/semantic-id";
 export * from "./lib/session-activity";
 export * from "./lib/sidebar-contributions";
 export * from "./lib/stat-icons";
+export * from "./lib/server-context";
+export * from "./lib/shortcuts/platform";
+export * from "./lib/shortcuts/store";
+export * from "./lib/shortcuts/terminal-clipboard";
+export * from "./lib/shortcuts/terminal-keys";
 export * from "./lib/strings";
+export * from "./lib/terminal-machines";
 export * from "./lib/textarea-fit";
 export * from "./lib/tone";
+export * from "./lib/use-coarse-pointer";
 export * from "./lib/use-document-title";
+export * from "./lib/use-visual-viewport-height";
 export * from "./lib/web-app-pages";
 export * from "./lib/work-mode";
 export * from "./state/auth";

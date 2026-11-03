@@ -15,9 +15,9 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import { SESSION_COOKIE } from "../auth/middleware.js";
-import type { ServerHmrHost } from "../hmr/platform.js";
-import type { Auth } from "../mechanisms/identity.js";
+import { SESSION_COOKIE } from "@prismshadow/penguin-server/internal";
+import type { ServerHmrHost } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
