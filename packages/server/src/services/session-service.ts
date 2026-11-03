@@ -51,7 +51,7 @@ import {
   unrunSource,
 } from "../runtime/session-sources.js";
 import type { ListingView } from "../runtime/session-sources.js";
-import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/server";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";

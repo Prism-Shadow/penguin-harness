@@ -8,7 +8,7 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
-import type { ScheduleFileCache } from "../runtime/schedule-store.js";
+import type { ScheduleFileCache } from "@penguinharness/plugin-schedules/server";
 import type { ScheduleEntryView } from "@penguinharness/plugin-schedules/server";
 import type { LiveTail } from "../runtime/live-tail.js";
 import type { RuntimeEntry } from "../runtime/session-manager.js";
