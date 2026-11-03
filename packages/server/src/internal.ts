@@ -43,6 +43,7 @@ export {
   fallbackTitle,
   listCategory,
   listingMarksOf,
+  listingViewOf,
   readRecordedSource,
   recallStoreOf,
   sourceSeenBy,
