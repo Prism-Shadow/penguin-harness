@@ -25,10 +25,12 @@ import {
   readSession,
   sessionFile,
   tokenFromSetCookie,
-  writeSession,
-} from "@prismshadow/penguin-server/cli";
+  writeSession,,
+  getMessages} from "@prismshadow/penguin-server/cli";
 import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
 
 /** Must match the server's SESSION_COOKIE — it is the name a login's Set-Cookie carries. */
 const SESSION_COOKIE = "penguin_session";
@@ -41,6 +43,9 @@ const DEFAULT_USER = "admin";
  * anchors on this rather than on position, so nothing the shell prints on its own can be
  * mistaken for a credential.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export const TOKEN_MARK = "---penguin-auth-token---";
 
 /**
@@ -249,4 +254,30 @@ export function registerAuthCommand(auth: Command, t: Messages): void {
       if (opts.mark) process.stdout.write(TOKEN_MARK + "\n");
       process.stdout.write(result.token + "\n");
     });
+}
+
+/** `penguin auth`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.auth",
+        key: "auth",
+        summary: {
+          en: "Sign in to a PenguinHarness server from the terminal",
+          zh: "在终端里登录 PenguinHarness 服务",
+        },
+      },
+    ],
+  },
+})
+export class AuthCommand {
+  @Bind("cli.auth") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAuthCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
 }
