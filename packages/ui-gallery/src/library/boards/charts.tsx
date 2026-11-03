@@ -21,16 +21,16 @@ import type {
 import { ContextRing, Legend, Ring, Sparkline, TokenDonut } from "@prismshadow/penguin-ui";
 import type { LegendItem, RingSegment, ToneName } from "@prismshadow/penguin-ui";
 import { humanizeTokens } from "../../../../web/src/lib/format";
-import { TimelineChart } from "../../../../web/src/features/traces/timeline-chart";
-import type { TraceHighlight } from "../../../../web/src/features/traces/timeline-chart";
-import { TrendChart } from "../../../../web/src/features/usage/trend-chart";
+import { TimelineChart } from "../../../../plugins/usage/src/web/traces/timeline-chart";
+import type { TraceHighlight } from "../../../../plugins/usage/src/web/traces/timeline-chart";
+import { TrendChart } from "../../../../plugins/usage/src/web/usage/trend-chart";
 import {
   RequestsChart,
   TokenBarChart,
   TokenLegend,
-} from "../../../../web/src/features/usage/usage-charts";
-import type { TokenLegendKey } from "../../../../web/src/features/usage/usage-charts";
-import type { EntityCounts } from "../../../../web/src/features/usage/usage-controls";
+} from "../../../../plugins/usage/src/web/usage/usage-charts";
+import type { TokenLegendKey } from "../../../../plugins/usage/src/web/usage/usage-charts";
+import type { EntityCounts } from "../../../../web/src/lib/usage-controls";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 import { BasicCharts } from "./basic-charts";
