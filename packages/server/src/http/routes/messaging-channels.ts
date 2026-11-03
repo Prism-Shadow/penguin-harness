@@ -23,7 +23,7 @@
  */
 import { HttpError } from "../errors.js";
 import { optionalBoolean } from "../validate.js";
-import { maskApiKey } from "../../services/project-config-service.js";
+import { maskApiKey } from "@penguinharness/plugin-projects/server";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
 import type {

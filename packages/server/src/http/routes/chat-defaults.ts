@@ -14,7 +14,7 @@ import { optionalEnum, optionalString, readJson, requireValidId } from "../valid
 import { APPROVAL_MODES } from "./sessions.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ChatDefaultsRouteDeps {

@@ -1,143 +1,7 @@
-import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
-import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
-import table from "./ifaces.json" with { type: "json" };
-import type { HmrCapabilities, ReassemblyChange } from "./hmr/capabilities.js";
-import {
-  ConfigPaths,
-  ConsoleLog,
-  RuntimeAuthState,
-  RuntimeChannels,
-  RuntimeConfig,
-  RuntimeDb,
-  RuntimeDesktop,
-  RuntimeHmr,
-  RuntimeHmrControl,
-  AppReassembly,
-  RuntimeProxy,
-  RuntimeResourceGroups,
-  SystemClock,
-  AuthState,
-  Channels,
-  Clock,
-  Config,
-  Db,
-  Desktop,
-  Hmr,
-  Reassembly,
-  HmrControl,
-  Log,
-  Paths,
-  Proxy,
-  ResourceGroups,
-} from "./hmr/capabilities.js";
-import { ScryptHasher, PasswordHasher } from "./auth/password.js";
-import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
-import {
-  DefaultMessagingTuning,
-  Messaging,
-  MessagingTaskRunner,
-  MessagingModule,
-  QQScan,
-} from "./runtime/messaging/bridge.js";
-import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
-import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
-import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
-import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
-import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
-import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
-import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
-import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
-import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
-import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
-import {
-  CoreSessionLoaders,
-  DefaultTitleGenerators,
-  SessionsModule,
-  SessionEnv,
-  Sessions,
-  SessionServiceIface,
-} from "./runtime/session-manager.js";
-import {
-  GlobalFetch,
-  UpdateCheckService,
-  VersionRoutes,
-  UpdateCheck,
-} from "./services/update-check-service.js";
-import { UpdateJobService } from "./services/update-job.js";
-import { HarnessHistoryStore } from "@penguinharness/plugin-usage/server";
-import { UsersRepo } from "./db/repos/users.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
-import { UserDraftsRepo } from "./db/repos/user-drafts.js";
-import { BackgroundImagesRepo } from "./db/repos/background-images.js";
-import { SessionsRepo } from "./db/repos/sessions.js";
-import { ProjectsRepo } from "./db/repos/projects.js";
-import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
-import { ModelProviderAuthTokensRepo } from "./db/repos/model-provider-auth-tokens.js";
-import { MembersRepo } from "./db/repos/members.js";
-import { AgentsRepo } from "./db/repos/agents.js";
-import { UsageRepo } from "./db/repos/usage.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
-import { AgentStateStore } from "./runtime/agent-state.js";
-import { SessionSources } from "./runtime/session-sources.js";
-import { SessionDriverRegistry } from "./runtime/session-drivers.js";
-import { ErrorRecorder } from "./runtime/error-recorder.js";
-import { UsageRecorder } from "./runtime/usage-recorder.js";
-import { UsageService } from "@penguinharness/plugin-usage/server";
-import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
-import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
-import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
-import { TraceIndexService } from "@penguinharness/plugin-usage/server";
-import { TraceService } from "@penguinharness/plugin-usage/server";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { RevealService } from "./services/reveal-path.js";
-import { ProjectAccess } from "./services/project-access.js";
-import { ProjectNotifier } from "./services/project-events.js";
-import {
-  ProjectService,
-  ProjectRuns,
-  ShippedBuiltinBenchmarkSeeds,
-} from "./services/project-service.js";
-import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
-import { AdminService } from "./services/admin-service.js";
-import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
-import { AgentConfigService } from "./services/agent-config-service.js";
-import { SnapshotService } from "./services/snapshot-service.js";
-import { AgentRoutes } from "./services/agent-routes.js";
-import { AgentService } from "./services/agent-service.js";
-import { MemoryService } from "./services/memory-service.js";
-import { BenchmarkService } from "@penguinharness/plugin-usage/server";
-import { ProjectsRoutes } from "./http/routes/dirs.js";
-import { SandboxModule } from "./sandbox/service.js";
-import { SandboxSettings } from "./sandbox/settings-store.js";
-import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
-import { SchedulerRoutes } from "@penguinharness/plugin-schedules/server";
-import { Machines, MachinesModule } from "./machines/service.js";
-import { TerminalRelay } from "@penguinharness/plugin-terminal/server";
-import { SessionForwardRoutes } from "./machines/session-forward.js";
-import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
-import { HistoryRoutes } from "./http/routes/history.js";
-||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
-import { ProjectAdminRoutes } from "./http/routes/projects.js";
-import { AdminRoutes } from "./http/routes/admin.js";
-import { MeRoutes } from "./http/routes/me.js";
-import { AuthRoutes } from "./http/routes/auth.js";
-import { RemoteRoutes } from "./http/routes/remote.js";
-import {
-  DesktopPrivacySettingsRoutes,
-  DesktopRoutes,
-  DesktopTrayRoutes,
-  DesktopUpdateRoutes,
-} from "./http/routes/desktop.js";
-import { CommandRoutes } from "./http/routes/command.js";
-import { InstallRoutes } from "./http/routes/install.js";
-import { HandshakeRoutes } from "./http/routes/handshake.js";
+import { ProjectAdminRoutes } from "@penguinharness/plugin-projects/server";
+
+import { InstallRoutes } from "@penguinharness/plugin-projects/server";
+
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
@@ -171,8 +35,8 @@ import {
   SessionOrigins,
 } from "./mechanisms/sessions.js";
 import { Workbenches } from "./mechanisms/workbenches.js";
-import { WorkbenchService } from "./workbenches/service.js";
-import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
+import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
 import {
   ErrorLog,
   Errors,

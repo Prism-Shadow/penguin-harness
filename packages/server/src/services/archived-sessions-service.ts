@@ -46,7 +46,7 @@ import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndexStore } from "../mechanisms/traces.js";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";
-import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "./workspace-group.js";
+import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
 
 /** What the archive page reaches. */
 export interface ArchivedSessionsDeps {

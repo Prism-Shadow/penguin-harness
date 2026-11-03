@@ -44,7 +44,7 @@ import type {
   PluginConfiguration,
 } from "../api/types.js";
 import { Settings } from "../mechanisms/settings.js";
-import { maskApiKey } from "../services/project-config-service.js";
+import { maskApiKey } from "@penguinharness/plugin-projects/server";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 

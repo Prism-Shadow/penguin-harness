@@ -1,44 +1,5 @@
-/**
- * Message stream container: renders the ChatItem list; auto-sticks to the
- * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
- * the bottom resumes it (see stream-follow.ts for the exact rule).
- * StreamRenderContext threads the pending-approval map and approval callback down to tool
- * cards at any nesting depth. Text selected in the stream, and a web link in it, get the app's
- * own context menu (Copy / Add to conversation; open the link or copy its address — see
- * stream-selection-menu.tsx).
- */
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { WorkspaceLinksProvider } from "../internal";
 
-import {
-  A2uiActionsProvider,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  MessageBubble,
-  ReportIssueAction,
-  TextAction,
-  exceptionReport,
-  isSeriousError,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/amsp/stream-model";
-import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
-import type { TaskStats } from "../../lib/amsp/task-stats";
-import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
-import { MessageItem } from "./message-item";
-import type { RequestFailure } from "./request-failure-report";
-import { parseUserMessageBody } from "./user-message-body";
-import { interactiveReplyIndex } from "./a2ui-reply";
-import { readOnlyActions } from "./a2ui-answered";
-import { WorkspaceLinksProvider } from "../workspace";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { ElidedBodiesContext } from "./elided-body";
 import { HistoryTransferLine } from "./history-loading";

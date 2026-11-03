@@ -76,7 +76,7 @@ import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
-import { maskApiKey } from "../../services/project-config-service.js";
+import { maskApiKey } from "@penguinharness/plugin-projects/server";
 import { HttpError } from "../errors.js";
 import {
   badRequest,

@@ -28,7 +28,7 @@ import type {
   ServerEvent,
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
-import type { RawTable, UtilityCompletion } from "../services/project-config-service.js";
+import type { RawTable, UtilityCompletion } from "@penguinharness/plugin-projects/server";
 import type {
   ListEndpointModelsOptions,
   ModelRequestContext,

@@ -1,33 +1,6 @@
-/**
- * The run handler: `POST /api/amsp/v1/agents/:projectId/:agentId/runs` is one run and its stream
- * (the API tab's Try it runs the same handler, try-route.ts).
- *
- * 1. The gate (gate.ts) has resolved the Agent and the key before anything here runs.
- * 2. The body is read and validated: `input` becomes the run's user messages (run-input.ts).
- * 3. The Session: without `session_id` a new one is created — source `api`, client `api`, the
- *    Agent's API model, thinking, workspace and approval defaults, and the server's sandbox;
- *    with one, it must be an API Session of this Agent. A busy Session (409) and an Agent at its
- *    limit of running Sessions (429) are refused before anything starts (admission.ts).
- * 4. The handler subscribes to the Session's channel BEFORE the Task starts, so nothing of the
- *    run can be published unseen; a start that fails answers JSON, and nothing is streamed.
- * 5. The stream is AMSP's run stream: `event: ping` at once and every 20 s, the channel's
- *    records from this run's first main-Session record on — the Session's `session_meta` on its
- *    first message, its `task_begin` otherwise — each with its `id:`, and `data: [DONE]` when the
- *    run is over: when the Session's state goes back to idle. The Web App's server events on the
- *    same channel are never written. No frame names the Session: a new one is named by that
- *    first `session_meta`, a continued one by the `session_id` the caller sent.
- *
- * Nothing in the stream says how the run went; its records do. A run the server could not finish
- * leaves its last `task_begin` unclosed before `[DONE]` (the manager records the failure).
- *
- * Disconnecting aborts the run: a run nobody is reading would only spend the Project's tokens,
- * and an approval asked of a caller that went away would never be answered.
- */
-import { isValidId } from "@prismshadow/penguin-core";
-import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
-import type { Channels, Log } from "../hmr/capabilities.js";
-import { HEARTBEAT_MS } from "../http/sse.js";
+import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "../http/errors.js";
+
 import { badRequest, readJson } from "../http/validate.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";

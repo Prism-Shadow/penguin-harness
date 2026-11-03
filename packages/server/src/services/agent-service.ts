@@ -1,48 +1,5 @@
-/**
- * Agent service.
- *
- * The list is the union of "DB index ∪ directory scan", held to the one rule every Agent route
- * applies: an Agent exists while `agents/<id>/agent_state/system_config.yaml` does. Unmanaged
- * directories found are backfilled into the DB — this handles Agents created directly via the
- * CLI — and an index row whose folder no longer has that file is not listed, so a listed Agent
- * can always be opened and deleted.
- * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
- * and route at once) and its contents are removed in the background, the removal reporting how
- * far it got; a server that stops mid-removal resumes it at its next start.
- * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
- * then write name/description into system_config.yaml (parseDocument preserves the
- * template's comments).
- */
-import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import path from "node:path";
-import { HttpError } from "../http/errors.js";
-import { countEntries, FsLimiter, purgeTree } from "./tree-purge.js";
-import {
-  agentDir,
-  agentsDir,
-  agentsMdPath,
-  BUILTIN_AGENT_IDS,
-  createAgent as coreCreateAgent,
-  installPlugin,
-  installSkill,
-  McpServerNameTakenError,
-  listInstalledHooks,
-  isValidId,
-  loadAgentVault,
-  memoryDir,
-  scheduleDir,
-  skillsDir,
-  systemConfigPath,
-  comparePluginVersions,
-  parseSkillFrontmatter,
-  pluginContentVersion,
-  listInstalledWorkbenches,
-} from "@prismshadow/penguin-core";
-import type { LibraryPlugin } from "@prismshadow/penguin-core";
-import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
-import { migrateWorkbenches } from "../workbenches/migrate.js";
-import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
+import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
+
 import { isTopicFileName } from "./memory-service.js";
 import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";

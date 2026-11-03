@@ -25,7 +25,7 @@ import type {
 import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
-} from "../services/workspace-files-service.js";
+} from "@penguinharness/plugin-projects/server";
 import type { AgentListItem } from "../services/agent-service.js";
 import type {
   BenchmarkArchive,

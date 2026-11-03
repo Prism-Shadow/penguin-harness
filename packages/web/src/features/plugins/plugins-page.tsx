@@ -1,85 +1,13 @@
-/**
- * The plugin market: every plugin as one card (plugin-card.tsx) — the library's plugins
- * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
- * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
- * and whatever the registry lists, installed on the server by an admin). Cards sit in
- * collapsible sections, by category unless the reader picks another grouping — status,
- * contents, or none — in the select beside the header's search box, which narrows the cards.
- * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
- * search is not. Settings › Plugins can narrow the list to the plugins this build cannot fully
- * run, also per browser (incompatible-only.ts), and while it does a notice under the title says
- * so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
- * plugin-status.ts.
- *
- * - A library plugin is installed per Agent, by any member, through its card's "manage
- *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
- *   behind (`AgentSummary.pluginUpdates` — the page never compares versions itself), and the
- *   notice under the title updates every outdated plugin at once. Installed means the whole
- *   plugin: every one of its skills in the Agent's installed skills, its hook package (when it
- *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
- *   servers as an entry it installed — which is why the page reads the three lists per Agent
- *   (agent-installs.ts). Uninstall takes it apart the same way: one DELETE per skill, one for the
- *   hook package and one per MCP server. The dialog lists this server's Agents and each machine's
- *   own in one list, in the Agents page's order (lib/machine-agent-lists.ts `mixAgents`): a
- *   machine's Agent is installed on, read back from and updated on that machine, from that
- *   machine's library, and counts towards the card's "used by" and status — with what the
- *   machine last answered while it is out of reach. The update notice and the nav badge it
- *   answers are this server's alone.
- * - A server module is installed on the whole server for every Project, by an admin only (a
- *   member sees the card read-only). Installing or removing one re-assembles the App, which stops
- *   the agent runs in progress in every Project, so the confirm says what the install does and,
- *   in small type below, what it costs.
- *
- * Every read the page makes keeps its last answer (lib/read-store.ts): coming back to the page
- * shows what it showed, an answer is read again behind it, and a status, a count or a row's state
- * changes only when an answer says something different — never because a read is in flight,
- * failed, or a machine dropped out of reach. Until this server has answered at least once, the
- * card's status and "used by" are placeholders (plugin-card.tsx).
- */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
-import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import { MachinePicker, type MachineChoice } from "@penguinharness/plugin-machines/web";
 import {
-  Button,
-  CollapsibleSection,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  Notice,
-  PageFrame,
-  PageHeader,
-  SearchInput,
-  Select,
-  Skeleton,
-  SkeletonCard,
-  TodoNotice,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import {
-  useUpdateBadges,
-  dismissTodo,
-  bulkOutcome,
-  failedList,
-  firstFailure,
-  noticeCounts,
-} from "../todos";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useMachines } from "../../state/machines";
-import { useSessions } from "../../state/sessions";
-import { agentKey } from "../../lib/agent-location";
-import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import { readKey, useRead } from "../../lib/read-store";
-import { MachinePicker, type MachineChoice } from "../machines";
-import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
-import { localizedText } from "../../lib/skill-use";
+  DRAFT_SESSION_ID,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  prepareNewChatDraft,
+  localizedText,
+} from "../chat";
+
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";

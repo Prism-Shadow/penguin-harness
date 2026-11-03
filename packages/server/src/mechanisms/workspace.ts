@@ -6,7 +6,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
   WorkspaceFileStat,
-} from "../services/workspace-files-service.js";
+} from "@penguinharness/plugin-projects/server";
 import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */

@@ -92,7 +92,7 @@ import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "../../db/repos/machines.js";
 
 export interface InstalledPluginsDeps {

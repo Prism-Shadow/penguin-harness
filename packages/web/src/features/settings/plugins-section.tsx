@@ -44,7 +44,7 @@ import {
   installInOrder,
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { MachinePicker } from "../machines";
+import { MachinePicker } from "@penguinharness/plugin-machines/web";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
