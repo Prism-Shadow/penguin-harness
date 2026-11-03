@@ -1,6 +1,7 @@
 /**
- * One leaderboard: its charts one at a time (the choice is `?chart=` in the URL), with the
- * benchmarks it measures on and the algorithms it compares beside them, each linking to its page.
+ * One leaderboard: a panel with its three views of the same entries, one at a time (the choice is
+ * `?chart=` in the URL), then how the numbers are computed and where they come from. The
+ * benchmarks it measures on sit in the side column, each linking to its page.
  */
 import { Link, useParams, useSearchParams } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
@@ -8,17 +9,20 @@ import {
   AuthorName,
   HubDetail,
   HubMissing,
+  HubPanel,
   HubPending,
   useHubDetail,
 } from "../../components/hub/hub-detail";
+import { ExternalLink } from "../../components/external-link";
+import { MethodNote } from "../../components/hub/charts/method-note";
 import { ParetoChart } from "../../components/hub/charts/pareto-chart";
 import { ScoreTable } from "../../components/hub/charts/score-table";
 import { WaffleChart } from "../../components/hub/charts/waffle-chart";
 import type { NameOf } from "../../components/hub/charts/entry-name";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { plugins } from "../../lib/hub/data";
-import { formatDay, pick, titleOf } from "../../lib/hub/text";
-import type { ChartKind, HubLink, LeaderboardDetail } from "../../lib/hub/types";
+import { formatDay, titleOf } from "../../lib/hub/text";
+import type { ChartKind, LeaderboardDetail, LeaderboardEntry } from "../../lib/hub/types";
 import { S } from "../../lib/strings";
 
 const KINDS: ChartKind[] = ["table", "pareto", "waffle"];
@@ -31,49 +35,55 @@ export function LeaderboardPage() {
   return <LeaderboardView board={board} />;
 }
 
-function LinkList({ items, to }: { items: readonly HubLink[]; to: (id: string) => string | null }) {
-  const { locale } = useSiteLocale();
-  return (
-    <ul className="flex flex-col gap-1">
-      {items.map((item) => {
-        const href = to(item.id);
-        return (
-          <li key={item.id}>
-            {href ? (
-              <Link to={href} className="text-brand-700 hover:underline dark:text-brand-300">
-                {titleOf(locale, item)}
-              </Link>
-            ) : (
-              titleOf(locale, item)
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function LeaderboardView({ board }: { board: LeaderboardDetail }) {
+  const t = S.hub.leaderboards;
   const { locale } = useSiteLocale();
   const [params, setParams] = useSearchParams();
   const title = titleOf(locale, board);
-  useDocumentMeta(S.hub.pageTitle(title), S.hub.leaderboards.description);
-  const kinds = KINDS.filter((kind) => board.charts[kind] !== undefined);
-  const kind = kinds.find((candidate) => candidate === params.get("chart")) ?? kinds[0];
-  const algorithms = new Map(board.algorithms.map((item) => [item.id, item]));
-  const libraryPlugins = new Set(plugins.map((plugin) => plugin.id));
-  const nameOf: NameOf = (entry) => ({
-    method: entry.algorithm
-      ? titleOf(locale, algorithms.get(entry.algorithm) ?? { title: entry.algorithm })
-      : S.hub.leaderboards.baseline,
-    methodHref:
-      entry.algorithm && libraryPlugins.has(entry.algorithm)
-        ? `/plugins/${entry.algorithm}`
-        : undefined,
-    model: entry.model,
-  });
-  const chart = kind ? board.charts[kind] : undefined;
-  const subtitle = chart?.subtitle ? pick(locale, chart.subtitle, chart.subtitleZh) : undefined;
+  useDocumentMeta(S.hub.pageTitle(title), t.description);
+  const kind = KINDS.find((candidate) => candidate === params.get("chart")) ?? KINDS[0]!;
+
+  const pluginTitles = new Map(plugins.map((plugin) => [plugin.id, titleOf(locale, plugin)]));
+  const methodOf = (entry: LeaderboardEntry) =>
+    entry.algorithm ? (pluginTitles.get(entry.algorithm) ?? entry.algorithm) : t.baseline;
+  const nameOf: NameOf = (entry) => ({ method: methodOf(entry), model: entry.model });
+  const benchmarkTitles = new Map(board.benchmarks.map((item) => [item.id, titleOf(locale, item)]));
+  const benchmarkTitle = (id: string) => benchmarkTitles.get(id) ?? id;
+
+  const tabs = (
+    <div
+      role="tablist"
+      aria-label={t.chartsLabel}
+      className="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
+    >
+      {KINDS.map((candidate, index) => (
+        <button
+          key={candidate}
+          type="button"
+          role="tab"
+          aria-selected={candidate === kind}
+          onClick={() =>
+            setParams(
+              (current) => {
+                const next = new URLSearchParams(current);
+                if (index === 0) next.delete("chart");
+                else next.set("chart", candidate);
+                return next;
+              },
+              { replace: true, preventScrollReset: true },
+            )
+          }
+          className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
+            candidate === kind
+              ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+              : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          }`}
+        >
+          {t.charts[candidate]}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <HubDetail
@@ -82,83 +92,65 @@ function LeaderboardView({ board }: { board: LeaderboardDetail }) {
       facts={[
         { label: S.hub.meta.author, value: <AuthorName author={board.author} /> },
         { label: S.hub.meta.updated, value: formatDay(board.updated, locale) },
-        ...(board.algorithms.length > 0
-          ? [
-              {
-                label: S.hub.leaderboards.algorithms,
-                value: (
-                  <LinkList
-                    items={board.algorithms}
-                    to={(id) => (libraryPlugins.has(id) ? `/plugins/${id}` : null)}
-                  />
-                ),
-              },
-            ]
-          : []),
-        {
-          label: S.hub.leaderboards.benchmarks,
-          value: <LinkList items={board.benchmarks} to={(id) => `/benchmarks/${id}`} />,
-        },
+        { label: t.entries, value: board.entryCount },
       ]}
-    >
-      <section>
-        {kinds.length > 1 && (
-          <div
-            role="tablist"
-            aria-label={S.hub.leaderboards.chartsLabel}
-            className="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
-          >
-            {kinds.map((candidate, index) => (
-              <button
-                key={candidate}
-                type="button"
-                role="tab"
-                aria-selected={candidate === kind}
-                onClick={() =>
-                  setParams(
-                    (current) => {
-                      const next = new URLSearchParams(current);
-                      if (index === 0) next.delete("chart");
-                      else next.set("chart", candidate);
-                      return next;
-                    },
-                    { replace: true, preventScrollReset: true },
-                  )
-                }
-                className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-                  candidate === kind
-                    ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                }`}
-              >
-                {S.hub.leaderboards.charts[candidate]}
-              </button>
+      aside={
+        <HubPanel title={`${t.benchmarks} ${board.benchmarks.length}`} flush>
+          <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-800">
+            {board.benchmarks.map((item) => (
+              <li key={item.id} className="px-4 py-2.5">
+                <Link
+                  to={`/benchmarks/${item.id}`}
+                  className="text-brand-700 hover:underline dark:text-brand-300"
+                >
+                  {titleOf(locale, item)}
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
+        </HubPanel>
+      }
+    >
+      <HubPanel title={t.results} actions={tabs}>
+        {kind === "table" && (
+          <ScoreTable entries={board.entries} methodOf={methodOf} benchmarkTitle={benchmarkTitle} />
         )}
-        {subtitle && (
-          <h2
-            className={`text-base font-semibold tracking-tight ${kinds.length > 1 ? "mt-6" : ""}`}
-          >
-            {subtitle}
-          </h2>
+        {kind === "pareto" && <ParetoChart entries={board.entries} nameOf={nameOf} />}
+        {kind === "waffle" && (
+          <WaffleChart
+            entries={board.entries}
+            grid={board.waffle}
+            nameOf={nameOf}
+            taskTitles={board.taskTitles}
+            benchmarkTitle={benchmarkTitle}
+          />
         )}
-        <div className="mt-4">
-          {kind === "table" && board.charts.table && (
-            <ScoreTable entries={board.charts.table.entries} nameOf={nameOf} />
-          )}
-          {kind === "pareto" && board.charts.pareto && (
-            <ParetoChart entries={board.charts.pareto.entries} nameOf={nameOf} />
-          )}
-          {kind === "waffle" && board.charts.waffle && (
-            <WaffleChart
-              chart={board.charts.waffle}
-              nameOf={nameOf}
-              taskTitles={board.taskTitles}
-            />
-          )}
-        </div>
-      </section>
+      </HubPanel>
+      <HubPanel title={t.method.title}>
+        <MethodNote entries={board.entries} />
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-gray-100 pt-4 text-sm dark:border-gray-800">
+          <dt className="text-gray-500 dark:text-gray-400">{t.method.config}</dt>
+          <dd className="min-w-0 [overflow-wrap:anywhere]">
+            <ExternalLink
+              href={board.sourceUrl}
+              className="text-brand-700 hover:underline dark:text-brand-300"
+            >
+              leaderboard.yaml
+            </ExternalLink>
+          </dd>
+          <dt className="text-gray-500 dark:text-gray-400">{t.method.experiments}</dt>
+          <dd className="min-w-0 [overflow-wrap:anywhere]">
+            <ExternalLink
+              href={board.experimentsUrl}
+              className="text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {board.experimentsUrl
+                .replace(/^https:\/\/github\.com\/[^/]+\//, "")
+                .replace("/tree/main/", "/")}
+            </ExternalLink>
+          </dd>
+        </dl>
+      </HubPanel>
     </HubDetail>
   );
 }

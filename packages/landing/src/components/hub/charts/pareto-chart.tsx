@@ -1,5 +1,5 @@
 /**
- * The score-against-cost chart (pareto.yaml): one point per entry, score up the side and one run's
+ * The score-against-cost view: one point per entry, score up the side and one run's
  * cost, time or tokens along the bottom. Entries no other entry beats on both counts (cheaper and
  * better) form the Pareto frontier: they take the accent and a step line joins them.
  */

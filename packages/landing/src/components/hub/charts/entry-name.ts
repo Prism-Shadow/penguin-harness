@@ -3,8 +3,6 @@ import type { LeaderboardEntry } from "../../../lib/hub/types";
 
 export interface EntryName {
   method: string;
-  /** The method's plugin page, when the method is a plugin of the library. */
-  methodHref?: string;
   model: string;
 }
 

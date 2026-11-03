@@ -122,13 +122,16 @@ export function Readout({
   id,
   anchor,
   bound,
+  start = 0,
   flip = true,
   children,
 }: {
   /** Names what the readout shows; it is measured and placed again when this changes. */
   id: string;
   anchor: Anchor;
+  /** The readout's right limit, and `start` its left one, in the wrapper's pixels. */
   bound: number;
+  start?: number;
   flip?: boolean;
   children: ReactNode;
 }) {
@@ -139,13 +142,13 @@ export function Readout({
     if (!element) return;
     const width = element.offsetWidth;
     const height = element.offsetHeight;
-    const left = Math.max(0, Math.min(anchor.x - width / 2, bound - width));
+    const left = Math.max(start, Math.min(anchor.x - width / 2, bound - width));
     const above = anchor.top - height - 6;
     const top = above >= 0 || !flip ? above : anchor.bottom + 6;
     setPlace((current) =>
       current && current.left === left && current.top === top ? current : { left, top },
     );
-  }, [id, anchor.x, anchor.top, anchor.bottom, bound, flip]);
+  }, [id, anchor.x, anchor.top, anchor.bottom, bound, start, flip]);
   return (
     <div
       ref={ref}

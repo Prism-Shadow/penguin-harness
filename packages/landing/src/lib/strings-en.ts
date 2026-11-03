@@ -504,33 +504,99 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       entryCount: (n: number) => (n === 1 ? "1 entry" : `${n} entries`),
       benchmarkCount: (n: number) => (n === 1 ? "1 benchmark" : `${n} benchmarks`),
       charts: { table: "Ranking", pareto: "Score and cost", waffle: "Per task" },
-      chartsLabel: "Charts",
+      chartsLabel: "Views",
+      results: "Results",
+      entries: "Entries",
       baseline: "Baseline",
       rank: "Rank",
-      method: "Method",
       model: "Model",
       score: "Score",
-      std: (value: string) => `std ${value}`,
+      modelThinking: (model: string, level: string) => `${model} (${level})`,
+      columnNames: {
+        harness: "Harness",
+        algorithm: "Algorithm",
+        released: "Released",
+        cost: "Cost",
+      } as Record<"harness" | "algorithm" | "released" | "cost", string>,
+      columns: "Columns",
+      filters: {
+        model: "Model",
+        harness: "Harness",
+        algorithm: "Algorithm",
+        thinking: "Thinking level",
+      } as Record<"model" | "harness" | "algorithm" | "thinking", string>,
+      filterLabel: (name: string) => `Filter by ${name.toLowerCase()}`,
+      noMatch: "No entry matches these filters.",
+      rawData: "Show the raw data",
+      raw: {
+        harness: "Harness",
+        provider: "Model provider",
+        thinking: "Thinking level",
+        phase: "Phase",
+        std: "Standard deviation",
+        stdAttempts: (n: number) => `Across ${n} attempts`,
+        stdExperiments: "From each experiment's score_std",
+        experiments: "Experiments",
+        benchmark: "Benchmark and experiment",
+        value: "Score",
+        attempts: "Attempts",
+        tokens: "Tokens in / cache / out",
+        finished: "Finished",
+        harnessSetting: "Harness setting",
+        notRecorded: "Not recorded",
+      },
       cost: "Cost",
       duration: "Time",
       tokens: "Tokens",
       axisLabel: "Horizontal axis",
       frontier: "Pareto frontier",
-      attempt: (n: number) => `Attempt ${n}`,
-      taskScore: (task: string, attempt: number, score: string) =>
-        `${task}, attempt ${attempt}: ${score}`,
-      scale: "Score",
       hoursShort: (value: string) => `${value} h`,
+      minutesShort: (value: string) => `${value} min`,
+      scale: "Score",
       noScore: "Not scored",
-      taskEmpty: (task: string, attempt: number) => `${task}, attempt ${attempt}: not scored`,
+      task: "Task",
+      attemptsPerCell: (n: number) =>
+        n === 1 ? "One square per task" : `${n} squares per cell, one per attempt`,
+      cellScores: (scores: string[]) => `Attempts: ${scores.join(", ")}`,
       methodOnModel: (method: string, model: string) => `${method} (${model})`,
-      waffleRow: (method: string, score: string) => `${method}: score ${score}`,
       paretoPoint: (method: string, score: string, axis: string, value: string) =>
         `${method}: score ${score}, ${axis.toLowerCase()} ${value}`,
       paretoSummary: (axis: string, points: string[], frontier: string[]) =>
         `Horizontal axis: ${axis}. ${points.join("; ")}. Pareto frontier: ${frontier.join(", ")}.`,
-      algorithms: "Algorithms",
       benchmarks: "Benchmarks",
+      method: {
+        title: "Method and sources",
+        entry:
+          "Each entry is one algorithm, or the baseline, on one model in one harness. The experiments behind it share those three and the phase, and differ only in the benchmark they ran on.",
+        score: (op: string, count: number, metric: string, phase: string) =>
+          `Its score is ${
+            (
+              {
+                mean: "the mean",
+                sum: "the sum",
+                weighted_mean: "a weighted mean",
+                sub: "the difference",
+                div: "the ratio",
+              } as Record<string, string>
+            )[op] ?? op
+          } of \`${metric}\` over its ${count} experiments, read from each experiment's \`${phase}\` summary.`,
+        scoreSingle: (metric: string, phase: string) =>
+          `Its score is \`${metric}\` from one experiment's \`${phase}\` summary.`,
+        scoreMixed:
+          "Each entry combines its experiments' summary metrics with the expression leaderboard.yaml gives it.",
+        stdAttempts: (n: number | null) =>
+          `± is the sample standard deviation across ${n === null ? "the" : `the ${n}`} attempts: each attempt's task scores are combined the same way as the score, and the deviation is taken over those combined scores.`,
+        stdExperiments:
+          "± is composed from each experiment's own `score_std`, taking the experiments as independent.",
+        stdExperimentsSome:
+          "Where an entry's experiments ran different numbers of attempts, ± is composed instead from each experiment's own `score_std`, taking them as independent.",
+        resources:
+          "Cost, time and tokens are one run of those experiments added up; tokens count input and output.",
+        waffle:
+          "Per task shows every attempt's score on every task, from the experiments' attempt files.",
+        config: "Configuration",
+        experiments: "Experiments",
+      },
     },
   },
 
