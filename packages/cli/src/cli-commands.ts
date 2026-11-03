@@ -28,7 +28,7 @@ import type {
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
 import { getMessages } from "./i18n.js";
 import table from "./ifaces.json" with { type: "json" };

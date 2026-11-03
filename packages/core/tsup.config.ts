@@ -15,6 +15,9 @@ export default defineConfig({
     // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
+    // The CLI command contract: the data and code halves of one `penguin` command,
+    // shared by the CLI's own table and the server's plugin slot.
+    "src/cli/index.ts",
     "src/state/model-catalog.ts",
     // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
     // Project lists them as a new Project gets them.

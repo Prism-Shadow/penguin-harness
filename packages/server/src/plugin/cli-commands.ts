@@ -5,7 +5,7 @@
  * A plugin contributes a command the way it contributes anything else: a class whose
  * `contributes["PluginCliCommandsProvider.commands"]` entry is the data half (the key and
  * the one-line summary) and whose `@Bind(entry.id)` field is the code half
- * (`CliCommandCode`, `@prismshadow/penguin-core/plugin`). The commands live in the
+ * (`CliCommandCode`, `@prismshadow/penguin-core/cli`). The commands live in the
  * server's tree with the rest of the plugin, so only the server knows them. The CLI lists
  * them from GET /api/cli/commands and runs one with POST /api/cli/commands/run, the same
  * way the web app reads its slots from GET /api/contributions.
@@ -21,14 +21,14 @@ import { Command, CommanderError } from "commander";
 import { Hono } from "hono";
 import { Bind, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import { cliCommandKeyFault } from "@prismshadow/penguin-core/plugin";
+import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import type {
   CliCommandCode,
   CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type {
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,

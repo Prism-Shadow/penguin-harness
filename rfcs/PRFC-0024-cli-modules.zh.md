@@ -79,7 +79,7 @@ CLI 自有的二十条命令各是这样一个 `@Component` 类，贡献给 `Cli
 
 ### 收进 core 插件契约包的契约
 
-命令契约住在 `@prismshadow/penguin-core/plugin`，贡献者因此不依赖任何 CLI 包：
+命令契约住在 `@prismshadow/penguin-core/cli`——core SDK 里与插件契约并列的一个出口——贡献者因此不依赖任何 CLI 包：
 
 - `CliCommandSummary`——`{ en, zh }`，每语言一行的 summary。
 - `CliCommandData`——`{ key, summary }`，槽的数据类型。

@@ -6,7 +6,7 @@
 
 [English](2026-10-10-cli-command-contributions.md)
 
-`penguin` CLI 成为一个命令贡献的程序。CLI 自有的二十条命令各是一个 `@Component` 类，其 `contributes["CliCommandsModule.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半，与沙箱后端同一个类形状。一次 `CliCommandsModule` 的静态启动收集它们：宿主把每个 key 变成程序上的命令节点、以 summary 作节点描述，再调用绑定的 register。register 从不写自己的路径；契约类型放在 core 的插件契约包（`@prismshadow/penguin-core/plugin`）里，贡献者不依赖任何 CLI 包。serve 组——`server`、`web`、`server status`、`server stop` 与 `server reset-admin-password`——仍是一组 CLI 命令，且由 CLI 包携带：启动 server 的代码就是 CLI，因此它收集到的命令由构建固定，在 CLI 进程与 server 进程里一致。
+`penguin` CLI 成为一个命令贡献的程序。CLI 自有的二十条命令各是一个 `@Component` 类，其 `contributes["CliCommandsModule.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半，与沙箱后端同一个类形状。一次 `CliCommandsModule` 的静态启动收集它们：宿主把每个 key 变成程序上的命令节点、以 summary 作节点描述，再调用绑定的 register。register 从不写自己的路径；契约类型放在 core SDK 的 CLI 命令契约出口（`@prismshadow/penguin-core/cli`）里，贡献者不依赖任何 CLI 包。serve 组——`server`、`web`、`server status`、`server stop` 与 `server reset-admin-password`——仍是一组 CLI 命令，且由 CLI 包携带：启动 server 的代码就是 CLI，因此它收集到的命令由构建固定，在 CLI 进程与 server 进程里一致。
 
 ## 插件向 server 贡献命令
 

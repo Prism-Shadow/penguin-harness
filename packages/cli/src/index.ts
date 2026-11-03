@@ -14,7 +14,7 @@
  */
 import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
-import type { CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands, builtinContext } from "./cli-commands.js";
 import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";

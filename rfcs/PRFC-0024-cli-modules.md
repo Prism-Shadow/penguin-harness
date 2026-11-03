@@ -79,7 +79,7 @@ When the first word of the command line names one of the CLI's own commands, the
 
 ### The contract in the core plugin package
 
-The command contract lives in `@prismshadow/penguin-core/plugin`, so a contributor depends on no CLI package:
+The command contract lives in `@prismshadow/penguin-core/cli`, beside the plugin contract in the core SDK, so a contributor depends on no CLI package:
 
 - `CliCommandSummary` — `{ en, zh }`, the one-line summaries.
 - `CliCommandData` — `{ key, summary }`, the slot's data type.
