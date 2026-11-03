@@ -1,18 +1,22 @@
-/** One plugin: what it does, how to start it, what it ships, and its package facts. */
+/**
+ * One plugin: what it does, how to start it, what it ships and its README, each in its own panel,
+ * with its package facts beside them and its references last.
+ */
 import { useParams } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { HubIcon } from "../../components/hub/hub-icon";
 import {
   AuthorName,
+  CountTitle,
   HubDetail,
   HubMissing,
+  HubPanel,
   HubPending,
-  HubSection,
+  HubReferences,
   useHubDetail,
 } from "../../components/hub/hub-detail";
 import { HubMarkdown } from "../../components/hub/hub-markdown";
 import { InlineText } from "../../components/hub/inline-text";
-import { ExternalLink } from "../../components/external-link";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { pick, titleOf } from "../../lib/hub/text";
 import type { PluginDetail } from "../../lib/hub/types";
@@ -33,6 +37,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
   useDocumentMeta(S.hub.pageTitle(title), short);
   const description = pick(locale, plugin.description, plugin.descriptionZh);
   const quickStart = plugin.quickStart;
+  const t = S.hub.plugins;
   return (
     <HubDetail
       lead={<HubIcon src={plugin.icon} size="lg" />}
@@ -43,10 +48,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
         ...(plugin.author
           ? [{ label: S.hub.meta.author, value: <AuthorName author={plugin.author} /> }]
           : []),
-        {
-          label: S.hub.meta.category,
-          value: S.hub.plugins.categories[plugin.category] ?? plugin.category,
-        },
+        { label: S.hub.meta.category, value: t.categories[plugin.category] ?? plugin.category },
         { label: S.hub.meta.version, value: plugin.version },
         ...(plugin.license ? [{ label: S.hub.meta.license, value: plugin.license }] : []),
         { label: S.hub.meta.package, value: plugin.packageName },
@@ -57,36 +59,36 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
       ]}
     >
       {description !== short && (
-        <HubSection title={S.hub.plugins.about}>
+        <HubPanel title={t.about}>
           <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">
             <InlineText>{description}</InlineText>
           </p>
-        </HubSection>
+        </HubPanel>
       )}
       {quickStart && (
-        <HubSection title={S.hub.plugins.quickStart}>
+        <HubPanel title={t.quickStart}>
           <p className="text-sm leading-7 whitespace-pre-line text-gray-700 dark:text-gray-300">
             <InlineText>{pick(locale, quickStart.prompt, quickStart.promptZh)}</InlineText>
           </p>
           {quickStart.skills.length > 0 && (
             <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-              {S.hub.plugins.quickStartSkills}{" "}
+              {t.quickStartSkills}{" "}
               <span className="text-gray-700 dark:text-gray-300">
-                {quickStart.skills.join(", ")}
+                {quickStart.skills.join(S.hub.listSeparator)}
               </span>
             </p>
           )}
-        </HubSection>
+        </HubPanel>
       )}
       {plugin.skills.length > 0 && (
-        <HubSection title={S.hub.plugins.skills}>
-          <ul className="flex flex-col gap-3">
+        <HubPanel title={<CountTitle label={t.skills} count={plugin.skills.length} />} flush>
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {plugin.skills.map((skill) => {
               const text = skill.description
                 ? pick(locale, skill.description, skill.descriptionZh)
                 : undefined;
               return (
-                <li key={skill.name} className="text-sm leading-6">
+                <li key={skill.name} className="px-4 py-3 text-sm leading-6 sm:px-5">
                   <span className="font-medium">{skill.name}</span>
                   {text && (
                     <p className="text-gray-600 dark:text-gray-400">
@@ -97,41 +99,32 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
               );
             })}
           </ul>
-        </HubSection>
+        </HubPanel>
       )}
-      {plugin.hooks.length > 0 && (
-        <HubSection title={S.hub.plugins.hooks}>
-          <p className="text-sm text-gray-700 dark:text-gray-300">{plugin.hooks.join(", ")}</p>
-        </HubSection>
-      )}
-      {plugin.workbenches.length > 0 && (
-        <HubSection title={S.hub.plugins.workbenches}>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            {plugin.workbenches.join(", ")}
-          </p>
-        </HubSection>
-      )}
-      {plugin.references.length > 0 && (
-        <HubSection title={S.hub.references}>
-          <ul className="flex flex-col gap-1.5 text-sm">
-            {plugin.references.map((href) => (
-              <li key={href} className="[overflow-wrap:anywhere]">
-                <ExternalLink
-                  href={href}
-                  className="text-brand-700 hover:underline dark:text-brand-300"
-                >
-                  {href}
-                </ExternalLink>
-              </li>
-            ))}
-          </ul>
-        </HubSection>
+      {(plugin.hooks.length > 0 || plugin.workbenches.length > 0) && (
+        <HubPanel title={t.extensions} flush>
+          <dl className="divide-y divide-gray-100 text-sm dark:divide-gray-800">
+            {plugin.hooks.length > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+                <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-400">{t.hooks}</dt>
+                <dd>{plugin.hooks.join(S.hub.listSeparator)}</dd>
+              </div>
+            )}
+            {plugin.workbenches.length > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+                <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-400">{t.workbenches}</dt>
+                <dd>{plugin.workbenches.join(S.hub.listSeparator)}</dd>
+              </div>
+            )}
+          </dl>
+        </HubPanel>
       )}
       {plugin.readme && (
-        <HubSection title="README">
+        <HubPanel title="README">
           <HubMarkdown base={`${plugin.sourceUrl}/`}>{plugin.readme}</HubMarkdown>
-        </HubSection>
+        </HubPanel>
       )}
+      <HubReferences links={plugin.references} />
     </HubDetail>
   );
 }

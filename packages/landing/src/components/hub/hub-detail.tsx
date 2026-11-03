@@ -106,9 +106,12 @@ export function HubDetail({
             <HubPanel title={S.hub.details} flush>
               <dl className="divide-y divide-gray-100 dark:divide-gray-800">
                 {facts.map(({ label, value }) => (
-                  <div key={label} className="px-4 py-2.5">
-                    <dt className="text-xs leading-5 text-gray-500 dark:text-gray-400">{label}</dt>
-                    <dd className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">
+                  <div
+                    key={label}
+                    className="flex items-baseline justify-between gap-4 px-4 py-2.5"
+                  >
+                    <dt className="shrink-0 text-xs text-gray-500 dark:text-gray-400">{label}</dt>
+                    <dd className="min-w-0 text-right text-sm font-medium [overflow-wrap:anywhere]">
                       {value}
                     </dd>
                   </div>
@@ -150,6 +153,18 @@ export function HubPanel({
       </header>
       <div className={flush ? "" : "p-4 sm:p-5"}>{children}</div>
     </section>
+  );
+}
+
+/** A panel title with a count after it, the count in the muted ink. */
+export function CountTitle({ label, count }: { label: string; count: number }) {
+  return (
+    <>
+      {label}
+      <span className="ml-1.5 font-normal text-gray-500 tabular-nums dark:text-gray-400">
+        {count}
+      </span>
+    </>
   );
 }
 

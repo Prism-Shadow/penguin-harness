@@ -1,8 +1,8 @@
 /**
  * The list page the Plugins, Benchmarks and Leaderboards pages share: a title with the source the
- * list is read from, a search box, facets (a side column from 1024 px, rows above the list below
- * it) and the cards. The query, the facets and the order live in the URL, so a filtered list can
- * be linked and Back restores it.
+ * list is read from and, beside it, the search box and the order; facets (a side column from
+ * 1024 px, rows above the list below it) and the cards. The query, the facets and the order live
+ * in the URL, so a filtered list can be linked and Back restores it.
  */
 import { useMemo } from "react";
 import type { ReactNode } from "react";
@@ -128,91 +128,83 @@ export function HubList<T>({
   return (
     <ExternalLinkScope>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {title}
-            <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
-              {items.length}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            {S.hub.source}{" "}
-            <ExternalLink
-              href={source.href}
-              className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
-            >
-              {source.label}
-            </ExternalLink>
-          </p>
+        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {title}
+              <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
+                {items.length}
+              </span>
+            </h1>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {S.hub.source}{" "}
+              <ExternalLink
+                href={source.href}
+                className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
+              >
+                {source.label}
+              </ExternalLink>
+            </p>
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <label className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
+              <span className="sr-only">{S.hub.searchPlaceholder}</span>
+              <SearchIcon
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={S.hub.searchPlaceholder}
+                className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pr-8 pl-8 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 dark:border-gray-800 dark:bg-gray-900 dark:focus:border-brand-400 [&::-webkit-search-cancel-button]:appearance-none"
+              />
+              {query !== "" && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label={S.hub.clearSearch}
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  <XIcon aria-hidden className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
+            {sorts.length > 1 && sort && (
+              <div
+                role="radiogroup"
+                aria-label={S.hub.sortLabel}
+                className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-800 dark:bg-gray-900"
+              >
+                {sorts.map((candidate, index) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={candidate === sort}
+                    onClick={() =>
+                      update((next) =>
+                        index === 0 ? next.delete("sort") : next.set("sort", candidate.id),
+                      )
+                    }
+                    className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
+                      candidate === sort
+                        ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                        : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    }`}
+                  >
+                    {candidate.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </header>
 
-        <div className="mt-8 grid gap-x-8 gap-y-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
-          <div
-            className={`min-w-0 lg:row-start-1 ${offered.length > 0 ? "lg:col-start-2" : "lg:col-span-2"}`}
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="relative min-w-0 flex-1 basis-60">
-                <span className="sr-only">{S.hub.searchPlaceholder}</span>
-                <SearchIcon
-                  aria-hidden
-                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
-                />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={S.hub.searchPlaceholder}
-                  className="w-full rounded-lg border border-gray-200 bg-white py-2 pr-9 pl-9 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 dark:border-gray-800 dark:bg-gray-900 dark:focus:border-brand-400 [&::-webkit-search-cancel-button]:appearance-none"
-                />
-                {query !== "" && (
-                  <button
-                    type="button"
-                    onClick={() => setQuery("")}
-                    aria-label={S.hub.clearSearch}
-                    className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  >
-                    <XIcon aria-hidden className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </label>
-              {sorts.length > 1 && sort && (
-                <div
-                  role="radiogroup"
-                  aria-label={S.hub.sortLabel}
-                  className="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
-                >
-                  {sorts.map((candidate, index) => (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={candidate === sort}
-                      onClick={() =>
-                        update((next) =>
-                          index === 0 ? next.delete("sort") : next.set("sort", candidate.id),
-                        )
-                      }
-                      className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-                        candidate === sort
-                          ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                          : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                      }`}
-                    >
-                      {candidate.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          {offered.length > 0 && (
-            <aside className="flex flex-col gap-5 lg:col-start-1 lg:row-span-2 lg:row-start-1">
-              {facetGroups}
-            </aside>
-          )}
-          <div
-            className={`min-w-0 lg:row-start-2 ${offered.length > 0 ? "lg:col-start-2" : "lg:col-span-2"}`}
-          >
+        <div className="mt-8 grid gap-x-8 gap-y-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
+          {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
+          <div className={`min-w-0 ${offered.length > 0 ? "" : "lg:col-span-2"}`}>
             {shown.length === 0 ? (
               <div className="py-16 text-center text-sm text-gray-600 dark:text-gray-400">
                 <p>{S.hub.empty}</p>
@@ -227,7 +219,7 @@ export function HubList<T>({
                 )}
               </div>
             ) : (
-              <ul className="grid gap-3 md:grid-cols-2">
+              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {shown.map((item) => (
                   <li key={keyOf(item)} className="flex">
                     {renderItem(item)}

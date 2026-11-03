@@ -6,23 +6,14 @@ import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { leaderboards } from "../../lib/hub/data";
 import { formatDay, titleOf } from "../../lib/hub/text";
-import type { ChartKind, LeaderboardSummary } from "../../lib/hub/types";
+import type { LeaderboardSummary } from "../../lib/hub/types";
 import { BENCHMARK_REPO_URL } from "../../lib/links";
 import { S } from "../../lib/strings";
-
-const KINDS: ChartKind[] = ["table", "pareto", "waffle"];
 
 export function LeaderboardsPage() {
   const { locale } = useSiteLocale();
   useDocumentMeta(S.hub.pageTitle(S.hub.leaderboards.title), S.hub.leaderboards.description);
   const facets: HubFacet<LeaderboardSummary>[] = [
-    {
-      id: "chart",
-      label: S.hub.leaderboards.facetChart,
-      values: (board) => board.kinds,
-      valueLabel: (value) => S.hub.leaderboards.charts[value as ChartKind] ?? value,
-      order: KINDS,
-    },
     {
       id: "author",
       label: S.hub.leaderboards.facetAuthor,
@@ -54,9 +45,6 @@ export function LeaderboardsPage() {
         <HubCard
           to={`/leaderboards/${board.id}`}
           title={titleOf(locale, board)}
-          summary={board.kinds
-            .map((kind) => S.hub.leaderboards.charts[kind])
-            .join(S.hub.listSeparator)}
           facts={[
             board.author.name,
             S.hub.leaderboards.entryCount(board.entryCount),

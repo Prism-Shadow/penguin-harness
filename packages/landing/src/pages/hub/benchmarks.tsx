@@ -6,7 +6,7 @@ import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { benchmarks, leaderboards } from "../../lib/hub/data";
 import { timeoutBucket } from "../../lib/hub/filter";
-import { formatDay, pick, titleOf } from "../../lib/hub/text";
+import { formatDay, titleOf } from "../../lib/hub/text";
 import type { BenchmarkSummary } from "../../lib/hub/types";
 import { BENCHMARK_REPO_URL } from "../../lib/links";
 import { S } from "../../lib/strings";
@@ -75,7 +75,6 @@ export function BenchmarksPage() {
         <HubCard
           to={`/benchmarks/${benchmark.id}`}
           title={titleOf(locale, benchmark)}
-          summary={pick(locale, benchmark.description, benchmark.descriptionZh)}
           facts={[
             benchmark.author.name,
             S.hub.benchmarks.taskCount(benchmark.taskCount),

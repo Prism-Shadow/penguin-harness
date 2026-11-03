@@ -6,7 +6,7 @@ import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { plugins } from "../../lib/hub/data";
-import { pick, titleOf } from "../../lib/hub/text";
+import { titleOf } from "../../lib/hub/text";
 import type { PluginSummary } from "../../lib/hub/types";
 import { PLUGINS_SOURCE } from "../../lib/links";
 import { S } from "../../lib/strings";
@@ -88,12 +88,7 @@ export function PluginsPage() {
           to={`/plugins/${plugin.id}`}
           lead={<HubIcon src={plugin.icon} />}
           title={titleOf(locale, plugin)}
-          summary={pick(locale, plugin.short, plugin.shortZh)}
-          facts={[
-            ...(plugin.author ? [plugin.author.name] : []),
-            categoryLabel(plugin.category),
-            `v${plugin.version}`,
-          ]}
+          facts={[...(plugin.author ? [plugin.author.name] : []), `v${plugin.version}`]}
         />
       )}
     />
