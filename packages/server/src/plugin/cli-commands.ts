@@ -199,7 +199,7 @@ async function runPluginCommandOnce(
  * would interpret. The colon is `penguin exec <package>:<id>`'s — the explicit form names
  * the package before the id, and an npm name carries no colon itself.
  */
-const PROG_PATTERN = /^[A-Za-z0-9@/._:-]{1,256}$/;
+const PROG_PATTERN = /^[A-Za-z0-9@/._ :-]{1,256}$/;
 
 export function pluginCliCommandRoutes(commands: PluginCliCommands): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
