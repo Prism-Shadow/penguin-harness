@@ -1047,7 +1047,7 @@ for (const project of projects) {
                       return undefined;
                     }
                   })(),
-                )}`) +
+                )}`);
 
       errors.push(
         `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}'; resolved: ${where})`,
