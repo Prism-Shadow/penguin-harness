@@ -246,7 +246,7 @@ export function MachinesPage() {
   };
   const use = (ids: string[], replaceProgram = false) =>
     post(async (project) => {
-      const answer = await api.useMachines(project, ids, replaceProgram);
+      const answer = await api.useMachinesApi(project, ids, replaceProgram);
       const refused = refusals(answer);
       // Set after `post` clears the error, by way of the microtask order: post awaits this, so
       // its setError(null) runs first and this one stands.

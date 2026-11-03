@@ -12,7 +12,7 @@ import {
 } from "@prismshadow/penguin-web/internal";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "@prismshadow/penguin-web/internal";
-import { WorkspaceSelect } from "../workspace/index.js";
+import { WorkspaceSelect } from "../../workspace/index.js";
 import { sameModelRef } from "@prismshadow/penguin-web/internal";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
