@@ -59,6 +59,18 @@
       ],
       "@prismshadow/penguin-server/ifaces.json": [
         "../../packages/server/src/ifaces.json"
+      ],
+      "@penguinharness/plugin-browser/web": [
+        "../browser/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/web": [
+        "../schedules/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/web": [
+        "../terminal/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-company/web": [
+        "../company/src/web/index.ts"
       ]
     },
     "resolveJsonModule": true
