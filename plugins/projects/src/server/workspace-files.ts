@@ -27,14 +27,7 @@ import type { FileReveal, WorkspaceFiles } from "@prismshadow/penguin-server/int
 import { MAX_UPLOAD_BYTES } from "@prismshadow/penguin-server/internal";
 import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import {
-  badRequest,
-  optionalString,
-  readJson,
-  requireEnum,
-  requireString,
-  requireValidId,
-} from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalString, readJson, requireEnum, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 
 /** What the file handlers reach. */
 export interface WorkspaceFileRouteDeps {

@@ -52,9 +52,9 @@ import type { ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
 import { noteSignIn, signInFor } from "./login.js";
-import { scpArgs, sshArgs } from "@prismshadow/penguin-server/internal";
+import { scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
-import type { RemoteTarget } from "@prismshadow/penguin-server/internal";
+import type { RemoteTarget } from "../commands.js";
 
 /**
  * The verbs a caller speaks to a machine with — what install-server.ts is written against,

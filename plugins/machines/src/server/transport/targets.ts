@@ -11,8 +11,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseHostAliases, parseHostEntries } from "@prismshadow/penguin-server/internal";
-import type { SshHostLines } from "@prismshadow/penguin-server/internal";
+import { parseHostAliases, parseHostEntries } from "../ssh-config.js";
+import type { SshHostLines } from "../ssh-config.js";
 
 const SSH_DIR = () => path.join(os.homedir(), ".ssh");
 

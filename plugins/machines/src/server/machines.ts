@@ -1,4 +1,48 @@
-} from "@prismshadow/penguin-server/internal";
+/**
+ * Machines routes, under a Project (admin only). Relative to `/api/projects/:projectId/machines`:
+ *
+ * GET  /                        — this machine and the ssh config's host aliases, the version
+ *                                 this server would install, the last status probed for each,
+ *                                 and the running or last job.
+ * POST /probe                   — refresh the statuses of this Project's machines (one ssh
+ *                                 round trip each), then answer the list.
+ * POST /:machineId/install      — start an install and give the machine to this Project; 202,
+ *                                 or 409 when one runs.
+ * POST /:machineId/release      — drop it from this Project. The install stays.
+ * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
+ *                                 or 409 when a connect already runs.
+ * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /add                     — put machines in this Project's list, installing nothing.
+ * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
+ * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config, and store
+ *                                 the password it signs in with when one is given; 201.
+ * GET  /ssh-hosts/:alias        — that block read back, whether this app wrote it, and whether a
+ *                                 password is stored for it (never the password).
+ * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote, and set or delete its password;
+ *                                 404 none, 409 hand-written (its password alone may be set).
+ * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
+ * POST /:machineId/stop         — stop that machine's server and stop keeping it connected;
+ *                                 202, or 409.
+ * POST /:machineId/uninstall    — stop it and remove the program, and with `removeData` its
+ *                                 data root; 202, or 409.
+ * POST /:machineId/sync         — hand that connected machine the Project config now; 202, or
+ *                                 409 (`not_connected`, `job_running`, …).
+ * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
+ *                                 nothing on it; 200, or 409 while a job works on it.
+ * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
+ *
+ * Under a Project because the page is, and because this Project's config, its Model
+ * credentials included, goes to this Project's machines and no others (machines/models-sync.ts). The machine itself is not
+ * project-scoped: connect, disconnect and dirs act on one host, shared by every Project using
+ * it; what a Project owns is the membership.
+ *
+ * Admin rather than any logged-in user: installing spawns ssh with the SERVER ACCOUNT's keys
+ * and writes a program directory on another machine — an owner's capability, not a visitor's.
+ */
+import { Hono } from "hono";
+import type { Context } from "hono";
+import type { DirListResponse, MachineDiagnosis, MachineUninstallRequest, MachinesResponse, MachinesUseResponse, SshHostResponse, SshHostsResponse } from "@prismshadow/penguin-server/api";
+
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { requireValidId } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";

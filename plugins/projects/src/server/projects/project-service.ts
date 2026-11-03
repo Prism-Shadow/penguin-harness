@@ -1,4 +1,33 @@
-} from "@prismshadow/penguin-server/internal";
+/**
+ * Project service.
+ *
+ * The single implementation point for authorization rules: `requireProjectAccess`
+ * (owner or member, otherwise 404 without leaking existence) and
+ * `requireProjectOwner` (owner only; 403 when known to be accessible, 404 when not)
+ * are reused by every route; the non-throwing `canAccess` (for error attribution)
+ * is likewise just a sibling wrapper around them — all three share the single
+ * `resolveAccess` decision, with no second rule set maintained separately.
+ * Also handles Project create / list / delete, member authorization, and initial
+ * Project provisioning at signup.
+ */
+import fs from "node:fs/promises";
+import {
+  DEFAULT_PROJECT_ID,
+  projectDir,
+  provisionProjectAgents,
+  provisionProjectBenchmarks,
+  type BuiltinBenchmark,
+} from "@prismshadow/penguin-core";
+import type { MemberInfo, ProjectRole, ProjectSummary } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import type { ProjectRow } from "@prismshadow/penguin-server/internal";
+import type { UserRow } from "@prismshadow/penguin-server/internal";
+import type { SessionManager } from "@prismshadow/penguin-server/internal";
+import { PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN, SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "@prismshadow/penguin-server/internal";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { Access, AgentIndex, Members, ProjectConfigStore, ProjectLifecycle, Projects } from "@prismshadow/penguin-server/internal";
+
 import type { Users } from "@prismshadow/penguin-server/internal";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { ErrorLog, UsageStore } from "@prismshadow/penguin-server/internal";

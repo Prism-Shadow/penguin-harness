@@ -38,11 +38,11 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
-import { sessionArgs } from "@prismshadow/penguin-server/internal";
-import type { RemoteTarget } from "@prismshadow/penguin-server/internal";
+import { sessionArgs } from "../commands.js";
+import type { RemoteTarget } from "../commands.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
-import { sshFailureText } from "@prismshadow/penguin-server/internal";
+import { sshFailureText } from "../ssh-failure.js";
 import { noteSignIn, signInFor } from "./login.js";
 import type { SignIn } from "./login.js";
 

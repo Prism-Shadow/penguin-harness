@@ -8,5 +8,7 @@ export type { MachinesEffects } from "./service.js";
 export { machinesRoutes } from "./machines.js";
 export type { MachinesRouteDeps } from "./machines.js";
 export { readMachineStatus } from "./machine-status.js";
+export type { Machines } from "./service.js";
+export { carriedStore } from "./install-server.js";
 export type { MachineStatus } from "./machine-status.js";
 export * from "./layout.js";

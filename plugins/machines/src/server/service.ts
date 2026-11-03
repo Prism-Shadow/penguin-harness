@@ -1,3 +1,133 @@
+/**
+ * The machines service: this server's own `~/.ssh/config` as a list of targets, and putting
+ * this build on one of them, reaching it, and keeping it configured.
+ *
+ * ONE JOB per machine at a time — an install, a connect, a stop — started by POST, a few
+ * machines worked on at once, each job's progress pushed to the page as it goes
+ * (`machines_changed`). The job lives in this App's memory; what it achieved is in web.db
+ * (MachinesRepo): which machines carry this program, the session held to each, and which
+ * Project uses which. Every word to a machine leaves through its MachineConnection
+ * (transport/connection.ts) — ONE ssh session per machine, carrying commands on its stdin
+ * and every TCP connection as a channel through its SOCKS port — and every request to a
+ * machine's API is made as its admin, with a session this server mints over the ssh access
+ * that installed it.
+ *
+ * The JOB is not persisted. It lives in this App's memory and dies with it (see the park
+ * list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during an install
+ * loses the progress log, and the recovery is to run it again, which is safe because every
+ * step is idempotent — the far side's installer stages, smoke-tests and swaps, and an
+ * unchanged version is a no-op.
+ *
+ * A machine BELONGS TO A PROJECT. The host is shared — one program, one ssh config entry —
+ * but which Projects use it is this server's own bookkeeping, because a Project's machines
+ * are where that Project's work runs. A host installed for another Project is reported as
+ * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
+ * 30 MB transfer to reach the same place.
+ */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  DEFAULT_PROJECT_ID,
+  VERSION,
+  effectivePluginTable,
+  loadProjectConfig,
+} from "@prismshadow/penguin-core";
+import type { ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
+import type {
+  SshHostSummary,
+  MachineCheck,
+  MachineConfigSync,
+  MachineDiagnosis,
+  MachineEnvOnly,
+  MachineInfo,
+  MachineSkippedModel,
+  MachineJob,
+  MachinePhase,
+  MachineReconnect,
+  MachineServerStatus,
+  MachineSshFailure,
+  MachineUseRefusal,
+  MachinesCheckoutImage,
+  ServerEvent,
+} from "@prismshadow/penguin-server/api";
+import { readServerLock } from "@prismshadow/penguin-server/internal";
+import { SESSION_COOKIE } from "@prismshadow/penguin-server/internal";
+import http from "node:http";
+import {
+  appendHostBlock,
+  closeAllConnections,
+  SESSION_GROUP,
+  attachSessionRegistry,
+  closeConnectionTo,
+  connectionTo,
+  forgetRefusal,
+  heldSessionOf,
+  listHostAliases,
+  listHostEntries,
+  onSessionChange,
+  passwordSignIn,
+  readSshConfig,
+  writeSshConfig,
+} from "./transport/index.js";
+import type {
+  AskpassPlan,
+  ExecResult,
+  MachineConnection,
+  SessionListener,
+  ShellSession,
+} from "./transport/index.js";
+import { SshPasswords, passwordProblem } from "./ssh-passwords.js";
+import {
+  findHostBlock,
+  machineIdentity,
+  renderHostBlock,
+  replaceHostBlock,
+  sameHostEntry,
+  validateHostEntry,
+} from "./ssh-config.js";
+import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
+import { DIR_LIST_MARK, listDirsCommand, uninstallCommand } from "./commands.js";
+import type { RemoteTarget } from "./commands.js";
+import {
+  detectRemote,
+  installOnRemote,
+  resolvePushPlan,
+  runningBuild,
+  runsPlan,
+  sameBuild,
+  shippedImage,
+} from "./install-server.js";
+import { parseProbeOutput, posixProbe } from "./detect.js";
+import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
+import type { SshFailureReason } from "./ssh-failure.js";
+import { diagnoseCommand, parseDiagnosis, sshFailureChecks } from "./diagnose.js";
+import type { CarryRelease, PushPlan, RunningBuild } from "./install-server.js";
+import { releaseCache } from "./release-cache.js";
+import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
+import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
+import { ShippedImage } from "./shipped-image.js";
+import { probeServerState } from "./server-state.js";
+import { upgradeRemote } from "./upgrade.js";
+import type { UpgradeOutcome } from "./upgrade.js";
+import { mintTokenOnRemote } from "./remote-token.js";
+import { envSourced, syncModelsToMachine } from "./models-sync.js";
+import { syncPluginsToMachine, type WantedPlugin } from "./plugins-sync.js";
+import type { LocalModels } from "./models-sync.js";
+import { localSettings, syncSettingsToMachine } from "./settings-sync.js";
+import { machineApi } from "./machine-api.js";
+import type { MachineApi } from "./machine-api.js";
+import { ADOPTED_AT_HEADER } from "@prismshadow/penguin-server/internal";
+import { startRemoteServer, stopRemoteServer } from "./server-control.js";
+import type { MachineRow } from "@prismshadow/penguin-server/internal";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { machinesRoutes } from "./machines.ts";
+import { machinesProxy } from "./proxy.js";
+import type { ProxyTarget } from "./proxy.js";
+
 import { MachineEventRelay } from "./event-relay.js";
 import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";

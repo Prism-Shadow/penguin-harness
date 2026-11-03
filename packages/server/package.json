@@ -1,12 +1,118 @@
-    "@penguinharness/plugin-company": "workspace:*",
-    "@penguinharness/plugin-terminal": "workspace:*",
-    "@penguinharness/plugin-browser": "workspace:*",
-    "@penguinharness/plugin-usage": "workspace:*",
-    "@penguinharness/plugin-machines": "workspace:*",
-    "@penguinharness/plugin-workbenches": "workspace:*",
-    "@penguinharness/plugin-projects": "workspace:*",
-    "@penguinharness/plugin-schedules": "workspace:*",
-
+{
+  "name": "@prismshadow/penguin-server",
+  "version": "0.2.18",
+  "type": "module",
+  "description": "PenguinHarness web server: multi-user authentication and authorization, Session execution with SSE streaming, and usage accounting, built on @prismshadow/penguin-core.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/server"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api/types.d.ts",
+      "import": "./dist/api/types.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
+    },
+    "./machine-status": {
+      "types": "./dist/machine-status.d.ts",
+      "import": "./dist/machine-status.js"
+    },
+    "./lock": {
+      "types": "./dist/lock.d.ts",
+      "import": "./dist/lock.js"
+    },
+    "./initial-password": {
+      "types": "./dist/initial-password.d.ts",
+      "import": "./dist/initial-password.js"
+    },
+    "./reset-admin-password": {
+      "types": "./dist/reset-admin-password.d.ts",
+      "import": "./dist/reset-admin-password.js"
+    },
+    "./hmr/manifest": {
+      "types": "./dist/hmr/manifest.d.ts",
+      "import": "./dist/hmr/manifest.js"
+    },
+    "./harness-meta": {
+      "types": "./dist/harness-meta.d.ts",
+      "import": "./dist/harness-meta.js"
+    },
+    "./cli-shim": {
+      "types": "./dist/cli-shim.d.ts",
+      "import": "./dist/cli-shim.js"
+    },
+    "./version-report": {
+      "types": "./dist/version-report.d.ts",
+      "import": "./dist/version-report.js"
+    },
+    "./auth-token": {
+      "types": "./dist/auth-token.d.ts",
+      "import": "./dist/auth-token.js"
+    },
+    "./secret-file": {
+      "types": "./dist/secret-file.d.ts",
+      "import": "./dist/secret-file.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./dist/plugin/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- node ../../scripts/dev-server.mjs src/index.ts",
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js",
+    "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
+    "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.5",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@penguinharness/a2ui": "workspace:*",
+    "@penguinharness/ace-rsi-toolkit": "workspace:*",
+    "@penguinharness/agent-company": "workspace:*",
+    "@penguinharness/agent-development": "workspace:*",
+    "@penguinharness/agent-evaluation": "workspace:*",
+    "@penguinharness/ape-rsi-toolkit": "workspace:*",
+    "@penguinharness/awm-rsi-toolkit": "workspace:*",
+    "@penguinharness/browser-automation": "workspace:*",
+    "@penguinharness/continual-learning": "workspace:*",
+    "@penguinharness/data-analysis": "workspace:*",
+    "@penguinharness/default-rsi-toolkit": "workspace:*",
+    "@penguinharness/goal": "workspace:*",
+    "@penguinharness/humanizer": "workspace:*",
+    "@penguinharness/model-development": "workspace:*",
+    "@penguinharness/openskill-rsi-toolkit": "workspace:*",
+    "@penguinharness/opro-rsi-toolkit": "workspace:*",
+    "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/skill-porting": "workspace:*",
+    "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
+    "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
+    "@penguinharness/software-development": "workspace:*",
+    "@penguinharness/trace-rsi-toolkit": "workspace:*",
+    "@penguinharness/use-bento-slides": "workspace:*",
+    "@penguinharness/use-firecrawl": "workspace:*",
+    "@penguinharness/use-claude-code": "workspace:*",
+    "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
@@ -27,8 +133,13 @@
     "ws": "^8.18.3",
     "yaml": "^2.5.0",
     "@penguinharness/plugin-browser": "workspace:*",
+    "@penguinharness/plugin-company": "workspace:*",
+    "@penguinharness/plugin-machines": "workspace:*",
+    "@penguinharness/plugin-projects": "workspace:*",
+    "@penguinharness/plugin-schedules": "workspace:*",
+    "@penguinharness/plugin-terminal": "workspace:*",
     "@penguinharness/plugin-usage": "workspace:*",
-    "@penguinharness/plugin-schedules": "workspace:*"
+    "@penguinharness/plugin-workbenches": "workspace:*"
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",

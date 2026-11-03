@@ -1,24 +1,129 @@
-} from "@prismshadow/penguin-server/internal";
-import { detectModelProtocol } from "@prismshadow/penguin-server/internal";
-
+/**
+ * `.project_config.toml` read/write (single hidden config file).
+ *
+ * Doesn't reuse core's loadProjectConfig/saveProjectConfig (they only keep known
+ * fields): reads and writes the complete object directly via smol-toml, preserving
+ * extension fields like `name`. Connection values (api_key / base_url / client_type) live in
+ * two layers of the same file: once per group in `[providers.<id>]`, and on a model entry
+ * only where that model overrides its group (core's effectiveConnection resolves them, row ->
+ * group -> none, per field). The built-in catalog is a reference written into the file — a new
+ * Project, "Add new models", "Restore defaults" — and never read when a request is built: the
+ * file is the only truth. There's no supplementary section or secrets file; since the
+ * file contains secrets, it's always written with mode 0600. Plaintext only ever hits disk,
+ * and is always masked in responses.
+ *
+ * Model references are **fully split into separate fields**: an entry is
+ * stored as two independent fields, `provider` and `model_id`; the `(provider,
+ * model_id)` pair is the entry's unique key. `model_id` is the upstream request id,
+ * sent to MMSP verbatim — string concatenation like `<provider>/<id>` is
+ * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
+ * provider, model_id }` paired references (TOML tables).
+ *
+ * Reads are memoized on the file's mtime (see readTable): every consumer of this
+ * service — scheduler model-ref validation, the models/schedules routes, usage
+ * pricing — shares one parsed table per on-disk version instead of re-reading and
+ * re-parsing the TOML per call. The service's own writes all funnel through
+ * `writeRaw`, which invalidates synchronously; external edits (CLI, hand edits) are
+ * caught by the stat. The cached table is shared between callers and must be treated
+ * as immutable — every mutating method here copies before changing.
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import {
-  VISION_PROBE_IMAGE,
-  VISION_PROBE_MAX_TOKENS,
-  VISION_PROBE_PROMPT,
-  VISION_PROBE_TIMEOUT_MS,
-  classifyVisionProbe,
-  classifyVisionProbeError,
-} from "@prismshadow/penguin-server/internal";
+  CHAT_APPROVAL_MODES,
+  atomicWriteFile,
+  DEFAULT_CHAT_THINKING_LEVELS,
+  DEFAULT_COMMAND_POLICY_RULES,
+  effectiveCommandPolicyRules,
+  parseCommandPolicy,
+  parsePluginTables,
+  pluginTablesToToml,
+  GenerativeModel,
+  canonicalClientType,
+  listEndpointModels as coreListEndpointModels,
+  MODELSCOPE_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
+  catalogEntryFor,
+  catalogGroupConnection,
+  defaultProjectConfig,
+  effectiveConnection,
+  groupKeyReaches,
+  imageUrlMessage,
+  metaMaxTokens,
+  migrateProjectConfigTable,
+  migratePenguinGoRoutes,
+  parseProviderTable,
+  presetModelEntries,
+  presetPromotions,
+  projectConfigFromTable,
+  retainedCatalogPricing,
+  projectConfigPath,
+  providerConnectionShape,
+  renderProjectConfigToml,
+  modelEnvFallback,
+  modelEnvPreviewKey,
+  resolveEntryCredential,
+  userText,
+} from "@prismshadow/penguin-core";
+import {
+  VENDOR_ENDPOINTS,
+  fixedClientType,
+  fixedClientTypeRefuses,
+  providerInfo,
+  sameClientType,
+  sameEndpoint,
+  unaddableModel,
+  unroutableVendorModel,
+} from "@prismshadow/penguin-core/model-catalog";
+import type {
+  PluginTables,
+  CommandPolicyRule,
+  GenerativeModelConfig,
+  LLMOutcome,
+  ModelRequestContext,
+  ModelRef,
+  OmniMessage,
+  ModelEntry,
+  ProjectConfig,
+  ProviderConnection,
+  ProviderConnectionShape,
+  ProviderTable,
+} from "@prismshadow/penguin-core";
+import type {
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelEffectiveConnection,
+  ModelInfo,
+  ModelPricingDto,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelRefDto,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
+} from "@prismshadow/penguin-server/api";
+import { badRequest } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { cacheable } from "@prismshadow/penguin-server/internal";
+import type { PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog } from "@prismshadow/penguin-server/internal";
+
+import { VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError } from "@prismshadow/penguin-server/internal";
+
 import type { PricingRates, TieredRates } from "@penguinharness/plugin-usage/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type {
-  ModelPromotion,
-  ModelProviderAuthToken,
-  ModelProviderAuthTokens,
-  ModelPromotions,
-  ProjectConfigStore,
-} from "@prismshadow/penguin-server/internal";
+import type { ModelPromotion, ModelProviderAuthToken, ModelProviderAuthTokens, ModelPromotions, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 export type RawTable = Record<string, unknown>;
 

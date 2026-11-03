@@ -12,7 +12,7 @@ import { jsonAnswer } from "./answer.js";
 import type { RemoteTarget } from "./commands.js";
 import type { RemotePlatform } from "./detect.js";
 import type { ExecResult } from "./transport/index.js";
-import type { MachineStatus } from "None";
+import type { MachineStatus } from "./machine-status.js";
 
 /**
  * `2>&1` so the far side's own complaint (an old build with no such subcommand, a launcher

@@ -38,7 +38,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/internal";
+import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { requireValidId } from "@prismshadow/penguin-server/internal";
