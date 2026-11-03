@@ -28,6 +28,7 @@
  * desktop app, and the user's Chrome is paired with the server they signed in to, so a server
  * started here would have neither.
  * Docs: /docs/cli § "penguin browser".
+ */
 
 import type { Command } from "commander";
 import type {
@@ -79,6 +80,10 @@ import {
   BASE,
   STDIN_GRACE_MS,
 } from "./browser-args.js";
+import fs from "node:fs";
+import path from "node:path";
+import { BrowserCliError, errorText } from "./browser-args.js";
+import type { CommonOpts } from "./browser-args.js";
 
 export function registerBrowserCommand(browser: Command, t: Messages): void {
   /** `--json` and `--server`, which every leaf takes, after its own options. */
