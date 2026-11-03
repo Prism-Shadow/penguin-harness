@@ -7,6 +7,8 @@
  * - Given a draft on a machine's Workspace, the first send creates the Session on that machine,
  *   starts its task there, lists the row, opens the conversation, clears the draft and hands the
  *   draft's docks to the new Session.
+ * - Given the send succeeds, the Workspace (and its machine) carries over to the next
+ *   conversation; a local Workspace carries over with no machine attached.
  * - Given the create refused, nothing else is sent, no row is listed, the page stays on the draft
  *   with the text in the composer, and one toast says why.
  * - Given the task refused after the create, the Session just created is deleted, and once the
@@ -60,10 +62,10 @@ afterEach(async () => {
 const errorToasts = () => toastStore.getState().items.filter((t) => t.kind === "error");
 const composer = () => document.querySelector("textarea")!;
 
-/** The draft page with `text` typed, its Send live. `onMachine` puts the Workspace on the machine. */
-async function draftReady(text: string, onMachine = false) {
-  if (onMachine) {
-    saveDraft(DRAFT_KEY, { agentId: AGENT_ID, workspace: "/srv/app", machineId: MACHINE });
+/** The draft page with `text` typed, its Send live. `seed` pre-picks the Workspace (and its machine). */
+async function draftReady(text: string, seed?: { workspace: string; machineId?: string }) {
+  if (seed !== undefined) {
+    saveDraft(DRAFT_KEY, { agentId: AGENT_ID, ...seed });
   }
   const router = await mountDraft();
   await waitFor(() => composer() !== null);
@@ -75,7 +77,10 @@ async function draftReady(text: string, onMachine = false) {
 describe("a new conversation's first send", () => {
   it("creates the Session on the Workspace's machine, starts it there, lists it and opens it", async () => {
     const world = draftWorld();
-    const router = await draftReady("Look at the build", true);
+    const router = await draftReady("Look at the build", {
+      workspace: "/srv/app",
+      machineId: MACHINE,
+    });
     await click(send());
     await waitFor(() => whereIs(router) === "/chat/session-1", 40);
 
@@ -87,7 +92,25 @@ describe("a new conversation's first send", () => {
     ]);
     expect(listedRows()).toContain("session-1");
     expect(loadDraft(DRAFT_KEY).text).toBeUndefined();
+    // Sticky Workspace: the next conversation starts where this one did, on its machine;
+    // the agent re-seeds from the Project defaults.
+    expect(loadDraft(DRAFT_KEY).workspace).toBe("/srv/app");
+    expect(loadDraft(DRAFT_KEY).machineId).toBe(MACHINE);
+    expect(loadDraft(DRAFT_KEY).agentId).toBeUndefined();
     expect(currentDockScope()).toBe("session-1");
+  });
+
+  it("carries a local Workspace over with no machine attached", async () => {
+    const world = draftWorld();
+    const router = await draftReady("Look at the build", { workspace: "/srv/local" });
+    await click(send());
+    await waitFor(() => whereIs(router) === "/chat/session-1", 40);
+
+    expect(
+      world.creates().map((r) => [r.machine, (r.body as { workspace?: string }).workspace]),
+    ).toEqual([[null, "/srv/local"]]);
+    expect(loadDraft(DRAFT_KEY).workspace).toBe("/srv/local");
+    expect(loadDraft(DRAFT_KEY).machineId).toBeUndefined();
   });
 
   it("sends nothing else when the create is refused, lists nothing, and keeps the text", async () => {
@@ -150,7 +173,10 @@ describe("a new conversation's first send", () => {
   it("lists and opens a self-healed id, still addressed to the machine", async () => {
     const world = draftWorld();
     world.healNext();
-    const router = await draftReady("Look at the build", true);
+    const router = await draftReady("Look at the build", {
+      workspace: "/srv/app",
+      machineId: MACHINE,
+    });
     await click(send());
     await waitFor(() => whereIs(router) === "/chat/session-1-healed", 40);
 
