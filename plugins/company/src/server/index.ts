@@ -12,6 +12,7 @@ import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/service.
 import type { OrgCache } from "@prismshadow/penguin-server/internal";
 
 export { OrgRuns, OrgSessions } from "./runtime/deps.js";
+export { OrgService, OrgScheduler } from "./runtime/service.js";
 
 @Module({
   children: [OrgCacheRepo, OrganizationModule, OrgRoutes],
