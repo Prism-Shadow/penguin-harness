@@ -46,7 +46,7 @@ import type {
   ModelOAuthMode,
   ModelOAuthStartResult,
   ModelOAuthStatus,
-} from "../services/model-oauth-service.js";
+} from "@penguinharness/plugin-models/server";
 
 /** Projects: the mechanism ProjectsRepo implements. */
 @Interface()

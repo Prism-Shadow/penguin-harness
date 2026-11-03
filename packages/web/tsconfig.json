@@ -53,6 +53,9 @@
       ],
       "@penguinharness/plugin-models/web/*": [
         "../../plugins/models/src/web/*"
+      ],
+      "@penguinharness/plugin-models/server": [
+        "../../plugins/models/src/server/index.ts"
       ]
     }
   },

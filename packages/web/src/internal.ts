@@ -167,4 +167,3 @@ export * from "./lib/model-catalog-sync.js";
 export * from "./lib/model-peak-windows.js";
 export * from "./lib/session-order.js";
 export * from "./lib/sidebar-contributions.js";
-export * from "./features/todos/index.js";

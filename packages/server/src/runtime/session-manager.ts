@@ -98,7 +98,7 @@ import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
 import { SessionService } from "../services/session-service.js";
-import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
+import { ModelScopeAuth } from "@penguinharness/plugin-models/server";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";

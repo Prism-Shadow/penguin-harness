@@ -10,7 +10,7 @@ import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import {
   compactionTally,
   heldThinkingSwitch,

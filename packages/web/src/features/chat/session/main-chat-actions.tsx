@@ -10,7 +10,7 @@ import type { StreamRenderContext } from "../message-stream";
 import type { ForkTarget } from "../task-stats-line";
 import { prepareNewChatDraft } from "../new-chat";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { turnPricing, sameModelRef } from "../../models";
+import { turnPricing, sameModelRef } from "@penguinharness/plugin-models/web";
 import { openPanel } from "../../dock";
 import type { useMainChatControls } from "./main-chat-controls";
 

@@ -87,7 +87,7 @@ import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "../../model-picker";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import { FilesPanelToggle } from "../dock-toggles";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;

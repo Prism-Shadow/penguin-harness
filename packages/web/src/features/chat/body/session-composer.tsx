@@ -13,7 +13,7 @@ import type {
   SessionInfo,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { sessionThinkingLevel } from "../../model-picker";
 import { ChatInput, type ComposerControl } from "../chat-input";
 
