@@ -50,7 +50,8 @@ import {
   resolveConnection,
   resolveProjectId,
   ServerClient,
-  getMessages} from "@prismshadow/penguin-server/cli";
+  getMessages,
+} from "@prismshadow/penguin-server/cli";
 import { renderTable } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";

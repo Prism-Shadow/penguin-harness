@@ -318,7 +318,11 @@ export function collect(value: string, previous: string[]): string[] {
  * `import --from`: a source id as `--list` prints it, or a browser, which means its Default
  * profile — or its only one.
  */
-export async function resolveSource(client: ServerClient, from: string, t: Messages): Promise<string> {
+export async function resolveSource(
+  client: ServerClient,
+  from: string,
+  t: Messages,
+): Promise<string> {
   if (from.includes(":")) return from;
   const { sources } = await client.request<BuiltinBrowserImportSourcesResponse>(
     "GET",

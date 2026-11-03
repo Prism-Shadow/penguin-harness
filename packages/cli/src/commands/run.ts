@@ -42,7 +42,8 @@ import {
   denyActivePrompt,
   promptApproval,
   resolveApprovalMode,
-  getMessages} from "@prismshadow/penguin-server/cli";
+  getMessages,
+} from "@prismshadow/penguin-server/cli";
 import {
   connectionLabel,
   resolveAgentId,
@@ -65,7 +66,6 @@ import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
-
 
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
