@@ -33,6 +33,10 @@
  *   first, and never one held; a copy of a file's tail counts up to its highest offset.
  * - Given a commit and an eviction of the same Session at once, then the copy is gone and
  *   nothing comes back after it.
+ * - Given a Session not read for 8 days and one read 6 days ago, when the copies past their
+ *   retention go, then only the first goes, and a machine directory that leaves empty goes too.
+ * - Given a cache that never held anything, when its retention is checked, then it makes no
+ *   directory.
  * - Given ids that differ only by case, or a Windows device name, then each is its own directory.
  * - Given a directory that cannot open, then each use fails until it can, and then it works.
  * - Given a machine dropped, then nothing of it remains; given the sweep at start, then every
@@ -54,6 +58,7 @@ import {
 } from "../src/services/history-wire.js";
 import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
+const DAY = 24 * 60 * 60 * 1000;
 const M = "machine-a";
 const S = "session-1";
 const K = `default_agent/${S}/1`;
@@ -472,7 +477,7 @@ describe("the hub's copy of a machine's Trace lines", () => {
       const k = `default_agent/${session}/1`;
       await cache.reconcile(M, session, [{ ...fact(file.bytes, 4), k }]);
       await cache.commit(M, linesFrame(file, 0, 4, k));
-      cache.touch(M, [session]);
+      await cache.touch(M, [session]);
     }
     const held = (session: string) => cache.bytes(M, `default_agent/${session}/1`, 0, 1);
 
@@ -508,6 +513,36 @@ describe("the hub's copy of a machine's Trace lines", () => {
     await expect(fs.access(path.dirname(dataPath(M, S)))).rejects.toThrow();
     expect(await new TraceCache(root).bytes(M, K, 0, 10)).toBeNull();
     expect(cache.usedBytes).toBe(0);
+  });
+
+  it("deletes the copy of a Session not read for a week, and the machine directory that leaves empty", async () => {
+    let now = 0;
+    const file = traceFile(2);
+    const cache = new TraceCache(root, { now: () => now });
+    /** A Session's file brought over and read, as a stream does it. */
+    const read = async (machineId: string, sessionId: string) => {
+      const k = `default_agent/${sessionId}/1`;
+      await cache.reconcile(machineId, sessionId, [{ ...fact(file.bytes, 2), k }]);
+      await cache.commit(machineId, linesFrame(file, 0, 2, k));
+      await cache.touch(machineId, [sessionId]);
+    };
+    await read("machine-gone", "s-stale");
+    await read(M, "s-stale");
+    now = 2 * DAY;
+    await read(M, "s-read");
+
+    now = 8 * DAY;
+    await cache.expire(() => new Set());
+    expect(await cache.bytes("machine-gone", "default_agent/s-stale/1", 0, 1)).toBeNull();
+    expect(await cache.bytes(M, "default_agent/s-stale/1", 0, 1)).toBeNull();
+    expect(await cache.bytes(M, "default_agent/s-read/1", 0, 1)).not.toBeNull();
+    expect((await fs.readdir(root)).sort()).toEqual(["VERSION", dirNameOf(M)].sort());
+    expect(cache.usedBytes).toBe(file.bytes.length);
+  });
+
+  it("makes no directory when its retention is checked and it never held anything", async () => {
+    await new TraceCache(root).expire(() => new Set());
+    await expect(fs.access(root)).rejects.toThrow();
   });
 
   it("gives ids that differ only by case, and device names, their own directories", async () => {
