@@ -31,9 +31,9 @@ import type {
   WeChatScanPollResponse,
 } from "@prismshadow/penguin-server/api";
 import { Button, Input, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
+import * as api from "@penguinharness/penguin-web/internal";
+import { apiErrorText } from "@penguinharness/penguin-web/internal";
+import { S } from "@penguinharness/penguin-web/internal";
 import { QrCode } from "./qq-scan-connect";
 
 /**

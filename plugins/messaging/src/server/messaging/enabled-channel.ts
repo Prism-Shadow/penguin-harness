@@ -5,8 +5,8 @@
  * `OrgDeskItem.messagingChannel`. A saved-but-disabled config marks nothing, and neither does
  * a stored channel id that is not a `MessagingChannel`.
  */
-import type { MessagingChannel } from "../../api/types.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import type { MessagingChannel } from "@prismshadow/penguin-server/api";
+import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
 
 /**
  * Every channel id, keyed so that a `MessagingChannel` added without an entry here fails

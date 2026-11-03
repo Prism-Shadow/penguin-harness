@@ -70,21 +70,21 @@ import type {
   WeChatScanPollResponse,
   WeChatScanStartResponse,
   WeChatTestResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
-import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
-import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import type { SessionRow } from "@prismshadow/penguin-server/internal";
+import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../messaging/feishu-connector.js";
+import { telegramBotIdOf } from "../messaging/telegram-connector.js";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
-import { HttpError } from "../errors.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import {
   badRequest,
   optionalBoolean,
   optionalString,
   readJson,
   requireString,
-} from "../validate.js";
+} from "@prismshadow/penguin-server/internal";
 import {
   commonBindingFields,
   deliveryPatchOf,
@@ -92,15 +92,15 @@ import {
   resolveSecret,
 } from "./messaging-channels.js";
 import type { MessagingChannelSpec } from "./messaging-channels.js";
-import type { MessagingChannel } from "../../runtime/messaging/connector.js";
-import { MessagingNeedsRecentMessageError } from "../../runtime/messaging/connector.js";
-import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
-import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
-import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
-import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { MessagingChannel } from "../messaging/connector.js";
+import { MessagingNeedsRecentMessageError } from "../messaging/connector.js";
+import { isMessagingChannel } from "../messaging/enabled-channel.js";
+import type { WeChatScanService } from "../messaging/wechat-scan.js";
+import type { MessagingBridge } from "../messaging/bridge.js";
+import type { QQScanService } from "../messaging/qq-scan.js";
+import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@penguinharness/plugin-projects/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MessagingRouteDeps {

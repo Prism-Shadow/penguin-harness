@@ -1,91 +1,17 @@
-/**
- * Messaging bridge: a Web server runtime component connecting Sessions to external chat
- * platforms through channel connectors (Feishu, Telegram, QQ and WeChat today — see
- * feishu-connector.ts / telegram-connector.ts / qq-connector.ts). Started by the platform next to the
- * Scheduler, stopped when the
- * App is disposed — a hot swap hard-stops it like the scheduler. A Session may keep a
- * saved config per channel, but AT MOST ONE of them is enabled (the state route enforces
- * that), so the bridge holds at most one inbound event connection per Session — the
- * enabled binding's. `enabled` is stored intent the state toggle owns — saving
- * credentials never opens or closes a connection (with one deliberate exception:
- * re-saving an enabled binding restarts its connector with the new credentials, so the
- * stored config and the live connection never diverge).
- *
- * Inbound (channel → Session): a message the binding has already processed is dropped
- * first (see RecentInboundIds, seeded from the binding row so a restart does not forget) —
- * channels redeliver, and nothing downstream of here is idempotent. Then every inbound
- * message records its chat as the binding's reply target; a text message then starts a
- * Task on the bound Session as an ordinary user input — exactly as if typed into the web
- * composer, no marker block and no special sender (the model deliberately does not learn
- * where the message came from) — with `queueIfBusy`: a busy Session queues it as a
- * follow-up, never 409. A message carrying images becomes that same composer input with
- * the pictures attached: the caption's text (when there is one) plus one `image_url` part
- * per image, as a base64 `data:` URL, which is byte for byte the shape the web composer
- * submits. A message carrying FILES becomes the composer's other attachment shape: each
- * one is written into the Session scratchpad and named on the message text as an
- * `[attached file: <path>]` line, so the model opens it with its ordinary file tools and
- * the bytes never enter the conversation (see services/task-attachments.ts, which owns
- * that path and its caps for the web composer too). The three combine — text, images and
- * files in one message compose one input — and a message with none of them (sticker,
- * voice, video) gets a polite bilingual "not supported" reply. Only once that work is done
- * is the binding row's watermark advanced, so a process that dies mid-message has the
- * channel replay it rather than find it already marked.
- *
- * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
- * and relays the main conversation's completed assistant messages — by default each of them
- * on its own, the moment it completes: a run that writes working notes between tool calls
- * before its answer reaches the chat as that same sequence of messages, so the chat follows
- * the run as it happens. A binding with `finalReplyOnly` set holds them back instead and
- * delivers the run's LAST completed assistant text alone, at the run's end: the answer
- * without the working notes, at the cost of the chat hearing nothing while the run works.
- * Either way delivery is the same path — sent to the last known chat (a held reply to the chat
- * its run was ASKED in, captured at the run's start: it leaves late enough for another message
- * to have moved the conversation elsewhere), chunked under the channel's text-size limits, or,
- * when the binding's `linePerMessage` is set, split into one message per non-blank line first,
- * each of those chunked and the resulting burst paced (the two options compose: a binding with
- * both sends that final reply one message per line). With the binding's `renderMarkdown` set
- * (the default) each message additionally carries a request to render it: the connector
- * converts the model's Markdown into its own channel's markup and falls back to sending the
- * plain source if the channel refuses the result, so formatting is the only thing a rendering
- * failure can cost, and the chunking follows the request, cutting at boundaries the document
- * actually has (see markdown.ts). The outbound traffic of one entry is
- * serialised through a promise chain:
- * several messages completing in quick succession must reach the chat in the order they
- * completed. In a group chat the run's FIRST outbound message threads onto the inbound
- * one and everything after it is a plain send — one reply-to anchors the exchange, where
- * repeating it per message would stack a quote header over each of them; a direct chat is
- * plain sends throughout. Mirroring needs a known chat — web-initiated turns included;
- * before the first inbound message no chat is known and nothing is sent. Compaction output
- * (the summary the model streams between compaction events) is not a reply and is skipped,
- * and a connection joining mid-run relays nothing from that run rather than mirroring half a
- * reply. An `approval_request` additionally sends a one-line notice that a tool call is
- * waiting in the web UI — on the same chain, so it lands between replies instead of inside
- * one. That notice is not an assistant message, so `finalReplyOnly` never holds it: a run
- * blocked on approval is exactly when the chat must hear something.
- *
- * When the run ends, the files ITS DELIVERED TEXT mentioned follow it into the chat (see
- * reply-files.ts): path-like tokens that resolve inside the Workspace and actually exist,
- * pictures sent as pictures and everything else as attachments. Not "every file the run
- * wrote": the Agent's own words are what say which output was the point, and a chat window
- * is a bad place to receive a directory. What the caps drop and what the channel refuses is
- * filed as error records under the Session's Project, one per cause for the whole reply,
- * rather than dropped quietly, and none of it is posted into the chat (see
- * messagingFilesNotSentRecords).
- */
-import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { AmspRecord } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/a2ui";
-import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
-import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
-import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
-import type { ChannelEvent, ChannelHub } from "../channel.js";
-import { MESSAGE_MAX } from "../error-recorder.js";
-import type { ErrorSink } from "../error-recorder.js";
-import { recallStoreOf } from "../session-manager.js";
-import type { RecallStore } from "../session-manager.js";
+import type { OmniMessage } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
+import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-server/internal";
+import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
+import { attachFilesToInput, removeAttachments } from "@prismshadow/penguin-server/internal";
+import type { AttachedFiles, TaskAttachment } from "@prismshadow/penguin-server/internal";
+import type { ChannelEvent, ChannelHub } from "@prismshadow/penguin-server/internal";
+import { MESSAGE_MAX } from "@prismshadow/penguin-server/internal";
+import type { ErrorSink } from "@prismshadow/penguin-server/internal";
+import { recallStoreOf } from "@prismshadow/penguin-server/internal";
+import type { RecallStore } from "@prismshadow/penguin-server/internal";
+
 import type {
   MessagingChannelConnector,
   MessagingClient,
@@ -109,7 +35,7 @@ import { Component, Interface, Bind, Module, Provide, Use } from "@prismshadow/p
 import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { QQScanTransportHandle } from "./qq-scan.js";
 import { QQScanService, createQQScanTransport } from "./qq-scan.js";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { Hono } from "hono";
 
 import { FeishuMessaging } from "./feishu-connector.js";
@@ -118,14 +44,14 @@ import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
 import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
-import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
-import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Errors } from "../../mechanisms/observability.js";
-import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import { sessionMessagingRoutes } from "../routes/messaging.js";
+import type { Channels, Clock, Log, Paths } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@penguinharness/plugin-projects/server";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Errors } from "@prismshadow/penguin-server/internal";
+import type { WorkspaceFiles } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under

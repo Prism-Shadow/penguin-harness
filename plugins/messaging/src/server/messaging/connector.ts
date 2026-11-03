@@ -11,7 +11,7 @@
  * every connector method validates its own shape and throws a readable error on a
  * malformed one — the bridge treats that like any other channel failure.
  */
-import type { MessagingChannel } from "../../api/types.js";
+import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 
 /**
  * Known messaging channels, declared once with the wire types. The DB stores the discriminator

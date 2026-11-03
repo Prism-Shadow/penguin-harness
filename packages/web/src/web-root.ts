@@ -42,7 +42,7 @@ import { SettingsModule } from "@penguinharness/plugin-settings/web";
 import { SchedulesModule } from "@penguinharness/plugin-schedules/web";
 import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "@penguinharness/plugin-projects/web";
-import { MessagingModule } from "./features/messaging/module";
+import { MessagingModule } from "@penguinharness/plugin-messaging/web";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "@penguinharness/plugin-projects/web";
 import { TracesModule } from "@penguinharness/plugin-usage/web";

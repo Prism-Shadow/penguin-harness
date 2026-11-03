@@ -1,7 +1,89 @@
-import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
-import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
-import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { SessionRow } from "../../db/repos/sessions.js";
+import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
+import { isGoalOutcome } from "../../runtime/goal-events.js";
+import { deleteSessionTree } from "../../services/session-deletion.js";
+import type { SessionDeletionDeps } from "../../services/session-deletion.js";
+import { HttpError } from "../errors.js";
+import { sseEndpoint, streamRevocation } from "../sse.js";
+import {
+  badRequest,
+  listingViewOfRequest,
+  optionalEnum,
+  optionalSessionListPagingQuery,
+  optionalString,
+  paginationQuery,
+  parseNonNegativeInt,
+  pathParam,
+  positiveIntParam,
+  readJson,
+  requireEnum,
+  requireString,
+  requireValidId,
+} from "../validate.js";
+import type { ServerConfig } from "../../config.js";
+import { normalizePenguinGoOrigin } from "../../config.js";
+import type { ChannelHub } from "../../runtime/channel.js";
+import type { MessagingBridge } from "@penguinharness/plugin-messaging/server/bridge.js";
+import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
+import type { PreviewTokenSigner } from "../../services/preview-token.js";
+import type {
+  ActivityCursor,
+  SessionListOrder,
+  SessionListPaging,
+  SessionService,
+} from "../../services/session-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface SessionsRouteDeps {
+  agentConfigService: AgentConfig;
+  channels: ChannelHub;
+  config: ServerConfig;
+  manager: SessionManager;
+  messaging: MessagingBridge;
+  previewTokens: PreviewTokenSigner;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  /** Tells everyone who can see the Project about a change the list could not otherwise learn of. */
+  projectEvents: ProjectEvents;
+  serverSettingsRepo: Settings;
+  sessionService: SessionService;
+  sessionSources: SessionOrigins;
+  sessionsRepo: SessionIndex;
+  traceService: Traces;
+  workspaceFiles: WorkspaceFiles;
+  /** Whether this server was spawned by the desktop shell — half of the reveal route's gate. */
+  desktopMode: boolean;
+  /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
+  fileReveal: FileReveal;
+  /** The registry that ends a Session stream when the session behind it is revoked. */
+  liveStreams: LiveStreams;
+  /** Re-validates the session behind an open stream, once per heartbeat. */
+  auth: Auth;
+  /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
+  drivers?: SessionDrivers;
+}
+import {
+  assertAttachmentBudget,
+  attachFilesToInput,
+  parseAttachmentPart,
+  readRecalledFiles,
+  removeAttachments,
+} from "../../services/task-attachments.js";
+import type { TaskAttachment } from "../../services/task-attachments.js";
+import {
+  INLINE_IMAGE_MAX_BYTES,
+  INLINE_IMAGE_MAX_MB,
+  toAttachmentLimits,
+} from "../../services/attachment-limits.js";
+import type { AttachmentLimits } from "../../services/attachment-limits.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
+import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
+import { Messaging } from "@penguinharness/plugin-messaging/server/bridge.js";
+
 
 import { agentsRoutes } from "@penguinharness/plugin-agents/server";
 import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";

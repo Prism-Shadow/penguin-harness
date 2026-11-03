@@ -1,4 +1,10 @@
       ],
+      "@penguinharness/plugin-messaging/web": [
+        "../../plugins/messaging/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-messaging/web/*": [
+        "../../plugins/messaging/src/web/*"
+      ],
       "@penguinharness/plugin-models/server": [
         "../../plugins/models/src/server/index.ts"
       ],

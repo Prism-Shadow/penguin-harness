@@ -81,7 +81,7 @@
     "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- node ../../scripts/dev-server.mjs src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json --project ../../plugins/browser/tsconfig.json --project ../../plugins/usage/tsconfig.json --project ../../plugins/schedules/tsconfig.json --project ../../plugins/machines/tsconfig.json --project ../../plugins/workbenches/tsconfig.json --project ../../plugins/projects/tsconfig.json --project ../../plugins/agents/tsconfig.json --project ../../plugins/settings/tsconfig.json --project ../../plugins/models/tsconfig.json --project ../../plugins/plugins/tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json --project ../../plugins/browser/tsconfig.json --project ../../plugins/usage/tsconfig.json --project ../../plugins/schedules/tsconfig.json --project ../../plugins/machines/tsconfig.json --project ../../plugins/workbenches/tsconfig.json --project ../../plugins/projects/tsconfig.json --project ../../plugins/agents/tsconfig.json --project ../../plugins/settings/tsconfig.json --project ../../plugins/models/tsconfig.json --project ../../plugins/messaging/tsconfig.json --project ../../plugins/plugins/tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
@@ -93,6 +93,7 @@
     "@penguinharness/plugin-browser": "workspace:*",
     "@penguinharness/plugin-company": "workspace:*",
     "@penguinharness/plugin-machines": "workspace:*",
+    "@penguinharness/plugin-messaging": "workspace:*",
     "@penguinharness/plugin-models": "workspace:*",
     "@penguinharness/plugin-plugins": "workspace:*",
     "@penguinharness/plugin-projects": "workspace:*",
