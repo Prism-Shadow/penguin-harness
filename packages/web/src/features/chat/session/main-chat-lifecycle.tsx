@@ -1,35 +1,6 @@
-import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
+import { adoptDockScope, isTabShown, openPanel } from "../../dock";
 
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { ApiError } from "../../../api/client";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { configuredCompactionLimit } from "../../../lib/context";
-import { humanizeTokens } from "../../../lib/format";
-import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
-import { noteSessionSeen } from "../../../lib/session-seen";
-import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
-import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { routeSessionOutcome, sessionForProject } from "../session-project";
-import { RouteProbe } from "../route-probe";
-import { machineForSession } from "../../../lib/session-machines";
-import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
-import { goalPluginGate } from "../goal-plugin-gate";
-import { useAgentSkills } from "../use-agent-skills";
-import { applyUsageFetch } from "../header-stats";
-import { hasConfiguredKey, sameModelRef } from "../../models";
-import { noteScheduleEvent } from "../../schedules";
-import {
-  adoptDockScope,
-  currentDockScope,
-  isTabShown,
-  openPanel,
-  reownTerminals,
-} from "../../dock";
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";

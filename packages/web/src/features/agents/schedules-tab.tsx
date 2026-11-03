@@ -49,7 +49,7 @@ import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
+import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "../../lib/toast-api-error";
 
