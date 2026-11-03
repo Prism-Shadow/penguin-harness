@@ -1,57 +1,6 @@
-/**
- * One plugin's card on the Plugins page — every plugin wears the same one, a library plugin of
- * Skills and hooks and a server module such as an Agent Sandbox backend alike: a rounded icon
- * tile (the plugin's own icon, else the puzzle piece) centred against its title (the package's
- * display name, else the plugin's name) and the one-line description (the "no description"
- * placeholder, in the same muted ink, when the package carries none), a metadata line
- * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
- * only), and a tag line — the category (outside the category's own section), "built in", where
- * a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
- * buttons whose words show once the card is wide enough:
- *
- * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
- *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
- *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
- *   after the Agent's name, every action on such a row going to that machine. A machine out of
- *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
- *   installs have not been answered yet keeps its row too, its Install held until they are.
- *   Installing a plugin with a stdio MCP server on an Agent that lacks it asks first, showing the
- *   command it runs on the Agent's server, and an update's confirmation shows it too (the
- *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
- *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
- *   which writes those values into the Agent's vault.
- * - A server module: Install, or Remove, for an admin only; a member reads the card and its
- *   dialog, with no way in to change the server.
- *
- * The dialog's footer repeats the same actions with their words, after Export — the package as
- * a zip another server imports, for any member whenever its package is on this server — and,
- * for an admin, Delete on a package an admin installed on the server.
- *
- * Until this server has said what its own Agents hold (or, for a module, what its tables list),
- * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
- * replaces a bar rather than a word.
- */
-import { useId, useState, type ReactNode } from "react";
+import { apiErrorText } from "../../lib/api-error";
+import { downloadArchive } from "@penguinharness/plugin-agents/web";
 
-import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
-import {
-  AgentAvatar,
-  Button,
-  Card,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  Modal,
-  Skeleton,
-  StatusIcon,
-  UpdateDot,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { cardBodyClick } from "../../lib/card-open";
-import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";

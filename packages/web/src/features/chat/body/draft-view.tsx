@@ -1,4 +1,91 @@
-import { WorkspaceSelect } from "../../internal";
+/**
+ * Draft view (/chat/new): the pre-persistence form of a new
+ * conversation, before any Session exists. The page around the input card is the start
+ * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
+ * shortcuts below it); this module keeps the draft itself. Before sending,
+ * this is where Agent / Workspace / approval mode / Model are all
+ * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
+ * directory selection (the menu browses server-side directories, and the current
+ * path can be edited directly); the model picker lives in the input card's bottom
+ * toolbar, left of the send button (with a vendor logo). The Session is only
+ * created when **the first message is sent**; once created, Agent / Workspace /
+ * Model are locked in via meta, and only approval mode remains editable (in the
+ * session-mode input area).
+ *
+ * Draft auto-cache (storage and validation in draft-cache.ts; keys are isolated by
+ * "user × Project", #68): the four selections are saved as soon as they change;
+ * body text is keystroke-frequent and deferred/coalesced (if there's an unsaved
+ * change before unmount, one final write is flushed) — closing and returning to
+ * the page resumes where you left off; on successful send the cache clears, except
+ * the model selection, which carries over as the next conversation's default
+ * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
+ * The one thing that does not resume is a prompt a "Create with AI" surface composed
+ * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
+ * or sending it clears the slot exactly as a send would (see dropAiPrefill).
+ * Every "New chat" entry point first rewrites the slot to the model carry-over and staged
+ * skills, releasing whatever else an earlier visit left in the cache (prepareNewChatDraft,
+ * new-chat.ts), then names in route state only what it is about: an Agent group's "+" or
+ * an Agent card names its Agent, a Workspace group's "+" its path ("" = temporary
+ * workspace), and the plain "New chat" names nothing. A direct visit or refresh keeps the
+ * cache. Precedence per field: route state > draft cache > the Project's new-chat defaults
+ * ([default_chat]) > built-in fallback (for the Agent: default_agent, then the first —
+ * newChatAgentId); the model default already flows through models.defaultModel.
+ *
+ * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
+ * the change up: the project-settings dialog strips the cached pins (next visits reseed
+ * from the fresh defaults) and dispatches a same-tab chat-defaults-changed event that a
+ * MOUNTED draft answers by resetting Agent / Workspace / approval mode / Model in
+ * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
+ * always survive.
+ */
+import { browserState, adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useLocation, useNavigate } from "react-router";
+import type {
+  AgentModelConfigDto,
+  AgentSummary,
+  ApprovalMode,
+  ChatDefaultsDto,
+  ModelRefDto,
+  ModelsResponse,
+  SessionCreateRequest,
+  SessionSandbox,
+  SkillMetadataItem,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
+import { toastError } from "@prismshadow/penguin-ui";
+import { AgentSelect } from "@penguinharness/plugin-agents/web";
+import * as api from "../../../api/endpoints";
+import { S } from "../../../lib/strings";
+import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
+import { apiErrorText } from "../../../lib/api-error";
+import { rememberSessionMachine } from "../../../lib/session-machines";
+import { cachedMachineAgents, rememberMachineAgents } from "../../../lib/machine-cache";
+import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/machine-link";
+import { useMachines } from "../../../state/machines";
+import { useAuth } from "../../../state/auth";
+import { useProject } from "../../../state/project";
+import { useSessions } from "../../../state/sessions";
+import { ChatInput, type ComposerControl } from "../chat-input";
+import { APPROVAL_MODES } from "../approval-mode";
+import { adoptDockScope, setDockCwd } from "../../dock";
+import { StartDashboard } from "../start-dashboard";
+import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
+import {
+  DRAFT_FLUSH_EVENT,
+  getDraftSession,
+  removeDraftSession,
+  saveDraftSession,
+} from "../draft-sessions";
+import {
+  CHAT_DEFAULTS_CHANGED_EVENT,
+  chatDefaultsChangedDetail,
+  type ChatDefaultsChangedDetail,
+} from "../chat-defaults-event";
+import { newChatAgentId } from "../new-chat";
+import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
+import { effectiveThinkingLevel } from "../../model-picker";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 
 import { FilesPanelToggle } from "../dock-toggles";
 import { sameModelRef } from "../../models";

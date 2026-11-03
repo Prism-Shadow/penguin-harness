@@ -10,7 +10,7 @@ import {
 
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
-import { SettingsDialog } from "../settings";
+import { SettingsDialog } from "@penguinharness/plugin-settings/web";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
