@@ -13,6 +13,8 @@
       "@penguinharness/plugin-projects/server": ["./src/server/index.ts"],
       "@penguinharness/plugin-projects/web": ["./src/web/index.ts"],
       "@penguinharness/plugin-machines/server": ["../machines/src/server/index.ts"],
+      "@penguinharness/plugin-agents/server": ["../agents/src/server/index.ts"],
+      "@penguinharness/plugin-models/server": ["../models/src/server/index.ts"],
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
       "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],

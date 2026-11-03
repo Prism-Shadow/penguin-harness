@@ -50,6 +50,7 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
+import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "./db/database.js";
@@ -137,8 +138,6 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { MembersRepo } from "./db/repos/members.js";
-import { ProjectsRepo } from "./db/repos/projects.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { adminUsersRoutes } from "@penguinharness/plugin-settings/server";
@@ -176,7 +175,7 @@ import { MachinesService } from "@penguinharness/plugin-machines/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "./mechanisms/settings.js";
 import type { Errors } from "./mechanisms/observability.js";
-import type { Access } from "./mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Auth } from "./mechanisms/identity.js";
 
 /**

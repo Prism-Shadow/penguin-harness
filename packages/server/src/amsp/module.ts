@@ -18,7 +18,7 @@ import { AgentApiRepo } from "../db/repos/agent-api.js";
 import type { Channels, Clock, Log } from "../hmr/capabilities.js";
 import { AgentApi } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";

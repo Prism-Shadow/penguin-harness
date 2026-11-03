@@ -11,7 +11,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VaultRouteDeps {

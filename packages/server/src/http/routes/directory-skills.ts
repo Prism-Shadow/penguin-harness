@@ -24,7 +24,7 @@ export interface DirectorySkillsRouteDeps {
 }
 import { discoverDirectorySkills } from "../../services/directory-skills.js";
 import { toSkillItem } from "../../services/plugin-library.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 
 export function directorySkillsRoutes(deps: DirectorySkillsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

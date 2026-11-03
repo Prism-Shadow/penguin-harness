@@ -11,7 +11,9 @@
     "./web/*": "./src/web/*"
   },
   "dependencies": {
+    "@penguinharness/plugin-agents": "workspace:*",
     "@penguinharness/plugin-machines": "workspace:*",
+    "@penguinharness/plugin-models": "workspace:*",
     "@penguinharness/plugin-usage": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",

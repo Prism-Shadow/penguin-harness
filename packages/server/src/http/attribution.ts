@@ -6,7 +6,7 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import type { UserRow } from "../db/repos/users.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 
 /**
  * The Project an error is attributed to: only

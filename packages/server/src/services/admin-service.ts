@@ -23,7 +23,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { LiveStreams } from "../auth/live-streams.js";
 import type { Admin, AuthSessions, Users } from "../mechanisms/identity.js";
-import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
+import type { ProjectLifecycle, Projects } from "@penguinharness/plugin-projects/server";
 
 @Component()
 export class AdminService implements Admin {

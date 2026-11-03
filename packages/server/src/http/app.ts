@@ -1,26 +1,7 @@
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Hono } from "hono";
-import type { AppEnv } from "../auth/middleware.js";
-import { Config, Log } from "../hmr/capabilities.js";
-import type { MiddlewareHandler } from "hono";
-import { bodyLimit } from "hono/body-limit";
-import {
-  authMiddleware,
-  bearerToken,
-  jsonOnlyWrites,
-  sameOriginWrites,
-} from "../auth/middleware.js";
-import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
-import { HttpError, handleError } from "./errors.js";
-import { originRule } from "./public-origin.js";
-import { attributedProjectId } from "./attribution.js";
-import { jsonCompression } from "./json-compression.js";
-import { jsonValidators } from "./json-validators.js";
-import { bodyLimitBytes } from "../services/attachment-limits.js";
-import { declined } from "../hmr/hono-seam.js";
-import type { Auth, Users } from "../mechanisms/identity.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Auth } from "../mechanisms/identity.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
+
+||||||| parent of 4828df32ae (projects: mechanism and repos move into plugin-projects)
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
 

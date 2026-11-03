@@ -20,7 +20,6 @@ export * from "./http/validate.js";
 export * from "./mechanisms/identity.js";
 export * from "./mechanisms/observability.js";
 export * from "./mechanisms/organization.js";
-export * from "./mechanisms/projects.js";
 export * from "./mechanisms/sessions.js";
 export * from "./mechanisms/workbenches.js";
 export * from "./mechanisms/settings.js";
@@ -39,6 +38,20 @@ export type {
   Memory,
   Snapshots,
 } from "@penguinharness/plugin-agents/server";
+export type {
+  Access,
+  AgentIndex,
+  Members,
+  ModelOAuth,
+  ModelPromotion,
+  ModelPromotions,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
+  ProjectConfigStore,
+  ProjectEvents,
+  ProjectLifecycle,
+  Projects,
+} from "@penguinharness/plugin-projects/server";
 export * from "./services/task-attachments.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
