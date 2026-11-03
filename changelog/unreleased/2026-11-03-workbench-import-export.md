@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui-gallery`
+- **PR:** [#1444](https://github.com/Prism-Shadow/penguin-harness/pull/1444)
 
 [中文版](2026-11-03-workbench-import-export.zh.md)
 
