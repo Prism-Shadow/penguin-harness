@@ -11,8 +11,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { agentVaultPath, DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
-import { registerConfigCommand } from "../src/commands/config.js";
-import { getMessages } from "../src/i18n.js";
+import { registerConfigCommand } from "../../src/cli/commands/config.js";
+import { getMessages } from "../../src/cli/i18n.js";
 
 let tmpRoot: string;
 let prevHome: string | undefined;

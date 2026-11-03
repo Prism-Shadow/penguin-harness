@@ -14,7 +14,7 @@
  * Session that never ran switches inline.
  */
 import { DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** A model reference as the server API spells it. */
 export interface ModelTarget {

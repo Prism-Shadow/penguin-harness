@@ -11,8 +11,8 @@
 import path from "node:path";
 import { readMachineStatus } from "@prismshadow/penguin-server/machine-status";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 
 /** Fills in `penguin server status`, on the node the host located by the command's key. */
 export function registerStatusCommand(status: Command, t: Messages): void {

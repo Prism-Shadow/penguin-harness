@@ -34,15 +34,16 @@
  * Docs: /docs/cli § "penguin schedule".
  */
 import type { Command } from "commander";
-import type { ScheduleItem, SchedulesResponse } from "@prismshadow/penguin-server/api";
-import {
-  resolveAgentId,
-  resolveConnection,
-  resolveProjectId,
-  ServerClient,
-  shortSessionId,
-} from "../client.js";
-import { listAgents } from "../server-session.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
+import type { ScheduleItem, SchedulesResponse } from "../../api/types.js";
+import { resolveAgentId, resolveProjectId, ServerClient, shortSessionId } from "../client.js";
+import { resolveConnection } from "../connection.js";
+import { listAgents } from "../agents.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
@@ -301,4 +302,33 @@ function validateTarget(
     return false;
   }
   return true;
+}
+
+/**
+ * `penguin schedule`, as a contribution to the CLI's `CliCommandsModule.commands` from this
+ * package (the server resource API's client); the CLI's boot collects it.
+ */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.schedule",
+        key: "schedule",
+        summary: {
+          en: "Manage scheduled tasks",
+          zh: "管理定时任务",
+        },
+      },
+    ],
+  },
+})
+export class ScheduleCommand {
+  @Bind("cli.schedule") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerScheduleCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

@@ -39,7 +39,7 @@ import type {
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo } from "@prismshadow/penguin-server/cli";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
@@ -49,7 +49,7 @@ import {
   switchModelRefusal,
   type ModelTarget,
 } from "../switch-model-command.js";
-import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
+import { parseApprovalAnswer, resolveApprovalMode } from "@prismshadow/penguin-server/cli";
 import { LineComposer, PasteFilter } from "../input.js";
 import {
   ApiError,
@@ -59,19 +59,19 @@ import {
   resolveProjectId,
   resolveSessionRef,
   ServerClient,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
 import {
   callerSessionContext,
   createServerSession,
   getSessionInfo,
   getSessionMessages,
-  listAgentSessions,
   pinThinkingLevel,
   projectDefaultModel,
   resolveWorkspace,
 } from "../server-session.js";
+import { listAgentSessions } from "@prismshadow/penguin-server/cli";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
 

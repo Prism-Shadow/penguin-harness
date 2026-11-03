@@ -11,7 +11,7 @@ import {
   reportAmbiguous,
 } from "../src/plugin-cli-commands.js";
 import type { PluginCommandSource } from "../src/plugin-cli-commands.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 const t = getMessages("en");
 

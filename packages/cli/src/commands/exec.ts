@@ -21,7 +21,7 @@
  */
 import type { Command } from "commander";
 import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
-import type { Language, Messages } from "../i18n.js";
+import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 import { renderTable } from "../table.js";
 import { serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
 

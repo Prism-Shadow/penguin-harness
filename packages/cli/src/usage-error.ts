@@ -13,7 +13,7 @@
  * swallowed silently.
  */
 import type { Command, CommanderError } from "commander";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Commander codes that mean "the command line was typed wrong" — these earn the usage line. */
 const USAGE_ERROR_CODES = new Set([
