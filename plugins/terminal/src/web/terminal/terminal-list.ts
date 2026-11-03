@@ -13,7 +13,7 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { probeSession } from "@prismshadow/penguin-web/internal";
-import { pruneTerminalTabs } from "../dock/dock-state";
+import { pruneTerminalTabs } from "@prismshadow/penguin-web/internal";
 import { apiUrl } from "@prismshadow/penguin-web/internal";
 
 import { probeSession } from "../../api/session-probe";
