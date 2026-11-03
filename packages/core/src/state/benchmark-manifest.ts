@@ -96,6 +96,8 @@ export interface BenchmarkManifest {
   lastUpdate?: string;
   /** Package author and maintainer. */
   author?: { name: string; email?: string; homepage?: string };
+  /** Where the package's tasks come from (a paper, an upstream repository): http(s) links. */
+  references?: string[];
   /** A file that says neither `draft` nor `failed` is published. */
   status: BenchmarkStatus;
   /** Runs per case, a positive integer; absent when the file gives none, which counts as 1. Written: up to 1000. */
@@ -206,6 +208,14 @@ function authorOf(raw: unknown): BenchmarkManifest["author"] {
   return author;
 }
 
+function referencesOf(raw: unknown): string[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || !raw.every((link) => typeof link === "string" && isWebLink(link))) {
+    throw invalid(`"references" must be a list of http(s) links.`);
+  }
+  return [...raw];
+}
+
 function lastUpdateOf(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
   if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString();
@@ -268,6 +278,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
   const origin = originOf(config.origin);
   const author = authorOf(config.author);
   const lastUpdate = lastUpdateOf(config.last_update);
+  const references = referencesOf(config.references);
   const { title, description, runs, status } = config;
   const titleZh = config.title_zh;
   const descriptionZh = config.description_zh;
@@ -280,6 +291,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
     ...(version !== undefined ? { version } : {}),
     ...(lastUpdate !== undefined ? { lastUpdate } : {}),
     ...(author !== undefined ? { author } : {}),
+    ...(references !== undefined ? { references } : {}),
     // The two states that make a Benchmark unusable are literal: "draft" while it is still being
     // built, "failed" when its calibration never produced a result to freeze. A file written
     // before the key existed has none, and an unrecognized value is neither: both are published.
@@ -324,6 +336,7 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
   versionOf(manifest.version);
   lastUpdateOf(manifest.lastUpdate);
   authorOf(manifest.author);
+  referencesOf(manifest.references);
   if (!STATUSES.includes(manifest.status)) {
     throw invalid(`"status" must be one of ${STATUSES.join(", ")}.`);
   }
@@ -350,6 +363,7 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
       : {}),
     ...(manifest.version !== undefined ? { version: manifest.version } : {}),
     ...(manifest.lastUpdate !== undefined ? { last_update: manifest.lastUpdate } : {}),
+    ...(manifest.references !== undefined ? { references: [...manifest.references] } : {}),
     status: manifest.status,
     ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),
   };
