@@ -22,6 +22,7 @@
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
+    "./ifaces.json": "./src/ifaces.json",
     "./machine-status": {
       "types": "./dist/machine-status.d.ts",
       "import": "./dist/machine-status.js"
@@ -80,7 +81,7 @@
     "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- node ../../scripts/dev-server.mjs src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json --project ../../plugins/browser/tsconfig.json --project ../../plugins/usage/tsconfig.json --project ../../plugins/schedules/tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
@@ -89,6 +90,9 @@
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@penguinharness/plugin-company": "workspace:*",
     "@penguinharness/plugin-terminal": "workspace:*",
+    "@penguinharness/plugin-browser": "workspace:*",
+    "@penguinharness/plugin-usage": "workspace:*",
+    "@penguinharness/plugin-schedules": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",

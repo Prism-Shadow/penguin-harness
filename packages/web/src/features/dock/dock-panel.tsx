@@ -92,7 +92,7 @@ import {
   type TerminalInfo,
 } from "@penguinharness/plugin-terminal/web";
 
-import { invalidateSlotClips } from "../builtin-browser";
+import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";

@@ -40,7 +40,7 @@ import {
   browserState,
   subscribeBrowser,
   PairingDialog,
-} from "../builtin-browser";
+} from "@penguinharness/plugin-browser/web";
 
 /** Forgets a paired Chrome on the server; true once it is gone. Reached only through the confirm. */
 const revokeChrome = async (record: BrowserExtensionRecord): Promise<boolean> => {

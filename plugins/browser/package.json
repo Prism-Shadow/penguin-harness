@@ -1,0 +1,29 @@
+{
+  "name": "@penguinharness/plugin-browser",
+  "version": "0.2.18",
+  "private": true,
+  "type": "module",
+  "description": "The builtin browser functional group: its server half and web panel in one package, temporarily parked under plugins/.",
+  "exports": {
+    "./server": "./src/server/index.ts",
+    "./web": "./src/web/index.ts"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "ws": "^8.18.3",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "vite": "^7.3.6"
+  },
+  "penguin": {
+    "parked": true
+  }
+}

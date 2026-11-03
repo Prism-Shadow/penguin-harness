@@ -38,7 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState, adoptBrowserSession } from "../../builtin-browser";
+import { browserState, adoptBrowserSession } from "@penguinharness/plugin-browser/web";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {

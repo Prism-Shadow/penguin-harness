@@ -1,4 +1,4 @@
-import { adoptBrowserSession } from "../../builtin-browser";
+import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SessionInfo,

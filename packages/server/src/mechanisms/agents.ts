@@ -30,7 +30,7 @@ import type {
   BenchmarkArchive,
   BenchmarkCreateInput,
   BenchmarkImportOptions,
-} from "../services/benchmark-service.js";
+} from "@penguinharness/plugin-usage/server";
 
 /** AgentConfig: the mechanism AgentConfigService implements. */
 @Interface()

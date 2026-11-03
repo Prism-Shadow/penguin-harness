@@ -59,7 +59,7 @@ import type {
   UsageQuery,
   UsageErrorsClearQuery,
   UsageErrorsQuery,
-} from "../services/usage-service.js";
+} from "@penguinharness/plugin-usage/server";
 
 /** ErrorLog: the mechanism ErrorsRepo implements. */
 @Interface()
