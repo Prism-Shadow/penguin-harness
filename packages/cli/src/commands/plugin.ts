@@ -49,7 +49,7 @@ import {
   ApiError,
   resolveConnection,
   resolveProjectId,
-  ServerClient,,
+  ServerClient,
   getMessages} from "@prismshadow/penguin-server/cli";
 import { renderTable } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";

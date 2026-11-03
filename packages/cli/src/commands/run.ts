@@ -41,7 +41,7 @@ import { resolveThinkingLevel } from "../thinking-command.js";
 import {
   denyActivePrompt,
   promptApproval,
-  resolveApprovalMode,,
+  resolveApprovalMode,
   getMessages} from "@prismshadow/penguin-server/cli";
 import {
   connectionLabel,
