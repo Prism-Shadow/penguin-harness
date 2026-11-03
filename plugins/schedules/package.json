@@ -11,10 +11,15 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "hono": "^4.12.34",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0",
     "smol-toml": "^1.9.1",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
