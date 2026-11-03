@@ -12,7 +12,7 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import {
   agentDir,
   agentsDir,
@@ -37,16 +37,16 @@ import {
   listInstalledWorkbenches,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
-import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
+import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "@prismshadow/penguin-server/internal";
 import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
-import { isTopicFileName } from "./memory-service.js";
-import type { PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
-import { resolveDirectorySkills } from "./directory-skills.js";
+import { isTopicFileName } from "@prismshadow/penguin-server/internal";
+import type { PluginUpdateRef } from "@prismshadow/penguin-server/api";
+import { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
+import { resolveDirectorySkills } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
+import type { AgentIndex } from "@prismshadow/penguin-server/internal";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).

@@ -21,30 +21,22 @@
  * services/proxy-probe.ts.
  */
 import { Hono } from "hono";
-import type {
-  ProxyProbeResponse,
-  ProxyProbeTargetsResponse,
-  ServerSettingsResponse,
-} from "../../api/types.js";
-import { HttpError } from "../errors.js";
-import { requireHuman } from "../../auth/middleware.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { optionalBoolean, readJson } from "../validate.js";
-import type { ProxyControl } from "../../hmr/capabilities.js";
+import type { ProxyProbeResponse, ProxyProbeTargetsResponse, ServerSettingsResponse } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { requireHuman } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { optionalBoolean, readJson } from "@prismshadow/penguin-server/internal";
+import type { ProxyControl } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AdminSettingsRouteDeps {
   proxyControl: ProxyControl;
   serverSettingsRepo: Settings;
 }
-import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
-import {
-  PROXY_PROBE_TARGETS,
-  probeProxyReachabilityOf,
-  proxyProbeTarget,
-} from "../../services/proxy-probe.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import { applyProxySettings, normalizeProxyUrl } from "@prismshadow/penguin-server/internal";
+import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-server/internal";
+import { PROXY_PROBE_TARGETS, probeProxyReachabilityOf, proxyProbeTarget } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the

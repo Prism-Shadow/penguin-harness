@@ -19,32 +19,18 @@ import { Hono } from "hono";
 import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
 import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
 import type { Context } from "hono";
-import type {
-  AgentApiKeyCreateResponse,
-  AgentApiKeyInfo,
-  AgentApiResponse,
-  ModelRefDto,
-} from "../../api/types.js";
-import { requireHuman } from "../../auth/middleware.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { mintAgentApiKey } from "../../amsp/keys.js";
-import { HttpError } from "../errors.js";
-import {
-  badRequest,
-  optionalString,
-  optionalBoolean,
-  optionalNumber,
-  optionalEnum,
-  readJson,
-  requireString,
-  requireValidId,
-} from "../validate.js";
+import type { AgentApiKeyCreateResponse, AgentApiKeyInfo, AgentApiResponse, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { requireHuman } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { mintAgentApiKey } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalString, optionalBoolean, optionalNumber, optionalEnum, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { APPROVAL_MODES } from "./sessions.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
-import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
-import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-server/internal";
+import type { AgentApi, AgentApiKeyRow } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { ProjectConfigStore, Access } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {

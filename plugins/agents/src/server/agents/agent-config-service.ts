@@ -44,33 +44,13 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentConfigDto,
-  AgentConfigUpdateRequest,
-  AgentKernelUpdateResponse,
-  AgentModelConfigDto,
-  AgentCompactionConfigDto,
-  AgentMemoryConfigDto,
-  AgentHooksConfigDto,
-  AgentSchedulesConfigDto,
-  AgentSkillsConfigDto,
-  AgentVaultConfigDto,
-  VaultEntryInfo,
-  VaultResponse,
-  VaultUpdateRequest,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import {
-  badRequest,
-  optionalBoolean,
-  optionalEnum,
-  optionalNumber,
-  optionalString,
-} from "../http/validate.js";
+import type { AgentConfigDto, AgentConfigUpdateRequest, AgentKernelUpdateResponse, AgentModelConfigDto, AgentCompactionConfigDto, AgentMemoryConfigDto, AgentHooksConfigDto, AgentSchedulesConfigDto, AgentSkillsConfigDto, AgentVaultConfigDto, VaultEntryInfo, VaultResponse, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalBoolean, optionalEnum, optionalNumber, optionalString } from "@prismshadow/penguin-server/internal";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 

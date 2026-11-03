@@ -5,8 +5,8 @@
  */
 import fs from "node:fs/promises";
 import { Hono } from "hono";
-import type { AgentImportResponse } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AgentImportResponse } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTransferRouteDeps {
@@ -14,9 +14,9 @@ export interface AgentTransferRouteDeps {
   access: Access;
   snapshots: Snapshots;
 }
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, Snapshots } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

@@ -10,34 +10,21 @@
  * service; the route consumes both.
  */
 import { Hono } from "hono";
-import type {
-  AgentCreateResponse,
-  AgentsResponse,
-  AgentSummary,
-  Employment,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AgentCreateResponse, AgentsResponse, AgentSummary, Employment } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { OrgService } from "@penguinharness/plugin-company/server";
-import { HttpError } from "../errors.js";
-import { settleWithin } from "../settle.js";
-import {
-  badRequest,
-  optionalString,
-  optionalStringArray,
-  readJson,
-  requireProjectDir,
-  requireString,
-  requireValidId,
-} from "../validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { settleWithin } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalString, optionalStringArray, readJson, requireProjectDir, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { readArchiveBase64 } from "./agent-transfer.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
-import type { SessionService } from "../../services/session-service.js";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { SessionManager } from "@prismshadow/penguin-server/internal";
+import type { SessionService } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
+import type { TraceIndex } from "@prismshadow/penguin-server/internal";
+import type { ErrorLog } from "@prismshadow/penguin-server/internal";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {

@@ -13,7 +13,9 @@
       "@penguinharness/plugin-usage/web": ["../../plugins/usage/src/web/index.ts"],
       "@penguinharness/plugin-schedules/web": ["../../plugins/schedules/src/web/index.ts"],
       "@penguinharness/plugin-machines/web": ["../../plugins/machines/src/web/index.ts"],
-      "@penguinharness/plugin-projects/web": ["../../plugins/projects/src/web/index.ts"],
+      "@penguinharness/plugin-agents/web": ["../../plugins/agents/src/web/index.ts"],
+    "@penguinharness/plugin-settings/web": ["../../plugins/settings/src/web/index.ts"],
+    "@penguinharness/plugin-projects/web": ["../../plugins/projects/src/web/index.ts"],
     "@penguinharness/plugin-workbenches/web": ["../../plugins/workbenches/src/web/index.ts"],
       "@prismshadow/penguin-web/internal": ["./src/internal.ts"]
     }
