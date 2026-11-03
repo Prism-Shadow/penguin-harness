@@ -3,6 +3,7 @@
 - **Date:** 2026-11-02
 - **Type:** feature
 - **Scope:** `landing`, `ui`, `docs`, `ui-gallery`, `plugins`, `ci`
+- **PR:** [#1430](https://github.com/Prism-Shadow/penguin-harness/pull/1430)
 
 [English](2026-11-02-landing-plugins-benchmarks-leaderboards.md)
 
