@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-02
 - **Type:** feature
-- **Scope:** `landing`, `ui`, `docs`, `plugins`, `ci`
+- **Scope:** `landing`, `ui`, `docs`, `ui-gallery`, `plugins`, `ci`
 
 [中文版](2026-11-02-landing-plugins-benchmarks-leaderboards.zh.md)
 
