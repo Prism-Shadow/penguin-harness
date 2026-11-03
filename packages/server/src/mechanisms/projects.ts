@@ -4,7 +4,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AccessibleProjectRow, ProjectRow } from "../db/repos/projects.js";
 import type { MemberRow } from "../db/repos/members.js";
-import type { AgentRow } from "../db/repos/agents.js";
+import type { AgentRow } from "@penguinharness/plugin-agents/server";
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,

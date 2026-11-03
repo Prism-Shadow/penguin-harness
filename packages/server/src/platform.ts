@@ -42,6 +42,14 @@ import {
   MessagingBindingsRepo,
   MessagingConversationsRepo,
 } from "@penguinharness/plugin-messaging/server";
+import {
+  AgentConfig,
+  AgentLifecycle,
+  AgentsRepo,
+  Benchmarks,
+  Memory,
+  Snapshots,
+} from "@penguinharness/plugin-agents/server";
 import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
 import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
 import { QQTransportProvider } from "@penguinharness/plugin-messaging/server";
@@ -77,7 +85,6 @@ import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
 import { ModelProviderAuthTokensRepo } from "./db/repos/model-provider-auth-tokens.js";
 import { MembersRepo } from "./db/repos/members.js";
-import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
@@ -173,7 +180,6 @@ import {
   UsageStore,
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
-import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { OrgCache } from "./mechanisms/organization.js";

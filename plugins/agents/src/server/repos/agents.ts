@@ -2,8 +2,8 @@
  * agents table repo: Agent index; name/description live in system_config.yaml.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { AgentIndex } from "../../mechanisms/projects.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 
 export interface AgentRow {
   projectId: string;

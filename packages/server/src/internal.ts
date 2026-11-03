@@ -17,7 +17,6 @@ export * from "./hmr/capabilities.js";
 export * from "./http/errors.js";
 export * from "./http/routes/events.js";
 export * from "./http/validate.js";
-export * from "./mechanisms/agents.js";
 export * from "./mechanisms/identity.js";
 export * from "./mechanisms/observability.js";
 export * from "./mechanisms/organization.js";
@@ -32,6 +31,14 @@ export * from "./runtime/usage-recorder.js";
 export * from "./runtime/error-recorder.js";
 export { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
 export type { MessagingBindings, MessagingConversations, MessagingBindingRow } from "@penguinharness/plugin-messaging/server";
+export type {
+  AgentConfig,
+  AgentLifecycle,
+  AgentRow,
+  Benchmarks,
+  Memory,
+  Snapshots,
+} from "@penguinharness/plugin-agents/server";
 export * from "./services/task-attachments.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
