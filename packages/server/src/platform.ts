@@ -172,7 +172,7 @@ import {
   SessionDrivers,
   SessionIndex,
   SessionOrigins,
-} from "./mechanisms/sessions.js";
+} from "@penguinharness/plugin-sessions/server";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
 import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
