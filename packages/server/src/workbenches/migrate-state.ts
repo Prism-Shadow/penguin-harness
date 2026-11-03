@@ -70,23 +70,23 @@ export async function migrateWorkbenchesIntoState(
   const target = stateWorkbenchesDir(agentDir);
   const backup = path.join(journal, "backup", "workbenches-history");
   const started = path.join(journal, STARTED);
+  const conflict = () =>
+    new Error(
+      `Cannot migrate: agent_state/workbenches already exists in ${agentDir}. Move it aside before retrying; the workbenches/ files are unchanged.`,
+    );
   if (!(await exists(started))) {
     if (!(await exists(live)) && !(await exists(history))) return;
-    if (await exists(target)) {
-      throw new Error(
-        `Cannot migrate: agent_state/workbenches already exists in ${agentDir}. Move it aside before retrying; the workbenches/ files are unchanged.`,
-      );
-    }
+    if (await exists(target)) throw conflict();
     await fs.mkdir(journal, { recursive: true });
     await fs.writeFile(started, "1\n");
   }
   if (await exists(history)) {
-    if (await exists(backup)) throw new Error(`Migration backup already exists: ${backup}`);
     await fs.mkdir(path.dirname(backup), { recursive: true });
     await fs.rename(history, backup);
   }
   if (await exists(live)) {
-    if (await exists(target)) throw new Error(`Migration destination already exists: ${target}`);
+    // Made at the new place since this run started: still not merged into.
+    if (await exists(target)) throw conflict();
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.rename(live, target);
   }

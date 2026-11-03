@@ -9,7 +9,11 @@
  *   newest recorded version is listed once.
  * - Given an Agent already on the new layout, nothing is written, journal included.
  * - Given both the old and the new folder, the migration refuses, naming the fix, and moves nothing.
- * - Given a run stopped before its end mark, the next one finishes it and records no version twice.
+ * - Given a run stopped before its end mark, the next one finishes it and records no version twice;
+ *   once finished, it never runs again, so a later edit is not recorded by it.
+ * - Given a run stopped before the workbench moved, a folder made at the new place meanwhile is
+ *   still refused; once moved aside, the run finishes.
+ * - Given a recorded workbench whose folder is gone, no version of it is imported.
  * - Given a Workflow-era Agent, one migration takes `workflows/` to `agent_state/workbenches/`.
  * - Given two callers at once, both see one finished migration and each version once.
  * - Given a `versions.json` entry that is not a readable version, the readable ones are imported
@@ -184,7 +188,39 @@ describe("moving workbenches into Agent State", () => {
     await migrateWorkbenches(agent);
     expect(await history(agent)).toEqual(recorded);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
-    expect(await fs.stat(path.join(agent, JOURNAL, "state-complete"))).toBeTruthy();
+    // Finished: an edit since is the next load's to record, not a migration's.
+    await fs.writeFile(moved(agent, "index.ts"), "export default 4;\n");
+    await migrateWorkbenches(agent);
+    expect(await history(agent)).toEqual(recorded);
+  });
+
+  it("refuses, after a run stopped before the move, a folder made at the new place meanwhile", async () => {
+    await oldLayout(agent);
+    // Something in the journal's way stops the first run once it has started.
+    await fs.mkdir(path.join(agent, JOURNAL));
+    await fs.writeFile(path.join(agent, JOURNAL, "backup"), "");
+    await expect(migrateWorkbenches(agent)).rejects.toThrow();
+    await fs.rm(path.join(agent, JOURNAL, "backup"));
+    const mine = path.join(agent, "agent_state", "workbenches", "mine");
+    await fs.mkdir(mine, { recursive: true });
+    await fs.writeFile(path.join(mine, "package.json"), "keep");
+    await expect(migrateWorkbenches(agent)).rejects.toThrow("Move it aside before retrying");
+    expect(await fs.readFile(path.join(mine, "package.json"), "utf8")).toBe("keep");
+    expect(await fs.readFile(path.join(agent, "workbenches", "demo", "index.ts"), "utf8")).toBe(
+      EDIT,
+    );
+    await fs.rm(path.join(agent, "agent_state", "workbenches"), { recursive: true });
+    await migrateWorkbenches(agent);
+    expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
+    expect(await history(agent)).toHaveLength(3);
+  });
+
+  it("imports no version of a recorded workbench whose folder is gone", async () => {
+    const copies = await oldLayout(agent);
+    await fs.rm(path.join(agent, "workbenches", "demo"), { recursive: true });
+    await migrateWorkbenches(agent);
+    await missing(path.join(agent, "agent_state", ".git"));
+    expect(await fs.stat(backedUp(copies[0]!))).toBeTruthy();
   });
 
   it("takes a Workflow-era Agent from workflows/ to agent_state/workbenches/ in one run", async () => {
