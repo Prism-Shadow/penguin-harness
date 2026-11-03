@@ -1,3 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2023"
+    ],
+    "paths": {
+        "@penguinharness/plugin-company/server": [
+          "../company/src/server/index.ts"
+        ],
+
+||||||| parent of 48fb6ba824 (plugins: map the company face to the workspace source where agents imports it)
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],

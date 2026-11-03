@@ -7,6 +7,9 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "paths": {
+        "@penguinharness/plugin-company/server": [
+          "../company/src/server/index.ts"
+        ],
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],
