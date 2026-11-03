@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `plugins`, `server`
+- **PR:** [#1434](https://github.com/Prism-Shadow/penguin-harness/pull/1434)
 - **Issue:** [#1394](https://github.com/Prism-Shadow/penguin-harness/issues/1394)
 
 [中文版](2026-11-03-company-channel-messages.zh.md)
