@@ -18,26 +18,35 @@
  */
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ICONS, LoadFailed, RetryStatus, toastError } from "@prismshadow/penguin-ui";
+import {
+  ICONS,
+  LoadFailed,
+  RetryStatus,
+  exceptionReport,
+  isSeriousError,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { machineLink } from "../../lib/machine-link";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
 import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function HistoryLoadFailed({
   projectId,
   sessionId,
   error,
+  cause,
   onRetry,
 }: {
   projectId: string | null;
   sessionId: string;
   /** The read's error, in words. */
   error: string;
+  /** What the read threw: a defect (not the person's to fix) offers 「[报告问题]」. */
+  cause?: unknown;
   /** Reads the history again. */
   onRetry: () => void;
 }) {
@@ -67,6 +76,12 @@ export function HistoryLoadFailed({
         title={S.chat.historyLoadFailed}
         description={error}
         action={{ label: S.common.retry, onClick: onRetry }}
+        report={
+          isSeriousError(cause)
+            ? () =>
+                exceptionReport(cause, { what: "the conversation's history could not be loaded" })
+            : null
+        }
       />
     );
   }
@@ -81,7 +96,7 @@ export function HistoryLoadFailed({
     try {
       machines.accept(await send(projectId, entry.id));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
       throw err;
     }
   };

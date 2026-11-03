@@ -13,32 +13,24 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
+import { ClipboardWriterProvider, toastStore } from "@prismshadow/penguin-ui";
 import type { VersionResponse } from "@prismshadow/penguin-server/api";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { button, click, mount, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { RequestFailureDialog } from "../src/features/chat/request-failure-dialog";
 import type { RequestFailure } from "../src/features/chat/request-failure-report";
+import { ReportEnvironmentSync } from "../src/lib/report-environment";
 import { rememberSessionMachine } from "../src/lib/session-machines";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AuthProvider } from "../src/state/auth";
 
-/** Toasts raised during a test (the real store would leave its dismiss timers running). */
-const toasts = vi.hoisted(() => [] as string[]);
-vi.mock("@prismshadow/penguin-ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@prismshadow/penguin-ui")>();
-  return {
-    ...actual,
-    toastSuccess: (text: string) => {
-      toasts.push(text);
-    },
-  };
-});
-
-/** The clipboard entry (its own behaviour is clipboard.test.ts's). */
+/** The clipboard entry the app hands the UI package (its own behaviour is clipboard.test.ts's). */
 const writeClipboard = vi.hoisted(() => vi.fn<(text: string) => Promise<boolean>>());
-vi.mock("../src/lib/clipboard", () => ({ writeClipboard }));
+
+/** The toasts on screen, by their words. */
+const toasts = () => toastStore.getState().items.map((item) => item.text);
 
 const SESSION = "session-2026-11-02-08-40-00-a1b2c3d4";
 const MACHINE = "QS7J4YVgSovi-Z2c";
@@ -95,18 +87,24 @@ async function open(onClose = vi.fn(), machine: string | null = null) {
   rememberSessionMachine(SESSION, machine);
   await mount(
     h(
-      AuthProvider,
-      null,
-      h(RequestFailureDialog, {
-        failure: FAILURE,
-        sessionId: SESSION,
-        sessionModel: null,
-        workspace: "/home/alice/acme",
-        onClose,
-      }),
+      ClipboardWriterProvider,
+      { write: writeClipboard },
+      h(
+        AuthProvider,
+        null,
+        // The app's root hands every report its environment; the dialog reads it from there.
+        h(ReportEnvironmentSync),
+        h(RequestFailureDialog, {
+          failure: FAILURE,
+          sessionId: SESSION,
+          sessionModel: null,
+          workspace: "/home/alice/acme",
+          onClose,
+        }),
+      ),
     ),
   );
-  return { words: en.chat.failureReport, onClose };
+  return { words: en.report, onClose };
 }
 
 const report = () => document.querySelector("[data-report]")?.textContent ?? "";
@@ -114,7 +112,7 @@ const report = () => document.querySelector("[data-report]")?.textContent ?? "";
 afterEach(async () => {
   await unmountAll();
   setActiveStrings(zh);
-  toasts.length = 0;
+  toastStore.setState({ items: [] });
   writeClipboard.mockReset();
   vi.unstubAllGlobals();
 });
@@ -141,7 +139,7 @@ describe("a failed request's details", () => {
     await waitFor(() => report().includes("Installed as"));
     await click(button(words.copy));
     expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(report());
-    expect(toasts).toEqual([words.copied]);
+    expect(toasts()).toEqual([words.copied]);
   });
 
   it("links to the project's bug form in a new tab, prefilled", async () => {

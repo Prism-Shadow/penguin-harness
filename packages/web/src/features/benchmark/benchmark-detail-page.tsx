@@ -22,7 +22,6 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
@@ -38,6 +37,7 @@ import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -239,7 +239,7 @@ export function BenchmarkDetailPage() {
         benchmark.id,
       );
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

@@ -44,6 +44,7 @@ export function uiStringsOf(dict: Strings): UiStrings {
       closeFind: dict.find.close,
       noResults: dict.find.noResults,
     },
+    report: dict.report,
   };
 }
 

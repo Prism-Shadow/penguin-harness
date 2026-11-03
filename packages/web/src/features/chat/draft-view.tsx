@@ -54,7 +54,7 @@ import type {
   SessionSandbox,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
+
 import { AgentSelect } from "../agents/agent-select";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -97,6 +97,7 @@ import { useAgentSkills } from "./use-agent-skills";
 import { WorkspaceSelect } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -539,7 +540,7 @@ export function DraftView({
         )
         .catch((e: unknown) => {
           setAgentThinkingLevel(rollback);
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
     [projectId, agentId, workspaceMachine],
@@ -829,7 +830,7 @@ export function DraftView({
           await adoptBrowserSession(createdId, browserScope);
           void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
         }
-        toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
+        toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});
         return false;
       } finally {
         sendingRef.current = false;

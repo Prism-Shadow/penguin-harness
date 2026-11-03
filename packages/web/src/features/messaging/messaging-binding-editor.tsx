@@ -107,6 +107,7 @@ import {
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
@@ -506,7 +507,7 @@ export function useMessagingBinding(
         if (cancelled) return;
         if (initial) {
           initialDone = true; // reported; a retry is the host's call, not a silent loop
-          toastError(apiErrorText(e));
+          toastApiError(e);
           onLoadFailed?.();
         }
       }
@@ -641,7 +642,7 @@ export function useMessagingBinding(
       await api.sendMessagingTestMessage(sessionId, selected);
       toastSuccess(S.messaging.testMessageSent);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSendingTest(false);
     }
@@ -663,7 +664,7 @@ export function useMessagingBinding(
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -696,7 +697,7 @@ export function useMessagingBinding(
       if (unchecked !== null) setNote({ channel: selected, text: unchecked });
       onChanged?.(sessionId, next && res.binding?.enabled === true ? selected : null);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setToggling(false);
     }

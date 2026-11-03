@@ -23,10 +23,8 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Modal,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
@@ -35,6 +33,7 @@ import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
 import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
 import type { AskEvaluationParams } from "./benchmark-prompts";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
 const TRIAL_PREFIX = "harbor:";
@@ -232,7 +231,7 @@ export function EvaluationDetailModal({
       onClose();
       navigate(`/chat/${encodeURIComponent(sessionId)}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
   const label = evaluationLabel(evaluation);

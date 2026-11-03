@@ -38,14 +38,12 @@ import {
   SettingsEmpty,
   SkeletonList,
   Switch,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { AgentLocationContext } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -63,6 +61,7 @@ import type { ScheduleFilter } from "./schedule-panel-state";
 import { refreshSchedules, useProjectSchedules } from "./schedule-store";
 import { ScheduleSuggestions } from "./schedule-suggestions";
 import { toggleBody } from "./schedule-upsert";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How often the list refetches while on screen — about the server's own re-read cadence for the schedule directory. */
 const REFRESH_MS = 30_000;
@@ -205,7 +204,7 @@ export function SchedulePanel({
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await refreshSchedules(projectId, machineId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -221,7 +220,7 @@ export function SchedulePanel({
       if (editing?.agentId === deleting.agentId && editing?.name === deleting.name) setForm(null);
       changed();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setDeleting(null);

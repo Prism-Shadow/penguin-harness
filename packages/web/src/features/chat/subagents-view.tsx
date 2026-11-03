@@ -44,7 +44,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
 import { ChatInput } from "./chat-input";
@@ -67,6 +66,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { useAgentSkills } from "./use-agent-skills";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { toastApiError } from "../../lib/toast-api-error";
 
 interface Selection {
   sessionId: string;
@@ -390,7 +390,7 @@ function SubagentComposer({
     setTurnLevel(level);
     void patchSession(childSessionId, {
       thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
-    }).catch((err: unknown) => toastError(apiErrorText(err)));
+    }).catch((err: unknown) => toastApiError(err));
   };
 
   const modelRef = meta ? { provider: meta.provider, modelId: meta.modelId } : null;

@@ -37,7 +37,6 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
@@ -54,6 +53,7 @@ import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -141,7 +141,7 @@ export function SchedulesTab({
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -156,7 +156,7 @@ export function SchedulesTab({
       if (form?.editing?.name === deleting) setForm(null);
       changed();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setDeleting(null);
