@@ -1,3 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2023"
+    ],
+    "paths": {
+        "@penguinharness/plugin-sessions/server": [
+          "../sessions/src/server/index.ts"
+        ],
+
+||||||| parent of d4fd0b9463 (plugins: map the sessions face to the workspace source in each plugin tsconfig)
       "@penguinharness/plugin-models/server": [
         "./src/server/index.ts"
       ],

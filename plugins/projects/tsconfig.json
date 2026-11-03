@@ -4,6 +4,9 @@
     "noEmit": true,
     "lib": ["ES2023"],
     "paths": {
+        "@penguinharness/plugin-sessions/server": [
+          "../sessions/src/server/index.ts"
+        ],
       "@penguinharness/plugin-projects/server": ["./src/server/index.ts"],
       "@penguinharness/plugin-projects/web": ["./src/web/index.ts"],
       "@penguinharness/plugin-machines/server": ["../machines/src/server/index.ts"],
