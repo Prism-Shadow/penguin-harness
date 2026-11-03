@@ -5,6 +5,8 @@
  *
  * - Create waits for something to be filled in and an id that keeps the naming rule; a broken id
  *   is marked as it is typed.
+ * - A name past the server's ceiling is said under the field as it is typed, Create stays off
+ *   and nothing is sent; shortening it creates the Agent as usual.
  * - Esc, Cancel, a press outside and the × each ask while anything is filled in; "keep editing"
  *   leaves the dialog and the typing.
  * - An untouched dialog closes at once.
@@ -25,6 +27,7 @@ import { useNavigate } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { NAME_MAX_LENGTH } from "../src/lib/name-limits";
 import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
 import type { LocationChoice, PluginPickItem } from "../src/features/agents/create-agent-dialog";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
@@ -165,6 +168,27 @@ describe("creating an Agent", () => {
     await type(id(), "writer");
     expect(create().disabled).toBe(false);
     expect(id().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("says a name past the server's ceiling under the field, and creates nothing until it is shortened", async () => {
+    const { server, router } = await openCreate();
+    await type(name(), "n".repeat(NAME_MAX_LENGTH + 1));
+    await type(id(), "writer");
+    expect(name().getAttribute("aria-invalid")).toBe("true");
+    expect(topDialog().textContent).toContain(en.agent.nameTooLong(NAME_MAX_LENGTH));
+    expect(create().disabled).toBe(true);
+    expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)).toEqual([]);
+
+    await type(name(), "Writer");
+    expect(name().getAttribute("aria-invalid")).toBeNull();
+    expect(topDialog().textContent).not.toContain(en.agent.nameTooLong(NAME_MAX_LENGTH));
+    expect(create().disabled).toBe(false);
+    await click(create());
+    await waitFor(() => whereIs(router) === "/agents");
+    expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
+      agentId: "writer",
+      name: "Writer",
+    });
   });
 
   it.each([
