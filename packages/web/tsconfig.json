@@ -68,6 +68,12 @@
       ],
       "@penguinharness/plugin-plugins/server": [
         "../../plugins/plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/web": [
+        "../../plugins/sessions/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/web/*": [
+        "../../plugins/sessions/src/web/*"
       ]
     }
   },
