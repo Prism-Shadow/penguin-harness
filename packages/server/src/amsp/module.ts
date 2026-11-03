@@ -22,7 +22,7 @@ import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";
-import type { SessionManager, Sessions, SessionServiceIface } from "../runtime/session-manager.js";
+import type { SessionManager, Sessions, SessionServiceIface } from "@penguinharness/plugin-sessions/server";
 import type { SessionService } from "../services/session-service.js";
 import { amspRoutes } from "./routes.js";
 import { agentApiTryRoutes } from "./try-route.js";

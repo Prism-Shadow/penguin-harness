@@ -34,7 +34,7 @@ import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ChannelEvent } from "../runtime/channel.js";
-import type { SessionManager } from "../runtime/session-manager.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import type { SessionService } from "../services/session-service.js";
 import {
   INLINE_IMAGE_MAX_BYTES,

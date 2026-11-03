@@ -10,8 +10,8 @@ import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "@penguinharness/plugin-schedules/server";
 import type { ScheduleEntryView } from "@penguinharness/plugin-schedules/server";
-import type { LiveTail } from "../runtime/live-tail.js";
-import type { RuntimeEntry } from "../runtime/session-manager.js";
+import type { LiveTail } from "@penguinharness/plugin-sessions/server";
+import type { RuntimeEntry } from "@penguinharness/plugin-sessions/server";
 
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
