@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1449](https://github.com/Prism-Shadow/penguin-harness/pull/1449)
 
 [中文版](2026-11-03-leaderboard-run-figures-carry.zh.md)
 
