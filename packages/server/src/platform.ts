@@ -191,7 +191,12 @@ import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
-import { CompanyModule, OrgRuns, OrgSessions } from "@penguinharness/plugin-company/server";
+import {
+  CompanyModule,
+  OrgRuns,
+  OrgSessions,
+  OrgScheduler,
+} from "@penguinharness/plugin-company/server";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
