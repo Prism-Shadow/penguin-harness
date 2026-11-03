@@ -1,7 +1,10 @@
-import type { Clock, Config } from "@prismshadow/penguin-server/internal";
-import { memoryRoutes } from "@prismshadow/penguin-server/internal";
+import { memoryRoutes } from "../memory.js";
+import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
+import { agentSkillsRoutes } from "../skills.js";
+import { agentTransferRoutes } from "../agent-transfer.js";
+import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
+import { agentApiRoutes } from "../agent-api.js";
 
-import { agentApiRoutes } from "@prismshadow/penguin-server/internal";
 import type { AgentApi } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, Benchmarks, Memory, Snapshots } from "@prismshadow/penguin-server/internal";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
