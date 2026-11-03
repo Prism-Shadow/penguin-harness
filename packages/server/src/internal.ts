@@ -53,8 +53,6 @@ export * from "./services/protocol-detect.js";
 export * from "./services/skill-import-limits.js";
 export * from "./runtime/session-sources.js";
 export * from "./runtime/title-generator.js";
-export * from "./http/validate.js";
-export * from "./http/errors.js";
 export type { Machines } from "./machines/service.js";
 export type { ServerConfig } from "./config.js";
 export type { ServerHmrHost } from "./hmr/platform.js";
