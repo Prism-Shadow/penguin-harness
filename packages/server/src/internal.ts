@@ -34,5 +34,6 @@ export * from "./services/ids.js";
 export * from "./services/project-config-service.js";
 export * from "./services/semantic-id.js";
 export * from "./services/semantic-id-suggest.js";
+export type { Machines } from "./machines/service.js";
 export type { ServerConfig } from "./config.js";
 export type { ServerHmrHost } from "./hmr/platform.js";
