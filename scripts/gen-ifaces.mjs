@@ -1180,7 +1180,8 @@ for (const { m, sym, file } of pendingChildren) {
     (sym &&
       moduleNameByClassName.get(typeof sym.getName === "function" ? sym.getName() : sym.name));
   if (childName === undefined) {
-    errors.push(`${file}: children: an entry is not a @Module or @Component class`);
+    const dbg = sym === undefined || sym === null ? String(sym) : typeof sym.getName === "function" ? sym.getName() : String(sym?.name ?? sym);
+    errors.push(`${file}: children: an entry is not a @Module or @Component class: ${dbg} (module ${m.name}, child #${m.children.indexOf(sym)})`);
     continue;
   }
   const i = m.children.indexOf(sym);
