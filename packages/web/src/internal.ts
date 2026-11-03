@@ -196,6 +196,7 @@ export * from "./lib/main-sidebar-persistence";
 export { NEW_CHAT_ICON } from "./lib/nav-icons";
 export * from "./lib/module-deps";
 export * from "./lib/omni/stream-controller";
+export * from "./lib/omni/stream-model";
 export * from "./lib/omni/compaction-summary";
 export * from "./lib/omni/memory-changes";
 export * from "./lib/permission-level";
