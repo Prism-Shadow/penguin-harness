@@ -6,7 +6,7 @@
  * a stored channel id that is not a `MessagingChannel`.
  */
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
-import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "../mechanism.js";
 
 /**
  * Every channel id, keyed so that a `MessagingChannel` added without an entry here fails

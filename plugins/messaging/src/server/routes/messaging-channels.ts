@@ -24,7 +24,7 @@
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { optionalBoolean } from "@prismshadow/penguin-server/internal";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
-import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindingRow } from "../repos/messaging-bindings.js";
 import type { MessagingChannel } from "../messaging/connector.js";
 import type {
   MessagingBindingCommon,

@@ -38,6 +38,9 @@ import {
   MessagingTaskRunner,
   MessagingModule,
   QQScan,
+  MessagingBindings,
+  MessagingBindingsRepo,
+  MessagingConversationsRepo,
 } from "@penguinharness/plugin-messaging/server";
 import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
 import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
@@ -78,8 +81,6 @@ import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "@penguinharness/plugin-sessions/server";
@@ -175,7 +176,6 @@ import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
-import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";

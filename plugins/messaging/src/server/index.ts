@@ -1,5 +1,8 @@
 /** The messaging group's server half: the messaging bridge with its channel connectors and the messaging routes. */
 export * from "./messaging/bridge.js";
+export * from "./mechanism.js";
+export * from "./repos/messaging-bindings.js";
+export * from "./repos/messaging-conversations.js";
 export * from "./messaging/connector.js";
 export * from "./messaging/enabled-channel.js";
 export * from "./messaging/error-kind.js";
