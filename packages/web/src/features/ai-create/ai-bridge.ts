@@ -23,7 +23,7 @@ import {
   saveDraft,
   parkActiveDraft,
   type DraftCache,
-} from "../chat";
+} from "@penguinharness/plugin-sessions/web";
 
 export interface AiChatRequest {
   /** The agent that does the work (normally pickDefaultAgent's choice). */

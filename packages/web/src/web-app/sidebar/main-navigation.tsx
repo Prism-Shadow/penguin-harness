@@ -19,7 +19,7 @@ import { pageTitle } from "../index";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
-import type { MainSidebarState } from "../../features/session-list";
+import type { MainSidebarState } from "@penguinharness/plugin-sessions/web";
 
 export function createMainSidebarNavigation(scope: MainSidebarState) {
   const {

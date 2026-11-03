@@ -5,7 +5,7 @@
  */
 import { Module, Provide, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 
-import type { ChatDrafts } from "../../features/chat";
+import type { ChatDrafts } from "@penguinharness/plugin-sessions/web";
 import type { Sidebar } from "./iface";
 import { sidebarDeps, useColumnStateOf, type SidebarDeps } from "./deps";
 

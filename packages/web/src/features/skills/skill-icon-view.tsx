@@ -1,20 +1,6 @@
-/**
- * Skill, hook package and plugin icons. An icon belongs to a plugin: the library card and the
- * detail Modal show the plugin's own `icon.svg`, and an installed skill or hook package shows
- * the icon of the plugin it came from (written into its directory at install time). Where a
- * subject has no icon — a user-authored or zip-imported skill, an install older than the icon
- * copy, a custom plugin without an icon.svg — the mark falls back to one uniform glyph for its
- * kind: the book for a skill, the hook for a hook package, the puzzle piece for a plugin. The
- * caller names the kind through `fallback`; never a letter or a per-name mark.
- *
- * `SkillIcon` is the bare mark (inline beside a name: the composer's chips and pick list);
- * `SkillTile` is the tinted square the rows and cards lead with. A DTO icon (raw icon.svg) is
- * rendered inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text
- * color).
- */
-import { useMemo } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
-import { BOOK_ICON } from "../../lib/skill-use";
+import { BOOK_ICON } from "@penguinharness/plugin-sessions/web";
+
+||||||| parent of 1c6504848e (sessions: fill internal gaps, rewire host web imports, fix star conflicts)
 import { sanitizeSkillIcon } from "./skill-icon";
 
 /**

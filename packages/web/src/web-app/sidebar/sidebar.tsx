@@ -1,4 +1,4 @@
-import { useMainSidebarController } from "../../features/session-list";
+import { useMainSidebarController } from "@penguinharness/plugin-sessions/web";
 import { navPagesOf, useWebAppPages } from "../index";
 import { sidebarDeps } from "./deps";
 import type { MainSidebarProps } from "../../lib/main-sidebar-bindings";

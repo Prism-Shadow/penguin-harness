@@ -4,7 +4,7 @@
  */
 import { S } from "../../lib/strings";
 import { createDeps } from "../../lib/module-deps";
-import type { ChatDrafts } from "../../features/chat";
+import type { ChatDrafts } from "@penguinharness/plugin-sessions/web";
 import type { ModeState } from "../../lib/sidebar-contributions";
 import type { SidebarColumnState } from "./iface";
 import { type BadgeEntry, type ModeEntry, type SectionEntry, currentModeIndex } from "./modes";

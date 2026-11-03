@@ -29,7 +29,7 @@ import { useCompany } from "../../lib/company-context";
 import { parseOrgKey } from "../../lib/company-nav";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
+import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/web";
 
 /**
  * The folded navigation column: the unfold button on top; below it, in product-specified order,

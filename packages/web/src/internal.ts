@@ -202,7 +202,7 @@ export * from "./lib/random-id";
 export * from "./lib/selection-menu";
 export * from "./lib/session-machines";
 export * from "./lib/session-seen";
-export * from "./lib/shortcuts";
+// shortcuts modules are starred above (use-keymap, platform, store, chord, …)
 export * from "./lib/sidebar-modes";
 export * from "./lib/sidebar-nav-state";
 export * from "./lib/strip-ansi";
