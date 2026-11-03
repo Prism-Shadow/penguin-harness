@@ -488,7 +488,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     leaderboards: {
       title: "榜单",
       description: "PenguinHarness 榜单：在评估集上比较 Agent 的得分与开销。",
-      facetChart: "图表",
       facetAuthor: "作者",
       entryCount: (n: number) => `${n} 个条目`,
       benchmarkCount: (n: number) => `${n} 个评估集`,

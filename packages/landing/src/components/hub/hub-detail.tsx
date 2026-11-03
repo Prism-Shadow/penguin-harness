@@ -1,7 +1,7 @@
 /**
  * The page of one hub entry: a header (icon, title, one line under it, a link to its source),
- * then the body's panels beside a column with the facts panel; below 1024 px that column comes
- * first. Each block is an opaque panel with a title bar, so the blocks read apart at a glance.
+ * then the body's panels beside a column with the facts panel; below 1024 px that column follows
+ * the body. Each block is an opaque panel with a title bar, so the blocks read apart at a glance.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -102,7 +102,8 @@ export function HubDetail({
           )}
         </header>
         <div className="mt-8 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
-          <aside className="flex flex-col gap-5 lg:order-2">
+          <div className="flex min-w-0 flex-col gap-5">{children}</div>
+          <aside className="flex flex-col gap-5">
             <HubPanel title={S.hub.details} flush>
               <dl className="divide-y divide-gray-100 dark:divide-gray-800">
                 {facts.map(({ label, value }) => (
@@ -120,7 +121,6 @@ export function HubDetail({
             </HubPanel>
             {aside}
           </aside>
-          <div className="flex min-w-0 flex-col gap-5 lg:order-1">{children}</div>
         </div>
       </article>
     </ExternalLinkScope>

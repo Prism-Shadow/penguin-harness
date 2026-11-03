@@ -275,7 +275,7 @@ export function WaffleChart({
                         <Link
                           to={`/benchmarks/${task.benchmarkId}#${encodeURIComponent(task.taskIds[0] ?? "")}`}
                           title={full}
-                          className="block max-w-32 truncate text-gray-700 hover:underline sm:max-w-80 dark:text-gray-300"
+                          className="block max-w-32 truncate text-gray-700 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 sm:max-w-80 dark:text-gray-300 dark:decoration-gray-700"
                         >
                           {short}
                         </Link>

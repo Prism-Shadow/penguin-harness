@@ -136,7 +136,7 @@ function TaskRow({
   const [chosen, setChosen] = useState<TaskPart | undefined>(undefined);
   const part = chosen ?? parts[0];
   return (
-    <li id={task.id} className="scroll-mt-20">
+    <li id={task.id} className="scroll-mt-20 last:overflow-hidden last:rounded-b-xl">
       <button
         type="button"
         aria-expanded={open}

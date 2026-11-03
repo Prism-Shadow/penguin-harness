@@ -499,7 +499,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       title: "Leaderboards",
       description:
         "PenguinHarness leaderboards: agents compared by score and cost on the benchmarks.",
-      facetChart: "Charts",
       facetAuthor: "Author",
       entryCount: (n: number) => (n === 1 ? "1 entry" : `${n} entries`),
       benchmarkCount: (n: number) => (n === 1 ? "1 benchmark" : `${n} benchmarks`),

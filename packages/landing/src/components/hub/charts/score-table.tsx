@@ -17,21 +17,27 @@ import { byValue } from "./chart-kit";
 
 type Column = "harness" | "algorithm" | "released" | "cost";
 const OPTIONAL: readonly Column[] = ["harness", "algorithm", "released", "cost"];
-/** Hidden at first on a phone, where every column at once would not fit. */
-const NARROW_HIDDEN: readonly Column[] = ["harness", "released", "cost"];
+/**
+ * Hidden at first where every column at once would not fit the panel: on a phone all but the
+ * algorithm, below 1200 px (the side column narrows the panel from 1024 px) the harness and the
+ * release date.
+ */
+const initialHidden = (): Column[] => {
+  if (typeof window === "undefined") return [];
+  if (window.matchMedia("(max-width: 639px)").matches) return ["harness", "released", "cost"];
+  if (window.matchMedia("(max-width: 1199px)").matches) return ["harness", "released"];
+  return [];
+};
 
 type FilterKey = "model" | "harness" | "algorithm" | "thinking";
 const FILTERS: readonly FilterKey[] = ["algorithm", "model", "harness", "thinking"];
 
-const TH = "py-2 pr-3 text-left font-medium whitespace-nowrap last:pr-0";
-const TD = "py-2.5 pr-3 align-top last:pr-0";
+const TH = "py-2 pr-2 text-left font-medium whitespace-nowrap last:pr-0 sm:pr-3";
+const TD = "py-2.5 pr-2 align-top last:pr-0 sm:pr-3";
 const CHIP_ON = "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200";
 const CHIP_OFF = "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800";
 
 const distinct = (values: readonly string[]): string[] => [...new Set(values)];
-
-const narrowScreen = () =>
-  typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
 
 /** One run's time: minutes under an hour, else hours to one decimal. */
 export function formatDuration(ms: number): string {
@@ -56,9 +62,7 @@ export function ScoreTable({
   const { locale } = useSiteLocale();
   const ranked = byValue(entries);
   const [chosen, setChosen] = useState<Partial<Record<FilterKey, readonly string[]>>>({});
-  const [hidden, setHidden] = useState<ReadonlySet<Column>>(
-    () => new Set(narrowScreen() ? NARROW_HIDDEN : []),
-  );
+  const [hidden, setHidden] = useState<ReadonlySet<Column>>(() => new Set(initialHidden()));
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const ids = useId();
 
@@ -200,7 +204,7 @@ export function ScoreTable({
                     <td className={`${TD} text-gray-500 tabular-nums dark:text-gray-400`}>
                       {rankOf(entry)}
                     </td>
-                    <td className={`${TD} min-w-24 sm:min-w-36`}>
+                    <td className={`${TD} min-w-20 sm:min-w-36`}>
                       {entry.thinking ? t.modelThinking(entry.model, entry.thinking) : entry.model}
                     </td>
                     {has("harness") && (
@@ -214,7 +218,7 @@ export function ScoreTable({
                       </td>
                     )}
                     {has("algorithm") && (
-                      <td className={`${TD} min-w-20 font-medium sm:min-w-24`}>
+                      <td className={`${TD} min-w-16 font-medium sm:min-w-24`}>
                         {methodOf(entry)}
                       </td>
                     )}
@@ -224,7 +228,7 @@ export function ScoreTable({
                         aria-expanded={isOpen}
                         aria-controls={rowId}
                         onClick={() => toggleRow(entry.key)}
-                        className="-mx-1.5 flex items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="-ml-1.5 flex items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                       >
                         <span className="flex w-11 flex-col">
                           <span className="font-medium tabular-nums">
