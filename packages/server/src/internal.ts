@@ -40,7 +40,9 @@ export type {
 } from "@penguinharness/plugin-agents/server";
 export type {
   Access,
+  AccessibleProjectRow,
   AgentIndex,
+  MemberRow,
   Members,
   ModelOAuth,
   ModelPromotion,
@@ -50,6 +52,7 @@ export type {
   ProjectConfigStore,
   ProjectEvents,
   ProjectLifecycle,
+  ProjectRow,
   Projects,
 } from "@penguinharness/plugin-projects/server";
 export * from "./services/task-attachments.js";
@@ -83,7 +86,6 @@ export * from "./db/repos/trace-index.js";
 export * from "./db/repos/usage.js";
 export * from "./db/database.js";
 export * from "./db/repos/machines.js";
-export * from "./db/repos/projects.js";
 export * from "./db/repos/users.js";
 export * from "./mechanisms/agent-api.js";
 export * from "./lock.js";
