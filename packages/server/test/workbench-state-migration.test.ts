@@ -27,13 +27,16 @@
  * - A plugin install (the route) or update (company mode) on an un-migrated Agent migrates first:
  *   the install updates the moved folder, keeping its data, instead of creating a new one.
  * - The history route lists the imported versions, and rolling back to the oldest restores its files.
+ * - A snapshot import on an un-migrated Agent moves its workbenches in first: they are in the
+ *   snapshot taken before the import, and the package's own arrive without a conflict.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
+import * as tar from "tar";
 import type { AgentsResponse, WorkbenchVersion } from "../src/api/types.js";
 import { migrateWorkbenches } from "../src/workbenches/migrate.js";
 import { migrateWorkbenchesIntoState } from "../src/workbenches/migrate-state.js";
@@ -313,8 +316,8 @@ describe(
       await t.cleanup();
     });
 
-    /** A new Agent of the Project, for its workbenches to be written in the old layout. */
-    async function unmigrated(): Promise<{ agentId: string; dir: string; route: string }> {
+    /** A new Agent of the Project; most scenarios then write its workbenches in the old layout. */
+    async function newAgent(): Promise<{ agentId: string; dir: string; route: string }> {
       agents += 1;
       const agentId = `old_${agents}`;
       const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
@@ -348,7 +351,7 @@ describe(
     }
 
     it("counts an un-migrated Agent's workbench in the Agents list, migrating it first", async () => {
-      const { agentId, dir } = await unmigrated();
+      const { agentId, dir } = await newAgent();
       await oldLayout(dir);
       const res = await owner.get(`/api/projects/${PROJECT}/agents`);
       expect(res.status).toBe(200);
@@ -358,7 +361,7 @@ describe(
     });
 
     it("shows the workbench a plugin installed in the Agent's plugin list, migrating it first", async () => {
-      const { dir, route } = await unmigrated();
+      const { dir, route } = await newAgent();
       await oldSupport(dir);
       const res = await owner.get(`${route}/plugins`);
       expect(res.status).toBe(200);
@@ -381,7 +384,7 @@ describe(
       ],
     ];
     it.each(installs)("updates the moved workbench, keeping its data: %s", async (_, install) => {
-      const { agentId, dir, route } = await unmigrated();
+      const { agentId, dir, route } = await newAgent();
       const support = await oldSupport(dir);
       await install(route, agentId);
       expect(await fs.readFile(path.join(support, "state.json"), "utf8")).toBe(STATE);
@@ -390,7 +393,7 @@ describe(
     });
 
     it("lists the imported versions in the history route and rolls back to the oldest", async () => {
-      const { dir, route } = await unmigrated();
+      const { dir, route } = await newAgent();
       await oldLayout(dir);
       const base = `${route}/workbenches/demo`;
       const res = await owner.get(`${base}/history`);
@@ -405,6 +408,32 @@ describe(
       expect(await fs.readFile(moved(dir, "index.ts"), "utf8")).toBe(RECORDED[0]!.index);
       expect(await fs.readFile(moved(dir, "ui", "index.html"), "utf8")).toBe(RECORDED[0]!.page);
       expect(await fs.readFile(moved(dir, "state.json"), "utf8")).toBe(STATE);
+    });
+
+    it("moves an un-migrated Agent's workbenches in before a snapshot import replaces its state", async () => {
+      const { agentId, dir, route } = await newAgent();
+      await oldLayout(dir);
+      const source = await newAgent();
+      const pkg = path.join(agentStateDir(t.root, PROJECT, source.agentId), "workbenches", "pkg");
+      await fs.mkdir(pkg, { recursive: true });
+      await fs.writeFile(path.join(pkg, "package.json"), JSON.stringify({ name: "Pkg" }));
+      const archive = Buffer.from(await (await owner.get(`${source.route}/export`)).arrayBuffer());
+      const imported = await owner.post(`${route}/import`, {
+        dataBase64: archive.toString("base64"),
+        confirm: true,
+      });
+      expect(imported.status, await imported.text()).toBe(200);
+      // What the Agent had is in the snapshot taken before its state was replaced.
+      const entries: string[] = [];
+      await tar.list({
+        file: path.join(snapshotsDir(t.root, PROJECT, agentId), "v1.tar.gz"),
+        onReadEntry: (entry) => void entries.push(entry.path),
+      });
+      expect(entries).toContain("agent_state/workbenches/demo/state.json");
+      await missing(path.join(dir, "workbenches"));
+      const listed = await owner.get(`${route}/workbenches`);
+      expect(listed.status, await listed.clone().text()).toBe(200);
+      expect(await listed.json()).toMatchObject({ workbenches: [{ id: "pkg" }] });
     });
   },
 );

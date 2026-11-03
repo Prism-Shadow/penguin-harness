@@ -478,9 +478,7 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     }
   });
 
-  // The Workflow conversion still lands in `<agentDir>/workbenches/`; this passes again once
-  // that folder is moved into Agent State on first access.
-  it.skip("loads an existing Workflow through the new route without losing state", async () => {
+  it("loads an existing Workflow through the new route without losing state", async () => {
     const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "legacy" });
     expect(made.status).toBe(201);
     const legacy = path.join(agentDir(t.root, PROJECT, "legacy"), "workflows/demo");

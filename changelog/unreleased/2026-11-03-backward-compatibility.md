@@ -12,7 +12,7 @@ Every compatibility decision of this batch is recorded here once; the feature en
 
 [Workbenches moved into Agent State](2026-11-03-workbenches-live-in-agent-state.md) and [their versions became git commits](2026-11-03-workbench-versions-are-git-commits.md). Before this batch an Agent kept its workbenches in `<agentDir>/workbenches/<id>/`, and a full copy of each successfully loaded version, up to 20 of them, in `<agentDir>/workbenches-history/<id>/<revision>/`, listed newest first in `versions.json`. Left alone, every upgraded install would have listed no workbenches, the built-in Support app and its tickets among them, and the Plugins page would have offered `penguin-support` as not installed.
 
-Chosen (owner's decision): **a one-time migration that keeps the history.** The first time the server touches an Agent's workbenches (its Workbenches tab, a workbench page, the Agents list, the Agent's plugin list, a plugin install, a company-mode plugin update):
+Chosen (owner's decision): **a one-time migration that keeps the history.** The first time the server touches an Agent's workbenches (its Workbenches tab, a workbench page, the Agents list, the Agent's plugin list, a plugin install, a company-mode plugin update, an Agent snapshot import):
 
 - `<agentDir>/workbenches/` moves into `agent_state/workbenches/` in one rename, so each workbench's `state.json`, `.harness/` and `.plugin.json` arrive unchanged.
 - Each version `versions.json` lists becomes a commit in `agent_state/.git`, oldest first, dated with its original `savedAt`; the live folder is then committed as the newest version when it differs. History and Restore show the versions and times they showed before the upgrade.
@@ -30,7 +30,7 @@ Nothing. If an Agent has both `<agentDir>/workbenches/` and `agent_state/workben
 
 ### Lifetime
 
-The Workbench maintainers keep this migration until the next major version (1.0) and remove it in that release's preparation: `packages/server/src/workbenches/migrate-state.ts`, its call in `migrateWorkbenches` (`migrate.ts`) and `test/workbench-state-migration.test.ts`, and, with the Workflow conversion already gone at 0.3, `migrateWorkbenches` itself with every await of it (`workbenches/service.ts`, `services/agent-service.ts`, `http/routes/plugins.ts`). It is not removed together with the Workflow conversion at 0.3. The backup is never removed by code.
+The Workbench maintainers keep this migration until the next major version (1.0) and remove it in that release's preparation: `packages/server/src/workbenches/migrate-state.ts`, its call in `migrateWorkbenches` (`migrate.ts`) and `test/workbench-state-migration.test.ts`, and, with the Workflow conversion already gone at 0.3, `migrateWorkbenches` itself with every await of it (`workbenches/service.ts`, `services/agent-service.ts`, `http/routes/plugins.ts`, `http/routes/agent-transfer.ts`). It is not removed together with the Workflow conversion at 0.3. The backup is never removed by code.
 
 ## Compatibility
 

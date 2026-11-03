@@ -25,8 +25,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AgentStateRepo, type SourceFile } from "./repo.js";
-import { listFolders, readFolder, type WorkbenchFolder } from "./store.js";
+import { AgentStateRepo } from "./repo.js";
+import { listFolders, readFolder, readSource, type WorkbenchFolder } from "./store.js";
 
 const JOURNAL = ".workbench-migration";
 const STARTED = "state-started";
@@ -133,22 +133,16 @@ async function importVersions(
   )
     done += 1;
   for (const version of versions.slice(done)) {
-    await repo.commitPath(rel, await sourceFiles(version.folder), subject(version.folder), {
+    await repo.commitPath(rel, await readSource(version.folder), subject(version.folder), {
       at: version.at,
     });
   }
   // Unchanged content records nothing, so the newest version is not listed twice.
-  await repo.commitPath(rel, await sourceFiles(folder), subject(folder));
+  await repo.commitPath(rel, await readSource(folder), subject(folder));
 }
 
 /** The commit subject a load of this folder records. */
 const subject = (folder: WorkbenchFolder) => `workbench ${folder.id} @${folder.revision}`;
-
-async function sourceFiles(folder: WorkbenchFolder): Promise<SourceFile[]> {
-  return Promise.all(
-    folder.files.map(async (rel) => ({ rel, body: await fs.readFile(path.join(folder.dir, rel)) })),
-  );
-}
 
 /**
  * The versions `versions.json` lists (newest first on disk), oldest first. An entry that is not
