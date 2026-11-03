@@ -1,8 +1,80 @@
-import * as api from "@penguinharness/penguin-web/internal";
-import { S } from "@penguinharness/penguin-web/internal";
-import { apiErrorText } from "@penguinharness/penguin-web/internal";
-import { formatDateTime } from "@penguinharness/penguin-web/internal";
-import { toneInk, type Tone } from "@penguinharness/penguin-web/internal";
+/**
+ * Shared messaging binding editor — ONE implementation behind both the session-row dialog
+ * and the conversation's Messaging dock panel (the two hosts differ only in where they
+ * place the Save action and the FAQ folds, so the state machine is a hook and the pieces
+ * are body components; neither host forks the form).
+ *
+ * Channel model: a Session keeps at most one saved config PER channel — all of them may
+ * sit saved side by side — and AT MOST ONE of them is enabled. The channel selector
+ * switches freely between the channel forms (each independently savable, each showing its
+ * own configured/enabled state); enabling one channel while another is enabled is gated
+ * with a "turn that one off first" hint (the server refuses it too, 409).
+ *
+ * The form opens on the connection controls and the credential fields trail them: the
+ * channels' field lists differ in length, so controls placed under the fields would sit at
+ * a different height in each channel and move on every switch. That is also why QQ's
+ * replies-only rule — the one piece of channel copy too load-bearing to leave in a
+ * collapsed fold — sits below its fields rather than above them. The explanation lives in
+ * collapsed FAQ folds below the save area (`MessagingBindingHelp`), and the channel's
+ * leading credential field — where the value starts being pasted — carries at its label's
+ * top-right corner a link to wherever that channel issues the credential (the models-page
+ * "get API key" idiom, which puts the link on the field, not in a row of its own). Secrets
+ * follow that page's interaction: the field always starts empty, a stored secret shows as a
+ * masked line under it with a "clear stored …" checkbox (typing unchecks it; applied on
+ * Save), blank keeps the stored value — and clearing requires the channel's connection to be
+ * disabled first. The connection switch IS the bind/unbind control — enabling binds the
+ * bot to this conversation, turning it off releases it, and the credentials stay saved
+ * through both, so several conversations may keep one bot saved and take turns holding it
+ * (the server refuses a second live one with 409 `account_enabled_elsewhere`, naming
+ * nothing about who holds it). That is semantics, so it is disclosed rather than parked on
+ * screen: the switch carries it as its tooltip and the "what binding does" fold states it
+ * in full. Deleting a stored credential remains a separate act — the per-field clear.
+ *
+ * Two channels lead their section with scan-to-connect, after which the server holds the
+ * credentials without them ever passing through this browser. On QQ (`qq-scan-connect.tsx`)
+ * the typed fields stay below the QR as the fallback; on WeChat
+ * (`wechat-scan-connect.tsx`) there are no fields at all, because the bot token has no other
+ * source — so that channel's section is the QR, the stored-token row, and nothing else.
+ *
+ * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
+ * connect/error flips show up live.
+ *
+ * Under the settings commit model the credentials and the delivery switches are one record per
+ * channel: they wait for Save, which is live once the selected channel's form differs from what
+ * is stored and nothing in it is wrong (a malformed value is said under its field as it is
+ * typed; an empty required one is marked by its asterisk). The connection switch is the instant
+ * control beside them, gated while the form holds unsaved edits. Each host registers the
+ * editor's unsaved edits with the shared guard under a scope of its own, so leaving it asks
+ * first — the dialog's close, the dock tab's ×, a route change.
+ */
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+
+import type {
+  MessagingBindingInfo,
+  MessagingBindingsResponse,
+  MessagingChannel,
+  MessagingRuntimeStatus,
+  TelegramTestResponse,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Checkbox,
+  FieldLabel,
+  HelpFold,
+  InfoPopover,
+  Input,
+  PasswordInput,
+  Segmented,
+  Switch,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
 
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";

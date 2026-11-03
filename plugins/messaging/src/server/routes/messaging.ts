@@ -100,7 +100,7 @@ import type { MessagingBridge } from "../messaging/bridge.js";
 import type { QQScanService } from "../messaging/qq-scan.js";
 import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
-import type { Access } from "@penguinharness/plugin-projects/server";
+import type { Access } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MessagingRouteDeps {

@@ -17,7 +17,7 @@
  */
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import { Button, Modal, useGuardedClose, useUnsavedChanges } from "@prismshadow/penguin-ui";
-import { S } from "@penguinharness/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
