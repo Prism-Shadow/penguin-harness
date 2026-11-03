@@ -1,11 +1,11 @@
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { MessageStream } from "../message-stream";
 import { ChatDropRegion } from "../drop-zone";
 import { ConversationOutline } from "../conversation-outline";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "../goal-banner";
-import { DockPanel, DockLauncher } from "../../dock";
+import { DockPanel, DockLauncher } from "@prismshadow/penguin-web/internal";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";

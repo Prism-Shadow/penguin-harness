@@ -1,6 +1,6 @@
 import { Fold, GroupHeader } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { DRAFTS_GROUP_KEY, NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
+import { S } from "@prismshadow/penguin-web/internal";
+import { DRAFTS_GROUP_KEY, NEW_CHAT_ICON } from "@prismshadow/penguin-web/internal";
 import { DraftRow } from "./main-draft-row";
 import type { MainSidebarState } from "./main-sidebar-controller";
 

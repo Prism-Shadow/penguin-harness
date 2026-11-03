@@ -17,7 +17,7 @@
  * so mode changes take effect immediately.
  * Docs: /docs/tools § "Approval".
  */
-import type { ApprovalMode } from "../api/types.js";
+import type { ApprovalMode } from "@prismshadow/penguin-server/api";
 import type {
   ApprovalDecision,
   ApproveFn,

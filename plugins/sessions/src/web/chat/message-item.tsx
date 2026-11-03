@@ -18,12 +18,12 @@ import {
   MessageMeta,
   MessageRow,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { formatMessageTime } from "../../lib/format";
-import { splitAttachments } from "../../lib/attachments";
-import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { formatMessageTime } from "@prismshadow/penguin-web/internal";
+import { splitAttachments } from "@prismshadow/penguin-web/internal";
+import { routedUrl } from "@prismshadow/penguin-web/internal";
+import type { ChatItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
 import { MessageFilesCard } from "./message-files-card";
 import { ReplyTrailer } from "./reply-files-provider";
 import { MemoryChangesCard } from "./memory-changes-card";
@@ -46,7 +46,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "../../lib/skill-use";
+import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
 

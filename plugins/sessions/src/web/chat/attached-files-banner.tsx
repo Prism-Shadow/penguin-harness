@@ -7,8 +7,8 @@
  * notices; the caller owns its user-side alignment and timestamp footer.
  */
 import { TranscriptNote } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { PAPERCLIP_ICON, attachmentFileName } from "../../lib/attachments";
+import { S } from "@prismshadow/penguin-web/internal";
+import { PAPERCLIP_ICON, attachmentFileName } from "@prismshadow/penguin-web/internal";
 
 export function AttachedFilesBanner({ files }: { files: string[] }) {
   // The names are cut to the line, the composer chip's rule (truncate max-w-56) applied to a

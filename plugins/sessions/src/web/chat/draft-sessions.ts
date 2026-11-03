@@ -20,7 +20,7 @@
  */
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
-import { randomHex } from "../../lib/random-id";
+import { randomHex } from "@prismshadow/penguin-web/internal";
 import {
   clearDraft,
   draftFromUnknown,

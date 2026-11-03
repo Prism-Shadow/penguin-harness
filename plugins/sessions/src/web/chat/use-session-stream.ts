@@ -24,21 +24,21 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMessages } from "../../api/endpoints";
-import { probeSession } from "../../api/session-probe";
-import { openSessionStream } from "../../api/sse";
+import { getGoal, getMessages } from "@prismshadow/penguin-web/internal";
+import { probeSession } from "@prismshadow/penguin-web/internal";
+import { openSessionStream } from "@prismshadow/penguin-web/internal";
 import {
   createStreamController,
   type OlderHistoryState,
   type PendingApproval,
   type StreamController,
-} from "../../lib/omni/stream-controller";
+} from "@prismshadow/penguin-web/internal";
 
-import { createStreamModel, type ChatItem, type StreamModel } from "../../lib/omni/stream-model";
+import { createStreamModel, type ChatItem, type StreamModel } from "@prismshadow/penguin-web/internal";
 
 import type { GoalBannerState } from "./goal-use";
 
-export type { OlderHistoryState, PendingApproval } from "../../lib/omni/stream-controller";
+export type { OlderHistoryState, PendingApproval } from "@prismshadow/penguin-web/internal";
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;

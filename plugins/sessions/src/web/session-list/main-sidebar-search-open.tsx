@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { S } from "../../lib/strings";
-import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
+import { S } from "@prismshadow/penguin-web/internal";
+import { onCommand } from "@prismshadow/penguin-web/internal";
+import { useShortcutTitle } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarGroupMode } from "./main-sidebar-group-mode";
 
 /** Consecutive live main statements 49..57, called once in original hook order. */

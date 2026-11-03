@@ -5,10 +5,10 @@
  * comes back to the page — and does not drop back to "—" while the fresh list is on its way.
  */
 import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { useFreshRead } from "../../lib/use-fresh-read";
+import * as api from "@prismshadow/penguin-web/internal";
+import { useFreshRead } from "@prismshadow/penguin-web/internal";
 
-export { useRsiToolkits } from "../../lib/use-rsi-toolkits";
+export { useRsiToolkits } from "@prismshadow/penguin-web/internal";
 
 /** The last Benchmark list read per Project in this page load. */
 const benchmarkLists = new Map<string, BenchmarkSummary[]>();

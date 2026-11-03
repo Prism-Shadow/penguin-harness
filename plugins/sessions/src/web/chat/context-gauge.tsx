@@ -78,7 +78,7 @@ import {
   usePointerDrag,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
-import { getSessionContext } from "../../api/endpoints";
+import { getSessionContext } from "@prismshadow/penguin-web/internal";
 import {
   MIN_COMPACTION_THRESHOLD,
   THRESHOLD_STEP,
@@ -88,9 +88,9 @@ import {
   thresholdCappedByWindow,
   thresholdFraction,
   thresholdFromPointer,
-} from "../../lib/context";
-import { formatPercent, humanizeTokens } from "../../lib/format";
-import { S } from "../../lib/strings";
+} from "@prismshadow/penguin-web/internal";
+import { formatPercent, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { contextComposition, type ContextPartKey } from "./context-parts";
 
 /**

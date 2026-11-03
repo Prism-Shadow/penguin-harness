@@ -12,9 +12,9 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "../../lib/skill-use";
+import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
 import { parseOrgTriggerMessage } from "./org-trigger";
-import { splitAttachments } from "../../lib/attachments";
+import { splitAttachments } from "@prismshadow/penguin-web/internal";
 
 export interface UserMessageBody {
   /** What remains once protocol blocks and attachment lines are stripped: the text the user wrote (trimmed; may be empty for e.g. an image-only message). */

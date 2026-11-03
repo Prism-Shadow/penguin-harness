@@ -4,9 +4,9 @@
  */
 import type { SessionProcessInfo } from "@prismshadow/penguin-server/api";
 import { Dot } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
-import { formatDateTime } from "../../../lib/format";
-import { Truncated } from "../../../components/ui/truncated";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { Truncated } from "@prismshadow/penguin-web/internal";
 
 export interface ProcessListProps {
   processes: SessionProcessInfo[];

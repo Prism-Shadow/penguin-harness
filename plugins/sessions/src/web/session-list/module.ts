@@ -4,7 +4,7 @@
  */
 import { Bind, Module, Provide, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 
-import type { SidebarSection } from "../../lib/sidebar-contributions";
+import type { SidebarSection } from "@prismshadow/penguin-web/internal";
 import type { ChatDrafts } from "../chat";
 import type { SessionList } from "./iface";
 import { sessionListDeps } from "./deps";

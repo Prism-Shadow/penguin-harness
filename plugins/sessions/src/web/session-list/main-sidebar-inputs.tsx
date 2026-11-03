@@ -1,10 +1,10 @@
-import { sectionsIn, currentModeIndex } from "../../lib/sidebar-modes";
+import { sectionsIn, currentModeIndex } from "@prismshadow/penguin-web/internal";
 import { useLocation, useMatch, useNavigate } from "react-router";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import { useUpdateBadges } from "../../lib/use-update-badges";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "@penguinharness/plugin-company/web";
 import { parseOrgKey } from "@penguinharness/plugin-company/web";
 import type {
@@ -12,7 +12,7 @@ import type {
   SidebarBindingReader,
   SidebarNavSelector,
   SidebarPagesReader,
-} from "../../lib/main-sidebar-bindings";
+} from "@prismshadow/penguin-web/internal";
 
 /** Consecutive live main statements 0..18, called once in original hook order. */
 export function useMainSidebarInputs(

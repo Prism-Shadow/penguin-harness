@@ -6,11 +6,11 @@
  * subagents panel focused on the child through ctx.onOpenSubagent.
  */
 import { SubagentChip } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { hasPendingWithinOrigin, type StreamModel } from "../../lib/omni/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { hasPendingWithinOrigin, type StreamModel } from "@prismshadow/penguin-web/internal";
 
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";
 import type { StreamRenderContext } from "./message-stream";
 

@@ -43,17 +43,17 @@ import {
   Text,
   toastError,
 } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../api/client";
-import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { NestedSessionMeta, StreamModel } from "@prismshadow/penguin-web/internal";
 import { ChatInput, type ComposerControl } from "./chat-input";
 
-import type { PermissionPick } from "../../lib/permission-level";
-import { noteSessionSeen } from "../../lib/session-seen";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 import {
   extractTopology,
   extractTopologyForChild,
@@ -66,7 +66,7 @@ import {
 import { AgentTopologyView } from "./agent-topology-view";
 import { MessageStream, type StreamRenderContext } from "./message-stream";
 
-import type { ComposerReference } from "../../lib/workspace-tree";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 
 interface Selection {
   sessionId: string;

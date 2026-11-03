@@ -3,7 +3,7 @@ import type {
   SidebarBindingReader,
   SidebarNavSelector,
   SidebarPagesReader,
-} from "../../lib/main-sidebar-bindings";
+} from "@prismshadow/penguin-web/internal";
 import { useMainSidebarInputs } from "./main-sidebar-inputs";
 import { useMainSidebarSessions } from "./main-sidebar-sessions";
 import { useMainSidebarNavCollapsed } from "./main-sidebar-nav-collapsed";

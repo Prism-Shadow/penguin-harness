@@ -4,8 +4,8 @@ import {
   aggregateWorkspaceLatest,
   completeWorkspaceGroups,
   groupSessionsByWorkspace,
-} from "../../lib/session-grouping";
-import { machineForSession } from "../../lib/session-machines";
+} from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";
 import { dropsEmployeeGroup } from "@penguinharness/plugin-agents/web";

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { groupPageOf, workspaceGroupKey } from "../../lib/session-grouping";
+import { groupPageOf, workspaceGroupKey } from "@prismshadow/penguin-web/internal";
 import {
   registerWorkspace,
   saveWorkspaceRegistry,

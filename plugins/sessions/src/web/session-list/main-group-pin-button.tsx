@@ -1,6 +1,6 @@
 import { ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { Icon } from "../../components/ui/group-list";
+import { S } from "@prismshadow/penguin-web/internal";
+import { Icon } from "@prismshadow/penguin-web/internal";
 
 export function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
   return (

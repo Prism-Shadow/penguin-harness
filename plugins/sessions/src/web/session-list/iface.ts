@@ -9,7 +9,7 @@
  */
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
 
-import type { RowAction } from "../../lib/session-row-contributions";
+import type { RowAction } from "@prismshadow/penguin-web/internal";
 
 @Interface()
 export abstract class SessionList {}

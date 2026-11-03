@@ -3,8 +3,8 @@
  * `fileRenderers` contributions (iface.ts), read once at boot.
  */
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
-import type { FileRenderer } from "../../lib/file-renderers";
-import { createDeps } from "../../lib/module-deps";
+import type { FileRenderer } from "@prismshadow/penguin-web/internal";
+import { createDeps } from "@prismshadow/penguin-web/internal";
 import type { FileRendererData, SessionTab, SessionTabData } from "./iface";
 
 export interface ChatDeps {

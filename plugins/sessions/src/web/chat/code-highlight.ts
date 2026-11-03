@@ -1,1 +1,1 @@
-export * from "../../lib/code-highlight";
+export * from "@prismshadow/penguin-web/internal";

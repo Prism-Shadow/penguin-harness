@@ -16,18 +16,18 @@ import {
   ElapsedSplitRows,
   StatHint,
   TokenPartsRows,
-} from "../../components/ui/stat-hint";
-import type { UsageParts } from "../../components/ui/stat-hint";
+} from "@prismshadow/penguin-web/internal";
+import type { UsageParts } from "@prismshadow/penguin-web/internal";
 import {
   cacheHitRate,
   formatPercent,
   humanizeDuration,
   humanizeDurationLive,
-} from "../../lib/format";
-import { liveSessionElapsedMs, sessionElapsedBreakdown } from "../../lib/omni/task-stats";
-import type { TaskStatsTracker } from "../../lib/omni/task-stats";
-import { S } from "../../lib/strings";
-import type { Currency } from "../../state/theme";
+} from "@prismshadow/penguin-web/internal";
+import { liveSessionElapsedMs, sessionElapsedBreakdown } from "@prismshadow/penguin-web/internal";
+import type { TaskStatsTracker } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { Currency } from "@prismshadow/penguin-web/internal";
 
 interface ElapsedSource {
   stats: TaskStatsTracker;

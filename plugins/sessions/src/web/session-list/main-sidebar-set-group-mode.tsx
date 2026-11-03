@@ -6,13 +6,13 @@ import {
   storeNavPinOverrides,
   withNavPinned,
   type NavEntryKey,
-} from "../../lib/sidebar-nav-state";
+} from "@prismshadow/penguin-web/internal";
 
-import { loadSessionOrder } from "../../lib/session-order";
+import { loadSessionOrder } from "@prismshadow/penguin-web/internal";
 import { loadGroupOrder } from "./group-order";
-import { storeGroupMode, type GroupMode } from "../../components/ui/group-list";
+import { storeGroupMode, type GroupMode } from "@prismshadow/penguin-web/internal";
 
-import { NAV_DRAG_MIME, isNavDrag, NavArea } from "../../lib/main-sidebar-persistence";
+import { NAV_DRAG_MIME, isNavDrag, NavArea } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarCanDrag } from "./main-sidebar-can-drag";
 
 /** Consecutive live main statements 77..81, called once in original hook order. */

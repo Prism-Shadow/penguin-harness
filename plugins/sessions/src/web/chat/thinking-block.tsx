@@ -3,8 +3,8 @@
  * this binds the item's streaming and stop state to the row's run state and labels.
  */
 import { ThinkingBlock } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import type { ThinkingItem } from "../../lib/omni/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { ThinkingItem } from "@prismshadow/penguin-web/internal";
 
 export function SessionThinking({ item }: { item: ThinkingItem }) {
   const failed = item.stopReason !== undefined && item.stopReason !== "completed";

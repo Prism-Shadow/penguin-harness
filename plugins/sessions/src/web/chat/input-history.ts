@@ -22,8 +22,8 @@
  *   entry, ↑/↓ first walk the caret through the lines; only ↑ on the first line / ↓ on the
  *   last line step the history.
  */
-import type { ChatItem } from "../../lib/omni/stream-model";
-import { splitAttachments } from "../../lib/attachments";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+import { splitAttachments } from "@prismshadow/penguin-web/internal";
 import { parseUserMessageBody } from "./user-message-body";
 
 /** Active navigation state; null in the composer means "not navigating". */

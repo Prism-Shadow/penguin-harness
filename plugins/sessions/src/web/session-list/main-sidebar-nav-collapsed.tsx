@@ -3,9 +3,9 @@ import {
   initialNavGroupCollapsed,
   initialNavPinOverrides,
   type NavEntryKey,
-} from "../../lib/sidebar-nav-state";
+} from "@prismshadow/penguin-web/internal";
 
-import { NavArea } from "../../lib/main-sidebar-persistence";
+import { NavArea } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarSessions } from "./main-sidebar-sessions";
 
 /** Consecutive live main statements 30..36, called once in original hook order. */

@@ -11,7 +11,7 @@
  * stand in for the Project's defaults on every later "New chat".
  */
 import type { AgentSummary, ChatDefaultsDto } from "@prismshadow/penguin-server/api";
-import { pickDefaultAgent } from "../../lib/default-agent";
+import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
 import {
   clearDraft,
   draftKey,

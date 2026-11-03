@@ -128,14 +128,14 @@ import {
   type TagInputChip,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { formatBytes, humanizeTokens } from "../../lib/format";
-import { fitTextarea } from "../../lib/textarea-fit";
-import { useLocale } from "../../state/locale";
-import { useAuth } from "../../state/auth";
-import { agentDisplayName } from "../../state/project";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatBytes, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { fitTextarea } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { PermissionSelect } from "./permission-select";
-import type { PermissionPick } from "../../lib/permission-level";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
@@ -155,7 +155,7 @@ import {
   buildSkillsMessage,
   localizedShortText,
   skillSlashItems,
-} from "../../lib/skill-use";
+} from "@prismshadow/penguin-web/internal";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
@@ -168,14 +168,14 @@ import {
 } from "./input-history";
 
 import { isStopAction, midRunAction } from "./composer-send";
-import { PAPERCLIP_ICON } from "../../lib/attachments";
+import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
-import { modelWindowBelowCompactionLimit } from "../../lib/context";
-import { splitDroppedFiles } from "../../lib/file-drop";
-import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
-import { splitBySize } from "../../lib/upload-limits";
-import type { ComposerReference } from "../../lib/workspace-tree";
+import { modelWindowBelowCompactionLimit } from "@prismshadow/penguin-web/internal";
+import { splitDroppedFiles } from "@prismshadow/penguin-web/internal";
+import { isLongPaste, longPasteFileName } from "@prismshadow/penguin-web/internal";
+import { splitBySize } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 import { ReferenceChip } from "./reference-chip";
 
 /**

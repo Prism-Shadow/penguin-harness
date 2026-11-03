@@ -55,10 +55,10 @@ import {
   type ActivityGroupRow,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
-import type { CompactionItem } from "../../lib/omni/stream-model";
-import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/compaction-summary";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeDuration } from "@prismshadow/penguin-web/internal";
+import type { CompactionItem } from "@prismshadow/penguin-web/internal";
+import { compactionResultVisible, compactionSummaryText } from "@prismshadow/penguin-web/internal";
 
 /**
  * One body section: the thinking block's row (status icon + label + wall time + chevron) over

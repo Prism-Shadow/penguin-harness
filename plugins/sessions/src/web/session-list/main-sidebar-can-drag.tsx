@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
-import { loadSessionOrder } from "../../lib/session-order";
+import { loadSessionOrder } from "@prismshadow/penguin-web/internal";
 import { loadGroupOrder } from "./group-order";
 import { useDraftSessions, type DraftSessionEntry } from "../chat";
 
-import { DRAG_POINTER_QUERY, loadGroupSet } from "../../lib/main-sidebar-persistence";
+import { DRAG_POINTER_QUERY, loadGroupSet } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarSearchOpen } from "./main-sidebar-search-open";
 
 /** Consecutive live main statements 58..76, called once in original hook order. */

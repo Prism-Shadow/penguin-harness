@@ -1,9 +1,9 @@
-import type { WorkspaceTarget, WorkspaceEntryHost } from "../../lib/session-row-contributions";
+import type { WorkspaceTarget, WorkspaceEntryHost } from "@prismshadow/penguin-web/internal";
 import { useContext, useState } from "react";
-import { glyphOf } from "../../lib/nav-icons";
+import { glyphOf } from "@prismshadow/penguin-web/internal";
 import { MainRowExtensions } from "./index";
 import { Dropdown, GlyphIcon, ICONS, Menu, MenuItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function GroupOverflowMenu({
   target,

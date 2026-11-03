@@ -7,10 +7,10 @@ import type { ReactNode } from "react";
 import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import { CopyButton } from "@prismshadow/penguin-ui";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { S } from "../../../lib/strings";
-import { formatDateTime } from "../../../lib/format";
-import { nameOnMachine } from "../../../lib/workspace-machines";
-import { agentDisplayName } from "../../../state/project";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import type { HeaderStats } from "./session-stats";
 
 /**

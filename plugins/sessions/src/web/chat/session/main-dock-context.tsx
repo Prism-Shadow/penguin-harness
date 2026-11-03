@@ -1,4 +1,4 @@
-import { ChatSessionContext } from "../../../lib/chat-session";
+import { ChatSessionContext } from "@prismshadow/penguin-web/internal";
 /**
  * What the chat page hands its dock panels. A dock renders every panel the same way — the
  * registered Body with its `active` flag and nothing else — but the built-in bodies
@@ -10,10 +10,10 @@ import { ChatSessionContext } from "../../../lib/chat-session";
 import { useContext, type Context, type ReactNode } from "react";
 
 import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
-import type { PermissionPick } from "../../../lib/permission-level";
-import type { StreamModel } from "../../../lib/omni/stream-model";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../../lib/omni/memory-changes";
-import type { ComposerReference } from "../../../lib/workspace-tree";
+import type { PermissionPick } from "@prismshadow/penguin-web/internal";
+import type { StreamModel } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow, MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 import type { StreamRenderContext } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";
 import type { useMemoryListing } from "../use-memory-listing";

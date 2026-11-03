@@ -43,20 +43,20 @@ import type {
   RetryNowResponse,
   TaskCreateResponse,
   SessionSandbox,
-} from "../../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
-import { decodeCursor } from "../../services/message-window.js";
+import { decodeCursor } from "@prismshadow/penguin-server/internal";
 import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import { withImagesByReference } from "@penguinharness/plugin-usage/server";
-import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { SessionRow } from "@prismshadow/penguin-server/internal";
 import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
-import { isGoalOutcome } from "../../runtime/goal-events.js";
-import { deleteSessionTree } from "../../services/session-deletion.js";
-import type { SessionDeletionDeps } from "../../services/session-deletion.js";
-import { HttpError } from "../errors.js";
-import { sseEndpoint, streamRevocation } from "../sse.js";
+import { isGoalOutcome } from "@prismshadow/penguin-server/internal";
+import { deleteSessionTree } from "@prismshadow/penguin-server/internal";
+import type { SessionDeletionDeps } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { sseEndpoint, streamRevocation } from "@prismshadow/penguin-server/internal";
 import {
   badRequest,
   listingViewOfRequest,
@@ -71,19 +71,19 @@ import {
   requireEnum,
   requireString,
   requireValidId,
-} from "../validate.js";
-import type { ServerConfig } from "../../config.js";
-import { normalizePenguinGoOrigin } from "../../config.js";
-import type { ChannelHub } from "../../runtime/channel.js";
+} from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import { normalizePenguinGoOrigin } from "@prismshadow/penguin-server/internal";
+import type { ChannelHub } from "@prismshadow/penguin-server/internal";
 import type { MessagingBridge } from "@penguinharness/plugin-messaging/server";
-import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
-import type { PreviewTokenSigner } from "../../services/preview-token.js";
+import type { SessionManager, RecallStore } from "../runtime/session-manager.js";
+import type { PreviewTokenSigner } from "@prismshadow/penguin-server/internal";
 import type {
   ActivityCursor,
   SessionListOrder,
   SessionListPaging,
   SessionService,
-} from "../../services/session-service.js";
+} from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
@@ -120,57 +120,57 @@ import {
   parseAttachmentPart,
   readRecalledFiles,
   removeAttachments,
-} from "../../services/task-attachments.js";
-import type { TaskAttachment } from "../../services/task-attachments.js";
+} from "@prismshadow/penguin-server/internal";
+import type { TaskAttachment } from "@prismshadow/penguin-server/internal";
 import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-server/internal";
+import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
-import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
+import { Channels, Config, Desktop } from "@prismshadow/penguin-server/internal";
+import { Sessions as ManagerIface, SessionServiceIface } from "../runtime/session-manager.js";
 import { Messaging } from "@penguinharness/plugin-messaging/server";
 
 import { agentsRoutes } from "@penguinharness/plugin-agents/server";
 import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
-import { vaultRoutes } from "./vault.js";
+import { vaultRoutes } from "@prismshadow/penguin-server/internal";
 import { modelsRoutes } from "@penguinharness/plugin-models/server";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "@penguinharness/plugin-models/server";
-import { platformAuthRoutes } from "./platform-auth.js";
+import { platformAuthRoutes } from "@prismshadow/penguin-server/internal";
 import { modelScopeAuthRoutes } from "@penguinharness/plugin-models/server";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
-import { commandPolicyRoutes } from "./command-policy.js";
+import { commandPolicyRoutes } from "@prismshadow/penguin-server/internal";
 import { usageRoutes } from "@penguinharness/plugin-usage/server";
 import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "@penguinharness/plugin-projects/server";
 import { archivedSessionsRoutes } from "./archived-sessions.js";
-import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
-import { PreviewTokens } from "./preview.js";
+import { ArchivedSessionsService } from "@prismshadow/penguin-server/internal";
+import { PreviewTokens } from "@prismshadow/penguin-server/internal";
 import type {
   Access,
   ModelOAuth,
   ProjectConfigStore,
   ProjectEvents,
-} from "../../mechanisms/projects.js";
-import type { PlatformAuth } from "../../services/platform-auth-service.js";
+} from "@prismshadow/penguin-server/internal";
+import type { PlatformAuth } from "@prismshadow/penguin-server/internal";
 import type { ModelScopeAuth } from "@penguinharness/plugin-models/server";
 import type {
   Schedules,
   SessionDrivers,
   SessionIndex,
   SessionOrigins,
-} from "../../mechanisms/sessions.js";
-import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
-import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
+} from "@prismshadow/penguin-server/internal";
+import type { ErrorLog, UsageQueries } from "@prismshadow/penguin-server/internal";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-server/internal";
+import type { FileReveal, WorkspaceFiles } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { LiveStreams } from "../../auth/live-streams.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { LiveStreams } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
 import type { OrgService } from "@penguinharness/plugin-company/server";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */

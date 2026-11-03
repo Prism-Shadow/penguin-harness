@@ -36,7 +36,7 @@ import {
   Spinner,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { formatTaskStats, type TaskStats } from "../../lib/omni/task-stats";
+import { formatTaskStats, type TaskStats } from "@prismshadow/penguin-web/internal";
 
 import {
   formatMessageTime,
@@ -44,11 +44,11 @@ import {
   formatTps,
   humanizeDuration,
   humanizeTokens,
-} from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { S } from "../../lib/strings";
-import { useTheme } from "../../state/theme";
-import { useLocale } from "../../state/locale";
+} from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 
 export interface ForkTarget {
   assistantText: string;

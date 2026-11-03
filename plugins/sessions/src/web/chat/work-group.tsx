@@ -17,9 +17,9 @@
 import { useContext } from "react";
 import { ActivityGroup, type ActivityGroupProps } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { FindRevealContext } from "../../lib/find-expand";
-import { approvalKey, type ChatItem } from "../../lib/omni/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { FindRevealContext } from "@prismshadow/penguin-web/internal";
+import { approvalKey, type ChatItem } from "@prismshadow/penguin-web/internal";
 
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";

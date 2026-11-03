@@ -13,8 +13,8 @@
  * the whole card hides when nothing survives.
  */
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { type MemoryChangeRow, memoryRowKey } from "../../lib/omni/memory-changes";
+import { S } from "@prismshadow/penguin-web/internal";
+import { type MemoryChangeRow, memoryRowKey } from "@prismshadow/penguin-web/internal";
 
 import { scopeGlyph } from "./memory-view";
 

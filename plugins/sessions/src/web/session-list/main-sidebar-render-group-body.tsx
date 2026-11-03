@@ -1,8 +1,8 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { MoreRow, SkeletonList } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { SIDEBAR_PAGE_SIZE, cutAtWatermark, revealPlan } from "../../lib/session-grouping";
-import { orderSessionRows } from "../../lib/session-order";
+import { S } from "@prismshadow/penguin-web/internal";
+import { SIDEBAR_PAGE_SIZE, cutAtWatermark, revealPlan } from "@prismshadow/penguin-web/internal";
+import { orderSessionRows } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarShowMore } from "./main-sidebar-show-more";
 
 /** Consecutive live main statements 138..138, called once in original hook order. */

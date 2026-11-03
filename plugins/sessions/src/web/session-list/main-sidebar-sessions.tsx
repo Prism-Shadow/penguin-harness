@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { useSessionSeen } from "../../lib/session-seen";
-import { isSidebarRow } from "../../lib/session-grouping";
+import { useSessionSeen } from "@prismshadow/penguin-web/internal";
+import { isSidebarRow } from "@prismshadow/penguin-web/internal";
 import { pendingScheduleSessions, useProjectSchedules } from "@penguinharness/plugin-schedules/web";
 import {
   collapsedGroupsKey,
   pinnedGroupsKey,
   NO_SCHEDULED_SESSIONS,
-} from "../../lib/main-sidebar-persistence";
+} from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";
 
 /** Consecutive live main statements 19..29, called once in original hook order. */

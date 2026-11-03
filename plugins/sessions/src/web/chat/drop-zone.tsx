@@ -45,10 +45,10 @@ import {
   isFileDrag,
   type DragSignal,
   type DropRegionAction,
-} from "../../lib/file-drop";
+} from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
-import { PAPERCLIP_ICON } from "../../lib/attachments";
+import { S } from "@prismshadow/penguin-web/internal";
+import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */
 const ChatDropRegionContext = createContext<HTMLElement | null>(null);

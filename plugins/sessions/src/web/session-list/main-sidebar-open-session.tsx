@@ -1,5 +1,5 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { noteSessionSeen } from "../../lib/session-seen";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarApplyRegistryChange } from "./main-sidebar-apply-registry-change";
 
 /** Consecutive live main statements 132..133, called once in original hook order. */

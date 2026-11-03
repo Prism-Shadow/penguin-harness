@@ -5,8 +5,8 @@
  * on the skill library page); the body text after the block is rendered as usual by the caller.
  */
 import { TranscriptNote } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { BOOK_ICON } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import { BOOK_ICON } from "@prismshadow/penguin-web/internal";
 
 export function SkillsBanner({ names }: { names: string[] }) {
   return (

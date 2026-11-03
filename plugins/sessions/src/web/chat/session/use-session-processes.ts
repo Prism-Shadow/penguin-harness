@@ -5,8 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionProcessInfo } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { apiErrorText } from "../../../lib/api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import type { SessionStreamState } from "../use-session-stream";
 

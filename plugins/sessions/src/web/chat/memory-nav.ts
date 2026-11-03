@@ -14,7 +14,7 @@ import {
   type MemoryChangeRow,
   type MemoryLocateTarget,
   memoryRowKey,
-} from "../../lib/omni/memory-changes";
+} from "@prismshadow/penguin-web/internal";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

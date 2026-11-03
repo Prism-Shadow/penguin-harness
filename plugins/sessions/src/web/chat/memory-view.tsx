@@ -22,16 +22,16 @@ import {
   SkeletonList,
   bodyWithoutFrontmatter,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { formatRelativeDate } from "../../lib/format";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
 import {
   type MemoryChangeRow,
   type MemoryLocateTarget,
   memoryRowKey,
-} from "../../lib/omni/memory-changes";
+} from "@prismshadow/penguin-web/internal";
 
-import { useLocale } from "../../state/locale";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import {
   buildMemoryList,
   memoryNavBack,

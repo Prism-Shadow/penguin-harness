@@ -46,9 +46,9 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import type { BrowserBackend } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { isDesktopShellWindow } from "../../lib/account-menu";
+import { S } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { isDesktopShellWindow } from "@prismshadow/penguin-web/internal";
 import {
   SELECTION_MENU_ITEMS,
   excerptReference,
@@ -57,11 +57,11 @@ import {
   menuLinkHref,
   selectionEndAnchor,
   streamMenuContent,
-} from "../../lib/selection-menu";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import { useAuth } from "../../state/auth";
-import { writeClipboard } from "../../lib/clipboard";
-import { restoreSelection } from "../../components/ui/text-selection";
+} from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { writeClipboard } from "@prismshadow/penguin-web/internal";
+import { restoreSelection } from "@prismshadow/penguin-web/internal";
 import { openLinkInBrowser, browserLinkTarget, subscribeBrowser } from "@penguinharness/plugin-browser/web";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */

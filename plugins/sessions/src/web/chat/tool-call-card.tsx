@@ -20,13 +20,13 @@ import {
   type ToolCallDuration,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { toolDisplayName } from "../../lib/tool-alias";
-import { stripAnsi } from "../../lib/strip-ansi";
-import { routedUrl } from "../../lib/session-machines";
-import { approvalKey, type ToolCallItem } from "../../lib/omni/stream-model";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toolDisplayName } from "@prismshadow/penguin-web/internal";
+import { stripAnsi } from "@prismshadow/penguin-web/internal";
+import { routedUrl } from "@prismshadow/penguin-web/internal";
+import { approvalKey, type ToolCallItem } from "@prismshadow/penguin-web/internal";
 
-import { useTheme } from "../../state/theme";
+import { useTheme } from "@prismshadow/penguin-web/internal";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SessionSubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";

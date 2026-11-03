@@ -1,6 +1,6 @@
 import { useCallback } from "react";
-import { sessionThinkingLevel } from "../../model-picker";
-import { useDockMount, closedDockView, dockViews } from "../../dock";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { useDockMount, closedDockView, dockViews } from "@prismshadow/penguin-web/internal";
 import type { ChatDockState } from "./main-dock-context";
 import { terminalApiSupported } from "@penguinharness/plugin-terminal/web";
 import type { useMainChatActions } from "./main-chat-actions";

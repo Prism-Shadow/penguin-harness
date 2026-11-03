@@ -13,9 +13,9 @@
  * the same id here is another Agent, and its memory is not this conversation's.
  */
 import { useEffect, useState } from "react";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
 import type { ScopeFiles } from "./memory-nav";
 
 export function useMemoryListing(

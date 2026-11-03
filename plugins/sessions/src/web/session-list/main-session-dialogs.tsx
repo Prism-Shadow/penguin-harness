@@ -1,6 +1,6 @@
 import { Button, ConfirmModal, Input, Modal } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { workspaceLabel } from "../../lib/session-grouping";
+import { S } from "@prismshadow/penguin-web/internal";
+import { workspaceLabel } from "@prismshadow/penguin-web/internal";
 import { MessagingBindingModal } from "@penguinharness/plugin-messaging/web";
 import { draftSessionTitle } from "../chat";
 import type { MainSidebarState } from "./main-sidebar-controller";

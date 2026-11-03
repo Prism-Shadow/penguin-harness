@@ -1,5 +1,5 @@
-import { S } from "../../lib/strings";
-import { newEntityForGroupMode } from "../../components/ui/group-list";
+import { S } from "@prismshadow/penguin-web/internal";
+import { newEntityForGroupMode } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarArchiveSession } from "./main-sidebar-archive-session";
 
 /** Consecutive live main statements 123..124, called once in original hook order. */

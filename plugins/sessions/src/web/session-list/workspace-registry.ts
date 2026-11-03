@@ -4,7 +4,7 @@ import {
   workspaceGroupPath,
   workspaceLabel,
   type WorkspaceGroup,
-} from "../../lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */
 export interface WorkspaceEntry {

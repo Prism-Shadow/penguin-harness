@@ -6,8 +6,8 @@
  * harness-origin caption — see message-item.tsx; no goal-specific message rendering remains.)
  */
 import { Pill, TranscriptNote, type ToneName } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { humanizeTokens } from "../../lib/format";
+import { S } from "@prismshadow/penguin-web/internal";
+import { humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { GOAL_ICON, UNLIMITED_BUDGET, type GoalBannerState } from "./goal-use";
 
 /** A run still going is neutral; one that ended reached its goal or stopped short of it. */

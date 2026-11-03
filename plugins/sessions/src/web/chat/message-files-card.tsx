@@ -13,8 +13,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { isFilePathLike, toWorkspaceRelative } from "../../lib/file-path";
+import { S } from "@prismshadow/penguin-web/internal";
+import { isFilePathLike, toWorkspaceRelative } from "@prismshadow/penguin-web/internal";
 
 /** Extracts file paths from inline code in raw Markdown (deduplicated, preserving order of appearance). */
 export function extractFilePaths(markdown: string): string[] {

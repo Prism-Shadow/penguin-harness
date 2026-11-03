@@ -11,7 +11,7 @@
  */
 import { useNavigate } from "react-router";
 import { TranscriptNote } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { HandoffOrigin, ModelSwitchOrigin } from "./agent-handoff";
 
 /**

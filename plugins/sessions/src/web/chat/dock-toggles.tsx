@@ -16,8 +16,8 @@
 import { useSyncExternalStore } from "react";
 import { ICONS, PanelsToolbar, type PanelsToolbarToggle } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useShortcutTitle } from "@prismshadow/penguin-web/internal";
 import {
   dockVersion,
   isDockVisible,

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { openPanel } from "../../dock";
+import { openPanel } from "@prismshadow/penguin-web/internal";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
 import { heldRouteSession, resolveRoutedSession, sessionProbeKey } from "../session-project";
 import type { ChatInputs } from "./use-chat-inputs";

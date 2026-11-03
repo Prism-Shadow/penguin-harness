@@ -1,5 +1,5 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { panelLabel, type PanelId } from "../dock/index";
 
 import { approvalModeChoices } from "./approval-mode";

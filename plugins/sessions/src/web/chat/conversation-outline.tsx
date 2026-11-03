@@ -44,7 +44,7 @@ import {
 } from "react";
 
 import { Dot, Dropdown, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import {
   type OutlineEntry,
   globalTurnNumber,

@@ -7,13 +7,13 @@
  */
 import { Hono } from "hono";
 import { DEFAULT_CHAT_THINKING_LEVELS, isValidId } from "@prismshadow/penguin-core";
-import type { ChatDefaultsDto, SessionSandbox } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { HttpError } from "../errors.js";
-import { optionalEnum, optionalString, readJson, requireValidId } from "../validate.js";
+import type { ChatDefaultsDto, SessionSandbox } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { optionalEnum, optionalString, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
 import { APPROVAL_MODES } from "./sessions.js";
-import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
 
 /** What this route group reaches — bound by its module (src/modules). */

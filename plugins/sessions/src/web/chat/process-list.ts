@@ -5,7 +5,7 @@
  * (vitest runs node-only, no DOM).
  */
 import type { SessionProcessInfo } from "@prismshadow/penguin-server/api";
-import { ApiError } from "../../api/client";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The entries "clear exited" removes, in list order: every row that is no longer running.

@@ -25,10 +25,10 @@ import {
   ICONS,
   Spinner,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import type { TaskStats } from "../../lib/omni/task-stats";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
+import type { TaskStats } from "@prismshadow/penguin-web/internal";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { interactiveReplyIndex } from "./a2ui-reply";
@@ -38,9 +38,9 @@ import { createStreamFollow, stickToBottom, type StreamFollow } from "./stream-f
 
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "../../lib/find-dom";
-import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "@prismshadow/penguin-web/internal";
+import { FindRevealContext, useRegionRevealed } from "@prismshadow/penguin-web/internal";
 
 /**
  * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take

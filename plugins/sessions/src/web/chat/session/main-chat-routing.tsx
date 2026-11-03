@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "../../../lib/strings";
-import { useDocumentTitle } from "../../../lib/use-document-title";
-import type { MemoryLocateTarget } from "../../../lib/omni/memory-changes";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
 import {
   heldRouteSession,
@@ -10,9 +10,9 @@ import {
   routedView,
   sessionProbeKey,
 } from "../session-project";
-import { machineForSession } from "../../../lib/session-machines";
-import { useMachineModels } from "../../../lib/machine-models";
-import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { useMachineModels } from "@prismshadow/penguin-web/internal";
+import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "@prismshadow/penguin-web/internal";
 import { terminalApiSupported, subscribeTerminals } from "@penguinharness/plugin-terminal/web";
 import type { useMainChatInputs } from "./main-chat-inputs";
 

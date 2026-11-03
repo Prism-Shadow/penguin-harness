@@ -5,8 +5,8 @@
  * Session acts for its Project's owner until someone starts a run in it again.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Projects } from "../mechanisms/projects.js";
-import type { SessionDrivers, SessionIndex } from "../mechanisms/sessions.js";
+import type { Projects } from "@prismshadow/penguin-server/internal";
+import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-server/internal";
 
 /** The Sessions remembered; the oldest notes go first beyond it. */
 const MAX_NOTED = 10_000;

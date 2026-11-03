@@ -7,7 +7,7 @@
  */
 import { createContext, useContext, type ReactNode } from "react";
 
-import { ChatSessionContext, type ChatSession } from "../../../lib/chat-session";
+import { ChatSessionContext, type ChatSession } from "@prismshadow/penguin-web/internal";
 
 import type { ChatController } from "./use-chat-controller";
 import { ReplyFilesProvider } from "../reply-files-provider";

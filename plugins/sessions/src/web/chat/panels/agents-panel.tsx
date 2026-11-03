@@ -2,8 +2,8 @@
  * The agents panel (`DockModule.panels`, kind `agents`): the open conversation's subagent graph,
  * started over per conversation (keyed by Session).
  */
-import { DraftPanelEmpty } from "../../../lib/dock-panel-empty";
-import { sessionThinkingLevel } from "../../model-picker";
+import { DraftPanelEmpty } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { approvalModeChoices } from "../approval-mode";
 import { SubagentsView } from "../subagents-view";
 import { useChatControllerContext } from "../session/chat-session-context";
