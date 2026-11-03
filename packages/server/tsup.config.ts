@@ -52,6 +52,9 @@ export default defineConfig({
     // renderer, approval parsing). The CLI's build collects their @Component contributions
     // and its commands import them back through this subpath.
     "cli/index": "src/cli/index.ts",
+    // "./internal": the platform internals the parked plugin groups (plugins/*) compile
+    // against — one seam instead of reaching into this package's file tree.
+    "internal": "src/internal.ts",
   },
   format: ["esm"],
   target: "node24",

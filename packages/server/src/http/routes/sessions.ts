@@ -173,7 +173,7 @@ import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
-import type { OrgService } from "../../runtime/organization/service.js";
+import type { OrgService } from "@penguinharness/plugin-company/server";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;

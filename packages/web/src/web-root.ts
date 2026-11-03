@@ -36,7 +36,7 @@ import { UsageModule } from "./features/usage/module";
 import { BenchmarkModule } from "./features/benchmark/module";
 import { TerminalModule } from "./features/terminal/module";
 import { WorkbenchesModule } from "./features/workbenches/module";
-import { CompanyModule } from "./features/company/module";
+import { CompanyModule } from "@penguinharness/plugin-company/web";
 import { BuiltinBrowserModule } from "./features/builtin-browser/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";

@@ -1,0 +1,1217 @@
+/**
+ * The organization calendar: month / week / day views over every employee's events
+ * (geometry in calendar-geom.ts), events coloured per employee from the categorical
+ * palette, a legend that names each employee's cadence and doubles as the employee filter,
+ * and one dialog for creating and editing an event — the scheduled-task dialog minus its
+ * target fields, with the employee as a select. The grid is always on screen: a skeleton of
+ * it while the first fetch is out, the empty grid with a one-line hint when the organization
+ * has no events yet — dismissible, and repeated in the page's "?" so it stays reachable —
+ * the grid plus an error strip when a refetch fails. A month cell shows a few chips and folds
+ * the rest into a button that opens the whole day in a popover rather than the create dialog.
+ * Past instances carry the outcome the scheduler recorded. The event dialog's Save (Create)
+ * writes at once — it is live once a field changed and every required one is filled — and
+ * reports back whatever the server has to say about the rota; deleting confirms first, and
+ * closing the dialog with unsaved edits asks first.
+ *
+ * An empty slot — a month cell, an hour row — is itself the control that creates there, and it
+ * says so: a real button (CREATE_SLOT_CLASS) that tints with the theme's accent and spells out
+ * 「新建日程」 while it is hovered or focused. The button is laid under the chips so an event
+ * still opens its own event; its 「新建日程」 hint is lifted back above them, on a line of the
+ * cell reserved for it, so a day that already has events still says what its empty space does.
+ */
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router";
+import type {
+  OrgCalendarItem,
+  OrgCalendarOutcome,
+  OrgChartResponse,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Modal,
+  Notice,
+  Segmented,
+  Select,
+  Skeleton,
+  Switch,
+  Textarea,
+  toastAttention,
+  toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+  usePortalPanel,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { employeeColor } from "@prismshadow/penguin-web/internal";
+import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
+
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useCompany } from "./company-state";
+import { OrgPage, useOrg } from "./org-layout";
+import {
+  cadenceOf,
+  chipLanes,
+  dayFraction,
+  dayKey,
+  expandEvents,
+  instancesByDay,
+  legendState,
+  monthGrid,
+  shiftAnchor,
+  timeLabel,
+  toLocalInput,
+  viewRange,
+  weekDays,
+  type Cadence,
+  type CalendarView,
+  type EventInstance,
+  type GridDay,
+} from "./calendar-geom";
+
+import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
+import { toastApiError } from "../../lib/toast-api-error";
+
+const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
+  fired: "success",
+  queued: "attention",
+  paused: "muted",
+  missed: "danger",
+  error: "danger",
+};
+
+/** The mark a recorded outcome leaves on its instance: a check, an hourglass, a pause, a cross, an alert. */
+const OUTCOME_ICON: Record<OrgCalendarOutcome, string> = {
+  fired: ICONS.check,
+  queued: ICONS.hourglass,
+  paused: ICONS.pause,
+  missed: ICONS.cross,
+  error: ICONS.alertCircle,
+};
+
+/** Hour rows of the day and week columns (px per hour): a day is 24 × this tall. */
+const HOUR_PX = 44;
+/** The footprint of a chip in those columns: half an hour, the smallest slot a line of text fits at this row height. */
+const CHIP_SLOT_MS = 30 * 60_000;
+/** The columns open scrolled to 06:00 and show sixteen hours; the night is reached by scrolling. */
+const VISIBLE_FROM_HOUR = 6;
+const VISIBLE_HOURS = 16;
+/** Chips shown per month cell before the rest fold into a count. */
+const MONTH_CELL_CHIPS = 3;
+/**
+ * Width of the day popover, in px rather than a `w-` class: usePortalPanel clamps the panel's
+ * left edge against this number, and the app's root font size is a user setting (16 / 18 / 20
+ * px), so a rem-based class and a px constant would agree only at one of the three tiers.
+ */
+const DAY_PANEL_WIDTH = 240;
+
+/**
+ * The create control that fills an empty calendar slot — a month cell, an hour row of the week
+ * and day columns. It is a real button, so it takes focus and the keyboard, and it lies *under*
+ * the chips drawn in the same cell: a chip is a button too, and interactive content may not nest
+ * inside a button.
+ *
+ * Resting it is invisible. Hovered or focused it wears a low-alpha wash of the theme's accent
+ * with a hairline inset ring — the `gray-50` it used to hover with was all but unreadable on a
+ * white page, and the accent is a CSS variable, so the tint follows whichever accent the user
+ * picked instead of pinning one hue. With nobody hired there is no event to create, so the slot
+ * is disabled and drops out of the pointer's way entirely — no tint, no tooltip, nothing to say.
+ * Positioning is the call site's (`inset-0` for a month cell, `inset-x-0` plus a top/height for an
+ * hour row), and so is where the hint sits inside it.
+ */
+const CREATE_SLOT_CLASS =
+  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-accent/[0.07] hover:ring-1 hover:ring-inset hover:ring-accent/25 focus-visible:bg-accent/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 disabled:pointer-events-none";
+
+/**
+ * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
+ * hidden until its own slot is hovered or focused — a chip covering part of the slot takes the
+ * pointer itself, so the hint only ever answers for the bare part of a slot.
+ *
+ * It draws on the top layer (`z-10`), above the chips its own slot lies under, because a slot
+ * with events in it is exactly where the hint was needed and exactly where it used to be
+ * covered. That it never intercepts a click is `pointer-events-none`, not the stacking order:
+ * a click anywhere over the hint still reaches whatever is under it.
+ *
+ * The call site positions it — and so has to position it, since `z-10` only applies to a
+ * positioned element — and says how it stays readable over what it now covers: a month cell
+ * reserves its last line for it, an hour row centres it over the chips on a translucent
+ * backdrop.
+ */
+function CreateSlotHint({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-xs leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
+    >
+      <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
+      {S.company.calendar.create}
+    </span>
+  );
+}
+
+interface FormState {
+  /** Editing an existing event (its file is fixed): agentId + name; null when creating. */
+  editing: { agentId: string; name: string } | null;
+  agentId: string;
+  name: string;
+  title: string;
+  prompt: string;
+  enabled: boolean;
+  startAt: string;
+  endAt: string;
+  period: string;
+}
+
+function cadenceLabel(c: Cadence): string {
+  const t = S.company.calendar.cadence;
+  switch (c.kind) {
+    case "once":
+      return t.once;
+    case "minutes":
+      return t.minutes(c.n);
+    case "hours":
+      return t.hours(c.n);
+    case "days":
+      return c.n === 1 ? t.daily(c.time) : t.days(c.n, c.time);
+    case "weeks":
+      return c.n === 1 ? t.weekly(c.time) : t.weeks(c.n, c.time);
+    default:
+      return t.invalid;
+  }
+}
+
+const hourLabel = (h: number) => `${h < 10 ? "0" : ""}${h}:00`;
+
+export function CalendarPage() {
+  const { projectId, orgId, org } = useOrg();
+  const navigate = useNavigate();
+  const company = useCompany();
+  const { user } = useAuth();
+  useDocumentTitle(org ? `${org.name} · ${S.nav.org.calendar}` : S.nav.org.calendar);
+  const [events, setEvents] = useState<OrgCalendarItem[] | null>(null);
+  const [invalidFiles, setInvalidFiles] = useState<
+    Array<{ agentId: string; name: string; error: string }>
+  >([]);
+  const [chart, setChart] = useState<OrgChartResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<CalendarView>("month");
+  const [anchor, setAnchor] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  /** What the event dialog opened on (null while it is closed); the dialog holds the edits. */
+  const [opened, setOpened] = useState<FormState | null>(null);
+  const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // The empty-calendar note goes away for good once read; the page's "?" carries the same
+  // sentence. The key holds the organization, so switching to another one — which does not
+  // unmount this page — re-reads the dismissal instead of carrying the last answer over.
+  const emptyHintKey = hintKey(user?.userId ?? null, projectId, orgId, "calendar");
+  const [hintDismissed, setHintDismissed] = useState(() => isHintDismissed(emptyHintKey));
+  useEffect(() => {
+    setHintDismissed(isHintDismissed(emptyHintKey));
+  }, [emptyHintKey]);
+
+  const load = useCallback(async () => {
+    try {
+      const [cal, ch] = await Promise.all([
+        api.listOrgCalendar(projectId, orgId),
+        api.getOrgChart(projectId, orgId),
+      ]);
+      setEvents(cal.events);
+      setInvalidFiles(cal.invalidFiles);
+      setChart(ch);
+      setError(null);
+    } catch (e) {
+      setError(apiErrorText(e));
+    }
+  }, [projectId, orgId]);
+  // A fired slot arrives as an org_run event; a budget pause flips `paused` on every event of that employee.
+  const { runs, budget } = company.versions;
+  useEffect(() => {
+    void load();
+  }, [load, runs, budget]);
+
+  // The "now" the past marks and the time line read: a minute's precision is all they show.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const loaded = events !== null;
+  // The day and week columns open at the working hours (the hour label sits astride its
+  // line, so the scroll stops a few pixels short of it); the night above is one scroll away.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && view !== "month") el.scrollTop = VISIBLE_FROM_HOUR * HOUR_PX - 10;
+  }, [view, loaded]);
+
+  const employees = chart?.employees ?? [];
+  const names = new Map(employees.map((e) => [e.agentId, e.name]));
+  /** Colour index by chart order, so an employee keeps its hue across days and views. */
+  const colorOf = (agentId: string) => {
+    const i = employees.findIndex((e) => e.agentId === agentId);
+    return employeeColor(i === -1 ? employees.length : i);
+  };
+
+  const range = viewRange(anchor, view);
+  const instances = useMemo(() => {
+    const list = (events ?? []).filter(
+      (e) => employeeFilter === "" || e.agentId === employeeFilter,
+    );
+    return expandEvents(list, range.startMs, range.endMs, now);
+  }, [events, employeeFilter, range.startMs, range.endMs, now]);
+  const byDay = useMemo(() => instancesByDay(instances), [instances]);
+
+  const openCreate = (atMs?: number) => {
+    setOpened({
+      editing: null,
+      agentId: employeeFilter || (employees[0]?.agentId ?? ""),
+      name: "",
+      title: "",
+      prompt: "",
+      enabled: true,
+      startAt: toLocalInput(new Date(atMs ?? Date.now()).toISOString()),
+      endAt: "",
+      period: "",
+    });
+  };
+  const openEdit = (ev: OrgCalendarItem) => {
+    setOpened({
+      editing: { agentId: ev.agentId, name: ev.name },
+      agentId: ev.agentId,
+      name: ev.name,
+      title: ev.title ?? "",
+      prompt: ev.prompt,
+      enabled: ev.enabled,
+      startAt: toLocalInput(ev.startAt),
+      endAt: toLocalInput(ev.endAt),
+      period: ev.period ?? "",
+    });
+  };
+  /** Writes the dialog's event; resolves with whether it landed (the dialog then closes). */
+  const save = async (form: FormState): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const body = {
+        ...(form.title.trim() ? { title: form.title.trim() } : {}),
+        prompt: form.prompt,
+        enabled: form.enabled,
+        startAt: new Date(form.startAt).toISOString(),
+        ...(form.period.trim() ? { period: form.period.trim() } : {}),
+        ...(form.endAt ? { endAt: new Date(form.endAt).toISOString() } : {}),
+      };
+      const written =
+        form.editing !== null
+          ? await api.updateOrgCalendarEvent(
+              projectId,
+              orgId,
+              form.editing.agentId,
+              form.editing.name,
+              body,
+            )
+          : await api.createOrgCalendarEvent(projectId, orgId, {
+              ...body,
+              agentId: form.agentId,
+              name: form.name.trim(),
+            });
+      toastSuccess(S.common.saved);
+      // Rota advice, not a failure: the event is stored either way, so it rides in a second
+      // toast rather than turning the save into an error.
+      const warnings = written.warnings ?? [];
+      if (warnings.length > 0) {
+        toastAttention(`${S.company.calendar.warningsPrefix} · ${warnings.join(" · ")}`);
+      }
+      setOpened(null);
+      void load();
+      return true;
+    } catch (e) {
+      toastApiError(e);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (deleting === null) return;
+    setBusy(true);
+    try {
+      await api.deleteOrgCalendarEvent(projectId, orgId, deleting.agentId, deleting.name);
+      setDeleting(null);
+      setOpened(null);
+      void load();
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Open the desk session an instance's run went to (a past, fired instance). */
+  const openDesk = async (agentId: string) => {
+    try {
+      const desk = await api.getOrgDesk(projectId, orgId, agentId);
+      navigate(`/chat/${desk.sessionId}`);
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
+  const todayKey = dayKey(now);
+
+  /**
+   * One event instance as a chip. Employee colour carries identity; the recorded outcome (on
+   * the one instance it belongs to) rides at the end as a toned glyph; a past instance fades,
+   * and a disabled or paused event is struck through so the chip says it will not fire.
+   *
+   * It opens its event and nothing else: wherever a chip is drawn, the cell's create button is
+   * a *sibling* laid under it rather than an ancestor, so the click never reaches the create
+   * form and no handler here has to stop it.
+   */
+  const chip = (i: EventInstance, opts: { block?: boolean; onOpen?: () => void } = {}) => {
+    const color = colorOf(i.event.agentId);
+    const outcome = i.outcome;
+    const label = i.event.title ?? i.event.name;
+    const inert = !i.event.enabled || i.event.paused;
+    const title = [
+      `${timeLabel(i.atMs)} · ${label}`,
+      names.get(i.event.agentId) ?? i.event.agentId,
+      outcome !== null
+        ? (S.company.calendarOutcomes[outcome] ?? outcome)
+        : i.past
+          ? S.company.calendar.past
+          : null,
+      !i.event.enabled ? S.company.calendar.disabledNote : null,
+      i.event.paused ? S.company.calendar.pausedNote : null,
+    ]
+      .filter((p) => p !== null)
+      .join(" · ");
+    return (
+      <button
+        key={i.key}
+        type="button"
+        data-tooltip={title}
+        data-tooltip-extra
+        onClick={() => {
+          opts.onOpen?.();
+          openEdit(i.event);
+        }}
+        className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-xs leading-5 transition-opacity ${color.chip} ${
+          opts.block ? "h-full w-full" : "w-full"
+        } ${i.past && outcome === null ? "opacity-60" : ""} ${
+          inert ? "line-through decoration-1 opacity-60" : ""
+        }`}
+      >
+        <span className="shrink-0 font-mono tabular-nums">{timeLabel(i.atMs)}</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {outcome !== null && (
+          <span className={`inline-flex shrink-0 items-center ${toneInk[OUTCOME_TONE[outcome]]}`}>
+            <GlyphIcon d={OUTCOME_ICON[outcome]} size={ICON_SIZE.inlineGlyph} />
+            <span className="sr-only">{S.company.calendarOutcomes[outcome] ?? outcome}</span>
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const heading =
+    view === "month"
+      ? S.company.calendar.monthTitle(
+          new Date(anchor).getFullYear(),
+          new Date(anchor).getMonth() + 1,
+        )
+      : view === "week"
+        ? `${dayKey(range.startMs)} – ${dayKey(range.endMs - 1)}`
+        : `${dayKey(anchor)} ${S.company.calendar.weekdays[(new Date(anchor).getDay() + 6) % 7] ?? ""}`;
+
+  const toolbar = (
+    <>
+      <Segmented
+        options={[
+          { value: "month" as const, label: S.company.calendar.month },
+          { value: "week" as const, label: S.company.calendar.week },
+          { value: "day" as const, label: S.company.calendar.day },
+        ]}
+        value={view}
+        onChange={setView}
+        cols={3}
+      />
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={employees.length === 0}
+        onClick={() => openCreate()}
+      >
+        {S.company.calendar.create}
+      </Button>
+    </>
+  );
+
+  /**
+   * A month cell: the day number, up to three chips, the rest folded into a button that opens
+   * the whole day. Creating at 09:00 is the cell's own full-bleed button, laid under that
+   * content (CREATE_SLOT_CLASS) — the cell IS the control, but it cannot *contain* the chips,
+   * which are buttons themselves. The content above it is inert to the pointer so the create
+   * button keeps the whole cell, and each chip takes its pointer events back: a click on an
+   * event opens that event, and only the bare cell creates. The chips stop one line short of
+   * the bottom, which is the line the hint draws on, above them.
+   */
+  const monthCell = (day: GridDay) => {
+    const list = byDay.get(day.key) ?? [];
+    const shown = list.slice(0, MONTH_CELL_CHIPS);
+    const isToday = day.key === todayKey;
+    const createMs = day.dayStartMs + 9 * 3_600_000;
+    const weekday = S.company.calendar.weekdays[(new Date(day.dayStartMs).getDay() + 6) % 7] ?? "";
+    const createLabel = S.company.calendar.createAt(`${day.key} 09:00`);
+    return (
+      <div
+        key={day.key}
+        className={`relative min-h-24 border-r border-gray-100 p-1 last:border-r-0 dark:border-gray-800 ${
+          day.inMonth ? "" : "bg-gray-50/60 text-gray-400 dark:bg-gray-900/40 dark:text-gray-600"
+        }`}
+      >
+        <button
+          type="button"
+          data-tooltip={createLabel}
+          aria-label={createLabel}
+          disabled={employees.length === 0}
+          onClick={() => openCreate(createMs)}
+          className={`${CREATE_SLOT_CLASS} inset-0`}
+        >
+          <CreateSlotHint className="absolute inset-x-0 bottom-1 justify-center" />
+        </button>
+        {/* The last line of the cell belongs to the hint: the chips stop above it (pb-5), so
+            the hint has a line of its own to draw on however full the day is. */}
+        <div className="pointer-events-none relative pb-5">
+          <p className="mb-1 flex h-5 items-center">
+            <span
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 text-xs tabular-nums ${
+                isToday
+                  ? "bg-accent font-semibold text-accent-fg"
+                  : day.inMonth
+                    ? "text-gray-600 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-600"
+              }`}
+            >
+              {new Date(day.dayStartMs).getDate()}
+            </span>
+          </p>
+          <div className="space-y-1">
+            {shown.map((i) => (
+              <span key={i.key} className="pointer-events-auto block">
+                {chip(i)}
+              </span>
+            ))}
+            {list.length > shown.length && (
+              <span className="pointer-events-auto block">
+                <DayOverflow
+                  hidden={list.length - shown.length}
+                  total={list.length}
+                  dateLabel={`${day.key} ${weekday}`}
+                  onOpenDay={() => {
+                    setAnchor(day.dayStartMs);
+                    setView("day");
+                  }}
+                >
+                  {(close) => list.map((i) => chip(i, { onOpen: close }))}
+                </DayOverflow>
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /**
+   * A day column of the week and day views: hour rows that create on click — each a real button
+   * that names the hour it would create at and spells out 「新建日程」 while it is under the
+   * pointer — and chips placed by time and packed into lanes. The chips are siblings drawn after
+   * the rows, so they take their own clicks; the hint rises back over them on its own layer,
+   * reading off a translucent backdrop rather than off a chip.
+   */
+  const timeColumn = (day: GridDay) => {
+    const slots = chipLanes(byDay.get(day.key) ?? [], CHIP_SLOT_MS);
+    const chipHeight = (CHIP_SLOT_MS / 3_600_000) * HOUR_PX - 2;
+    const isToday = day.key === todayKey;
+    return (
+      <div
+        key={day.key}
+        className={`relative border-l border-gray-100 dark:border-gray-800 ${
+          isToday ? "bg-accent/[0.03]" : ""
+        }`}
+        style={{ height: HOUR_PX * 24 }}
+      >
+        {Array.from({ length: 24 }, (_, h) => {
+          const createLabel = S.company.calendar.createAt(`${day.key} ${hourLabel(h)}`);
+          return (
+            <button
+              key={h}
+              type="button"
+              data-tooltip={createLabel}
+              aria-label={createLabel}
+              disabled={employees.length === 0}
+              className={`${CREATE_SLOT_CLASS} inset-x-0 flex items-center justify-center border-t border-gray-100 dark:border-gray-800`}
+              style={{ top: h * HOUR_PX, height: HOUR_PX }}
+              onClick={() => openCreate(day.dayStartMs + h * 3_600_000)}
+            >
+              {/* An hour row has no spare line to reserve, so the hint reads over the chips on
+                  a wash of the page behind it. */}
+              <CreateSlotHint className="relative rounded bg-white/85 px-1 dark:bg-gray-900/85" />
+            </button>
+          );
+        })}
+        {isToday && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 z-10 flex items-center"
+            style={{ top: dayFraction(now) * HOUR_PX * 24 - 1 }}
+          >
+            <span className="-ml-1 h-2 w-2 rounded-full bg-accent" />
+            <span className="h-0.5 flex-1 bg-accent" />
+          </div>
+        )}
+        {slots.map(({ item, lane, lanes }) => (
+          <div
+            key={item.key}
+            className="absolute"
+            style={{
+              top: dayFraction(item.atMs) * HOUR_PX * 24 + 1,
+              height: chipHeight,
+              left: `calc(${(lane / lanes) * 100}% + 2px)`,
+              width: `calc(${100 / lanes}% - 4px)`,
+            }}
+          >
+            {chip(item, { block: true })}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  /** The week and day views share one frame: a day header, then the scrolling hour grid with its gutter. */
+  const timeGrid = (days: GridDay[]) => {
+    const cols = days.length === 1 ? "grid-cols-[3rem_1fr]" : "grid-cols-[3rem_repeat(7,1fr)]";
+    return (
+      <div className="overflow-x-auto">
+        {/* The width floor sits on a wrapper: the card keeps its own `min-w-0`. */}
+        <div className={days.length === 1 ? "" : "min-w-[52rem]"}>
+          <Card padding="none">
+            <div
+              className={`grid ${cols} border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400`}
+            >
+              <div />
+              {days.map((day) => {
+                const d = new Date(day.dayStartMs);
+                const isToday = day.key === todayKey;
+                return (
+                  <div
+                    key={day.key}
+                    className={`flex items-center gap-1.5 border-l border-gray-100 px-2 py-1.5 dark:border-gray-800 ${
+                      isToday ? "font-semibold text-gray-900 dark:text-gray-100" : ""
+                    }`}
+                  >
+                    {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
+                    <span
+                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--ui-radius-pill)] px-1 tabular-nums ${
+                        isToday ? "bg-accent text-accent-fg" : ""
+                      }`}
+                    >
+                      {d.getDate()}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div
+              ref={scrollRef}
+              className="overflow-y-auto"
+              style={{ height: VISIBLE_HOURS * HOUR_PX }}
+            >
+              <div className={`grid ${cols}`}>
+                <div className="relative" style={{ height: HOUR_PX * 24 }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    // Centred on its hour line: half the label's 16px line box above it.
+                    <span
+                      key={h}
+                      className="absolute right-2 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      style={{ top: h * HOUR_PX - 8 }}
+                    >
+                      {h === 0 ? "" : hourLabel(h)}
+                    </span>
+                  ))}
+                </div>
+                {days.map(timeColumn)}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const grid =
+    view === "month" ? (
+      <div className="overflow-x-auto">
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              {S.company.calendar.weekdays.map((w) => (
+                <div key={w} className="px-2 py-1.5">
+                  {w}
+                </div>
+              ))}
+            </div>
+            {monthGrid(anchor).map((row, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {row.map(monthCell)}
+              </div>
+            ))}
+          </Card>
+        </div>
+      </div>
+    ) : view === "week" ? (
+      timeGrid(weekDays(anchor))
+    ) : (
+      timeGrid([{ key: dayKey(anchor), dayStartMs: range.startMs, inMonth: true }])
+    );
+
+  const editingEvent =
+    opened?.editing != null
+      ? (events ?? []).find(
+          (e) => e.agentId === opened.editing?.agentId && e.name === opened.editing?.name,
+        )
+      : undefined;
+
+  return (
+    <OrgPage title={S.nav.org.calendar} info={S.company.calendar.info} actions={toolbar} wide>
+      {/* Navigation row: previous / today / next, the heading, and the employee filter. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          title={S.company.calendar.prev}
+          aria-label={S.company.calendar.prev}
+          onClick={() => setAnchor((a) => shiftAnchor(a, view, -1))}
+        >
+          <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
+        </Button>
+        <Button size="sm" onClick={() => setAnchor(Date.now())}>
+          {S.company.calendar.today}
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          title={S.company.calendar.next}
+          aria-label={S.company.calendar.next}
+          onClick={() => setAnchor((a) => shiftAnchor(a, view, 1))}
+        >
+          <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.iconButton} />
+        </Button>
+        <span className="text-sm font-semibold tabular-nums">{heading}</span>
+        <div className="ml-auto w-48">
+          <Select
+            size="sm"
+            aria-label={S.company.calendar.filterEmployee}
+            value={employeeFilter}
+            onChange={(e) => setEmployeeFilter(e.target.value)}
+          >
+            <option value="">{S.company.calendar.allEmployees}</option>
+            {employees.map((e) => (
+              <option key={e.agentId} value={e.agentId}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      {/* Legend: one entry per employee in the chart's colour order, naming its cadence; a click
+          filters to it, and strikes through everyone it just switched off. */}
+      {employees.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-xs">
+          {employees.map((e) => {
+            const own = (events ?? []).filter((ev) => ev.agentId === e.agentId);
+            const cadences = own.map(
+              (ev) => `${ev.title ?? ev.name} ${cadenceLabel(cadenceOf(ev))}`,
+            );
+            const shown = cadences.slice(0, 2);
+            const rest = cadences.length - shown.length;
+            const state = legendState(employeeFilter, e.agentId);
+            const active = state === "pressed";
+            const struck = state === "struck";
+            return (
+              <button
+                key={e.agentId}
+                type="button"
+                data-tooltip={
+                  active ? S.company.calendar.allEmployees : S.company.calendar.legendFilter(e.name)
+                }
+                data-tooltip-extra
+                aria-pressed={active}
+                onClick={() => setEmployeeFilter(active ? "" : e.agentId)}
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                  active ? "bg-gray-100 dark:bg-gray-800" : struck ? "line-through" : ""
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${colorOf(e.agentId).dot} ${struck ? "opacity-40" : ""}`}
+                />
+                <span
+                  className={
+                    struck
+                      ? "text-gray-400 dark:text-gray-500"
+                      : "font-medium text-gray-700 dark:text-gray-200"
+                  }
+                >
+                  {e.name}
+                </span>
+                <span
+                  className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
+                  data-tooltip={cadences.join(" · ")}
+                  data-tooltip-content="text"
+                  data-tooltip-extra={rest > 0}
+                >
+                  {cadences.length === 0
+                    ? S.company.calendar.legendEmpty
+                    : `${shown.join(" · ")}${rest > 0 ? ` +${rest}` : ""}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {error !== null && (
+        <Notice
+          tone="danger"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
+        >
+          {S.company.calendar.loadFailed(error)}
+        </Notice>
+      )}
+
+      {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
+        <Notice
+          tone="neutral"
+          className="mb-3"
+          dismiss={{
+            ariaLabel: S.company.calendar.dismissHint,
+            onClick: () => {
+              dismissHint(emptyHintKey);
+              setHintDismissed(true);
+            },
+          }}
+        >
+          {S.company.calendar.emptyHint}
+        </Notice>
+      )}
+
+      {events === null && error === null ? <CalendarSkeleton view={view} /> : grid}
+
+      {invalidFiles.length > 0 && (
+        <Notice tone="danger" title={S.company.calendar.invalidFiles} className="mt-4">
+          <ul className="mt-1 space-y-1 font-mono">
+            {invalidFiles.map((f) => (
+              <li key={`${f.agentId}/${f.name}`}>
+                {f.agentId}/{f.name}: {f.error}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+
+      {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
+      {opened !== null && (
+        <CalendarEventDialog
+          opening={opened}
+          event={editingEvent}
+          employees={employees}
+          busy={busy}
+          onClose={() => setOpened(null)}
+          onSave={save}
+          onDelete={setDeleting}
+          onOpenDesk={(agentId) => void openDesk(agentId)}
+        />
+      )}
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.company.calendar.delete}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
+        busy={busy}
+        onClose={() => (busy ? undefined : setDeleting(null))}
+        onConfirm={() => void remove()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.company.calendar.deleteConfirm(deleting?.name ?? "")}
+        </p>
+      </ConfirmModal>
+    </OrgPage>
+  );
+}
+
+/**
+ * The event dialog, mounted once per opening: its fields are a draft of the event it opened on
+ * (a blank one at the clicked time, or the stored event). Save — Create for a new event — is
+ * live once a field changed and every required one is filled, and writes at once; closing with
+ * unsaved edits asks first, and nothing closes it while a write is in flight. Delete hands the
+ * event to the page's own confirmation. Exported for test/company-dialogs-guard.test.ts.
+ */
+export function CalendarEventDialog({
+  opening,
+  event,
+  employees,
+  busy,
+  onClose,
+  onSave,
+  onDelete,
+  onOpenDesk,
+}: {
+  opening: FormState;
+  /** The stored event being edited, for its run facts; undefined when creating. */
+  event: OrgCalendarItem | undefined;
+  employees: OrgChartResponse["employees"];
+  busy: boolean;
+  onClose: () => void;
+  /** Writes the draft; resolves with whether it landed. */
+  onSave: (form: FormState) => Promise<boolean>;
+  onDelete: (target: { agentId: string; name: string }) => void;
+  onOpenDesk: (agentId: string) => void;
+}) {
+  const form = useFormDraft(opening, {
+    normalize: (f) => ({
+      ...f,
+      name: f.name.trim(),
+      title: f.title.trim(),
+      period: f.period.trim(),
+    }),
+  });
+  const draft = form.draft;
+  const set = form.patch;
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  // Each required field is marked by its asterisk; Save waits until all are filled.
+  const valid =
+    draft.agentId !== "" &&
+    draft.name.trim() !== "" &&
+    draft.prompt.trim() !== "" &&
+    draft.startAt !== "";
+
+  return (
+    <Modal
+      open
+      title={
+        draft.editing !== null
+          ? S.company.calendar.editTitle(draft.name)
+          : S.company.calendar.createTitle
+      }
+      onClose={requestClose}
+      widthClass="sm:max-w-lg"
+      footer={
+        <>
+          {draft.editing !== null && (
+            <Button
+              size="sm"
+              variant="danger"
+              className="mr-auto"
+              disabled={busy}
+              onClick={() => {
+                if (draft.editing !== null) onDelete(draft.editing);
+              }}
+            >
+              {S.company.calendar.delete}
+            </Button>
+          )}
+          <Button size="sm" onClick={requestClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || !form.dirty || !valid}
+            onClick={() => void onSave(draft)}
+          >
+            {draft.editing !== null ? S.common.save : S.common.create}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {event !== undefined && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            {event.nextFireAt !== undefined && (
+              <span>
+                {S.company.calendar.nextFire}{" "}
+                <span className="font-mono tabular-nums">{formatDateTime(event.nextFireAt)}</span>
+              </span>
+            )}
+            {event.lastFiredAt !== undefined && (
+              <span className="inline-flex items-center gap-1">
+                {S.company.calendar.lastFired}{" "}
+                <span className="font-mono tabular-nums">{formatDateTime(event.lastFiredAt)}</span>
+                {event.lastOutcome !== undefined && (
+                  <span className={toneInk[OUTCOME_TONE[event.lastOutcome]]}>
+                    {S.company.calendarOutcomes[event.lastOutcome] ?? event.lastOutcome}
+                  </span>
+                )}
+                {event.lastOutcome === "fired" && (
+                  <button
+                    type="button"
+                    className="whitespace-nowrap underline"
+                    onClick={() => onOpenDesk(event.agentId)}
+                  >
+                    {S.company.openDesk}
+                  </button>
+                )}
+              </span>
+            )}
+            {event.paused && (
+              <span className={toneInk.attention}>{S.company.calendar.pausedNote}</span>
+            )}
+            {event.invalidReason !== undefined && (
+              <span className={toneInk.danger}>{event.invalidReason}</span>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Select
+            size="sm"
+            label={S.company.calendar.employee}
+            required
+            value={draft.agentId}
+            disabled={draft.editing !== null}
+            onChange={(e) => set({ agentId: e.target.value })}
+          >
+            {employees.map((e) => (
+              <option key={e.agentId} value={e.agentId}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            size="sm"
+            label={S.company.calendar.name}
+            required
+            info={S.company.calendar.nameHint}
+            value={draft.name}
+            disabled={draft.editing !== null}
+            onChange={(e) => set({ name: e.target.value })}
+            className="font-mono"
+            placeholder="daily_sweep"
+          />
+        </div>
+        <Input
+          size="sm"
+          label={S.common.name}
+          value={draft.title}
+          onChange={(e) => set({ title: e.target.value })}
+        />
+        <Textarea
+          label={S.company.calendar.prompt}
+          required
+          size="sm"
+          rows={4}
+          info={S.company.calendar.promptHint}
+          value={draft.prompt}
+          onChange={(e) => set({ prompt: e.target.value })}
+        />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Input
+            size="sm"
+            label={S.company.calendar.startAt}
+            required
+            type="datetime-local"
+            info={S.company.calendar.staggerHint}
+            value={draft.startAt}
+            onChange={(e) => set({ startAt: e.target.value })}
+            className="font-mono"
+          />
+          <Input
+            size="sm"
+            label={S.company.calendar.period}
+            value={draft.period}
+            hint={S.company.calendar.periodHint}
+            onChange={(e) => set({ period: e.target.value })}
+            className="font-mono"
+            placeholder="1d"
+          />
+          <Input
+            size="sm"
+            label={S.company.calendar.endAt}
+            type="datetime-local"
+            value={draft.endAt}
+            onChange={(e) => set({ endAt: e.target.value })}
+            className="font-mono"
+          />
+          <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <Switch checked={draft.enabled} onChange={(v) => set({ enabled: v })} />
+            {S.company.calendar.enabled}
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * The chips a month cell could not fit, behind the count that stands for them: a button that
+ * opens the day — every chip of it in time order, plus a link into the day view. It sits over
+ * the cell's create button rather than inside it, so reading "3 more" never opens the create
+ * dialog.
+ *
+ * The panel is portaled to document.body and placed by usePortalPanel, which also closes it on
+ * an outside click, on Esc (captured, so an enclosing dialog stays open), and on a scroll or a
+ * resize that moves the trigger. A chip inside it closes the panel before opening its event.
+ */
+function DayOverflow({
+  hidden,
+  total,
+  dateLabel,
+  onOpenDay,
+  children,
+}: {
+  /** How many chips the cell could not show — what the trigger counts. */
+  hidden: number;
+  /** How many the day holds in all — what the panel lists, and how tall it is expected to be. */
+  total: number;
+  /** The day the panel heads with, as the day view names it ("2026-09-08 Tue"). */
+  dateLabel: string;
+  onOpenDay: () => void;
+  /** The day's chips; `close` puts the panel away as one of them opens its event. */
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const { triggerRef, panelRef, position } = usePortalPanel({
+    open,
+    onClose: () => setOpen(false),
+    // A chip row is 20px tall with 4px between rows; the header and the panel's own padding add
+    // about 40.
+    estimatedHeight: total * 24 + 40,
+    panelWidth: DAY_PANEL_WIDTH,
+  });
+  const close = () => setOpen(false);
+  const label = S.company.calendar.moreEventsExpand(hidden);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((v) => !v)}
+        className="block w-full rounded px-1 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+      >
+        {S.company.calendar.moreEvents(hidden)}
+      </button>
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={panelId}
+            role="group"
+            aria-label={dateLabel}
+            style={{
+              position: "fixed",
+              top: position.topPx,
+              bottom: position.bottomPx,
+              left: position.left,
+              width: DAY_PANEL_WIDTH,
+            }}
+            className="anim-pop z-[60] flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
+              <span className="truncate text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
+                {dateLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  onOpenDay();
+                }}
+                className="shrink-0 whitespace-nowrap text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                {S.company.calendar.openDay}
+              </button>
+            </div>
+            <div className="space-y-1 overflow-y-auto p-1">{children(close)}</div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+/** The grid's shape while the first fetch is out: the same frame, cells of placeholder instead of days. */
+function CalendarSkeleton({ view }: { view: CalendarView }) {
+  if (view === "month") {
+    return (
+      <div className="overflow-x-auto">
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
+              {Array.from({ length: 7 }, (_, i) => (
+                <div key={i} className="px-2 py-2">
+                  <Skeleton className="h-3 w-8" />
+                </div>
+              ))}
+            </div>
+            {Array.from({ length: 5 }, (_, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {Array.from({ length: 7 }, (_, c) => (
+                  <div
+                    key={c}
+                    className="min-h-24 space-y-1 border-r border-gray-100 p-1.5 last:border-r-0 dark:border-gray-800"
+                  >
+                    <Skeleton className="h-3 w-4" />
+                    {(r + c) % 3 === 0 && <Skeleton className="h-4 w-full" />}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <Card padding="none">
+      <div className="flex gap-4 border-b border-gray-200 px-14 py-2 dark:border-gray-800">
+        {Array.from({ length: view === "week" ? 7 : 1 }, (_, i) => (
+          <Skeleton key={i} className="h-3 w-12" />
+        ))}
+      </div>
+      <div className="space-y-px p-2" style={{ height: VISIBLE_HOURS * HOUR_PX }}>
+        {Array.from({ length: VISIBLE_HOURS }, (_, i) => (
+          <div key={i} className="flex items-start gap-3" style={{ height: HOUR_PX }}>
+            <Skeleton className="h-2.5 w-8" />
+            {i % 4 === 1 && <Skeleton className="h-5 w-40" />}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}

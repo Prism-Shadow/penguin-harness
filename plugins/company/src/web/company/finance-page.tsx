@@ -1,0 +1,833 @@
+/**
+ * Finance: budgets and spend for one period, as a grid of bordered cards. The top row reads
+ * the period — the KPI panel, four tiles two by two (the total against the CEO's budget with
+ * the ring riding in it, the ratio in its threshold tone, the head count and the alert count),
+ * beside the trend chart the daily costs draw. The middle row says where the spend sat, in two
+ * tables that stand side by side on a wide screen and stack on a narrow one, each cut to the
+ * columns a reader needs at a glance with the rest in the row's tooltip: the spend tree walks
+ * the reporting line in three columns — who they are, how they stand, and cumulative against
+ * budget as one meter carrying its own percent with the amounts after it and the budget edited
+ * in place (typed in the reader's currency, written to the employee in USD) — and the ticket
+ * ledger rolls costs up along parent tickets, opening on its roots alone with each parent's
+ * children behind a chevron that says how many it hides, and every title a text button that
+ * opens the ticket's detail dialog over this page (the rest of the row reads; nothing here
+ * carries the reader to another page). The period's warnings and
+ * pauses close the page full width, listed by state with how a pause is lifted. `?period=yyyy-mm`
+ * switches between this period and the previous one.
+ *
+ * Every panel here is a card and not a ruled section: the KPI tiles are bordered, and a rule
+ * standing among them reads as a different kind of thing rather than as the same thing without
+ * a border.
+ *
+ * Loading discipline: the skeleton stands only until the first response; a failed first
+ * fetch is an error with a retry; a failed refetch keeps the last good data on screen and
+ * says so in a strip above it. Two joins decorate the rows and are fetched best effort, so
+ * neither can hold the page: the employees' live states come from the org chart, the ticket
+ * owners from the board.
+ */
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
+import { useSearchParams } from "react-router";
+import type {
+  OrgBudgetAlert,
+  OrgEmployeeState,
+  OrgFinanceResponse,
+} from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Chevron,
+  CloseIcon,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  InfoPopover,
+  Segmented,
+  StatTile,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  guardLeave,
+  noAutofill,
+  toastError,
+  toastSuccess,
+  useUnsavedChanges,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, formatMoney, formatPercent } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { toneDot, toneInk, type Tone } from "@prismshadow/penguin-web/internal";
+
+import { useCompany } from "./company-state";
+import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
+
+import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
+import { EmployeeAvatar } from "./employee-avatar";
+import { TrendChart } from "@prismshadow/penguin-web/internal";
+import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
+import {
+  ErrorLine,
+  INVALID_ICON,
+  MoneyPerMonthUnit,
+  PrincipalChip,
+  StoredUsdNote,
+  TicketStatusBadge,
+  TitleButton,
+  principalLabel,
+} from "./shared";
+import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
+import { FinanceGauge, SpendMeter } from "./finance-gauge";
+import {
+  budgetTone,
+  dailyBreaks,
+  financeKpis,
+  financeSeries,
+  groupAlerts,
+  shiftPeriod,
+  spendRowTooltip,
+  spendStateMarks,
+  spendTreeRows,
+  ticketRowTooltip,
+  ticketTreeRows,
+  visibleLedgerRows,
+  type SpendStateKey,
+} from "./finance-tree";
+
+import { agentPrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
+
+const iconButtonClass =
+  "inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
+
+/** The tree's indentation step per reporting depth, and the elbow that joins a child to the row above. */
+const INDENT_PX = 20;
+
+/**
+ * The ledger's fold toggle, and the box a childless row leaves in its place so every title in
+ * the column starts on the same x whether or not its row can open.
+ */
+const FOLD_BOX = "h-4 w-4 shrink-0";
+
+function TreeElbow() {
+  return (
+    <span
+      aria-hidden
+      className="mt-0.5 h-2.5 w-2.5 shrink-0 self-start rounded-bl-sm border-b border-l border-gray-300 dark:border-gray-700"
+    />
+  );
+}
+
+/** A tone dot with its meaning beside it: the marks in the spend tree's state column. */
+function StateMark({ tone, children }: { tone: Tone; children: string }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} text-xs ${toneInk[tone]}`}
+    >
+      <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
+      {children}
+    </span>
+  );
+}
+
+/** What a state mark says: an employee's live state, or what its budget has done to it. */
+function stateMarkLabel(key: SpendStateKey): string {
+  if (key === "paused") return S.company.finance.paused;
+  if (key === "warned") return S.company.finance.warned;
+  return S.company.employeeStates[key] ?? key;
+}
+
+/**
+ * One panel of the finance page: the package's card with its title inside it and the "?"
+ * anchored to that title — the shape the KPI tiles and the cost centre's charts already use.
+ * The period switch is the page's, not a panel's, so a card carries no controls of its own.
+ * The title sits under the page's own, so it is an h2.
+ */
+function FinanceCard({
+  title,
+  info,
+  children,
+  className = "",
+}: {
+  title: string;
+  info?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card as="section" className={className}>
+      <CardHeader title={title} {...(info !== undefined ? { info } : {})} level={2} />
+      {children}
+    </Card>
+  );
+}
+
+/** An open budget editor's typing: what opening another row's editor asks about. */
+const BUDGET_EDIT_SCOPE = "finance-budget";
+
+/**
+ * The budget cell while it is being typed: a number box in the reader's own currency with the
+ * unit after it (empty = unbounded, said beneath it while typing), save and cancel. Enter and
+ * the check save, Escape and the cross cancel; focus leaving the box writes nothing. While the
+ * box holds a value other than the stored one it counts as unsaved, so leaving the page (or
+ * opening another row's editor) asks first. What goes out is USD, which is what the chart file
+ * holds, and a box in another currency says so under itself. Exported for
+ * test/budget-editor.test.ts, which renders it on its own.
+ */
+export function BudgetEditor({
+  initial,
+  name,
+  currency,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  /** The stored budget in USD; undefined is unbounded. */
+  initial: number | undefined;
+  name: string;
+  currency: Currency;
+  busy: boolean;
+  /** The new budget in USD, or null for unbounded. */
+  onSave: (value: number | null) => void;
+  onCancel: () => void;
+}) {
+  const stored = fromStoredUsd(initial, currency);
+  const [text, setText] = useState(stored);
+  useUnsavedChanges(text.trim() !== stored.trim(), {
+    scope: BUDGET_EDIT_SCOPE,
+    discard: onCancel,
+  });
+  const commit = () => {
+    if (!isBudgetText(text)) {
+      toastError(S.company.chart.budgetHint);
+      return;
+    }
+    onSave(toStoredUsd(text, currency));
+  };
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+        <input
+          autoFocus
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="any"
+          value={text}
+          placeholder={S.company.finance.budgetPlaceholder}
+          aria-label={S.company.finance.editBudgetOf(name)}
+          disabled={busy}
+          {...noAutofill}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+          className="w-24 rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-right text-xs tabular-nums focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900"
+        />
+        <MoneyPerMonthUnit currency={currency} />
+        <button
+          type="button"
+          data-tooltip={S.company.finance.saveBudget}
+          aria-label={S.company.finance.saveBudget}
+          disabled={busy}
+          onClick={commit}
+          className={iconButtonClass}
+        >
+          <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.inlineGlyph} />
+        </button>
+        <button
+          type="button"
+          data-tooltip={S.company.finance.cancelEdit}
+          aria-label={S.company.finance.cancelEdit}
+          onClick={onCancel}
+          className={iconButtonClass}
+        >
+          <CloseIcon />
+        </button>
+      </span>
+      <span className="text-xs text-gray-400 dark:text-gray-500">
+        {S.company.finance.budgetEmptyHint}
+      </span>
+      <StoredUsdNote usd={toStoredUsd(text, currency)} currency={currency} />
+    </span>
+  );
+}
+
+/** One alert line: the employee, and when it crossed the threshold. */
+function AlertRow({
+  alert,
+  tone,
+  names,
+}: {
+  alert: OrgBudgetAlert;
+  tone: Tone;
+  names: ReadonlyMap<string, string>;
+}) {
+  const at = tone === "danger" ? alert.pausedAt : alert.warnedAt;
+  const when = at === undefined ? "" : formatDateTime(at);
+  return (
+    <li className={`flex flex-wrap items-center ${ICON_GAP.menu} py-1 text-xs`}>
+      <span className={`block h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]}`} />
+      <PrincipalChip
+        principal={agentPrincipal(alert.agentId)}
+        names={names}
+        size={ICON_SIZE.rowLead}
+      />
+      <span className="text-gray-500 dark:text-gray-400">
+        {tone === "danger" ? S.company.finance.pausedAt(when) : S.company.finance.warnedAt(when)}
+      </span>
+    </li>
+  );
+}
+
+export function FinancePage() {
+  const { projectId, orgId, org } = useOrg();
+  const company = useCompany();
+  const { currency } = useTheme();
+  const [params, setParams] = useSearchParams();
+  useDocumentTitle(org ? `${org.name} · ${S.nav.org.finance}` : S.nav.org.finance);
+  const [data, setData] = useState<OrgFinanceResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** Ticket owners, joined from the board (best effort: the finance rows carry none). */
+  const [owners, setOwners] = useState<ReadonlyMap<string, string>>(new Map());
+  /** Live employee states, joined from the org chart (best effort, for the state column). */
+  const [states, setStates] = useState<ReadonlyMap<string, OrgEmployeeState>>(new Map());
+  /** The employee whose budget is being typed. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  /**
+   * The ticket ledger's opened parents. Deliberately not persisted and not a URL parameter: a
+   * fold is how the reader is looking at the table right now, and a ledger that reopened
+   * yesterday's branches would hide today's roots behind them.
+   */
+  const [expandedTickets, setExpandedTickets] = useState<ReadonlySet<string>>(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const requested = params.get("period");
+  /** Sequence of the newest request: a slower, older response must not overwrite a newer one. */
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const my = ++seq.current;
+    void api
+      .listOrgTickets(projectId, orgId)
+      .then((res) => {
+        if (my !== seq.current) return;
+        const map = new Map<string, string>();
+        for (const column of Object.values(res.columns)) {
+          for (const t of column) if (t.owner !== undefined) map.set(t.ticketId, t.owner);
+        }
+        setOwners(map);
+      })
+      .catch(() => undefined);
+    void api
+      .getOrgChart(projectId, orgId)
+      .then((res) => {
+        if (my !== seq.current) return;
+        setStates(new Map(res.employees.map((e) => [e.agentId, e.state])));
+      })
+      .catch(() => undefined);
+    try {
+      const res = await api.getOrgFinance(projectId, orgId, requested ?? undefined);
+      if (my !== seq.current) return;
+      setData(res);
+      setError(null);
+    } catch (e) {
+      if (my !== seq.current) return;
+      setError(apiErrorText(e));
+    }
+  }, [projectId, orgId, requested]);
+  const { budget: budgetVersion, runs } = company.versions;
+  useEffect(() => {
+    void load();
+  }, [load, budgetVersion, runs]);
+
+  const names = new Map((data?.employees ?? []).map((e) => [e.agentId, e.name]));
+  // The current period is the organization's (its summary is computed in its timezone); the
+  // response's period only stands in before the summary is known.
+  const currentPeriod = org?.spend.period ?? (requested === null ? (data?.period ?? "") : "");
+  const previous = currentPeriod === "" ? null : shiftPeriod(currentPeriod, -1);
+  const target = requested ?? currentPeriod;
+  const setPeriod = (p: string) => {
+    const next = new URLSearchParams(params);
+    if (p === currentPeriod) next.delete("period");
+    else next.set("period", p);
+    setParams(next, { replace: true });
+  };
+
+  const saveBudget = async (agentId: string, value: number | null) => {
+    const row = data?.employees.find((e) => e.agentId === agentId);
+    if (row !== undefined && (row.budget ?? null) === value) {
+      setEditingId(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.patchOrgEmployee(projectId, orgId, agentId, { budget: value });
+      toastSuccess(S.company.finance.budgetSaved);
+      setEditingId(null);
+      void load();
+      void company.reloadOrganizations();
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // On a phone the switch takes a full-width row of its own under the title, and each option
+  // shows its month alone: "Previous period 2026-09" beside its twin does not fit there at a
+  // large text size. The full wording stays each option's accessible name.
+  const periodSwitch =
+    previous !== null ? (
+      <div className="w-full sm:w-auto">
+        <Segmented
+          options={[
+            {
+              value: previous,
+              label: `${S.company.finance.prevPeriod} ${previous}`,
+              shortLabel: previous,
+            },
+            {
+              value: currentPeriod,
+              label: `${S.company.finance.thisPeriod} ${currentPeriod}`,
+              shortLabel: currentPeriod,
+            },
+          ]}
+          value={target === previous ? previous : currentPeriod}
+          onChange={setPeriod}
+          cols={2}
+        />
+      </div>
+    ) : undefined;
+
+  if (data === null) {
+    return (
+      <OrgPage title={S.nav.org.finance} info={S.company.finance.info} actions={periodSwitch}>
+        {error !== null ? (
+          <EmptyState
+            title={error}
+            action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
+          />
+        ) : (
+          <OrgPageSkeleton />
+        )}
+      </OrgPage>
+    );
+  }
+
+  const kpis = financeKpis(data);
+  const ratioTone = budgetTone(kpis.ratio);
+  /** Spend against a budget as one sentence — what the ring and every meter carry as their name. */
+  const spendLabel = (
+    cost: number,
+    budget: number | undefined,
+    ratio: number | undefined,
+  ): string =>
+    budget === undefined
+      ? `${formatMoney(cost, currency)} · ${S.company.noBudget}`
+      : `${S.company.spendOfBudget(formatMoney(cost, currency), formatMoney(budget, currency))} · ${formatPercent(ratio)}`;
+  const gaugeLabel = spendLabel(kpis.total, kpis.budget, kpis.ratio);
+  const rows = spendTreeRows(data.employees);
+  const ticketRows = visibleLedgerRows(ticketTreeRows(data.tickets), expandedTickets);
+  const toggleTicket = (ticketId: string) =>
+    setExpandedTickets((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(ticketId)) next.add(ticketId);
+      return next;
+    });
+  const series = financeSeries(data.daily);
+  const alerts = groupAlerts(data.alerts);
+  // A period switch keeps the last data on screen, dimmed, until the new one lands.
+  const stale = target !== "" && data.period !== target;
+  const openTicket = (ticketId: string) => company.openTicket(projectId, orgId, ticketId);
+
+  return (
+    <OrgPage title={S.nav.org.finance} info={S.company.finance.info} actions={periodSwitch}>
+      {error !== null && (
+        <ErrorLine
+          message={S.company.finance.refreshFailed}
+          detail={error}
+          onRetry={() => void load()}
+          className="mb-4"
+        />
+      )}
+      <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
+        {/* Top row: what the period cost against the budget, beside how it accumulated. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* The KPI panel: four bordered tiles two by two, the ring riding in the first. */}
+          <div className="min-w-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StatTile
+                icon={STAT_ICONS.cost}
+                label={S.company.finance.kpiTotal}
+                value={formatMoney(kpis.total, currency)}
+                detail={`${S.company.finance.orgBudget} · ${
+                  kpis.budget === undefined
+                    ? S.company.noBudget
+                    : formatMoney(kpis.budget, currency)
+                }`}
+              >
+                {/* Small: the tile is a quarter of the KPI panel, and the ring is the
+                    picture of a number that is already spelled out beside it. */}
+                <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} size={40} />
+              </StatTile>
+              <StatTile
+                icon={ICONS.percent}
+                label={S.company.finance.ratio}
+                value={formatPercent(kpis.ratio)}
+                detail={S.company.finance.thresholds}
+                {...(ratioTone === "muted" ? {} : { tone: ratioTone })}
+              />
+              <StatTile
+                icon={NAV_ICONS.orgChart}
+                label={S.company.finance.kpiEmployees}
+                value={kpis.employees}
+                detail={S.company.finance.budgetsSet(kpis.budgeted)}
+              />
+              <StatTile
+                icon={INVALID_ICON}
+                label={S.company.finance.kpiAlerts}
+                value={data.alerts.length}
+                detail={S.company.finance.alertsSummary(kpis.warned, kpis.paused)}
+                {...(kpis.paused > 0
+                  ? { tone: "danger" as const }
+                  : kpis.warned > 0
+                    ? { tone: "attention" as const }
+                    : {})}
+              />
+            </div>
+            {data.unpriced && (
+              <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.unpriced}
+              </p>
+            )}
+          </div>
+          <FinanceCard title={S.company.finance.trend} info={S.company.finance.trendInfo}>
+            {series.length === 0 ? (
+              <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.trendEmpty}
+              </p>
+            ) : (
+              <TrendChart
+                series={series}
+                granularity="day"
+                currency={currency}
+                breaks={dailyBreaks(data.daily)}
+              />
+            )}
+          </FinanceCard>
+        </div>
+
+        {/* Middle row: where the spend sat — by employee, and by ticket; each table scrolls in its own half. */}
+        {/* The two tables sit side by side only from 1536px: a three-column spend tree with its
+            meter needs about 560px, and half of a laptop's content column is less than that —
+            below the threshold they stack rather than scroll sideways. */}
+        <div className="mt-4 grid grid-cols-1 gap-4 2xl:grid-cols-2">
+          <FinanceCard title={S.company.finance.spendTree} info={S.company.finance.spendTreeInfo}>
+            <Table size="sm" framed={false} tableClassName="min-w-[20rem]">
+              <TableHead>
+                <TableHeaderCell>{S.company.overview.employees}</TableHeaderCell>
+                <TableHeaderCell>{S.company.status}</TableHeaderCell>
+                <TableHeaderCell align="right">
+                  <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+                    {S.company.finance.cumulativeBudget}
+                    <InfoPopover label={S.company.finance.cumulativeBudget}>
+                      {S.company.finance.cumulativeInfo}
+                    </InfoPopover>
+                  </span>
+                </TableHeaderCell>
+              </TableHead>
+              <TableBody>
+                {rows.map(({ employee, depth }) => {
+                  const editing = editingId === employee.agentId;
+                  const marks = spendStateMarks(employee, states.get(employee.agentId));
+                  return (
+                    <TableRow
+                      key={employee.agentId}
+                      data-tooltip={spendRowTooltip(
+                        employee,
+                        {
+                          own: S.company.finance.own,
+                          cumulative: S.company.finance.cumulative,
+                          budget: S.company.finance.budget,
+                          noBudget: S.company.noBudget,
+                        },
+                        (value) => formatMoney(value, currency),
+                      )}
+                      data-tooltip-extra
+                    >
+                      <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
+                        <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                          {depth > 0 && <TreeElbow />}
+                          <EmployeeAvatar
+                            id={employee.agentId}
+                            name={employee.name}
+                            size={ICON_SIZE.navRow}
+                            className="shrink-0 rounded"
+                          />
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                            {employee.name}
+                          </span>
+                          {employee.reportsTo === null &&
+                            employee.title.trim().toLowerCase() !== "ceo" && (
+                              <Badge>{S.company.ceo}</Badge>
+                            )}
+                          <span className="truncate text-gray-400 dark:text-gray-500">
+                            {employee.title}
+                          </span>
+                        </span>
+                      </TableCell>
+                      {/* How the employee stands: what it is doing right now, and what its
+                            budget has done to it. Empty while the chart join is in flight and
+                            nothing has crossed a threshold — an empty cell says exactly that. */}
+                      <TableCell nowrap>
+                        <span className={`flex flex-wrap items-center ${ICON_GAP.menu}`}>
+                          {marks.map((mark) => (
+                            <StateMark key={mark.key} tone={mark.tone}>
+                              {stateMarkLabel(mark.key)}
+                            </StateMark>
+                          ))}
+                        </span>
+                      </TableCell>
+                      {/* The meter carries the percent, the amounts follow it, and the budget
+                            half of them is the button that edits it — so the pencil still sits
+                            on the number it changes. Own spend rides in the row's tooltip. */}
+                      <TableCell numeric nowrap>
+                        {editing ? (
+                          <BudgetEditor
+                            initial={employee.budget}
+                            name={employee.name}
+                            currency={currency}
+                            busy={busy}
+                            onSave={(value) => void saveBudget(employee.agentId, value)}
+                            onCancel={() => setEditingId(null)}
+                          />
+                        ) : (
+                          <span className={`flex items-center ${ICON_GAP.menu}`}>
+                            {/* Fixed width, first in the cell: every meter then starts at the
+                                  same x and the column reads as one chart. */}
+                            <span className="w-20 shrink-0">
+                              <SpendMeter
+                                label={spendLabel(
+                                  employee.cumulative,
+                                  employee.budget,
+                                  employee.ratio,
+                                )}
+                                {...(employee.ratio !== undefined ? { ratio: employee.ratio } : {})}
+                              />
+                            </span>
+                            <span className="flex-1 text-right">
+                              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                {formatMoney(employee.cumulative, currency)}
+                              </span>
+                              <span aria-hidden className="px-1 text-gray-300 dark:text-gray-600">
+                                {employee.budget === undefined ? "·" : "/"}
+                              </span>
+                              <button
+                                type="button"
+                                data-tooltip={S.company.finance.editBudget}
+                                aria-label={S.company.finance.editBudgetOf(employee.name)}
+                                onClick={() =>
+                                  void guardLeave(
+                                    () => setEditingId(employee.agentId),
+                                    BUDGET_EDIT_SCOPE,
+                                  )
+                                }
+                                className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                              >
+                                <span
+                                  className={
+                                    employee.budget === undefined
+                                      ? "text-gray-400 dark:text-gray-500"
+                                      : "text-gray-900 dark:text-gray-100"
+                                  }
+                                >
+                                  {employee.budget === undefined
+                                    ? S.company.noBudget
+                                    : formatMoney(employee.budget, currency)}
+                                </span>
+                                <GlyphIcon
+                                  d={ICONS.pencil}
+                                  size={ICON_SIZE.inlineGlyph}
+                                  className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
+                                />
+                              </button>
+                            </span>
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </FinanceCard>
+
+          <FinanceCard title={S.company.finance.ticketsTable} info={S.company.finance.ticketsInfo}>
+            {ticketRows.length === 0 ? (
+              <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.ticketsEmpty}
+              </p>
+            ) : (
+              <Table size="sm" framed={false} tableClassName="min-w-[17rem]">
+                <TableHead>
+                  <TableHeaderCell>{S.nav.org.tickets}</TableHeaderCell>
+                  <TableHeaderCell>{S.company.status}</TableHeaderCell>
+                  <TableHeaderCell align="right">
+                    <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+                      {S.company.finance.rolledUp}
+                      <InfoPopover label={S.company.finance.rolledUp}>
+                        {S.company.finance.rolledUpInfo}
+                      </InfoPopover>
+                    </span>
+                  </TableHeaderCell>
+                </TableHead>
+                <TableBody>
+                  {ticketRows.map(({ ticket, depth, children }) => {
+                    const owner = owners.get(ticket.ticketId);
+                    const open = expandedTickets.has(ticket.ticketId);
+                    return (
+                      // The id, the owner and the ticket's own cost ride in the row's
+                      // tooltip: three columns the table cannot afford beside the spend tree.
+                      <TableRow
+                        key={ticket.ticketId}
+                        data-tooltip={ticketRowTooltip(
+                          ticket,
+                          owner === undefined ? undefined : principalLabel(owner, names),
+                          {
+                            owner: S.company.tickets.owner,
+                            noOwner: S.company.tickets.noOwner,
+                            cost: S.company.tickets.cost,
+                            rolledUp: S.company.finance.rolledUp,
+                          },
+                          (value) => formatMoney(value, currency),
+                        )}
+                      >
+                        <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
+                          <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                            {depth > 0 && <TreeElbow />}
+                            {children > 0 ? (
+                              <button
+                                type="button"
+                                aria-expanded={open}
+                                aria-label={`${
+                                  open
+                                    ? S.company.finance.collapseChildren
+                                    : S.company.finance.expandChildren
+                                } · ${ticket.title}`}
+                                onClick={() => toggleTicket(ticket.ticketId)}
+                                className={`${iconButtonClass} ${FOLD_BOX}`}
+                              >
+                                <Chevron open={open} size={ICON_SIZE.chevronDense} />
+                              </button>
+                            ) : (
+                              <span aria-hidden className={FOLD_BOX} />
+                            )}
+                            {/* The title is the link; the rest of the row reads. */}
+                            <TitleButton
+                              className="truncate font-medium text-gray-900 dark:text-gray-100"
+                              hint={ticket.title}
+                              onClick={() => openTicket(ticket.ticketId)}
+                            >
+                              {ticket.title}
+                            </TitleButton>
+                            {children > 0 && !open && (
+                              <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                                {S.company.finance.childCount(children)}
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell nowrap>
+                          <TicketStatusBadge status={ticket.status} />
+                        </TableCell>
+                        <TableCell
+                          numeric
+                          nowrap
+                          className="font-semibold text-gray-900 dark:text-gray-100"
+                        >
+                          {formatMoney(ticket.rolledUp, currency)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </FinanceCard>
+        </div>
+
+        <FinanceCard
+          title={S.company.finance.alerts}
+          info={S.company.finance.alertsInfo}
+          className="mt-4"
+        >
+          {data.alerts.length === 0 ? (
+            <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
+              {S.company.finance.alertsEmpty}
+            </p>
+          ) : (
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              <AlertGroup
+                title={S.company.finance.pausedGroup}
+                tone="danger"
+                alerts={alerts.paused}
+                names={names}
+              />
+              <AlertGroup
+                title={S.company.finance.warnedGroup}
+                tone="attention"
+                alerts={alerts.warned}
+                names={names}
+              />
+            </div>
+          )}
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+            {S.company.finance.alertsHint}
+          </p>
+        </FinanceCard>
+      </div>
+    </OrgPage>
+  );
+}
+
+/** One state's alerts: a small title with the count, then the rows; nothing when the group is empty. */
+function AlertGroup({
+  title,
+  tone,
+  alerts,
+  names,
+}: {
+  title: string;
+  tone: Tone;
+  alerts: readonly OrgBudgetAlert[];
+  names: ReadonlyMap<string, string>;
+}) {
+  if (alerts.length === 0) return null;
+  return (
+    <div>
+      <p className={`text-xs font-medium ${toneInk[tone]}`}>
+        {title} · {alerts.length}
+      </p>
+      <ul className="mt-1 divide-y divide-gray-100 dark:divide-gray-800/60">
+        {alerts.map((a) => (
+          <AlertRow key={`${a.agentId}/${a.period}`} alert={a} tone={tone} names={names} />
+        ))}
+      </ul>
+    </div>
+  );
+}

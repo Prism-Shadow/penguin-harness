@@ -22,7 +22,7 @@ import type {
   Employment,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { OrgService } from "../../runtime/organization/service.js";
+import type { OrgService } from "@penguinharness/plugin-company/server";
 import { HttpError } from "../errors.js";
 import { settleWithin } from "../settle.js";
 import {

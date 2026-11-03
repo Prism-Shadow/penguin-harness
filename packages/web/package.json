@@ -1,19 +1,20 @@
 {
   "name": "@prismshadow/penguin-web",
-  "version": "0.2.18",
+  "version": "0.2.16",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness web frontend SPA: React + Vite + Tailwind CSS, rendering conversations streamed as AMSP records, plus Agent configuration, model configuration, usage stats, and Traces.",
+  "description": "PenguinHarness web frontend SPA: React + Vite + Tailwind CSS, rendering conversations streamed over the OmniMessage protocol, plus Agent configuration, model configuration, usage stats, and Traces.",
   "scripts": {
     "dev": "pnpm gen:ifaces && vite",
     "build": "pnpm gen:ifaces && vite build",
     "preview": "vite preview",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "test:e2e": "bash e2e/run.sh"
   },
   "dependencies": {
+    "@penguinharness/plugin-company": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
@@ -43,5 +44,8 @@
     "typescript": "^5.6.0",
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
+  },
+  "exports": {
+    "./internal": "./src/internal.ts"
   }
 }

@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+    "paths": {
+      "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
+      "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
+      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
+    }
+  },
+  "include": ["src"]
+}
