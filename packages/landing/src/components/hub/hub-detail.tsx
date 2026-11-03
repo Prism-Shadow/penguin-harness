@@ -98,7 +98,7 @@ export function HubDetail({
       <article className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
         <header className="anim-rise flex flex-wrap items-start gap-x-4 gap-y-3">
           {lead}
-          <div className="min-w-0 flex-1 basis-72">
+          <div className="min-w-0 flex-1 basis-48">
             <h1 className="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">
               {title}
             </h1>
