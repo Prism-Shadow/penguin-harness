@@ -234,11 +234,13 @@ export function BenchmarkCard({
         disabled={masked}
         className="min-w-[14rem] flex-1 text-left"
       >
+        {/* The title takes the row first; the id (flex-basis 0) gets only what is left and is cut
+            short there, so a long id never truncates the title. */}
         <span className="flex items-center gap-2">
           <span className="min-w-0 truncate text-base font-bold">
             {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
           </span>
-          <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
             {benchmark.id}
           </span>
         </span>
