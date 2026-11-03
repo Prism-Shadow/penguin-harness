@@ -511,16 +511,6 @@ function waffle(entries) {
 
 const publicEntry = ({ leaves, ...entry }) => entry;
 
-/**
- * Whether a leaderboard is shown: its `status` is `published`. A board written before RFC-0005
- * gained `status` has none; it is shown while every experiment it reads is published. Drop that
- * fallback once penguin-harness-benchmark's leaderboards all carry `status`.
- */
-function published(config, entries) {
-  if (config.status !== undefined) return config.status === "published";
-  return entries.every((entry) => entry.leaves.every((leaf) => leaf.meta.status === "published"));
-}
-
 /** Every published leaderboard under `<repo>/leaderboards`, one `leaderboard.yaml` each. */
 export function readLeaderboards(repo) {
   const root = join(repo, "leaderboards");
@@ -534,9 +524,7 @@ export function readLeaderboards(repo) {
       fail(file, "leaderboard_id does not match its directory");
     }
     if (!ID.test(dirName)) fail(file, 'leaderboard_id may hold only letters, digits and "-"');
-    if (config.status !== undefined && typeof config.status !== "string") {
-      fail(file, "status is draft or published");
-    }
+    if (requireText(config, "status", file) !== "published") continue;
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "author.name is required");
     if (!Array.isArray(config.values) || config.values.length === 0) {
@@ -544,7 +532,6 @@ export function readLeaderboards(repo) {
     }
     const ctx = { repo, leaderboardId: dirName, cache, file };
     const entries = config.values.map((value) => entryFor(value, ctx));
-    if (!published(config, entries)) continue;
     const experiments = existsSync(join(repo, "experiments", dirName))
       ? `experiments/${dirName}`
       : "experiments";

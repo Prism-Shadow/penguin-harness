@@ -7,9 +7,8 @@
  *   description, and lists what it ships.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
  *   naming that file (nothing is silently dropped).
- * - Given a draft benchmark, a draft leaderboard and a leaderboard with no status, when the hub
- *   is read, then the drafts are left out and the board with no status is shown because its
- *   experiments are published.
+ * - Given a draft benchmark and a draft leaderboard, when the hub is read, then both are left
+ *   out.
  * - Given a benchmark with a data folder, when it is read, then each task carries its rubric and
  *   finds its data folder by the link in its statement or by its id without the CASE prefix, and a
  *   task with neither has no data.
@@ -129,9 +128,7 @@ function experiment(
 }
 
 const board = (values: string, id = "board-a", status = "published") => ({
-  [`leaderboards/${id}/leaderboard.yaml`]: `leaderboard_id: ${id}\ntitle: "Board ${id}"\n${
-    status ? `status: ${status}\n` : ""
-  }author: { name: Prism-Shadow }\nvalues:\n${values}`,
+  [`leaderboards/${id}/leaderboard.yaml`]: `leaderboard_id: ${id}\ntitle: "Board ${id}"\nstatus: ${status}\nauthor: { name: Prism-Shadow }\nvalues:\n${values}`,
 });
 
 const leaf = (id: string) => `      - { experiment_id: ${id}, phase: test }\n`;
@@ -203,18 +200,17 @@ describe("the hub readers", () => {
     );
   });
 
-  it("leaves drafts out, and shows a board with no status while its experiments are published", () => {
+  it("leaves draft benchmarks and leaderboards out", () => {
     const hub = loadHub({
       repo: repo({
         "packages/bench-d/benchmark_config.toml": benchmark("bench-d", "draft"),
         ...board(mean2, "board-a"),
         ...board(mean2, "board-d", "draft"),
-        ...board(mean2, "board-n", ""),
       }),
       pluginsDir: tree({}),
     });
     expect(hub.index.benchmarks.map((b) => b.id)).toEqual(["bench-a"]);
-    expect(hub.index.leaderboards.map((b) => b.id)).toEqual(["board-a", "board-n"]);
+    expect(hub.index.leaderboards.map((b) => b.id)).toEqual(["board-a"]);
   });
 
   it("gives each task its rubric and finds its data folder by the statement's link or its id", () => {
