@@ -45,23 +45,23 @@ import {
   upgrade,
 } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
-import { TerminalManager } from "../terminal/manager.js";
-import type { TerminalSession } from "../terminal/session.js";
+import { TerminalManager } from "@penguinharness/plugin-terminal/server";
+import type { TerminalSession } from "@penguinharness/plugin-terminal/server";
 import {
   MACHINE_SESSION_IFACE,
   SESSION_GROUP,
   SESSION_SHAPE_ID,
 } from "../machines/transport/index.js";
 import type { HeldSession } from "../machines/transport/index.js";
-import type { RemoteTerminals } from "../machines/terminal-relay.js";
-import { identityFrom } from "../terminal/identity.js";
-import { bindTerminalStream } from "../terminal/stream.js";
+import type { RemoteTerminals } from "@penguinharness/plugin-terminal/server";
+import { identityFrom } from "@penguinharness/plugin-terminal/server";
+import { bindTerminalStream } from "@penguinharness/plugin-terminal/server";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
-import { terminalRoutes } from "../terminal/routes.js";
-import type { Identity } from "../terminal/identity.js";
+import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
+import type { Identity } from "@penguinharness/plugin-terminal/server";
 import { platformDef } from "../platform.js";
 import { SandboxModule } from "../sandbox/service.js";
 import ifaceTable from "../ifaces.json" with { type: "json" };
