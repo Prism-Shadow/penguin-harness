@@ -8,6 +8,8 @@
  * - A code nobody mapped still falls back to the server's message; a non-ApiError reads as the
  *   generic failure.
  * - A numeric Retry-After header survives onto the ApiError.
+ * - A machine that did not answer (`machine_no_answer`: the hub's lookup, or any machine read the
+ *   socket gave up on — files, lists, settings) is said about the machine, not a conversation.
  * - An answer that is not the server's (no JSON) says what answered instead of blaming the
  *   server: a web page from a dev server or reverse proxy that did not forward the request, or a
  *   proxy's gateway answer. For a machine's Agents, that is the sentence the new-chat page shows.
@@ -29,6 +31,15 @@ afterEach(() => {
 });
 
 describe("apiErrorText", () => {
+  it("says a machine that did not answer about the machine, whatever was being read", () => {
+    for (const dict of [ZH, EN]) {
+      setActiveStrings(dict);
+      const text = apiErrorText(new ApiError(0, "machine_no_answer", "RAW ENGLISH SERVER MESSAGE"));
+      expect(text).not.toBe("RAW ENGLISH SERVER MESSAGE");
+      expect(text).not.toMatch(/conversation|对话/i);
+    }
+  });
+
   it("localizes each compaction refusal separately in both locales", () => {
     const codes = ["compaction_not_configured", "nothing_to_compact", "already_compacted"];
 

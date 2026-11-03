@@ -15,7 +15,6 @@ import {
   Modal,
   NoticeStrip,
   SkeletonList,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -27,6 +26,7 @@ import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {
@@ -71,7 +71,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
       await load();
       if (machineId === null) void reloadAgents();
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       setBusy(false);
     }

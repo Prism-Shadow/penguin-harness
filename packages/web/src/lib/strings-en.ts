@@ -278,7 +278,6 @@ export const en: Strings = {
       cancelled: "Stopped retrying",
       stoppedSsh: "Reconnect failed; fix ssh first",
       stoppedPassword: "Sign-in refused; not retrying",
-      lastFailure: "Last failure",
       retryNow: "Retry now",
       stop: "Stop retrying",
       retry: "Retry",
@@ -3690,8 +3689,9 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "Loading earlier messages…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "Failed to load earlier messages — click to retry",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) =>
+      `[Load failed]: could not load earlier messages (${error})`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3715,13 +3715,27 @@ Scenarios:
       `Steering queued — delivered with the next turn: ${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "User steering",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "Mid-run send mode",
     steerModeSteer: "Steer",
     steerModeSteerHint: "Steer now: delivered to the running agent with the next turn",
     steerModeFollowUp: "Queue",
     steerModeFollowUpHint:
       "Queue a follow-up: sent automatically as a new message when this run finishes",
+    steerModeInterrupt: "Interrupt",
+    steerModeInterruptHint:
+      "Interrupt this run: stop it and send the message right after the turn it cut",
+    interruptPlaceholder: "Interrupt and send — the message follows the turn it cuts",
+    interruptPlaceholderShort: "Interrupt and send…",
+    interruptSend: "Interrupt and send",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `Interrupting — sent next: ${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "Interrupt",
+    /** Its tooltip. */
+    interruptQueuedTitle: "Stop this run and send this message now",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "That message already went out; there is nothing to interrupt.",
     followUpPlaceholder: "Queue as the next message — sent automatically when this run finishes",
     followUpPlaceholderShort: "Queue as the next message…",
     followUpSend: "Queue as the next message",
@@ -3768,37 +3782,57 @@ Scenarios:
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
     requestRetry: {
-      waiting: (seconds: number, n: number, m: number) =>
-        `Retrying in ${seconds} s (attempt ${n}/${m})`,
-      sending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
-      sent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      gaveUp: (attempts: number) =>
-        attempts > 1 ? `Request failed after ${attempts} attempts` : "Request failed",
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
-          ? "Connection timed out"
+      waiting: (seconds: number, n: number, m: number) => `attempt ${n}/${m} in ${seconds} s`,
+      sending: (n: number, m: number) => `sending attempt ${n}/${m}`,
+      sent: (n: number, m: number) => `attempt ${n}/${m} sent`,
+      retrying: (sentence: string, why: string) => `[Retrying]: ${sentence} (${why})`,
+      retried: (sentence: string, why: string) => `[Retried]: ${sentence} (${why})`,
+      failed: (attempts: number, why: string) =>
+        attempts > 2
+          ? `[Failed]: all ${attempts} requests failed (${why})`
+          : attempts === 2
+            ? `[Failed]: both requests failed (${why})`
+            : `[Failed]: ${why}`,
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}, HTTP ${status}`,
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
+          ? "connection timed out"
           : kind === "malformed"
-            ? "Response incomplete or unparseable"
+            ? "response incomplete or unparseable"
             : kind === "network"
-              ? "Network or service temporarily unavailable"
-              : kind === "image_rejected"
-                ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "output_truncated"
-                  ? "The model's output was cut off at the output limit"
-                  : kind === "failed"
-                    ? "The model provider returned an error"
-                    : "The request failed";
-      },
+              ? "network or service temporarily unavailable"
+              : kind === "rate_limited"
+                ? "rate limited, or the quota is used up"
+                : kind === "auth"
+                  ? "credentials rejected"
+                  : kind === "rejected"
+                    ? "the provider rejected the request"
+                    : kind === "image_rejected"
+                      ? "the provider rejected an image in this turn's input; it was replaced with a note"
+                      : kind === "output_truncated"
+                        ? "the model's output was cut off at the output limit"
+                        : kind === "unsupported"
+                          ? "the model does not support this request"
+                          : kind === "invalid_input"
+                            ? "the input could not be built into a request"
+                            : kind === "failed"
+                              ? "the provider returned an error"
+                              : null,
+      unknownCause: "cause unknown",
       retryNow: "Retry now",
       stop: "Stop retrying",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
+    /** Run-ending LLM failure line (request_end status fatal): why in short when it is known; the provider's own words are in the failure details. */
+    llmError: (why: string | null) =>
+      `[Error]: the model request failed${why === null ? "" : ` (${why})`}`,
+    failureReport: {
+      open: "Details",
+      title: "Request failure details",
+      lead: "Most of these failures come from the model provider or the network. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
+      check:
+        "Key-shaped strings are taken out of the report; still check it for anything private before you send it.",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "Retry",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
@@ -3858,14 +3892,47 @@ Scenarios:
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
+    sessionOnQuietMachine: (machine: string) =>
+      `This conversation is on ${machine}, which isn't answering right now.`,
     sessionOnOfflineMachineUnknown:
-      "This conversation is on a machine that is not connected right now.",
+      "This server doesn't have this conversation. It may be on a machine this server can't reach right now.",
+    /**
+     * A link the list does not hold while machines that could hold it are silent: what is known —
+     * not here — and where it may be. At most three aliases are named; more end in "and others".
+     * `state` says whether those machines are not connected, connected and not answering, or some
+     * of each.
+     */
+    sessionMaybeOnMachines: (
+      aliases: readonly string[],
+      more: boolean,
+      state: "disconnected" | "quiet" | "mixed",
+    ) => {
+      if (aliases.length === 1 && !more) {
+        const why = state === "disconnected" ? "isn't connected" : "isn't answering";
+        return `This server doesn't have this conversation. It may be on ${aliases[0]}, but ${aliases[0]} ${why} right now.`;
+      }
+      const why =
+        state === "disconnected"
+          ? "aren't connected"
+          : state === "quiet"
+            ? "aren't answering"
+            : "aren't connected or aren't answering";
+      return `This server doesn't have this conversation. It may be on ${aliases.join(", ")}${more ? " and others" : ""}, but those machines ${why} right now.`;
+    },
     sessionOfflineHint: "It will open as soon as the connection is back.",
+    sessionQuietHint: "It will open as soon as the machine answers.",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null
+        ? "The machine does not let this server see this conversation"
+        : `${machine} does not let this server see this conversation`,
+    sessionRefusedHint:
+      "The conversation is still there, but that machine refuses this server's reads.",
     sessionNotFound: "This conversation does not exist or was deleted",
     sessionNotFoundHint:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
-    historyLoadFailed: "Failed to load history",
+    historyLoadFailed: "Could not load the message history",
     machineAway: {
       reconnecting: (alias: string) => `${alias} is reconnecting`,
       reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,
@@ -3881,6 +3948,52 @@ Scenarios:
       body: (alias: string) =>
         `${alias} is on a different version, so this conversation won't update by itself. Go to Machines and restart it.`,
       open: "Go to Machines",
+    },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null
+          ? "Loading the latest messages"
+          : `Loading the latest messages from ${alias}`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "Syncing earlier history",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "Syncing full outputs",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "Loading the full text",
+      /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
+      bodyFailed: (reason: string) => `[Load failed]: could not load the full text (${reason})`,
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "Fetching the Trace" : `Fetching the Trace from ${alias}`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) =>
+        `Lost the connection to the machine, reconnecting (attempt ${attempt})`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `Lost the connection to the machine, reconnecting in ${seconds} s (attempt ${attempt})`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) =>
+        `The machine is not answering, asking again (attempt ${attempt})`,
+      askIn: (seconds: number, attempt: number) =>
+        `The machine is not answering, asking again in ${seconds} s (attempt ${attempt})`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "The machine is connected but has sent no new data for a minute; still waiting"
+          : `${alias} is connected but has sent no new data for a minute; still waiting`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "Waiting for the machine",
+      retryNow: "Retry now",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "The history transfer broke off; try again",
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
@@ -6101,6 +6214,20 @@ Scenarios:
       loadFailed: "Could not load the handbook",
     },
   },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
+  },
   errors: {
     networkError: "Network error, please check your connection",
     notTheServer: {
@@ -6123,6 +6250,13 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
+      trace_body_not_found: "This part is no longer in the conversation's Trace.",
+      machine_refused: "The machine refused this read.",
+      machine_no_answer: "The machine didn't answer.",
+      machine_not_found: "This machine is not on the Project's machine list.",
+      machine_outdated: "The machine runs an older version; update it on the Machines page.",
+      machine_answered: "The machine's answer could not be used; try again.",
+      trace_changed: "The conversation's Trace kept changing while it was read; try again.",
       internal: "The server hit an internal error. Please try again shortly.",
       agent_not_found: "This agent no longer exists.",
       job_running: "A job is running on that machine; wait for it to finish.",
@@ -6178,6 +6312,7 @@ Scenarios:
       workspace_missing: "This Session's Workspace no longer exists.",
       workspace_not_found: "That Workspace does not exist, or is not a directory.",
       session_not_found: "This Session no longer exists, or you do not have access.",
+      session_forbidden: "You do not have access to this Session.",
       session_deleting: "This Session is being deleted.",
       approval_not_found: "This approval request was already answered, or is no longer valid.",
       process_not_found: "This background process already exited, or was removed.",

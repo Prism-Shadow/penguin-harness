@@ -18,8 +18,8 @@
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
- * user-defined), the speed test, and the gear last on every group: a menu with the group's sort
- * and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
+ * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
  *
  * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
  * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
@@ -231,6 +231,7 @@ import { DetailsFold, MODEL_DIALOG_SLOTS, foldedErrors, foldedSlots } from "./mo
 import type { ModelDialogSlot } from "./model-dialog-details";
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -1103,7 +1104,7 @@ export function ModelsPage() {
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -1158,7 +1159,7 @@ export function ModelsPage() {
         keyLanded.current = false;
         setOauthFor(PENGUIN_GO_PROVIDER_ID);
       } else {
-        toastError(apiErrorText(error));
+        toastApiError(error);
       }
     } finally {
       setBusy(false);
@@ -3496,10 +3497,10 @@ function ModelDialog({
           }}
         >
           {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
-              TokenDance, SiliconFlow, Atlas Cloud), and the group the row was loaded in — a row
-              already in another gateway or a vendor group may stay there, but no other row may
-              be moved into one (the server refuses that as an addition, model_not_addable). The
-              current value stays listed so it is valid. */}
+              TokenDance, SiliconFlow, Atlas Cloud, Runcrate), and the group the row was loaded
+              in — a row already in another gateway or a vendor group may stay there, but no
+              other row may be moved into one (the server refuses that as an addition,
+              model_not_addable). The current value stays listed so it is valid. */}
           {MODEL_PROVIDERS.filter(
             (p) =>
               isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,

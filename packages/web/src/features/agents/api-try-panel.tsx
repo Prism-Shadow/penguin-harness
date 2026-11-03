@@ -33,9 +33,7 @@ import {
   Segmented,
   StreamingCaret,
   Text,
-  toastError,
 } from "@prismshadow/penguin-ui";
-import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -60,6 +58,7 @@ import type {
   TryState,
   TryView,
 } from "./api-try-log";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export interface ApiTryViewProps {
   input: string;
@@ -545,9 +544,7 @@ export function ApiTryPanel({
         );
       }}
       onStop={() => {
-        stopTry(state, connection.current, machineId).catch((e: unknown) =>
-          toastError(apiErrorText(e)),
-        );
+        stopTry(state, connection.current, machineId).catch((e: unknown) => toastApiError(e));
       }}
       onNewSession={() => dispatch({ type: "reset" })}
       onView={(view) => dispatch({ type: "view", view })}

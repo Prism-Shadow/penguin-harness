@@ -22,7 +22,9 @@
  * - This server not answering abandons the reload: the rows stand and loading stays clear.
  * - A machine is asked once this server's rows are on screen, and holds nothing back: they show
  *   and loading clears as soon as this server answers; the machine keeps the rows it showed and
- *   its cache until its own answer lands, which builds the list again.
+ *   its cache until its own answer lands, which builds the list again. Until then it stands as
+ *   being asked, and a held machine that answers nothing stands as out of reach — so the chat
+ *   page never takes this server's "no such Session" for a verdict while it might hold it.
  * - Two machines' counts for one path stay apart.
  * - A group's next page is asked only of the machine the group is on, by path.
  *
@@ -92,6 +94,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   LISTING_CHANGE_DELAY_MS,
+  MACHINE_REST_MIN_MS,
   applyUserEvent,
   createSessionsStore,
   liveSessionStatuses,
@@ -484,6 +487,8 @@ describe("the list across machines", () => {
     const store = boot(["M1"], ["M2"]);
     await store.getState().reload();
     expect(ids(store)).toEqual(["m2-cached", "here", "m1-cached"]);
+    // The held one that said nothing is out of reach for this round, as the one not held is.
+    expect(store.getState().silentMachineIds).toEqual(["M1"]);
     expect(machineForSession("m2-cached")).toBe("M2");
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["m1-cached"]);
     // Counts come only from servers that answered: the cache makes no claim about now.
@@ -624,6 +629,47 @@ describe("a machine still being asked", () => {
     await done;
     expect(ids(store)).toEqual(["there", "here"]);
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(2);
+  });
+
+  it("stands as being asked until its answer lands", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const held = hold("M1");
+    const store = boot(["M1"]);
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(store.getState().loading).toBe(false));
+    expect(store.getState()).toMatchObject({ askingMachineIds: ["M1"], silentMachineIds: [] });
+
+    held.release("M1");
+    await done;
+    expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: [] });
+  });
+
+  it("once silent, stays out of reach while it is probed again, until it answers", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+      const store = boot(["M1"]);
+      await store.getState().reload(); // M1 answers nothing: out of reach, and resting
+      expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: ["M1"] });
+
+      answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+      const held = hold("M1");
+      await vi.advanceTimersByTimeAsync(MACHINE_REST_MIN_MS); // the rest ends: one question
+      expect(held.waiting("M1")).toBe(1);
+      // A page that said the machine is out of reach does not flip to "still asking" on a retry.
+      expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: ["M1"] });
+
+      held.release("M1");
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.runOnlyPendingTimersAsync();
+      expect(store.getState().silentMachineIds).toEqual([]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it("keeps the rows it showed, and its cache, until its own answer lands", async () => {

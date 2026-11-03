@@ -19,11 +19,28 @@ import { apiUrl } from "./server-context";
 
 /** sessionId → the machine it lives on. Absent = this server. */
 const owners = new Map<string, string>();
+/**
+ * Sessions seen on this server's own list or made here. Routing reads absence as "here" either
+ * way; this says that "here" is known rather than assumed, which is what a link to a Session the
+ * list no longer holds needs: one known to be here is settled by this server's answer alone,
+ * whatever machine of the Project is out of reach (features/chat/route-reach.ts).
+ */
+const knownHere = new Set<string>();
 
 /** Records where a Session lives. `null` (this machine) is stored as absence, not as a value. */
 export function rememberSessionMachine(sessionId: string, machineId: string | null): void {
-  if (machineId === null) owners.delete(sessionId);
-  else owners.set(sessionId, machineId);
+  if (machineId === null) {
+    owners.delete(sessionId);
+    knownHere.add(sessionId);
+  } else {
+    owners.set(sessionId, machineId);
+    knownHere.delete(sessionId);
+  }
+}
+
+/** Whether the Session is known to live on this server (not merely not known elsewhere). */
+export function sessionKnownHere(sessionId: string): boolean {
+  return knownHere.has(sessionId);
 }
 
 /** The machine a Session lives on, or null for this one. */
@@ -34,6 +51,7 @@ export function machineForSession(sessionId: string): string | null {
 /** Forgets everything — for a project switch, where the whole list is about to be rebuilt. */
 export function forgetSessionMachines(): void {
   owners.clear();
+  knownHere.clear();
 }
 
 /**

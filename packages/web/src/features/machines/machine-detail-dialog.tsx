@@ -570,7 +570,7 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* The card's retry row, at the dialog's size, with no "?": the last failure is said in
+          {/* The card's retry row, at the dialog's size, with no reason: the last failure is said in
               full under it. A job moving on the machine decides first, so the presses wait for it. */}
           <RetryStatus
             {...retryStatus(reconnect.status, {

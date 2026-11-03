@@ -26,6 +26,7 @@ import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
 import { apiSocketRef } from "../socket/ref.js";
+import { API_SOCKET_DEFLATE, compressesApiSocket } from "../socket/compression.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -62,6 +63,10 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
       concurrencyLimit: 10,
     },
   });
+  // The API socket between servers, or to a browser on another computer, compresses its
+  // frames, each on its own (socket/compression.ts); this computer's browser does not.
+  const compressed = new WebSocketServer({ noServer: true, perMessageDeflate: API_SOCKET_DEFLATE });
+  const plain = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -117,7 +122,8 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(authed.user.userId);
-          return wss.handleUpgrade(req, socket, head, (ws) => {
+          const server = compressesApiSocket(req.headers.origin) ? compressed : plain;
+          return server.handleUpgrade(req, socket, head, (ws) => {
             platform.api.attachStream?.(ws, ref, streamUrl, deps.log);
           });
         }

@@ -31,12 +31,10 @@ import {
   SkeletonList,
   Text,
   railItemClass,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -45,6 +43,7 @@ import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** A channel (the hash sign): the mark every channel but the all-hands one wears. */
 export const CHANNEL_ICON = ICONS.hash;
@@ -216,7 +215,7 @@ export function ChannelSidebar({
       // this one reload replaces the Join prompt there too (channel-stream.joinedElsewhere).
       await company.reloadChannels();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setJoining(null);
     }

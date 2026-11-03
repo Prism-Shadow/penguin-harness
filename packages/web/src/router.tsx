@@ -13,7 +13,7 @@
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -22,8 +22,11 @@ import {
   createBrowserRouter,
   createMemoryRouter,
   createRoutesFromElements,
+  useRouteError,
 } from "react-router";
+import { CrashNotice, setReportRoute } from "@prismshadow/penguin-ui";
 import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
+import { routePattern } from "./lib/route-pattern";
 import { NavigationGuard } from "./lib/unsaved/navigation-guard";
 import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
@@ -143,9 +146,18 @@ function RootFrame() {
   );
 }
 
+/**
+ * What the router shows in place of a route that crashed outside a page body's own boundary (the
+ * shell, a guard): the crash notice over the whole window, with Reload and Report.
+ */
+function RouteCrash() {
+  const error = useRouteError();
+  return <CrashNotice error={error} className="h-dvh" />;
+}
+
 function appRoutes() {
   return createRoutesFromElements(
-    <Route element={<RootFrame />}>
+    <Route element={<RootFrame />} errorElement={<RouteCrash />}>
       <Route path="/login" element={<LoginRoute />} />
       <Route
         path="/terminal"
@@ -216,5 +228,10 @@ export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
       ? (browserRouter ??= createBrowserRouter(appRoutes()))
       : createMemoryRouter(appRoutes(), { initialEntries: [initialPath] }),
   );
+  // A problem report names the page by its route's pattern, never by the ids in the address.
+  useEffect(() => {
+    setReportRoute(() => routePattern(router.state.matches));
+    return () => setReportRoute(null);
+  }, [router]);
   return <RouterProvider router={router} />;
 }
