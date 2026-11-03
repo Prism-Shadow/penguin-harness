@@ -23,7 +23,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { PACKAGE_NAME } from "../plugin/loader.js";
-import { assertSafeEntryPath } from "./skill-import-limits.js";
+import { assertSafeEntryPath } from "@prismshadow/penguin-server/internal";
 
 /** Decoded zip cap: the Skill archive's, which stays within the 20MB body limit after base64. */
 export const MAX_PLUGIN_ARCHIVE_BYTES = 14 * 1024 * 1024;
