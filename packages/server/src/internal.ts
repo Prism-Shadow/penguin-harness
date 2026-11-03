@@ -28,7 +28,6 @@ export * from "./mechanisms/settings.js";
 export * from "./runtime/channel.js";
 export * from "./runtime/error-recorder.js";
 export * from "./runtime/messaging/enabled-channel.js";
-export * from "./runtime/schedule-file.js";
 export * from "./runtime/session-manager.js";
 export * from "./services/ids.js";
 export * from "./services/project-config-service.js";

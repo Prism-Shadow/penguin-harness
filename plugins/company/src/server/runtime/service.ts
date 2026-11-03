@@ -53,6 +53,7 @@ import { TICKET_SLUG_PATTERN } from "@prismshadow/penguin-server/api";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "@prismshadow/penguin-server/internal";
+import { latestSlotAt, nextSlotAfter, slotInWindow } from "@penguinharness/plugin-schedules/server";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import type { Channels, Clock, Config, Log } from "@prismshadow/penguin-server/internal";
 import type { ChannelHub } from "@prismshadow/penguin-server/internal";
@@ -110,8 +111,8 @@ import { SEMANTIC_ID_RULES } from "@prismshadow/penguin-server/internal";
 import { suggestSemanticId } from "@prismshadow/penguin-server/internal";
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-server/internal";
 import { enabledMessagingChannel } from "@prismshadow/penguin-server/internal";
-import { latestSlotAt, nextSlotAfter, slotInWindow } from "@prismshadow/penguin-server/internal";
-import type { ScheduleDefinition } from "@prismshadow/penguin-server/internal";
+
+import type { ScheduleDefinition } from "@penguinharness/plugin-schedules/server";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
 import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins } from "./deps.js";

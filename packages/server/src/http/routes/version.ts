@@ -33,7 +33,7 @@ import type {
   VersionRollbackResponse,
 } from "../../api/types.js";
 import { diffIfaces } from "@prismshadow/penguin-hmr";
-import type { HarnessHistoryIface } from "../../services/harness-history.js";
+import type { HarnessHistoryIface } from "@penguinharness/plugin-usage/server";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";

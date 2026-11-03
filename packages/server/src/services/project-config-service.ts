@@ -132,7 +132,7 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "./usage-service.js";
+import type { PricingRates, TieredRates } from "@penguinharness/plugin-usage/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {

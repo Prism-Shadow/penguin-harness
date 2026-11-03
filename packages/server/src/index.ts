@@ -35,11 +35,19 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "@penguinharness/plugin-terminal/server";
+<<<<<<< HEAD
 import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server/extension-ws.js";
 import type { ExtensionGate } from "@penguinharness/plugin-browser/server/extension-ws.js";
 
 ||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
 ||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
+||||||| parent of 702065d087 (fix(plugins): B1 residue — hono pins, schedule fns via the schedules plugin, host residual imports)
+import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server/extension-ws.js";
+import type { ExtensionGate } from "@penguinharness/plugin-browser/server/extension-ws.js";
+=======
+import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server";
+import type { ExtensionGate } from "@penguinharness/plugin-browser/server";
+>>>>>>> 702065d087 (fix(plugins): B1 residue — hono pins, schedule fns via the schedules plugin, host residual imports)
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";

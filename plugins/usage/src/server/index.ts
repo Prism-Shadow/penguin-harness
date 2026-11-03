@@ -14,3 +14,4 @@ export { benchmarksRoutes } from "./benchmarks.js";
 export type { BenchmarksRouteDeps } from "./benchmarks.js";
 export { agentTracesRoutes } from "./agent-traces.js";
 export type { AgentTracesRouteDeps } from "./agent-traces.js";
+export type { PricingRates, TieredRates } from "./usage-service.js";

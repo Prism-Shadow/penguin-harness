@@ -12,6 +12,7 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "hono": "^4.12.34",
     "ws": "^8.18.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"

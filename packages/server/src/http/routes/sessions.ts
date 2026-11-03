@@ -41,12 +41,24 @@ import type {
   TaskCreateResponse,
   SessionSandbox,
 } from "../../api/types.js";
+<<<<<<< HEAD
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
 import { readableSession } from "../session-access.js";
 import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
+||||||| parent of 702065d087 (fix(plugins): B1 residue — hono pins, schedule fns via the schedules plugin, host residual imports)
+import { compactionThresholdFor } from "../../services/context-breakdown.js";
+import { decodeCursor } from "../../services/message-window.js";
+import type { MessagesPageRequest } from "../../services/trace-service.js";
+import { withImagesByReference } from "../../services/trace-images.js";
+=======
+import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
+import { decodeCursor } from "../../services/message-window.js";
+import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+>>>>>>> 702065d087 (fix(plugins): B1 residue — hono pins, schedule fns via the schedules plugin, host residual imports)
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -143,7 +155,7 @@ import { platformAuthRoutes } from "./platform-auth.js";
 import { modelScopeAuthRoutes } from "./modelscope-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
-import { usageRoutes } from "./usage.js";
+import { usageRoutes } from "@penguinharness/plugin-usage/server";
 import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-files.js";
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
