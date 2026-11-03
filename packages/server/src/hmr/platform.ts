@@ -1,3 +1,60 @@
+/**
+ * THE platform: the one hot-swappable unit this build of the server packages.
+ *
+ * The repo carries exactly one platform — versions exist BETWEEN deployments
+ * (this packaged build vs the next bundle pushed over HTTP), not as parallel
+ * files. When a future build changes the context shape, it bumps `version`
+ * and ships the migrator alongside the new schema; the previous shape lives
+ * only in already-parked documents out in the world.
+ *
+ * PLATFORM LAYER — WHERE POLICY BELONGS. Anything a deployment might want to
+ * change (business APIs, what an agent sees, how a capability behaves) goes
+ * here rather than in the runtime, and reaches installations by one HTTP push
+ * instead of a rebuild. Worth remembering when something looks like it must
+ * live in the shell: this code runs INSIDE the server process, so in-process
+ * effects (e.g. extending process.env for the shells agents spawn) are
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
+ *
+ * This packaged platform carries the WHOLE business surface (see app.ts):
+ * every business service and route is assembled inside create() over the runtime's
+ * published capabilities, and serves through the seam in ../hmr/http-seam.ts — it
+ * sees every request before the runtime's own routes do and answers null for the
+ * ones it does not own. A pushed bundle therefore replaces the business wholesale:
+ * adding or changing an endpoint or a service needs no runtime change.
+ */
+import type { WebSocket } from "ws";
+import type {
+  Impl,
+  Json,
+  Park,
+  IfaceTable,
+  Instance,
+  ManifestTable,
+  ModuleDef,
+  ModuleTree,
+} from "@prismshadow/penguin-core/kernel";
+import {
+  closedShape,
+  defineIface,
+  schema,
+  type,
+  boot,
+  bootModules,
+  initialDoc,
+  moduleDefOf,
+  upgrade,
+} from "@prismshadow/penguin-core/kernel";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
+import { TerminalManager } from "@penguinharness/plugin-terminal/server";
+import type { TerminalSession } from "@penguinharness/plugin-terminal/server";
+import {
+  MACHINE_SESSION_IFACE,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+} from "@penguinharness/plugin-machines/server";
+import type { HeldSession } from "@penguinharness/plugin-machines/server";
+
+||||||| parent of a5dee5d921 (machines: the composition root takes the machines face, transport shim removed)
 import type { RemoteTerminals } from "@penguinharness/plugin-terminal/server";
 import { identityFrom } from "@penguinharness/plugin-terminal/server";
 import { bindTerminalStream } from "@penguinharness/plugin-terminal/server";
