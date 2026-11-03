@@ -49,6 +49,9 @@
       ],
       "@penguinharness/plugin-models/server": [
         "../../plugins/models/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../../plugins/plugins/src/server/index.ts"
       ]
     }
   },

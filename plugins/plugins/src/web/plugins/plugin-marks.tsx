@@ -14,9 +14,9 @@
  */
 import { Badge, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
-import { S } from "../../lib/strings";
-import { toneInk, type Tone } from "../../lib/tone";
-import { localizedText } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import type { PluginRow } from "./plugin-groups";
 import type { LibraryUsage, PluginStatus } from "./plugin-status";
 

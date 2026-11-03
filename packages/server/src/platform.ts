@@ -132,10 +132,10 @@ import {
 import { InstallRoutes } from "@penguinharness/plugin-projects/server";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
-import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
-import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
+import { PluginRegistryRoutes, PluginRoutes } from "@penguinharness/plugin-plugins/server";
+import { InstalledPluginRoutes } from "@penguinharness/plugin-plugins/server";
 import { NpmPluginPackages } from "./plugin/install.js";
-import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
+import { PluginUiRoutes } from "@penguinharness/plugin-plugins/server";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";

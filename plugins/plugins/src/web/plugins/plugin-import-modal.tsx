@@ -24,12 +24,12 @@ import {
   useGuardedClose,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
-import { AiExamples, PromptFold, useAiBridge } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { AiExamples, PromptFold, useAiBridge } from "@prismshadow/penguin-web/internal";
 import {
   buildPluginImportPrompt,
   isNpmPluginName,

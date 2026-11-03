@@ -55,7 +55,7 @@ import {
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
 import type { PluginPackageManifest, LibraryPlugin } from "@prismshadow/penguin-core";
-import type { PluginSkills } from "../../plugin/skills.js";
+import type { PluginSkills } from "../plugin/skills.js";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
@@ -64,13 +64,13 @@ import type {
   PluginIndexResponse,
   PluginLibraryResponse,
   PluginReadmeResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
-import type { Config, Hmr } from "../../hmr/capabilities.js";
-import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import type { Config, Hmr } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+import type { Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
@@ -84,16 +84,16 @@ import {
   withoutIcon,
   NIGHTLY_INDEX_URL,
   SOURCE_WAIT_MS,
-} from "../../plugin/registry.js";
-import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
-import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
-import type { PluginBase } from "../../plugin/loader.js";
-import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
+} from "../plugin/registry.js";
+import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../plugin/registry.js";
+import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../plugin/loader.js";
+import type { PluginBase } from "../plugin/loader.js";
+import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../plugin/install.js";
 import {
   pluginArchiveResponse,
   unscopedName,
   zipPluginPackage,
-} from "../../services/plugin-archive.js";
+} from "../services/plugin-archive.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -104,15 +104,15 @@ export interface PluginsRouteDeps {
   /** The skills enabled code plugins contribute (plugin/skills.ts): their package names install like library names. */
   pluginSkills: Pick<PluginSkills, "resolve">;
 }
-import { HttpError } from "../errors.js";
-import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalStringArray, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
 import {
   pluginFiles,
   toAgentMcpServerItem,
   toHookItem,
   toPluginItem,
   toSkillItem,
-} from "../../services/plugin-library.js";
+} from "@prismshadow/penguin-server/internal";
 
 /** A server name another owner holds, as the answer: what it is and who has it; nothing was written. */
 async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {

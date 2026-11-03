@@ -19,12 +19,12 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { Hmr } from "../../hmr/capabilities.js";
-import { pluginHostFrom } from "../../plugin/host.js";
-import { PACKAGE_NAME } from "../../plugin/loader.js";
-import { HttpError } from "../errors.js";
-import { containedFile, uiFileResponse } from "../static-files.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { Hmr } from "@prismshadow/penguin-server/internal";
+import { pluginHostFrom } from "../plugin/host.js";
+import { PACKAGE_NAME } from "../plugin/loader.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { containedFile, uiFileResponse } from "@prismshadow/penguin-server/internal";
 
 /** Where a plugin's shipped UI lives inside its package. */
 const PLUGIN_UI_DIR = "ui";

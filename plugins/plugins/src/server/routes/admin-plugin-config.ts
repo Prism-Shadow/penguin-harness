@@ -9,12 +9,12 @@
  * happened, together with the groups as they stand afterwards.
  */
 import { Hono } from "hono";
-import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { PluginConfigError } from "../../plugin/config.js";
-import type { PluginConfigAdmin } from "../../plugin/config-page.js";
-import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString } from "../validate.js";
+import type { PluginConfigActionResponse, PluginConfigResponse } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { PluginConfigError } from "../plugin/config.js";
+import type { PluginConfigAdmin } from "../plugin/config-page.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
 
 export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

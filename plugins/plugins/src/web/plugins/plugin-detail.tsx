@@ -42,15 +42,15 @@ import {
   type MarkdownReaderState,
   type TreeToggle,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { linkSegments } from "../../lib/link-segments";
-import { apiErrorText } from "../../lib/api-error";
-import { baseName } from "../../lib/workspace-tree";
-import { useReaderFind } from "../../lib/reader-find";
-import { useLocale } from "../../state/locale";
-import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { SkillTile } from "../skills";
+import { S } from "@prismshadow/penguin-web/internal";
+import { linkSegments } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { baseName } from "@prismshadow/penguin-web/internal";
+import { useReaderFind } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";

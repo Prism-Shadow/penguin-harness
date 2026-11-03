@@ -20,7 +20,7 @@ import {
   declaresMcpServers,
   readLibraryPackage,
 } from "@prismshadow/penguin-core";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import { PACKAGE_NAME } from "../plugin/loader.js";
 import { assertSafeEntryPath } from "./skill-import-limits.js";
 

@@ -30,7 +30,7 @@ import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "@penguinharness/plugin-agents/web";
 import { ModelsModule } from "@penguinharness/plugin-models/web";
-import { PluginsModule } from "./features/plugins/module";
+import { PluginsModule } from "@penguinharness/plugin-plugins/web";
 import { MachinesModule } from "@penguinharness/plugin-machines/web";
 import { UsageModule } from "@penguinharness/plugin-usage/web";
 import { BenchmarkModule } from "@penguinharness/plugin-usage/web";

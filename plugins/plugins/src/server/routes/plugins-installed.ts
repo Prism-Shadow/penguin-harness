@@ -55,16 +55,16 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginInstallOutcome,
   UnsatisfiedPlugin,
   SkillMetadataItem,
-} from "../../api/types.js";
-import { HttpError } from "../errors.js";
-import { readJson, requireString, requireValidId } from "../validate.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
@@ -73,7 +73,7 @@ import {
   type PluginRequirement,
   type PluginTables,
 } from "@prismshadow/penguin-core";
-import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
+import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "@prismshadow/penguin-server/internal";
 import {
   discoverBuiltinPlugins,
   PACKAGE_NAME,
@@ -82,23 +82,23 @@ import {
   pluginBases,
   readPluginClosure,
   readPluginDeclaration,
-} from "../../plugin/loader.js";
-import type { PluginPackages } from "../../mechanisms/plugins.js";
+} from "../plugin/loader.js";
+import type { PluginPackages } from "@prismshadow/penguin-server/internal";
 import {
   installedPackageDir,
   PluginInstallError,
   pluginsPrefix,
   readInstalledVersion,
   type InstalledPackage,
-} from "../../plugin/install.js";
-import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
-import { parsePluginArchive } from "../../services/plugin-archive.js";
-import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import type { PluginSkills } from "../../plugin/skills.js";
-import { toSkillItem } from "../../services/plugin-library.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+} from "../plugin/install.js";
+import { parsePluginSource, type PluginSource } from "../plugin/source.js";
+import { parsePluginArchive } from "../services/plugin-archive.js";
+import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../plugin/host.js";
+import type { PluginSkills } from "../plugin/skills.js";
+import { toSkillItem } from "@prismshadow/penguin-server/internal";
+import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-server/internal";
 
 export interface InstalledPluginsDeps {
   root: string;
