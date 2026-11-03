@@ -1,67 +1,8 @@
-/**
- * A group's settings — the gear at the end of every group header (owner only): the connection
- * the group holds once, in `[providers.<id>]`, which every model in it follows for each field it
- * leaves blank (the group key only where it reaches the model: core's groupKeyReaches). This is
- * also where the group key is set by hand.
- *
- * Three fields, in the model dialog's rhythm: the group key, the base URL, and the protocol as
- * the base URL field's in-field suffix menu, whose first row "Not set" sets none (a model with no
- * protocol of its own is then routed by its id; on custom and user-defined groups each model
- * keeps its own). Every group takes a protocol, OpenCode Go included: a model's own protocol
- * always wins over its group's. The exception is a group whose protocol is fixed (core's
- * fixedClientType: Penguin Go, whose platform speaks MMSP alone): its suffix is the read-only
- * path, it has no Detect, and one short line under the field names the protocol. The fields
- * hold the file's values and nothing else: the catalog only seeds a new Project's file and is
- * never a fallback, so the dialog does not quote it (Restore defaults puts the catalog's values
- * back). Where the catalog names the
- * vendor's model list, a link to it closes the dialog's body.
- *
- * Save is live once a field differs from what the group stores and the base URL is acceptable:
- * one that is set but is not an absolute http(s) URL, or a blank one the group needs, is said
- * under the field as it is typed. Closing the dialog with edits asks before they are dropped.
- * Saving sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never probes
- * the endpoint, with one exception: a custom or user-defined group given a base URL and left on
- * "Not set", with a model that has no protocol of its own (or no model yet), has nothing that
- * decides how that model is spoken to, so the endpoint is asked once first (a miss saves on Chat
- * Completions, as the model dialog does). The dialog cannot be closed while a save, that probe
- * included, is in flight, and a save whose dialog went away before the write writes nothing.
- *
- * Everything that decides what is shown and what is sent is a pure function below, so the rules
- * are checked without a DOM; the component only holds the draft and runs the requests.
- */
-import { useEffect, useRef, useState } from "react";
-import type {
-  ModelProtocolDetectRequest,
-  ModelsResponse,
-  ProviderConnectionDto,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  Checkbox,
-  FieldError,
-  FieldHint,
-  FieldLabel,
-  Input,
-  Link,
-  Modal,
-  PasswordInput,
-  toastError,
-  toastInfo,
-  toastSuccess,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import {
-  fixedClientType,
-  providerCalledKeyless,
-  providerEnvFallbackKey,
-  type ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
-import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {

@@ -1,23 +1,8 @@
-/**
- * A group's balance where it is shown: in its header on the models page — one control, the
- * amount with a small chevron, opening a menu — and beside the user name in the sidebar's user
- * row. Both read the one store in balance.ts, and both show the amount in the display currency
- * the cost center and the model prices use.
- *
- * The header's menu is three short lines: pin the balance at the sidebar's bottom-left (beside
- * the user name), refresh it, and — not a row to choose — when it was read, or why the last read
- * failed. A balance that cannot be read is a muted dash, never red text: it is information about
- * an account, not an error the user made on this page.
- */
-import { useEffect, useState } from "react";
-import { type ModelProviderInfo, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
-import { ChevronDown, Dropdown, Menu, MenuItem, ProviderLogo } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { formatDateTime } from "../../lib/format";
-import { useLocalShown } from "../../lib/local-first";
-import { useProject } from "../../state/project";
-import { useTheme, type Currency } from "../../state/theme";
 
 import {
   displayBalance,

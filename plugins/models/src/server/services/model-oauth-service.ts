@@ -1,36 +1,11 @@
-/**
- * Provider key-minting flows (the `oauth` descriptor in core's model catalog).
- *
- * A provider that publishes such a flow lets the user authorize in a browser and get a
- * **freshly minted API key** back, instead of copying one out of a console. The upstream
- * protocol is PKCE: the harness picks a random verifier, sends only its SHA-256 challenge
- * to the authorization page, and later presents the verifier to redeem the one-time code
- * the page hands back.
- *
- * Everything secret stays on this side of the wire. The verifier is generated here, kept
- * only in this process's memory, and never sent to the browser; the minted key goes
- * straight into the Project's model config and is never echoed to a caller, a URL, or a
- * log line. What the Web App holds is an opaque flow id and a status.
- *
- * That flow id is also a capability, and the flow store treats it as one: 32 random bytes
- * bound here to a user, a Project, a provider and a verifier, valid for ten minutes and
- * spendable once. The loopback redirect receiver leans on exactly that, because the browser
- * the provider redirects cannot be assumed to hold a session — see the route module. What
- * that receiver may do with the id is only `deposit`: the exchange itself runs on the
- * owner's own poll, so no key is ever written for a Project without its owner asking.
- *
- * Flows are in-memory and per-App: a restart or a platform push drops the pending ones,
- * which costs the user a re-authorization and nothing else (the upstream code expires in
- * minutes anyway, and no key exists until the exchange runs).
- */
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { APP_URL, userAgent } from "@prismshadow/penguin-core";
-import { providerInfo } from "../model-catalog/catalog.js";
-import type { ModelProviderOAuth } from "../model-catalog/catalog.js";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+import { userAgent } from "@prismshadow/penguin-core";
+import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest } from "@prismshadow/penguin-server/internal";
+
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ModelOAuth, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";

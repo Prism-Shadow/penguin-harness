@@ -1,33 +1,14 @@
-/**
- * Project-scoped ModelScope key authorization, through the harness's own bridge.
- *
- * ModelScope's OAuth cannot run inside the App: the code exchange needs a client secret the
- * desktop App must not hold, and ModelScope returns that code to a redirect URI the App does
- * not own. The bridge at `config.modelscopeBridgeUrl` keeps the secret and runs the exchange.
- * The App speaks only the device-style start/poll pair below to the bridge, and receives
- * exactly once an api-inference token delivery, which it then writes across the ModelScope
- * group the same way any other group key is written.
- *
- * Two consequences of that single delivery shape most of this file. A poll that has already
- * succeeded can never be re-polled — the bridge clears its server-side copy on delivery — so a
- * write that fails afterwards keeps the token on the flow for `retryApply` instead of asking
- * the user to authorize again. The refresh token is stored in web.db, never in
- * .project_config.toml; model requests call `ensureFresh` before loading a runtime and again
- * immediately before each upstream request, silently rotating the access token near expiry.
- */
-import { randomBytes } from "node:crypto";
-import { userAgent } from "@prismshadow/penguin-core";
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
-import { HttpError } from "../http/errors.js";
-import { normalizeModelScopeBridgeUrl } from "../config.js";
-import { Config } from "../hmr/capabilities.js";
+import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { normalizeModelScopeBridgeUrl } from "@prismshadow/penguin-server/internal";
+import { Config } from "@prismshadow/penguin-server/internal";
+
 import type {
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ProjectConfigStore,
-} from "../mechanisms/projects.js";
-import type { ModelScopeAuthFlowStatusResponse } from "../api/types.js";
+} from "@prismshadow/penguin-server/internal";
+import type { ModelScopeAuthFlowStatusResponse } from "@prismshadow/penguin-server/api";
 
 /** Recorded by the bridge alongside the flow; it identifies the App but does not gate it. */
 export const MODELSCOPE_BRIDGE_CLIENT_ID = "penguin-harness";

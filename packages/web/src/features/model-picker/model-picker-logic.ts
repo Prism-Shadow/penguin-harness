@@ -1,32 +1,6 @@
-/**
- * Pure logic behind the model-picker modal (model-picker-modal.tsx), kept out of the component
- * so the node-only test suite can pin it without a DOM:
- *
- * - which models each provider group holds, under the same visibility rule the composer's
- *   picker has always applied (visibleChatModels: configured-key models plus the selected and
- *   the default one, everything once "show all" is on or when nothing has a key);
- * - which group is active when the modal opens;
- * - which marks a row wears;
- * - how search results rank and group across providers;
- * - how the arrow keys move between the group rail and the model list.
- *
- * `modelLabel` lives here too (model-select.tsx re-exports it for its existing importers), so
- * the modal and the triggers share it without importing each other.
- */
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelInfo } from "@prismshadow/penguin-server/api";
-import {
-  discountedPrice,
-  groupModelRows,
-  hasConfiguredKey,
-  isFreeModel,
-  sameModelRef,
-  visibleChatModels,
-  type ModelCredentialRowLike,
-  type ModelRefValue,
-  type ModelRowLike,
-} from "../../lib/model-grouping";
-import { modelTags, type ModelTag } from "../../lib/model-tags";
+  type ModelTag,
+} from "@penguinharness/plugin-models/web";
+
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is

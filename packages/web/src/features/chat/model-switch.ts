@@ -1,28 +1,6 @@
-/**
- * In-conversation model switch (the active Session's toolbar model picker): the decisions the
- * chat page makes, kept pure so they are testable without a DOM.
- *
- * The switch is not the `/model` handoff. `/model` opens a NEW conversation on another model
- * and leaves this one as it is; this picker keeps the conversation and moves it onto the
- * picked model. That compacts on the current model first (`POST …/switch-model` answers 202 and
- * streams an ordinary compaction row, then the new context's `session_meta`), except for a
- * Session that never ran, which has no context to compact and switches inside the request (200
- * with the updated Session). Only that `session_meta` says the Session moved: the stream model
- * turns it into a model-change marker, and the page moves its Session row to the model it
- * names (see sessionRowStale). When the summary cannot be had — the current model is
- * unavailable, or the compaction fails — the switch still completes, by Trace handoff: a
- * `[model_switch_from]` block naming this Session follows the meta, and the marker says so.
- * Only a stopped compaction streams no meta, and the Session then stays on its model.
- */
-import type {
-  ModelRefDto,
-  ModelsResponse,
-  SessionInfo,
-  SessionStatus,
-} from "@prismshadow/penguin-server/api";
-import { modelCalledKeyless } from "@prismshadow/penguin-server/model-catalog";
-import { groupShape } from "../models/connection";
-import { hasConfiguredKey, sameModelRef } from "../models";
+import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
+
 import { trailingCompaction, type ThinkingSwitchItem } from "../model-picker";
 
 /**

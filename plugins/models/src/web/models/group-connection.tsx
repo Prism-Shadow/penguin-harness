@@ -1,37 +1,9 @@
-/**
- * A group's connection in its header (groups whose key comes from an authorization flow:
- * TokenDance, Penguin Go, ModelScope), as one control:
- *
- * - not connected, for the owner: one flat button — the muted dot and "Not connected" — that
- *   starts the group's connect flow, so the status is also the way to change it;
- * - connected, for the owner: one flat trigger — the success dot, "Connected" and a chevron —
- *   opening a menu with Sync models (Penguin Go only: it reads the platform's catalog with the
- *   group key), Reconnect (the group's flow again, for a fresh key or another account) and
- *   Disconnect, in the danger tone;
- * - for a member, either way: the status as plain text, with nothing to press.
- *
- * "Connected" is the group holding a key of its own, however it got there (group-header.ts).
- * Disconnect clears that key (`PUT …/models/providers/:id { clearApiKey: true }`) behind a danger
- * confirmation, and the table the server answers with is adopted, so the status turns back to
- * "Not connected" without a reload.
- */
-import { useState } from "react";
-import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
-import {
-  ChevronDown,
-  ConfirmModal,
-  Dropdown,
-  Menu,
-  MenuItem,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toneDot } from "../../lib/tone";
-import { HEADER_TEXT, connectedMenuItems } from "./group-header";
-import type { ConnectedMenuItem } from "./group-header";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneDot } from "@prismshadow/penguin-web/internal";
+import { HEADER_TEXT, connectedMenuItems, type ConnectedMenuItem } from "./group-header";
+
 
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {

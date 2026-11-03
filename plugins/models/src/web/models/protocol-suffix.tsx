@@ -35,11 +35,11 @@ import { ChevronDown, Dropdown, Menu, MenuRadioItem, Spinner } from "@prismshado
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
 // OptionMenu cannot do), so it takes its rows from the Menu family rather than re-spelling
 // them — a change to the family reaches it.
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "./protocol-types";
 
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 
 /** Whether a value is one of the protocols the menu always lists. */
 function isPickerProtocol(value: string): value is ProtocolClientType {

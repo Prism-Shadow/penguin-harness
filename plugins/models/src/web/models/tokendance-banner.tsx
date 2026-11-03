@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { Button, CloseButton, ICON_GAP, ProviderLogo } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The group the banner connects: it is TokenDance's by name, so it names the group too. */
 export const TOKENDANCE_PROVIDER_ID = "tokendance";

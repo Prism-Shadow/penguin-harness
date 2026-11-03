@@ -1,205 +1,16 @@
-/**
- * Model config page.
- *
- * Model entries are persisted as two independent fields, `provider` and `model_id`;
- * the (provider, model_id) pair is the entry's unique key — **zero
- * concatenation** anywhere in the pipeline, `model_id` is sent to MMSP verbatim as the
- * upstream request id. The dialog's identity section = (group dropdown, upstream id input);
- * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
- * to migrate the credential and pointers).
- *
- * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
- * name + count + the collapse chevron), with one card per model within a group — the card
- * shows only the display name + status badges (default / vision / fast / free / discount), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
- * delete). The group header's right side holds the group's actions in a fixed order
- * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
- * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
- * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
- * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
- * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
- * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
- *
- * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
- * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
- * in this browser, applies to search results too, and leaves the group order and the chat model
- * picker alone.
- *
- * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
- * rest under one full-width bar that folds them away (folded by default). A star on each header,
- * shown on hover or focus, moves a group across; searching shows both areas, unfolded.
- *
- * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
- * written by Connect and the group settings — and a model stores only what it overrides: every
- * field it leaves blank follows the group (connection.ts), and a field the group leaves blank
- * too is the client's default; the catalog is never a fallback. The dialogs say a blank field
- * follows the group without repeating the group's value, and a card prints the key the model is
- * actually used with. The "get model id / API key" external links sit next to the
- * corresponding input's label in the dialogs, never in the header. A TokenDance banner above
- * the groups offers its connect flow until the group holds a key. The group list ends with an
- * "add group" action (user-defined groups share custom's semantics; the group appears once the
- * first model saves successfully — groups are carried by the model entry's provider field).
- *
- * The page header holds two owner-only catalog actions next to the search box, both run by the
- * server: "Add new models" adds the presets the table lacks (shown only while there are some,
- * see catalog-sync.ts) and touches nothing else; "Restore defaults", behind a danger
- * confirmation, puts every built-in model back to the catalog while keeping keys and the
- * user's own models. Nothing else ever rewrites an existing row's catalog facts.
- *
- * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
- * means keep the existing value); only the owner can edit. The config dialog's Save (Add, for a
- * new model) is live once something changed and nothing is wrong; the dialog waits for the
- * write and closes only once it landed — a refused one leaves the table as it was and the draft
- * in the dialog — and closing it with unsaved edits asks first.
- */
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent as ReactDragEvent,
-  type ReactNode,
-} from "react";
 
-import type {
-  CredentialInfo,
-  ModelProtocolDetectRequest,
-  ModelRefDto,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelUpdateEntry,
-  ModelVisionDetectRequest,
-  ProviderConnectionDto,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-server/api";
-import {
-  Pill,
-  Button,
-  Card,
-  Checkbox,
-  Chevron,
-  ChevronFlip,
-  ConfirmModal,
-  EmptyState,
-  FieldError,
-  FieldLabel,
-  GlyphIcon,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  Input,
-  Link,
-  Modal,
-  NAV_FILL,
-  NoticeStrip,
-  PageFrame,
-  PageHeader,
-  PasswordInput,
-  ProviderLogo,
-  ROW_HOVER_BUTTON,
-  Segmented,
-  Select,
-  SkeletonList,
-  Spinner,
-  Switch,
-  TodoNotice,
-  WallpaperSurface,
-  buttonClass,
-  setDragPreview,
-  toastError,
-  toastInfo,
-  toastSuccess,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
-
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { formatDateTime, humanizeTokens } from "../../lib/format";
-import {
-  MODEL_PROVIDERS,
-  PENGUIN_GO_PROVIDER_ID,
-  catalogEntryFor,
-  fastModeProtocol,
-  isAddableGroup,
-  isVendorGroup,
-  modelHomepageUrl,
-  providerInfo,
-  unroutableVendorModel,
-  type FastModeProtocol,
-  type ModelProviderBridgeAuth,
-  type ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
-
-import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
-import {
-  allGroupKeys,
-  discountedPrice,
-  fractionOff,
-  groupModelRows,
-  isFreeModel,
-  sameModelRef,
-  userProviderInfo,
-} from "../../lib/model-grouping";
-import {
-  commitModelGroupOrder,
-  loadModelGroupOrder,
-  saveModelGroupOrder,
-} from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
-import { protocolPathForModel } from "./protocol-path";
-import { ProtocolSuffixMenu } from "./protocol-suffix";
-import {
-  DEFAULT_CUSTOM_CLIENT_TYPE,
-  detectableBaseUrl,
-  displayWidthCh,
-  envHintFor,
-  keylessFor,
-  isCustomLikeGroup,
-  isGenericProtocolClientType,
-  needsProtocolDetectOnSave,
-  protocolForPersist,
-  protocolSelectorValue,
-  type InheritedProtocol,
-  type ProtocolClientType,
-} from "./protocol-types";
+import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 
 import {
-  isGroupExpanded,
-  loadExpandedProviders,
-  saveExpandedProviders,
-  toggleExpandedProvider,
-} from "./model-group-expansion";
-import {
-  initialModelGroupPins,
-  initialModelGroupsFolded,
-  isModelGroupPinned,
-  modelGroupLayout,
-  pinsAfterDrop,
-  storeModelGroupPins,
-  storeModelGroupsFolded,
-  withModelGroupPinned,
-  type ModelGroupPins,
-} from "./model-group-pins";
-import { clearDraftModelRef } from "../chat/draft-cache";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
-import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
-import type { PresetSyncHost } from "./preset-sync";
-import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
-import { ImportPickList } from "./group-import-picker";
+  AddNewModelsButton,
+  AddNewModelsConfirm,
+  RestoreDefaultsConfirm,
+  type PresetSyncHost,
+} from "./preset-sync";
+
+import { buildImportedRows, groupImportConnection } from "./group-import";
+
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
@@ -222,7 +33,7 @@ import {
 
 import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
 import {

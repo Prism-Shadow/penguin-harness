@@ -1,43 +1,9 @@
-/**
- * Provider key-minting routes:
- * POST /api/projects/:p/model-oauth/start,
- * GET  /api/projects/:p/model-oauth/callback,
- * POST /api/projects/:p/model-oauth/:flowId/code,
- * GET  /api/projects/:p/model-oauth/:flowId.
- *
- * Owner only, like every other route that spends or rewrites a Project's credentials — with
- * one deliberate exception, `GET /callback`, which is mounted ahead of the global auth
- * middleware and only deposits the code it was redirected with (see
- * `modelOAuthCallbackRoutes` below and its mount in app.ts).
- *
- * The whole exchange runs here: the PKCE verifier is generated server-side and never leaves
- * this process, and the minted key goes straight into the Project's model config without
- * passing through the browser. A caller only ever holds an opaque flow id and a status.
- */
-import { Hono } from "hono";
-import type {
-  ModelOAuthCodeResponse,
-  ModelOAuthMode,
-  ModelOAuthStartResponse,
-  ModelOAuthStatusResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 
-/** What this route group reaches — bound by its module (src/modules). */
-export interface ModelOauthRouteDeps extends ModelsRouteDeps {
-  config: ServerConfig;
-  manager: SessionManager;
-  modelOAuth: ModelOAuth;
-  access: Access;
-}
-import { HttpError } from "../errors.js";
-import { publicOriginOf } from "../public-origin.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
-import type { Access, ModelOAuth } from "../../mechanisms/projects.js";
+import type { Access, ModelOAuth } from "@prismshadow/penguin-server/internal";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;

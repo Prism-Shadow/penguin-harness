@@ -1,18 +1,6 @@
-/**
- * UI copy (bilingual): this file holds the Chinese dictionary `zh` and the runtime
- * active dictionary `S`; the English dictionary lives in strings-en.ts (constrained
- * to the same shape by the `Strings` type). Locale preference is resolved by
- * state/locale.tsx, which calls `setActiveStrings` to switch and remounts the whole
- * tree keyed by locale, so `S.x` reads in components always reflect the current
- * language (module-level constants do not update on switch — keep reads inside components).
- * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
- * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
- * label/sentence or in a proper name (Agent State). zh names the SURFACE
- * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
- * inside running prose, where it is the term of art rather than the thing being pointed at.
- */
-import type { PeakWindows } from "./peak-windows";
-import type { ModelGroupSort } from "../features/models/model-sort";
+import type { PeakWindows } from "./model-peak-windows";
+import type { ModelGroupSort } from "@penguinharness/plugin-models/web/model-sort";
+
 import type { StartPageSiteId } from "./browser-start-sites";
 
 export const zh = {

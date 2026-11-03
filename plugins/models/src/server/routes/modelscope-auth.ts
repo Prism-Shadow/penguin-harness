@@ -3,11 +3,11 @@ import { Hono } from "hono";
 import type {
   ModelScopeAuthFlowStatusResponse,
   ModelScopeAuthStartResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import { HttpError } from "../errors.js";
-import { requireValidId } from "../validate.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ModelScopeAuth } from "../services/modelscope-auth-service.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { requireValidId } from "@prismshadow/penguin-server/internal";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
 

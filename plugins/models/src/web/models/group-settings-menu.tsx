@@ -27,7 +27,7 @@ import {
   MenuRadioItem,
   MenuSeparator,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { HEADER_SQUARE } from "./group-header";
 import { MODEL_GROUP_SORTS, type ModelGroupSort } from "./model-sort";
 

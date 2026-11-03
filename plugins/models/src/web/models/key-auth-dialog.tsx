@@ -4,11 +4,11 @@ import type {
   PlatformAuthFlowStatusResponse,
   PlatformAuthStartResponse,
 } from "@prismshadow/penguin-server/api";
-import type { KeyAuthEndpoints } from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { isElectronRenderer } from "../../lib/desktop-renderer";
-import { S } from "../../lib/strings";
+import type { KeyAuthEndpoints } from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { isElectronRenderer } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { Button, Modal, Spinner } from "@prismshadow/penguin-ui";
 
 const POLL_MS = 3_000;

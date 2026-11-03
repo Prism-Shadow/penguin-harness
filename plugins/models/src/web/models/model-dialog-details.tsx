@@ -16,7 +16,7 @@
 import { useId, type ReactNode } from "react";
 
 import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** A block of a model dialog below its identity fields. */
 export type ModelDialogSlot =

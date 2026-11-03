@@ -1,20 +1,8 @@
-/**
- * The models page's two catalog actions, both run by the server against the saved table
- * (`POST …/models/sync-presets`): "Add new models" (`add`) puts in the presets the table lacks
- * and touches nothing else; "Restore defaults" (`restore`) resets the model configuration to a
- * new Project's, keeping only the API keys, behind a danger confirmation.
- *
- * Both run only from their confirmation, each bound to its mode here through runPresetSync, so
- * which control sends which mode lives in one place: "Add new models" (the header button and the
- * Models notice) opens a confirmation listing what would be added; "Restore defaults" opens a
- * danger one saying what it keeps and deletes. The controls hold no state of their own: the page
- * owns the busy flags and the table, and hands them in as a {@link PresetSyncHost}.
- */
-import type { ModelsResponse, PresetSyncMode } from "@prismshadow/penguin-server/api";
-import { Button, ConfirmModal, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import { Button, ConfirmModal, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+
 
 /** What a catalog action needs from the page. */
 export interface PresetSyncHost {
