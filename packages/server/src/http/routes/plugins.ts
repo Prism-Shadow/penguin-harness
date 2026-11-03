@@ -66,7 +66,7 @@ import type { Access } from "../../mechanisms/projects.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
-import { agentHooksRoutes } from "./hooks.js";
+import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
 import {
   BUILTIN_REGISTRY_SOURCE,
   builtinPluginRegistry,

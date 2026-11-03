@@ -144,7 +144,7 @@ import { UsageRepo } from "./db/repos/usage.js";
 import { adminUsersRoutes } from "@penguinharness/plugin-settings/server";
 import { adminSettingsRoutes } from "@penguinharness/plugin-settings/server";
 import type { ServerEvent } from "./api/types.js";
-import { meRoutes } from "./http/routes/me.js";
+import { meRoutes } from "@penguinharness/plugin-settings/server";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "@penguinharness/plugin-projects/server";
 import { membersRoutes } from "@penguinharness/plugin-projects/server";

@@ -25,7 +25,7 @@ import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { mintAgentApiKey } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, optionalString, optionalBoolean, optionalNumber, optionalEnum, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import { APPROVAL_MODES } from "./sessions.js";
+import { APPROVAL_MODES } from "@prismshadow/penguin-server/internal";
 import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-server/internal";
 import type { AgentApi, AgentApiKeyRow } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";
