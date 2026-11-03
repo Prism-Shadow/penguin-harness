@@ -93,7 +93,7 @@ import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
-import { TraceIndexService } from "./services/trace-index.js";
+import { TraceIndexService } from "@penguinharness/plugin-usage/server";
 import { TraceService } from "@penguinharness/plugin-usage/server";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";

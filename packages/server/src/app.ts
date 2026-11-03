@@ -115,7 +115,7 @@ import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
-import { TraceIndexService } from "./services/trace-index.js";
+import { TraceIndexService } from "@penguinharness/plugin-usage/server";
 import { TraceService } from "@penguinharness/plugin-usage/server";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
