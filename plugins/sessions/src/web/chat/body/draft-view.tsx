@@ -86,7 +86,7 @@ import { newChatAgentId } from "../new-chat";
 import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
 import { effectiveThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import { FilesPanelToggle } from "../dock-toggles";
+import { FilesPanelToggle } from "@prismshadow/penguin-web/internal-toggles";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */

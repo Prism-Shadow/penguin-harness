@@ -28,7 +28,7 @@ import {
   toggleDock,
   type DockPosition,
   panelLabel,
-} from "../dock";
+} from "@prismshadow/penguin-web/internal";
 
 export interface DockTogglesProps {
   /** A pending approval inside a subagent: amber dot beside the agents tab's dock toggle. */

@@ -18,7 +18,7 @@ import { CostPartsRows, StatHint } from "@prismshadow/penguin-web/internal";
 import { OutlineMenuButton } from "../conversation-outline";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { DockToggles } from "../dock-toggles";
+import { DockToggles } from "@prismshadow/penguin-web/internal-toggles";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { SessionIdRow } from "../session/main-chat-helpers";

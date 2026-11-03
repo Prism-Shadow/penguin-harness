@@ -12,7 +12,7 @@ import {
   removeDraftSession,
   prepareNewChatDraft,
 } from "../chat";
-import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
+import { docksOnScreen, openPanel, dockWorkspace } from "@prismshadow/penguin-web/internal";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 
 /** Consecutive live main statements 116..122, called once in original hook order. */

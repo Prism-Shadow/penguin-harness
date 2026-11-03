@@ -136,7 +136,7 @@ import { useAuth } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
-import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+import { SkillIcon, SkillPickList, toggleSkillName } from "@prismshadow/penguin-web/internal";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { employeesLast, isEmployee } from "@penguinharness/plugin-agents/web";
@@ -147,7 +147,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   modelLabel,
   thinkingLevelLabel,
-} from "../model-picker";
+} from "@prismshadow/penguin-web/internal";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {
