@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `web`, `core`, `server`, `skills`, `docs`
+- **PR:** [#1431](https://github.com/Prism-Shadow/penguin-harness/pull/1431)
 - **Issue:** [#1429](https://github.com/Prism-Shadow/penguin-harness/issues/1429)
 
 [中文版](2026-11-03-optimize-train-test-toolkits.zh.md)
