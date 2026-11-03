@@ -29,6 +29,8 @@ export * from "./mechanisms/settings.js";
 export * from "./runtime/channel.js";
 export * from "./runtime/error-recorder.js";
 export { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
+export * from "./services/task-attachments.js";
+export * from "./db/repos/messaging-bindings.js";
 export * from "./runtime/session-manager.js";
 export * from "./services/ids.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-guard.js";

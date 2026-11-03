@@ -25,7 +25,7 @@ import {
 import type { ServerConfig } from "../../config.js";
 import { normalizePenguinGoOrigin } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
-import type { MessagingBridge } from "@penguinharness/plugin-messaging/server/bridge.js";
+import type { MessagingBridge } from "@penguinharness/plugin-messaging/server";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import type {
@@ -82,7 +82,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
-import { Messaging } from "@penguinharness/plugin-messaging/server/bridge.js";
+import { Messaging } from "@penguinharness/plugin-messaging/server";
 
 
 import { agentsRoutes } from "@penguinharness/plugin-agents/server";

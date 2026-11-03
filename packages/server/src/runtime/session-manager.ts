@@ -1,4 +1,118 @@
-import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server/enabled-channel.js";
+/**
+ * Active Session runtime.
+ *
+ * Responsibilities:
+ *   - get-or-resume-or-heal: use it directly on an active-table hit; with a Trace,
+ *     recover via `agent.resumeSession`; a stale Session that was created but never run
+ *     and survived a process restart (no Trace) **self-heals** — recreated via
+ *     createSession using the index row's workspace/modelId, yielding a new session_id
+ *     and updating the index's primary key; the Task response body always returns the
+ *     current actual id;
+ *   - Credential effectiveness: a Project's models/credentials change bumps every affected
+ *     Agent's config generation (invalidateProjectRuntimes); runtimes built earlier are
+ *     discarded on their next idle access and re-resumed, so the next Task runs with the
+ *     new api_key / base_url. Agent State changes (vault, AGENTS.md, tools, …) take no
+ *     such shortcut: core assembles them into the next model context — at the Session's
+ *     next compaction — exactly as the CLI does, so a running context never changes;
+ *   - Per-Session mutual exclusion: only one Task/compaction/model switch may be in
+ *     progress at a time;
+ *   - run/compact/switch drive: consumes the output stream in the background, publishing
+ *     each message to the SSE channel and handing it to usage-recorder for persistence;
+ *     on completion (including errors) resets to idle and pushes a `task_state` server
+ *     event. A model switch (startSwitch) is a compaction whose next context opens on
+ *     another model: the entry's (provider, modelId) — the pair usage is attributed to —
+ *     and the index row follow the runtime, moving as the new context's session_meta passes
+ *     through the drive;
+ *   - Approval registration and interrupt convergence: each approval decision re-reads
+ *     approval_mode from the DB (takes effect immediately); an interrupt first
+ *     converges pending approvals to deny, then aborts. An organization's sessions have
+ *     nobody to ask, so a call their mode would hand to a person is denied at once
+ *     (see entryApprove).
+ *
+ * The underlying implementation of get-or-resume-or-heal is injected via
+ * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
+ * a fake Session (issuing no real LLM requests).
+ */
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import {
+  createAgent,
+  findLatestTraceFile,
+  isHookContinue,
+  isHookInput,
+  isSessionMeta,
+  ModelSwitchRefusedError,
+  normalizeSessionSource,
+  parseUserSteeringText,
+  tracesDir,
+  userText,
+} from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  BackgroundCommandInfo,
+  BackgroundSubagentInfo,
+  CompactAvailability,
+  ControlEnvContext,
+  AgentAssembly,
+  OmniMessage,
+  ProxyEnvPolicy,
+  SpawnConfiner,
+  SessionMetaPayload,
+  SessionTitleResult,
+  StopReason,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
+  TextPayload,
+  ThinkingLevelName,
+  ToolDetachResult,
+} from "@prismshadow/penguin-core";
+import type {
+  ModelRefDto,
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  ServerEvent,
+  SessionBackgroundTasks,
+  SessionStatus,
+} from "../api/types.js";
+import type { RecallableFile } from "../services/task-attachments.js";
+import { cliShimDir } from "../services/cli-shim.js";
+import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
+import type { SessionRow } from "../db/repos/sessions.js";
+import { ApprovalRegistry, makeApprove } from "./approvals.js";
+import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
+import type { Approvals, PendingApproval } from "./approvals.js";
+import type { ChannelHub } from "./channel.js";
+import type { ErrorSink } from "./error-recorder.js";
+import { AgentStateStore } from "./agent-state.js";
+import type { LiveTail } from "./live-tail.js";
+import { unrunSource } from "./session-sources.js";
+import { StreamErrorWatcher } from "./stream-error-watcher.js";
+import type { TitleNotifier } from "./title-generator.js";
+import type { UsageContext } from "./usage-recorder.js";
+import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
+import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
+import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
+import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
+import { PluginConfig } from "../plugin/config.js";
+import { SessionService } from "../services/session-service.js";
+import { ModelScopeAuth } from "@penguinharness/plugin-models/server";
+import { TitleGenerator } from "./title-generator.js";
+import { loopbackHostRoles } from "../services/preview-token.js";
+import { agentNoProxy } from "../net/proxy.js";
+import type { SandboxService } from "../sandbox/service.js";
+import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
+import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
+import type { AgentState, SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { Errors, UsageRecording } from "../mechanisms/observability.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { Settings } from "../mechanisms/settings.js";
+import type { MessagingBindings } from "../mechanisms/messaging.js";
+import type { OrgCache } from "../mechanisms/organization.js";
+import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
+
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
 
