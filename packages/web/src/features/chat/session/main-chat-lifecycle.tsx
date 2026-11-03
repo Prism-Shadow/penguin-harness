@@ -22,7 +22,7 @@ import { machineForSession } from "../../../lib/session-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 import { applyUsageFetch } from "../header-stats";
 import { hasConfiguredKey, sameModelRef } from "../../models";
-import { noteScheduleEvent } from "../../schedules";
+import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
 import { adoptDockScope, isTabShown, openPanel } from "../../dock";
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";

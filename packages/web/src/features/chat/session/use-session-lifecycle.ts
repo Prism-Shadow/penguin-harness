@@ -10,7 +10,7 @@ import { ApiError } from "../../../api/client";
 import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
 import { noteSessionSeen } from "../../../lib/session-seen";
 import { machineForSession } from "../../../lib/session-machines";
-import { noteScheduleEvent } from "../../schedules";
+import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";
 import type { SessionStreamState } from "../use-session-stream";

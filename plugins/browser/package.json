@@ -11,6 +11,7 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "hono": "^4.12.34",
     "ws": "^8.18.3",

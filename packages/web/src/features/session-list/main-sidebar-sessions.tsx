@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { useSessionSeen } from "../../lib/session-seen";
 import { isSidebarRow } from "../../lib/session-grouping";
-import { pendingScheduleSessions, useProjectSchedules } from "../schedules";
+import { pendingScheduleSessions, useProjectSchedules } from "@penguinharness/plugin-schedules/web";
 import {
   collapsedGroupsKey,
   pinnedGroupsKey,
