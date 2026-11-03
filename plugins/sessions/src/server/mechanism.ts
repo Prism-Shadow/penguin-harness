@@ -3,11 +3,11 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { SessionSource, ApprovalMode } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionSource, ApprovalMode } from "@prismshadow/penguin-server/api";
+import type { SessionRow } from "./repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import type { ScheduleStateRow } from "../db/repos/schedules.js";
+import type { ScheduleStateRow } from "./repos/schedules.js";
 import type { ScheduleFileCache } from "@penguinharness/plugin-schedules/server";
 import type { ScheduleEntryView } from "@penguinharness/plugin-schedules/server";
 import type { LiveTail } from "@penguinharness/plugin-sessions/server";

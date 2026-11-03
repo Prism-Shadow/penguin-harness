@@ -39,10 +39,10 @@ import type {
   SessionSource,
   SessionStatus,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "@penguinharness/plugin-sessions/server";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import type { TraceIndexStore } from "../mechanisms/traces.js";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";

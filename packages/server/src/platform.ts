@@ -56,6 +56,10 @@ import {
   ModelProviderAuthTokensRepo,
   ProjectsRepo,
 } from "@penguinharness/plugin-projects/server";
+import {
+  SchedulesRepo,
+  SessionsRepo,
+} from "@penguinharness/plugin-sessions/server";
 import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
 import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
 import { QQTransportProvider } from "@penguinharness/plugin-messaging/server";
@@ -86,9 +90,7 @@ import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-import { SessionsRepo } from "./db/repos/sessions.js";
 import { UsageRepo } from "./db/repos/usage.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { AgentStateStore } from "./runtime/agent-state.js";

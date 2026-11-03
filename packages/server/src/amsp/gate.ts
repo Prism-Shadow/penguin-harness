@@ -21,11 +21,11 @@ import { isValidId } from "@prismshadow/penguin-core";
 import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { bearerToken } from "../auth/middleware.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { HttpError } from "../http/errors.js";
 import type { AgentApi, AgentApiRow } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import type { Settings } from "../mechanisms/settings.js";
 import { hashAgentApiKey } from "./keys.js";
 

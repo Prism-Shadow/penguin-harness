@@ -5,7 +5,7 @@ import { badRequest, readJson } from "../http/validate.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
 import type { Errors } from "../mechanisms/observability.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ChannelEvent } from "../runtime/channel.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";

@@ -10,7 +10,7 @@
  * disk, and the database, the channel hub and the auth state belong to the process.
  */
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { AgentState, RunStarter } from "../mechanisms/sessions.js";
+import type { AgentState, RunStarter } from "@penguinharness/plugin-sessions/server";
 import { LiveTailTracker } from "@penguinharness/plugin-sessions/server";
 import type { LiveTail } from "@penguinharness/plugin-sessions/server";
 import type { RuntimeEntry } from "./session-manager.js";

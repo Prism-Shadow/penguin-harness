@@ -51,14 +51,13 @@ import {
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
+import { SchedulesRepo, SessionsRepo } from "@penguinharness/plugin-sessions/server";
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
-import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";

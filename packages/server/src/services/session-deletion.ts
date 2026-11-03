@@ -17,7 +17,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { scratchpadDir } from "@prismshadow/penguin-core";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
 import type { Traces } from "../mechanisms/traces.js";
 import type { UserDraftsStore } from "../mechanisms/account-data.js";
 

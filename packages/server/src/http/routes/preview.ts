@@ -23,7 +23,7 @@ import {
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
 
 export interface PreviewDeps {
