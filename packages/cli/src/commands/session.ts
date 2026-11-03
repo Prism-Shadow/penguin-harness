@@ -27,7 +27,7 @@ import {
   resolveConnection,
   resolveProjectId,
   ServerClient,
-  shortSessionId,,
+  shortSessionId,
   getMessages} from "@prismshadow/penguin-server/cli";
 import { checkSessionTitle, renameSession, resolveSessionTarget } from "../server-session.js";
 import { registerInputCommand } from "./input.js";
