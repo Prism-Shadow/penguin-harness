@@ -78,7 +78,7 @@ function ComparePanel({
   children: ReactNode;
 }) {
   return (
-    <article className="rounded-2xl bg-gray-50 p-6 text-center sm:p-8 dark:bg-gray-900/60">
+    <article className="rounded-2xl bg-gray-50 p-6 text-center sm:p-8 dark:bg-gray-900">
       <p
         className={`text-sm font-semibold tracking-tight ${
           emphasized ? "text-brand-700 dark:text-brand-300" : "text-gray-500 dark:text-gray-400"

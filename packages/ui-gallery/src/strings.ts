@@ -1112,7 +1112,7 @@ export const zh = {
         { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
-      copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+      copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
       code: "代码与复制",
       codeHint:
         "命令卡片带复制按钮；写入剪贴板后图标换成对勾，按钮文字不变，读屏软件播报「已复制」。",

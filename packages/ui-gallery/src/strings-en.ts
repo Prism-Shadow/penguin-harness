@@ -1144,7 +1144,7 @@ export const en: GalleryStrings = {
         { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
       ],
       lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
-      copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+      copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
       code: "Code and copy",
       codeHint:
         "A command card carries a copy button; once the text is on the clipboard its icon turns to a check, the label stays, and a screen reader hears Copied.",

@@ -1,5 +1,5 @@
 /**
- * Code on the public sites, in three shapes:
+ * Code in the public sites' articles, in two shapes:
  *
  * - `SiteCodeBlock`, a fenced block inside an article: the same surface for every block, holding
  *   either the highlighted markup or a plain `<pre>`. The plain one renders first (and stays, for
@@ -9,18 +9,16 @@
  *   never runs the engine itself; plain-text fences are never sent.
  * - `SiteCodeTabs`, one tab strip over the blocks a tab group holds: only the selected panel is
  *   mounted, so an install page shows one command instead of three stacked ones.
- * - `SiteCodeCard`, a terminal-style card for a short command: a label and a copy button over a
- *   monospace body whose `#` comment lines read muted.
  *
- * The block and the tabs take their look from site-prose.css (`.site-prose .site-code`), the card
- * from site-content.css.
+ * The terminal-style card for a short command is `SiteCodeCard` (site-code-card.tsx), a module of
+ * its own: a page that shows only commands does not load the block's language table with it.
+ *
+ * The block and the tabs take their look from site-prose.css (`.site-prose .site-code`).
  */
 import { Children, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { isPlainTextLanguage, resolveLanguage } from "../content/code-block/code-languages";
 import type { CodeHighlighter } from "../content/code-block/highlight-options";
-import { SiteCopyButton } from "./site-copy";
-import { TerminalIcon } from "./site-icons";
 
 /** The highlighter `SiteMarkdown` hands the fenced blocks it renders. */
 export const SiteCodeHighlight = createContext<CodeHighlighter | null>(null);
@@ -129,46 +127,6 @@ export function SiteCodeTabs({ labels, children }: { labels: string[]; children:
       >
         {panels[active]}
       </div>
-    </div>
-  );
-}
-
-/** No highlighter: the card holds short shell commands, where the muted comments are enough. */
-export function SiteCodeCard({
-  code,
-  label = "shell",
-  copy,
-  className = "",
-}: {
-  code: string;
-  label?: string;
-  /** The copy button's label, and what a screen reader hears once the command is copied. */
-  copy: { label: string; announcement: string };
-  className?: string;
-}) {
-  const lines = code.split("\n");
-  return (
-    <div className={`site-code-card ${className}`}>
-      <div className="site-code-card-head flex items-center justify-between gap-2 px-3 py-2">
-        <span className="site-code-card-label inline-flex min-w-0 items-center gap-1.5 text-xs">
-          <TerminalIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate font-mono">{label}</span>
-        </span>
-        <SiteCopyButton text={code} label={copy.label} announcement={copy.announcement} />
-      </div>
-      <pre className="site-code-card-body overflow-x-auto px-4 py-3">
-        <code>
-          {lines.map((line, i) => (
-            <span
-              key={i}
-              className="site-code-card-line block whitespace-pre"
-              data-comment={line.trimStart().startsWith("#") || undefined}
-            >
-              {line.length > 0 ? line : " "}
-            </span>
-          ))}
-        </code>
-      </pre>
     </div>
   );
 }
