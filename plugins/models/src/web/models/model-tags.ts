@@ -1,10 +1,21 @@
-<<<<<<< HEAD:packages/web/src/lib/model-tags.ts
-import { S } from "./strings";
-|||||||| parent of c87e240ae8 (b4a: move models group (routes, balance/oauth/modelscope services, models web) to plugins/models):packages/web/src/features/models/model-tags.ts
-import { S } from "../../lib/strings";
-========
+/**
+ * The standing marks a model carries wherever it is listed — the models page's cards and the
+ * model picker's rows — so the two agree on which marks exist, what they say, their order and
+ * their tone.
+ *
+ * Every mark is the package's tag — an outlined sm `Badge`, so the marks look like every other
+ * tag in the theme, and with no fill, so a row of marks sits on its row rather than on top of
+ * it. Six marks filling six coloured chips turned a row of tags into confetti; on a list whose
+ * job is scanning names, the marks are meant to be noticed second.
+ *
+ * Three tones, so the row groups instead of enumerating: what the model IS (its default status,
+ * `info`), what it CAN do (`success`), and what it COSTS (`attention`). These sort identities
+ * rather than rate a state: they are the three semantic tones nearest the brand blue, emerald
+ * and amber the marks have always worn, and identity is carried by the words in every case —
+ * the tone only sorts them at a glance, and never alone says which mark this is.
+ */
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-
 import type { DiscountedPrice } from "./model-grouping";
 
 /** Each group's tone, for the `Badge` a mark renders as. */

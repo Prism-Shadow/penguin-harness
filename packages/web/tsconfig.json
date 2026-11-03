@@ -1,3 +1,58 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "vite/client"
+    ],
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+    "paths": {
+      "@prismshadow/penguin-server/api": [
+        "../server/src/api/types.ts"
+      ],
+      "@penguinharness/plugin-company/web": [
+        "../../plugins/company/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/web": [
+        "../../plugins/terminal/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-browser/web": [
+        "../../plugins/browser/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-usage/web": [
+        "../../plugins/usage/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/web": [
+        "../../plugins/schedules/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-machines/web": [
+        "../../plugins/machines/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-agents/web": [
+        "../../plugins/agents/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-settings/web": [
+        "../../plugins/settings/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-projects/web": [
+        "../../plugins/projects/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/web": [
+        "../../plugins/workbenches/src/web/index.ts"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "./src/internal.ts"
+      ],
+      "@penguinharness/plugin-models/web": [
+        "../../plugins/models/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-models/web/*": [
+        "../../plugins/models/src/web/*"
       ],
       "@penguinharness/plugin-messaging/web": [
         "../../plugins/messaging/src/web/index.ts"

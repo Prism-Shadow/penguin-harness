@@ -1,8 +1,75 @@
-import type { AgentConfigDto, AgentConfigUpdateRequest, AgentKernelUpdateResponse, AgentModelConfigDto, AgentCompactionConfigDto, AgentMemoryConfigDto, AgentHooksConfigDto, AgentSchedulesConfigDto, AgentSkillsConfigDto, AgentVaultConfigDto, VaultEntryInfo, VaultResponse, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { badRequest, optionalBoolean, optionalEnum, optionalNumber, optionalString } from "@prismshadow/penguin-server/internal";
+/**
+ * Agent config read/write (config is an editable file).
+ *
+ * system_config.yaml is edited via yaml's `parseDocument`: only the keys provided in
+ * the request are updated, the rest of the file (including comments) is preserved
+ * as-is; AGENTS.md is overwritten in full.
+ * The vault (agent_state/.vault.toml) is read/written via core's loadAgentVault/saveAgentVault;
+ * plaintext values only ever hit disk, and are always masked in responses.
+ */
+import fs from "node:fs/promises";
+import { parseDocument, parse as parseYaml } from "yaml";
+import {
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_VAULT_PROMPT,
+  KERNEL_VERSION,
+  LEGACY_SKILLS_SECTION,
+  LEGACY_VAULT_SECTION,
+  agentsMdPath,
+  applyKernelUpdate,
+  atomicWriteFile,
+  isKernelOutdated,
+  agentStateDir,
+  agentStateVersion,
+  hasSchedulesPlaceholder,
+  hasSkillsPlaceholder,
+  hasVaultPlaceholder,
+  insertSchedulesPlaceholder,
+  insertSkillsPlaceholder,
+  insertVaultPlaceholder,
+  VAULT_VALUE_MAX_LENGTH,
+  isValidVaultKey,
+  loadAgentVault,
+  resetSystemConfigToDefaults,
+  resolveMCPServer,
+  saveAgentVault,
+  systemConfigPath,
+  THINKING_LEVEL_NAMES,
+} from "@prismshadow/penguin-core";
+import type {
+  MCPServerConfig,
+  ThinkingLevelName,
+  ToolDefinitionConfig,
+} from "@prismshadow/penguin-core";
+import type {
+  AgentConfigDto,
+  AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
+  AgentModelConfigDto,
+  AgentCompactionConfigDto,
+  AgentMemoryConfigDto,
+  AgentHooksConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
+  VaultEntryInfo,
+  VaultResponse,
+  VaultUpdateRequest,
+} from "../api/types.js";
+import { HttpError } from "../http/errors.js";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  optionalNumber,
+  optionalString,
+} from "../http/validate.js";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
 
+||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/server/src/services/agent-config-service.ts
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";

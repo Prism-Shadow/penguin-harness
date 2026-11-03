@@ -1,10 +1,47 @@
-<<<<<<< HEAD:packages/web/src/lib/model-group-order.ts
-} from "./session-order";
-|||||||| parent of c87e240ae8 (b4a: move models group (routes, balance/oauth/modelscope services, models web) to plugins/models):packages/web/src/features/models/model-group-order.ts
-} from "../../lib/session-order";
-========
+/**
+ * Manual order of the models page's provider GROUPS: where the arrangement is stored, and
+ * the two halves of the rule that reads and writes it.
+ *
+ * The page renders provider groups in the built-in catalog's order (model-grouping.ts).
+ * That order is a curated default, not everyone's: a user who only ever reaches for two
+ * providers can drag those groups to the top and leave the rest below. Dragging IS the
+ * intent — there is no sort toggle and no pinning, so a Project with nothing stored
+ * renders exactly the catalog order it always did (an empty order is the identity).
+ *
+ * - **One array per Project**, keyed like its neighbour `penguin.modelsExpandedGroups`
+ *   — the model table is per Project, so the arrangement of its groups is too.
+ * - **Unplaced groups TRAIL**, keeping their automatic order among themselves. This is
+ *   the opposite of the sidebar's rule (session-order.ts's applyManualOrder surfaces an
+ *   unplaced group so a Workspace used for the first time is not lost at the bottom of a
+ *   long list), and the difference is what an unplaced group MEANS on each side. Here it
+ *   is almost always one the user just created, through a control that sits below every
+ *   group: a new group that jumps to the top leaves the part of the page being looked at.
+ *   Trailing is also what the automatic order already does — user-defined groups follow
+ *   the built-in ones.
+ * - **A drop commits against every group the library could show**, empty built-ins
+ *   included (`allGroupKeys`), not the groups currently on screen. groupModelRows drops
+ *   a built-in group holding no models, so committing only what renders would leave the
+ *   empty ones unplaced and make each one a newcomer the day a model is added to it.
+ * - **Stale keys are inert, and nothing prunes them.** A key matching no group is only
+ *   a failed membership lookup. A provider that leaves the catalog and returns resumes
+ *   its place, which is the honest reading of "same key, same group"; the cost of
+ *   keeping it is one map entry.
+ *
+ * orderModelGroups and commitModelGroupOrder are one rule stated twice — where an
+ * unplaced group renders, and where a drop writes it — so they live side by side: a drop
+ * that materialised unplaced groups at the other end would shove groups the user never
+ * touched. The splice itself is session-order.ts's `moveInSequence`, including its
+ * identity return for a drop that moves nothing.
+ *
+ * Storage is injectable (model-group-expansion.ts convention: vitest runs in Node, no
+ * localStorage); malformed values degrade to an empty order, i.e. the catalog sequence.
+ */
+import {
+  moveInSequence,
+  readStringArray,
+  writeStringArray,
+  type SessionOrderStorage,
 } from "@prismshadow/penguin-web/internal";
-
 
 /** Minimal storage interface, shared with session-order.ts; tests inject an in-memory implementation. */
 export type ModelGroupOrderStorage = SessionOrderStorage;

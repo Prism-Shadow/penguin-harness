@@ -1,18 +1,7 @@
-import {
-  A2uiActionsProvider,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  Spinner,
-} from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import type { ChatItem } from "@prismshadow/penguin-web/internal";
-import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
-import type { TaskStats } from "@prismshadow/penguin-web/internal";
-import type { PendingApproval } from "./use-session-stream";
-import { MessageItem } from "./message-item";
-import { interactiveReplyIndex } from "./a2ui-reply";
-import { WorkspaceLinksProvider } from "@prismshadow/penguin-web/internal";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
+import { createStreamFollow, stickToBottom, type StreamFollow } from "./stream-follow";
+
+||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/chat/message-stream.tsx
 
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { ElidedBodiesContext } from "./elided-body";

@@ -124,7 +124,7 @@ import type { MachineRow } from "@prismshadow/penguin-server/internal";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { machinesRoutes } from "./machines.ts";
+import { machinesRoutes } from "./machines.js";
 import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 

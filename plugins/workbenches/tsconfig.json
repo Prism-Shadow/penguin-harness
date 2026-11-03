@@ -1,3 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2023"
+    ],
+    "paths": {
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
       "@penguinharness/plugin-workbenches/server": [
         "./src/server/index.ts"
       ],
@@ -27,27 +41,7 @@
       ]
     }
   },
-
-        "@penguinharness/plugin-company/server": [
-          "../company/src/server/index.ts"
-        ],
-||||||| parent of 48fb6ba824 (plugins: map the company face to the workspace source where agents imports it)
-        "@penguinharness/plugin-sessions/server": [
-          "../sessions/src/server/index.ts"
-        ],
-||||||| parent of 411a6ecb70 (tsconfig: map plugin-plugins/server into company/terminal/projects/workbenches; company face + organizations repo into sandbox so gen-ifaces resolves @Use field types to source)
-        "@penguinharness/plugin-company/server": [
-          "../company/src/server/index.ts"
-        ],
-        "@penguinharness/plugin-sessions/server": [
-          "../sessions/src/server/index.ts"
-        ],
-||||||| parent of adee9658bb (tsconfig: map plugin-db/server face into the packages whose programs pull server/machines source)
   "include": [
     "src/server"
   ]
-
-  "include": ["src/server"]
-||||||| parent of 411a6ecb70 (tsconfig: map plugin-plugins/server into company/terminal/projects/workbenches; company face + organizations repo into sandbox so gen-ifaces resolves @Use field types to source)
-}
 }

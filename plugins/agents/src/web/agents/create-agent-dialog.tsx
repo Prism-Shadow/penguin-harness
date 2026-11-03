@@ -1,10 +1,33 @@
-import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
-import { SemanticIdField } from "@prismshadow/penguin-web/internal";
+import type {
+  AgentCreateRequest,
+  PluginItem,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CloseIcon,
+  ConfirmModal,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  FormPicker,
+  HiddenFileInput,
+  ICONS,
+  Input,
+  Modal,
+  Textarea,
+  discardUnsaved,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
+import { SemanticIdField } from "../semantic-id";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 
+||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/agents/create-agent-dialog.tsx
 import {
   SkillPickList,
   addSkillNames,
