@@ -90,6 +90,13 @@ export interface ApiFetchOptions {
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
   /**
+   * Aborts the HTTP path of this call: the fetch carries the signal, so the request stops when
+   * it fires. The socket path cannot be aborted mid-call — it is bounded by its own answer
+   * timeout (api/socket.ts) — so a caller giving up on an answer cuts the wait itself and uses
+   * the signal only to free the HTTP request underneath.
+   */
+  signal?: AbortSignal;
+  /**
    * Which machine answers this call, when the caller knows and the path does not say.
    *
    * Omitted, a Session-scoped path routes itself to the machine that Session lives on (see
@@ -238,7 +245,7 @@ export async function apiFetchWithMeta<T>(
   const overSocket = wantsSocket && !apiSocket.isUnavailable() && (await apiSocket.ready());
   let answer = overSocket ? await callOverSocket(method, url, options.body, target) : null;
   if (answer === null || answer.status === 415 || answer.status === 421) {
-    const http = callOverHttp(method, url, options.body);
+    const http = callOverHttp(method, url, options.body, options.signal);
     // The socket's own question is this one: it waits for this answer rather than asking again.
     if (target === null && path === "/api/me" && method === "GET") {
       apiSocket.identityPending(http.then((a) => identityOf(a.status, a.body)));
@@ -379,12 +386,18 @@ function networkFailure(code: string, method: string, url: string, cause: unknow
   return new ApiError(0, code, S.errors.networkError);
 }
 
-async function callOverHttp(method: string, url: string, body: unknown): Promise<Answer> {
+async function callOverHttp(
+  method: string,
+  url: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<Answer> {
   let response: Response;
   try {
     response = await fetch(url, {
       method,
       credentials: "same-origin",
+      ...(signal !== undefined ? { signal } : {}),
       ...(body !== undefined
         ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
         : {}),

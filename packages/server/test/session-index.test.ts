@@ -852,6 +852,72 @@ describe("session-index", () => {
     expect((await list(`?sessionIdPrefix=session-${"x".repeat(65)}`)).status).toBe(400);
   });
 
+  it("sessionIdPrefix serves trace-only Sessions the index holds no row for (head facts, deduplicated, page-bounded)", async () => {
+    await configureModels();
+    const created = ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session
+      .sessionId;
+    // Two traces on disk, the boot adoption intentionally not run: only the trace heads name
+    // them — the shape a Session wears between adoption runs, with its trace file on disk and
+    // no active session row behind it (the single GET answers 404 just the same).
+    const userOrphan = "session-2026-10-31-22-26-00-9a000001";
+    const cliOrphan = "session-2026-10-31-22-26-00-9b000002";
+    for (const [sessionId, source] of [
+      [userOrphan, "user"],
+      [cliOrphan, "cli"],
+    ] as const) {
+      await writeTraceFile(t.root, projectId, agentId, "2026-10-31", sessionId, 1, [
+        sessionMeta({
+          session_id: sessionId,
+          model_id: "m",
+          provider: "custom",
+          model_context_window: 1,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: "/w",
+          source,
+        }),
+      ]);
+    }
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
+
+    // An exact prefix names a trace-only Session no index row backs; the head's source decides
+    // the listing rule: the user's conversation reads active, the program's reads archived
+    // until kept — and the pseudo row reports the trace it was read from.
+    const users = await list(`?sessionIdPrefix=${userOrphan}`);
+    expect(ids(users)).toEqual([userOrphan]);
+    expect(users.sessions[0]).toMatchObject({ hasTrace: true, archived: false });
+    const clis = await list(`?sessionIdPrefix=${cliOrphan}`);
+    expect(ids(clis)).toEqual([cliOrphan]);
+    expect(clis.sessions[0]).toMatchObject({ hasTrace: true, archived: true });
+
+    // The head answer rides alongside the index rows, never instead of them, and never twice:
+    // the whole stream stays free of one id twice.
+    const whole = await list("?sessionIdPrefix=session-");
+    expect(ids(whole)).toEqual(
+      expect.arrayContaining([created, cliOrphan, userOrphan]),
+    );
+    expect(new Set(ids(whole)).size).toBe(ids(whole).length);
+
+    // A page the index rows fill leaves no room for the trace-only rows: the asked page size
+    // bounds the whole answer.
+    const bounded = await list(`?sessionIdPrefix=session-2026-10-31&limit=1`);
+    expect(ids(bounded)).toHaveLength(1);
+    expect(ids(bounded)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^session-2026-10-31-22-26-00-9/)!]),
+    );
+
+    // Once the adoption has registered the row, the index answer wins and the pseudo row is
+    // not duplicated on top of it.
+    await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    const adopted = await list(`?sessionIdPrefix=${userOrphan}`);
+    expect(ids(adopted)).toEqual([userOrphan]);
+  });
+
   it("PATCH approval mode persists and reads back", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
