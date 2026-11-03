@@ -72,7 +72,7 @@ export abstract class BrowserCommands {
 }
 
 /** The slot `BrowserModule` owns: a command's key and summary, and the code half it binds. */
-export interface BrowserModuleSlots {
+export interface BrowserCommandsSlots {
   commands: Slot<CliCommandData, CliCommandCode>;
 }
 
