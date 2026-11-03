@@ -20,7 +20,6 @@ export type { DraftCache, DraftStorage } from "./draft-cache";
 export { prepareNewChatDraft } from "./new-chat";
 export { dispatchChatDefaultsChanged } from "./chat-defaults-event";
 export type { ChatDefaultsChangedDetail } from "./chat-defaults-event";
-export { BOOK_ICON, filterSkills, localizedShortText, localizedText } from "@prismshadow/penguin-web/internal";
 export { createStreamFollow, stickToBottom } from "./stream-follow";
 export { shortSessionId } from "./agent-topology";
 
