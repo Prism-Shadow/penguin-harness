@@ -44,10 +44,10 @@ import type {
   TaskCreateResponse,
   SessionSandbox,
 } from "../../api/types.js";
-import { compactionThresholdFor } from "../../services/context-breakdown.js";
+import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
 import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest } from "../../services/trace-service.js";
-import { withImagesByReference } from "../../services/trace-images.js";
+import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -143,7 +143,7 @@ import { platformAuthRoutes } from "./platform-auth.js";
 import { modelScopeAuthRoutes } from "./modelscope-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
-import { usageRoutes } from "./usage.js";
+import { usageRoutes } from "@penguinharness/plugin-usage/server";
 import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-files.js";
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";

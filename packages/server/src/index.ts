@@ -35,8 +35,8 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "@penguinharness/plugin-terminal/server";
-import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server/extension-ws.js";
-import type { ExtensionGate } from "@penguinharness/plugin-browser/server/extension-ws.js";
+import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server";
+import type { ExtensionGate } from "@penguinharness/plugin-browser/server";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";

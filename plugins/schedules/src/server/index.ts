@@ -5,3 +5,4 @@
 export { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./scheduler.js";
 export { scheduleRoutes, projectScheduleRoutes, SchedulerRoutes } from "./schedules.js";
 export type { SchedulesRouteDeps } from "./schedules.js";
+export type { ScheduleDefinition } from "./schedule-file.js";
