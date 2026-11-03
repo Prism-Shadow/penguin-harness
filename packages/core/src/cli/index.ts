@@ -47,16 +47,16 @@ export type CliCommandEntry = CliCommandData & { id: string } & JsonObject;
  */
 export type CliCommandProgram = Opaque<"Command">;
 
-/** What a command's code half may use from the host that runs it. */
+/**
+ * What a command's code half may use from the host that runs it: the language the
+ * invocation resolved. Output is not in the contract — a command writes to the process's
+ * own stdout and stderr and sets `process.exitCode` — and what those mean is the host's
+ * to decide: the CLI's invocation prints to its own process, a server's run redirects the
+ * process's streams into the response and restores them after.
+ */
 export interface CliCommandContext {
   /** The language the invocation resolved (`PENGUIN_LANG`, default English). */
   language: "en" | "zh";
-  /** Writes one line of output. */
-  write(text: string): void;
-  /** Writes one line of diagnostics. */
-  writeErr(text: string): void;
-  /** Sets the invocation's exit code (0 unless set). */
-  setExitCode(code: number): void;
 }
 
 /**

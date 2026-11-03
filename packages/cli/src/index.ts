@@ -15,7 +15,7 @@
 import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
 import type { CliCommandProgram } from "@prismshadow/penguin-core/cli";
-import { bootBuiltinCommands, builtinContext } from "./cli-commands.js";
+import { bootBuiltinCommands } from "./cli-commands.js";
 import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";
 import { getMessages, resolveLanguage } from "./i18n.js";
@@ -52,11 +52,11 @@ export async function cli(argv: string[]): Promise<number> {
     // are copied down (commander's copyInheritedSettings).
     .configureOutput({ outputError: () => {} });
 
-  const ctx = builtinContext(language);
   for (const command of await bootBuiltinCommands()) {
     const node = commandAt(program, command.key).description(command.summary[language]);
-    // CliCommandProgram is opaque in the contract; the host knows what it built.
-    command.code.register(node as unknown as CliCommandProgram, ctx);
+    // CliCommandProgram is opaque in the contract; the host knows what it built. The
+    // commands write to this process's own streams; this invocation IS the process.
+    command.code.register(node as unknown as CliCommandProgram, { language });
   }
 
   // Show help only when no subcommand is given (empty input); do not error.

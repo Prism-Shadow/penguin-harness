@@ -24,7 +24,6 @@ import type {
 import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type {
   CliCommandCode,
-  CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
@@ -650,20 +649,4 @@ export async function bootBuiltinCommands(): Promise<readonly BuiltinCommand[]> 
   } finally {
     tree.dispose();
   }
-}
-
-/** The context a builtin command runs with: this process's own output and exit code. */
-export function builtinContext(language: "en" | "zh"): CliCommandContext {
-  return {
-    language,
-    write: (text) => {
-      process.stdout.write(`${text}\n`);
-    },
-    writeErr: (text) => {
-      process.stderr.write(`${text}\n`);
-    },
-    setExitCode: (code) => {
-      process.exitCode = code;
-    },
-  };
 }

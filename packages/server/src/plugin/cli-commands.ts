@@ -12,8 +12,9 @@
  *
  * A run builds a fresh commander program per request: every command of the named plugin,
  * each on the node its key locates and described by its summary, then argv is parsed
- * against that program alone. What the command writes through its context, and what
- * commander prints for help and usage errors, comes back as the response with the exit
+ * against that program alone. For the duration of a run the process's stdout and stderr
+ * are redirected into the response, so what the command writes to the process — and what
+ * commander prints for help and usage errors — comes back as the response with the exit
  * code. Running a plugin's code is an admin operation; listing is open to any signed-in
  * user.
  */
@@ -24,7 +25,6 @@ import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import type {
   CliCommandCode,
-  CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
@@ -125,58 +125,69 @@ function commandAt(program: Command, key: string): Command {
  * Runs `request.args` against `commands` (one package's) on a fresh program, collecting
  * everything printed. A command's own failure is reported on stderr with exit code 1, and
  * never escapes into the server.
+ *
+ * A command writes to the process's own streams — the contract holds no output channel —
+ * so for the duration of a run this process's stdout and stderr are redirected into the
+ * response's strings and restored after: the host decides what the process's streams mean.
+ * Runs are serialized, so two concurrent runs never capture each other's output.
  */
+let runs: Promise<unknown> = Promise.resolve();
+
 export async function runPluginCommands(
   commands: readonly PluginCliCommand[],
   request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
 ): Promise<PluginCliCommandRunResponse> {
-  let stdout = "";
-  let stderr = "";
-  let exitCode = 0;
-  const ctx: CliCommandContext = {
-    language: request.language,
-    write: (text) => {
-      stdout += `${text}\n`;
-    },
-    writeErr: (text) => {
-      stderr += `${text}\n`;
-    },
-    setExitCode: (code) => {
-      exitCode = code;
-    },
-  };
-  const program = new Command();
-  program
-    .name(request.prog)
-    .exitOverride()
-    .configureOutput({
-      writeOut: (text) => {
-        stdout += text;
-      },
-      writeErr: (text) => {
-        stderr += text;
-      },
-    });
+  const run = runs.then(() => runPluginCommandOnce(commands, request));
+  runs = run.catch(() => undefined);
+  return run;
+}
+
+async function runPluginCommandOnce(
+  commands: readonly PluginCliCommand[],
+  request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
+): Promise<PluginCliCommandRunResponse> {
+  const stdout = { text: "" };
+  const stderr = { text: "" };
+  const capture =
+    (sink: { text: string }): typeof process.stdout.write =>
+    (chunk: unknown) => {
+      sink.text += typeof chunk === "string" ? chunk : String(chunk);
+      return true;
+    };
+  const stdoutWrite = process.stdout.write;
+  const stderrWrite = process.stderr.write;
+  const priorExitCode = process.exitCode;
+  process.stdout.write = capture(stdout);
+  process.stderr.write = capture(stderr);
+  process.exitCode = 0;
   try {
-    for (const c of commands) {
-      const node = commandAt(program, c.key).description(c.summary[request.language]);
-      c.code.register(node as unknown as CliCommandProgram, ctx);
+    const program = new Command();
+    program.name(request.prog).exitOverride();
+    try {
+      for (const c of commands) {
+        const node = commandAt(program, c.key).description(c.summary[request.language]);
+        c.code.register(node as unknown as CliCommandProgram, { language: request.language });
+      }
+      // Only print help when no args given, so unknown words are reported as they are.
+      if (request.args.length === 0) {
+        program.outputHelp();
+        return { exitCode: 0, stdout: stdout.text, stderr: stderr.text };
+      }
+      await program.parseAsync(request.args, { from: "user" });
+      return { exitCode: process.exitCode ?? 0, stdout: stdout.text, stderr: stderr.text };
+    } catch (err) {
+      if (err instanceof CommanderError) {
+        // Commander already printed what it had to say (help, or the usage error).
+        return { exitCode: err.exitCode, stdout: stdout.text, stderr: stderr.text };
+      }
+      stderr.text += `${err instanceof Error ? err.message : String(err)}\n`;
+      return { exitCode: 1, stdout: stdout.text, stderr: stderr.text };
     }
-    // Only print help when no args given, so unknown words are reported as they are.
-    if (request.args.length === 0) {
-      program.outputHelp();
-      return { exitCode: 0, stdout, stderr };
-    }
-    await program.parseAsync(request.args, { from: "user" });
-  } catch (err) {
-    if (err instanceof CommanderError) {
-      // Commander already printed what it had to say (help, or the usage error).
-      return { exitCode: err.exitCode, stdout, stderr };
-    }
-    stderr += `${err instanceof Error ? err.message : String(err)}\n`;
-    return { exitCode: 1, stdout, stderr };
+  } finally {
+    process.stdout.write = stdoutWrite;
+    process.stderr.write = stderrWrite;
+    process.exitCode = priorExitCode;
   }
-  return { exitCode, stdout, stderr };
 }
 
 /** The `prog` a run may name: the program name followed by plain words, nothing a terminal would interpret. */
