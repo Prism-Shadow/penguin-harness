@@ -34,7 +34,18 @@ export * from "./runtime/error-recorder.js";
 export { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
 export * from "./services/task-attachments.js";
 export * from "./db/repos/messaging-bindings.js";
-export * from "@penguinharness/plugin-sessions/server";
+// The sessions face is a package.json dep, so the bundler keeps it external and a bare
+// `export *` from it contributes nothing statically knowable to this module's export
+// list — the desktop bundle then fails on the names plugins take from here (see the
+// messaging face's explicit `enabledMessagingChannel` above). Name the consumed values.
+export {
+  ADOPTED_AT_HEADER,
+  fallbackTitle,
+  listCategory,
+  listingMarksOf,
+  readRecordedSource,
+  recallStoreOf
+} from "@penguinharness/plugin-sessions/server";
 export * from "./services/ids.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-guard.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-group.js";
@@ -79,7 +90,6 @@ export * from "./services/skill-import-limits.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-files-service.js";
 export * from "./services/message-window.js";
 export * from "./services/session-service.js";
-export * from "@penguinharness/plugin-sessions/server";
 export * from "@penguinharness/plugin-sessions/server";
 export type { Machines } from "../../../plugins/machines/src/server/service.js";
 export type { ServerConfig } from "./config.js";
