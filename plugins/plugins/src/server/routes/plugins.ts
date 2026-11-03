@@ -1,93 +1,15 @@
-/**
- * Plugins: the library this build ships, the registry a deployment lists, and what an
- * Agent has installed.
- *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
- *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
- *   GET    /api/plugins/:plugin/readme                    # a library plugin's README.md, from its package root (404 without one)
- *   GET    /api/plugins/:plugin/archive                   # a library plugin's package as a zip, for another server to import
- *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries, the published ones, and the server modules an admin installed from a link or a zip
- *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
- *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
- *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
- *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
- *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
- * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
- * package to agent_state/hooks/<plugin>/ (hooks.json + scripts) and its MCP servers into the
- * Agent's `tools.mcpServers` (each entry carrying the plugin's name); reinstalling overwrites
- * with library content (i.e. an update). A server name the Agent already has from someone else
- * refuses the whole request before anything is written (409 `mcp_server_name_taken`).
- * Installed skills and hook packages keep their own routes (skills.ts, hooks.ts); MCP servers
- * are listed and removed here, one by one — a plugin's uninstall from the Plugins page removes
- * its servers like its skills, and anyone who can edit the Agent's config could already rewrite
- * the whole list.
- *
- * Library and registry are two views of one kind of thing — a package of skills and/or
- * hooks. The library is what this build carries; the registry is what the deployment can
- * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
- *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
- * is cached, a failure to reach it is reported alongside the entries rather than emptying the
- * page, and a listing waits for it only briefly before answering without it — see
- * plugin/registry.ts for the three rules.
- */
-import { Hono } from "hono";
-import fs from "node:fs/promises";
-import {
-  agentDir,
-  McpServerNameTakenError,
-  WorkbenchNameTakenError,
-  assertPluginWorkbenchesInstallable,
-  listInstalledWorkbenches,
-  assertPluginMcpServersInstallable,
-  installPlugin,
-  listInstalledHooks,
-  listInstalledMcpServers,
-  listInstalledSkills,
-  libraryParts,
-  readPackageJson,
-  uninstallMcpServer,
-} from "@prismshadow/penguin-core";
-import type { NpmPackage } from "@prismshadow/penguin-core";
-import type {
-  AgentMcpServersResponse,
-  AgentPluginsInstallResponse,
-  PluginFilesResponse,
-  PluginIndexEntry,
-  PluginIndexResponse,
-  PluginLibraryResponse,
-  PluginReadmeResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
-import type { Config, Hmr } from "../../hmr/capabilities.js";
-import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
-import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
-import {
-  BUILTIN_REGISTRY_SOURCE,
-  builtinPluginRegistry,
-  cachedRegistry,
-  httpPluginRegistry,
-  localPluginDisplay,
-  mergeIndexes,
-  withoutIcon,
-  NIGHTLY_INDEX_URL,
-} from "../../plugin/registry.js";
-import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
-import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
-import type { PluginBase } from "../../plugin/loader.js";
-import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
-import {
-  pluginArchiveResponse,
-  unscopedName,
-  zipPluginPackage,
-} from "../../services/plugin-archive.js";
-import { migrateWorkbenches } from "../../workbenches/migrate.js";
-import type { PluginLibrary } from "../../plugin/library-module.js";
+import type { PluginPackageManifest, LibraryPlugin } from "@prismshadow/penguin-core";
+import type { PluginSkills } from "../plugin/skills.js";
+
+  SOURCE_WAIT_MS,
+} from "../plugin/registry.js";
+import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../plugin/registry.js";
+import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../plugin/loader.js";
+import type { PluginBase } from "../plugin/loader.js";
+import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../plugin/install.js";
+
+} from "../services/plugin-archive.js";
+
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -97,8 +19,8 @@ export interface PluginsRouteDeps {
   manager: ManagerIface;
   library: PluginLibrary;
 }
-import { HttpError } from "../errors.js";
-import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalStringArray, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
 import {
   pluginFiles,
   resolveLibraryPlugins,
@@ -106,7 +28,7 @@ import {
   toHookItem,
   toPluginItem,
   toSkillItem,
-} from "../../services/plugin-library.js";
+} from "@prismshadow/penguin-server/internal";
 
 /** A server name another owner holds, as the answer: what it is and who has it; nothing was written. */
 async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {

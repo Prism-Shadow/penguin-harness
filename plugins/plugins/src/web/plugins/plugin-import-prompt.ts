@@ -9,7 +9,7 @@
  * repository folder, a Codex or Claude Code plugin) it first ports into one with the
  * `plugin-porting` skill.
  */
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** A registry package by name, optionally `@<version, range or tag>` — no `npm:` or `file:` alias. */
 const NPM_NAME =

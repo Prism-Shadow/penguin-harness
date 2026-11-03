@@ -1,17 +1,8 @@
-/**
- * "Fix with AI" for an installed plugin the running build cannot fully run (the server's
- * `InstalledPlugin.unsatisfied`): a confirm that says what is about to happen, then the same
- * hand-off every "with AI" surface uses — a new chat in a temporary Workspace with the repair
- * prompt in its composer, never sent on the user's behalf. The repair may change an
- * installed plugin, so reading the prompt and pressing send stays the user's step.
- */
-import { useState, type ReactNode } from "react";
+import { useAiBridge, type AiChatRequest } from "@prismshadow/penguin-web/internal";
 
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, ICONS, toastError } from "@prismshadow/penguin-ui";
-import { useAiBridge, pickDefaultAgent, type AiChatRequest } from "../ai-create";
+import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
 
 /** The plugin to repair, as its row has it. */
 export interface RepairTarget {

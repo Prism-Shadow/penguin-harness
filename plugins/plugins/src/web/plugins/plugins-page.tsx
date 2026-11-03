@@ -1,18 +1,80 @@
-import { MachinePicker, type MachineChoice } from "@penguinharness/plugin-machines/web";
+/**
+ * The plugin market: every plugin as one card (plugin-card.tsx) — the library's plugins
+ * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
+ * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
+ * and whatever the registry lists, installed on the server by an admin). Cards sit in
+ * collapsible sections, by category unless the reader picks another grouping — status,
+ * contents, or none — in the select beside the header's search box, which narrows the cards.
+ * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
+ * search is not. Settings › Plugins can narrow the list to the plugins this build cannot fully
+ * run, also per browser (incompatible-only.ts), and while it does a notice under the title says
+ * so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
+ * plugin-status.ts.
+ *
+ * - A library plugin is installed per Agent, by any member, through its card's "manage
+ *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
+ *   behind (`AgentSummary.pluginUpdates` — the page never compares versions itself), and the
+ *   notice under the title updates every outdated plugin at once. Installed means the whole
+ *   plugin: every one of its skills in the Agent's installed skills, its hook package (when it
+ *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
+ *   servers as an entry it installed — which is why the page fetches the three lists per Agent.
+ *   Uninstall takes it apart the same way: one DELETE per skill, one for the hook package and
+ *   one per MCP server.
+ * - A server module is installed on the whole server for every Project, by an admin only (a
+ *   member sees the card read-only). Installing or removing one re-assembles the App, which stops
+ *   the agent runs in progress in every Project, so the confirm says what the install does and,
+ *   in small type below, what it costs.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
+import type {
+  AgentMcpServerItem,
+  AgentSummary,
+  HookItem,
+  InstalledPluginsResponse,
+  PluginGroupItem,
+  PluginIndexEntry,
+  PluginItem,
+  QuickStartItem,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
 import {
-  DRAFT_SESSION_ID,
-  draftKey,
-  loadDraft,
-  saveDraft,
-  prepareNewChatDraft,
-  localizedText,
-} from "../chat";
+  Button,
+  CollapsibleSection,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  Notice,
+  PageFrame,
+  PageHeader,
+  SearchInput,
+  Select,
+  Skeleton,
+  SkeletonCard,
+  TodoNotice,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
+import { dismissTodo } from "@prismshadow/penguin-web/internal";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+
+} from "@prismshadow/penguin-web/internal";
 
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "@penguinharness/plugin-settings/web";
-import { pickDefaultAgent } from "../ai-create";
-import { toneInk } from "../../lib/tone";
+import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget } from "./plugin-card";
 import {
@@ -36,7 +98,7 @@ import { ImportPluginModal } from "./plugin-import-modal";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
+} from "@prismshadow/penguin-web/internal";
 import {
   PLUGIN_GROUP_BYS,
   foldKey,

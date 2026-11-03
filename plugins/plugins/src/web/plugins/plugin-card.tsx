@@ -1,9 +1,54 @@
-import { apiErrorText } from "../../lib/api-error";
-import { downloadArchive } from "@penguinharness/plugin-agents/web";
+/**
+ * One plugin's card on the Plugins page — every plugin wears the same one, a library plugin of
+ * Skills and hooks and a server module such as an Agent Sandbox backend alike: a rounded icon
+ * tile (the plugin's own icon, else the puzzle piece) centred against its title (the package's
+ * display name, else the plugin's name) and the one-line description (the "no description"
+ * placeholder, in the same muted ink, when the package carries none), a metadata line
+ * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
+ * only), and a tag line — the category (outside the category's own section), "built in", where
+ * a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
+ * buttons whose words show once the card is wide enough:
+ *
+ * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
+ *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
+ *   Update. Installing a plugin with a stdio MCP server on an Agent that lacks it asks first,
+ *   showing the command it runs on this server, and an update's confirmation shows it too (the
+ *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
+ *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
+ *   which writes those values into the Agent's vault.
+ * - A server module: Install, or Remove, for an admin only; a member reads the card and its
+ *   dialog, with no way in to change the server.
+ *
+ * The dialog's footer repeats the same actions with their words, after Export — the package as
+ * a zip another server imports, for any member whenever its package is on this server — and,
+ * for an admin, Delete on a package an admin installed on the server.
+ */
+import { useId, useState, type ReactNode } from "react";
 
-import { useLocale } from "../../state/locale";
-import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills";
+import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  Card,
+  ConfirmModal,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Modal,
+  StatusIcon,
+  UpdateDot,
+  toastError,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
+
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";

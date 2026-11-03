@@ -158,7 +158,7 @@ import { scheduleRoutes } from "@penguinharness/plugin-schedules/server";
 import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
 import { agentSkillsRoutes } from "@penguinharness/plugin-agents/server";
 import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
-import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
+import { agentPluginsRoutes, pluginLibraryRoutes } from "@penguinharness/plugin-plugins/server";
 import { agentTransferRoutes } from "@penguinharness/plugin-agents/server";
 import { agentsRoutes } from "@penguinharness/plugin-agents/server";
 import { dirsRoutes } from "@penguinharness/plugin-projects/server";

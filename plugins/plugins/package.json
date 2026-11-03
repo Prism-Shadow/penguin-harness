@@ -1,0 +1,42 @@
+{
+  "name": "@penguinharness/plugin-plugins",
+  "version": "0.2.18",
+  "private": true,
+  "type": "module",
+  "description": "The plugins functional group: the plugin system itself (hosts, loader, registry, install, config pages) with the plugin routes and the plugins pages, temporarily parked under plugins/.",
+  "exports": {
+    "./server": "./src/server/index.ts",
+    "./web": "./src/web/index.ts",
+    "./server/*": "./src/server/*",
+    "./web/*": "./src/web/*"
+  },
+  "dependencies": {
+    "@penguinharness/plugin-agents": "workspace:*",
+    "@penguinharness/plugin-machines": "workspace:*",
+    "@penguinharness/plugin-models": "workspace:*",
+    "@penguinharness/plugin-projects": "workspace:*",
+    "@penguinharness/plugin-terminal": "workspace:*",
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "commander": "^13.0.0",
+    "fflate": "^0.8.3",
+    "hono": "^4.12.34",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^8.3.0",
+    "smol-toml": "^1.3.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.3.6"
+  },
+  "penguin": {
+    "parked": true
+  }
+}
