@@ -1,71 +1,14 @@
-/**
- * THE platform: the one hot-swappable unit this build of the server packages.
- *
- * The repo carries exactly one platform — versions exist BETWEEN deployments
- * (this packaged build vs the next bundle pushed over HTTP), not as parallel
- * files. When a future build changes the context shape, it bumps `version`
- * and ships the migrator alongside the new schema; the previous shape lives
- * only in already-parked documents out in the world.
- *
- * PLATFORM LAYER — WHERE POLICY BELONGS. Anything a deployment might want to
- * change (business APIs, what an agent sees, how a capability behaves) goes
- * here rather than in the runtime, and reaches installations by one HTTP push
- * instead of a rebuild. Worth remembering when something looks like it must
- * live in the shell: this code runs INSIDE the server process, so in-process
- * effects (e.g. extending process.env for the shells agents spawn) are
- * deliverable from boot() with no runtime change. See packages/hmr/README.md.
- *
- * This packaged platform carries the WHOLE business surface (see app.ts):
- * every business service and route is assembled inside create() over the runtime's
- * published capabilities, and serves through the seam in ../hmr/http-seam.ts — it
- * sees every request before the runtime's own routes do and answers null for the
- * ones it does not own. A pushed bundle therefore replaces the business wholesale:
- * adding or changing an endpoint or a service needs no runtime change.
- */
-import type { WebSocket } from "ws";
-import type {
-  Impl,
-  Json,
-  Park,
-  IfaceTable,
-  Instance,
-  ManifestTable,
-  ModuleDef,
-  ModuleTree,
-} from "@prismshadow/penguin-core/kernel";
-import {
-  closedShape,
-  defineIface,
-  schema,
-  type,
-  boot,
-  bootModules,
-  initialDoc,
-  moduleDefOf,
-  upgrade,
-} from "@prismshadow/penguin-core/kernel";
-import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
-import { TerminalManager } from "../terminal/manager.js";
-import type { TerminalSession } from "../terminal/session.js";
-import {
-  MACHINE_SESSION_IFACE,
-  SESSION_GROUP,
-  SESSION_SHAPE_ID,
-} from "../machines/transport/index.js";
-import type { HeldSession } from "../machines/transport/index.js";
-import type { RemoteTerminals } from "../machines/terminal-relay.js";
-import { identityFrom } from "../terminal/identity.js";
-import { bindTerminalStream } from "../terminal/stream.js";
-import { isApiSocketRef } from "../socket/ref.js";
-import type { AttachedStream } from "../socket/ref.js";
-import { serveApiSocket } from "../socket/serve.js";
-import { carryStreamAnswer } from "../socket/stream-answer.js";
+import type { RemoteTerminals } from "@penguinharness/plugin-terminal/server";
+import { identityFrom } from "@penguinharness/plugin-terminal/server";
+import { bindTerminalStream } from "@penguinharness/plugin-terminal/server";
+
+||||||| parent of cbb467aef8 (terminal: the composition root takes the terminal face, host shims removed)
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
-import { terminalRoutes } from "../terminal/routes.js";
-import type { Identity } from "../terminal/identity.js";
+import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
+import type { Identity } from "@penguinharness/plugin-terminal/server";
 import { platformDef } from "../platform.js";
 import { SandboxModule } from "../sandbox/service.js";
 import ifaceTable from "../ifaces.json" with { type: "json" };

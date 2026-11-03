@@ -15,8 +15,10 @@ export type {
   Terminal,
 } from "./terminal/manager.js";
 export { terminalRoutes, resolveKeys } from "./terminal/routes.js";
+export { bindTerminalStream } from "./terminal/stream.js";
 export { attachTerminalWebSocket } from "./terminal/ws.js";
 export type { TerminalWebSocketDeps } from "./terminal/ws.js";
+export type { TerminalSession } from "./terminal/session.js";
 export {
   identityFrom,
   readSessionCookie,
