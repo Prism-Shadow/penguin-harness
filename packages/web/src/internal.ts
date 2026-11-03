@@ -15,6 +15,7 @@ export * from "./components/ui/session-row-menu";
 export * from "./components/ui/truncated";
 export * from "@penguinharness/plugin-agents/web";
 export * from "./features/ai-create/index";
+export * from "@penguinharness/plugin-sessions/web";
 export * from "./features/dock/index";
 export * from "@penguinharness/plugin-messaging/web";
 export * from "./features/model-picker/index";
