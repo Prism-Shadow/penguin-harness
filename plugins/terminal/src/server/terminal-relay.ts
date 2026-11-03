@@ -26,8 +26,7 @@ import { WebSocket } from "ws";
 import type { RawData, WebSocket as WsSocket } from "ws";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { Terminal } from "@prismshadow/penguin-server/internal";
-import type { Auth } from "@prismshadow/penguin-server/internal";
-import type { Machines } from "./service.js";
+import type { Auth, Machines } from "@prismshadow/penguin-server/internal";
 
 const SEP = "@";
 
