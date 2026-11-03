@@ -100,7 +100,4 @@ export * from "./services/directory-skills.js";
 export { APPROVAL_MODES } from "./http/routes/sessions.js";
 export { PluginConfigAdmin } from "./plugin/config-page.js";
 export type { PluginConfigAdminSlots } from "./plugin/config-page.js";
-export * from "./sandbox/service.js";
-export * from "./runtime/messaging/bridge.js";
-export * from "./http/app.js";
-export * from "./http/routes/contributions.js";
+export type { PluginPackages } from "./mechanisms/plugins.js";

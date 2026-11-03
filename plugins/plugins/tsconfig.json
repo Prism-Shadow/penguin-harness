@@ -45,6 +45,12 @@
       ],
       "@penguinharness/plugin-settings/web": [
         "../settings/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
       ]
     }
   },

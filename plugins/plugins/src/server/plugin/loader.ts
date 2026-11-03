@@ -46,7 +46,7 @@ import { readManifest } from "@prismshadow/penguin-server/internal";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
-import platformTable from "../../../../packages/server/src/ifaces.json" with { type: "json" };
+import platformTable from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import { checkIfaces, ifaceQuestions } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
