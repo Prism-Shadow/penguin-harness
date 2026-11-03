@@ -2326,7 +2326,9 @@ export const uninstallMachine = (projectId: string, machineId: string, removeDat
 
 // Version & self-update ----------------------------------------------------------------
 
-export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** This server's version report, or, given a machine's id, that machine's (its OS for a report). */
+export const getVersion = (machine?: string) =>
+  apiFetch<VersionResponse>("/api/version", machine === undefined ? {} : { server: machine });
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 /** Push a kept version back (admin); the swap follows the 202. */

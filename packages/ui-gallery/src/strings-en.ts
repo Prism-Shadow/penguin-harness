@@ -1896,16 +1896,31 @@ export const en: GalleryStrings = {
     retry: {
       phases: "Five phases",
       phasesHint:
-        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured.",
+        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed follows the sentence in the muted ink, clamped to two lines with Expand; only the mark is coloured. The sentence is never bold: the body ink while an attempt is live, muted once it stops.",
       blocks: "At body size",
       blocksHint:
-        "In a dialog section and in a conversation: the same one line at body size, the actions link-style text in it.",
+        "In a dialog section and in a load-failure notice: the same one line at body size, the actions bracketed text in it.",
       inCard: "In a machine card",
       inCardHint:
         "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
       inChat: "In a conversation",
       inChatHint:
-        "A model request being retried wears the same row: the attempt of the engine's ceiling, the cause and the provider's words behind the ?, Retry now and Stop retrying while it waits.",
+        'A model request being retried is a line of text in the conversation, the shape of "[Aborted]": a bracketed label, the attempt and the countdown, the cause in short with the HTTP status in parentheses, then bracketed text actions on the same line. Retry now and Stop retrying while it waits, Details on every state. A ladder that ran out, or was stopped during a wait, reads "[Failed]" and offers Retry as the last line; an error no retry can fix reads "[Error]". The provider\'s own words are in the details, not on the line. Earlier messages that failed to load get the same kind of line at the top.',
+      report: "Failure details",
+      reportHint:
+        "What Details opens: the report as it would be sent (English, mono, read-only), key-shaped strings taken out; Copy copies it as Markdown, and File an issue on GitHub opens the bug form prefilled.",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "What stands where content could not be loaded: a mark, a one-line title, a muted line under it with the reason or what happens next, the retry row while something retries on its own, one text action, and the raw error folded under Technical details. No red words: the mark says it failed.",
+      historyFailed: "Could not load the message history",
+      networkError: "Network error, please check your connection",
+      awayHeadline: (alias: string) => `${alias} is reconnecting`,
+      awayHint:
+        "The conversation is kept on that machine and loads as soon as the connection is back.",
+      openMachines: "Go to Machines",
+      details: "Technical details",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
       narrow: "Narrow",
       narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
       trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
@@ -1915,7 +1930,6 @@ export const en: GalleryStrings = {
       cancelled: "Stopped retrying",
       stoppedSsh: "Reconnect failed; fix ssh first",
       stoppedPassword: "Sign-in refused; not retrying",
-      lastFailure: "Last failure",
       retryNow: "Retry now",
       stop: "Stop retrying",
       retry: "Retry",
@@ -1931,12 +1945,28 @@ export const en: GalleryStrings = {
         reconnectFailed: "Reconnect failed",
       },
       card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
-      chatWaiting: (s: number, n: number, m: number) => `Retrying in ${s} s (attempt ${n}/${m})`,
-      chatSending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
-      chatSent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      chatGaveUp: (n: number) => `Request failed after ${n} attempts`,
-      chatCause: "Connection timed out",
-      chatError: "upstream request timeout after 60s (request id 7f3c…)",
+      chatWaiting: (s: number, n: number, m: number) => `attempt ${n}/${m} in ${s} s`,
+      chatSending: (n: number, m: number) => `sending attempt ${n}/${m}`,
+      chatSent: (n: number, m: number) => `attempt ${n}/${m} sent`,
+      chatRetrying: (sentence: string, why: string) => `[Retrying]: ${sentence} (${why})`,
+      chatRetried: (sentence: string, why: string) => `[Retried]: ${sentence} (${why})`,
+      chatFailed: (n: number, why: string) => `[Failed]: all ${n} requests failed (${why})`,
+      chatFailedOnce: (why: string) => `[Failed]: ${why}`,
+      chatError: (why: string) => `[Error]: the model request failed (${why})`,
+      chatAborted: "[Aborted]: aborted during reconnect backoff",
+      chatWhy: "network or service temporarily unavailable, HTTP 503",
+      chatFatalWhy: "credentials rejected, HTTP 401",
+      chatEarlierFailed:
+        "[Load failed]: could not load earlier messages (network error, please check your connection)",
+      openDetails: "Details",
+      reportTitle: "Request failure details",
+      reportLead:
+        "Most of these failures come from the model provider or the network. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
+      reportCheck:
+        "Key-shaped strings are taken out of the report; still check it for anything private before you send it.",
+      reportLabel: "Failure report",
+      copy: "Copy",
+      fileIssue: "File an issue on GitHub",
     },
     attachments: {
       composer: "Composer",

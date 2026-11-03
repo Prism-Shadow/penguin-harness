@@ -10,7 +10,7 @@
  *   a server stopped only when it is, not connected for one out of reach — and while a job moves
  *   there, its stepper says what is happening instead;
  * - while the server brings the machine back, says in its middle where that stands — the attempt
- *   of how many and the countdown to it, the last failure behind a "?", Retry now and Stop
+ *   of how many and the countdown to it, the last failure after it in sight, Retry now and Stop
  *   retrying — and after the automatic attempts stopped, that they failed, with Retry; each press
  *   asks the page for its own request; a refused password says the fix and offers nothing;
  * - asks to delete the machine with its trash button, never while a job is on its way;
@@ -450,17 +450,16 @@ describe("a machine's card", () => {
     }
   });
 
-  it("while the server brings the machine back, counts down in its middle to the attempt of how many, the last failure behind a ?; Retry now and Stop retrying each ask the page", () => {
+  it("while the server brings the machine back, counts down in its middle to the attempt of how many, the last failure in sight; Retry now and Stop retrying each ask the page", () => {
     const shown = card(comingBack);
     expect(shown.retry).toMatchObject({
       phase: "waiting",
       label: S.machines.retry.trying(4, 5),
       reason: S.machines.check.ssh.refused("mini"),
-      reasonTitle: S.machines.retry.lastFailure,
     });
     expect(shown.html).toContain("data-retry-countdown");
-    // The failure is the "?"'s, not a line of the card.
-    expect(seenText(readMarkup(shown.html))).not.toContain(S.machines.check.ssh.refused("mini"));
+    // The failure is on the card's line, not behind a hover.
+    expect(seenText(readMarkup(shown.html))).toContain(S.machines.check.ssh.refused("mini"));
     expect(shown.waits).toBeNull();
     expect(shown.buttons.get("use")!.props.disabled).toBe(true);
     expect(shown.retry?.retry?.label).toBe(S.machines.retry.retryNow);
@@ -482,7 +481,6 @@ describe("a machine's card", () => {
       phase: "gaveUp",
       label: S.machines.retry.gaveUp(5),
       reason: S.machines.check.ssh.refused("lab-2"),
-      reasonTitle: S.machines.retry.lastFailure,
       retry: { label: S.machines.retry.retry },
       secondary: null,
     });
