@@ -10,12 +10,12 @@
  * is its contract) or an abstract interface class (`extends Interface<…>()`) declared
  * beside its owner — reachable as `<module>#<Export>` in a manifest's `requires`. Types only.
  */
-export type { Sandbox, SandboxSlots } from "@prismshadow/penguin-server/internal";
+export type { Sandbox, SandboxSlots } from "../../../../packages/server/src/sandbox/service.js";
 export type { Terminals } from "@penguinharness/plugin-terminal/server";
-export type { Sessions, SessionServiceIface } from "@prismshadow/penguin-server/internal";
+export type { Sessions, SessionServiceIface } from "../../../../packages/server/src/runtime/session-manager.js";
 export type { AgentService } from "@penguinharness/plugin-agents/server";
 export type { AgentConfigService } from "@penguinharness/plugin-agents/server";
-export type { Messaging, MessagingSlots } from "@prismshadow/penguin-server/internal";
+export type { Messaging, MessagingSlots } from "../../../../packages/server/src/runtime/messaging/bridge.js";
 export type {
   PluginConfig,
   PluginConfigField,
@@ -23,6 +23,6 @@ export type {
   PluginConfigSlots,
   SettingsGroupDecl,
 } from "./config.js";
-export type { Http, HttpSlots } from "@prismshadow/penguin-server/internal";
-export type { WebShell, WebShellSlots } from "@prismshadow/penguin-server/internal";
+export type { Http, HttpSlots } from "../../../../packages/server/src/http/app.js";
+export type { WebShell, WebShellSlots } from "../../../../packages/server/src/http/routes/contributions.js";
 export type { PluginCliCommands, PluginCliCommandsSlots } from "./cli-commands.js";
