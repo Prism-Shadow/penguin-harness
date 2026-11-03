@@ -83,7 +83,6 @@ export type { ServerHmrHost } from "./hmr/platform.js";
 export * from "./amsp/keys.js";
 export * from "./config.js";
 export * from "./db/repos/auth-sessions.js";
-export * from "@penguinharness/plugin-plugins/server";
 export { Clock } from "./hmr/capabilities.js";
 export * from "./net/proxy.js";
 export { parsePluginIndex, withoutIcon, BUILTIN_REGISTRY_SOURCE, builtinPluginRegistry, httpPluginRegistry, NIGHTLY_INDEX_URL } from "./plugin/registry.js";
