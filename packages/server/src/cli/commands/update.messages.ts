@@ -3,6 +3,8 @@
 package). Field names and shapes are unchanged; the host's table spreads this file in.
  */
 
+import type { InstallerSource } from "../i18n.js";
+
 export interface UpdateText {
   /** `penguin update`: help text and every line the command can print. */
   update: {
