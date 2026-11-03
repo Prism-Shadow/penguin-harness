@@ -167,7 +167,7 @@ import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
 import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
 import { usageRoutes } from "@penguinharness/plugin-usage/server";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
-import { sessionMessagingRoutes } from "./http/routes/messaging.js";
+import { sessionMessagingRoutes } from "@penguinharness/plugin-messaging/server";
 import { versionRoutes } from "./http/routes/version.js";
 import { machinesRoutes } from "@penguinharness/plugin-machines/server";
 import { UsageRecorder } from "./runtime/usage-recorder.js";

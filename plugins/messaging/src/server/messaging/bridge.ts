@@ -46,7 +46,7 @@ import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
 import { sessionMessagingRoutes } from "../routes/messaging.js";
 import type { Channels, Clock, Log, Paths } from "@prismshadow/penguin-server/internal";
-import type { Access } from "@penguinharness/plugin-projects/server";
+import type { Access } from "@prismshadow/penguin-server/internal";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Errors } from "@prismshadow/penguin-server/internal";
 import type { WorkspaceFiles } from "@prismshadow/penguin-server/internal";
