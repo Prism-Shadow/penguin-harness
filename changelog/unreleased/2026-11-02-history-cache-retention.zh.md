@@ -3,6 +3,7 @@
 - **Date:** 2026-11-02
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1432](https://github.com/Prism-Shadow/penguin-harness/pull/1432)
 
 [English](2026-11-02-history-cache-retention.md)
 
