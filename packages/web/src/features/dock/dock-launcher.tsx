@@ -55,6 +55,11 @@ import {
 
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { subscribeTerminals, terminalApiSupported } from "@penguinharness/plugin-terminal/web";
+import { openTerminalInDock } from "./dock-terminal";
+
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
+import { subscribeTerminals, terminalApiSupported } from "../terminal";
 import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";
 import {

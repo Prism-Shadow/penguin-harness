@@ -10,7 +10,7 @@
  * selected differs. What the terminal SCREEN uses is a separate concern — the sixteen ANSI
  * colours live in terminal-view.tsx.
  */
-import { useTheme } from "../../state/theme";
+import { useTheme } from "@prismshadow/penguin-web/internal";
 
 export interface TerminalChrome {
   /** True when the terminal is painting dark, whatever the app is doing. */

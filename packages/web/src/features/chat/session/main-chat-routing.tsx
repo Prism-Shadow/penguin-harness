@@ -12,8 +12,10 @@ import {
 } from "../session-project";
 import { machineForSession } from "../../../lib/session-machines";
 import { useMachineModels } from "../../../lib/machine-models";
-import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
-import { terminalApiSupported, subscribeTerminals } from "../../terminal";
+import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
+import { terminalApiSupported, subscribeTerminals } from "@penguinharness/plugin-terminal/web";
+
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */

@@ -64,9 +64,9 @@ import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middlew
 import { originRule } from "./http/public-origin.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
-import type { Identity } from "./terminal/identity.js";
-import { terminalRoutes } from "./terminal/routes.js";
-import type { TerminalManager } from "./terminal/manager.js";
+import type { Identity } from "@penguinharness/plugin-terminal/server";
+import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
+import type { TerminalManager } from "@penguinharness/plugin-terminal/server";
 import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";

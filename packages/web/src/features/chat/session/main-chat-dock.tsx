@@ -3,6 +3,9 @@ import { useCallback } from "react";
 import { sessionThinkingLevel } from "../../model-picker";
 import { useDockMount, closedDockView, dockViews } from "../../dock";
 import type { ChatDockState } from "./main-dock-context";
+import { terminalApiSupported } from "@penguinharness/plugin-terminal/web";
+
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
 import type { useMainChatActions } from "./main-chat-actions";
 
 /**

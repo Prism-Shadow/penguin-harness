@@ -22,12 +22,17 @@ import {
   noteTerminalCreated,
   noteTerminalReowned,
   refreshTerminals,
+} from "@penguinharness/plugin-terminal/web";
+import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
+
   terminalApiSupported,
   terminalsOf,
   watchTerminals,
   type TerminalInfo,
 } from "../terminal";
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
+} from "../terminal";
 import {
   currentDockScope,
   docksOnScreen,

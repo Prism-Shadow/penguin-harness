@@ -3,9 +3,7 @@
  *
  * Ownership is per user, not per project: a shell runs as the OS account hosting the server
  * and can read and write everything that account can, so it is not a project-scoped
- * resource and must never be reachable by another account. Within a user's shells, each
- * also records the conversation (Session) it was opened for — a label, not a permission:
- * it is what the Web App files a shell under, so one conversation never lists another's.
+ * resource and must never be reachable by another account.
  *
  * Two lifetime rules matter:
  * - A session that has exited is kept for a short grace period instead of being dropped, so
@@ -16,7 +14,7 @@
 import fsp from "node:fs/promises";
 import type { Resources, Opaque, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import { spawnHelperHint } from "./spawn-helper.js";
 import { loadedNodePtyDir } from "./pty-module.js";
 import {
@@ -27,16 +25,16 @@ import {
   type TerminalSessionInfo,
 } from "./session.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppEnv } from "../auth/middleware.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { Hono } from "hono";
-import { Config, Hmr, ResourceGroups } from "../hmr/capabilities.js";
-import type { SessionEnv } from "../runtime/session-manager.js";
+import { Config, Hmr, ResourceGroups } from "@prismshadow/penguin-server/internal";
+import type { SessionEnv } from "@prismshadow/penguin-server/internal";
 import { shellStartupDir, type TerminalPathFirst } from "./shell-startup.js";
 import { shimNamesDataRoot, terminalCliNotice } from "./cli-notice.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
-import type { Auth } from "../mechanisms/identity.js";
-import type { RemoteTerminals } from "../machines/terminal-relay.js";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+import type { RemoteTerminals } from "../terminal-relay.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */
 export const EXITED_SESSION_GRACE_MS = 5 * 60 * 1000;
@@ -46,8 +44,6 @@ export const MAX_TERMINALS_PER_USER = 12;
 export interface CreateTerminalRequest {
   cwd: string;
   ownerUserId: string;
-  /** The conversation the shell is opened for; absent or null for none. */
-  sessionId?: string | null;
   name?: string;
   cols?: number;
   rows?: number;
@@ -137,7 +133,6 @@ export class TerminalManager {
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
-      sessionId: request.sessionId ?? null,
       seq,
       name,
       ...(this.opts.assets !== undefined ? { assets: this.opts.assets } : {}),
@@ -257,13 +252,6 @@ export class TerminalManager {
 
   listInfo(userId: string): TerminalSessionInfo[] {
     return this.list(userId).map((session) => session.info());
-  }
-
-  /** Files one of the user's shells under another conversation (a self-healed Session id). */
-  reown(id: string, userId: string, sessionId: string | null): TerminalSession {
-    const session = this.require(id, userId);
-    session.setSession(sessionId);
-    return session;
   }
 
   kill(id: string, userId: string): void {

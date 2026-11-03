@@ -22,7 +22,7 @@ import { loadNodePty, loadedNodePtyDir } from "./pty-module.js";
 import { defaultTerminalShell } from "./shell.js";
 import { shellLaunch, type ShellNotice, type TerminalPathFirst } from "./shell-startup.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
-import { ensureSpawnHelperExecutable } from "../terminal/spawn-helper.js";
+import { ensureSpawnHelperExecutable } from "./spawn-helper.js";
 import {
   captureLines,
   renderRestoreAnsi,
@@ -66,12 +66,6 @@ export interface CreateTerminalSessionOptions {
   cwd: string;
   /** Owning user id — a shell is the most privileged thing this server hands out. */
   ownerUserId: string;
-  /**
-   * The conversation (PenguinHarness Session) this shell was opened for — not this object's own
-   * id. A label the Web App files the shell under, so each conversation lists only its own; null
-   * for a shell no conversation asked for (the API, the CLI, the standalone /terminal page).
-   */
-  sessionId?: string | null;
   /**
    * Stable per-user display number (tmux-style), assigned by the manager at creation. It
    * travels with the terminal for its whole life — UI numbering must never depend on list
@@ -142,8 +136,6 @@ export interface TerminalSessionInfo {
   name: string;
   cwd: string;
   ownerUserId: string;
-  /** The conversation the shell belongs to, or null (see CreateTerminalSessionOptions.sessionId). */
-  sessionId: string | null;
   title: string | null;
   cols: number;
   rows: number;
@@ -246,8 +238,6 @@ export class TerminalSession {
   readonly createdAt = new Date();
 
   private name: string;
-  /** The conversation this shell belongs to; changes only when that conversation's id does. */
-  private owningSession: string | null;
   private readonly terminal: Terminal;
   private readonly ptyProcess: IPty;
   private readonly inputMode = new TerminalInputModeTracker();
@@ -267,7 +257,6 @@ export class TerminalSession {
     this.seq = options.seq ?? 1;
     this.cwd = options.cwd;
     this.ownerUserId = options.ownerUserId;
-    this.owningSession = options.sessionId ?? null;
     this.name = options.name ?? (path.basename(options.cwd) || "terminal");
 
     const cols = clampDimension(options.cols, DEFAULT_COLS, 1000);
@@ -408,7 +397,6 @@ export class TerminalSession {
       name: this.name,
       cwd: this.cwd,
       ownerUserId: this.ownerUserId,
-      sessionId: this.owningSession,
       title: this.title,
       cols: this.sizeState.cols,
       rows: this.sizeState.rows,
@@ -422,11 +410,6 @@ export class TerminalSession {
   rename(name: string): void {
     const trimmed = name.trim();
     if (trimmed) this.name = trimmed;
-  }
-
-  /** Files the shell under another conversation — the same one, once its id has self-healed. */
-  setSession(sessionId: string | null): void {
-    this.owningSession = sessionId;
   }
 
   write(data: string): void {

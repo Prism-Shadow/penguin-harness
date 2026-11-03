@@ -20,6 +20,10 @@ import { format } from "node:url";
 import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
+import { SESSION_COOKIE } from "@prismshadow/penguin-server/internal";
+import type { ServerHmrHost } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
 import { acceptsOrigin, publicOrigin, sameOriginSite } from "../http/public-origin.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
@@ -27,6 +31,10 @@ import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
 import { apiSocketRef } from "../socket/ref.js";
 import { API_SOCKET_DEFLATE, compressesApiSocket } from "../socket/compression.js";
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims)):packages/server/src/terminal/ws.ts
+import { SESSION_COOKIE } from "../auth/middleware.js";
+import type { ServerHmrHost } from "../hmr/platform.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 

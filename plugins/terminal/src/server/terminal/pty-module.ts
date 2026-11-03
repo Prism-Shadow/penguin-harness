@@ -28,7 +28,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+import { unpackedAssetsDir } from "@prismshadow/penguin-server/internal";
 
 /** The slice of node-pty this package uses (kept narrow so the fallback stays checkable). */
 export interface NodePty {

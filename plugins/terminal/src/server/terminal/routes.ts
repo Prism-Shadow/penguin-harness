@@ -3,7 +3,7 @@
  *
  * Mounted by http/app.ts's HttpModule beside the business route groups, so all
  * platform routes register into ONE app and swap as one unit. This group owns exactly
- * the seven routes below and nothing else under its prefix: unknown paths and methods fall
+ * the six routes below and nothing else under its prefix: unknown paths and methods fall
  * to the parent app's notFound, which declines to the runtime. The identity gate is
  * attached per-route, not as a prefix middleware, so a request nothing here serves
  * declines BEFORE authentication, same as a request outside the prefix.
@@ -21,7 +21,6 @@
  *   GET    /api/terminals            list the caller's terminals
  *   POST   /api/terminals            create one (cwd defaults to the home directory)
  *   GET    /api/terminals/:id        one terminal's metadata
- *   PATCH  /api/terminals/:id        file it under another conversation (`sessionId`)
  *   DELETE /api/terminals/:id        kill it
  *   GET    /api/terminals/:id/capture   plain-text screen contents
  *   POST   /api/terminals/:id/keys      send text or key tokens
@@ -29,16 +28,11 @@
  * `capture` and `keys` exist because a terminal should be readable and drivable by things
  * that are not a rendering client — the e2e check for reload fidelity uses them, and they
  * are the same two primitives an agent needs to run a command and read the result.
- *
- * Every terminal carries the conversation it was opened for (`sessionId`, null for none),
- * set on create and changed only by PATCH, when that conversation's id self-heals. It is a
- * label within one user's shells, not a permission — the user gate above is the boundary —
- * so it is recorded as given, without asking whether such a Session exists.
  */
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest } from "@prismshadow/penguin-server/internal";
 import type { TerminalManager } from "./manager.js";
 import type { IdentifiedUser, Identity } from "./identity.js";
 
@@ -81,15 +75,6 @@ function optionalInt(value: unknown, field: string): number | undefined {
   return value as number;
 }
 
-/** A conversation id as a request names it: a non-empty string, or null / absent for none. */
-function sessionIdOf(value: unknown): string | null {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "string" || value.trim() === "") {
-    throw badRequest("sessionId must be a non-empty string or null.");
-  }
-  return value.trim();
-}
-
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -99,9 +84,7 @@ function json(body: unknown, status = 200): Response {
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   try {
-    const body: unknown = await request.json();
-    // A JSON `null` or scalar is no body to read fields from, the same as a malformed one.
-    return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    return (await request.json()) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -136,13 +119,6 @@ export function terminalRoutes(manager: TerminalManager, identity: Identity): Ho
   app.get("/api/terminals/:id", gate, (c) =>
     json(manager.require(c.req.param("id"), c.var.user.userId).info()),
   );
-  app.patch("/api/terminals/:id", gate, async (c) => {
-    const body = await readBody(c.req.raw);
-    // Required, so an empty or mistyped body cannot silently file a shell under no one.
-    if (body.sessionId === undefined) throw badRequest("sessionId is required (null for none).");
-    const sessionId = sessionIdOf(body.sessionId);
-    return json(manager.reown(c.req.param("id"), c.var.user.userId, sessionId).info());
-  });
   app.delete("/api/terminals/:id", gate, (c) => {
     manager.kill(c.req.param("id"), c.var.user.userId);
     return new Response(null, { status: 204 });
@@ -182,7 +158,6 @@ async function create(request: Request, manager: TerminalManager, ownerUserId: s
   const session = await manager.create({
     cwd,
     ownerUserId,
-    sessionId: sessionIdOf(body.sessionId),
     ...(name !== undefined ? { name } : {}),
     ...(shell !== undefined ? { shell } : {}),
     ...(optionalInt(body.cols, "cols") !== undefined ? { cols: body.cols as number } : {}),

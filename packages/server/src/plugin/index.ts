@@ -11,7 +11,7 @@
  * beside its owner — reachable as `<module>#<Export>` in a manifest's `requires`. Types only.
  */
 export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
-export type { Terminals } from "../terminal/manager.js";
+export type { Terminals } from "@penguinharness/plugin-terminal/server";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";

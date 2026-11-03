@@ -23,18 +23,18 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
 import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
-import { writeClipboard } from "../../lib/clipboard";
+import { writeClipboard } from "@prismshadow/penguin-web/internal";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
 import { TouchScroll } from "./terminal-touch";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { useTheme } from "../../state/theme";
-import { currentPlatform } from "../../lib/shortcuts/platform";
-import { keymap } from "../../lib/shortcuts/store";
-import { terminalClipboardAction } from "../../lib/shortcuts/terminal-clipboard";
-import { terminalKeyAction } from "../../lib/shortcuts/terminal-keys";
-import { useAuth } from "../../state/auth";
-import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
+import { useCoarsePointer } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
+import { currentPlatform } from "@prismshadow/penguin-web/internal";
+import { keymap } from "@prismshadow/penguin-web/internal";
+import { terminalClipboardAction } from "@prismshadow/penguin-web/internal";
+import { terminalKeyAction } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { machineForTerminal, terminalUrl } from "@prismshadow/penguin-web/internal";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD

@@ -76,6 +76,22 @@ import { S } from "../../lib/strings";
 import { chordKeys } from "../../components/ui/chord-kbd";
 import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
+import {
+  useTerminalChrome,
+  displayTitle,
+  killTerminal,
+  liveTerminals,
+  subscribeTerminals,
+  subscribeTerminalViewStates,
+  terminalViewContainer,
+  terminalViewState,
+  subscribeTerminalCloseRequests,
+  type TerminalInfo,
+} from "@penguinharness/plugin-terminal/web";
+
+
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
+} from "../terminal";
 import { invalidateSlotClips } from "../builtin-browser";
 import { confirmClose } from "../../lib/dock-close-guard";
 import { TERMINAL_PANEL } from "./dock-terminal";

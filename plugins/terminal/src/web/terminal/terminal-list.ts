@@ -12,15 +12,22 @@
  *   tab cannot see (a shell exiting on its own, terminals opened from another window).
  */
 import type { TerminalInfo } from "./terminal-view";
+import { probeSession } from "@prismshadow/penguin-web/internal";
+import { pruneTerminalTabs } from "../dock/dock-state";
+import { apiUrl } from "@prismshadow/penguin-web/internal";
+
 import { probeSession } from "../../api/session-probe";
 import { ANSWER_TIMEOUT_MS } from "../../api/socket";
+import { apiUrl } from "../../lib/server-context";
+||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims)):packages/web/src/features/terminal/terminal-list.ts
+import { probeSession } from "../../api/session-probe";
 import { apiUrl } from "../../lib/server-context";
 import {
   machineForTerminal,
   rememberTerminalMachine,
   terminalSources,
   terminalUrl,
-} from "../../lib/terminal-machines";
+} from "@prismshadow/penguin-web/internal";
 
 /**
  * Shell titles usually open with a `user@host` marker (bash and zsh default title
