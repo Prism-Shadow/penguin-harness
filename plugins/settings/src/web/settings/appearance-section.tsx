@@ -22,17 +22,17 @@ import {
   ToggleRow,
 } from "@prismshadow/penguin-ui";
 import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
-import { S } from "../../lib/strings";
-import * as api from "../../api/endpoints";
-import { isDesktopShellWindow } from "../../lib/account-menu";
-import { useInstantSetting } from "../../lib/instant-setting";
+import { S } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { isDesktopShellWindow } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
 import {
   launcherHiddenVersion,
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-} from "../dock";
-import { useAuth } from "../../state/auth";
+} from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
 import {
   accentSwatches,
   useTheme,
@@ -42,9 +42,9 @@ import {
   type TextSize,
   type ThemeId,
   type ThemeMode,
-} from "../../state/theme";
+} from "@prismshadow/penguin-web/internal";
 
-import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
+import { FONT_FOLLOWS_THEME, effectiveAccent } from "@prismshadow/penguin-web/internal";
 import { BackgroundControls } from "./background-controls";
 
 /**

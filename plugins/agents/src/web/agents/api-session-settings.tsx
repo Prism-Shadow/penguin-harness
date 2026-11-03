@@ -14,12 +14,12 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { useInstantSetting } from "../../lib/instant-setting";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 
 interface ApiSettingsProps {

@@ -46,17 +46,17 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import type { AgentMcpServerItem, McpServerTestResponse } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { localizedText } from "../../lib/skill-use";
-import { McpServerMarks } from "../plugins";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { McpServerMarks } from "@prismshadow/penguin-web/internal";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */
 function targetOf(entry: MCPServerConfig): string {

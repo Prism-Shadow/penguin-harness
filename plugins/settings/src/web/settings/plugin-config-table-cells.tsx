@@ -4,7 +4,7 @@
  */
 import { useLayoutEffect, useRef } from "react";
 import { GlyphIcon, ICONS, ICON_SIZE, Textarea } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The one box every icon control in a table row takes, so a row's icons line up. */
 export const ICON_BUTTON =

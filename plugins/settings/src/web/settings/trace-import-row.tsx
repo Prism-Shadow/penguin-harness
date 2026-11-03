@@ -27,11 +27,11 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;

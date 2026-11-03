@@ -60,12 +60,12 @@ import {
   type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
 
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import {
   normalizeRuntime,
   runtimeDraftOf,
@@ -96,7 +96,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
+import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
 
 type TabKey =
   | "overview"

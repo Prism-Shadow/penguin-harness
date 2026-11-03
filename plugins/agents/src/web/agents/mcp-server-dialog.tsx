@@ -37,10 +37,10 @@ import {
   type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
 
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import {
   emptyMcpForm,
   entryToTest,

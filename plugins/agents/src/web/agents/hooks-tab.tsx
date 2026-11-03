@@ -51,15 +51,15 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { localizedText } from "../chat";
-import { SkillTile } from "../skills";
-import { useAiBridge } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";

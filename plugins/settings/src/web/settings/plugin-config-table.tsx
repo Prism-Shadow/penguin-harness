@@ -27,10 +27,10 @@ import type {
   PluginConfigTableColumn,
 } from "@prismshadow/penguin-server/api";
 import { Button, InfoPopover } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import type { TableDraft } from "./plugin-config-draft";
 import { Cell, rowHelp, type DrawnRow } from "./plugin-config-field-cell";
 

@@ -8,7 +8,7 @@
  */
 import { useState } from "react";
 import { Dropdown, GlyphIcon, ICONS, ICON_SIZE, Menu, MenuItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { ICON_BUTTON } from "./plugin-config-table-cells";
 
 /** One item of a row's menu; `blocked` says why it cannot be used now. */

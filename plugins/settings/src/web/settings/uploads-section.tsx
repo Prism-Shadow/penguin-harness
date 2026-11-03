@@ -28,12 +28,12 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { useAuth } from "../../state/auth";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
 
 /** The two boxes as typed. Kept as strings: a number input that clears to NaN cannot be typed into. */
 interface LimitsDraft {

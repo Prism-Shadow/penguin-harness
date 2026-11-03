@@ -30,25 +30,25 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { localizedText } from "../chat";
-import { apiErrorText } from "../../lib/api-error";
-import { useSessions } from "../../state/sessions";
-import { useProject } from "../../state/project";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import {
   THIS_SERVER_KEY,
   backendToOffer,
   dismissBackendPrompt,
   installInOrder,
-} from "../../lib/sandbox-backend-prompt";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
+} from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
 import { MachinePicker } from "@penguinharness/plugin-machines/web";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
+} from "@prismshadow/penguin-web/internal";
 import { PluginCard } from "./plugin-config-card";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";

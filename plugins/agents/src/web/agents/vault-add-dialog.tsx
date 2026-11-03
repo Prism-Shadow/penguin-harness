@@ -20,7 +20,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 export const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;

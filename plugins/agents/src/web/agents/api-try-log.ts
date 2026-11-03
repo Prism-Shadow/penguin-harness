@@ -30,8 +30,8 @@ import {
   type TokenCounts,
 } from "@prismshadow/amsp";
 
-import { ApiError } from "../../api/client";
-import * as api from "../../api/endpoints";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
 
 /** Where a one-line value is cut, so one long argument string does not take the row. */
 const CUT = 120;

@@ -45,10 +45,10 @@ import {
   toastSuccess,
   useFormDraft,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useProject } from "../../state/project";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 

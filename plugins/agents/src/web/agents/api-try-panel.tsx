@@ -40,10 +40,10 @@ import {
   Text,
   toastError,
 } from "@prismshadow/penguin-ui";
-import { apiErrorText } from "../../lib/api-error";
-import { formatBytes } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import {
   answerApproval,
   initialTryState,

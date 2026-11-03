@@ -25,13 +25,13 @@
 import { useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { Button, toastError, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import type { Locale } from "../../state/locale";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { dispatchPluginConfigSaved } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
 import { AdvancedFold } from "./advanced-fold";
 import {
   baselineOf,

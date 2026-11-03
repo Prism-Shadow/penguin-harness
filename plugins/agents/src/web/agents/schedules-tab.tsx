@@ -42,12 +42,12 @@ import {
   type BadgeStyle,
 } from "@prismshadow/penguin-ui";
 
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { useProject } from "../../state/project";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
 import { usePromptInjection } from "./prompt-injection-controls";
 

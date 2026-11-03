@@ -46,20 +46,20 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
   type AvatarCrop,
-} from "../../lib/avatar-image";
+} from "@prismshadow/penguin-web/internal";
 
-import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { profileControls } from "../../lib/profile-form";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { useAuth } from "../../state/auth";
+import { AvatarCropDialog } from "@prismshadow/penguin-web/internal";
+import { profileControls } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";

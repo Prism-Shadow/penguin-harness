@@ -17,15 +17,15 @@ import {
   SkeletonList,
   toastError,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-tabs";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { localizedText } from "../chat";
-import { SkillTile } from "../skills";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {

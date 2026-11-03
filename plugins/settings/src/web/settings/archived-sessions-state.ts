@@ -35,9 +35,9 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { SIDEBAR_PAGE_SIZE, activityKeyOf } from "../../lib/session-grouping";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { SIDEBAR_PAGE_SIZE, activityKeyOf } from "@prismshadow/penguin-web/internal";
 
 /** Groups shown before "more groups". */
 export const ARCHIVE_GROUP_PAGE = 20;

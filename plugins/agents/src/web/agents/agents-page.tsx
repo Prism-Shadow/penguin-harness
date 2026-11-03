@@ -47,25 +47,25 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeDays } from "../../lib/format";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { mergeAgents, type AgentSource } from "../../lib/benchmark-merge";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, formatRelativeDays } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
+import { dismissTodo } from "@prismshadow/penguin-web/internal";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
+import { mergeAgents, type AgentSource } from "@prismshadow/penguin-web/internal";
 
-import { useSessions } from "../../state/sessions";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, type PluginPickItem } from "./create-agent-dialog";
 

@@ -21,14 +21,14 @@ import {
   SettingsGroup,
   SettingsSection,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { conflictsOf, findConflicts, type Conflict } from "../../lib/shortcuts/conflicts";
-import { currentHost, currentPlatform } from "../../lib/shortcuts/platform";
-import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "../../lib/shortcuts/registry";
-import { browserCommon, browserReserved, desktopReserved } from "../../lib/shortcuts/reserved";
-import { isOverridden, resetAll, resetBinding, setBinding } from "../../lib/shortcuts/store";
-import type { Chord, CommandId, ShortcutCommand } from "../../lib/shortcuts/types";
-import { useKeymap } from "../../lib/shortcuts/use-keymap";
+import { S } from "@prismshadow/penguin-web/internal";
+import { conflictsOf, findConflicts, type Conflict } from "@prismshadow/penguin-web/internal";
+import { currentHost, currentPlatform } from "@prismshadow/penguin-web/internal";
+import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "@prismshadow/penguin-web/internal";
+import { browserCommon, browserReserved, desktopReserved } from "@prismshadow/penguin-web/internal";
+import { isOverridden, resetAll, resetBinding, setBinding } from "@prismshadow/penguin-web/internal";
+import type { Chord, CommandId, ShortcutCommand } from "@prismshadow/penguin-web/internal";
+import { useKeymap } from "@prismshadow/penguin-web/internal";
 import { ShortcutRecorder } from "./shortcut-recorder";
 
 interface RowHint {

@@ -9,10 +9,10 @@
  */
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import { Button, HelpFold, InfoPopover, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import { switchedOff } from "./plugin-config-draft";
 
 export function ConfigHeading({

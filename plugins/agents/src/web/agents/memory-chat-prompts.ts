@@ -8,7 +8,7 @@
  * Read `S` inside the functions, never at module top level: the dictionary binding is swapped
  * on language switch.
  */
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function buildMemoryEditPrompt(title: string, requirement = ""): string {
   const base = `${S.memory.editPromptLead(title)}\n${S.memory.editPromptTail}`;
