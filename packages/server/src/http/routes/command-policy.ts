@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Access, ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { Machines } from "@penguinharness/plugin-machines/server";
 
 /** What this route group reaches — bound by its module (src/modules). */

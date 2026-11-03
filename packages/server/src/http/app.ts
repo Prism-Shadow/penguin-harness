@@ -12,7 +12,7 @@ import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "../mechanisms/identity.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
 

@@ -8,8 +8,8 @@
  * a reader never sees half of one.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { ModelPromotion, ModelPromotions } from "../../mechanisms/projects.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { ModelPromotion, ModelPromotions } from "../mechanism.js";
 
 @Component()
 export class ModelPromotionsRepo implements ModelPromotions {

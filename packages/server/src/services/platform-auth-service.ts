@@ -14,7 +14,7 @@ import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog"
 import { HttpError } from "../http/errors.js";
 import { normalizePenguinGoOrigin } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,

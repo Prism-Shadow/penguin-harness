@@ -4,6 +4,11 @@
  * routes, exported for the server's composition root.
  */
 export * from "./projects/project-service.js";
+export * from "./mechanism.js";
+export * from "./repos/projects.js";
+export * from "./repos/members.js";
+export * from "./repos/model-promotions.js";
+export * from "./repos/model-provider-auth-tokens.js";
 export * from "./projects/project-config-service.js";
 export * from "./projects/project-access.js";
 export * from "./projects/project-events.js";

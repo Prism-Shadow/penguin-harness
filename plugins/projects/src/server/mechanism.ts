@@ -2,8 +2,8 @@
  * The projects mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AccessibleProjectRow, ProjectRow } from "../db/repos/projects.js";
-import type { MemberRow } from "../db/repos/members.js";
+import type { AccessibleProjectRow, ProjectRow } from "./repos/projects.js";
+import type { MemberRow } from "./repos/members.js";
 import type { AgentRow } from "@penguinharness/plugin-agents/server";
 import type {
   ChatDefaultsDto,
@@ -26,8 +26,8 @@ import type {
   ProviderConnectionUpdate,
   ProjectSummary,
   ServerEvent,
-} from "../api/types.js";
-import type { UserRow } from "../db/repos/users.js";
+} from "@prismshadow/penguin-server/api";
+import type { UserRow } from "@prismshadow/penguin-server/internal";
 import type { RawTable, UtilityCompletion } from "@penguinharness/plugin-projects/server";
 import type {
   ListEndpointModelsOptions,
@@ -40,7 +40,7 @@ import type { TieredRates } from "@penguinharness/plugin-usage/server";
 import type {
   PlatformModelApplyResult,
   PlatformModelCatalog,
-} from "../services/platform-auth-types.js";
+} from "@prismshadow/penguin-server/internal";
 import type {
   ModelOAuthErrorCode,
   ModelOAuthMode,

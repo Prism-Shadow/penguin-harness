@@ -55,7 +55,7 @@ import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/s
 import { matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 
