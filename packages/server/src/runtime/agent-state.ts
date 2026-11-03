@@ -11,8 +11,8 @@
  */
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { AgentState, RunStarter } from "../mechanisms/sessions.js";
-import { LiveTailTracker } from "./live-tail.js";
-import type { LiveTail } from "./live-tail.js";
+import { LiveTailTracker } from "@penguinharness/plugin-sessions/server";
+import type { LiveTail } from "@penguinharness/plugin-sessions/server";
 import type { RuntimeEntry } from "./session-manager.js";
 
 @Component()
