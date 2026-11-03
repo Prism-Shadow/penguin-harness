@@ -12,8 +12,12 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "@xterm/addon-clipboard": "^0.1.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
     "@xterm/headless": "^5.5.0",
     "@xterm/xterm": "^5.5.0",
     "hono": "^4.12.34",
