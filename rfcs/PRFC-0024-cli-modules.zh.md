@@ -69,10 +69,10 @@ CLI 自有的二十条命令各是这样一个 `@Component` 类，贡献给 `Cli
 命令行首词是 CLI 自有命令时，照旧本地运行。否则：
 
 - **恰有一个包答。** CLI 向一份已在跑的 server 查命令列表（不启动 server）。一条命令「答」一个命令行，指它的 key 与命令行的前导词逐段一致（判定见 Reference）；找到恰有一个包的命令答这些词，经 server 运行，把带回的输出当作自己的打印。
-- **两个及以上包答。** 这就是歧义。CLI 逐包打印一行可直接复制的 `penguin exec <包> …`，退出码 2，什么都不运行——由调用方指明它要的那一个。
+- **两个及以上包答。** 这就是歧义。CLI 逐包打印一行可直接复制的 `penguin exec <包>:<id>`，退出码 2，什么都不运行——由调用方指明它要的那一个。
 - **无人答。** 命令行交回 CLI 自己的解析，照旧报未知命令。
 
-`penguin exec <包> [args…]` 是无歧义形式：包已被点名，无可歧义。npm 全名精确解析；短名在恰有一个贡献包携带它时可用。同其他需要 server 的命令一样，server 未运行时它会启动一个。
+`penguin exec <id> [args…]` 直接按点分 id 点名一条插件命令——`sandbox.wsl.restart`，至少两段——id 之后的所有选项（包括 `--help`）都归那条命令。两个插件贡献同一 id 时，用 npm 全名点名：`penguin exec <包>:<id>`，scope 不可省略。`penguin exec ls [包]` 列出各插件贡献的 id，旁边是各自的摘要。同其他需要 server 的命令一样，server 未运行时它会启动一个。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -113,9 +113,9 @@ CLI 的隐式分派是 argv 与列表的一个纯函数。**命令词**是 argv 
 - 一个包有多条命令仍只算一个候选：匹配按包计、去重。
 - `tool`（包 A）与 `tool sub`（包 B）都应答 `tool sub x`——两个包，即歧义。一词被一个包前缀、被另一个包延展，不构成打破平局的依据；打破平局靠具名，那就是 `penguin exec`。
 
-歧义报告逐包打印一行——`penguin exec <完整包名> -- <原 argv>`——每个词按 POSIX shell 能原样读回的方式加引号；argv 带选项时必带 `--`，让 CLI 把选项交给插件而不是自己读走。报告写 stderr、退出码 2，什么都不运行。
+歧义报告逐包打印一行——`penguin exec <包>:<id>`，id 取该包应答 argv 的命令中最长的 key——后接 argv 中 key 未命名的部分，每个词按 POSIX shell 能原样读回的方式加引号。粘贴这行，即以同样的参数（选项在内）运行那条插件命令，无需 `--`。报告写 stderr、退出码 2，什么都不运行。
 
-`penguin exec` 按列表解析名字：npm 全名精确命中即胜；短名（最后一个 `/` 之后的部分）在恰有一个贡献包携带它时可用；撞名列出各全名，未知名列出候选，两者退出码 1、什么都不运行。请求携带 `prog`——隐式分派是 `penguin`，显式形式是 `penguin exec <名>`——用法行按调用方的叫法打印；还携带 `language`，summary 与命令自己的文字按调用方语言返回。
+`penguin exec` 按列表解析 id：id 是至少两段的点分 key，精确匹配——不做前缀或后缀匹配。裸 id 在恰有一个贡献包携带它时可用；撞名列出各包，未知 id 列出全部 id，两者退出码 1、什么都不运行。带前缀的形式 `<包>:<id>` 取 npm 全名——scope 不可省略——读作该包的这条 id。`penguin exec ls` 列出全部命令及其包与摘要；带包名则只列该包的命令。请求携带 `prog`——隐式分派是 `penguin`，显式形式是 `penguin exec <名>`——用法行按调用方的叫法打印；还携带 `language`，summary 与命令自己的文字按调用方语言返回。
 
 一处降级明说：列表取不到时——server 未在跑，或查询失败——CLI 无法知道是否有插件本会答，于是退回自己的解析、报未知命令。隐式分派把「问不到」与「没有命中」同样对待；`penguin exec` 的存在，正是让需要这条命令的调用方不必依赖那个回退。
 
@@ -159,7 +159,7 @@ manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与�
 
 **VS Code 的 contribution points** 是静态半的原型：命令在 manifest 里按数据声明——id 加每语言一个标题——扩展在代码里注册 handler；workbench 不执行扩展即可列出声明了什么。我们的槽取同一形状，key 扮演 id 的角色。
 
-**Git、kubectl、cargo 与 gh** 都把子命令分派给具名的可执行文件：`git-remote-*` 在 `PATH` 上，`kubectl-*` 与 `cargo-*` 也在那里找，`gh` 按名运行扩展。具名形式无一例外是最可靠的形式，发现形式的严格程度则各有取舍——kubectl 对撞名给警告，cargo 拒绝歧义短名。`penguin exec <包>` 是具名形式；隐式分派是发现形式，按其中最严格的标准执行：有歧义就不运行，而不是挑一个。
+**Git、kubectl、cargo 与 gh** 都把子命令分派给具名的可执行文件：`git-remote-*` 在 `PATH` 上，`kubectl-*` 与 `cargo-*` 也在那里找，`gh` 按名运行扩展。具名形式无一例外是最可靠的形式，发现形式的严格程度则各有取舍——kubectl 对撞名给警告，cargo 拒绝歧义短名。`penguin exec <id>` 是具名形式；隐式分派是发现形式，按其中最严格的标准执行：有歧义就不运行，而不是挑一个。
 
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
@@ -172,7 +172,7 @@ manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与�
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-补全与 help 可以只从静态半出，内建与插件一视同仁，包括 `penguin exec <包>` 无参数的帮助——它已经是了。别名——第二个 key 答同一条目——能让一个包改名命令而不破脚本。桌面若有一天在同一张表上长出命令面板，它读两条路由与本地表即可，无需新机制。
+补全与 help 可以只从静态半出，内建与插件一视同仁，包括 `penguin exec ls` 的列表——它已经是了。别名——第二个 key 答同一条目——能让一个包改名命令而不破脚本。桌面若有一天在同一张表上长出命令面板，它读两条路由与本地表即可，无需新机制。
 
 ---
 

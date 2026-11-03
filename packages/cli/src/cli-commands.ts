@@ -504,8 +504,8 @@ export class WebCommand {
         id: "cli.exec",
         key: "exec",
         summary: {
-          en: "Run a plugin's command on the server by naming the plugin (the unambiguous form when two plugins contribute the same command)",
-          zh: "点名插件，在服务端执行它的命令（两个插件贡献同一命令时的无歧义形式）",
+          en: "Run a plugin command on the server by its dotted id (`penguin exec ls` lists what the plugins contribute)",
+          zh: "按点分 id 在服务端执行插件命令（`penguin exec ls` 列出各插件贡献的命令）",
         },
       },
     ],

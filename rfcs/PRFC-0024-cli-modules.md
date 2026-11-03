@@ -69,10 +69,10 @@ A command that cannot run drops out at boot with a warning: a module no loaded p
 When the first word of the command line names one of the CLI's own commands, the CLI runs it as always. Otherwise:
 
 - **One package answers.** The CLI asks a server that is already running for the command list (it does not start one). A command *answers* a command line when its key's segments agree with the line's leading words (the exact judgment is in Reference); the CLI finds exactly one package whose commands answer the words, runs it through the server, and prints what came back as if it were its own.
-- **Two or more packages answer.** That is ambiguity. The CLI prints one copyable `penguin exec <package> …` line per package, exits 2, and runs nothing — the caller says which it meant.
+- **Two or more packages answer.** That is ambiguity. The CLI prints one copyable `penguin exec <package>:<id>` line per package, exits 2, and runs nothing — the caller says which it meant.
 - **None answers.** The command line goes back to the CLI's own parse, which reports the unknown command as it always has.
 
-`penguin exec <package> [args…]` is the unambiguous form: the package is named, so there is nothing to disambiguate. It resolves npm full names exactly, and a short name while exactly one contributing package carries it. Like every command that needs a server, it starts one when none is running.
+`penguin exec <id> [args…]` names a plugin command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — and every option after the id, `--help` included, belongs to that command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. Like every command that needs a server, it starts one when none is running.
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -113,9 +113,9 @@ The CLI's implicit dispatch is a pure function of the argv and the listing. The 
 - A package with several commands is one candidate: the match is per package, deduplicated.
 - `tool` (package A) and `tool sub` (package B) both answer `tool sub x` — two packages, so ambiguous. Words that one package prefixes and another extends are not a tiebreaker; `penguin exec` exists to break ties by name.
 
-The ambiguity report prints one line per package — `penguin exec <full-package-name> -- <original argv>` — with each word quoted the way a POSIX shell reads it back, and `--` present whenever the argv carries an option, so the CLI hands the option to the plugin instead of reading it itself. The report goes to stderr with exit code 2, and nothing runs.
+The ambiguity report prints one line per package — `penguin exec <package>:<id>`, the id being the longest key of that package's commands that answers the argv — followed by the part of the argv the key does not name, with each word quoted the way a POSIX shell reads it back. A pasted line therefore runs the plugin command with the same arguments, options included, no `--` needed. The report goes to stderr with exit code 2, and nothing runs.
 
-`penguin exec` resolves the name against the listing: an exact npm full name wins; a short name (the part after the last `/`) works while exactly one contributing package carries it; a collision names the full names, an unknown name lists the candidates, and both exit 1 without running anything. The request carries `prog` — `penguin` for implicit dispatch, `penguin exec <name>` for the explicit form — so usage lines print as the caller invoked them, and `language`, so the summaries and the command's own text come back in the caller's language.
+`penguin exec` resolves the id against the listing: an id is a dotted key of at least two segments, and it matches exactly — no prefix or suffix matching. A bare id works while exactly one contributing package carries it; a collision names the packages, an unknown id lists the ids, and both exit 1 without running anything. The prefixed form `<package>:<id>` takes the full npm name — the scope is not optional — and reads as that package's id. `penguin exec ls` lists every command with its package and summary; with a package it lists that package's commands. The request carries `prog` — `penguin` for implicit dispatch, `penguin exec <name>` for the explicit form — so usage lines print as the caller invoked them, and `language`, so the summaries and the command's own text come back in the caller's language.
 
 One degradation is stated openly: when the listing cannot be fetched — no server running, or the query fails — the CLI cannot know whether a plugin would have answered, and it falls back to its own parse, which reports the unknown command. Implicit dispatch treats "cannot ask" the same as "no answer"; `penguin exec` exists precisely so a caller who needs the command does not depend on that fallback.
 
@@ -159,7 +159,7 @@ Twenty command components boot statically, which the one-file assembly did not: 
 
 **VS Code's contribution points** are the shape of the static half: commands declared in the manifest as data — id plus a title per language — while the extension registers the handler in code; the workbench lists what is declared without executing the extension. Our slot takes the same shape, with the key playing the id's role.
 
-**Git, kubectl, cargo and gh** all dispatch subcommands to named executables: `git-remote-*` on `PATH`, `kubectl-*` and `cargo-*` found there too, `gh` running extensions by name. The named form is universally the reliable one, and the discovery form varies in strictness — kubectl warns on collisions, cargo refuses ambiguous short names. `penguin exec <package>` is the named form; the implicit dispatch is the discovery form, held to the strictest of these standards: it runs nothing on ambiguity rather than picking.
+**Git, kubectl, cargo and gh** all dispatch subcommands to named executables: `git-remote-*` on `PATH`, `kubectl-*` and `cargo-*` found there too, `gh` running extensions by name. The named form is universally the reliable one, and the discovery form varies in strictness — kubectl warns on collisions, cargo refuses ambiguous short names. `penguin exec <id>` is the named form; the implicit dispatch is the discovery form, held to the strictest of these standards: it runs nothing on ambiguity rather than picking.
 
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
@@ -172,7 +172,7 @@ Twenty command components boot statically, which the one-file assembly did not: 
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-Completion and help can be served from the static half alone, for builtins and plugins alike, including `penguin exec <package>`'s no-argument help, which already is. Aliases — a second key answering the same entry — would let a package rename a command without breaking scripts. If the desktop ever grows a command palette over the same table, it reads the two routes and the local table with no new mechanism.
+Completion and help can be served from the static half alone, for builtins and plugins alike, including `penguin exec ls`'s listing, which already is. Aliases — a second key answering the same entry — would let a package rename a command without breaking scripts. If the desktop ever grows a command palette over the same table, it reads the two routes and the local table with no new mechanism.
 
 ---
 

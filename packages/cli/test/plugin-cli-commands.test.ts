@@ -120,19 +120,33 @@ describe("reportAmbiguous", () => {
   });
 
   it("writes the header, one exec line per package, and the note, and returns 2", () => {
-    const code = reportAmbiguous(["greet", "world"], ["@a/x", "@b/y"], t);
+    const code = reportAmbiguous(
+      ["greet", "world"],
+      [
+        { package: "@a/x", key: "greet", summary: { en: "", zh: "" } },
+        { package: "@b/y", key: "greet", summary: { en: "", zh: "" } },
+      ],
+      t,
+    );
     expect(code).toBe(2);
     const text = stderrSpy.mock.calls.map((c) => c[0]).join("");
     expect(text).toContain("greet world");
-    expect(text).toContain("penguin exec @a/x greet world");
-    expect(text).toContain("penguin exec @b/y greet world");
+    expect(text).toContain("penguin exec @a/x:greet world");
+    expect(text).toContain("penguin exec @b/y:greet world");
     expect(text).toContain(t.ambiguous.note());
   });
 
-  it("inserts -- when the argv carries an option", () => {
-    reportAmbiguous(["greet", "--loud", "two words"], ["@a/one"], t);
+  it("uses the longest matching key and leaves the rest of the argv in place", () => {
+    reportAmbiguous(
+      ["greet", "all", "--loud", "two words"],
+      [
+        { package: "@a/one", key: "greet", summary: { en: "", zh: "" } },
+        { package: "@a/one", key: "greet.all", summary: { en: "", zh: "" } },
+      ],
+      t,
+    );
     const text = stderrSpy.mock.calls.map((c) => c[0]).join("");
-    expect(text).toContain("penguin exec @a/one -- greet --loud 'two words'");
+    expect(text).toContain("penguin exec @a/one:greet.all --loud 'two words'");
   });
 });
 
@@ -184,8 +198,8 @@ describe("dispatchPluginCommand (unit)", () => {
     expect(code).toBe(2);
     expect(source.run).not.toHaveBeenCalled();
     const stderr = stderrSpy.mock.calls.map((c) => c[0]).join("");
-    expect(stderr).toContain("penguin exec @a/x greet world");
-    expect(stderr).toContain("penguin exec @b/y greet world");
+    expect(stderr).toContain("penguin exec @a/x:greet world");
+    expect(stderr).toContain("penguin exec @b/y:greet world");
   });
 
   it("runs the command when exactly one package matches", async () => {
