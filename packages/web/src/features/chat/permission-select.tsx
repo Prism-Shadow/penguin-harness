@@ -67,7 +67,7 @@ import {
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../../lib/skill-use";
-import { SettingsDialog } from "../settings";
+import { SettingsDialog } from "@penguinharness/plugin-settings/web";
 
 /**
  * A level's shield in the level's tone: the button's mark, and the mark ahead of each row's name.

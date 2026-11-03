@@ -54,7 +54,7 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import { AgentSelect } from "../../agents";
+import { AgentSelect } from "@penguinharness/plugin-agents/web";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";

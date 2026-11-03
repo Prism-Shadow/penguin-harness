@@ -44,7 +44,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { apiErrorText } from "../../lib/api-error";
-import { downloadArchive } from "../agents";
+import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
