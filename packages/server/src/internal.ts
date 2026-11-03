@@ -101,3 +101,4 @@ export { APPROVAL_MODES } from "./http/routes/sessions.js";
 export { PluginConfigAdmin } from "./plugin/config-page.js";
 export type { PluginConfigAdminSlots } from "./plugin/config-page.js";
 export type { PluginPackages } from "./mechanisms/plugins.js";
+export type { Sessions, SessionServiceIface } from "./runtime/session-manager.js";
