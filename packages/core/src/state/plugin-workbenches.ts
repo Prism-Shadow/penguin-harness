@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { LibraryPlugin } from "../plugins/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
-import { agentDir } from "./paths.js";
+import { workbenchesDir } from "./paths.js";
 
 export interface InstalledWorkbench {
   name: string;
@@ -19,8 +19,6 @@ const safeSource = (rel: string): boolean =>
   !path.isAbsolute(rel) &&
   !rel.includes("\\") &&
   rel.split("/").every((part) => part !== "" && !part.startsWith(".") && part !== "node_modules");
-const baseDir = (root: string, project: string, agent: string) =>
-  path.join(agentDir(root, project, agent), "workbenches");
 async function receipt(dir: string): Promise<Receipt | null> {
   try {
     const data = JSON.parse(await fs.readFile(path.join(dir, receiptFile), "utf8"));
@@ -45,7 +43,7 @@ export async function listInstalledWorkbenches(
   project: string,
   agent: string,
 ): Promise<InstalledWorkbench[]> {
-  const base = baseDir(root, project, agent);
+  const base = workbenchesDir(root, project, agent);
   let dirs;
   try {
     dirs = await fs.readdir(base, { withFileTypes: true });
@@ -99,7 +97,7 @@ export async function assertPluginWorkbenchesInstallable(
         Object.keys(workbench.files).some((file) => !safeSource(file))
       )
         throw new Error("Invalid workbench payload");
-      const dir = path.join(baseDir(root, project, agent), workbench.name);
+      const dir = path.join(workbenchesDir(root, project, agent), workbench.name);
       const owner = seen.get(workbench.name);
       if (owner && owner !== plugin.name) throw new WorkbenchNameTakenError(workbench.name);
       seen.set(workbench.name, plugin.name);
@@ -125,7 +123,7 @@ export async function installPluginWorkbenches(
   plugin: LibraryPlugin,
 ): Promise<void> {
   for (const workbench of plugin.workbenches ?? []) {
-    const dir = path.join(baseDir(root, project, agent), workbench.name);
+    const dir = path.join(workbenchesDir(root, project, agent), workbench.name);
     const previous = await receipt(dir);
     await fs.mkdir(dir, { recursive: true });
     // Claim before writing source so a failed first install can be retried. Empty version stays outdated.

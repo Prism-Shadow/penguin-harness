@@ -135,7 +135,7 @@ describe("support Agent provisioning", () => {
   it("seeds the default Project's editable workbench once and preserves user edits", async () => {
     await provisionProjectAgents();
     const base = path.join(tmpRoot, DEFAULT_PROJECT_ID, "agents", SUPPORT_AGENT_ID);
-    const file = path.join(base, "workbenches/support/ui/index.html");
+    const file = path.join(base, "agent_state/workbenches/support/ui/index.html");
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
     expect(config.agentsMd).toContain("penguin-support");

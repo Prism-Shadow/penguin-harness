@@ -19,8 +19,8 @@
  * Loading is by content: the folder's revision (store.ts) names the directory the source
  * is emitted into, so an edited workbench is a new import URL rather than a hit in the ESM
  * cache, and every successful load records the folder as a version the Agent (or the
- * user) can roll back to. A watcher on the `workbenches/` folder reloads on change, debounced, and the users of
- * the Project hear `workbench_updated` on their event stream.
+ * user) can roll back to. A watcher on the Agent State's `workbenches/` folder reloads on change,
+ * debounced, and the users of the Project hear `workbench_updated` on their event stream.
  */
 import fs from "node:fs";
 import path from "node:path";

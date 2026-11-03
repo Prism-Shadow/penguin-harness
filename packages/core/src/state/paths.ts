@@ -139,6 +139,14 @@ export function hooksDir(root: string, projectId: string, agentId: string): stri
   return path.join(agentStateDir(root, projectId, agentId), "hooks");
 }
 
+/**
+ * `<agentStateDir>/workbenches`: the Agent's workbenches, one folder per workbench id (doesn't
+ * exist until the first one is made or installed).
+ */
+export function workbenchesDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentStateDir(root, projectId, agentId), "workbenches");
+}
+
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */
 export function scheduleDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "schedule");
