@@ -1,7 +1,9 @@
 /**
  * The per-task grid: one column per entry (best first), one row per task grouped under its
  * benchmark, and in each cell that entry's attempts on that task as squares side by side, shaded
- * by score on a single-hue ramp. Task and benchmark names link to their pages. On a narrow screen
+ * by score on a single-hue ramp. Each column head carries its entry's colour; every name keeps to
+ * one line, cut short with the whole name on hover. Task and benchmark names link to their pages
+ * (a draft benchmark has none, so its names stay text). On a narrow screen
  * the grid scrolls sideways inside its panel with the task column held in place, so its focus ring
  * is drawn inside its edge, where the scroll box does not clip it.
  */
@@ -13,7 +15,9 @@ import { formatScore } from "../../../lib/hub/text";
 import { S } from "../../../lib/strings";
 import { Readout, labelsOf, useWidth } from "./chart-kit";
 import type { Anchor } from "./chart-kit";
+import type { EntryColour } from "./entry-colour";
 import type { NameOf } from "./entry-name";
+import { Dot } from "./score-table";
 
 /**
  * Four score bands, 0–25 up to 75–100, light to dark on white and dark to light on the dark
@@ -49,12 +53,16 @@ export function WaffleChart({
   nameOf,
   taskTitles,
   benchmarkTitle,
+  benchmarkListed,
+  colourOf,
 }: {
   entries: readonly LeaderboardEntry[];
   grid: WaffleGrid;
   nameOf: NameOf;
   taskTitles: Record<string, string>;
   benchmarkTitle: (id: string) => string;
+  benchmarkListed: (id: string) => boolean;
+  colourOf: (entry: LeaderboardEntry) => EntryColour;
 }) {
   const t = S.hub.leaderboards;
   const [wrapRef, width] = useWidth<HTMLDivElement>();
@@ -237,9 +245,17 @@ export function WaffleChart({
                   <th
                     key={`${row.entry.key}:${row.index}`}
                     scope="col"
-                    className="w-20 px-2 pb-2 text-center align-bottom text-xs font-medium"
+                    className="px-2 pb-2 text-center align-bottom text-xs font-medium"
                   >
-                    <span className="block text-gray-900 dark:text-gray-100">{labels[col]}</span>
+                    <span className="mx-auto flex max-w-28 items-center justify-center gap-1.5 sm:max-w-44">
+                      <Dot colour={colourOf(row.entry)} />
+                      <span
+                        title={labels[col]}
+                        className="min-w-0 truncate text-gray-900 dark:text-gray-100"
+                      >
+                        {labels[col]}
+                      </span>
+                    </span>
                     <span className="block text-gray-500 tabular-nums dark:text-gray-400">
                       {formatScore(row.entry.value)}
                     </span>
@@ -254,12 +270,22 @@ export function WaffleChart({
                     scope="rowgroup"
                     className={`${STICKY} border-t border-gray-100 pt-3 pr-3 pb-1 text-left text-xs font-medium dark:border-gray-800`}
                   >
-                    <Link
-                      to={`/benchmarks/${group.benchmarkId}`}
-                      className="block max-w-32 text-gray-900 hover:underline sm:max-w-80 dark:text-gray-100"
-                    >
-                      {benchmarkTitle(group.benchmarkId)}
-                    </Link>
+                    {benchmarkListed(group.benchmarkId) ? (
+                      <Link
+                        to={`/benchmarks/${group.benchmarkId}`}
+                        title={benchmarkTitle(group.benchmarkId)}
+                        className="block max-w-32 truncate text-gray-900 hover:underline sm:max-w-80 dark:text-gray-100"
+                      >
+                        {benchmarkTitle(group.benchmarkId)}
+                      </Link>
+                    ) : (
+                      <span
+                        title={benchmarkTitle(group.benchmarkId)}
+                        className="block max-w-32 truncate text-gray-900 sm:max-w-80 dark:text-gray-100"
+                      >
+                        {benchmarkTitle(group.benchmarkId)}
+                      </span>
+                    )}
                   </th>
                   <td
                     colSpan={ranked.length}
@@ -272,13 +298,22 @@ export function WaffleChart({
                   return (
                     <tr key={k}>
                       <th scope="row" className={`${STICKY} py-0.5 pr-3 text-left font-normal`}>
-                        <Link
-                          to={`/benchmarks/${task.benchmarkId}#${encodeURIComponent(task.taskIds[0] ?? "")}`}
-                          title={full}
-                          className="block max-w-32 truncate text-gray-700 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 sm:max-w-80 dark:text-gray-300 dark:decoration-gray-700"
-                        >
-                          {short}
-                        </Link>
+                        {benchmarkListed(task.benchmarkId) ? (
+                          <Link
+                            to={`/benchmarks/${task.benchmarkId}#${encodeURIComponent(task.taskIds[0] ?? "")}`}
+                            title={full}
+                            className="block max-w-32 truncate text-gray-700 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 sm:max-w-80 dark:text-gray-300 dark:decoration-gray-700"
+                          >
+                            {short}
+                          </Link>
+                        ) : (
+                          <span
+                            title={full}
+                            className="block max-w-32 truncate text-gray-700 sm:max-w-80 dark:text-gray-300"
+                          >
+                            {short}
+                          </span>
+                        )}
                       </th>
                       {ranked.map((row, col) => {
                         const scores = row.scores[k] ?? [];

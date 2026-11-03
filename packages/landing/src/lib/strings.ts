@@ -511,6 +511,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         cost: "成本",
       } as Record<"harness" | "algorithm" | "released" | "cost", string>,
       columns: "列",
+      filter: "筛选",
+      sortBy: (name: string) => `按${name}排序`,
       filters: {
         model: "模型",
         harness: "Harness",
@@ -557,30 +559,24 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       benchmarks: "评估集",
       method: {
         title: "计算方式与来源",
-        entry:
-          "每个条目是一种算法（或基线）在一个模型、一个 Harness 上的结果。它引用的各个实验在这三项和阶段上都相同，只是所跑的评估集不同。",
-        score: (op: string, count: number, metric: string, phase: string) =>
-          `得分取其 ${count} 个实验在 \`${phase}\` 阶段 summary 中 \`${metric}\` 的${
-            (
-              {
-                mean: "平均值",
-                sum: "总和",
-                weighted_mean: "加权平均值",
-                sub: "差",
-                div: "比值",
-              } as Record<string, string>
-            )[op] ?? op
-          }。`,
-        scoreSingle: (metric: string, phase: string) =>
-          `得分取单个实验在 \`${phase}\` 阶段 summary 中的 \`${metric}\`。`,
-        scoreMixed: "每个条目按 leaderboard.yaml 中给出的表达式，合成其各实验的 summary 指标。",
+        matrixLead: (metric: string, phase: string) =>
+          `每一格是一个实验在 \`${phase}\` 阶段 summary 中的 \`${metric}\`；横线下方各行是每一列合成后的结果。`,
+        listLead: "逐个条目列出表达式的各个参数：所读的实验、阶段与指标，以及取到的值。",
         stdAttempts: (n: number | null) =>
-          `± 为跨${n === null ? "" : ` ${n} 次`}尝试的样本标准差：每次尝试的各题得分按与总分相同的方式合成，再对这些合成得分求标准差。`,
+          `± 为跨${n === null ? "" : ` ${n} 次`}尝试的样本标准差，每次尝试的各题得分按与总分相同的方式合成。`,
         stdExperiments: "± 由各实验自身的 `score_std` 按相互独立合成。",
         stdExperimentsSome:
-          "若某条目的各实验尝试次数不一致，± 改由各实验自身的 `score_std` 按相互独立合成。",
-        resources: "成本、耗时与 Token 为这些实验各跑一遍的总和，Token 计输入与输出。",
-        waffle: "逐题得分展示每道题每次尝试的得分，取自各实验的 attempt 文件。",
+          "± 取跨尝试的样本标准差；若某条目的各实验尝试次数不一致，改由各实验的 `score_std` 合成。",
+        benchmark: "评估集",
+        experiment: "实验",
+        phase: "阶段",
+        metric: "指标",
+        value: "值",
+        opName: (op: string | null) => (op === null ? "取值" : op),
+        opRow: (op: string | null) => (op === null ? "得分" : `得分（${op}）`),
+        stdRow: "± 标准差",
+        costRow: "成本（单次运行之和）",
+        timeRow: "耗时（单次运行之和）",
         config: "配置",
         experiments: "实验数据",
       },

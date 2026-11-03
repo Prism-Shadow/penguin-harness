@@ -522,6 +522,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         cost: "Cost",
       } as Record<"harness" | "algorithm" | "released" | "cost", string>,
       columns: "Columns",
+      filter: "Filter",
+      sortBy: (name: string) => `Sort by ${name.toLowerCase()}`,
       filters: {
         model: "Model",
         harness: "Harness",
@@ -569,34 +571,26 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       benchmarks: "Benchmarks",
       method: {
         title: "Method and sources",
-        entry:
-          "Each entry is one algorithm, or the baseline, on one model in one harness. The experiments behind it share those three and the phase, and differ only in the benchmark they ran on.",
-        score: (op: string, count: number, metric: string, phase: string) =>
-          `Its score is ${
-            (
-              {
-                mean: "the mean",
-                sum: "the sum",
-                weighted_mean: "a weighted mean",
-                sub: "the difference",
-                div: "the ratio",
-              } as Record<string, string>
-            )[op] ?? op
-          } of \`${metric}\` over its ${count} experiments, read from each experiment's \`${phase}\` summary.`,
-        scoreSingle: (metric: string, phase: string) =>
-          `Its score is \`${metric}\` from one experiment's \`${phase}\` summary.`,
-        scoreMixed:
-          "Each entry combines its experiments' summary metrics with the expression leaderboard.yaml gives it.",
+        matrixLead: (metric: string, phase: string) =>
+          `Each cell is one experiment's \`${metric}\` from its \`${phase}\` summary; the rows under the line are what each column comes to.`,
+        listLead:
+          "Each entry's expression, argument by argument: the experiment it reads, the phase and metric, and the value there.",
         stdAttempts: (n: number | null) =>
-          `± is the sample standard deviation across ${n === null ? "the" : `the ${n}`} attempts: each attempt's task scores are combined the same way as the score, and the deviation is taken over those combined scores.`,
+          `± is the sample standard deviation across ${n === null ? "the" : `the ${n}`} attempts, each attempt's task scores combined the same way as the score.`,
         stdExperiments:
-          "± is composed from each experiment's own `score_std`, taking the experiments as independent.",
+          "± is composed from each experiment's own `score_std`, taken as independent.",
         stdExperimentsSome:
-          "Where an entry's experiments ran different numbers of attempts, ± is composed instead from each experiment's own `score_std`, taking them as independent.",
-        resources:
-          "Cost, time and tokens are one run of those experiments added up; tokens count input and output.",
-        waffle:
-          "Per task shows every attempt's score on every task, from the experiments' attempt files.",
+          "± is taken across attempts; where an entry's experiments ran different numbers of attempts, it is composed from each experiment's `score_std` instead.",
+        benchmark: "Benchmark",
+        experiment: "Experiment",
+        phase: "Phase",
+        metric: "Metric",
+        value: "Value",
+        opName: (op: string | null) => (op === null ? "the value" : op),
+        opRow: (op: string | null) => (op === null ? "Score" : `Score (${op})`),
+        stdRow: "± std",
+        costRow: "Cost (one run, summed)",
+        timeRow: "Time (one run, summed)",
         config: "Configuration",
         experiments: "Experiments",
       },

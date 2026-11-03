@@ -1,7 +1,9 @@
 /**
  * The score-against-cost view: one point per entry, score up the side and one run's
  * cost, time or tokens along the bottom. Entries no other entry beats on both counts (cheaper and
- * better) form the Pareto frontier: they take the accent and a step line joins them.
+ * better) form the Pareto frontier, joined by a step line. A small board colours each point as
+ * its entry (`colourPoints`, with a legend) and draws the line in ink; a larger one, whose hues
+ * would not all tell apart on one plot, gives the frontier points the accent and the rest gray.
  */
 import { useLayoutEffect, useState } from "react";
 import type { FocusEvent, KeyboardEvent, PointerEvent } from "react";
@@ -18,7 +20,9 @@ import {
   useWidth,
 } from "./chart-kit";
 import type { Scale } from "./chart-kit";
+import type { EntryColour } from "./entry-colour";
 import type { NameOf } from "./entry-name";
+import { Dot } from "./score-table";
 
 type Axis = "cost" | "duration" | "tokens";
 const AXES: readonly Axis[] = ["cost", "duration", "tokens"];
@@ -88,11 +92,20 @@ type TextAnchor = "start" | "middle" | "end";
 export function ParetoChart({
   entries,
   nameOf,
+  colourOf,
+  colourPoints,
 }: {
   entries: readonly LeaderboardEntry[];
   nameOf: NameOf;
+  colourOf: (entry: LeaderboardEntry) => EntryColour;
+  /** Whether each point takes its entry's colour (the board is small enough to tell them apart). */
+  colourPoints: boolean;
 }) {
   const t = S.hub.leaderboards;
+  /** The frontier's step line: the accent beside gray points, ink beside coloured ones. */
+  const LINE = colourPoints
+    ? "stroke-gray-700 dark:stroke-gray-300"
+    : "stroke-brand-600 dark:stroke-brand-300";
   const [axis, setAxis] = useState<Axis>("cost");
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [font, setFont] = useState("");
@@ -287,18 +300,26 @@ export function ParetoChart({
         </div>
         <div
           aria-hidden
-          className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400"
+          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600 dark:text-gray-400"
         >
-          <svg width="20" height="10" viewBox="0 0 20 10" className="shrink-0">
-            <path
-              d="M1 5H19"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="stroke-brand-600 dark:stroke-brand-300"
-            />
-            <circle cx="10" cy="5" r={RADIUS} className="fill-brand-600 dark:fill-brand-300" />
-          </svg>
-          {t.frontier}
+          {colourPoints &&
+            entries.map((entry, i) => (
+              <span key={`${entry.key}:${i}`} className="flex min-w-0 items-center gap-1.5">
+                <Dot colour={colourOf(entry)} />
+                <span title={labels[i]} className="max-w-40 truncate">
+                  {labels[i]}
+                </span>
+              </span>
+            ))}
+          <span className="flex items-center gap-2">
+            <svg width="20" height="10" viewBox="0 0 20 10" className="shrink-0">
+              <path d="M1 5H19" strokeWidth="2" strokeLinecap="round" className={LINE} />
+              {!colourPoints && (
+                <circle cx="10" cy="5" r={RADIUS} className="fill-brand-600 dark:fill-brand-300" />
+              )}
+            </svg>
+            {t.frontier}
+          </span>
         </div>
       </div>
 
@@ -387,7 +408,7 @@ export function ParetoChart({
                 strokeWidth="2"
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                className="stroke-brand-600 dark:stroke-brand-300"
+                className={LINE}
               />
             )}
             {drawOrder.map((i) => (
@@ -396,11 +417,14 @@ export function ParetoChart({
                 cx={at[i]!.x}
                 cy={at[i]!.y}
                 r={RADIUS}
-                className={
-                  onFrontier[i]
-                    ? "fill-brand-600 dark:fill-brand-300"
-                    : "fill-gray-400 dark:fill-gray-500"
-                }
+                strokeWidth="2"
+                className={`stroke-white dark:stroke-gray-900 ${
+                  colourPoints
+                    ? colourOf(entries[i]!).fill
+                    : onFrontier[i]
+                      ? "fill-brand-600 dark:fill-brand-300"
+                      : "fill-gray-400 dark:fill-gray-500"
+                }`}
               />
             ))}
             {placed.map(
