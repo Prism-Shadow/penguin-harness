@@ -65,9 +65,8 @@ it("retries a failed history request and displays saved versions", async () => {
       versions: [
         {
           revision: "saved-revision",
-          version: "1.0.0",
+          commit: "0123456789ab",
           savedAt: "2026-10-14T00:00:00Z",
-          files: ["index.ts"],
         },
       ],
     }),

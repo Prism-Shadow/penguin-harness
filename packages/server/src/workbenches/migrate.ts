@@ -7,7 +7,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readFolder } from "./store.js";
-import type { WorkbenchVersion } from "../mechanisms/workbenches.js";
+
+/** An entry of a Workflow-era `versions.json`. */
+interface LegacyVersion {
+  revision: string;
+  uiRev?: string | null;
+  files?: string[];
+}
 
 const pairs = [
   ["workflows", "workbenches"],
@@ -61,8 +67,8 @@ async function convertHistory(base: string): Promise<void> {
     const dir = path.join(base, entry.name);
     const index = path.join(dir, "versions.json");
     if (!(await exists(index))) continue;
-    const versions = JSON.parse(await fs.readFile(index, "utf8")) as WorkbenchVersion[];
-    const updated: WorkbenchVersion[] = [];
+    const versions = JSON.parse(await fs.readFile(index, "utf8")) as LegacyVersion[];
+    const updated: LegacyVersion[] = [];
     // Build beside the old revision directories: hashes can converge after the rename.
     const staged = path.join(dir, ".converted");
     await fs.mkdir(staged);

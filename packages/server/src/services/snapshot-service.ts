@@ -3,9 +3,11 @@
  *
  * A snapshot = `snapshots/v<version>.tar.gz`, packaging `agent_state/` (archive
  * entries are rooted at `agent_state/`), **excluding `.vault.toml`** (secrets never
- * go into a snapshot); if a snapshot for the same version already exists, it isn't
- * repacked. Import goes by the `version` inside the package and keeps the current
- * vault; a snapshot of the current version is automatically taken before import;
+ * go into a snapshot), `agent_state/.git` (the repository holding the workbench versions
+ * is this machine's record, not part of a State) and each workbench's emitted code and
+ * installed packages (`.build/`, `node_modules/`); if a snapshot for the same version
+ * already exists, it isn't repacked. Import goes by the `version` inside the package and keeps the current
+ * vault and repository; a snapshot of the current version is automatically taken before import;
  * importing a package version equal to or lower than the current version requires
  * explicit confirmation (otherwise 409). A package's `agent_state/` must be a real
  * directory whose links all resolve inside it; the current vault must be readable (a
@@ -34,9 +36,36 @@ import type { Snapshots } from "../mechanisms/agents.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
+/** The Agent State repository's directory inside `agent_state/`. */
+const REPO_DIR = ".git";
 
-function isVaultEntry(entryPath: string): boolean {
-  return path.posix.basename(entryPath.replaceAll("\\", "/")) === VAULT_BASENAME;
+/**
+ * What a snapshot leaves out and an import never takes from a package: any vault, the Agent
+ * State repository, and a workbench's emitted code and installed packages.
+ */
+function isLeftOut(entryPath: string): boolean {
+  const segments = entryPath
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((s) => s !== "" && s !== ".");
+  if (segments.at(-1) === VAULT_BASENAME) return true;
+  const [top, child, ...rest] = segments;
+  if (top !== "agent_state") return false;
+  if (child === REPO_DIR) return true;
+  // Anywhere inside `workbenches/<id>/`.
+  return (
+    child === "workbenches" && rest.slice(1).some((s) => s === ".build" || s === "node_modules")
+  );
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.lstat(file);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
 }
 
 /** `target` is `base` itself or lies below it (both already resolved by `realpath`). */
@@ -130,7 +159,7 @@ export class SnapshotService implements Snapshots {
           cwd: agentDir(this.root, projectId, agentId),
           file: tmp,
           portable: true,
-          filter: (p) => !isVaultEntry(p),
+          filter: (p) => !isLeftOut(p),
         },
         ["agent_state"],
       );
@@ -156,7 +185,7 @@ export class SnapshotService implements Snapshots {
    * Import: validates the package structure and `version`, compares versions
    * (higher than current imports directly, same version or older requires
    * `confirm`), automatically snapshots the current version before import, then
-   * replaces `agent_state/` while keeping the current vault.
+   * replaces `agent_state/` while keeping the current vault and repository.
    *
    * `preSnapshot: false` skips the automatic pre-import snapshot — for seeding a
    * freshly created Agent, whose template state is not worth preserving (its
@@ -184,7 +213,7 @@ export class SnapshotService implements Snapshots {
         await tar.extract({
           file: archiveFile,
           cwd: extractDir,
-          filter: (p) => !isVaultEntry(p),
+          filter: (p) => !isLeftOut(p),
         });
       } catch {
         throw badRequest("Import failed: not a valid tar.gz snapshot package.");
@@ -244,19 +273,39 @@ export class SnapshotService implements Snapshots {
       if (vault !== null) {
         await fs.writeFile(path.join(incomingState, VAULT_BASENAME), vault, { mode: 0o600 });
       }
+      // The repository stays the same way (extraction dropped the package's own): it moves
+      // into the directory swapped in, and goes back with the previous State if the swap does
+      // not land.
+      const repo = path.join(stateDir, REPO_DIR);
+      const carried = path.join(incomingState, REPO_DIR);
+      const hasRepo = await exists(repo);
+      if (hasRepo) await fs.rename(repo, carried);
       const trash = path.join(staging, "replaced-agent_state");
-      await fs.rename(stateDir, trash);
       try {
-        await fs.rename(incomingState, stateDir);
-      } catch (err) {
+        await fs.rename(stateDir, trash);
         try {
-          await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
-        } catch (rollbackErr) {
-          keepStaging = true;
-          throw new AggregateError(
-            [err, rollbackErr],
-            `Import failed and the previous Agent State could not be restored; it is kept at ${trash} — move it back to ${stateDir}.`,
-          );
+          await fs.rename(incomingState, stateDir);
+        } catch (err) {
+          try {
+            await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
+          } catch (rollbackErr) {
+            keepStaging = true;
+            throw new AggregateError(
+              [err, rollbackErr],
+              `Import failed and the previous Agent State could not be restored; it is kept at ${trash} — move it back to ${stateDir}.`,
+            );
+          }
+          throw err;
+        }
+      } catch (err) {
+        if (hasRepo) {
+          const home = path.join(keepStaging ? trash : stateDir, REPO_DIR);
+          await fs.rename(carried, home).catch((moveErr: unknown) => {
+            keepStaging = true;
+            this.log.line(
+              `[snapshots] the Agent State repository could not be moved back; it is kept at ${carried} — move it to ${home}: ${String(moveErr)}`,
+            );
+          });
         }
         throw err;
       }

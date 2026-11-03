@@ -1,6 +1,6 @@
 /**
  * Given legacy Workflows with state/history, migration publishes only renamed copies,
- * preserves originals and state, and makes every recorded version restorable.
+ * preserves originals and state, and keeps every recorded version as the revision it names.
  * Given an interrupted publication, retry resumes; a completed migration keeps later edits.
  * Given a conflicting destination or corrupt history, refusal leaves the originals intact.
  */
@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { migrateWorkbenches } from "../src/workbenches/migrate.js";
-import { readFolder, restoreVersion } from "../src/workbenches/store.js";
+import { readFolder } from "../src/workbenches/store.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -85,20 +85,10 @@ describe("one-time Workbench migration", () => {
     const history = path.join(dir, "workbenches-history/desk");
     const [version] = JSON.parse(await fs.readFile(path.join(history, "versions.json"), "utf8"));
     expect(version.revision).toBe((await readFolder(current, "desk"))!.revision);
-    await fs.writeFile(path.join(current, "index.ts"), "changed");
-    // The same store operation used by the rollback route accepts the converted revision.
-    expect(
-      await restoreVersion(
-        path.dirname(history),
-        (await readFolder(current, "desk"))!,
-        version.revision,
-      ),
-    ).toBe(true);
-    expect(await fs.readFile(path.join(current, "index.ts"), "utf8")).toContain("WorkbenchPackage");
-    expect(JSON.parse(await fs.readFile(path.join(current, "state.json"), "utf8"))).toEqual({
-      note: "Workflow",
-      count: 7,
-    });
+    // The converted copy is the version it names, so it can be replayed as that revision.
+    expect((await readFolder(path.join(history, version.revision), "desk"))!.revision).toBe(
+      version.revision,
+    );
   });
   it("resumes publication after interruption and never repeats a completed conversion", async () => {
     await legacy();

@@ -5,18 +5,24 @@
  */
 import fs from "node:fs/promises";
 import { Hono } from "hono";
+import { agentDir } from "@prismshadow/penguin-core";
 import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTransferRouteDeps {
+  /** The data root, for the Agent's directory the workbench migration works in. */
+  root: string;
   agentConfigService: AgentConfig;
   access: Access;
   snapshots: Snapshots;
+  workbenches: Pick<Workbenches, "releaseAgent">;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
+import { migrateWorkbenches } from "../../workbenches/migrate.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -64,6 +70,12 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const body = await readJson(c);
     const archive = readArchiveBase64(body);
     const confirm = body.confirm === true;
+    // The workbenches live inside agent_state/. Ones still in an older layout move in first, or
+    // the package's own would sit where they are going and stop their migration later; then
+    // what the server holds open there lets go before the directory is swapped (Windows cannot
+    // rename a watched directory).
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
+    await deps.workbenches.releaseAgent(projectId, agentId);
     const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, {
       confirm,
     });
