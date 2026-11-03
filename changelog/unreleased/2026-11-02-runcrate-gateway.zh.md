@@ -2,11 +2,11 @@
 
 - **Date:** 2026-11-02
 - **Type:** feature
-- **Scope:** `model-catalog`, `web`, `cli`, `docs`, `plugins`
+- **Scope:** `model-catalog`, `ui`, `web`, `cli`, `docs`, `plugins`
 
 [English](2026-11-02-runcrate-gateway.md)
 
-[Runcrate](https://runcrate.ai) 作为开源权重模型的 OpenAI 兼容网关加入了内置分组，默认顺序排在 Atlas Cloud 与 Z.AI 之间。其条目通过预置 base URL `https://api.runcrate.ai/v1` 走 MMSP 通用的 Chat Completions 客户端，与 Atlas Cloud、SiliconFlow、Fireworks AI、TokenDance 和两个 Qwen 网关分组同路，因此无需新增客户端。与 Atlas Cloud 一样，该分组固定 `openai-chat` 协议并接受手动添加的模型（分组头的**添加模型**、`penguin config model add --provider runcrate`），添加的模型跟随分组的端点与协议：该网关提供的开源权重模型多于目录预置的条目。`penguin-config` 技能（`2026.11.02.1`）把 `runcrate` 列入可手动添加模型的分组。与所有网关分组一样，它记录 `OPENAI_*` 这对变量但从不回退读取，因此 Runcrate 条目需要自己的 key 或分组密钥。该分组没有专属图标，显示字母图块。
+[Runcrate](https://runcrate.ai) 作为开源权重模型的 OpenAI 兼容网关加入了内置分组，默认顺序排在 Atlas Cloud 与 Z.AI 之间。其条目通过预置 base URL `https://api.runcrate.ai/v1` 走 MMSP 通用的 Chat Completions 客户端，与 Atlas Cloud、SiliconFlow、Fireworks AI、TokenDance 和两个 Qwen 网关分组同路，因此无需新增客户端。与 Atlas Cloud 一样，该分组固定 `openai-chat` 协议并接受手动添加的模型（分组头的**添加模型**、`penguin config model add --provider runcrate`），添加的模型跟随分组的端点与协议：该网关提供的开源权重模型多于目录预置的条目。`penguin-config` 技能（`2026.11.02.1`）把 `runcrate` 列入可手动添加模型的分组。与所有网关分组一样，它记录 `OPENAI_*` 这对变量但从不回退读取，因此 Runcrate 条目需要自己的 key 或分组密钥。凡显示服务商图标之处，该分组都显示 Runcrate 应用图标中的 `>_` 提示符标志。
 
 ## 条目
 

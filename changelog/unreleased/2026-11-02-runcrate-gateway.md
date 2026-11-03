@@ -2,11 +2,11 @@
 
 - **Date:** 2026-11-02
 - **Type:** feature
-- **Scope:** `model-catalog`, `web`, `cli`, `docs`, `plugins`
+- **Scope:** `model-catalog`, `ui`, `web`, `cli`, `docs`, `plugins`
 
 [中文版](2026-11-02-runcrate-gateway.zh.md)
 
-[Runcrate](https://runcrate.ai) joined the built-in groups as an OpenAI-compatible gateway for open-weight models, between Atlas Cloud and Z.AI in the default order. Its rows go to MMSP's generic Chat Completions client at the preset base URL `https://api.runcrate.ai/v1`, the same path the Atlas Cloud, SiliconFlow, Fireworks AI, TokenDance and Qwen gateway groups take, so the group needed no new client. As on Atlas Cloud, the group pins `openai-chat` and takes models added by hand (**Add model** on its header, `penguin config model add --provider runcrate`), which follow the group's endpoint and protocol: the gateway serves more open-weight models than the catalog presets. The `penguin-config` skill (`2026.11.02.1`) names `runcrate` among the groups that take models added by hand. Like every gateway group, it records the `OPENAI_*` pair and never falls back to it, so a Runcrate row needs a key of its own or the group's. The group has no glyph of its own and shows the letter tile.
+[Runcrate](https://runcrate.ai) joined the built-in groups as an OpenAI-compatible gateway for open-weight models, between Atlas Cloud and Z.AI in the default order. Its rows go to MMSP's generic Chat Completions client at the preset base URL `https://api.runcrate.ai/v1`, the same path the Atlas Cloud, SiliconFlow, Fireworks AI, TokenDance and Qwen gateway groups take, so the group needed no new client. As on Atlas Cloud, the group pins `openai-chat` and takes models added by hand (**Add model** on its header, `penguin config model add --provider runcrate`), which follow the group's endpoint and protocol: the gateway serves more open-weight models than the catalog presets. The `penguin-config` skill (`2026.11.02.1`) names `runcrate` among the groups that take models added by hand. Like every gateway group, it records the `OPENAI_*` pair and never falls back to it, so a Runcrate row needs a key of its own or the group's. Wherever provider logos appear, the group shows Runcrate's `>_` prompt mark, traced from its app icon.
 
 ## Rows
 
