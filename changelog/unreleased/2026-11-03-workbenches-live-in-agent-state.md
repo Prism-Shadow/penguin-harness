@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** refactor
 - **Scope:** `core`, `server`
+- **PR:** [#1442](https://github.com/Prism-Shadow/penguin-harness/pull/1442)
 
 [中文版](2026-11-03-workbenches-live-in-agent-state.zh.md)
 
