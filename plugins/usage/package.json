@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "fflate": "^0.8.2",

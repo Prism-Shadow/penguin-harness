@@ -1,46 +1,5 @@
-/**
- * A Benchmark package as a zip, both ways: reading the one a member uploads to the Evaluation
- * Center, and packing a Benchmark's directory for the Export button on its page.
- *
- * The package is what core's benchmark-manifest.ts defines: `benchmark_config.toml` and every
- * `CASE-*` tree. Everything else in a Benchmark's directory belongs to that copy and never travels:
- * `scoreboard.yaml` (its evaluation records), the `.jobs/` Harbor trials, any other entry whose
- * name starts with a dot, and symlinks. Packing leaves them out. An upload carrying one of them at
- * its top level — or anything else that is neither `benchmark_config.toml` nor a `CASE-*`
- * directory — is refused, naming the entry, rather than trimmed: such a zip is a copy of
- * someone's directory, not a package. A dot-entry inside a case (a `.DS_Store`) is no part of the
- * package either; it is skipped on the way in, as it is on the way out. A link or other special
- * file is refused wherever it is: fflate hands every entry back as plain bytes, so the type is
- * read from the central directory.
- *
- * Both directions hold the same caps — 1000 files, 5MB a file and 20MB inflated (the declared
- * sizes, checked before anything inflates), 14MB zipped — and the same manifest rules (core's
- * checkBenchmarkManifest on top of what the list reads), so whatever Export produces, Import
- * takes back. Nothing in a package is ever executed: it is Markdown and the small files its cases
- * name.
- */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { strFromU8, zipSync } from "fflate";
-import { parse as parseToml } from "smol-toml";
-import {
-  BENCHMARK_MANIFEST,
-  BenchmarkManifestError,
-  checkBenchmarkManifest,
-  isValidId,
-  parseBenchmarkManifest,
-  type BenchmarkManifest,
-} from "@prismshadow/penguin-core";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import {
-  MAX_ARCHIVE_BYTES,
-  MAX_BENCHMARK_ARCHIVE_FILES,
-  MAX_FILE_BYTES,
-  MAX_TOTAL_BYTES,
-  assertSafeEntryPath,
-  unzipBounded,
-} from "./skill-import-limits.js";
-import { CONTROL_CHARACTER, specialEntries } from "./zip-entries.js";
+} from "@prismshadow/penguin-server/internal";
+
 
 /** A case's directory: `CASE-` and the id alphabet, the create route's rule for a case id. */
 const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;

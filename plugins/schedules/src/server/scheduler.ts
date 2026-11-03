@@ -30,7 +30,7 @@ import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
 import type { ScheduleStateRow } from "@prismshadow/penguin-server/internal";
 import { cacheable, statMtime } from "@prismshadow/penguin-server/internal";
-import type { ErrorSink } from "./error-recorder.js";
+import type { ErrorSink } from "@prismshadow/penguin-server/internal";
 import type { ScheduleDefinition } from "./schedule-file.js";
 import { latestSlotAt, slotInWindow } from "./schedule-file.js";
 import {

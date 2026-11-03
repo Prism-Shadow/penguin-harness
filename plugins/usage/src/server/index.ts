@@ -4,7 +4,7 @@
  */
 export { UsageService } from "./usage-service.js";
 export { HarnessHistoryIface } from "./harness-history.js";
-export { TraceIndexService } from "./trace-index.js";
+export { TraceIndexService, traceFilePath } from "./trace-index.js";
 export { HarnessHistoryStore } from "./harness-history.js";
 export { TraceService } from "./trace-service.js";
 export { BenchmarkService } from "./benchmark-service.js";
