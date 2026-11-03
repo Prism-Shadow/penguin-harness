@@ -15,3 +15,8 @@ export type { BenchmarksRouteDeps } from "./benchmarks.js";
 export { agentTracesRoutes } from "./agent-traces.js";
 export type { AgentTracesRouteDeps } from "./agent-traces.js";
 export type { PricingRates, TieredRates } from "./usage-service.js";
+export { compactionThresholdFor } from "./context-breakdown.js";
+export { withImagesByReference } from "./trace-images.js";
+export type { MessagesPageRequest, MessagesPageResult, ForkTraceResult } from "./trace-service.js";
+export type { BenchmarkArchive, BenchmarkCreateInput, BenchmarkImportOptions, BenchmarkCaseInput } from "./benchmark-service.js";
+export type { UsageQuery, UsageErrorsQuery, UsageErrorsClearQuery } from "./usage-service.js";
