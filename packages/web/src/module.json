@@ -17,6 +17,17 @@
         }
       },
       {
+        "id": "web.search",
+        "key": "search",
+        "path": "/search",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "SearchPage"
+        }
+      },
+      {
         "id": "web.agents",
         "key": "agents",
         "path": "/agents",
