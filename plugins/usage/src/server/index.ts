@@ -3,6 +3,7 @@
  * their routes, exported for the server's composition root and the mechanisms.
  */
 export { UsageService } from "./usage-service.js";
+export { HarnessHistoryIface } from "./harness-history.js";
 export { TraceService } from "./trace-service.js";
 export { BenchmarkService } from "./benchmark-service.js";
 export { usageRoutes } from "./usage.js";

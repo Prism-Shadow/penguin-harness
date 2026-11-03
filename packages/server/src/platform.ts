@@ -115,7 +115,7 @@ import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
-import { SchedulerRoutes } from "./http/routes/schedules.js";
+import { SchedulerRoutes } from "@penguinharness/plugin-schedules/server";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { TerminalRelay } from "@penguinharness/plugin-terminal/server";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
