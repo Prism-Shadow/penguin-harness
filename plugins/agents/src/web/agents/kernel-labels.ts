@@ -5,7 +5,7 @@
  *
  * Built per call rather than at module scope: `S` is swapped on a language change.
  */
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function kernelTabLabel(tab: string): string {
   const labels: Record<string, string> = {

@@ -1,58 +1,7 @@
-/**
- * The archive page's state (Settings › Archived chats): the groups the server counts, the rows
- * each shown group has loaded, the selection, and the actions that move Sessions out of the
- * archive — unarchive, which returns them to the sidebar, and delete.
- *
- * - The groups come first (one request, with their counts); then each shown group's first page.
- *   Groups show twenty at a time, and a group shows one page of ten rows at a time
- *   (archived-sessions-paging.ts): a page not held yet is read below the last row held while
- *   the page shown stays, and a page already held turns at once.
- * - The selection: rows chosen one by one, and groups chosen whole with Select all — every
- *   Session the group's count saw, loaded or not, but the rows unticked since and those a row's
- *   own button has acted on. A whole group is pinned to the time its count was read at, so
- *   acting on it touches no Session archived, created or run after that. Turning a page keeps
- *   it: it names Sessions, not places.
- * - A new query or filter starts over: no rows, every group on its first page, no selection.
- * - An action takes its rows off the page at once, then reads the counts and every shown group
- *   again (as far as each was read, so each keeps its page), so what is left is the server's
- *   word. A page left with no rows falls back to the last page that has some.
- * - One group's reads go one after another: a page turned while the group reads itself again
- *   continues below what that read brings, and a read again after a turn reaches the new page.
- * - The page follows the user channel: a Session archived, unarchived, deleted or opened by a
- *   program elsewhere refreshes it the same way, debounced; a run starting or settling redraws
- *   its row's busy glyph in place, with nothing read again.
- * - An admin's groups include the machines their Projects use (this server asks each one): a
- *   machine's group is read from that machine, acted on there — its rows by id, the whole group
- *   pinned to the machine's own count time — and its events reach the page through this
- *   server's channel, wrapped as `machine_event`. Machines that could not be asked are named.
- *   The machines' groups are asked apart from this server's and join them when they answer.
- *
- * A vanilla store with its async actions, so the page's whole behaviour is exercised in Node
- * against the fetch fake (the component only renders it and asks before a delete).
- */
-import { createStore } from "zustand/vanilla";
-import type {
-  ArchivedSessionGroup,
-  ArchivedSessionGroupsResponse,
-  ArchivedSessionSource,
-  ArchivedSessionsBatch,
-  ArchivedSessionsQuery,
-  ServerEvent,
-  SessionInfo,
-  SessionStatus,
-} from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { activityKeyOf } from "../../lib/session-grouping";
-import {
-  ARCHIVE_ROW_PAGE,
-  joinBelow,
-  pageRows,
-  readThrough,
-  rowsThrough,
-  settlePage,
-} from "./archived-sessions-paging";
-import type { HeldRows } from "./archived-sessions-paging";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { SIDEBAR_PAGE_SIZE, activityKeyOf } from "@prismshadow/penguin-web/internal";
+
 
 /** Groups shown before "more groups". */
 export const ARCHIVE_GROUP_PAGE = 20;

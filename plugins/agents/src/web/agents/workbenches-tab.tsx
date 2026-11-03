@@ -1,61 +1,13 @@
-/**
- * Agent settings page "Workbenches" tab: the Agent's own workbenches, broken and handler-only
- * packages included. Each row opens, reloads, shows the history of, exports or removes one; the
- * files are the truth, so the list is read again after every action. "Import zip" uploads a
- * workbench's source the way the Hooks tab's upload takes a hook package back: a taken id
- * (409 `workbench_exists`) asks before overwriting, and an overwrite keeps the workbench's data.
- * Export downloads the source as a zip that imports back unchanged. Every action is
- * member-level, matching the workbench routes, and goes to the server the Agent lives on.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
-import { useNavigate } from "react-router";
-import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  ConfirmModal,
-  DownloadIcon,
-  GlyphIcon,
-  HelpFold,
-  HiddenFileInput,
-  IconButton,
-  ICONS,
-  ICON_SIZE,
-  ListRow,
-  SettingsList,
-  SettingsEmpty,
-  Modal,
-  NoticeStrip,
-  SkeletonList,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-tabs";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../../lib/skill-use";
-import { SkillTile } from "../skills/skill-icon-view";
-import { toastApiError } from "../../lib/toast-api-error";
-import { downloadArchive } from "./archive-download";
-import { UPLOAD_LABEL_CLASS } from "./skills-tab";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
 
-/** A zip waiting on the overwrite confirm: the payload to resend with `overwrite`, and the id it would replace. */
-interface PendingOverwrite {
-  dataBase64: string;
-  workbenchId: string;
-}
-
-/** The row of the newest version holding the workbench's current files; -1 when none does. */
-function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
-  return history.versions.findIndex((version) => version.revision === history.workbench.revision);
-}
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {

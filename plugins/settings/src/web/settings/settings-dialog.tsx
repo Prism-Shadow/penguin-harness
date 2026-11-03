@@ -23,17 +23,17 @@ import {
   type PagedDialogGroup,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
   type SettingsGroupKey,
   type SettingsSectionKey,
-} from "../../lib/settings-sections";
+} from "@prismshadow/penguin-web/internal";
 
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { useAuth } from "../../state/auth";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
@@ -47,7 +47,7 @@ import { BrowserSection } from "./browser-section";
 import { ChromeExtensionSection } from "./chrome-extension-section";
 import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
-import { AdminUsersSection } from "../admin";
+import { AdminUsersSection } from "@prismshadow/penguin-web/internal";
 
 /** Rail glyphs (see NAV_ICONS' conventions). */
 const SECTION_ICONS: Record<SettingsSectionKey, string> = {

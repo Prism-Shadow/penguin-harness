@@ -1,63 +1,11 @@
-/**
- * Agent settings page "API" tab: whether external programs may talk to this Agent over its public
- * API (the AMSP stream under /api/amsp/v1), the defaults its API conversations start with,
- * the address and id a program needs, the keys, and two examples that call it.
- *
- * Everything here is this server's, kept in its database — not in the Agent State, not in the
- * synced Project file — so the Agent can neither expose itself nor loosen its own approvals. Any
- * member reads it; only the Project owner changes it. Selectors apply immediately; typed
- * concurrency changes use Save. Turning the API on writes at once, while turning it off and
- * deleting a key ask first,
- * because a program using them is refused from then on. A new key's secret exists only in the
- * create response: it is shown once, in a panel with its copy button, until Done, and afterwards
- * the list names the key by its prefix alone. The name typed for a new key is a one-field form:
- * Create (or Enter) is live once a name is typed, Cancel or Esc drops it, and leaving the tab
- * with a name typed asks first.
- *
- * The admin's server-wide switch (Settings › Server › Agent API) overrides every Agent: when it is
- * off the switch here is disabled and says so, and nothing is lost. The tab's own read carries that
- * switch (`serverEnabled`), so every member sees it, not only an admin.
- *
- * The owner's tab ends with Try it (api-try-panel.tsx): one real API run on the owner's sign-in,
- * its stream shown as a program would receive it.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
-import type {
-  AgentApiKeyInfo,
-  AgentApiResponse,
-  AgentApiSettings,
-  AgentApiUpdateRequest,
-  ApprovalMode,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  CodeBlock,
-  ConfirmModal,
-  CopyButton,
-  CopyCheckGlyph,
-  CopiedStatus,
-  buttonClass,
-  useCopied,
-  GlyphIcon,
-  ICON_SIZE,
-  ICONS,
-  Input,
-  RuledSection,
-  Select,
-  SkeletonList,
-  ToggleRow,
-  useUnsavedChanges,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useMachineInfo } from "../../lib/machine-agent-lists";
-import { APPROVAL_MODES } from "../chat";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { APPROVAL_MODES } from "@prismshadow/penguin-web/internal";
+
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 import { toastApiError } from "../../lib/toast-api-error";

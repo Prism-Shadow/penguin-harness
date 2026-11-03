@@ -1,21 +1,15 @@
-/**
- * Settings › Server › Chrome extension (admin only): "Allow Chrome extension connections", the
- * server-wide switch over the agents driving users' own Chromes (`browserExtensionsEnabled` in
- * /api/admin/settings, on by default).
- *
- * The switch applies on the flip, like company mode's. Turning it on writes at once. Turning it
- * off asks first, in the danger tone — every user's extension disconnects at once and no agent on
- * the server can use a Chrome — and the knob stays on until the answer is yes. Pairings survive
- * either way. A write that fails puts the knob back on the stored value and says why under it.
- */
-import { useEffect, useState } from "react";
-import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { toastApiError } from "../../lib/toast-api-error";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+
 
 /** Turns the switch off on the server. Reached only through the confirm. */
 const switchOffExtensions = (): Promise<ServerSettingsResponse> =>

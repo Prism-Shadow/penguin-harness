@@ -1,38 +1,10 @@
-/**
- * Agent settings page "Vault" tab: an Agent-level key-value vault
- * (agent_state/.vault.toml) — a table (key, masked value, delete) plus an "Add" dialog
- * (vault-add-dialog.tsx: key + value, value uses a password field). Saving goes through PUT with
- * whole-table replace semantics: keys absent from the body are deleted, and
- * resending only the key name means keep the original value (plaintext never comes
- * back to the frontend); only owners can edit, members are read-only.
- * The key name is injected into the Agent's system prompt to inform the model; the
- * value is injected only into the exec_command subprocess environment, never into
- * the model context.
- *
- * Prompt-injection controls (usePromptInjection): the vault.enabled switch, the
- * {{VAULT}}-placeholder alert (with legacy-template migration) and the editable
- * vault.prompt section, mirroring the Memory tab — owner-only, like the table edits.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  ConfirmModal,
-  HelpFold,
-  NoticeStrip,
-  SettingsEmpty,
-  SkeletonList,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { VaultAddDialog } from "./vault-add-dialog";
 
 export function VaultTab({

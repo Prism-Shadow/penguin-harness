@@ -1,23 +1,7 @@
-/**
- * One field of a settings group, drawn from its declared type: a text box, a password box with
- * the stored value's mask and a clear box, a switch (held where one position is not supported
- * here), a number box, a select (its options this machine cannot honour greyed out with the
- * reason), a list of lines, or a table (plugin-config-table.tsx). It shows the draft it is
- * handed and reports each edit; the page owns the drafts, the errors and what a change sets in
- * motion.
- */
-import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import {
-  Checkbox,
-  Input,
-  PasswordInput,
-  Select,
-  Textarea,
-  ToggleRow,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import type { Locale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+
 import { ConfigTable } from "./plugin-config-table";
 import type { TableDraft } from "./plugin-config-draft";
 

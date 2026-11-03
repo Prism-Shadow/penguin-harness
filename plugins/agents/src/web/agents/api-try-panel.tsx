@@ -1,50 +1,8 @@
-/**
- * The API tab's Try it section, for the Project owner: one framed block holding the question and
- * Run, and under them the output. Run sends one real API run through the try route — the owner's
- * sign-in in place of a key, the runs route's handler behind it — and the output shows its stream
- * as a program would receive it.
- *
- * The output is one box in two views, switched in its header beside the Session the run named:
- * Rendered, one numbered row per message or record, labelled by its `payload.type` — a message's
- * `partial_*` fragments merged into the content they add up to, the answer included — and Raw,
- * one numbered line per `data:` payload as received, scrolling sideways rather than wrapping. Both views share the box's height and
- * scroll inside it. The strip under them names the run's outcome: the status, the Request count,
- * the output and total tokens, the cache-read and cache-write tokens when there are any, and the
- * elapsed time; or, in the danger tone, why there is none: a refusal, a stream that ended before
- * `[DONE]`, or a run that did not reach its end (its last `task_begin` never closed).
- *
- * Running again continues the same Session, as a program does with `session_id`; New
- * conversation starts over. Stop asks the Session's abort route, so the stream still ends with
- * `[DONE]`; an approval the Agent's API approval mode asks for — found by the SDK's approval loop
- * — is answered on its `tool_call` row, and the SDK posts the answer.
- * Leaving the tab mid-run closes the connection, which aborts the run on the server.
- *
- * `ApiTryView` is the section for one state, with no state of its own; the reducer and the
- * driver behind `ApiTryPanel` live in api-try-log.ts.
- */
-import {
-  useEffect,
-  useLayoutEffect,
-  useReducer,
-  useRef,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatBytes } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 
-import {
-  ApprovalButtons,
-  Button,
-  Card,
-  CopyButton,
-  Input,
-  Segmented,
-  StreamingCaret,
-  Text,
-} from "@prismshadow/penguin-ui";
-import { formatBytes } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useAgentLocation } from "../../lib/agent-location";
 import {
   approvalDesk,
   initialTryState,

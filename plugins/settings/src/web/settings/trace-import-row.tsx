@@ -1,37 +1,9 @@
-/**
- * Trace import (Settings → General): a `.jsonl` Trace exported from another install
- * becomes a conversation of the chosen Agent.
- *
- * Both halves of the destination are picked here, Project included. The endpoint is
- * per-Agent and a Trace file cannot name one: its `session_meta` carries an `agent_state`
- * path belonging to the machine that exported it. The Project is asked for rather than
- * inherited because this dialog does not show which one is current — every other row in it
- * belongs to the account or the server — and an import that silently landed in whichever
- * Project the sidebar happened to have selected would be a hard mistake to notice. It also
- * means a Trace can be imported into a Project other than the open one, as long as the viewer
- * owns it: importing is the owner's, so the picker lists owned Projects only, and a viewer who
- * owns none gets no row.
- *
- * The row sits beside the CLI-sessions filter because both decide what the conversation
- * list holds. Export is deliberately not here: a Trace is downloaded from the conversation
- * it belongs to, in the chat's Trace panel.
- */
-import { useEffect, useState, type ChangeEvent } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
 
-import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
-import {
-  HiddenFileInput,
-  PrefRow,
-  Select,
-  UploadIcon,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import { toastApiError } from "../../lib/toast-api-error";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;

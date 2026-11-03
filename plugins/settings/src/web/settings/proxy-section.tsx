@@ -1,70 +1,11 @@
-/**
- * Proxy options (admin only, server-global): two switches — "Application uses the proxy" (the
- * server's own outbound dispatcher) and "Agent environment uses the proxy" (command subprocess
- * environments) — sharing one proxy address.
- *
- * The page follows the settings commit model. Each switch writes the moment it is flipped, with
- * only its own value in the PUT, shows the new position at once and settles on the server's
- * answer; a refused write puts it back and says why in a toast. The address is a typed form: it
- * is written only by Save, which is live only while the address differs from the stored one,
- * and Reset puts the stored address back. Both switches act on the SAVED address, so while the
- * address has unsaved edits they are disabled with a hint to save it first — a flip must never
- * leave the user unsure which address it applied to. The server validates and normalizes the
- * address (bare "host:port" is stored as "http://host:port"); a rejected address renders inline
- * under the input, writes nothing, and the edit stays. Every write takes effect without a
- * restart.
- *
- * Settings hydrate when the section mounts — which is every time it is navigated to — and the
- * controls and Save stay disabled until they arrive. A saved response is adopted as the new
- * baseline, including the address in the exact form the server stored, so the page reflects
- * what is on the server rather than what was typed at it. Leaving the page, or the dialog, with
- * an unsaved address asks first (settings-dialog.tsx), and the dialog does not close while the
- * address's Save is in flight.
- *
- * The reachability test sits BELOW the save row, in its own block, because it measures the
- * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
- * address is not in the path the probes travel. Reading top to bottom — edit, save, then
- * measure — is what makes that honest without a warning banner. Any write — a save or a flipped
- * switch — clears results that now describe a superseded configuration.
- *
- * One request per target, fired together and rendered as each lands. A single response carrying
- * all of them would hold every row blank until the slowest answered, which for a host that
- * black-holes connections is the full five-second timeout with five working results behind it.
- *
- * It carries its own busy flag rather than borrowing Save's: a measurement is not an unsaved
- * edit, so it neither blocks Save nor is blocked by it.
- *
- * The targets — name and exact URL — come from the server and are listed before anyone presses
- * the button, so the page shows concretely what will be requested and a reader can see that
- * these are plain unauthenticated GETs. A frontend copy of that list could drift from the URLs
- * the server really fetches, so it is fetched, not hard-coded.
- */
-import { useEffect, useRef, useState } from "react";
-import type {
-  ProxyProbeDto,
-  ProxyProbeProvider,
-  ProxyProbeTargetDto,
-  ServerSettings,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  Input,
-  PrefRow,
-  SettingsGroup,
-  SettingsSection,
-  ToggleRow,
-  toastSuccess,
-  useFormDraft,
-  useSaving,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useInstantSetting } from "../../lib/instant-setting";
-import { toneInk } from "../../lib/tone";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {

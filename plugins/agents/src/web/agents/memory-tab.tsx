@@ -1,82 +1,12 @@
-/**
- * Agent settings page "Memory" tab: the switch, then every memory the Agent keeps, grouped by
- * scope — user memory first (read by every Session), then one group per Workspace (labeled by
- * its `.workspace` path, newest activity first).
- *
- * A memory's content is the model's document, so per-file editing stays out of the tab: both
- * "edit" and each scope header's "add" open a bridge modal first — a text field and a live
- * preview of the generated prompt, the same shape as the skill import modal — and then jump to
- * a new chat with this Agent and the prompt as the prefilled draft (the same draft-cache
- * route). For a Workspace scope the draft also pins that Workspace, so the Session is injected
- * with the very index it is about to change. Deleting confirms first and also drops the file's
- * MEMORY.md index lines (server-side).
- *
- * A whole group moves in one piece, though: each header carries export and import, following
- * the Agent State snapshot's split — any member may download a group, only the owner may write
- * one back. Import defaults to the mode that loses nothing, and the two that do not are held
- * behind a confirmation naming the memories at stake.
- *
- * The switch writes immediately rather than joining a tab-level Save, so turning Memory off
- * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
- * fully usable; it only stops Memory from entering the context and from preparing directories
- * for new Sessions.
- *
- * The two prompts are one typed form (the settings commit model): Save is live only while one
- * of them differs from the stored text, Reset puts the stored text back, and leaving the tab
- * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
- * and keeps what is being typed.
- */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal";
 
-import type {
-  MemoryFileInfo,
-  MemoryImportMode,
-  MemoryScopeExport,
-  MemoryScopeInfo,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  Card,
-  CollapsibleSection,
-  ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
-  DownloadIcon,
-  Drawer,
-  GlyphIcon,
-  HelpFold,
-  HiddenFileInput,
-  ICONS,
-  IconButton,
-  InfoPopover,
-  ListRow,
-  Md,
-  Modal,
-  Notice,
-  RadioGroup,
-  Sheet,
-  SkeletonList,
-  Textarea,
-  ToggleRow,
-  UploadIcon,
-  bodyWithoutFrontmatter,
-  buttonClass,
-  toastError,
-  toastSuccess,
-  useCopied,
-  useFormDraft,
-  type SheetSnap,
-} from "@prismshadow/penguin-ui";
-
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatRelativeDate } from "../../lib/format";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { agentKey, useAgentLocation } from "../../lib/agent-location";
-import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,

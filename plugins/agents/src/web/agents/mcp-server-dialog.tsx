@@ -1,47 +1,8 @@
-/**
- * The add / edit dialog of one MCP Server entry (mcp-servers-section.tsx lists them). Its fields
- * follow the chosen transport; the permission menu and the three budgets sit beside them. A
- * standalone "test connection" button probes the entry as typed (nothing saved; the result is a
- * toast, the models dialog idiom). The server fills vault values only into an entry saved as it
- * is: while the form still says what the saved entry says, the test sends the saved entry itself
- * (mcp-servers-form.ts `entryToTest`), and a new or changed entry that reads the vault is
- * answered "save first", a muted note beside the button rather than a failure. An entry a plugin
- * installed says so at the top: reinstalling the plugin replaces it.
- *
- * A record dialog under the settings commit model: the dialog is one form, Save is live only
- * while the entry as Save would write it (mcp-servers-form.ts `formToServer`) differs from the
- * stored one and is valid, and closing it with unsaved edits (Cancel, Esc, the ×, a press
- * outside) asks first. A field's error shows once the field differs from what the dialog opened
- * with — an untouched required field is marked by its asterisk, not by an error — and every
- * error shows once a test is asked for an entry that cannot be built. A rejection from the
- * server lands at the dialog's foot, and the dialog stays open with what was typed. The form is
- * mounted only while the dialog is open.
- */
-import { useState } from "react";
-import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import {
-  Button,
-  GlyphIcon,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  Input,
-  Modal,
-  OptionMenu,
-  Segmented,
-  Textarea,
-  toastError,
-  toastSuccess,
-  useFormDraft,
-  useGuardedClose,
-  type OptionMenuChoice,
-} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
-import { useAgentLocation } from "../../lib/agent-location";
 import {
   emptyMcpForm,
   entryToTest,

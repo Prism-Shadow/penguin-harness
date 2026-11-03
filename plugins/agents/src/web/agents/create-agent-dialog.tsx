@@ -1,65 +1,19 @@
-/**
- * The Agents page's "Create Agent" dialog (agents-page.tsx): name + id + description, and what
- * the new Agent starts with — plugins from the library (each one's skills, hook package and MCP
- * servers), and Skills from a project directory's .agents/skills or .claude/skills — through
- * form-variant dropdowns over the shared multi-select panel, with select all / select none; or,
- * instead of those, an exported snapshot package. A plain new Agent otherwise starts with none.
- * A picked plugin with a stdio MCP server asks before the Agent is created, showing the command
- * it runs on this server.
- *
- * A record dialog under the settings commit model: the dialog is one form, Create is live once
- * something is filled in and the id keeps the naming rule, and closing it with anything filled
- * in (Cancel, Esc, the ×, a press outside) asks before it is thrown away. The form is mounted
- * only while the dialog is open, so every opening starts empty — the spec's 「创建弹窗不留草稿」.
- * A rejection from the server lands under the id, and the dialog stays open as it was.
- *
- * Where a machine is connected, the first field is where the Agent is created: this server, or
- * that machine — where it then lives (lib/agent-location.ts). On a machine the whole create runs
- * there: the plugins on offer are that machine's library, the Skills directory is browsed on it,
- * the snapshot goes to it, and it decides whether the id is free. A new location drops the plugins
- * and the directory picked for the old one, which would name things the new one may not have.
- */
-import { useEffect, useState, type ChangeEvent } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
+import { SemanticIdField } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 
-import type {
-  AgentCreateRequest,
-  PluginItem,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  CloseIcon,
-  ConfirmModal,
-  FieldError,
-  FieldHint,
-  FieldLabel,
-  FormPicker,
-  HiddenFileInput,
-  ICONS,
-  InfoPopover,
-  Input,
-  MenuSelectBody,
-  Modal,
-  Textarea,
-  discardUnsaved,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { SemanticIdField } from "../semantic-id";
-import { WorkspaceSelect } from "../internal";
 import {
   SkillPickList,
   addSkillNames,
   removeSkillNames,
   toggleSkillName,
   type PickableItem,
-} from "../skills";
+} from "@prismshadow/penguin-web/internal";
 
-import { StdioDisclosure, stdioServers } from "../plugins";
+import { StdioDisclosure, stdioServers } from "@prismshadow/penguin-web/internal";
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,

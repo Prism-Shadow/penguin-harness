@@ -1,54 +1,10 @@
-/**
- * Agent settings page "Schedule" tab: a table view over
- * agent_state/schedule/*.toml (status badge derived from run state; "next / last
- * fired" shown as two stacked rows) with the split create button at its head —
- * "Create with AI" describes the task to the Project's default agent in a new
- * conversation (AiCreateModal), "Set up manually" opens the shared form
- * (features/schedules/schedule-form-modal.tsx, also the panel's and the row menu's) —
- * and the everyday-schedule suggestions in place of an empty table.
- * Wrapping is controlled per column: compact cells (status, period, fire times,
- * queue, actions) are nowrap, long text cells (name, target) truncate with the
- * full value on hover, and the existing overflow-x-auto container takes over
- * below the table's min width.
- * Readable by any member; toggle/edit/delete are owner-only — PUT has whole-file
- * replace semantics, so toggling also resends every field and only flips `enabled`.
- *
- * Prompt-injection controls (usePromptInjection): the schedules.enabled switch, the
- * {{SCHEDULES}}-placeholder alert and the editable schedules.prompt section, mirroring the
- * Memory tab — owner-only, like the table edits. The prompt teaches the model to manage
- * task files itself; the toggle never stops the server from firing configured tasks.
- */
-import { useCallback, useEffect, useState } from "react";
-import type {
-  ScheduleItem,
-  SchedulesResponse,
-  ScheduleStatus,
-} from "@prismshadow/penguin-server/api";
-import {
-  Badge,
-  Button,
-  ConfirmModal,
-  HelpFold,
-  SettingsEmpty,
-  SkeletonList,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  toastSuccess,
-  type BadgeStyle,
-} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "../../lib/toast-api-error";

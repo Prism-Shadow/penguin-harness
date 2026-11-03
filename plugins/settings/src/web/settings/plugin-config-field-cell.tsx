@@ -18,7 +18,7 @@ import type {
   PluginConfigTableRow,
 } from "@prismshadow/penguin-server/api";
 import { InfoPopover, Switch } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { EnumCell } from "./plugin-config-enum-cell";
 import { PinToggle, WrappingNameBox } from "./plugin-config-table-cells";
 

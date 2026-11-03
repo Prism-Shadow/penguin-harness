@@ -1,105 +1,21 @@
-/**
- * Agent settings page: eleven tabs —
- * Overview (name/description form + two ruled sections in the skills import modal's
- * family: Agent State — State version, snapshot export-import and the copyable State
- * path — and Kernel — the defaults generation with its update / restore-defaults
- * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
- * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
- * Hooks (hooks-tab.tsx), Workbenches (workbenches-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
- * Save = PUT config (sends only the changed keys; YAML comments are preserved
- * server-side).
- *
- * Every form tab follows the settings commit model: its typed fields are a draft
- * (`useFormDraft`) that only Save writes, Save is live only while the draft changed and is
- * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
- * switch, Back, a sidebar link and the browser's back button are all navigations that the
- * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
- * tools table's `call_description` included. A snapshot import asks before it replaces the
- * Agent State.
- *
- * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
- * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
- * While the machine cannot be asked, the page says why instead of showing anything stale.
- */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import type {
-  AgentConfigDto,
-  AgentConfigResponse,
-  AgentConfigUpdateRequest,
-  AgentKernelUpdateResponse,
-} from "@prismshadow/penguin-server/api";
-import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import {
-  Button,
-  Card,
-  ConfirmModal,
-  CopyButton,
-  GlyphIcon,
-  FieldLabel,
-  ICON_SIZE,
-  HiddenFileInput,
-  ICONS,
-  InfoPopover,
-  Input,
-  OptionMenu,
-  PageFrame,
-  PageHeader,
-  Skeleton,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  Tabs,
-  Textarea,
-  UpdateDot,
-  toastSuccess,
-  useFormDraft,
-  type OptionMenuChoice,
-} from "@prismshadow/penguin-ui";
+  normalizeRuntime,
+  runtimeDraftOf,
+  runtimeErrors,
+  runtimeUpdateOf,
+  type RuntimeDraft,
+  type RuntimeNumberField,
+} from "./runtime-form";
 
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
-import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
-import { useProject } from "../../state/project";
-import { useMachines } from "../../state/machines";
-import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
-import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
-import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
-import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
-import {
-  hasDescriptionProperty,
-  normalizeTools,
-  toolsDraftOf,
-  toolsErrors,
-  toolsUpdateOf,
-  withCallDescription,
-  type ToolNumberField,
-  type ToolRowDraft,
-} from "./tools-form";
 
-import { SkillsTab } from "./skills-tab";
-import { WorkbenchesTab } from "./workbenches-tab";
-import { HooksTab } from "./hooks-tab";
-import { MemoryTab } from "./memory-tab";
-import { kernelTabLabel } from "./kernel-labels";
-import { VaultTab } from "./vault-tab";
-import { SchedulesTab } from "./schedules-tab";
-import { ApiTab } from "./api-tab";
-import { McpServersSection } from "./mcp-servers-section";
-import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
-import { toastApiError } from "../../lib/toast-api-error";
+import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
+
 
 type TabKey =
   | "overview"

@@ -1,56 +1,12 @@
-/**
- * Settings › Personal › Archived chats: the conversations that are not in the sidebar — the ones
- * the user archived, and the ones a program opened (the Agent API, a scheduled task, `penguin
- * run`) that the user has not kept. An archived conversation shows only its title and its time;
- * unarchiving returns it to the sidebar, deleting removes it for good.
- *
- * - A search box and two filters (source, Project) on top, and under them, while rows are
- *   chosen, the batch bar: both stay put while the list scrolls in its own box below, so a batch
- *   chosen far down the list is still in reach. The list holds the groups, one per Workspace of
- *   a Project, newest first, each with its count and Select all, which chooses every Session of
- *   the group, loaded or not (Deselect all once all of it is chosen). A group shows ten rows a
- *   page, with a pager under them once it has more than one page; while the next page loads,
- *   the page shown stays and the pager waits.
- * - A row: a box to choose it (shown while the row is hovered or the box has keyboard focus,
- *   always on touch, and on every row while anything is chosen), the title and the time, the
- *   source as a word in a pill (on every row, a person's conversation included), a busy glyph
- *   while it runs, then a delete icon and Unarchive. Whatever is chosen, the one bar acts on it.
- * - An admin also sees the archived chats of the machines their Projects use: a machine's group
- *   names the machine after its Workspace (`[SSH: alias]`, as the sidebar's groups do), and a
- *   machine that could not be read is named in one muted line above the list.
- * - Every delete asks first, with the count — the only red on the page; unarchive does not ask.
- *
- * The page's state and every request live in archived-sessions-state.ts; this renders it.
- */
-import { useEffect, useState } from "react";
-import type { ArchivedSessionGroup, SessionInfo } from "@prismshadow/penguin-server/api";
-import {
-  Pill,
-  Button,
-  Checkbox,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  MoreRow,
-  Pager,
-  SearchInput,
-  Select,
-  SettingsEmpty,
-  SkeletonList,
-  Spinner,
-  toastError,
-} from "@prismshadow/penguin-ui";
-import { useStore } from "zustand/react";
-import { formatDateTime } from "../../lib/format";
-import { subscribeUserEvents } from "../../lib/amsp/user-events";
-import { workspaceLabel } from "../../lib/session-grouping";
-import { programSource } from "../../lib/session-source-mark";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { S } from "../../lib/strings";
-import { projectDisplayName, useProject } from "../../state/project";
-import { Truncated } from "../../components/ui/truncated";
-import { pageCountOf } from "./archived-sessions-paging";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { subscribeUserEvents } from "@prismshadow/penguin-web/internal";
+import { revealPlan, workspaceLabel } from "@prismshadow/penguin-web/internal";
+import { programSource } from "@prismshadow/penguin-web/internal";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { Truncated } from "@prismshadow/penguin-web/internal";
+
 import {
   createArchiveStore,
   groupKey,

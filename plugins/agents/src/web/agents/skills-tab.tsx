@@ -1,68 +1,13 @@
-/**
- * Agent settings page "Skills" tab: the skills installed on this Agent
- * (agent_state/skills/<name>/ — the files are the single source of truth, so the list is
- * re-fetched from the API after every mutation instead of trusting client state). Rows lead
- * with the icon of the plugin the skill came from (the book glyph when it has none), then
- * the name, localized short description and version; uninstall
- * confirms first (deletes the whole directory, local edits included). The "Import skill"
- * modal offers two paths: the recommended chat install (a source field accepting a web
- * page / repo URL / local path / foreign install command — see skill-import-source.ts —
- * whose generated review-then-install prompt can be copied or prefilled into a new chat
- * with this Agent) and a zip upload posted base64 to the archive endpoint (409
- * skill_exists asks before overwriting). Each row can also export the installed directory
- * as a zip that round-trips through that same endpoint. Read and mutate are both
- * member-level, matching the skills routes — no owner gating here.
- *
- * The import dialog is mounted only while it is open, so every opening starts with nothing
- * typed. The source is its draft under the settings commit model: closing the dialog with one
- * typed (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in
- * flight. Opening the chat hands the source over, so the draft is forgotten before the page
- * moves to the conversation.
- *
- * Prompt-injection controls (usePromptInjection): the skills.enabled switch, the
- * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
- * skills.prompt section, mirroring the Memory tab.
- */
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
+import { localizedShortText } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal";
 
-import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
-  DownloadIcon,
-  GlyphIcon,
-  HelpFold,
-  HiddenFileInput,
-  ICONS,
-  IconButton,
-  Input,
-  Modal,
-  SettingsEmpty,
-  SettingsList,
-  ListRow,
-  ICON_SIZE,
-  SkeletonList,
-  Textarea,
-  buttonClass,
-  discardUnsaved,
-  toastSuccess,
-  useCopied,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { SkillTile } from "../skills";
-import { localizedShortText } from "../../lib/skill-use";
-import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";

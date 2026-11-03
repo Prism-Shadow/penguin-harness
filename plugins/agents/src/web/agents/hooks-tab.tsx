@@ -1,66 +1,13 @@
-/**
- * Agent settings page "Hooks" tab: the hook packages installed on this Agent
- * (agent_state/hooks/<name>/ — a manifest plus the scripts the harness runs at the loop's
- * hook points, e.g. after every Task). The files are the single source of truth, so the list
- * is re-fetched from the API after every mutation instead of trusting client state, the way
- * the Skills tab does. Rows lead with the icon of the plugin the package came from (the hook
- * glyph when it has none), then the package name with the hook points it answers at right
- * beside it (one bare chip each — `stop`, `user_prompt` — wrapping with the name), its
- * localized description below, and the trailing slot: the version, export and uninstall.
- * Export downloads the installed directory as a zip; the "Import hook" modal offers the
- * Skills tab's two paths: the recommended chat import (a source field taking a URL / repo /
- * local path / description / another tool's hooks config, whose generated review-then-install
- * prompt — hook-import.ts — can be copied or prefilled into a new chat with this Agent) and a
- * zip upload that takes such a package back (409 hook_exists asks before overwriting). Read,
- * import/export and uninstall are member-level, matching the hooks routes.
- *
- * The import dialog is mounted only while it is open, so every opening starts with nothing
- * typed. The source is its draft under the settings commit model: closing the dialog with one
- * typed (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in
- * flight. Opening the chat hands the source over, so the draft is forgotten before the page
- * moves to the conversation.
- *
- * The Agent-level switch card sits at the top (usePromptInjection, the Skills tab's slot):
- * `hooks.enabled` in system_config.yaml decides whether a new Session assembles any hooks at
- * all — the packages are never touched by it. It is the owner's, like the Vault and Schedules
- * switches; members see the state. Hooks have no prompt half, so the card comes alone.
- */
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { SkillTile } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal";
 
-import type { HookItem } from "@prismshadow/penguin-server/api";
-import {
-  Badge,
-  Button,
-  Card,
-  ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
-  DownloadIcon,
-  GlyphIcon,
-  HelpFold,
-  HiddenFileInput,
-  ICONS,
-  Modal,
-  SettingsEmpty,
-  SkeletonList,
-  Textarea,
-  discardUnsaved,
-  toastSuccess,
-  useCopied,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { localizedText } from "../../lib/skill-use";
-import { SkillTile } from "../skills";
-import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";

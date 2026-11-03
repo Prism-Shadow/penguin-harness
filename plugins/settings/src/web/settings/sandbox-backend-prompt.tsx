@@ -9,7 +9,7 @@
  */
 import { useState } from "react";
 import { Checkbox, ConfirmModal, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function SandboxBackendPrompt({
   pkgs,

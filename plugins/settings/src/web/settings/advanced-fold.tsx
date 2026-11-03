@@ -8,7 +8,7 @@
 import { useId, useState, type ReactNode } from "react";
 
 import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function AdvancedFold({
   children,

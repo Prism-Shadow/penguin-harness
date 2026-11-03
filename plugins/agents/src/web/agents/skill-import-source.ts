@@ -7,7 +7,7 @@
  * per kind; the security tail (read fully, review for malicious instructions, then
  * install) is shared and always appended.
  */
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** How the pasted source should be approached by the agent (one lead sentence per kind in S.skills.importPromptLead). */
 export type ImportSourceKind = "webUrl" | "repoUrl" | "localPath" | "command" | "reference";

@@ -1,92 +1,23 @@
-/**
- * Agents list page: entry point for creating,
- * deleting, and editing Agents. Laid out as GitHub-repo-list-style single-column compact rows:
- * one horizontal band of "info | 30-day activity sparkline | button group" per row.
- * Info column has three lines: title line (small avatar + bold name + agentId); single-line
- * truncated description; and a stats line — icon + number only (Session count / tool count) plus
- * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
- * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
- * order.
- * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
- * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
- * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
- * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
- * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
- * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
- * description and picks what the new Agent starts with — plugins from the library (each one's
- * skills, hook package and MCP servers), and Skills from a project directory's .agents/skills or
- * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
- * server asks before the Agent is created, showing the command it runs on this server.
- *
- * A machine's Agents are that machine's own (lib/agent-location.ts), and they sit in the same
- * list as this server's, the way the sidebar mixes machine Workspaces with local ones: one order
- * for all (lib/machine-agent-lists.ts `mixAgents`), each machine card named `[SSH: alias]` after
- * the Agent's name as a machine's Workspace group is. Every control on such a card acts on that
- * machine — its settings page there, a new chat in its temporary workspace, its delete. A machine
- * out of reach keeps what it was last seen holding on the list, greyed, every control off, with
- * the reason beside the tag and on each control. A connected machine's cards show what it last
- * answered from the first paint, greyed and inert without the plug until it answers in this page
- * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
- *
- * The list is read again after a delete or a kernel update with the old one on screen: the
- * skeleton only stands in while no list of the Project has arrived yet. A delete answers once the
- * Agent has left every list; its files are removed in the background, on a progress card that
- * appears when that takes a while (agent-deletion-progress.ts).
- */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { cardBodyClick } from "@prismshadow/penguin-web/internal";
+import { formatDateTime, formatRelativeDays } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
+import { dismissTodo } from "@prismshadow/penguin-web/internal";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
+import { mergeAgents, type AgentSource } from "@prismshadow/penguin-web/internal";
 
-import { Link, useLocation, useNavigate } from "react-router";
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import {
-  AgentAvatar,
-  Pill,
-  Button,
-  Card,
-  ConfirmModal,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  Input,
-  PageFrame,
-  PageHeader,
-  RuledSection,
-  Skeleton,
-  SkeletonCard,
-  Sparkline,
-  TodoNotice,
-  UpdatePill,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeDays } from "../../lib/format";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import {
-  useUpdateBadges,
-  dismissTodo,
-  bulkOutcome,
-  failedList,
-  firstFailure,
-  noticeCounts,
-} from "../todos";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { agentKey, agentSettingsPath } from "../../lib/agent-location";
-import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import type { PlacedAgent } from "../../lib/machine-agent-lists";
-import { toneInk } from "../../lib/tone";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import { followAgentDeletion } from "./agent-deletion-progress";

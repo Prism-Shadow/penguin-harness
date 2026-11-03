@@ -7,19 +7,19 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { S } from "../../lib/strings";
-import { ChordKbd } from "../../components/ui/chord-kbd";
-import { isModifierCode } from "../../lib/shortcuts/chord";
-import { formatChord } from "../../lib/shortcuts/format";
-import { currentPlatform } from "../../lib/shortcuts/platform";
+import { S } from "@prismshadow/penguin-web/internal";
+import { ChordKbd } from "@prismshadow/penguin-web/internal";
+import { isModifierCode } from "@prismshadow/penguin-web/internal";
+import { formatChord } from "@prismshadow/penguin-web/internal";
+import { currentPlatform } from "@prismshadow/penguin-web/internal";
 import {
   RECORDER_IDLE,
   recorderRelease,
   recorderStart,
   recorderStep,
   type RecorderState,
-} from "../../lib/shortcuts/recorder";
-import type { Chord } from "../../lib/shortcuts/types";
+} from "@prismshadow/penguin-web/internal";
+import type { Chord } from "@prismshadow/penguin-web/internal";
 
 export function ShortcutRecorder({
   chord,

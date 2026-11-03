@@ -1,25 +1,16 @@
-/**
- * Company mode (admin only, server-global): one switch that applies the moment it is flipped —
- * a single PUT to /api/admin/settings, no Save button, and so no draft state to lose. The switch
- * is off on a server nobody has turned it on, which is why the pre-hydration state below is off
- * rather than on; it stays disabled until the stored value arrives and again while a write is in
- * flight, so a second flip cannot race the first. Off stops the organization scheduler, 404s
- * every organization route and hides the mode switch for everyone; on again resumes without
- * backfilling what was missed, and only brings the mode switch back — nobody's shell moves into
- * company mode by it (features/company/company-state.tsx). A write that fails puts the switch back on the stored
- * value and names the reason on a line under it (a toast would leave the switch and the message
- * on separate surfaces). The auth context is refreshed afterwards because the shell reads the
- * flag from /api/me, not from this page. The mode is a beta; the line under the switch says so
- * wherever the switch stands. Turning it off asks first — it stops every organization on the
- * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
- */
-import { useEffect, useState } from "react";
-import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
-import { useAuth } from "../../state/auth";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+
 import { writeCompanyMode } from "./company-mode-write";
 import { toastApiError } from "../../lib/toast-api-error";
 

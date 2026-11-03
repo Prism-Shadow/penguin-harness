@@ -1,37 +1,12 @@
-/**
- * One card of the Settings dialog's Plugins page: a settings entry and the entries drawn inside
- * it (a sandbox backend's group inside the sandbox's), under the settings commit model.
- *
- * - **Switches apply when flipped.** The card's `switch` and every `boolean` field write their
- *   own value alone, to their own entry, the moment they move; the switch shows the new position
- *   at once and settles on the server's answer, and a refused write puts it back with a toast.
- *   They are never part of the card's draft, so flipping one neither dirties the card nor
- *   touches what is typed beside it. Turning the `switch` on offers the backend install once the
- *   write has landed.
- * - **Everything typed waits for Save** — text, secrets (with the clear box, an instruction to
- *   the next Save), numbers, choices, lists and tables, a table's boolean cells included (its
- *   added rows exist only in the draft). Save is live only while the card differs from what is
- *   stored and every number parses (a box that does not is marked inline); it sends each
- *   changed entry in its own PUT, only the fields that changed. Reset puts the stored values
- *   back. A rejected field renders under that field; a save that fails keeps the draft.
- * - **A reload keeps the typing.** When the page re-reads the entries (a group action, a
- *   finished install), a clean card follows the new values and a dirty one keeps its draft
- *   against the new baseline (`useFormDraft`).
- *
- * The draft registers under the Settings dialog's scope, so switching pages, closing the dialog
- * or picking another machine with a dirty card asks first; while the card's Save is in flight
- * the dialog does not close.
- */
-import { useState } from "react";
-import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import { Button, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { dispatchPluginConfigSaved } from "../../lib/plugin-config-event";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import type { Locale } from "../../state/locale";
+import { Button, toastError, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { dispatchPluginConfigSaved } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+
 import { AdvancedFold } from "./advanced-fold";
 import {
   baselineOf,

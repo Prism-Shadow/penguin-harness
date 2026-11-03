@@ -1,63 +1,13 @@
-/**
- * Tools tab's "MCP Server" block: a table of configured servers (name / transport /
- * target) with vault-style immediate persistence — Add/Edit happens in a dialog whose
- * fields follow the chosen transport (mcp-server-dialog.tsx), deletion sits behind a
- * confirmation. Every operation PUTs the whole `mcpServers` list through the config route;
- * the server re-validates each entry via the core transport resolver, so a rejected save
- * surfaces inside the dialog instead of half-applying.
- *
- * Connectivity testing mirrors the models page: the dialog carries a standalone
- * "test connection" button (result as a toast, tool count + latency — the models dialog
- * idiom), and the section header offers a bulk test that probes every configured server
- * sequentially behind a confirm dialog, writing a tone-colored badge onto each row as its
- * result lands (the group speed-test idiom). The server fills vault values only into an entry
- * saved as it is (the user's rule): the dialog sends the saved entry itself while its form is
- * unchanged, and a new or changed entry that reads the vault is answered "save first", a muted
- * note beside the button rather than a failure.
- *
- * The permission control mirrors the builtin tool table's, with a third `auto` state: it
- * decides which of the server's tool calls stop for approval, and nothing about what the
- * remote server is able to do.
- *
- * A server a plugin installed carries the plugin's name: a puzzle mark after its name says
- * which plugin (by its title, read from the library once), the edit dialog says reinstalling
- * the plugin replaces the entry, and the removal says Manage installs can put it back. What
- * keeps a server from connecting — vault keys its `${KEY}` references name and the vault
- * lacks, an OAuth sign-in this version cannot do — is read from the server (GET …/mcp-servers)
- * and shown as marks in a status column, whoever added the server.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import {
-  Button,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  InfoPopover,
-  Modal,
-  SettingsEmpty,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  toastError,
-  toastSuccess,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import type { AgentMcpServerItem, McpServerTestResponse } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../../lib/skill-use";
-import { McpServerMarks } from "../plugins";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { McpServerMarks } from "@prismshadow/penguin-web/internal";
+
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */
 function targetOf(entry: MCPServerConfig): string {

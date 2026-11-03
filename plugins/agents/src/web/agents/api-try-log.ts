@@ -1,38 +1,7 @@
-/**
- * The API tab's Try it, without React: the state of one panel, the reducer that folds a run into
- * it, and the async driver that feeds it.
- *
- * A run is the Agent API's own run, sent through the owner's try route and read by the SDK's
- * `AgentClient` over a transport of the Web App's routes (api-try-transport.ts), so the panel sees
- * the records a program would. The raw view prints them back, one numbered `data:` line each. The
- * rendered view reads the same records as rows, one per item or event, labelled by the record's
- * `payload.type`:
- *
- * - A message's `partial_*` fragments and its complete record are one row (`text`, `thinking`,
- *   `tool_call`, `tool_call_output`). While fragments arrive the row shows them joined; once the
- *   complete record arrives it shows that record's content instead. The two are the same message,
- *   so nothing compares them: the latest is what shows. Fragments find their row by the message
- *   they belong to — a tool call or its output by its `tool_call_id` — so a row keeps its place
- *   when other rows come between its fragments.
- * - Every other record is a row of its own, with its key fields. The control frame `ping` is not
- *   a row.
- *
- * The outcome strip is the SDK's `RunResult`. The Session the run is on (a new one's is named by
- * its `session_meta`) stays after the run, so the next run continues the conversation, the way a
- * program passes `session_id`; New conversation forgets it. An approval the Agent's API approval
- * mode asks for reaches the panel through the SDK's approval loop: the `tool_call` row it is
- * about offers Allow and Deny, and the answer goes back through the SDK.
- */
-import { AgentClient, AmspHttpError } from "@prismshadow/amsp";
-import type {
-  AmspRecord,
-  RunRequest,
-  RunResult,
-  TokenCounts,
-  ToolCallPayload,
-} from "@prismshadow/amsp";
-import * as api from "../../api/endpoints";
-import { tryTransport } from "./api-try-transport";
+
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+
 
 /** Where a one-line value is cut, so one long argument string does not take the row. */
 const CUT = 120;

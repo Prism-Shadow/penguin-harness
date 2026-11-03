@@ -1,39 +1,10 @@
-/**
- * Upload limits (admin only, server-global), modelled on the proxy section beside it. Two
- * whole-MB numbers — the per-file attachment cap and the per-message total — written together
- * by a single PUT to /api/admin/settings, so a rejected value writes nothing.
- *
- * The bounds quoted under each field, and the fixed limits the page's "?" names, come from the
- * server (`/api/me` uploadLimits) rather than from constants here: the range is a statement
- * about what the server can survive, and a second copy of it in the browser would be a copy
- * that goes stale. A value outside it is refused by the server with `invalid_attachment_limit`
- * and rendered inline under the field, the same way the proxy section handles a bad address.
- *
- * The two boxes are a typed form (the settings commit model): Save is live only while a value
- * differs from the stored one and both are whole numbers — a box left empty or holding anything
- * else is marked inline, with Save held, rather than refused after the click — and Reset puts
- * the stored values back. Leaving the page, or the dialog, with unsaved values asks first
- * (settings-dialog.tsx), and the dialog does not close while Save is in flight. Saving takes
- * effect immediately — the attachment validators and the request body cap both read the setting
- * per request — so there is nothing to restart and nothing to warn about.
- */
-import { useEffect, useState } from "react";
-import type { ServerSettings } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  Input,
-  SettingsSection,
-  toastSuccess,
-  useFormDraft,
-  useSaving,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { useAuth } from "../../state/auth";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+
 
 /** The two boxes as typed. Kept as strings: a number input that clears to NaN cannot be typed into. */
 interface LimitsDraft {

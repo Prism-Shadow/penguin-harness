@@ -16,7 +16,7 @@ import type {
   MemoryScopeExport,
   MemoryTransferFile,
 } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** Format marker of a scope document, typed against the DTO so this literal cannot drift from the server's. */
 const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";

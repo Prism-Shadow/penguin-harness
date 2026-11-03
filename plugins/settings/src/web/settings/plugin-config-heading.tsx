@@ -1,18 +1,8 @@
-/**
- * A settings entry's head: its title with its description behind a "?", its store name, the
- * actions it offers
- * (what the deployment must do once on the machine, as buttons beside what each will do) and
- * its live notices — a spinner for work in progress, a strip for what needs attention, quiet
- * text for the rest; a notice's details fold under it, collapsed (the sandbox's headline
- * discloses why an installed backend is not in use). While the group's switch is off (as
- * drafted), only the title is drawn: the actions and notices concern the group in use.
- */
-import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
-import { Button, HelpFold, InfoPopover, NoticeStrip, Spinner } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import type { Locale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+
 import { switchedOff } from "./plugin-config-draft";
 
 export function ConfigHeading({

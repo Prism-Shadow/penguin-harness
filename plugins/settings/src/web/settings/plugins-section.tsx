@@ -1,54 +1,23 @@
-/**
- * At the top, apart from everything under it, the Plugins page's "incompatible plugins only"
- * switch: a display preference of this browser, not server configuration, which commits when
- * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
- *
- * Under it, ruled off, plugin options (admin only, server-global): one card per settings entry
- * — a group a module contributes (the sandbox) or a loaded plugin's declared configuration —
- * drawn from its schema: a string, a secret, a boolean, a number, a choice, a list of lines or
- * a table (a row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing
- * about any particular entry. Fields a group marks `advanced` sit in a fold under the others,
- * collapsed by default (advanced-fold.tsx). A group with a `switch` draws that field alone while
- * it is off, and one that reports a `backend` it lacks offers to install it when the switch is
- * turned on (sandbox-backend-prompt.tsx). An entry naming a
- * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
- * saved with it; notices the entry reports sit under its title. How a card commits — switches
- * when flipped, everything typed on the card's own Save — is plugin-config-card.tsx. A secret
- * field always starts empty and shows the stored value's mask under it: blank keeps what is
- * stored, typing replaces it, and the clear checkbox drops it. The server validates against the
- * same schema and answers a rejected field by name, which renders under that field.
- *
- * Each server keeps its own values, so the page edits one machine at a time: a picker at the
- * top switches between this server and the machines the Project holds a connection to, and
- * every read, save and action goes to the picked machine through this server's tunnel.
- * Nothing is copied between machines. Picking another machine replaces every card, so with an
- * unsaved card it asks first.
- *
- * Values hydrate when the section mounts and every stored response is adopted as the new
- * truth; a card with unsaved edits keeps them against it. The plugin picks a change up through
- * its watch, so nothing here says "restart".
- */
-import { useEffect, useRef, useState } from "react";
-import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
-import { apiErrorText } from "../../lib/api-error";
-import { useSessions } from "../../state/sessions";
-import { useProject } from "../../state/project";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+
 import {
   THIS_SERVER_KEY,
   backendToOffer,
   dismissBackendPrompt,
   installInOrder,
-} from "../../lib/sandbox-backend-prompt";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
+} from "@prismshadow/penguin-web/internal";
+import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
 import { MachinePicker } from "@penguinharness/plugin-machines/web";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
+} from "@prismshadow/penguin-web/internal";
 import { PluginCard } from "./plugin-config-card";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";

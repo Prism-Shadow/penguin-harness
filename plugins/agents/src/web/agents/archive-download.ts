@@ -8,8 +8,8 @@
  * authority on the filename (it appends -v<version> when the installed copy declares one);
  * `<fallbackName>.zip` covers a missing or unparseable header.
  */
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export async function downloadArchive(url: string, fallbackName: string): Promise<void> {
   const res = await fetch(url);

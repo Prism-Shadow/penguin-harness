@@ -1,54 +1,8 @@
-/**
- * Shared enable-switch (and, where the feature has one, prompt) controls for the Skills /
- * Vault / Schedules / Hooks tabs, mirroring the Memory tab's layout: an enable-switch card
- * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
- * never drags an unfinished prompt edit along), an amber alert when the template lacks the
- * feature's section placeholder — with one-click insert, or one-click migration when the
- * template still carries the legacy hardcoded section — and an editable prompt section (mono
- * textarea + placeholder-chip reference + Save and Reset). On the three prompt features
- * the toggle and prompt govern prompt injection only — the feature itself keeps working with
- * the switch off (vault values still reach subprocesses, tasks still fire, skills stay
- * invocable). Hooks is the one switch-only feature: its packages are scripts run at the loop's
- * hook points rather than text in the context, so it supplies no prompt strings and gets the
- * card alone — and its switch does govern behavior, deciding whether a new Session assembles
- * any hooks at all.
- *
- * Exposed as a hook returning render slots because the pieces straddle the host tab's own
- * content: the switch and alert sit above it, the prompt editor below. The hook owns the config
- * state; the tab seeds it via `applyConfig` from the getAgentConfig response it loads in
- * parallel with its own data. `canEdit` carries the host tab's permission model (member-level on
- * Skills, owner-only on Vault / Schedules / Hooks).
- *
- * The prompt is a typed form (the settings commit model): a draft against the stored prompt
- * that only Save writes, Save live only while the two differ, Reset to put the stored text back,
- * and leaving the tab with unsaved edits asks first. The switch and the placeholder insert write
- * the config at once and move the stored prompt the draft is compared with; what is being typed
- * stays as typed.
- */
-import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 
-import type {
-  AgentConfigDto,
-  AgentHooksConfigDto,
-  AgentSchedulesConfigDto,
-  AgentSkillsConfigDto,
-  AgentVaultConfigDto,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  Card,
-  InfoPopover,
-  Notice,
-  Textarea,
-  ToggleRow,
-  toastSuccess,
-  useFormDraft,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { toastApiError } from "../../lib/toast-api-error";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 

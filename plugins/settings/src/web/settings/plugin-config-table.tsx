@@ -1,36 +1,8 @@
-/**
- * A settings group's `table` field (the Sandbox card's presets), drawn inside a rounded,
- * hairline-bordered box. The layout is fixed: every `enum` column gets the same width, the
- * small columns (a pin, the handle, the "…" menu) get just their control, and the text column
- * takes the rest and wraps. On a screen too narrow for that the box scrolls sideways.
- *
- * The table's title, every column header and a column group's header carry a "?" disclosing
- * what they mean (the schema's `description`s), never a paragraph on screen.
- *
- * Cells by column type are plugin-config-field-cell.tsx's. The row's name (its `name` column)
- * is followed by the chosen row's marker ("(Default)", the `rowChoice`'s title) and a "?" saying
- * what the row is for: its declared `description` while its choices are the declared ones, else
- * each choice's value and what that option does.
- *
- * An `extensible` table ends every row with a drag handle (the arrow keys move a focused one),
- * and has an add button under it. A drag lifts the row and moves it with the pointer, shows a
- * line where it will land, and reorders once, on the drop; Esc puts it back. A row's "…" menu
- * (plugin-config-row-menu.tsx) holds what is used less often: Set as default, and Delete on an
- * added row. The handle and the menu join the column group when it ends the columns. Every
- * control is named "<row> · <column>" (or after its action) for a screen reader, the row's name
- * in the page's language.
- */
-import { useEffect, useRef, useState } from "react";
-import type {
-  PluginConfigEntry,
-  PluginConfigField,
-  PluginConfigTableColumn,
-} from "@prismshadow/penguin-server/api";
-import { Button, InfoPopover } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import type { Locale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import type { Locale } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "@prismshadow/penguin-web/internal";
+
 import type { TableDraft } from "./plugin-config-draft";
 import { Cell, rowHelp, type DrawnRow } from "./plugin-config-field-cell";
 

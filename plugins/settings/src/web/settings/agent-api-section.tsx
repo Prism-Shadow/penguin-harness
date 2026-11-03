@@ -1,21 +1,15 @@
-/**
- * Settings › Server › Agent API (admin only): "Allow the Agent API", the server-wide switch over
- * every Agent's public API (`agentApiEnabled` in /api/admin/settings, on by default). Off, every
- * request to the API is refused; each Agent's own switch, approval mode and keys are kept.
- *
- * The switch applies on the flip, like Chrome extension connections'. Turning it on writes at
- * once. Turning it off asks first, in the danger tone — every program calling an Agent fails from
- * then on — and the knob stays on until the answer is yes. A write that fails puts the knob back
- * on the stored value and says why under it.
- */
-import { useEffect, useState } from "react";
-import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { toastApiError } from "../../lib/toast-api-error";
+import {
+  ConfirmModal,
+  SettingsGroup,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+
 
 /** Turns the switch off on the server. Reached only through the confirm. */
 const switchOffAgentApiServer = (): Promise<ServerSettingsResponse> =>

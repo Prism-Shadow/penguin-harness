@@ -1,27 +1,11 @@
-/** The owner's new-API-Session defaults, using the App's existing form pickers. */
-import { useEffect, useState } from "react";
-import type {
-  AgentApiResponse,
-  AgentApiSettings,
-  AgentApiUpdateRequest,
-  ModelsResponse,
-} from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  FieldLabel,
-  Input,
-  RuledSection,
-  useFormDraft,
-  useSaving,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { useInstantSetting } from "../../lib/instant-setting";
-import { useAgentLocation } from "../../lib/agent-location";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
-import { WorkspaceSelect } from "../internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+
 
 interface ApiSettingsProps {
   projectId: string;
