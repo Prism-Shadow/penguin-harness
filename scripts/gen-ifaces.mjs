@@ -1235,7 +1235,7 @@ const text = `${JSON.stringify({ hash, ...body }, null, 1)}\n`;
 const SLOT_KEY = "CliCommandsModule.commands";
 const componentsText = () => {
   const found = [];
-  for (const [, { node, meta, file, kind, className }] of moduleClasses) {
+  for (const [, { meta, file, kind, className }] of moduleClasses) {
     if (kind !== "component") continue;
     if (!meta.contributes || !(SLOT_KEY in meta.contributes)) continue;
     found.push({ file, className });
