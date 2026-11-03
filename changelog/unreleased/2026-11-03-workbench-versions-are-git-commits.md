@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#1443](https://github.com/Prism-Shadow/penguin-harness/pull/1443)
 
 [中文版](2026-11-03-workbench-versions-are-git-commits.zh.md)
 
