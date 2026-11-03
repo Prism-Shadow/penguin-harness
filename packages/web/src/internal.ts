@@ -25,7 +25,7 @@ export * from "./features/settings/index";
 export * from "./features/semantic-id/index";
 export * from "./features/skills/index";
 export * from "@penguinharness/plugin-usage/web";
-export * from "../../../plugins/projects/src/web/workspace/index";
+export * from "@penguinharness/plugin-projects/web";
 export * from "./lib/api-error";
 export * from "./lib/browser-start-sites";
 export * from "./lib/settings-request";
