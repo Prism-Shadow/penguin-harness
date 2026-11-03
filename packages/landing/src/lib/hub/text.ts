@@ -4,6 +4,7 @@
  * where there is one, everyone else the English.
  */
 import type { SiteLocale } from "@prismshadow/penguin-ui/site";
+import { S } from "../strings";
 
 export const pick = (locale: SiteLocale, en: string, zh: string | undefined): string =>
   locale === "zh" && zh ? zh : en;
@@ -31,6 +32,15 @@ export function formatCompact(value: number): string {
 }
 
 const trim = (value: number) => (value >= 100 ? String(Math.round(value)) : value.toFixed(1));
+
+/** One run's time: minutes under an hour, else hours to one decimal. */
+export function formatDuration(ms: number): string {
+  const t = S.hub.leaderboards;
+  const minutes = ms / 60_000;
+  return minutes < 60
+    ? t.minutesShort(String(Math.max(1, Math.round(minutes))))
+    : t.hoursShort((minutes / 60).toFixed(1));
+}
 
 export const formatUsd = (value: number): string =>
   `$${value >= 100 ? Math.round(value) : value.toFixed(2)}`;
