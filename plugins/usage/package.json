@@ -1,0 +1,30 @@
+{
+  "name": "@penguinharness/plugin-usage",
+  "version": "0.2.18",
+  "private": true,
+  "type": "module",
+  "description": "The usage and traces functional group: usage, trace and benchmark services with their routes and pages, temporarily parked under plugins/.",
+  "exports": {
+    "./server": "./src/server/index.ts",
+    "./web": "./src/web/index.ts"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
+    "fflate": "^0.8.2",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.5.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "vite": "^7.3.6"
+  },
+  "penguin": {
+    "parked": true
+  }
+}

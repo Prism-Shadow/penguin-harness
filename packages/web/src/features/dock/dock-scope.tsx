@@ -1,5 +1,5 @@
 import { useProject } from "../../state/project";
-import { dispatchBrowser } from "../builtin-browser";
+import { dispatchBrowser } from "@penguinharness/plugin-browser/web";
 /**
  * Keeps the dock's scope on the conversation on screen (`WebAppModule.layers`, mounted once beside
  * every page). The docks belong to the conversation they were arranged in, so switching Sessions

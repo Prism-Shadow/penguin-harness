@@ -66,7 +66,7 @@ import { useAuth } from "../../state/auth";
 import { writeClipboard } from "../../lib/clipboard";
 import { inEditable, writeSelectionCopy } from "../../lib/selection-copy";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { openLinkInBrowser, browserLinkTarget, subscribeBrowser } from "../builtin-browser";
+import { openLinkInBrowser, browserLinkTarget, subscribeBrowser } from "@penguinharness/plugin-browser/web";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */
 export interface CapturedSelection {

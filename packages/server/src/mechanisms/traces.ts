@@ -47,7 +47,7 @@ import type {
   HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
-} from "../services/trace-service.js";
+} from "@penguinharness/plugin-usage/server";
 import type { MessageCursor } from "../services/message-window.js";
 
 /** TraceIndexStore: the mechanism TraceIndexRepo implements. */

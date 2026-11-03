@@ -1,0 +1,388 @@
+/**
+ * The chat dock's scheduled-tasks panel: the tasks bound to the conversation on screen (the
+ * Project's schedules filtered to this Session — new-Session tasks belong to the agent and live
+ * on its settings tab), searchable and filtered by state, each row with its human schedule
+ * line, an enable switch and an overflow menu (edit / delete); a suggestions list of everyday
+ * schedules; and the two create buttons in the header — "Create with AI" composes the request
+ * and prefills THIS conversation's composer with it (ScheduleAiModal), "Create manually" opens
+ * the shared form pinned to this Session. This panel is the only place a task bound to a
+ * conversation is created.
+ *
+ * The list is the shared store's (schedule-store.ts), narrowed to this Session, so the chat
+ * toolbar's alarm-clock mark counts exactly what is listed here. This panel adds the one
+ * refresh trigger the store cannot know about: a slow poll while the tab is actually on screen.
+ *
+ * Readable by any member; the switch, edit and delete are owner-only, like the settings tab,
+ * while the AI path stays open to everyone — asking the agent is a message, not a write.
+ *
+ * A conversation on a machine runs that machine's Agent, and its tasks are files there: the list
+ * is that machine's, and every switch, edit, delete and new task acts on the machine.
+ */
+import { useEffect, useState } from "react";
+import type {
+  ProjectScheduleItem,
+  ScheduleItem,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  ConfirmModal,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  SearchInput,
+  Segmented,
+  SettingsEmpty,
+  SkeletonList,
+  Switch,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { AiCreateButtons } from "@prismshadow/penguin-web/internal";
+
+||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/schedules/schedule-panel.tsx
+import { describeSchedule } from "./schedule-describe";
+import { ScheduleAiModal } from "./schedule-ai-modal";
+import { ScheduleFormModal } from "./schedule-form-modal";
+import {
+  SCHEDULE_FILTERS,
+  filterSchedules,
+  scheduleGlyph,
+  sessionSchedules,
+  type ScheduleFilter,
+} from "./schedule-panel-state";
+
+import { refreshSchedules, useProjectSchedules } from "./schedule-store";
+import { ScheduleSuggestions } from "./schedule-suggestions";
+import { toggleBody } from "./schedule-upsert";
+import { toastApiError } from "../../lib/toast-api-error";
+
+/** How often the list refetches while on screen — about the server's own re-read cadence for the schedule directory. */
+const REFRESH_MS = 30_000;
+
+/** The row's leading state glyph; an invalid file wears the info circle in the danger tone, its reason in the tooltip. */
+function StateGlyph({ item }: { item: ScheduleItem }) {
+  const glyph = scheduleGlyph(item.status);
+  const name = S.schedule.statusNames[item.status] ?? item.status;
+  const tone =
+    glyph === "play" ? toneInk.success : glyph === "alert" ? toneInk.danger : toneInk.muted;
+  // The state marks: a filled play for an armed task, pause bars, a check for the settled states.
+  const d =
+    glyph === "play"
+      ? ICONS.play
+      : glyph === "pause"
+        ? ICONS.pause
+        : glyph === "check"
+          ? ICONS.check
+          : ICONS.info;
+  return (
+    <span className={`shrink-0 ${tone}`} data-tooltip={item.invalidReason ?? name}>
+      <GlyphIcon d={d} size={ICON_SIZE.rowLead} filled={glyph === "play"} />
+      <span className="sr-only">{name}</span>
+    </span>
+  );
+}
+
+/** A row's overflow menu: edit, and delete in the destructive treatment (small Menu rows). */
+function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const item = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      portal={{ direction: "down", align: "right" }}
+      menuClass="w-32"
+      button={
+        <button
+          type="button"
+          data-tooltip={S.schedule.rowActions}
+          aria-label={S.schedule.rowActions}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
+        </button>
+      }
+    >
+      <Menu density="sm">
+        <MenuItem glyph={ICONS.pencil} label={S.common.edit} onSelect={item(onEdit)} />
+        {/* The glyph inherits the row's red. */}
+        <MenuItem glyph={ICONS.trash} label={S.common.delete} danger onSelect={item(onDelete)} />
+      </Menu>
+    </Dropdown>
+  );
+}
+
+export interface SchedulePanelProps {
+  session: SessionInfo;
+  /** The server the conversation runs on (null: this one): its Agent's tasks are files there. */
+  machineId?: string | null;
+  /** Whether this tab is the one on screen (the dock keeps hidden tabs mounted): a hidden tab does not poll. */
+  active: boolean;
+  /** Writes the AI dialog's prompt into this conversation's composer (see ScheduleAiModal). */
+  onPrefillComposer: (text: string) => void;
+}
+
+export function SchedulePanel({
+  session,
+  machineId = null,
+  active,
+  onPrefillComposer,
+}: SchedulePanelProps) {
+  const { currentProject, reloadAgents } = useProject();
+  const { locale } = useLocale();
+  const projectId = currentProject?.projectId ?? null;
+  const isOwner = currentProject?.role === "owner";
+  /** The Agents of the server the conversation runs on: the AI dialog names its Agent from them. */
+  const agents = useAgentsOn(machineId);
+  // The shared store's list, narrowed to this conversation; only the first load's failure shows
+  // in place, and row actions report via toast.
+  const { items: projectItems, error } = useProjectSchedules(
+    projectId,
+    session.sessionId,
+    machineId,
+  );
+  const items = projectItems === null ? null : sessionSchedules(projectItems, session.sessionId);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ScheduleFilter>("all");
+  const [busy, setBusy] = useState(false);
+  // Form dialog: non-null means open (editing a row, or null for a new task pinned to this Session).
+  const [form, setForm] = useState<{ editing: ProjectScheduleItem | null } | null>(null);
+  // The task pending deletion confirmation, named by its file: the agent whose directory holds it
+  // and the file name, which is what the delete call takes.
+  const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
+  // AI dialog: non-null means open, seeded with a suggestion's prompt or nothing.
+  const [ai, setAi] = useState<{ initial: string } | null>(null);
+
+  // On coming to the front, and on a timer while it stays there. Focus and visibility are the
+  // store's own business (it refreshes for the session rows' marks too); a hidden tab adds no
+  // poll. The refresh re-reads the whole Project, which is the one list both surfaces share, so
+  // the poll keeps the rows as fresh as this panel.
+  useEffect(() => {
+    if (!active) return;
+    void refreshSchedules(projectId, machineId);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshSchedules(projectId, machineId);
+    }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [active, projectId, machineId]);
+
+  /** After a create or delete: the list, and (on this server) the agent card's schedule count. */
+  const changed = () => {
+    void refreshSchedules(projectId, machineId);
+    if (machineId === null) void reloadAgents();
+  };
+
+  /**
+   * Toggle: whole-file-replace semantics — resend original fields, only flip enabled. The write
+   * names the agent whose schedule directory holds the file, which the Project-wide list stamps
+   * on every task; the conversation's own agent is only the right answer for tasks created here.
+   */
+  const toggle = async (item: ProjectScheduleItem) => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      await api.updateSchedule(
+        projectId,
+        item.agentId,
+        item.name,
+        toggleBody(item, !item.enabled),
+        machineId,
+      );
+      toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
+      await refreshSchedules(projectId, machineId);
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRemove = async () => {
+    if (!projectId || deleting === null) return;
+    setBusy(true);
+    try {
+      await api.deleteSchedule(projectId, deleting.agentId, deleting.name, machineId);
+      // The form may be sitting open on the very task just deleted (the row menu offers both).
+      const editing = form?.editing;
+      if (editing?.agentId === deleting.agentId && editing?.name === deleting.name) setForm(null);
+      changed();
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setBusy(false);
+      setDeleting(null);
+    }
+  };
+
+  const openAi = (initial: string) => setAi({ initial });
+  const visible = items === null ? [] : filterSchedules(items, filter, query);
+  const searching = query.trim() !== "";
+  const filterLabels: Record<ScheduleFilter, string> = {
+    all: S.schedule.filterAll,
+    active: S.schedule.filterActive,
+    paused: S.schedule.filterPaused,
+  };
+
+  return (
+    <div className="h-full overflow-y-auto p-3">
+      <div className="space-y-3">
+        {/* The two create paths, on a row of their own under the title rather than beside it.
+            This panel lives in a dock whose width the user drags, and a title block that may
+            shrink to nothing (min-w-0, which the subtitle needs) can never push a neighbour on
+            to a second line — so a side-by-side header squeezes the buttons instead of wrapping
+            them, and at the right dock's usual width they clip. A row of their own costs one
+            line at every width and clips at none. */}
+        <div className="space-y-2">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {S.schedule.panelTitle}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {S.schedule.panelSubtitle}
+            </p>
+          </div>
+          {/* The AI half is open to every member — asking the agent for a task is a message,
+              not a write — while the form writes files and stays with the owner. */}
+          <AiCreateButtons
+            size="sm"
+            onAi={() => openAi("")}
+            {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
+          />
+        </div>
+
+        <SearchInput
+          size="sm"
+          value={query}
+          placeholder={S.schedule.panelSearchPlaceholder}
+          aria-label={S.schedule.panelSearchPlaceholder}
+          onChange={setQuery}
+        />
+        <Segmented
+          cols={3}
+          options={SCHEDULE_FILTERS.map((value) => ({ value, label: filterLabels[value] }))}
+          value={filter}
+          onChange={setFilter}
+        />
+
+        {items === null ? (
+          error !== null ? (
+            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+          ) : (
+            <SkeletonList rows={3} />
+          )
+        ) : items.length === 0 ? (
+          <SettingsEmpty>{S.schedule.panelEmpty}</SettingsEmpty>
+        ) : visible.length === 0 ? (
+          <SettingsEmpty>{S.schedule.panelNoMatch}</SettingsEmpty>
+        ) : (
+          <ul className="space-y-1">
+            {visible.map((item) => {
+              const line = describeSchedule(item, locale);
+              return (
+                <li
+                  key={item.name}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-control-hover"
+                >
+                  <StateGlyph item={item} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="truncate text-sm text-gray-800 dark:text-gray-100"
+                        // The name leads the tooltip, not just the prompt: a task name is a
+                        // file name and truncates in a dock this narrow, and the panel would
+                        // otherwise be the one surface that cannot show it in full.
+                        data-tooltip={`${item.name}\n${item.prompt}`}
+                        data-tooltip-content="text"
+                        data-tooltip-extra
+                      >
+                        {item.name}
+                      </span>
+                      {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
+                    </div>
+                    <div
+                      className="truncate text-xs text-gray-500 dark:text-gray-400"
+                      data-tooltip={item.invalidReason ?? line}
+                      data-tooltip-content="text"
+                      data-tooltip-extra={item.invalidReason !== undefined}
+                    >
+                      {line}
+                    </div>
+                  </div>
+                  {isOwner && (
+                    <>
+                      <Switch
+                        checked={item.enabled}
+                        disabled={busy}
+                        aria-label={item.enabled ? S.schedule.disable : S.schedule.enable}
+                        onChange={() => void toggle(item)}
+                      />
+                      <RowMenu
+                        onEdit={() => setForm({ editing: item })}
+                        onDelete={() => setDeleting({ agentId: item.agentId, name: item.name })}
+                      />
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {!searching && <ScheduleSuggestions mode="session" onPick={openAi} />}
+      </div>
+
+      {/* The form reads the Agent's location from context: a task of a conversation on a
+          machine is written there, with that machine's models and Workspaces. */}
+      <AgentLocationContext.Provider value={machineId}>
+        <ScheduleFormModal
+          open={form !== null}
+          // Editing writes back to the file's own agent; creating pins the new task to this
+          // conversation, which is this agent's.
+          agentId={form?.editing?.agentId ?? session.agentId}
+          editing={form?.editing ?? null}
+          lockedSessionId={session.sessionId}
+          onClose={() => setForm(null)}
+          onSaved={changed}
+        />
+      </AgentLocationContext.Provider>
+
+      <ScheduleAiModal
+        open={ai !== null}
+        initialValue={ai?.initial ?? ""}
+        agents={agents}
+        agentId={session.agentId}
+        onPrefill={onPrefillComposer}
+        onClose={() => setAi(null)}
+      />
+
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.schedule.deleteTitle}
+        busy={busy}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {deleting !== null ? S.schedule.deleteConfirm(deleting.name) : ""}
+        </p>
+      </ConfirmModal>
+    </div>
+  );
+}

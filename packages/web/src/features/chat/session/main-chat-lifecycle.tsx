@@ -1,5 +1,6 @@
-import { scoped } from "../../../lib/project-scope";
-import { adoptBrowserSession } from "../../builtin-browser";
+import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+
+||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";

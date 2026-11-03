@@ -11,8 +11,23 @@
       "@penguinharness/plugin-terminal/server/*": [
         "../../plugins/terminal/src/server/*"
       ],
+      "@penguinharness/plugin-browser/server": [
+        "../../plugins/browser/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-browser/server/*": [
+        "../../plugins/browser/src/server/*"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../../plugins/usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/server": [
+        "../../plugins/schedules/src/server/index.ts"
+      ],
       "@prismshadow/penguin-server/internal": [
         "./src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "./src/ifaces.json"
       ],
       "@prismshadow/penguin-server/api": [
         "./src/api/types.ts"

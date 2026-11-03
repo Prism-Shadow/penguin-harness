@@ -38,8 +38,11 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState, adoptBrowserSession } from "../../builtin-browser";
+import { browserState, adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,

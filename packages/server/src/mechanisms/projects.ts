@@ -36,7 +36,7 @@ import type {
   PluginTables,
   ProjectConfig,
 } from "@prismshadow/penguin-core";
-import type { TieredRates } from "../services/usage-service.js";
+import type { TieredRates } from "@penguinharness/plugin-usage/server";
 import type {
   PlatformModelApplyResult,
   PlatformModelCatalog,

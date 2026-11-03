@@ -89,12 +89,12 @@ import {
   type TerminalInfo,
 } from "@penguinharness/plugin-terminal/web";
 
+import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
+import { confirmClose } from "./close-guard";
+import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 
 ||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
-} from "../terminal";
-import { invalidateSlotClips } from "../builtin-browser";
-import { confirmClose } from "../../lib/dock-close-guard";
-import { TERMINAL_PANEL } from "./dock-terminal";
+||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";

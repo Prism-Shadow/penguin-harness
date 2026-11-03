@@ -58,7 +58,7 @@ import type {
   WorkbenchVersion,
   Workbenches,
 } from "../mechanisms/workbenches.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";

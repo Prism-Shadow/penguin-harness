@@ -32,20 +32,20 @@ import { AgentsModule } from "./features/agents/module";
 import { ModelsModule } from "./features/models/module";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "./features/machines/module";
-import { UsageModule } from "./features/usage/module";
-import { BenchmarkModule } from "./features/benchmark/module";
+import { UsageModule } from "@penguinharness/plugin-usage/web";
+import { BenchmarkModule } from "@penguinharness/plugin-usage/web";
 import { TerminalModule } from "@penguinharness/plugin-terminal/web";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "@penguinharness/plugin-company/web";
-import { BuiltinBrowserModule } from "./features/builtin-browser/module";
+import { BuiltinBrowserModule } from "@penguinharness/plugin-browser/web";
 import { SettingsModule } from "./features/settings/module";
-import { SchedulesModule } from "./features/schedules/module";
+import { SchedulesModule } from "@penguinharness/plugin-schedules/web";
 import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "./features/projects/module";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";
-import { TracesModule } from "./features/traces/module";
+import { TracesModule } from "@penguinharness/plugin-usage/web";
 import { AudioModule } from "./features/audio/module";
 
 @Module({

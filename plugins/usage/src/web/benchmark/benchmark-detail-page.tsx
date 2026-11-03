@@ -1,0 +1,323 @@
+/**
+ * One Benchmark's own page (`/benchmark/:benchmarkId`): its title with the directory the files
+ * live in and the version they are at, the Use entry point, and the detail itself — chart,
+ * evaluation table, case browser.
+ * Opening a Benchmark enters this page the way an Agent's card enters its settings, so the back
+ * button is the way out rather than a close cross. An id that no longer resolves — a deleted
+ * Benchmark or a stale link — says so in place of the detail and keeps that way out.
+ */
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import type {
+  BenchmarkManifestProblem,
+  BenchmarkSummary,
+  ModelsResponse,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  CopyButton,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  PageFrame,
+  PageHeader,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
+
+||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/benchmark/benchmark-detail-page.tsx
+import { BenchmarkDetail } from "./benchmark-detail";
+import { benchmarkPath } from "./benchmark-prompts";
+import { useBenchmarksAcross } from "./benchmark-sources";
+import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
+
+/**
+ * What stands in place of the detail for a Benchmark that is not published: still being built,
+ * creation failed, or a manifest that cannot be read, with the reason the server gave. Deleting
+ * and creating again is a failed Benchmark's only way out, and only the owner may delete, so a
+ * member is told what happened without being sent to that step.
+ */
+export function UnpublishedNotice({
+  failed,
+  isOwner,
+  manifestError,
+}: {
+  failed: boolean;
+  isOwner: boolean;
+  manifestError?: BenchmarkManifestProblem;
+}) {
+  if (manifestError !== undefined) {
+    const hint = isOwner ? S.benchmark.manifestBrokenHint : S.benchmark.manifestBrokenHintMember;
+    return (
+      <EmptyState
+        title={S.benchmark.manifestBroken}
+        description={S.benchmark.manifestBrokenDetail(hint, manifestError.message)}
+      />
+    );
+  }
+  if (!failed) {
+    return <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />;
+  }
+  return (
+    <EmptyState
+      title={S.benchmark.creationFailed}
+      description={
+        isOwner ? S.benchmark.creationFailedDetail : S.benchmark.creationFailedDetailMember
+      }
+    />
+  );
+}
+
+/** `url` when it is an http(s) link, else null: a source link must never run anything. */
+function webLink(url: string | undefined): string | null {
+  if (url === undefined) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The copy button's quiet look, for the export button that stands beside it. */
+const QUIET_ICON_BUTTON =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted";
+
+/**
+ * What the header says under the Benchmark's title: the directory its files live in, with a copy
+ * button — and, for a published Benchmark, Export beside it, which downloads its package — and
+ * the version its manifest is at; under them, for a copy an Agent imported from a repository
+ * folder, a link to that folder. A draft, a failed Benchmark and one whose manifest cannot be read
+ * have no package, and no Export. A Benchmark whose manifest was written before versions or could
+ * not be read, or one a machine running an older server answered for, has no version, and the
+ * header names its directory alone.
+ */
+export function BenchmarkHeaderFacts({
+  benchmark,
+  onExport,
+}: {
+  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin"> &
+    Partial<Pick<BenchmarkSummary, "status">>;
+  /** Downloads the package; shown only when the Benchmark is published. */
+  onExport?: () => void;
+}) {
+  const source = benchmark.origin?.kind === "git" ? webLink(benchmark.origin.url) : null;
+  return (
+    <span className="block min-w-0">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
+            {benchmarkPath(benchmark.id)}
+          </span>
+          <CopyButton
+            text={benchmarkPath(benchmark.id)}
+            label={S.benchmark.copyPath}
+            size="sm"
+            className="shrink-0"
+          />
+          {onExport !== undefined && benchmark.status === "published" && (
+            <button
+              type="button"
+              data-tooltip={S.benchmark.exportBenchmark}
+              aria-label={S.benchmark.exportBenchmark}
+              onClick={onExport}
+              className={QUIET_ICON_BUTTON}
+            >
+              <GlyphIcon d={ICONS.download} />
+            </button>
+          )}
+        </span>
+        {benchmark.version !== undefined && benchmark.version !== "" && (
+          <span className="shrink-0 text-xs">
+            <span className="text-fg-muted">{S.benchmark.versionLabel}</span>{" "}
+            <span className="font-semibold tabular-nums text-fg">v{benchmark.version}</span>
+          </span>
+        )}
+      </span>
+      {source !== null && (
+        // A line of its own with no width of its own (w-0 min-w-full): the link takes the width
+        // the title and the line above give the header and truncates there, so a long folder
+        // link never pushes the title row's Use button onto a line of its own.
+        <span className="mt-1 flex w-0 min-w-full items-center gap-1 text-xs">
+          <span className="shrink-0 text-fg-muted">{S.benchmark.sourceLabel}</span>
+          <a
+            href={source}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-tooltip={source}
+            className="min-w-0 truncate text-link underline-offset-2 hover:underline"
+          >
+            {source.replace(/^https?:\/\//, "")}
+          </a>
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function BenchmarkDetailPage() {
+  const params = useParams<{ benchmarkId: string }>();
+  const benchmarkId = params.benchmarkId ?? "";
+  const navigate = useNavigate();
+  const { currentProject, agents } = useProject();
+  const { machineIds, machineLabels } = useSessions();
+  const projectId = currentProject?.projectId ?? null;
+  const isOwner = currentProject?.role === "owner";
+  // The route's Benchmark is one of the Project the page was opened in: a Project switch leaves
+  // for the new Project's Benchmarks rather than asking that Project about this id.
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/benchmark");
+
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [using, setUsing] = useState(false);
+
+  // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
+  // it whole — merged over this server and the machines it holds, each joining as it answers —
+  // and picks its own out of it. Not in the answers so far is only "missing" once no machine is
+  // still out: it may be a Benchmark a machine alone holds.
+  const listed = useBenchmarksAcross(switchedAway ? null : projectId, machineIds);
+  const benchmark: MergedBenchmark | null =
+    benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
+  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
+  const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
+  const error = listed.error === null ? null : apiErrorText(listed.error);
+
+  useDocumentTitle(benchmark?.title ?? S.benchmark.title);
+
+  // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
+  // the picker at the Project default.
+  useEffect(() => {
+    if (!projectId || switchedAway) return;
+    let cancelled = false;
+    api
+      .getModels(projectId, null)
+      .then((res) => {
+        if (!cancelled) setModels(res);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, switchedAway]);
+
+  // Switched away: nothing of the Benchmark renders (its cases would be asked of the new
+  // Project) while the navigation above takes the page to the list.
+  if (!projectId || switchedAway) return null;
+
+  /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  /** The one machine holding this Benchmark when it is not on this server; null otherwise. */
+  const onlyMachine =
+    benchmark !== null && benchmark.machineIds.length === 1
+      ? machineNameOf(benchmark.machineIds[0] ?? null)
+      : null;
+
+  // A Benchmark that is not published has no settled cases or scores to show and nothing to
+  // evaluate against: a draft is still being written and calibrated by the agent, and a failed
+  // one never finished calibrating and can only be deleted.
+  const masked = benchmark !== null && benchmark.status !== "published";
+  const failed = benchmark !== null && benchmark.status === "failed";
+
+  /**
+   * Export: the package of the copy this page describes — this server's when it holds one, else
+   * the first machine's — through the Skills tab's download, so a refusal is a toast rather than
+   * a saved error file.
+   */
+  const exportBenchmark = async () => {
+    if (benchmark === null) return;
+    try {
+      await downloadArchive(
+        api.benchmarkArchiveUrl(projectId, benchmark.id, benchmark.machineIds[0] ?? null),
+        benchmark.id,
+      );
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
+  let body;
+  if (error !== null) {
+    body = <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
+  } else if (missing) {
+    body = <EmptyState title={S.benchmark.notFound} description={S.benchmark.notFoundHint} />;
+  } else if (benchmark === null) {
+    body = (
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  } else if (masked) {
+    body = (
+      <UnpublishedNotice
+        failed={failed}
+        isOwner={isOwner}
+        manifestError={benchmark.manifestError}
+      />
+    );
+  } else {
+    body = (
+      <BenchmarkDetail projectId={projectId} benchmark={benchmark} machineNameOf={machineNameOf} />
+    );
+  }
+
+  return (
+    <PageFrame width="md">
+      {/* The Benchmark's name, the directory its files live in and its version under it, and
+          the Use entry point at the end of the title row. The case counts and the description
+          are the detail's own, one block below. A Benchmark tests whichever Agents its
+          scoreboard names, so no single Agent is named up here. A Benchmark that is not
+          published, reached by its address, keeps the path but drops Use, and shows the
+          building or creation-failed notice in place of the detail. A Benchmark that no longer
+          resolves has no directory to name and nothing to use: the title and the way back are
+          all the header keeps. */}
+      <PageHeader
+        back={{ label: S.benchmark.backToList, onClick: () => navigate("/benchmark") }}
+        title={
+          <span className="min-w-0 truncate">
+            {benchmark === null
+              ? benchmarkId
+              : onlyMachine !== null
+                ? nameOnMachine(benchmark.title, onlyMachine)
+                : benchmark.title}
+          </span>
+        }
+        description={
+          benchmark ? (
+            <BenchmarkHeaderFacts benchmark={benchmark} onExport={() => void exportBenchmark()} />
+          ) : undefined
+        }
+        actions={
+          benchmark && !masked ? (
+            <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
+              {S.benchmark.use}
+            </Button>
+          ) : undefined
+        }
+      />
+      {body}
+
+      {using && benchmark !== null && !masked && (
+        <UseBenchmarkModal
+          key={benchmark.id}
+          open
+          onClose={() => setUsing(false)}
+          projectId={projectId}
+          benchmark={benchmark}
+          agents={agents}
+          models={models}
+          initialTab="evaluate"
+        />
+      )}
+    </PageFrame>
+  );
+}
