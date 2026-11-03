@@ -16,8 +16,14 @@
 import type { Command } from "commander";
 import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 import { packageShortName, serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 /** What name resolution decided: the package, or the error to report. */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export type ExecResolution =
   | { readonly pkg: string }
   | { readonly unknown: string }
@@ -72,4 +78,30 @@ export function registerExecCommand(
         }),
       );
     });
+}
+
+/** `penguin exec`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.exec",
+        key: "exec",
+        summary: {
+          en: "Run a plugin's command on the server by naming the plugin (the unambiguous form when two plugins contribute the same command)",
+          zh: "点名插件，在服务端执行它的命令（两个插件贡献同一命令时的无歧义形式）",
+        },
+      },
+    ],
+  },
+})
+export class ExecCommand {
+  @Bind("cli.exec") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerExecCommand(node(command), getMessages(ctx.language), { language: ctx.language });
+      },
+    };
+  }
 }

@@ -27,14 +27,19 @@ import {
   resolveConnection,
   resolveProjectId,
   ServerClient,
-  shortSessionId,
-} from "@prismshadow/penguin-server/cli";
+  shortSessionId,,
+  getMessages} from "@prismshadow/penguin-server/cli";
 import { checkSessionTitle, renameSession, resolveSessionTarget } from "../server-session.js";
 import { registerInputCommand } from "./input.js";
 import { registerLogCommand } from "./log.js";
 import { registerLsCommand } from "./ls.js";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
 
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export function registerSessionCommand(session: Command, t: Messages): void {
   registerLsCommand(session, t);
   registerLogCommand(session, t);
@@ -70,4 +75,30 @@ export function registerSessionCommand(session: Command, t: Messages): void {
           : `${t.session.renamed(shortSessionId(sessionId), stored)}\n`,
       );
     });
+}
+
+/** `penguin session`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.session",
+        key: "session",
+        summary: {
+          en: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
+          zh: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
+        },
+      },
+    ],
+  },
+})
+export class SessionCommand {
+  @Bind("cli.session") command!: CliCommandCode;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerSessionCommand(node(command), getMessages(ctx.language));
+      },
+    };
+  }
 }
