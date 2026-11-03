@@ -9,9 +9,8 @@
  * A build clones penguin-harness-benchmark afresh; the dev server reads the cached clone and
  * reloads the page when a plugin's files change.
  */
-import { join } from "node:path";
 import type { Plugin } from "vite";
-import { loadHub, PLACEHOLDER_DIR, PLUGINS_DIR } from "./hub/hub.mjs";
+import { loadHub, PLUGINS_DIR } from "./hub/hub.mjs";
 
 const INDEX = "virtual:penguin-hub";
 const KINDS = ["plugin", "benchmark", "leaderboard"] as const;
@@ -60,9 +59,9 @@ export function hubData(): Plugin {
       return `export default ${json(detail)};`;
     },
     configureServer(server) {
-      server.watcher.add([PLUGINS_DIR, PLACEHOLDER_DIR]);
+      server.watcher.add(PLUGINS_DIR);
       server.watcher.on("change", (file) => {
-        if (!file.startsWith(PLUGINS_DIR) && !file.startsWith(join(PLACEHOLDER_DIR))) return;
+        if (!file.startsWith(PLUGINS_DIR)) return;
         hub = undefined;
         for (const module of server.moduleGraph.idToModuleMap.values()) {
           if (module.id?.startsWith(`\0${INDEX}`)) server.moduleGraph.invalidateModule(module);

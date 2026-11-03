@@ -1,6 +1,7 @@
 /** The leaderboards: penguin-harness-benchmark's, or the placeholder that stands in for them. */
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
-import { HubCard } from "../../components/hub/hub-card";
+import { CardFact, HubCard } from "../../components/hub/hub-card";
+import { HubTile } from "../../components/hub/hub-icon";
 import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
@@ -8,6 +9,7 @@ import { leaderboards } from "../../lib/hub/data";
 import { formatDay, titleOf } from "../../lib/hub/text";
 import type { LeaderboardSummary } from "../../lib/hub/types";
 import { BENCHMARK_REPO_URL } from "../../lib/links";
+import { KIND_TONE } from "../../lib/hub/tones";
 import { S } from "../../lib/strings";
 
 export function LeaderboardsPage() {
@@ -45,11 +47,14 @@ export function LeaderboardsPage() {
         <HubCard
           to={`/leaderboards/${board.id}`}
           title={titleOf(locale, board)}
+          lead={<HubTile tone={KIND_TONE.leaderboard} glyph="trophy" />}
           facts={[
-            board.author.name,
-            S.hub.leaderboards.entryCount(board.entryCount),
-            S.hub.leaderboards.benchmarkCount(board.benchmarkCount),
-            S.hub.updatedOn(formatDay(board.updated, locale)),
+            <CardFact glyph="user">{board.author.name}</CardFact>,
+            <CardFact glyph="barChart">{S.hub.leaderboards.entryCount(board.entryCount)}</CardFact>,
+            <CardFact glyph="target">
+              {S.hub.leaderboards.benchmarkCount(board.benchmarkCount)}
+            </CardFact>,
+            <CardFact glyph="calendar">{formatDay(board.updated, locale)}</CardFact>,
           ]}
         />
       )}

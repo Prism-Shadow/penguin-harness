@@ -1,7 +1,7 @@
 /** The plugin library: every package under the repository's plugins/, read at build time. */
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
-import { HubCard } from "../../components/hub/hub-card";
-import { HubIcon } from "../../components/hub/hub-icon";
+import { CardFact, HubCard } from "../../components/hub/hub-card";
+import { HubTile } from "../../components/hub/hub-icon";
 import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
@@ -9,6 +9,7 @@ import { plugins } from "../../lib/hub/data";
 import { titleOf } from "../../lib/hub/text";
 import type { PluginSummary } from "../../lib/hub/types";
 import { PLUGINS_SOURCE } from "../../lib/links";
+import { categoryTone } from "../../lib/hub/tones";
 import { S } from "../../lib/strings";
 
 const CATEGORY_ORDER = [
@@ -86,9 +87,15 @@ export function PluginsPage() {
       renderItem={(plugin) => (
         <HubCard
           to={`/plugins/${plugin.id}`}
-          lead={<HubIcon src={plugin.icon} />}
+          lead={<HubTile tone={categoryTone(plugin.category)} src={plugin.icon} glyph="puzzle" />}
           title={titleOf(locale, plugin)}
-          facts={[...(plugin.author ? [plugin.author.name] : []), `v${plugin.version}`]}
+          facts={[
+            ...(plugin.author ? [<CardFact glyph="user">{plugin.author.name}</CardFact>] : []),
+            <CardFact glyph="hash">{plugin.version}</CardFact>,
+            ...(plugin.skillCount > 0
+              ? [<CardFact glyph="sparkle">{S.hub.plugins.skillCount(plugin.skillCount)}</CardFact>]
+              : []),
+          ]}
         />
       )}
     />

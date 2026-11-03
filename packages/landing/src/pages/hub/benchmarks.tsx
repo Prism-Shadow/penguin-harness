@@ -1,6 +1,7 @@
 /** The benchmarks of penguin-harness-benchmark, read from a fresh clone at build time. */
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
-import { HubCard } from "../../components/hub/hub-card";
+import { CardFact, HubCard } from "../../components/hub/hub-card";
+import { HubTile } from "../../components/hub/hub-icon";
 import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
 import { useDocumentMeta } from "../../lib/document-meta";
@@ -9,6 +10,7 @@ import { timeoutBucket } from "../../lib/hub/filter";
 import { formatDay, titleOf } from "../../lib/hub/text";
 import type { BenchmarkSummary } from "../../lib/hub/types";
 import { BENCHMARK_REPO_URL } from "../../lib/links";
+import { KIND_TONE } from "../../lib/hub/tones";
 import { S } from "../../lib/strings";
 
 const TIMEOUT_ORDER = ["short", "hour", "long", "none"];
@@ -75,13 +77,11 @@ export function BenchmarksPage() {
         <HubCard
           to={`/benchmarks/${benchmark.id}`}
           title={titleOf(locale, benchmark)}
+          lead={<HubTile tone={KIND_TONE.benchmark} glyph="target" />}
           facts={[
-            benchmark.author.name,
-            S.hub.benchmarks.taskCount(benchmark.taskCount),
-            S.hub.updatedOn(formatDay(benchmark.lastUpdate, locale)),
-            ...(benchmark.status === "published"
-              ? []
-              : [S.hub.status[benchmark.status] ?? benchmark.status]),
+            <CardFact glyph="user">{benchmark.author.name}</CardFact>,
+            <CardFact glyph="kanban">{S.hub.benchmarks.taskCount(benchmark.taskCount)}</CardFact>,
+            <CardFact glyph="calendar">{formatDay(benchmark.lastUpdate, locale)}</CardFact>,
           ]}
         />
       )}

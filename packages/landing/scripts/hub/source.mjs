@@ -5,12 +5,20 @@
  * clone is shallow and sparse: `packages/`, `experiments/` and `leaderboards/`, and from the large
  * `data/` only each benchmark's README.md and each task's instruction.md; the rest of `data/` is
  * listed from git (`dataFiles`) without being downloaded.
- * The dev server reuses the last clone when there is one. PENGUIN_BENCHMARK_REPO names a local
+ * The dev server reuses the last clone while it is fresh (see `fresh`). PENGUIN_BENCHMARK_REPO names a local
  * checkout to read instead, with no network (developing both repositories, or a machine that
  * cannot reach GitHub). The clone lives in this package's node_modules cache, never in git.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +32,8 @@ export const CACHE_DIR = join(
   "penguin-hub",
 );
 const CHECKOUT = join(CACHE_DIR, "penguin-harness-benchmark");
+/** How long the dev server reuses a clone before fetching the repository again. */
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SPARSE = [
   "/packages/",
   "/experiments/",
@@ -42,7 +52,38 @@ export function benchmarkRepo({ refresh = false } = {}) {
     }
     return dir;
   }
-  if (!refresh && existsSync(join(CHECKOUT, "packages"))) return CHECKOUT;
+  const cached = existsSync(join(CHECKOUT, "packages"));
+  if (!refresh && cached && fresh(CHECKOUT)) return CHECKOUT;
+  try {
+    return clone();
+  } catch (error) {
+    // Offline in dev: an old clone still serves, but say so.
+    if (refresh || !cached) throw error;
+    console.warn(`[penguin:hub] ${error.message}; reading the clone from an earlier run.`);
+    return CHECKOUT;
+  }
+}
+
+/**
+ * Whether the dev server may reuse the last clone: it is under a day old and was made with the
+ * sparse patterns this file asks for, so a pattern added here reaches it.
+ */
+function fresh(dir) {
+  try {
+    const age = Date.now() - statSync(join(dir, ".git", "HEAD")).mtimeMs;
+    const patterns = execFileSync("git", ["-C", dir, "sparse-checkout", "list"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return (
+      age < MAX_AGE_MS && patterns.split("\n").filter(Boolean).join("\n") === SPARSE.join("\n")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function clone() {
   mkdirSync(CACHE_DIR, { recursive: true });
   const temp = mkdtempSync(join(CACHE_DIR, "clone-"));
   try {

@@ -37,7 +37,7 @@ These pages read their source files at build time and keep no copy here (`script
 PENGUIN_BENCHMARK_REPO=/path/to/penguin-harness-benchmark pnpm --filter @prismshadow/penguin-landing dev
 ```
 
-A source file that breaks its format (RFC-0001, RFC-0002, RFC-0003, RFC-0005) fails the build and names the file. Until the benchmark repository carries `leaderboards/`, the ones in `hub-placeholder/leaderboards/` stand in; delete that directory once it does.
+A source file that breaks its format (RFC-0001, RFC-0002, RFC-0003, RFC-0005) fails the build and names the file. Only published benchmarks and leaderboards are shown; a `draft` is skipped.
 
 ## Deployment
 

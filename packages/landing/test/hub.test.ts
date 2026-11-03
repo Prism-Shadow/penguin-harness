@@ -7,6 +7,9 @@
  *   description, and lists what it ships.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
  *   naming that file (nothing is silently dropped).
+ * - Given a draft benchmark, a draft leaderboard and a leaderboard with no status, when the hub
+ *   is read, then the drafts are left out and the board with no status is shown because its
+ *   experiments are published.
  * - Given a benchmark with a data folder, when it is read, then each task carries its rubric and
  *   finds its data folder by the link in its statement or by its id without the CASE prefix, and a
  *   task with neither has no data.
@@ -15,9 +18,8 @@
  *   composites, and its cost, time and tokens the sums of one run; when the attempts do not line
  *   up, the std is composed from each experiment's score_std instead.
  * - Given a value mixing two algorithms, when it is read, then the build fails.
- * - Given a repository without leaderboards/, when the hub is read, then the placeholder stands in
- *   and finds experiments in the flat layout; given one with leaderboards/, the placeholder is not
- *   read and experiments are found under their leaderboard.
+ * - Given experiments filed under their leaderboard or flat, when the board is read, then both are
+ *   found.
  * - Given a waffle, when it is read, then tasks come in benchmark and task order with each
  *   entry's attempts per task, and a task an entry never ran is empty.
  * - Given a leaderboard measured on a benchmark, when the hub is read, then the benchmark links to
@@ -61,14 +63,14 @@ const plugin = (name: string, penguin: object = {}, extra: object = {}) =>
     ...extra,
   });
 
-const benchmark = (id: string) =>
+const benchmark = (id: string, status = "published") =>
   [
     `id = "${id}"`,
     `title = "${id} title"`,
     `description = "About ${id}."`,
     `version = "0.1.0"`,
     `last_update = "2026-10-29T12:00:00Z"`,
-    `status = "published"`,
+    `status = "${status}"`,
     `[author]`,
     `name = "Prism-Shadow"`,
   ].join("\n");
@@ -126,8 +128,10 @@ function experiment(
   };
 }
 
-const board = (dir: string, values: string) => ({
-  [`${dir}/board-a/leaderboard.yaml`]: `leaderboard_id: board-a\ntitle: "Board A"\nauthor: { name: Prism-Shadow }\nvalues:\n${values}`,
+const board = (values: string, id = "board-a", status = "published") => ({
+  [`leaderboards/${id}/leaderboard.yaml`]: `leaderboard_id: ${id}\ntitle: "Board ${id}"\n${
+    status ? `status: ${status}\n` : ""
+  }author: { name: Prism-Shadow }\nvalues:\n${values}`,
 });
 
 const leaf = (id: string) => `      - { experiment_id: ${id}, phase: test }\n`;
@@ -174,7 +178,7 @@ const mean2 = `  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-2")}`;
 
 describe("the hub readers", () => {
   it("shows a plugin by its id and npm description when it names neither, with what it ships", () => {
-    const hub = loadHub({ repo: repo(), pluginsDir: plugins(), placeholderDir: tree({}) });
+    const hub = loadHub({ repo: repo(), pluginsDir: plugins() });
     const plain = hub.details.plugin["plain"]!;
     expect(plain.title).toBe("plain");
     expect(plain.description).toBe("plain does things.");
@@ -194,9 +198,23 @@ describe("the hub readers", () => {
 
   it("fails the build on a benchmark whose id differs from its folder", () => {
     const broken = repo({ "packages/bench-b/benchmark_config.toml": benchmark("bench-c") });
-    expect(() => loadHub({ repo: broken, pluginsDir: tree({}), placeholderDir: tree({}) })).toThrow(
+    expect(() => loadHub({ repo: broken, pluginsDir: tree({}) })).toThrow(
       /bench-b[/\\]benchmark_config\.toml: id "bench-c"/,
     );
+  });
+
+  it("leaves drafts out, and shows a board with no status while its experiments are published", () => {
+    const hub = loadHub({
+      repo: repo({
+        "packages/bench-d/benchmark_config.toml": benchmark("bench-d", "draft"),
+        ...board(mean2, "board-a"),
+        ...board(mean2, "board-d", "draft"),
+        ...board(mean2, "board-n", ""),
+      }),
+      pluginsDir: tree({}),
+    });
+    expect(hub.index.benchmarks.map((b) => b.id)).toEqual(["bench-a"]);
+    expect(hub.index.leaderboards.map((b) => b.id)).toEqual(["board-a", "board-n"]);
   });
 
   it("gives each task its rubric and finds its data folder by the statement's link or its id", () => {
@@ -210,9 +228,16 @@ describe("the hub readers", () => {
       "data/bench-a/tasks/first-task/environment/input.csv": "a,b",
       "data/bench-a/tasks/third/task.toml": "",
     });
-    const hub = loadHub({ repo: withData, pluginsDir: tree({}), placeholderDir: tree({}) });
+    const hub = loadHub({ repo: withData, pluginsDir: tree({}) });
     const bench = hub.details.benchmark["bench-a"]!;
-    expect(bench.data).toMatchObject({ readme: "# Data", fileCount: 4 });
+    expect(bench.data).toMatchObject({
+      readme: "# Data",
+      fileCount: 4,
+      entries: [
+        { name: "tasks", dir: true, files: 3 },
+        { name: "README.md", dir: false, files: 1 },
+      ],
+    });
     const byId = Object.fromEntries(bench.tasks.map((t) => [t.id, t]));
     expect(byId["t1"]!.rubric).toBe("# Rubric\n\n100 pts.");
     expect(byId["t1"]!.data).toMatchObject({
@@ -224,11 +249,7 @@ describe("the hub readers", () => {
   });
 
   it("averages a value's experiments, takes the std across attempt composites and sums one run", () => {
-    const hub = loadHub({
-      repo: repo(),
-      pluginsDir: plugins(),
-      placeholderDir: tree(board(".", mean2)),
-    });
+    const hub = loadHub({ repo: repo(board(mean2)), pluginsDir: plugins() });
     const [entry] = hub.details.leaderboard["board-a"]!.entries;
     expect(entry!.value).toBe(65);
     // Attempt composites: mean(70, 40) = 55, mean(80, 50) = 65, mean(90, 60) = 75.
@@ -250,13 +271,9 @@ describe("the hub readers", () => {
     const uneven = repo({
       ...experiment("experiments", "exp-4", "toolkit", [{ t1: 10 }, { t1: 30 }], 20, 1, 6),
       ...experiment("experiments", "exp-5", "toolkit", [{ t1: 50 }], 50, 1, 8),
+      ...board(`  - op: mean\n    args:\n${leaf("exp-4")}${leaf("exp-5")}`),
     });
-    const values = `  - op: mean\n    args:\n${leaf("exp-4")}${leaf("exp-5")}`;
-    const hub = loadHub({
-      repo: uneven,
-      pluginsDir: tree({}),
-      placeholderDir: tree(board(".", values)),
-    });
+    const hub = loadHub({ repo: uneven, pluginsDir: tree({}) });
     const [entry] = hub.details.leaderboard["board-a"]!.entries;
     // sqrt((1/2)^2 * 6^2 + (1/2)^2 * 8^2) = 5
     expect(entry!.std).toBeCloseTo(5);
@@ -264,32 +281,27 @@ describe("the hub readers", () => {
   });
 
   it("refuses a value whose experiments use different algorithms", () => {
-    const mixed = repo(experiment("experiments", "exp-3", "other", [{ t1: 1 }], 1, 1));
-    const values = `  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-3")}`;
-    expect(() =>
-      loadHub({ repo: mixed, pluginsDir: tree({}), placeholderDir: tree(board(".", values)) }),
-    ).toThrow(/share harness, model, algorithm and phase/);
+    const mixed = repo({
+      ...experiment("experiments", "exp-3", "other", [{ t1: 1 }], 1, 1),
+      ...board(`  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-3")}`),
+    });
+    expect(() => loadHub({ repo: mixed, pluginsDir: tree({}) })).toThrow(
+      /share harness, model, algorithm and phase/,
+    );
   });
 
-  it("reads the repository's own leaderboards, with experiments under them, over the placeholder", () => {
-    const own = tree({
-      "packages/bench-a/benchmark_config.toml": benchmark("bench-a"),
-      ...board("leaderboards", `${leaf("exp-9")}`.replace("      - ", "  - ")),
-      ...experiment("experiments/board-a", "exp-9", undefined, [{ t1: 90 }], 90, 1),
+  it("finds experiments filed under their leaderboard as well as flat", () => {
+    const own = repo({
+      ...board(`  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-9")}`),
+      ...experiment("experiments/board-a", "exp-9", "toolkit", [{ t1: 90 }], 90, 1),
     });
-    const placeholder = tree({ "other/leaderboard.yaml": "leaderboard_id: other\n" });
-    const hub = loadHub({ repo: own, pluginsDir: tree({}), placeholderDir: placeholder });
-    expect(hub.index.leaderboards.map((b) => b.id)).toEqual(["board-a"]);
-    expect(hub.details.leaderboard["board-a"]!.entries[0]).toMatchObject({
-      value: 90,
-      algorithm: null,
-    });
+    const hub = loadHub({ repo: own, pluginsDir: tree({}) });
+    expect(hub.details.leaderboard["board-a"]!.entries[0]!.value).toBe(85);
   });
 
   it("orders the waffle's tasks and leaves a task an entry never ran empty", () => {
     const values = `  - { experiment_id: exp-1, phase: test }\n  - { experiment_id: exp-2 }\n`;
-    const placeholder = tree(board(".", values));
-    const hub = loadHub({ repo: repo(), pluginsDir: tree({}), placeholderDir: placeholder });
+    const hub = loadHub({ repo: repo(board(values)), pluginsDir: tree({}) });
     const waffle = hub.details.leaderboard["board-a"]!.waffle;
     expect(waffle.tasks).toEqual([
       { benchmarkId: "bench-a", taskIds: ["t1"] },
@@ -305,13 +317,9 @@ describe("the hub readers", () => {
   });
 
   it("links a benchmark to the leaderboards measured on it and names algorithms by plugin title", () => {
-    const hub = loadHub({
-      repo: repo(),
-      pluginsDir: plugins(),
-      placeholderDir: tree(board(".", mean2)),
-    });
+    const hub = loadHub({ repo: repo(board(mean2)), pluginsDir: plugins() });
     expect(hub.details.benchmark["bench-a"]!.leaderboards).toEqual([
-      { id: "board-a", title: "Board A" },
+      { id: "board-a", title: "Board board-a" },
     ]);
     expect(hub.details.leaderboard["board-a"]!.algorithms).toEqual([
       { id: "toolkit", title: "Toolkit" },

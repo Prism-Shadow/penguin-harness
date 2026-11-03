@@ -219,7 +219,7 @@ export function HubList<T>({
                 )}
               </div>
             ) : (
-              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <ul className="grid gap-3 sm:grid-cols-2">
                 {shown.map((item) => (
                   <li key={keyOf(item)} className="flex">
                     {renderItem(item)}

@@ -9,7 +9,8 @@
  * `data/<benchmark-id>/` folder (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
  * and `<phase>/attempt-<n>.yaml` (RFC-0002), and leaderboards one `leaderboard.yaml` (RFC-0005).
  * A file that breaks its format fails the build: a page silently missing a benchmark is worse
- * than a deploy that waits for the source to be fixed.
+ * than a deploy that waits for the source to be fixed. Only what is `published` is shown: a
+ * benchmark or leaderboard still in review (`draft`) is read past.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -18,8 +19,6 @@ import { parse as parseYaml } from "yaml";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
 export const BENCHMARK_SOURCE = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
-const PLACEHOLDER_SOURCE =
-  "https://github.com/Prism-Shadow/penguin-harness/blob/main/packages/landing/hub-placeholder/leaderboards";
 
 const ID = /^[A-Za-z0-9-]+$/;
 /** The most data files one task lists; the folder link shows the rest. */
@@ -156,6 +155,23 @@ function taskDataName(benchmarkId, taskId, statement, folders) {
 }
 
 /**
+ * The top level of a data folder from its file paths: each file, and each directory with the
+ * number of files under it; directories first, then by name.
+ */
+function dataEntries(paths) {
+  const entries = new Map();
+  for (const path of paths) {
+    const [head, ...rest] = path.split("/");
+    const entry = entries.get(head) ?? { name: head, dir: rest.length > 0, files: 0 };
+    entry.files += 1;
+    entries.set(head, entry);
+  }
+  return [...entries.values()].sort(
+    (a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name),
+  );
+}
+
+/**
  * Every Benchmark package under `<repo>/packages`, its tasks included. `dataFiles` lists the
  * repository's files under `data/` (paths from the repository root): a checkout carries only the
  * small text files, so the listing comes from git rather than the disk.
@@ -169,6 +185,7 @@ export function readBenchmarks(repo, dataFiles = []) {
     if (!existsSync(file)) continue;
     const config = parseToml(readText(file));
     if (config.id !== dirName) fail(file, `id "${config.id}" does not match its directory`);
+    if (requireText(config, "status", file) !== "published") continue;
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "[author] name is required");
     const dataPrefix = `data/${dirName}/`;
@@ -230,6 +247,7 @@ export function readBenchmarks(repo, dataFiles = []) {
               url: `${BENCHMARK_SOURCE}/tree/main/${dataPrefix.slice(0, -1)}`,
               readme: optionalText(join(repo, dataPrefix, "README.md")),
               fileCount: ownData.length,
+              entries: dataEntries(ownData.map((path) => path.slice(dataPrefix.length))),
             }
           : undefined,
       sourceUrl: `${BENCHMARK_SOURCE}/tree/main/packages/${dirName}`,
@@ -494,13 +512,18 @@ function waffle(entries) {
 const publicEntry = ({ leaves, ...entry }) => entry;
 
 /**
- * Every leaderboard under `<repo>/leaderboards`, one `leaderboard.yaml` each. While the repository
- * has none, the ones under `placeholderDir` stand in: written to the RFC, over the repository's
- * real experiments. Delete that directory once the repository carries its own leaderboards.
+ * Whether a leaderboard is shown: its `status` is `published`. A board written before RFC-0005
+ * gained `status` has none; it is shown while every experiment it reads is published. Drop that
+ * fallback once penguin-harness-benchmark's leaderboards all carry `status`.
  */
-export function readLeaderboards(repo, placeholderDir) {
-  const own = existsSync(join(repo, "leaderboards"));
-  const root = own ? join(repo, "leaderboards") : placeholderDir;
+function published(config, entries) {
+  if (config.status !== undefined) return config.status === "published";
+  return entries.every((entry) => entry.leaves.every((leaf) => leaf.meta.status === "published"));
+}
+
+/** Every published leaderboard under `<repo>/leaderboards`, one `leaderboard.yaml` each. */
+export function readLeaderboards(repo) {
+  const root = join(repo, "leaderboards");
   const cache = new Map();
   const leaderboards = [];
   for (const dirName of subdirs(root)) {
@@ -511,6 +534,9 @@ export function readLeaderboards(repo, placeholderDir) {
       fail(file, "leaderboard_id does not match its directory");
     }
     if (!ID.test(dirName)) fail(file, 'leaderboard_id may hold only letters, digits and "-"');
+    if (config.status !== undefined && typeof config.status !== "string") {
+      fail(file, "status is draft or published");
+    }
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "author.name is required");
     if (!Array.isArray(config.values) || config.values.length === 0) {
@@ -518,6 +544,7 @@ export function readLeaderboards(repo, placeholderDir) {
     }
     const ctx = { repo, leaderboardId: dirName, cache, file };
     const entries = config.values.map((value) => entryFor(value, ctx));
+    if (!published(config, entries)) continue;
     const experiments = existsSync(join(repo, "experiments", dirName))
       ? `experiments/${dirName}`
       : "experiments";
@@ -529,14 +556,14 @@ export function readLeaderboards(repo, placeholderDir) {
       entries: entries.map(publicEntry),
       waffle: waffle(entries),
       benchmarks: distinct(
-        entries.flatMap((entry) => entry.parts.flatMap((p) => p.benchmarks)),
+        entries.flatMap((entry) => entry.parts.flatMap((part) => part.benchmarks)),
       ).sort(),
       updated:
         entries
           .map((entry) => entry.submitted)
           .sort()
           .at(-1) ?? "",
-      sourceUrl: `${own ? `${BENCHMARK_SOURCE}/blob/main/leaderboards` : PLACEHOLDER_SOURCE}/${dirName}/leaderboard.yaml`,
+      sourceUrl: `${BENCHMARK_SOURCE}/blob/main/leaderboards/${dirName}/leaderboard.yaml`,
       experimentsUrl: `${BENCHMARK_SOURCE}/tree/main/${experiments}`,
     });
   }

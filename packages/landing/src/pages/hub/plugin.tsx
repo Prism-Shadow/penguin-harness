@@ -4,7 +4,7 @@
  */
 import { useParams } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
-import { HubIcon } from "../../components/hub/hub-icon";
+import { HubTag, HubTile } from "../../components/hub/hub-icon";
 import {
   AuthorName,
   CountTitle,
@@ -20,7 +20,10 @@ import { InlineText } from "../../components/hub/inline-text";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { pick, titleOf } from "../../lib/hub/text";
 import type { PluginDetail } from "../../lib/hub/types";
+import { categoryTone, KIND_TONE } from "../../lib/hub/tones";
 import { S } from "../../lib/strings";
+
+const TONE = KIND_TONE.plugin;
 
 export function PluginPage() {
   const { id = "" } = useParams();
@@ -40,9 +43,28 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
   const t = S.hub.plugins;
   return (
     <HubDetail
-      lead={<HubIcon src={plugin.icon} size="lg" />}
+      lead={
+        <HubTile tone={categoryTone(plugin.category)} src={plugin.icon} glyph="puzzle" size="lg" />
+      }
       title={title}
       subtitle={short}
+      tags={
+        <>
+          <HubTag tone={categoryTone(plugin.category)} glyph="tiles">
+            {t.categories[plugin.category] ?? plugin.category}
+          </HubTag>
+          <HubTag glyph="hash">{plugin.version}</HubTag>
+          {plugin.license && <HubTag glyph="copyright">{plugin.license}</HubTag>}
+          {plugin.skills.length > 0 && (
+            <HubTag glyph="sparkle">{t.skillCount(plugin.skills.length)}</HubTag>
+          )}
+          {plugin.preinstall && (
+            <HubTag tone="emerald" glyph="checkCircle">
+              {t.preinstalled}
+            </HubTag>
+          )}
+        </>
+      }
       sourceUrl={plugin.sourceUrl}
       facts={[
         ...(plugin.author
@@ -59,14 +81,14 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
       ]}
     >
       {description !== short && (
-        <HubPanel title={t.about}>
+        <HubPanel title={t.about} glyph="bookOpen" tone={TONE}>
           <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">
             <InlineText>{description}</InlineText>
           </p>
         </HubPanel>
       )}
       {quickStart && (
-        <HubPanel title={t.quickStart}>
+        <HubPanel title={t.quickStart} glyph="zap" tone={TONE}>
           <p className="text-sm leading-7 whitespace-pre-line text-gray-700 dark:text-gray-300">
             <InlineText>{pick(locale, quickStart.prompt, quickStart.promptZh)}</InlineText>
           </p>
@@ -81,7 +103,12 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
         </HubPanel>
       )}
       {plugin.skills.length > 0 && (
-        <HubPanel title={<CountTitle label={t.skills} count={plugin.skills.length} />} flush>
+        <HubPanel
+          title={<CountTitle label={t.skills} count={plugin.skills.length} />}
+          glyph="sparkle"
+          tone={TONE}
+          flush
+        >
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {plugin.skills.map((skill) => {
               const text = skill.description
@@ -102,7 +129,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
         </HubPanel>
       )}
       {(plugin.hooks.length > 0 || plugin.workbenches.length > 0) && (
-        <HubPanel title={t.extensions} flush>
+        <HubPanel title={t.extensions} glyph="plug" tone={TONE} flush>
           <dl className="divide-y divide-gray-100 text-sm dark:divide-gray-800">
             {plugin.hooks.length > 0 && (
               <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
@@ -120,7 +147,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
         </HubPanel>
       )}
       {plugin.readme && (
-        <HubPanel title="README">
+        <HubPanel title="README" glyph="file" tone={TONE}>
           <HubMarkdown base={`${plugin.sourceUrl}/`}>{plugin.readme}</HubMarkdown>
         </HubPanel>
       )}

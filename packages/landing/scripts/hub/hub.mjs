@@ -10,8 +10,6 @@ import { benchmarkRepo, dataFiles } from "./source.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const PLUGINS_DIR = join(HERE, "..", "..", "..", "..", "plugins");
-/** Leaderboards written to RFC-0005 that stand in until penguin-harness-benchmark has its own. */
-export const PLACEHOLDER_DIR = join(HERE, "..", "..", "hub-placeholder", "leaderboards");
 
 const link = ({ id, title, titleZh }) => (titleZh ? { id, title, titleZh } : { id, title });
 
@@ -20,11 +18,10 @@ export function loadHub({
   refresh = false,
   repo = benchmarkRepo({ refresh }),
   pluginsDir = PLUGINS_DIR,
-  placeholderDir = PLACEHOLDER_DIR,
 } = {}) {
   const plugins = readPlugins(pluginsDir);
   const benchmarks = readBenchmarks(repo, dataFiles(repo));
-  const leaderboards = readLeaderboards(repo, placeholderDir);
+  const leaderboards = readLeaderboards(repo);
   const pluginById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const benchmarkById = new Map(benchmarks.map((benchmark) => [benchmark.id, benchmark]));
 

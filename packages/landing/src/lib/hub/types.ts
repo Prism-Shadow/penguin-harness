@@ -98,6 +98,8 @@ export interface BenchmarkData {
   /** Its README.md (Markdown). */
   readme?: string;
   fileCount: number;
+  /** Its top level: directories (with the files under them) first, then files. */
+  entries: { name: string; dir: boolean; files: number }[];
 }
 
 export interface HubLink {

@@ -16,13 +16,11 @@ export interface Hub {
 }
 
 export declare const PLUGINS_DIR: string;
-export declare const PLACEHOLDER_DIR: string;
 
 export declare function loadHub(options?: {
   refresh?: boolean;
   repo?: string;
   pluginsDir?: string;
-  placeholderDir?: string;
 }): Hub;
 
 export declare function hubRoutes(

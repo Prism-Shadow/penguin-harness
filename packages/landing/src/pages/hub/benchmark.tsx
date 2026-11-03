@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { ChevronDownIcon, Fold, useSiteLocale } from "@prismshadow/penguin-ui/site";
+import { ChevronDownIcon, Fold, SiteGlyph, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import {
   AuthorName,
   CountTitle,
@@ -16,6 +16,7 @@ import {
   HubReferences,
   useHubDetail,
 } from "../../components/hub/hub-detail";
+import { HubTag, HubTile } from "../../components/hub/hub-icon";
 import { HubMarkdown } from "../../components/hub/hub-markdown";
 import { InlineText } from "../../components/hub/inline-text";
 import { ExternalLink } from "../../components/external-link";
@@ -23,6 +24,9 @@ import { useDocumentMeta } from "../../lib/document-meta";
 import { formatDay, pick, titleOf } from "../../lib/hub/text";
 import type { BenchmarkData, BenchmarkDetail, BenchmarkTask, TaskData } from "../../lib/hub/types";
 import { S } from "../../lib/strings";
+import { KIND_TONE } from "../../lib/hub/tones";
+
+const TONE = KIND_TONE.benchmark;
 
 export function BenchmarkPage() {
   const { id = "" } = useParams();
@@ -58,8 +62,22 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
 
   return (
     <HubDetail
+      lead={<HubTile tone={TONE} glyph="target" size="lg" />}
       title={title}
       subtitle={benchmark.id}
+      tags={
+        <>
+          <HubTag tone="emerald" glyph="checkCircle">
+            {S.hub.status[benchmark.status] ?? benchmark.status}
+          </HubTag>
+          <HubTag glyph="kanban">{t.taskCount(benchmark.tasks.length)}</HubTag>
+          {benchmark.maxTimeout !== null && (
+            <HubTag glyph="clock">{t.upTo(durationText(benchmark.maxTimeout))}</HubTag>
+          )}
+          <HubTag glyph="hash">{benchmark.version}</HubTag>
+          {benchmark.data && <HubTag glyph="database">{t.withData}</HubTag>}
+        </>
+      }
       sourceUrl={benchmark.sourceUrl}
       facts={[
         { label: S.hub.meta.author, value: <AuthorName author={benchmark.author} /> },
@@ -70,7 +88,7 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
       ]}
       aside={
         benchmark.leaderboards.length > 0 && (
-          <HubPanel title={t.leaderboards} flush>
+          <HubPanel title={t.leaderboards} glyph="trophy" tone={KIND_TONE.leaderboard} flush>
             <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-800">
               {benchmark.leaderboards.map((board) => (
                 <li key={board.id} className="px-4 py-2.5">
@@ -87,12 +105,17 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
         )
       }
     >
-      <HubPanel title={t.about}>
+      <HubPanel title={t.about} glyph="bookOpen" tone={TONE}>
         <p className="text-sm leading-7 text-gray-700 dark:text-gray-300">
           <InlineText>{description}</InlineText>
         </p>
       </HubPanel>
-      <HubPanel title={<CountTitle label={t.tasks} count={benchmark.tasks.length} />} flush>
+      <HubPanel
+        title={<CountTitle label={t.tasks} count={benchmark.tasks.length} />}
+        glyph="kanban"
+        tone={TONE}
+        flush
+      >
         <ul className="divide-y divide-gray-100 dark:divide-gray-800">
           {benchmark.tasks.map((task) => (
             <TaskRow
@@ -262,13 +285,18 @@ function TaskDataView({ data }: { data: TaskData }) {
   );
 }
 
-/** The benchmark's data folder: its README, cut short until asked for, and a link to the files. */
+/**
+ * The benchmark's data folder: its README, cut short until asked for, and the folder's top level
+ * (each directory with the files under it) linking to GitHub.
+ */
 function DataPanel({ data }: { data: BenchmarkData }) {
   const t = S.hub.benchmarks;
   const [whole, setWhole] = useState(false);
   return (
     <HubPanel
       title={t.data}
+      glyph="database"
+      tone={TONE}
       actions={
         <ExternalLink
           href={data.url}
@@ -277,9 +305,32 @@ function DataPanel({ data }: { data: BenchmarkData }) {
           {t.allFiles(data.fileCount)}
         </ExternalLink>
       }
+      flush
     >
+      <ul className="grid gap-x-6 border-b border-gray-100 px-4 py-3 text-sm sm:grid-cols-2 sm:px-5 dark:border-gray-800">
+        {data.entries.map((entry) => (
+          <li key={entry.name} className="flex min-w-0 items-center gap-2 py-1">
+            <SiteGlyph
+              name={entry.dir ? "folder" : "file"}
+              className={`h-4 w-4 shrink-0 ${entry.dir ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400"}`}
+            />
+            <ExternalLink
+              href={`${data.url.replace("/tree/", entry.dir ? "/tree/" : "/blob/")}/${entry.name}`}
+              title={entry.name}
+              className="min-w-0 truncate text-gray-800 hover:text-brand-700 hover:underline dark:text-gray-200 dark:hover:text-brand-300"
+            >
+              {entry.name}
+            </ExternalLink>
+            {entry.dir && (
+              <span className="ml-auto shrink-0 text-xs text-gray-500 tabular-nums dark:text-gray-400">
+                {t.fileCount(entry.files)}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
       {data.readme && (
-        <>
+        <div className="p-4 sm:p-5">
           <div className={whole ? "" : "max-h-96 overflow-hidden"}>
             <HubMarkdown base={`${data.url}/`}>{data.readme}</HubMarkdown>
           </div>
@@ -291,10 +342,19 @@ function DataPanel({ data }: { data: BenchmarkData }) {
           >
             {whole ? t.showLess : t.showAll}
           </button>
-        </>
+        </div>
       )}
     </HubPanel>
   );
+}
+
+/** A time limit in seconds as words: whole hours as hours, anything else in minutes. */
+function durationText(seconds: number): string {
+  const words = S.hub.benchmarks;
+  const minutes = seconds / 60;
+  return minutes >= 60 && minutes % 60 === 0
+    ? words.hours(minutes / 60)
+    : words.minutes(Math.round(minutes));
 }
 
 /** The task's budget as short phrases, e.g. "Time 15 min", "CPU 1 core"; unset limits omitted. */
@@ -302,14 +362,7 @@ function budgetText(budget: BenchmarkTask["budget"]): string[] {
   const words = S.hub.benchmarks;
   const parts: string[] = [];
   if (budget.timeout !== undefined) {
-    const minutes = budget.timeout / 60;
-    parts.push(
-      `${words.budget.timeout} ${
-        minutes >= 60 && minutes % 60 === 0
-          ? words.hours(minutes / 60)
-          : words.minutes(Math.round(minutes))
-      }`,
-    );
+    parts.push(`${words.budget.timeout} ${durationText(budget.timeout)}`);
   }
   if (budget.cpus !== undefined) parts.push(`${words.budget.cpus} ${words.cores(budget.cpus)}`);
   if (budget.ram !== undefined) parts.push(`${words.budget.ram} ${words.gigabytes(budget.ram)}`);
