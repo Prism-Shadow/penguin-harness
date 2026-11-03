@@ -67,7 +67,7 @@ import {
   optionalNumber,
   optionalString,
 } from "../http/validate.js";
-import { maskApiKey } from "./project-config-service.js";
+import { maskApiKey } from "@penguinharness/plugin-projects/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig } from "../mechanisms/agents.js";

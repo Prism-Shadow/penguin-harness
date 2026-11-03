@@ -42,7 +42,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { SemanticIdField } from "../semantic-id";
-import { WorkspaceSelect } from "../internal";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import {
   SkillPickList,
   addSkillNames,

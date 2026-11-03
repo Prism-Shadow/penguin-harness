@@ -85,3 +85,6 @@ export * from "./state/project";
 export * from "./state/sessions";
 export * from "./state/theme";
 export * from "./state/user-events";
+
+/** useMachines: the machines account state wins over the api/endpoints hook of the same name. */
+export { useMachines } from "./state/machines";
