@@ -1048,11 +1048,25 @@ export const en: Strings = {
         ? "Open the command palette to get back to the workbench."
         : `Press ${palette} for the command palette to get back to the workbench.`,
     noSuchPage: "This workbench does not exist or has no page.",
-    removeConfirm: "Delete this workbench and all its recorded versions?",
+    removeConfirm:
+      "Delete this workbench and its data? Its past versions will no longer be listed.",
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
     fileCount: (n: number) => `${n} files`,
+    importAction: "Import zip",
+    importTitle: "Import workbench",
+    importUploadDesc:
+      "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Workbench imported",
+    importOverwriteTitle: "Overwrite existing workbench",
+    importOverwriteBody: (name: string): string =>
+      `The workbench "${name}" already exists. Overwriting replaces its source (local edits included); its data (state.json) stays, and the old source can still be restored from History. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "Export",
   },
   harnessHistory: {
     title: "Harness history",
@@ -6293,6 +6307,7 @@ Scenarios:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
+      workbench_too_large: "This workbench's source exceeds the export limits.",
       benchmark_busy:
         "This Benchmark is being evaluated: a run under its .jobs/ has not finished, and overwriting it now would let that evaluation go on writing into the new copy. Overwrite it once the evaluation ends.",
       file_not_found: "This file no longer exists.",

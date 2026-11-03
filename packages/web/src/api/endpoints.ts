@@ -238,6 +238,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchArchiveInstallRequest,
+  WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
   WorkbenchVersion,
   VersionRollbackResponse,
@@ -2758,6 +2760,29 @@ export const rollbackWorkbench = (
   apiFetch<{ workbench: WorkbenchInfo }>(
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
+  );
+/** Imports one workbench's source from an uploaded zip (base64) and loads it; 409 `workbench_exists` on a taken id unless overwrite; 201 returns the workbench as its load left it. */
+export const installWorkbenchArchive = (
+  projectId: string,
+  agentId: string,
+  body: WorkbenchArchiveInstallRequest,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchArchiveInstallResponse>(`${workbenchesBase(projectId, agentId)}/archive`, {
+    method: "POST",
+    body,
+    server: machineId,
+  });
+/** Zip download URL for one workbench's source (server sets Content-Disposition attachment); the export round-trips through installWorkbenchArchive. */
+export const workbenchArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+): string =>
+  apiUrl(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/archive`,
+    machineId,
   );
 /** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
 export const removeWorkbench = (

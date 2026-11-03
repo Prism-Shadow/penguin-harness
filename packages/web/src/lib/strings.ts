@@ -1182,11 +1182,24 @@ export const zh = {
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
-    removeConfirm: "删除这个工作台及其全部已记录版本？",
+    removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
     fileCount: (n: number) => `${n} 个文件`,
+    importAction: "导入 zip",
+    importTitle: "导入工作台",
+    importUploadDesc:
+      "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "工作台已导入",
+    importOverwriteTitle: "覆盖已有工作台",
+    importOverwriteBody: (name: string): string =>
+      `工作台「${name}」已存在，覆盖将替换其源码（含本地改动）；数据（state.json）保留，旧源码仍可从历史恢复。确认继续？`,
+    importOverwriteAction: "覆盖导入",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "打包导出",
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -6546,6 +6559,7 @@ Benchmark：
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
+      workbench_too_large: "该工作台的源码过大，超出了导出限制。",
       benchmark_busy:
         "这个 Benchmark 正在评估：它的 .jobs/ 里还有没跑完的运行，现在覆盖，进行中的评估会接着写进新导入的副本。请等评估结束后再覆盖。",
       file_not_found: "该文件已不存在。",
