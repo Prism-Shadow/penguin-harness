@@ -2,7 +2,8 @@
  * The schedules group's server half: the scheduler, its session-creator and
  * task-runner surfaces and the routes, exported for the server's composition root.
  */
-export { Scheduler, ScheduleEntryView, ScheduleSessionCreator, ScheduleTaskRunner } from "./scheduler.js";
+export { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./scheduler.js";
+export type { ScheduleEntryView } from "./scheduler.js";
 export { scheduleRoutes, projectScheduleRoutes, SchedulerRoutes } from "./schedules.js";
 export {
   ScheduleFileCache,
