@@ -39,7 +39,7 @@ import {
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "./skill-import-limits.js";
+} from "@prismshadow/penguin-server/internal";
 
 /** A case's directory: `CASE-` and the id alphabet, the create route's rule for a case id. */
 const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;

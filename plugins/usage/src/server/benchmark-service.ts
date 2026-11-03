@@ -51,7 +51,7 @@ import type {
   CaseMaterial,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
-import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
+import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "@prismshadow/penguin-server/internal";
 import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";

@@ -19,7 +19,7 @@ import { agentPrincipal, parsePrincipal, principalAgentId } from "../organizatio
 import { DEFAULT_CHANNEL_ID } from "../organization/paths.js";
 import type { TicketFile } from "../organization/store.js";
 import { zonedDate } from "../organization/zoned.js";
-import { latestSlotAt, slotInWindow } from "@prismshadow/penguin-server/internal";
+import { latestSlotAt, slotInWindow } from "@penguinharness/plugin-schedules/server";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend, TicketForSpend } from "./budget.js";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "./deps.js";
