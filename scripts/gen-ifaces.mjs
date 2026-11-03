@@ -1027,12 +1027,19 @@ for (const project of projects) {
     if (sym && componentKeyBySymbol.has(sym)) return componentKeyBySymbol.get(sym);
     const decl = sym?.declarations?.find((d) => isInterfaceClassDecl(d));
     if (!decl) {
+      const declsOf = (s) =>
+        s === undefined
+          ? "undefined"
+          : (s.declarations ?? [])
+              .map((d) => path.relative(process.cwd(), d.getSourceFile().fileName))
+              .join(", ") || `none(flags=${s.flags})`;
       const where =
         sym === undefined
           ? "no symbol"
-          : (sym.declarations ?? [])
-              .map((d) => path.relative(process.cwd(), d.getSourceFile().fileName))
-              .join(", ") || "no declarations";
+          : declsOf(sym) +
+            (sym.flags & ts.SymbolFlags.Alias
+              ? ` → aliased: ${declsOf(checker.getAliasedSymbol(sym))}`
+              : "");
       errors.push(
         `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}'; resolved: ${where})`,
       );
