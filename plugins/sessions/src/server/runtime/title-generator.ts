@@ -29,10 +29,10 @@ import {
   truncateTitle,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
-import type { ChannelHub } from "./channel.js";
-import type { ErrorSink } from "./error-recorder.js";
+import type { ChannelHub } from "@prismshadow/penguin-server/internal";
+import type { ErrorSink } from "@prismshadow/penguin-server/internal";
 import type { RuntimeSession } from "./session-manager.js";
-import type { UsageContext } from "./usage-recorder.js";
+import type { UsageContext } from "@prismshadow/penguin-server/internal";
 import type { UsageRecording } from "@prismshadow/penguin-server/internal";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 
