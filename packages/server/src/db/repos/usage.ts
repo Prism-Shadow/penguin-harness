@@ -123,6 +123,12 @@ const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
   month: "substr(date, 1, 7)",
 };
 
+/**
+ * A day key read from `ts` at a fixed UTC offset (`:dayShift`, e.g. `'+480 minutes'`) rather
+ * than from `date`: the days of another timezone, exact while that zone keeps the offset.
+ */
+const SHIFTED_DAY_EXPR = `strftime('%Y-%m-%d', ts, :dayShift)`;
+
 /** groupBy dimension -> column name allowlist (prevents injection; only these four columns can be group keys). */
 const GROUP_COLUMNS: Record<UsageGroupBy, string> = {
   date: "date",
@@ -308,16 +314,23 @@ export class UsageRepo implements UsageStore {
    * Time-series sums (bucket key x paired reference breakdown) with per-bucket
    * success-rate counts riding along: powers the cost center's time-series charts
    * (requests / success rate / Token / cost) at the requested precision. The
-   * denominator excludes aborted.
+   * denominator excludes aborted. `dayOffsetMinutes` keys day buckets by the
+   * calendar day at that UTC offset instead of the server-local `date` column
+   * (other granularities ignore it).
    */
   seriesByModel(
     projectId: string,
     granularity: UsageSeriesGranularity,
     f: UsageFilter = {},
     tiers: readonly PeakTier[] = [],
+    dayOffsetMinutes?: number,
   ): UsageSeriesModelSums[] {
-    const expr = BUCKET_EXPRS[granularity];
+    const shifted = granularity === "day" && dayOffsetMinutes !== undefined;
+    const expr = shifted ? SHIFTED_DAY_EXPR : BUCKET_EXPRS[granularity];
     const { where, params } = this.conds(projectId, f);
+    if (shifted) {
+      params.dayShift = `${dayOffsetMinutes >= 0 ? "+" : "-"}${Math.abs(dayOffsetMinutes)} minutes`;
+    }
     const peak = peakExpr(tiers);
     const rows = this.db
       .prepare(

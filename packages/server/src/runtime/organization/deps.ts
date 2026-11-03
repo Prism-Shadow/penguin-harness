@@ -126,11 +126,13 @@ export interface OrgUsageGateway {
     fromTs: string,
     toTs: string,
   ): Promise<{ bySession: Map<string, number>; unpriced: boolean }>;
+  /** Days are calendar days of `timeZone` (the organization's), not of the server. */
   dailyCostForSessions(
     projectId: string,
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>>;
 }
 

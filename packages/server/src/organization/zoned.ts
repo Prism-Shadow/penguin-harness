@@ -133,3 +133,49 @@ export function zonedDayRange(timeZone: string, date: string): { fromMs: number;
     toMs: zonedLocalToUtc(timeZone, y, m, d + 1),
   };
 }
+
+export interface ZonedOffsetSpan {
+  /** First instant of the span (inclusive), epoch ms. */
+  fromMs: number;
+  /** First instant past the span (exclusive), epoch ms. */
+  toMs: number;
+  /** The zone's UTC offset throughout the span, in minutes (positive east of UTC). */
+  offsetMinutes: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * A `[fromMs, toMs)` window cut wherever the zone's UTC offset changes (a DST transition), so a
+ * fixed-offset calculation — SQLite's `'+480 minutes'` modifier — is exact inside every piece.
+ * The window is probed a day at a time and a day whose offset moved is bisected to the
+ * millisecond the new offset starts; transitions are months apart, so a day holds at most one.
+ */
+export function zonedOffsetSpans(
+  timeZone: string,
+  fromMs: number,
+  toMs: number,
+): ZonedOffsetSpan[] {
+  const spans: ZonedOffsetSpan[] = [];
+  let spanFrom = fromMs;
+  let offset = zonedOffsetMinutes(timeZone, fromMs);
+  let lo = fromMs;
+  while (lo < toMs - 1) {
+    let hi = Math.min(lo + DAY_MS, toMs - 1);
+    if (zonedOffsetMinutes(timeZone, hi) === offset) {
+      lo = hi;
+      continue;
+    }
+    while (hi - lo > 1) {
+      const mid = lo + Math.floor((hi - lo) / 2);
+      if (zonedOffsetMinutes(timeZone, mid) === offset) lo = mid;
+      else hi = mid;
+    }
+    spans.push({ fromMs: spanFrom, toMs: hi, offsetMinutes: offset });
+    spanFrom = hi;
+    offset = zonedOffsetMinutes(timeZone, hi);
+    lo = hi;
+  }
+  if (spanFrom < toMs) spans.push({ fromMs: spanFrom, toMs, offsetMinutes: offset });
+  return spans;
+}
