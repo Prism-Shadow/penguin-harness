@@ -37,6 +37,9 @@ export function Nav() {
       home: route("/"),
       blog: route("/blog"),
       download: route("/download"),
+      plugins: route("/plugins"),
+      benchmarks: route("/benchmarks"),
+      leaderboards: route("/leaderboards"),
       amsp: route("/amsp"),
       gallery: { href: galleryUrl(locale) },
     },
@@ -51,9 +54,9 @@ export function Nav() {
       language={{ value: lang, onChange: setLang, labels: S.lang }}
       theme={{ mode, onChange: setMode, labels: S.theme }}
       repo={{ href: REPO_URL, apiUrl: REPO_API_URL }}
-      menu={{ open, onToggle: () => setOpen((v) => !v), hiddenClass: "md:hidden" }}
+      menu={{ open, onToggle: () => setOpen((v) => !v), hiddenClass: "lg:hidden" }}
     >
-      <Fold open={open} className="site-ui-fold md:hidden">
+      <Fold open={open} className="site-ui-fold lg:hidden">
         <SiteNavLinks links={links} mobile onNavigate={close} />
       </Fold>
     </SiteNav>

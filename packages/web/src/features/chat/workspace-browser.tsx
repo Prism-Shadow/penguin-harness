@@ -154,6 +154,7 @@ import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
 import { WorkspaceTreeView } from "./workspace-tree-view";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to
@@ -985,7 +986,7 @@ export function WorkspaceBrowser({
     } else if (err instanceof ApiError && err.code === "target_exists" && to !== undefined) {
       toastError(S.files.targetExists(to));
     } else {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
 
@@ -1489,7 +1490,7 @@ export function WorkspaceBrowser({
         setConflict({ name: baseName(current.path) });
         return;
       }
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       if (scopeKeyRef.current === key) setSaving(false);
     }
@@ -1521,7 +1522,7 @@ export function WorkspaceBrowser({
       }
       toastSuccess(S.files.uploadedCount(uploaded.length));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       if (scopeKeyRef.current === key) setUploading(null);
     }
@@ -1618,7 +1619,7 @@ export function WorkspaceBrowser({
       if (err instanceof ApiError && err.code === "target_exists") {
         toastError(S.files.targetExists(path));
       } else {
-        toastError(apiErrorText(err));
+        toastApiError(err);
       }
     } finally {
       if (scopeKeyRef.current === key) setCreating(false);
@@ -1635,7 +1636,7 @@ export function WorkspaceBrowser({
     try {
       await files.reveal(filePath);
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
 

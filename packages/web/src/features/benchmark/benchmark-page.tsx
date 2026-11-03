@@ -37,7 +37,6 @@ import {
   Skeleton,
   SkeletonCard,
   Sparkline,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -67,6 +66,7 @@ import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
@@ -234,11 +234,13 @@ export function BenchmarkCard({
         disabled={masked}
         className="min-w-[14rem] flex-1 text-left"
       >
+        {/* The title takes the row first; the id (flex-basis 0) gets only what is left and is cut
+            short there, so a long id never truncates the title. */}
         <span className="flex items-center gap-2">
           <span className="min-w-0 truncate text-base font-bold">
             {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
           </span>
-          <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
             {benchmark.id}
           </span>
         </span>
@@ -470,7 +472,7 @@ export function BenchmarkPage() {
       }
       setDeleting(null);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setDeleteBusy(false);
     }

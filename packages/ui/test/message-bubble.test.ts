@@ -74,7 +74,9 @@ describe("MessageBubble", () => {
       ),
     );
     expect(classTokens(html)).toContain("text-tone-attention-fg");
-    expect(html).toMatch(/<span>Reconnecting<\/span><span [^>]*><button [^>]*>Retry now<\/button>/);
+    expect(html).toMatch(
+      />Reconnecting<\/span><\/span><span [^>]*><button [^>]*>Retry now<\/button>/,
+    );
   });
 });
 

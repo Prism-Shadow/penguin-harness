@@ -88,6 +88,7 @@ import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import { followAgentDeletion } from "./agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
 const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
@@ -426,7 +427,7 @@ export function AgentsPage() {
     try {
       await reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setKernelRunning(false);
       setKernelConfirmOpen(false);

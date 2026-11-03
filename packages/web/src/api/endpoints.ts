@@ -163,6 +163,7 @@ import type {
   QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
+  InterruptRequest,
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
@@ -1390,6 +1391,13 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     { method: "DELETE" },
   );
 
+/** Send one waiting message now — the follow-up `followUpId` names or the steering `steerId` names: the run stops and it goes out first (202; 409 follow_up_started / not_pending once it is no longer waiting). */
+export const postInterrupt = (sessionId: string, body: InterruptRequest) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+    method: "POST",
+    body,
+  });
+
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).
   apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
@@ -2318,7 +2326,9 @@ export const uninstallMachine = (projectId: string, machineId: string, removeDat
 
 // Version & self-update ----------------------------------------------------------------
 
-export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** This server's version report, or, given a machine's id, that machine's (its OS for a report). */
+export const getVersion = (machine?: string) =>
+  apiFetch<VersionResponse>("/api/version", machine === undefined ? {} : { server: machine });
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 /** Push a kept version back (admin); the swap follows the 202. */

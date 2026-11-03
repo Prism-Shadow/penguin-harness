@@ -346,12 +346,10 @@ export const zh = {
       gaveUp: (m: number) => `${m} 次重连均失败`,
       /** A person stopped retrying. */
       cancelled: "已放弃重试",
-      /** ssh refused in a way no retry mends; the "?" says the fix. */
+      /** ssh refused in a way no retry mends; the reason after it says the fix. */
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
-      /** The title over the last attempt's failure behind the "?". */
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -3883,8 +3881,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) => `[加载失败]：未能加载更早的对话（${error}）`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3907,12 +3905,25 @@ Benchmark：
     steerQueuedItem: (content: string) => `插话已排队，将随下一轮送达：${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
     steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
     steerModeFollowUp: "排队",
     steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    steerModeInterrupt: "打断",
+    steerModeInterruptHint: "打断本轮：停止运行，消息接在被打断的那一轮之后立即发送",
+    interruptPlaceholder: "打断本轮并发送，消息接在被打断的那一轮之后",
+    interruptPlaceholderShort: "打断并发送…",
+    interruptSend: "打断并发送",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `正在打断，随后发送：${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "打断",
+    /** Its tooltip. */
+    interruptQueuedTitle: "停止本轮，立即发送这条消息",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "这条消息已经发出，无需打断。",
     followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
     followUpPlaceholderShort: "排队为下一条消息…",
     followUpSend: "排队为下一条消息",
@@ -3957,49 +3968,83 @@ Benchmark：
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
-     * The model request's retry row, one per ladder: `n` is the attempt it is about — the next
-     * one while it waits, the one sent after — of the turn's `m` at most (the engine counts the
-     * first request as attempt 1).
+     * A model request's retry ladder, one line per ladder, in the shape of the stop marker
+     * 「[已中断]：…」: a bracketed label, where it stands, and why in parentheses. `n` is the attempt
+     * the line is about — the next one while it waits, the one sent after — of the turn's `m` at
+     * most (the engine counts the first request as attempt 1).
      */
     requestRetry: {
       waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后发起第 ${n}/${m} 次请求`,
       /** The wait is over (or there was none) and the request is going out. */
       sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
-      /** The request went out; the row now only records it. */
+      /** The request went out; the line now only records it. */
       sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      gaveUp: (attempts: number) => (attempts > 1 ? `${attempts} 次请求均失败` : "请求失败"),
+      /** The line while it waits, or while the attempt goes out. */
+      retrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      /** The line once the attempt went out: it stays as the record of a ladder that recovered. */
+      retried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
       /**
-       * Why it retried, in words: the title over the provider's own message behind the row's
-       * "?". The live protocol carries the classified cause on `error_code`; the legacy status
-       * spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+       * The ladder ended the run — it gave up, or a stop came during a wait — said as the line a
+       * run ended on is, beside 「[已中断]」 and 「[错误]」: how many attempts failed, and why.
        */
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
+      failed: (attempts: number, why: string) =>
+        attempts > 1 ? `[请求失败]：${attempts} 次请求均失败（${why}）` : `[请求失败]：${why}`,
+      /**
+       * Why, in short: the cause in words, and the HTTP status when the provider's message names
+       * one. The provider's own words are the failure details' (「[详情]」), never the line's.
+       */
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}，HTTP ${status}`,
+      /**
+       * The cause in words, from `error_code` (the legacy status spellings failed/timeout/malformed
+       * say the same thing for pre-convergence Traces); null for a code it has no words for.
+       */
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
           ? "连接超时或网络中断"
           : kind === "malformed"
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "image_rejected"
-                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "output_truncated"
-                  ? "模型输出达到输出上限，被截断"
-                  : kind === "failed"
-                    ? "模型服务返回错误"
-                    : "请求失败";
-      },
+              : kind === "rate_limited"
+                ? "触发限流或额度已用尽"
+                : kind === "auth"
+                  ? "凭据被拒绝"
+                  : kind === "rejected"
+                    ? "模型服务拒绝了请求"
+                    : kind === "image_rejected"
+                      ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
+                      : kind === "output_truncated"
+                        ? "模型输出达到输出上限，被截断"
+                        : kind === "unsupported"
+                          ? "当前模型不支持该请求"
+                          : kind === "invalid_input"
+                            ? "输入无法组成请求"
+                            : kind === "failed"
+                              ? "模型服务返回错误"
+                              : null,
+      /** A retry whose cause has no words (an unknown code). */
+      unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
       retryNow: "立即重试",
       /** The ordinary session abort. */
       stop: "放弃重试",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+    /**
+     * Run-ending LLM failure line (request_end status fatal): why in short when it is known; the
+     * provider's own words are in the failure details.
+     */
+    llmError: (why: string | null) => `[错误]：模型请求错误${why === null ? "" : `（${why}）`}`,
+    /**
+     * The details of a failed or retrying model request: 「[详情]」 on its line opens a dialog
+     * with a report to copy or to file as a GitHub issue.
+     */
+    failureReport: {
+      open: "详情",
+      title: "请求失败详情",
+      lead: "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      check: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
@@ -4061,8 +4106,37 @@ Benchmark：
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
-    sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
+    /** The routed conversation's machine is connected and did not answer in time. */
+    sessionOnQuietMachine: (machine: string) =>
+      `这个对话在 ${machine} 上，但 ${machine} 暂时没有回应。`,
+    /** No machine can be named: nothing says whether it is not connected or not answering. */
+    sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台暂时联系不上的机器上。",
+    /**
+     * A link the list does not hold while machines that could hold it are silent: what is known —
+     * not here — and where it may be. At most three aliases are named; more end in 等. `state`
+     * says whether those machines are not connected, connected and not answering, or some of each.
+     */
+    sessionMaybeOnMachines: (
+      aliases: readonly string[],
+      more: boolean,
+      state: "disconnected" | "quiet" | "mixed",
+    ) => {
+      const why =
+        state === "disconnected"
+          ? "当前没有连接"
+          : state === "quiet"
+            ? "暂时没有回应"
+            : "当前没有连接或暂时没有回应";
+      return aliases.length === 1 && !more
+        ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} ${why}。`
+        : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器${why}。`;
+    },
     sessionOfflineHint: "连接恢复后会自动打开。",
+    sessionQuietHint: "机器回应后会自动打开。",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null ? "这台机器不让本服务端查看这个对话" : `${machine} 不让本服务端查看这个对话`,
+    sessionRefusedHint: "对话仍在那台机器上，但它拒绝了本服务端的读取。",
     /** The routed conversation does not exist (a stale link, or deleted elsewhere): said in place, never swapped for another conversation. */
     sessionNotFound: "会话不存在或已被删除",
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
@@ -4089,6 +4163,48 @@ Benchmark：
       body: (alias: string) =>
         `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
       open: "去机器管理",
+    },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null ? "正在加载最近的对话" : `正在从 ${alias} 加载最近的对话`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "更早的历史正在同步",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "完整输出正在同步",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "正在加载完整内容",
+      /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
+      bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) => `与机器的连接已断开，正在重连（第 ${attempt} 次）`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt} 次）`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
+      askIn: (seconds: number, attempt: number) =>
+        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "机器已连接，但一分钟内没有传来新数据，仍在等待"
+          : `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "正在等待机器",
+      retryNow: "立即重试",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "历史消息传输中断，请重试",
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
@@ -6346,6 +6462,23 @@ Benchmark：
       loadFailed: "手册加载失败",
     },
   },
+  /**
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * report dialog it opens, and the notice a crashed part of the page shows.
+   */
+  report: {
+    action: "报告问题",
+    title: "报告问题",
+    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
+    label: "报告",
+    copy: "复制",
+    copied: "已复制报告",
+    copyFailed: "没能复制，请选中报告手动复制",
+    fileIssue: "到 GitHub 提交 issue",
+    crashed: "[出错了]：这部分页面没能显示",
+    reload: "重新加载",
+  },
   errors: {
     networkError: "网络错误，请检查连接",
     /**
@@ -6374,6 +6507,13 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
+      trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
+      machine_refused: "机器拒绝了这次读取。",
+      machine_no_answer: "机器没有回应。",
+      machine_not_found: "这台机器不在当前 Project 的机器列表中。",
+      machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      machine_answered: "机器给出的应答无法使用，请重试。",
+      trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
       job_running: "这台机器上有任务在执行，请等它完成。",
@@ -6425,6 +6565,7 @@ Benchmark：
       workspace_missing: "该 Session 的 Workspace 已不存在。",
       workspace_not_found: "该 Workspace 不存在或不是目录。",
       session_not_found: "该 Session 已不存在，或你没有访问权限。",
+      session_forbidden: "你没有访问该 Session 的权限。",
       session_deleting: "该 Session 正在删除中。",
       approval_not_found: "该授权请求已处理或已失效。",
       process_not_found: "该后台进程已结束或已被移除。",

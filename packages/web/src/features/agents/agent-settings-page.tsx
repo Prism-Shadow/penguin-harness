@@ -59,7 +59,6 @@ import {
   Tabs,
   Textarea,
   UpdateDot,
-  toastError,
   toastSuccess,
   useFormDraft,
 } from "@prismshadow/penguin-ui";
@@ -98,6 +97,7 @@ import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { effectiveThinkingLevel } from "../chat/thinking-level";
 import { ThinkingLevelSelect } from "../chat/thinking-level-select";
+import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =
   | "overview"
@@ -286,7 +286,7 @@ export function AgentSettingsPage() {
         }
         return res;
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -511,7 +511,7 @@ function OverviewTab({
       setResetOpen(false);
       onConfigReset();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setResetting(false);
     }
@@ -527,7 +527,7 @@ function OverviewTab({
       toastSuccess(S.agent.kernelUpdateDone(res.kernelVersion, res.advanced.length));
       onKernelUpdated();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setKernelUpdating(false);
     }
@@ -937,7 +937,7 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
         if (!cancelled) setProjectThinking(effectiveThinkingLevel("", res.thinkingLevel));
       },
       (error: unknown) => {
-        if (!cancelled) toastError(apiErrorText(error));
+        if (!cancelled) toastApiError(error);
       },
     );
     return () => {

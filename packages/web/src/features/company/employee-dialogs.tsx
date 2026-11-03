@@ -43,7 +43,6 @@ import {
   Select,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -80,6 +79,7 @@ import {
   effectiveThinkingLevel,
   thinkingLevelLabel,
 } from "../chat/thinking-level";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -272,7 +272,7 @@ function HireForm({
       onHired();
     } catch (e) {
       setStdioConfirmOpen(false);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -572,7 +572,7 @@ export function EmployeeEditDialog({
       },
       (e: unknown) => {
         if (cancelled) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
         onClose();
       },
     );
@@ -627,7 +627,7 @@ export function EmployeeEditDialog({
       }
       onSaved();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -994,7 +994,7 @@ function DeskRenewForm({
       discardUnsaved(form.scope);
       onRenewed(desk.sessionId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       if (patched) onChartChanged();
     } finally {
       setBusy(false);

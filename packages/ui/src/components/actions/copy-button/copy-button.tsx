@@ -57,6 +57,11 @@ export function ClipboardWriterProvider({
   );
 }
 
+/** The app's clipboard writer, for a copy control that is not a `CopyButton` (a report's Copy). */
+export function useClipboardWriter(): ClipboardWriter {
+  return useContext(ClipboardWriterContext);
+}
+
 /**
  * Transient "just copied" flag: `flash()` writes the text and, if the write landed, turns
  * `copied` on for COPIED_MS. For a caller whose copy trigger is not a plain CopyButton (a text

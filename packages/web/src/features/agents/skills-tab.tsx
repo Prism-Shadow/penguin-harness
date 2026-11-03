@@ -47,7 +47,6 @@ import {
   Textarea,
   buttonClass,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useCopied,
   useFormDraft,
@@ -67,6 +66,7 @@ import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
 export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
@@ -141,7 +141,7 @@ export function SkillsTab({
     try {
       await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name, machineId), name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -156,7 +156,7 @@ export function SkillsTab({
       // The agent card's skill count changed; refresh the list provider too.
       if (machineId === null) void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setRemoving(null);

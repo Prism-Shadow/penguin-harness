@@ -16,7 +16,9 @@ import { useEffect } from "react";
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
+  CrashBoundary,
   ProgressToasts,
+  ReportHost,
   Toaster,
   TooltipLayer,
 } from "@prismshadow/penguin-ui";
@@ -27,6 +29,7 @@ import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
 import { writeClipboard } from "./lib/clipboard";
+import { ReportEnvironmentSync } from "./lib/report-environment";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./features/chat/code-highlight";
 
@@ -55,9 +58,16 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
             <BackgroundProvider>
               <AuthProvider>
                 <LocaleScope>
-                  <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+                  {/* What every problem report knows of where it ran. */}
+                  <ReportEnvironmentSync />
+                  {/* The last line against a blank window: a crash the routes did not catch. */}
+                  <CrashBoundary className="h-dvh">
+                    <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+                  </CrashBoundary>
                   {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
                   <Toaster />
+                  {/* The problem report opened from a toast, a notice or a crash: one dialog. */}
+                  <ReportHost />
                   {/* Long operations' progress cards, bottom right (an Agent's files being removed). */}
                   <ProgressToasts />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the

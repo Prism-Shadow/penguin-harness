@@ -77,6 +77,7 @@ describe("the library's topics", () => {
       "data",
       "machines",
       "retry",
+      "report",
       "attachments",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;

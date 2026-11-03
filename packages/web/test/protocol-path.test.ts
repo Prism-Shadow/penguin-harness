@@ -78,6 +78,7 @@ describe("protocolPathForModel", () => {
       "fireworks",
       "siliconflow",
       "atlascloud",
+      "runcrate",
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",

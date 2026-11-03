@@ -15,6 +15,9 @@
  * - Given another user, or another Project's path, the answer kept for one is never offered for
  *   the other: their first read carries no validator, even where the machine would accept any.
  * - Given answers past the bound, one too large is not kept and the least recently used go first.
+ * - Given a Session's history read the hub's copy could not answer (a Trace file's events or its
+ *   analysis, on either path), the machine's answer is relayed and not kept: the next read asks
+ *   in full, so the copy stays the one place those bytes are kept.
  */
 import http from "node:http";
 import net from "node:net";
@@ -297,6 +300,28 @@ describe("the scope of a kept answer", () => {
     expect(heard.map((h) => h.ifNoneMatch)).toEqual([undefined, '"v1"', undefined, undefined]);
     expect(await bob!.json()).toEqual({ path: AGENTS });
     expect(await other!.json()).toEqual({ path: OTHER });
+  });
+
+  it("is never kept for a Session's history read, which the hub's copy keeps instead", async () => {
+    const proxy = machinesProxy(
+      async () => ({ agent: new http.Agent(), port, cookie: "s=1", adoptedAt: null, session: 1 }),
+      undefined,
+      undefined,
+      { answers: new MachineAnswers() },
+    );
+    const reads = [
+      "/api/sessions/s1/traces/1",
+      "/api/sessions/s1/traces/1/analysis",
+      `${PROJECT}/agents/default_agent/traces/s1/2`,
+    ];
+    for (const path of [...reads, ...reads]) {
+      const res = await proxy(asked(path), { userId: "admin" });
+      expect(await res!.json()).toEqual({ path });
+    }
+
+    const traceReads = heard.filter((h) => reads.includes(h.path));
+    expect(traceReads).toHaveLength(6);
+    expect(traceReads.map((h) => h.ifNoneMatch)).toEqual(Array(6).fill(undefined));
   });
 });
 
