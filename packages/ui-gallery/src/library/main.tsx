@@ -14,7 +14,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CodeHighlighterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
-import { highlightCode } from "../../../web/src/features/chat/code-highlight";
+import { highlightCode } from "@prismshadow/penguin-web/internal";
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
 import "./library.css";
