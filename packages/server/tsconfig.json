@@ -3,8 +3,19 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@penguinharness/plugin-company/server": ["../../plugins/company/src/server/index.ts"]
+      "@penguinharness/plugin-company/server": [
+        "../../plugins/company/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "./src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "./src/api/types.ts"
+      ]
     }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }
