@@ -162,7 +162,7 @@ import {
   ProjectEvents,
   ProjectLifecycle,
   Projects,
-} from "./mechanisms/projects.js";
+} from "@penguinharness/plugin-projects/server";
 import {
   AgentState,
   Schedules,
