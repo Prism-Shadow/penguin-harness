@@ -44,7 +44,9 @@ export {
   listCategory,
   listingMarksOf,
   readRecordedSource,
-  recallStoreOf
+  recallStoreOf,
+  sourceSeenBy,
+  unrunSource
 } from "@penguinharness/plugin-sessions/server";
 export * from "./services/ids.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-guard.js";
