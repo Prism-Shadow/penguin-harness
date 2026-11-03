@@ -2,18 +2,52 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "paths": {
-      "@penguinharness/plugin-agents/server": ["./src/server/index.ts"],
-      "@penguinharness/plugin-agents/web": ["./src/web/index.ts"],
-      "@penguinharness/plugin-machines/server": ["../machines/src/server/index.ts"],
-      "@penguinharness/plugin-schedules/server": ["../schedules/src/server/index.ts"],
-      "@penguinharness/plugin-schedules/web": ["../schedules/src/web/index.ts"],
-      "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
-      "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
-      "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
-      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
+      "@penguinharness/plugin-agents/server": [
+        "./src/server/index.ts"
+      ],
+      "@penguinharness/plugin-agents/web": [
+        "./src/web/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server": [
+        "../machines/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/server": [
+        "../schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/web": [
+        "../schedules/src/web/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "../../packages/web/src/internal.ts"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../workbenches/src/server/index.ts"
+      ]
     }
   },
-  "include": ["src/server"]
+  "include": [
+    "src/server"
+  ]
 }

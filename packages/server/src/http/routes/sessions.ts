@@ -134,8 +134,8 @@ import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
 
-import { agentsRoutes } from "./agents.js";
-import { agentConfigRoutes } from "./agent-config.js";
+import { agentsRoutes } from "@penguinharness/plugin-agents/server";
+import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
 import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
