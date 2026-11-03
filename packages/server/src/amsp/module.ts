@@ -20,7 +20,7 @@ import { AgentApi } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Errors } from "../mechanisms/observability.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import type { Settings } from "../mechanisms/settings.js";
 import type { SessionManager, Sessions, SessionServiceIface } from "@penguinharness/plugin-sessions/server";
 import type { SessionService } from "../services/session-service.js";

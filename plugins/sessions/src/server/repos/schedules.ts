@@ -8,8 +8,8 @@
  * only clears the disabled flag (the file becomes effective again after reconciliation).
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { Schedules } from "../../mechanisms/sessions.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { Schedules } from "../mechanism.js";
 
 export interface ScheduleStateRow {
   projectId: string;

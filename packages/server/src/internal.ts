@@ -11,7 +11,6 @@
 export * from "./auth/middleware.js";
 export * from "./auth/service.js";
 export * from "./db/repos/organizations.js";
-export * from "./db/repos/sessions.js";
 export * from "./hmr/asset-archives.js";
 export * from "./hmr/capabilities.js";
 export * from "./http/errors.js";
@@ -20,7 +19,6 @@ export * from "./http/validate.js";
 export * from "./mechanisms/identity.js";
 export * from "./mechanisms/observability.js";
 export * from "./mechanisms/organization.js";
-export * from "./mechanisms/sessions.js";
 export * from "./mechanisms/workbenches.js";
 export * from "./mechanisms/settings.js";
 export * from "./runtime/channel.js";
@@ -55,6 +53,17 @@ export type {
   ProjectRow,
   Projects,
 } from "@penguinharness/plugin-projects/server";
+export type {
+  AgentState,
+  RunStarter,
+  Schedules,
+  Scheduling,
+  ScheduleStateRow,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+  SessionRow,
+} from "@penguinharness/plugin-sessions/server";
 export * from "./services/task-attachments.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
@@ -80,7 +89,6 @@ export * from "../../../plugins/projects/src/server/projects/semantic-id-suggest
 export * from "./mechanisms/workspace.js";
 export * from "./db/repos/browser-extensions.js";
 export * from "./db/repos/errors.js";
-export * from "./db/repos/schedules.js";
 export * from "../../../plugins/settings/src/server/repos/server-settings.js";
 export * from "./db/repos/trace-index.js";
 export * from "./db/repos/usage.js";

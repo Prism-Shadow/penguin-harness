@@ -3,11 +3,11 @@
  * Session index, approval mode, and auto-generated title; Session-level routes use this to look up project ownership.
  */
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
-import type { ApprovalMode } from "../../api/types.js";
+import type { ApprovalMode } from "@prismshadow/penguin-server/api";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { SessionIndex } from "../mechanism.js";
 
 export interface SessionRow {
   sessionId: string;

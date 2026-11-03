@@ -41,7 +41,7 @@ import type {
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import {
   listCategory,
@@ -54,7 +54,7 @@ import type { ListingView } from "@penguinharness/plugin-sessions/server";
 import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/server";
 import { matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
 import type { ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";

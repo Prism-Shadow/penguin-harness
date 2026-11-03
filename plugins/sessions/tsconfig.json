@@ -63,6 +63,7 @@
       "@penguinharness/plugin-browser/web": [
         "../browser/src/web/index.ts"
       ],
+      "@penguinharness/plugin-schedules/server": ["../schedules/src/server/index.ts"],
       "@penguinharness/plugin-schedules/web": [
         "../schedules/src/web/index.ts"
       ],
