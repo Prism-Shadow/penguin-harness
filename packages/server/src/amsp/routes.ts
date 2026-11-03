@@ -1,37 +1,6 @@
-/**
- * The Agent API's public routes, `/api/amsp/v1` — mounted in front of the cookie gate, since an
- * external program has no cookie: the key, when there is one, is all it presents.
- *
- *   GET  /agents/:projectId/:agentId                  the Agent's name and description
- *   POST /agents/:projectId/:agentId/runs             one run, streamed (run-stream.ts)
- *   GET  /sessions/:sessionId                         an API Session's state and model
- *   GET  /sessions/:sessionId/stream                  the Session stream (session-stream.ts)
- *   GET  /sessions/:sessionId/messages                its history (services/session-history.ts)
- *   GET  /sessions/:sessionId/trace-image             an image a history page references
- *   GET  /sessions/:sessionId/approvals               the calls waiting on a decision (approvals.ts)
- *   POST /sessions/:sessionId/tasks                   a run that does not hold the connection
- *   POST /sessions/:sessionId/abort                   202 interrupted / 204 nothing running
- *   POST /sessions/:sessionId/approvals/:toolCallId   answer a pending approval
- *   *    anything else                                404 not_found (JSON, never the SPA)
- *
- * The Session routes serve the same handlers as the Web App's `/api/sessions/:sessionId/…`, for
- * an API Session of the key's Agent; a history page's image references point at this prefix.
- *
- * CORS (cors.ts): a preflight is always answered; `Access-Control-Allow-Origin: *` goes only on
- * requests that carry `Authorization`, the global 413/415 refusals included. The `/api/*` CSRF
- * guard (JSON-only writes) stays in force; nothing here reads a cookie.
- *
- * One route of the family sits behind the cookie gate instead: the API tab's Try it,
- * `POST /api/projects/:projectId/agents/:agentId/api/try` (try-route.ts), the runs route's
- * handler for the Project owner's sign-in in place of a key.
- */
-import { Hono } from "hono";
-import type { AgentResponse, SessionResponse, TaskResponse } from "@prismshadow/amsp";
-import type { AppEnv } from "../auth/middleware.js";
-import { HttpError } from "../http/errors.js";
-import { readJson, requireEnum } from "../http/validate.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { AgentConfig } from "@penguinharness/plugin-agents/server";
+
+||||||| parent of 66b8653cb4 (agents: mechanism and repo move into plugin-agents)
 import type { Settings } from "../mechanisms/settings.js";
 import { toAttachmentLimits } from "../services/attachment-limits.js";
 import { sessionMessages, sessionTraceImage } from "../services/session-history.js";

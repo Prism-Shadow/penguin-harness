@@ -4,6 +4,8 @@
  * server's composition root.
  */
 export { AgentService } from "./agents/agent-service.js";
+export * from "./mechanism.js";
+export * from "./repos/agents.js";
 export type { AgentListItem } from "./agents/agent-service.js";
 export { AgentConfigService } from "./agents/agent-config-service.js";
 export type { AgentConfigView } from "./agents/agent-config-service.js";

@@ -29,7 +29,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
-import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
+import type { AgentLifecycle, Benchmarks } from "@penguinharness/plugin-agents/server";
 import type { Errors } from "../../mechanisms/observability.js";
 import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
 import type { Settings } from "../../mechanisms/settings.js";

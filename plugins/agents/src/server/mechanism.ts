@@ -21,7 +21,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   WorkspaceFilesResponse,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
