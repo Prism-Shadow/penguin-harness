@@ -199,6 +199,7 @@ export * from "./lib/omni/stream-controller";
 export * from "./lib/omni/stream-model";
 export * from "./lib/omni/compaction-summary";
 export * from "./lib/omni/memory-changes";
+export * from "./lib/omni/task-stats";
 export * from "./lib/permission-level";
 export * from "./lib/random-id";
 export * from "./lib/selection-menu";
