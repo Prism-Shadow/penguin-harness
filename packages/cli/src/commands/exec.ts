@@ -21,9 +21,19 @@
  */
 import type { Command } from "commander";
 import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
-import type { Messages } from "../i18n.js";
+import type { Language, Messages } from "../i18n.js";
 import { renderTable } from "../table.js";
 import { serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
+
+/**
+ * The language the server-side surfaces come in: a command summary is `{ en, zh }` and the
+ * run request names one of the two, while the bundle's `language` is the host's to define —
+ * so anything that is not `zh` renders English, the same judgment the host's own resolver
+ * makes.
+ */
+function summaryLanguage(t: Messages): Language {
+  return t.language === "zh" ? "zh" : "en";
+}
 
 /** What id resolution decided: the command to run, or the error to report. */
 export type ExecResolution =
@@ -114,7 +124,7 @@ export function registerExecCommand(exec: Command, t: Messages): void {
         await source.run({
           package: pkg,
           args: [...key.split("."), ...args.slice(1)],
-          language: t.language,
+          language: summaryLanguage(t),
           prog: `penguin exec ${args[0]}`,
         }),
       );
@@ -138,8 +148,8 @@ export function registerExecCommand(exec: Command, t: Messages): void {
         .filter((cmd) => pkg === undefined || cmd.package === pkg)
         .map((cmd) =>
           pkg === undefined
-            ? [cmd.package, cmd.key, cmd.summary[t.language]]
-            : [cmd.key, cmd.summary[t.language]],
+            ? [cmd.package, cmd.key, cmd.summary[summaryLanguage(t)]]
+            : [cmd.key, cmd.summary[summaryLanguage(t)]],
         );
       process.stdout.write(
         renderTable(
