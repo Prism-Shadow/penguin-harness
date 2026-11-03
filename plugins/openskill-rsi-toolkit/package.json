@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -35,6 +39,9 @@
       ]
     },
     "title": "OpenSkill RSI Toolkit",
-    "title_zh": "OpenSkill 自进化工具包"
+    "title_zh": "OpenSkill 自进化工具包",
+    "references": [
+      "https://arxiv.org/abs/2606.06741"
+    ]
   }
 }

@@ -352,6 +352,21 @@
   }
 }
 
+/* Hub detail pages: the panels rise in one after another when the page opens (never on
+   scroll); site-page.css's reduced-motion rule stops it. */
+.hub-stagger > * {
+  animation: rise-in 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.hub-stagger > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.hub-stagger > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.hub-stagger > :nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+
 /* Reduced motion (site-page.css stops every animation and transition): the states those leave
    behind are restored here. */
 @media (prefers-reduced-motion: reduce) {
