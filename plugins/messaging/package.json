@@ -24,7 +24,8 @@
     "remark-gfm": "^4.0.0",
     "remark-parse": "^11.0.0",
     "undici": "^7.29.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "uqr": "^0.1.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
