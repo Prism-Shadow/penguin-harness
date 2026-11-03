@@ -6,3 +6,4 @@ export { modelScopeAuthRoutes } from "./routes/modelscope-auth.js";
 export { ModelBalances, BALANCE_TIMEOUT_MS, BALANCE_CACHE_MS } from "./services/model-balance.js";
 export { ModelOAuthService } from "./services/model-oauth-service.js";
 export { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
+export type { ModelOAuthMode, ModelOAuthErrorCode, ModelOAuthStartResult, ModelOAuthStatus } from "./services/model-oauth-service.js";
