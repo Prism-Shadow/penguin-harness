@@ -26,7 +26,6 @@ import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
 import { getMessages } from "@prismshadow/penguin-server/cli";
 
-
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
 export function registerVersionCommand(version: Command, t: Messages): void {

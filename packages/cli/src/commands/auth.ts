@@ -26,7 +26,8 @@ import {
   sessionFile,
   tokenFromSetCookie,
   writeSession,
-  getMessages} from "@prismshadow/penguin-server/cli";
+  getMessages,
+} from "@prismshadow/penguin-server/cli";
 import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
