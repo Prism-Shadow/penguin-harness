@@ -105,12 +105,13 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 | **工具** | 内置工具设置和 MCP Server |
 | **技能** | 已安装的 Skill 和技能提示词 |
 | **钩子** | 已安装的钩子包和运行开关 |
+| **工作台** | Agent 的工作台：版本、zip 导入与导出、移除 |
 | **记忆** | Agent 的记忆和记忆提示词 |
 | **密钥保险柜** | Agent 命令用的环境变量 |
 | **定时任务** | 定时任务 |
 | **API** | 是否允许程序经 Agent API 调用这个 Agent、这些对话的审批模式，以及密钥 |
 
-每个标签页都有自己的地址：`/agents/<agentId>?tab=<tab>`，其中 `<tab>` 是 `overview`、`prompt`、`runtime`、`tools`、`skills`、`hooks`、`memory`、`vault`、`schedules` 或 `api`。
+每个标签页都有自己的地址：`/agents/<agentId>?tab=<tab>`，其中 `<tab>` 是 `overview`、`prompt`、`runtime`、`tools`、`skills`、`hooks`、`workbenches`、`memory`、`vault`、`schedules` 或 `api`。
 
 ### 保存修改
 
@@ -144,7 +145,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 **Agent State** 区块显示 **Agent State 版本**和 **State 路径**（Agent State 在服务端所在的文件夹），点击复制按钮可以复制路径。
 
 - **导出快照**：把 Agent State 下载为 `.tar.gz` 包。包里不含密钥保险柜，密钥不会随快照流出。
-- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜。导入前会先对当前版本做一次快照。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
+- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜与工作台版本历史，从不采用包内的版本历史。导入前会先对当前版本做一次快照。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
 
 版本和快照的工作机制见[自我进化](/self-improvement#快照与版本)。
 
@@ -277,6 +278,17 @@ PenguinHarness 依次连接每个 Server 并发现它的工具，不会保存任
 
 **钩子**标签页列出 Agent 已安装的钩子包。可以导出、卸载钩子包，用**导入钩子**导入新的钩子包，用**启用钩子**为这个 Agent 开关钩子。从插件库安装，要到**插件市场**页面操作。见[钩子包](/skills#钩子包)。
 
+## 工作台标签页
+
+**工作台**标签页列出 Agent 的工作台，加载失败的也在其中。每个工作台都可以打开、**重新加载**、在**历史**中**恢复**较早的版本、用**打包导出**把源码下载为 zip，或者**移除**。
+
+- **历史**最多列出 50 个版本，最新的在前。**恢复**把工作台的源码精确换成该版本并立即重新加载，数据（`state.json`）保持不变。
+- **移除**删除工作台及其数据，此前的版本不再列出。
+- **打包导出**下载的 zip 只有一个以工作台 id 命名的顶层文件夹，从不包含 `state.json`、隐藏文件和 `node_modules`，可以原样导回。
+- **导入 zip** 从 zip 添加工作台：`package.json` 位于 zip 根目录，或位于唯一一个以工作台 id 命名的顶层文件夹中。含有 `state.json`、隐藏文件或 `node_modules` 的 zip 会被拒绝。Agent 已有同 id 的工作台时，覆盖其源码之前会先确认；数据保留，旧源码仍可从**历史**恢复。
+
+任何 Project 成员都能使用这个标签页。在对话旁打开工作台时，它的标签栏同样提供**历史**和**移除**。见 [Workbench 插件](/skills#workbench-插件)。
+
 ## 记忆标签页
 
 记忆让 Agent 跨 Session 保留学到的东西。Agent 在工作过程中会自己保存值得记住的内容，你也可以让它记住指定内容。**用户记忆**对这个 Agent 的所有 Session 生效；Workspace 记忆按 Workspace 分别保存。
@@ -397,8 +409,9 @@ owner 可以在每一行选择**停用**或**启用**、**编辑**、**删除**�
 
 ## 工作原理
 
-Agent 的配置和数据存放在它的 Agent State 里，也就是概览标签页上 **State 路径**显示的 `agent_state/` 文件夹。里面有 `system_config.yaml`、`AGENTS.md`、密钥保险柜、工具、Skill、钩子包、定时任务和记忆。Agent 的 Trace 不在其中，而是存放在它旁边、这个 Agent 自己的文件夹里，见[数据目录](/sessions-and-traces#数据目录)。
+Agent 的配置和数据存放在它的 Agent State 里，也就是概览标签页上 **State 路径**显示的 `agent_state/` 文件夹。里面有 `system_config.yaml`、`AGENTS.md`、密钥保险柜、工具、Skill、钩子包、工作台、定时任务和记忆。Agent 的 Trace 不在其中，而是存放在它旁边、这个 Agent 自己的文件夹里，见[数据目录](/sessions-and-traces#数据目录)。
 
 - 记忆是 `agent_state/memory/` 下的文件，每个分组有一个 `MEMORY.md` 索引。存储方式见[记忆](/configuration#记忆)。
 - 密钥保险柜变量保存在 `agent_state/.vault.toml`。文件格式见[密钥保险柜](/configuration#vault)。
 - 定时任务以 TOML 文件保存在 `agent_state/schedule/` 下，也可以手动编辑。文件格式见[定时任务](/configuration#定时任务)。
+- 工作台是 `agent_state/workbenches/<id>/` 下的文件夹，它们的版本是 `agent_state/.git` 中的提交，这个 git 仓库位于 Agent State 根目录，由服务端维护。见 [Workbench 插件](/skills#workbench-插件)。
