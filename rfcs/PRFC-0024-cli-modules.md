@@ -10,7 +10,7 @@
 ## Summary
 [summary]: #summary
 
-The `penguin` command line becomes a set of command contributions under the module mechanism ([PRFC-0001](./PRFC-0001-module.md#the-three-primitives)). A command is one contribution of a `@Component` class: its data half sits in the manifest — a **command key**, the argv path the command answers, plus a one-line summary in each language — and its code half is the class's `@Bind` field, the same class shape a sandbox backend is written with. Two hosts collect such contributions, each in its own process. The CLI's own commands are contributions to the CLI's `CliCommandsModule.commands` slot, booted statically and fixed by the build. A plugin's commands are contributions to the server's `PluginCliCommandsProvider.commands` slot: the server is the one that knows them and the one that runs them, through two routes the CLI reads the way the web app reads its contributions. Ownership follows the process — a command belongs to the process that can run it, and the CLI never loads plugin code to dispatch one.
+The `penguin` command line becomes a set of command contributions under the module mechanism ([PRFC-0001](./PRFC-0001-module.md#the-three-primitives)). A command is one contribution of a `@Component` class: its static half sits in the manifest — a **command key**, the argv path the command answers, plus a one-line summary in each language — and its code half is the class's `@Bind` field, the same class shape a sandbox backend is written with (a [slot](./PRFC-0001-module.md#slots-and-contributions) is written `Slot<Data, Code>` — the data carried in the manifest and the bound implementation are exactly the two halves of one contribution). Two hosts collect such contributions, each in its own process. The CLI's own commands are contributions to the CLI's `CliCommandsModule.commands` slot, booted statically and fixed by the build. A plugin's commands are contributions to the server's `PluginCliCommandsProvider.commands` slot: the server is the one that knows them and the one that runs them, through two routes the CLI reads the way the web app reads its contributions. Ownership follows the process — a command belongs to the process that can run it, and the CLI never loads plugin code to dispatch one.
 
 ## Motivation
 [motivation]: #motivation
@@ -30,9 +30,9 @@ The fact that settles it: the CLI that a push carries is the same code that star
 
 ### The two halves of a command
 
-A command contributes the way everything else contributes ([PRFC-0001](./PRFC-0001-module.md#slots-and-contributions)): a **data half** in the manifest, read without executing any code, and a **code half** bound on the contributing class.
+A command contributes the way everything else contributes ([PRFC-0001](./PRFC-0001-module.md#slots-and-contributions)): a **static half** in the manifest, read without executing any code, and a **code half** bound on the contributing class.
 
-- The data half is a **command key** — `a.b.c`, the argv segments the command answers (`penguin a b c ARGS`) — and a **summary**, one line per language, which is what help prints.
+- The static half is a **command key** — `a.b.c`, the argv segments the command answers (`penguin a b c ARGS`) — and a **summary**, one line per language, which is what help prints.
 - The code half is a `register(node, ctx)` function: the host has already located the command node the key names and written the summary as its description; the register adds the options, arguments and action. A register never builds its own path.
 
 ```ts
@@ -68,8 +68,8 @@ A command that cannot run drops out at boot with a warning: a module no loaded p
 
 When the first word of the command line names one of the CLI's own commands, the CLI runs it as always. Otherwise:
 
-- **One plugin answers.** The CLI asks a server that is already running for the command list (it does not start one), finds exactly one package whose commands answer the words, runs it through the server, and prints what came back as if it were its own.
-- **Two or more answer.** That is ambiguity. The CLI prints one copyable `penguin exec <package> …` line per package, exits 2, and runs nothing — the caller says which it meant.
+- **One package answers.** The CLI asks a server that is already running for the command list (it does not start one). A command *answers* a command line when its key's segments agree with the line's leading words (the exact judgment is in Reference); the CLI finds exactly one package whose commands answer the words, runs it through the server, and prints what came back as if it were its own.
+- **Two or more packages answer.** That is ambiguity. The CLI prints one copyable `penguin exec <package> …` line per package, exits 2, and runs nothing — the caller says which it meant.
 - **None answers.** The command line goes back to the CLI's own parse, which reports the unknown command as it always has.
 
 `penguin exec <package> [args…]` is the unambiguous form: the package is named, so there is nothing to disambiguate. It resolves npm full names exactly, and a short name while exactly one contributing package carries it. Like every command that needs a server, it starts one when none is running.
@@ -83,7 +83,7 @@ The command contract lives in `@prismshadow/penguin-core/cli`, beside the plugin
 
 - `CliCommandSummary` — `{ en, zh }`, the one-line summaries.
 - `CliCommandData` — `{ key, summary }`, the slot's data type.
-- `CliCommandEntry` — the data half plus the manifest's `id`, as a collected contribution carries it.
+- `CliCommandEntry` — the static half plus the manifest's `id`, as a collected contribution carries it.
 - `CliCommandProgram` — the command node the host located by the key, with the summary already set as its description. It is `Opaque<"Command">`: the contributor types it with the commander its own package depends on, so the contract pins no commander version.
 - `CliCommandContext` — what the code half may use from the host: the resolved `language`, `write` / `writeErr`, and `setExitCode`.
 - `CliCommandCode` — `{ register(command, ctx) }`, the code half's shape.
@@ -121,11 +121,11 @@ One degradation is stated openly: when the listing cannot be fetched — no serv
 ## Invariants
 [invariants]: #invariants
 
-### The data half names the path
+### The static half names the path
 
 > However a command reaches a command line — the CLI's own table or a plugin's through the server — the [command key](./PRFC-0024-cli-modules.md#guide-level-explanation) is still the only thing that locates its node, and the [code half](./PRFC-0001-module.md#slots-and-contributions) still receives that node: a register never builds its own path.
 
-The key in the manifest is the single source of a command's path; the summary the help prints sits beside it in the same entry. The alternative — a register that calls `program.command("…")` itself — puts the path in two places, and the two disagree the first time someone edits one of them: help says one thing, dispatch answers another. Break this and the data half stops being data: nothing can be listed, checked, or projected without running the code.
+The key in the manifest is the single source of a command's path; the summary the help prints sits beside it in the same entry. The alternative — a register that calls `program.command("…")` itself — puts the path in two places, and the two disagree the first time someone edits one of them: help says one thing, dispatch answers another. Break this and the static half stops being data: nothing can be listed, checked, or projected without running the code.
 
 ### A plugin's commands belong to the server
 
@@ -156,7 +156,7 @@ Twenty command components boot statically, which the one-file assembly did not: 
 ## Prior art
 [prior-art]: #prior-art
 
-**VS Code's contribution points** are the shape of the data half: commands declared in the manifest as data — id plus a title per language — while the extension registers the handler in code; the workbench lists what is declared without executing the extension. Our slot takes the same shape, with the key playing the id's role.
+**VS Code's contribution points** are the shape of the static half: commands declared in the manifest as data — id plus a title per language — while the extension registers the handler in code; the workbench lists what is declared without executing the extension. Our slot takes the same shape, with the key playing the id's role.
 
 **Git, kubectl, cargo and gh** all dispatch subcommands to named executables: `git-remote-*` on `PATH`, `kubectl-*` and `cargo-*` found there too, `gh` running extensions by name. The named form is universally the reliable one, and the discovery form varies in strictness — kubectl warns on collisions, cargo refuses ambiguous short names. `penguin exec <package>` is the named form; the implicit dispatch is the discovery form, held to the strictest of these standards: it runs nothing on ambiguity rather than picking.
 
@@ -165,13 +165,13 @@ Twenty command components boot statically, which the one-file assembly did not: 
 
 - Should a failed listing be named? A degraded implicit dispatch that says "the server could not be asked" is more honest than an unknown-command error, and costs a second error path in the CLI.
 - Should the run response's buffer have a cap, and what does a run that exceeds it answer?
-- Shell completion from the data half: the keys and summaries are machine-readable already; the completion surface is out of scope here.
+- Shell completion from the static half: the keys and summaries are machine-readable already; the completion surface is out of scope here.
 - Should authorization refine below admin — per command, per package — once a real consumer needs it?
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-Completion and help can be served from the data half alone, for builtins and plugins alike, including `penguin exec <package>`'s no-argument help, which already is. Aliases — a second key answering the same entry — would let a package rename a command without breaking scripts. If the desktop ever grows a command palette over the same table, it reads the two routes and the local table with no new mechanism.
+Completion and help can be served from the static half alone, for builtins and plugins alike, including `penguin exec <package>`'s no-argument help, which already is. Aliases — a second key answering the same entry — would let a package rename a command without breaking scripts. If the desktop ever grows a command palette over the same table, it reads the two routes and the local table with no new mechanism.
 
 ---
 
