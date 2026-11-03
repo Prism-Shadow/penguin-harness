@@ -8,6 +8,7 @@
     "useDefineForClassFields": true,
     "paths": {
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
+      "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
       "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
     }
