@@ -28,7 +28,6 @@ export interface ServeText {
 
   /** Diagnostic shown after the `penguin web` ready-poll times out (15s). */
   webProbeFailed(url: string, detail: string, kind: WebProbeFailureKind, port: number): string;
-}
 
   /** `penguin server status`: help text. */
   serverStatus: {
