@@ -32,7 +32,7 @@ import { versionRoutes } from "../http/routes/version.js";
 import type { Clock, Config } from "../hmr/capabilities.js";
 import { processRestart } from "./process-restart.js";
 import type { UpdateJob } from "./update-job.js";
-import type { HarnessHistoryIface } from "./harness-history.js";
+import type { HarnessHistoryIface } from "@penguinharness/plugin-usage/server";
 
 /** Repository the released artifacts come from (same slug as cli/update.ts's REPO_SLUG). */
 const REPO_SLUG = "Prism-Shadow/penguin-harness";

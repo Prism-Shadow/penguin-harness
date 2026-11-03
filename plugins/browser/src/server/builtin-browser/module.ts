@@ -27,7 +27,7 @@ import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-server/internal";
 import type { Channels, Clock, Db, Desktop, Log, Paths } from "@prismshadow/penguin-server/internal";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import { ensureInstallId } from "@prismshadow/penguin-server/internal";
-import type { Users } from "../mechanisms/identity.js";
+import type { Users } from "@prismshadow/penguin-server/internal";
 import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-server/internal";
 import { shellPortOf } from "@prismshadow/penguin-server/internal";

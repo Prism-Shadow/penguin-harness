@@ -11,7 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { BuiltinBrowserImportSource } from "../../api/types.js";
+import type { BuiltinBrowserImportSource } from "@prismshadow/penguin-server/api";
 import {
   CHROMIUM_BROWSERS,
   chromiumRoots,

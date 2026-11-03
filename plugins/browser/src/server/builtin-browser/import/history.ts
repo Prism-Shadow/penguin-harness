@@ -5,7 +5,7 @@
  * Pages a browser keeps hidden (subframes, redirect hops) stay out.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { BuiltinBrowserHistoryEntry } from "../../api/types.js";
+import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
 import type { DiscoveredProfile } from "./discovery.js";
 import type { HistoryReadResult, ImportEnv } from "./index.js";
 import { columnsOf, readDatabaseCopy, unreadableStoreWarning } from "./sqlite-copy.js";
