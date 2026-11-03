@@ -1,25 +1,11 @@
-/**
- * The framed component library's entry (`lib.html`): one topic's board, made of the Web App's
- * real components, mounted under the app's own providers — locale, theme, the toast overlay and
- * the tooltip layer — with the gallery's context for the boards that read tokens and the
- * gallery's dictionary. The document's storage was already replaced and seeded by the inline
- * script in the page head, and the app's own boot script has applied the theme, so the board
- * renders exactly as the app would.
- *
- * The mock network is installed as in the app frame: a component that fetches (the file
- * browser's preview, a chart) gets the demo store's answer. Code is highlighted by the app's own
- * worker-backed highlighter, handed to the package's code surfaces as the app hands it; KaTeX's
- * stylesheet comes with the package's Markdown.
- */
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import {
+import { CodeHighlighterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
+import { highlightCode } from "@prismshadow/penguin-web/internal";
+
   CodeHighlighterProvider,
   ReportHost,
   Toaster,
   TooltipLayer,
-} from "@prismshadow/penguin-ui";
-import { highlightCode } from "../../../web/src/lib/highlight/code-highlight";
+||||||| parent of bdf45dcf64 (ui-gallery: take highlightCode from web internal (chat face moved to sessions))
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
 import "./library.css";
