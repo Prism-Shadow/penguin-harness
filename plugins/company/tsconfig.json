@@ -16,6 +16,7 @@
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
       "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
+      "@penguinharness/plugin-messaging/server": ["../../plugins/messaging/src/server/index.ts"],
       "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
     }
   },
