@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2023"
+    ],
+    "paths": {
+      "@penguinharness/plugin-messaging/server": [
+        "./src/server/index.ts"
+      ],
+      "@penguinharness/plugin-messaging/web": [
+        "./src/web/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "../../packages/web/src/internal.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../projects/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
+      ]
+    },
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/server"
+  ]
+}

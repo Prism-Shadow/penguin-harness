@@ -75,17 +75,17 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
-import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
-import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
-import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
-import type { ChannelEvent, ChannelHub } from "../channel.js";
-import { MESSAGE_MAX } from "../error-recorder.js";
-import type { ErrorSink } from "../error-recorder.js";
-import { recallStoreOf } from "../session-manager.js";
-import type { RecallStore } from "../session-manager.js";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
+import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-server/internal";
+import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
+import { attachFilesToInput, removeAttachments } from "@prismshadow/penguin-server/internal";
+import type { AttachedFiles, TaskAttachment } from "@prismshadow/penguin-server/internal";
+import type { ChannelEvent, ChannelHub } from "@prismshadow/penguin-server/internal";
+import { MESSAGE_MAX } from "@prismshadow/penguin-server/internal";
+import type { ErrorSink } from "@prismshadow/penguin-server/internal";
+import { recallStoreOf } from "@prismshadow/penguin-server/internal";
+import type { RecallStore } from "@prismshadow/penguin-server/internal";
 import type {
   MessagingChannelConnector,
   MessagingClient,
@@ -109,7 +109,7 @@ import { Component, Interface, Bind, Module, Provide, Use } from "@prismshadow/p
 import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { QQScanTransportHandle } from "./qq-scan.js";
 import { QQScanService, createQQScanTransport } from "./qq-scan.js";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { Hono } from "hono";
 
 import { FeishuMessaging } from "./feishu-connector.js";
@@ -118,14 +118,14 @@ import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
 import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
-import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
-import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Errors } from "../../mechanisms/observability.js";
-import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import { sessionMessagingRoutes } from "../routes/messaging.js";
+import type { Channels, Clock, Log, Paths } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@penguinharness/plugin-projects/server";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { Errors } from "@prismshadow/penguin-server/internal";
+import type { WorkspaceFiles } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under

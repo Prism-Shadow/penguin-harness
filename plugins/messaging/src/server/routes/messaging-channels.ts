@@ -21,16 +21,16 @@
  * credential, genuinely differ, and a table that hid that would only move the difference
  * somewhere harder to read.
  */
-import { HttpError } from "../errors.js";
-import { optionalBoolean } from "../validate.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { optionalBoolean } from "@prismshadow/penguin-server/internal";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import type { MessagingBindingRow } from "@prismshadow/penguin-server/internal";
+import type { MessagingChannel } from "../messaging/connector.js";
 import type {
   MessagingBindingCommon,
   MessagingBindingInfo,
   MessagingDeliveryPatch,
-} from "../../api/types.js";
+} from "@prismshadow/penguin-server/api";
 
 /**
  * One channel's contribution to the shared HTTP surface.

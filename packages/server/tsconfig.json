@@ -52,6 +52,9 @@
       ],
       "@penguinharness/plugin-plugins/server": [
         "../../plugins/plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-messaging/server": [
+        "../../plugins/messaging/src/server/index.ts"
       ]
     }
   },

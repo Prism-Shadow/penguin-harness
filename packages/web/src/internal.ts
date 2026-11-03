@@ -17,7 +17,7 @@ export * from "@penguinharness/plugin-agents/web";
 export * from "./features/ai-create/index";
 export * from "./features/dock/index";
 export * from "./features/chat/index";
-export * from "./features/messaging/index";
+export * from "@penguinharness/plugin-messaging/web";
 export * from "./features/model-picker/index";
 export * from "@penguinharness/plugin-models/web";
 export * from "@penguinharness/plugin-plugins/web";

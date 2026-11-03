@@ -32,7 +32,7 @@
  * `unexpected`, which is the safe direction: a real fault miscounted as routine is invisible,
  * while routine noise miscounted as a fault is merely loud.
  */
-import type { ErrorKind } from "../error-recorder.js";
+import type { ErrorKind } from "@prismshadow/penguin-server/internal";
 import {
   MessagingChannelError,
   MessagingNeedsRecentMessageError,
