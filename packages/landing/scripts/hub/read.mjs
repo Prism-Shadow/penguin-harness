@@ -256,20 +256,10 @@ export function readBenchmarks(repo, dataFiles = []) {
   return benchmarks;
 }
 
-/**
- * An experiment's folder. RFC-0002 files it under its leaderboard
- * (`experiments/<leaderboard-id>/<experiment-id>`); penguin-harness-benchmark still keeps its
- * experiments flat (`experiments/<experiment-id>`), so that form is read too. Drop the flat
- * lookup once the repository has moved its experiments under their leaderboards.
- */
+/** An experiment's folder, filed under its leaderboard (RFC-0002). */
 function experimentDir(repo, leaderboardId, experimentId) {
-  for (const dir of [
-    join(repo, "experiments", leaderboardId, experimentId),
-    join(repo, "experiments", experimentId),
-  ]) {
-    if (existsSync(join(dir, "meta_info.yaml"))) return dir;
-  }
-  return undefined;
+  const dir = join(repo, "experiments", leaderboardId, experimentId);
+  return existsSync(join(dir, "meta_info.yaml")) ? dir : undefined;
 }
 
 function readYaml(file) {
@@ -532,9 +522,6 @@ export function readLeaderboards(repo) {
     }
     const ctx = { repo, leaderboardId: dirName, cache, file };
     const entries = config.values.map((value) => entryFor(value, ctx));
-    const experiments = existsSync(join(repo, "experiments", dirName))
-      ? `experiments/${dirName}`
-      : "experiments";
     leaderboards.push({
       id: dirName,
       title: requireText(config, "title", file),
@@ -551,7 +538,7 @@ export function readLeaderboards(repo) {
           .sort()
           .at(-1) ?? "",
       sourceUrl: `${BENCHMARK_SOURCE}/blob/main/leaderboards/${dirName}/leaderboard.yaml`,
-      experimentsUrl: `${BENCHMARK_SOURCE}/tree/main/${experiments}`,
+      experimentsUrl: `${BENCHMARK_SOURCE}/tree/main/experiments/${dirName}`,
     });
   }
   return leaderboards;

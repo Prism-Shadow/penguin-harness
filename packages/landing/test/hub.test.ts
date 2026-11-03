@@ -17,8 +17,6 @@
  *   composites, and its cost, time and tokens the sums of one run; when the attempts do not line
  *   up, the std is composed from each experiment's score_std instead.
  * - Given a value mixing two algorithms, when it is read, then the build fails.
- * - Given experiments filed under their leaderboard or flat, when the board is read, then both are
- *   found.
  * - Given a waffle, when it is read, then tasks come in benchmark and task order with each
  *   entry's attempts per task, and a task an entry never ran is empty.
  * - Given a leaderboard measured on a benchmark, when the hub is read, then the benchmark links to
@@ -141,7 +139,7 @@ function repo(extra: Record<string, string> = {}) {
     "packages/bench-a/t1/statement/README.md": "# t1\n\nDo it.",
     "packages/bench-a/t2/task_config.toml": task("t2"),
     ...experiment(
-      "experiments",
+      "experiments/board-a",
       "exp-1",
       "toolkit",
       [
@@ -152,7 +150,14 @@ function repo(extra: Record<string, string> = {}) {
       80,
       1.5,
     ),
-    ...experiment("experiments", "exp-2", "toolkit", [{ t1: 40 }, { t1: 50 }, { t1: 60 }], 50, 0.5),
+    ...experiment(
+      "experiments/board-a",
+      "exp-2",
+      "toolkit",
+      [{ t1: 40 }, { t1: 50 }, { t1: 60 }],
+      50,
+      0.5,
+    ),
     ...extra,
   });
 }
@@ -265,8 +270,8 @@ describe("the hub readers", () => {
 
   it("composes the std from each experiment's score_std when the attempts do not line up", () => {
     const uneven = repo({
-      ...experiment("experiments", "exp-4", "toolkit", [{ t1: 10 }, { t1: 30 }], 20, 1, 6),
-      ...experiment("experiments", "exp-5", "toolkit", [{ t1: 50 }], 50, 1, 8),
+      ...experiment("experiments/board-a", "exp-4", "toolkit", [{ t1: 10 }, { t1: 30 }], 20, 1, 6),
+      ...experiment("experiments/board-a", "exp-5", "toolkit", [{ t1: 50 }], 50, 1, 8),
       ...board(`  - op: mean\n    args:\n${leaf("exp-4")}${leaf("exp-5")}`),
     });
     const hub = loadHub({ repo: uneven, pluginsDir: tree({}) });
@@ -278,21 +283,12 @@ describe("the hub readers", () => {
 
   it("refuses a value whose experiments use different algorithms", () => {
     const mixed = repo({
-      ...experiment("experiments", "exp-3", "other", [{ t1: 1 }], 1, 1),
+      ...experiment("experiments/board-a", "exp-3", "other", [{ t1: 1 }], 1, 1),
       ...board(`  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-3")}`),
     });
     expect(() => loadHub({ repo: mixed, pluginsDir: tree({}) })).toThrow(
       /share harness, model, algorithm and phase/,
     );
-  });
-
-  it("finds experiments filed under their leaderboard as well as flat", () => {
-    const own = repo({
-      ...board(`  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-9")}`),
-      ...experiment("experiments/board-a", "exp-9", "toolkit", [{ t1: 90 }], 90, 1),
-    });
-    const hub = loadHub({ repo: own, pluginsDir: tree({}) });
-    expect(hub.details.leaderboard["board-a"]!.entries[0]!.value).toBe(85);
   });
 
   it("orders the waffle's tasks and leaves a task an entry never ran empty", () => {
