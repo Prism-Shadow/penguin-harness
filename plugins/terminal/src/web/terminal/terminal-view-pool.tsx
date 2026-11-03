@@ -18,7 +18,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView, probeJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
-import { noteTerminalTitle, refreshTerminals } from "./terminal-list";
+import { dockActiveKey, isDockVisible, subscribeDock } from "@prismshadow/penguin-web/internal";
+>import { noteTerminalTitle, refreshTerminals } from "./terminal-list";
 
 export interface TerminalViewState {
   status: TerminalStatus;

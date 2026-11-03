@@ -28,6 +28,7 @@ export * from "./lib/api-error";
 export * from "./lib/avatar-image";
 export * from "./lib/category-colors";
 export * from "./lib/clipboard";
+export * from "./features/dock/dock-state";
 export * from "./lib/company-context";
 export * from "./lib/company-nav";
 export * from "./lib/format";
