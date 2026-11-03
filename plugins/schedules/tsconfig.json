@@ -4,6 +4,7 @@
     "noEmit": true,
     "lib": ["ES2023"],
     "paths": {
+      "@penguinharness/plugin-schedules/server": ["./src/server/index.ts"],
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
       "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
