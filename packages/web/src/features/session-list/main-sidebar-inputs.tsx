@@ -5,8 +5,8 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useUpdateBadges } from "../../lib/use-update-badges";
-import { useCompany } from "../../lib/company-context";
-import { parseOrgKey } from "../company";
+import { useCompany } from "@penguinharness/plugin-company/web";
+import { parseOrgKey } from "@penguinharness/plugin-company/web";
 import type {
   MainSidebarProps,
   SidebarBindingReader,

@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
     "paths": {
       "@penguinharness/plugin-company/server": [
         "../../plugins/company/src/server/index.ts"

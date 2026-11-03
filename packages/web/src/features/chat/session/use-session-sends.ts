@@ -18,7 +18,7 @@ import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";
 import { machineForSession } from "../../../lib/session-machines";
 import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
-import { switchDeskModel, useCompany } from "../../company";
+import { switchDeskModel, useCompany } from "@penguinharness/plugin-company/web";
 import { adoptDockScope } from "../../dock";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import { prepareNewChatDraft } from "../new-chat";

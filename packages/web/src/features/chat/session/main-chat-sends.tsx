@@ -8,7 +8,7 @@ import type {
 import { toastError } from "@prismshadow/penguin-ui";
 import { toastApiError } from "../../../lib/toast-api-error";
 import * as api from "../../../api/endpoints";
-import { switchDeskModel } from "../../company";
+import { switchDeskModel } from "@penguinharness/plugin-company/web";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";

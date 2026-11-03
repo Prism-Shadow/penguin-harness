@@ -25,7 +25,7 @@ import {
   type NotificationAccess,
 } from "../../lib/notification-pref";
 
-import { useCompany } from "../../lib/company-context";
+import { useCompany } from "@penguinharness/plugin-company/web";
 import { resolveSystemLocale, useLocale, type LangPref } from "../../state/locale";
 
 import { useTheme, type Currency } from "../../state/theme";
