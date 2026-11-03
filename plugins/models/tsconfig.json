@@ -26,8 +26,12 @@
       ],
       "@penguinharness/plugin-machines/web": [
         "../machines/src/web/index.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
       ]
-    }
+    },
+    "resolveJsonModule": true
   },
   "include": [
     "src/server"
