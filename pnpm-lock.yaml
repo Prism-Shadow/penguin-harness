@@ -522,6 +522,12 @@ importers:
       '@penguinharness/plugin-company':
         specifier: workspace:*
         version: file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines':
+        specifier: workspace:*
+        version: file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects':
+        specifier: workspace:*
+        version: file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules':
         specifier: workspace:*
         version: file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
@@ -531,6 +537,9 @@ importers:
       '@penguinharness/plugin-usage':
         specifier: workspace:*
         version: file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches':
+        specifier: workspace:*
+        version: file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -738,6 +747,12 @@ importers:
       '@penguinharness/plugin-company':
         specifier: workspace:*
         version: link:../../plugins/company
+      '@penguinharness/plugin-machines':
+        specifier: workspace:*
+        version: link:../../plugins/machines
+      '@penguinharness/plugin-projects':
+        specifier: workspace:*
+        version: link:../../plugins/projects
       '@penguinharness/plugin-schedules':
         specifier: workspace:*
         version: link:../../plugins/schedules
@@ -746,7 +761,10 @@ importers:
         version: link:../../plugins/terminal
       '@penguinharness/plugin-usage':
         specifier: workspace:*
-        version: file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+        version: link:../../plugins/usage
+      '@penguinharness/plugin-workbenches':
+        specifier: workspace:*
+        version: link:../../plugins/workbenches
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -987,11 +1005,124 @@ importers:
 
   plugins/humanizer: {}
 
+  plugins/machines:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.7(react@19.2.7)
+      react-router:
+        specifier: ^8.3.0
+        version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      tar:
+        specifier: ^7.5.21
+        version: 7.5.22
+      zustand:
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.17)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
+
   plugins/model-development: {}
 
   plugins/opro-rsi-toolkit: {}
 
   plugins/penguin-support: {}
+
+  plugins/projects:
+    dependencies:
+      '@penguinharness/plugin-machines':
+        specifier: workspace:*
+        version: link:../machines
+      '@penguinharness/plugin-usage':
+        specifier: workspace:*
+        version: link:../usage
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.7(react@19.2.7)
+      react-router:
+        specifier: ^8.3.0
+        version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+      tar:
+        specifier: ^7.5.21
+        version: 7.5.22
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+      zustand:
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.17)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
 
   plugins/sandbox-bwrap:
     devDependencies:
@@ -1249,6 +1380,55 @@ importers:
   plugins/use-claude-code: {}
 
   plugins/use-firecrawl: {}
+
+  plugins/workbenches:
+    dependencies:
+      '@penguinharness/plugin-schedules':
+        specifier: workspace:*
+        version: link:../schedules
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@prismshadow/penguin-web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.7(react@19.2.7)
+      react-router:
+        specifier: ^8.3.0
+        version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      zustand:
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.17)
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
 
 packages:
 
@@ -2247,6 +2427,12 @@ packages:
   '@penguinharness/plugin-company@file:plugins/company':
     resolution: {directory: plugins/company, type: directory}
 
+  '@penguinharness/plugin-machines@file:plugins/machines':
+    resolution: {directory: plugins/machines, type: directory}
+
+  '@penguinharness/plugin-projects@file:plugins/projects':
+    resolution: {directory: plugins/projects, type: directory}
+
   '@penguinharness/plugin-schedules@file:plugins/schedules':
     resolution: {directory: plugins/schedules, type: directory}
 
@@ -2255,6 +2441,9 @@ packages:
 
   '@penguinharness/plugin-usage@file:plugins/usage':
     resolution: {directory: plugins/usage, type: directory}
+
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches':
+    resolution: {directory: plugins/workbenches, type: directory}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
@@ -7048,6 +7237,218 @@ snapshots:
       - ws
       - zod
 
+  '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      tar: 7.5.22
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      tar: 7.5.22
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-machines@file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      tar: 7.5.22
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-machines@file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
+      '@prismshadow/penguin-ui': file:packages/ui(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      tar: 7.5.22
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-projects@file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      fflate: 0.8.3
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      smol-toml: 1.9.1
+      tar: 7.5.22
+      yaml: 2.9.0
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-projects@file:plugins/projects(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      fflate: 0.8.3
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      smol-toml: 1.9.1
+      tar: 7.5.22
+      yaml: 2.9.0
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-projects@file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
+      fflate: 0.8.3
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      smol-toml: 1.9.1
+      tar: 7.5.22
+      yaml: 2.9.0
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-projects@file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+    dependencies:
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)(zod@4.4.3)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
+      '@prismshadow/penguin-ui': file:packages/ui(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      fflate: 0.8.3
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      smol-toml: 1.9.1
+      tar: 7.5.22
+      yaml: 2.9.0
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
   '@penguinharness/plugin-schedules@file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -7292,7 +7693,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       fflate: 0.8.3
@@ -7370,6 +7771,106 @@ snapshots:
       - supports-color
       - use-sync-external-store
       - utf-8-validate
+      - zod
+
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript: 5.9.3
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript: 5.9.3
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript: 5.9.3
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+    dependencies:
+      '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
+      '@prismshadow/penguin-ui': file:packages/ui(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      hono: 4.12.34
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript: 5.9.3
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - ws
       - zod
 
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
@@ -7567,9 +8068,12 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
@@ -7606,9 +8110,12 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
@@ -7645,9 +8152,12 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-browser': file:plugins/browser(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
@@ -7684,9 +8194,12 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-browser': file:plugins/browser(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
       '@penguinharness/plugin-company': file:plugins/company(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)(zod@4.4.3)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)(zod@4.4.3)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
@@ -7783,9 +8296,12 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(supports-color@10.2.2)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
@@ -7816,9 +8332,12 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
@@ -7849,9 +8368,12 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-browser': file:plugins/browser(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@penguinharness/plugin-company': file:plugins/company(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
@@ -7882,9 +8404,12 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-browser': file:plugins/browser(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
       '@penguinharness/plugin-company': file:plugins/company(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)(zod@4.4.3)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)(zod@4.4.3)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-ui': file:packages/ui(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
