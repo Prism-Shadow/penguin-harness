@@ -54,9 +54,11 @@ export async function cli(argv: string[]): Promise<number> {
 
   for (const command of await bootBuiltinCommands()) {
     const node = commandAt(program, command.key).description(command.summary[language]);
-    // CliCommandProgram is opaque in the contract; the host knows what it built. The
-    // commands write to this process's own streams; this invocation IS the process.
-    command.code.register(node as unknown as CliCommandProgram, { language });
+    // CliCommandProgram is opaque in the contract; the host knows what it built. The locale
+    // is resolved once, here, and every register consumes the bundle — no command resolves
+    // a locale itself. The commands write to this process's own streams; this invocation
+    // IS the process.
+    command.code.register(node as unknown as CliCommandProgram, { messages: t });
   }
 
   // Show help only when no subcommand is given (empty input); do not error.

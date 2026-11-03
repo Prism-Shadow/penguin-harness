@@ -29,7 +29,7 @@ import type {
   CliCommandSummary,
 } from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
-import { getMessages } from "./i18n.js";
+import type { Messages } from "./i18n.js";
 import table from "./ifaces.json" with { type: "json" };
 import { registerAuthCommand } from "./commands/auth.js";
 import { registerConfigCommand } from "./commands/config.js";
@@ -70,11 +70,11 @@ const node = (command: CliCommandProgram): Command => command as Command;
   },
 })
 export class AuthCommand {
-  @Bind("cli.auth") command!: CliCommandCode;
+  @Bind("cli.auth") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerAuthCommand(node(command), getMessages(ctx.language));
+        registerAuthCommand(node(command), ctx.messages);
       },
     };
   }
@@ -96,11 +96,11 @@ export class AuthCommand {
   },
 })
 export class ConfigCommand {
-  @Bind("cli.config") command!: CliCommandCode;
+  @Bind("cli.config") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerConfigCommand(node(command), getMessages(ctx.language));
+        registerConfigCommand(node(command), ctx.messages);
       },
     };
   }
@@ -122,11 +122,11 @@ export class ConfigCommand {
   },
 })
 export class RunCommand {
-  @Bind("cli.run") command!: CliCommandCode;
+  @Bind("cli.run") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerRunCommand(node(command), getMessages(ctx.language));
+        registerRunCommand(node(command), ctx.messages);
       },
     };
   }
@@ -148,11 +148,11 @@ export class RunCommand {
   },
 })
 export class ChatCommand {
-  @Bind("cli.chat") command!: CliCommandCode;
+  @Bind("cli.chat") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerChatCommand(node(command), getMessages(ctx.language));
+        registerChatCommand(node(command), ctx.messages);
       },
     };
   }
@@ -174,11 +174,11 @@ export class ChatCommand {
   },
 })
 export class SessionCommand {
-  @Bind("cli.session") command!: CliCommandCode;
+  @Bind("cli.session") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerSessionCommand(node(command), getMessages(ctx.language));
+        registerSessionCommand(node(command), ctx.messages);
       },
     };
   }
@@ -200,11 +200,11 @@ export class SessionCommand {
   },
 })
 export class AgentCommand {
-  @Bind("cli.agent") command!: CliCommandCode;
+  @Bind("cli.agent") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerAgentCommand(node(command), getMessages(ctx.language));
+        registerAgentCommand(node(command), ctx.messages);
       },
     };
   }
@@ -226,11 +226,11 @@ export class AgentCommand {
   },
 })
 export class ProjectCommand {
-  @Bind("cli.project") command!: CliCommandCode;
+  @Bind("cli.project") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerProjectCommand(node(command), getMessages(ctx.language));
+        registerProjectCommand(node(command), ctx.messages);
       },
     };
   }
@@ -252,11 +252,11 @@ export class ProjectCommand {
   },
 })
 export class PluginCommand {
-  @Bind("cli.plugin") command!: CliCommandCode;
+  @Bind("cli.plugin") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerPluginCommand(node(command), getMessages(ctx.language));
+        registerPluginCommand(node(command), ctx.messages);
       },
     };
   }
@@ -278,11 +278,11 @@ export class PluginCommand {
   },
 })
 export class CostCommand {
-  @Bind("cli.cost") command!: CliCommandCode;
+  @Bind("cli.cost") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerCostCommand(node(command), getMessages(ctx.language));
+        registerCostCommand(node(command), ctx.messages);
       },
     };
   }
@@ -304,11 +304,11 @@ export class CostCommand {
   },
 })
 export class ScheduleCommand {
-  @Bind("cli.schedule") command!: CliCommandCode;
+  @Bind("cli.schedule") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerScheduleCommand(node(command), getMessages(ctx.language));
+        registerScheduleCommand(node(command), ctx.messages);
       },
     };
   }
@@ -330,11 +330,11 @@ export class ScheduleCommand {
   },
 })
 export class OrgCommand {
-  @Bind("cli.org") command!: CliCommandCode;
+  @Bind("cli.org") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerOrgCommand(node(command), getMessages(ctx.language));
+        registerOrgCommand(node(command), ctx.messages);
       },
     };
   }
@@ -356,11 +356,11 @@ export class OrgCommand {
   },
 })
 export class BrowserCommand {
-  @Bind("cli.browser") command!: CliCommandCode;
+  @Bind("cli.browser") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerBrowserCommand(node(command), getMessages(ctx.language));
+        registerBrowserCommand(node(command), ctx.messages);
       },
     };
   }
@@ -382,11 +382,11 @@ export class BrowserCommand {
   },
 })
 export class ServerCommand {
-  @Bind("cli.server") command!: CliCommandCode;
+  @Bind("cli.server") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerServerCommand(node(command), getMessages(ctx.language));
+        registerServerCommand(node(command), ctx.messages);
       },
     };
   }
@@ -408,11 +408,11 @@ export class ServerCommand {
   },
 })
 export class ServerResetAdminPasswordCommand {
-  @Bind("cli.server.reset-admin-password") command!: CliCommandCode;
+  @Bind("cli.server.reset-admin-password") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerResetPasswordCommand(node(command), getMessages(ctx.language));
+        registerResetPasswordCommand(node(command), ctx.messages);
       },
     };
   }
@@ -434,11 +434,11 @@ export class ServerResetAdminPasswordCommand {
   },
 })
 export class ServerStatusCommand {
-  @Bind("cli.server.status") command!: CliCommandCode;
+  @Bind("cli.server.status") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerStatusCommand(node(command), getMessages(ctx.language));
+        registerStatusCommand(node(command), ctx.messages);
       },
     };
   }
@@ -460,11 +460,11 @@ export class ServerStatusCommand {
   },
 })
 export class ServerStopCommand {
-  @Bind("cli.server.stop") command!: CliCommandCode;
+  @Bind("cli.server.stop") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerStopCommand(node(command), getMessages(ctx.language));
+        registerStopCommand(node(command), ctx.messages);
       },
     };
   }
@@ -486,11 +486,11 @@ export class ServerStopCommand {
   },
 })
 export class WebCommand {
-  @Bind("cli.web") command!: CliCommandCode;
+  @Bind("cli.web") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerWebCommand(node(command), getMessages(ctx.language));
+        registerWebCommand(node(command), ctx.messages);
       },
     };
   }
@@ -512,11 +512,11 @@ export class WebCommand {
   },
 })
 export class ExecCommand {
-  @Bind("cli.exec") command!: CliCommandCode;
+  @Bind("cli.exec") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerExecCommand(node(command), getMessages(ctx.language), { language: ctx.language });
+        registerExecCommand(node(command), ctx.messages);
       },
     };
   }
@@ -538,11 +538,11 @@ export class ExecCommand {
   },
 })
 export class UpdateCommand {
-  @Bind("cli.update") command!: CliCommandCode;
+  @Bind("cli.update") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerUpdateCommand(node(command), getMessages(ctx.language));
+        registerUpdateCommand(node(command), ctx.messages);
       },
     };
   }
@@ -564,11 +564,11 @@ export class UpdateCommand {
   },
 })
 export class VersionCommand {
-  @Bind("cli.version") command!: CliCommandCode;
+  @Bind("cli.version") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerVersionCommand(node(command), getMessages(ctx.language));
+        registerVersionCommand(node(command), ctx.messages);
       },
     };
   }
@@ -579,7 +579,7 @@ export interface BuiltinCommand {
   readonly id: string;
   readonly key: string;
   readonly summary: CliCommandSummary;
-  readonly code: CliCommandCode;
+  readonly code: CliCommandCode<Messages>;
 }
 
 /** The collector's face: the CLI's commands, in contribution order (the order help lists them in). */
@@ -590,7 +590,7 @@ export abstract class CliCommands {
 
 /** The slot `CliCommandsModule` owns: a command's key and summary, and the code half it binds. */
 export interface CliCommandsSlots {
-  commands: Slot<CliCommandData, CliCommandCode>;
+  commands: Slot<CliCommandData, CliCommandCode<Messages>>;
 }
 
 /** Owns the `commands` slot; its children are the CLI's commands. */
@@ -627,7 +627,7 @@ export class CliCommandsModule {
       id: c.id,
       key: c.data.key as string,
       summary: c.data.summary as unknown as CliCommandSummary,
-      code: c.code as CliCommandCode,
+      code: c.code as CliCommandCode<Messages>,
     }));
     this.cliCommands = { list: () => commands };
   }

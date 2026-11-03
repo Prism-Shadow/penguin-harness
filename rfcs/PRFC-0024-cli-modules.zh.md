@@ -46,7 +46,7 @@ CLI 的 program 由一个文件拼装：import 每条命令的 `register`，按�
 export class AuthCommand {
   @Bind("cli.auth") command!: CliCommandCode;
   setup() {
-    this.command = { register: (command, ctx) => registerAuthCommand(node(command), messages(ctx.language)) };
+    this.command = { register: (command, ctx) => registerAuthCommand(node(command), ctx.messages) };
   }
 }
 ```
@@ -85,13 +85,14 @@ CLI 自有的二十条命令各是这样一个 `@Component` 类，贡献给 `Cli
 - `CliCommandData`——`{ key, summary }`，槽的数据类型。
 - `CliCommandEntry`——静态半加 manifest 的 `id`，即被收集的贡献携带的形状。
 - `CliCommandProgram`——宿主按 key 定位的命令节点，summary 已写成它的描述。它是 `Opaque<"Command">`：贡献者用它自己包所依赖的 commander 来标注类型，契约因此不钉 commander 的版本。
-- `CliCommandContext`——代码半可从宿主使用的东西：解析出的 `language`。输出不在契约里：命令直接写进程自己的 stdout 与 stderr、直接设 `process.exitCode`，而这些意味着什么由宿主决定——内建命令是 CLI 自己的这次调用，server 运行时是回复里的字符串。
-- `CliCommandCode`——`{ register(command, ctx) }`，代码半的形状。
+- `CliCommandMessages`——每个宿主的 bundle 都保证的东西：`language`，宿主为这次调用解析出的 locale。命令从不解析 locale；bundle 其余部分是宿主自己的词汇，CLI 的就是它完整的 `Messages`。
+- `CliCommandContext<M>`——代码半可从宿主使用的东西：宿主的消息包，每次调用解析一次。输出不在契约里：命令直接写进程自己的 stdout 与 stderr、直接设 `process.exitCode`，而这些意味着什么由宿主决定——内建命令是 CLI 自己的这次调用，server 运行时是回复里的字符串。
+- `CliCommandCode<M>`——`{ register(command, ctx) }`，代码半的形状；贡献者用它所贡献槽的宿主来标注 `M`。
 - `cliCommandKeyFault(key)`——共享的 key 文法：小写 `[a-z][a-z0-9-]*` 分段以点连接，通过时返回 `null`。分派、归属与 key 到命令节点的翻译读的都是这一个判断。
 
 ### CLI 宿主
 
-CLI 每次调用 boot `CliCommandsModule` 一次，从槽上读贡献，把每个 key 变成 program 上的命令节点、以 summary 作节点描述，再对那个节点调用绑定的 register。本次调用解析出的语言（`PENGUIN_LANG`，默认英文）经上下文交给每个 register。help、version、`exec`、`update`、`auth`、`plugin` 与 serve 组归宿主所有，如同任何节点拥有自己的表面——给命令命名的另有其处是不允许的。
+CLI 每次调用 boot `CliCommandsModule` 一次，从槽上读贡献，把每个 key 变成 program 上的命令节点、以 summary 作节点描述，再对那个节点调用绑定的 register。CLI 把本次调用的 locale 解析一次（`PENGUIN_LANG`，默认英文），把它的消息包经上下文交给每个 register——没有任何命令自己去解析 locale。help、version、`exec`、`update`、`auth`、`plugin` 与 serve 组归宿主所有，如同任何节点拥有自己的表面——给命令命名的另有其处是不允许的。
 
 这张表与其他一切 manifest 一样是生成产物：`gen:ifaces` 把两个槽——CLI 包的 `CliCommandsModule.commands` 与 server 包的 `PluginCliCommandsProvider.commands`——投影进 `ifaces.json`，同几条再生路径（`typecheck`、build、test、`deploy.mjs`、`release-npm.sh`）让它与代码保持同步。
 
@@ -99,7 +100,7 @@ CLI 每次调用 boot `CliCommandsModule` 一次，从槽上读贡献，把每�
 
 `PluginCliCommandsProvider` 拥有槽，把路由以 `/api/cli/commands` 前缀贡献给 `HttpModule.routes`，boot 时从自己的槽上读贡献。三件事使一条贡献被剔除，各带一条指明模块与 id 的警告：贡献模块背后没有已加载的插件包；key 过不了 `cliCommandKeyFault`；同一包把同一个 key 贡献了两次——两条都剔除，这个包的命令因此保持无歧义。到包的归属按调用现取，插件表变更无需整树 re-boot 即可可见。
 
-运行侧每次请求新建一个 commander program——被指名包的每条命令，各在其 key 定位的节点上、以 summary 作描述——然后仅对这个 program 解析 argv。无参数时打印该包的帮助；commander 自己的帮助与用法错误按 commander 的退出码原样回复；命令自身的失败在受控调用链内被接住，写进回复的 stderr、退出码 1，从不越入 server。一次运行期间，server 把本进程的 stdout 与 stderr 重定向进回复的字符串——命令写进程；进程的流意味着什么由宿主决定——运行结束后恢复，且运行串行执行，两个并发的运行不会互相捕获对方的输出。运行返回的是字符串，不是一个活进程。这在请求边界内接住失败，不是进程隔离：插件与平台同进程运行，安装即信任其代码（[PRFC-0003](./PRFC-0003-plugin.zh.md#principles)）。这条边界保证的是普通失败——抛错、rejected promise、用法错误、帮助——以一个回复回来，而不是一个坏掉的请求。
+运行侧每次请求新建一个 commander program——被指名包的每条命令，各在其 key 定位的节点上、以 summary 作描述——然后仅对这个 program 解析 argv。每个 register 拿到宿主的消息包；server 还没有共享的命令词汇，它的 bundle 只携带调用方解析出的 locale。无参数时打印该包的帮助；commander 自己的帮助与用法错误按 commander 的退出码原样回复；命令自身的失败在受控调用链内被接住，写进回复的 stderr、退出码 1，从不越入 server。一次运行期间，server 把本进程的 stdout 与 stderr 重定向进回复的字符串——命令写进程；进程的流意味着什么由宿主决定——运行结束后恢复，且运行串行执行，两个并发的运行不会互相捕获对方的输出。运行返回的是字符串，不是一个活进程。这在请求边界内接住失败，不是进程隔离：插件与平台同进程运行，安装即信任其代码（[PRFC-0003](./PRFC-0003-plugin.zh.md#principles)）。这条边界保证的是普通失败——抛错、rejected promise、用法错误、帮助——以一个回复回来，而不是一个坏掉的请求。
 
 鉴权分两层：路由带 `auth: "user"`，列表对任何已登录用户开放；run 处理器对管理员之外一概以 `403 admin_required` 拒绝，被拒的请求到不了任何命令的 register。未知包答 `404 unknown_package`；畸形请求体按请求校验自己的名字作答。
 

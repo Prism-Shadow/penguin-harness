@@ -48,15 +48,22 @@ export type CliCommandEntry = CliCommandData & { id: string } & JsonObject;
 export type CliCommandProgram = Opaque<"Command">;
 
 /**
- * What a command's code half may use from the host that runs it: the language the
- * invocation resolved. Output is not in the contract — a command writes to the process's
- * own stdout and stderr and sets `process.exitCode` — and what those mean is the host's
- * to decide: the CLI's invocation prints to its own process, a server's run redirects the
- * process's streams into the response and restores them after.
+ * What every host's message bundle guarantees: the locale the host resolved the invocation
+ * into. A command never resolves a locale and never reads an environment variable — it
+ * reads the bundle it was handed. Each host fills the rest of its bundle with its own
+ * vocabulary; the CLI's is its full `Messages`.
  */
-export interface CliCommandContext {
-  /** The language the invocation resolved (`PENGUIN_LANG`, default English). */
+export interface CliCommandMessages {
   language: "en" | "zh";
+}
+
+/**
+ * What a command's code half may use from the host that runs it: the host's message
+ * bundle, resolved once per invocation. The bundle's shape beyond `language` is the
+ * host's to define — a contributor types it with the host whose slot it contributes to.
+ */
+export interface CliCommandContext<M extends CliCommandMessages = CliCommandMessages> {
+  messages: M;
 }
 
 /**
@@ -64,8 +71,8 @@ export interface CliCommandContext {
  * field. `register` fills in the node the host located for the entry's key — options,
  * arguments, action — and runs before the host parses argv.
  */
-export interface CliCommandCode {
-  register(command: CliCommandProgram, ctx: CliCommandContext): void;
+export interface CliCommandCode<M extends CliCommandMessages = CliCommandMessages> {
+  register(command: CliCommandProgram, ctx: CliCommandContext<M>): void;
 }
 
 /** Whether a key is shaped the way dispatch reads it: lowercase `[a-z][a-z0-9-]*` segments joined by dots. Null when it is. */

@@ -14,7 +14,7 @@
  * that is not running is started, as for any command that needs one.
  */
 import type { Command } from "commander";
-import type { Language, Messages } from "../i18n.js";
+import type { Messages } from "../i18n.js";
 import { packageShortName, serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
 
 /** What name resolution decided: the package, or the error to report. */
@@ -33,11 +33,7 @@ export function resolveExecPackage(packages: readonly string[], name: string): E
 }
 
 /** Fills in `penguin exec`, on the node the host located by the command's key. */
-export function registerExecCommand(
-  exec: Command,
-  t: Messages,
-  opts: { language: Language },
-): void {
+export function registerExecCommand(exec: Command, t: Messages): void {
   exec
     .argument("<package>", t.exec.packageArg)
     .argument("[args...]", t.exec.argsArg)
@@ -67,7 +63,7 @@ export function registerExecCommand(
         await source.run({
           package: resolution.pkg,
           args,
-          language: opts.language,
+          language: t.language,
           prog: `penguin exec ${name}`,
         }),
       );

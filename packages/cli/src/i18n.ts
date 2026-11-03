@@ -1,4 +1,5 @@
 import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import type { CliCommandMessages } from "@prismshadow/penguin-core/cli";
 
 /**
  * CLI text internationalization (i18n).
@@ -24,7 +25,7 @@ export function resolveLanguage(): Language {
   return v === "zh" ? "zh" : "en";
 }
 
-export interface Messages {
+export interface Messages extends CliCommandMessages {
   // —— Command/option help descriptions ——
   cliDescription: string;
   versionDesc: string;
@@ -1198,6 +1199,7 @@ function headerZh(
 }
 
 const en: Messages = {
+  language: "en",
   cliDescription: "PenguinHarness CLI",
   versionDesc: "output the version number",
   common: {
@@ -2340,6 +2342,7 @@ const en: Messages = {
 };
 
 const zh: Messages = {
+  language: "zh",
   cliDescription: "PenguinHarness CLI",
   versionDesc: "输出版本号",
   common: {

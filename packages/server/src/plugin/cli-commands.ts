@@ -166,7 +166,11 @@ async function runPluginCommandOnce(
     try {
       for (const c of commands) {
         const node = commandAt(program, c.key).description(c.summary[request.language]);
-        c.code.register(node as unknown as CliCommandProgram, { language: request.language });
+        // The server host holds no shared command vocabulary yet, so its bundle is the
+        // locale the caller resolved — the one thing every host's bundle guarantees.
+        c.code.register(node as unknown as CliCommandProgram, {
+          messages: { language: request.language },
+        });
       }
       // Only print help when no args given, so unknown words are reported as they are.
       if (request.args.length === 0) {
