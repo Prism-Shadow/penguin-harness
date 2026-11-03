@@ -51,8 +51,8 @@ import {
   MACHINE_SESSION_IFACE,
   SESSION_GROUP,
   SESSION_SHAPE_ID,
-} from "../machines/transport/index.js";
-import type { HeldSession } from "../machines/transport/index.js";
+} from "@penguinharness/plugin-machines/server";
+import type { HeldSession } from "@penguinharness/plugin-machines/server";
 import type { RemoteTerminals } from "@penguinharness/plugin-terminal/server";
 import { identityFrom } from "@penguinharness/plugin-terminal/server";
 import { bindTerminalStream } from "@penguinharness/plugin-terminal/server";

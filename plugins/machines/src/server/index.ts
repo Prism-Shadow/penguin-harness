@@ -11,4 +11,10 @@ export { readMachineStatus } from "./machine-status.js";
 export type { Machines } from "./service.js";
 export { carriedStore } from "./install-server.js";
 export type { MachineStatus } from "./machine-status.js";
+export {
+  MACHINE_SESSION_IFACE,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+} from "./transport/index.js";
+export type { HeldSession } from "./transport/index.js";
 export * from "./layout.js";
