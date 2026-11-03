@@ -1,6 +1,6 @@
 /**
  * The ranking chart (table.yaml): entries best first, each score beside a bar on a fixed 0–100
- * scale, then its cost. Below 640 px the model moves under the method and the cost column goes.
+ * scale, then its cost. Below 640 px the model moves under the method, and the bar and the cost go.
  */
 import { Link } from "react-router";
 import type { LeaderboardEntry } from "../../../lib/hub/types";
@@ -88,7 +88,7 @@ export function ScoreTable({
                   </span>
                   <span
                     aria-hidden
-                    className="h-1.5 w-16 shrink-0 overflow-hidden rounded-xs bg-gray-100 sm:w-32 xl:w-40 dark:bg-gray-800"
+                    className="hidden h-1.5 w-32 shrink-0 overflow-hidden rounded-xs bg-gray-100 sm:block xl:w-40 dark:bg-gray-800"
                   >
                     <span
                       className="block h-full rounded-xs bg-brand-600 dark:bg-brand-300"

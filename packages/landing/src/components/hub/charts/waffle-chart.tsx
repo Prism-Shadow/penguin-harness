@@ -34,7 +34,7 @@ const MAX_SIZE = 16;
 const MIN_SIZE = 8;
 const WRAP_SIZE = 10;
 const LINE_GAP = 8;
-const LABEL_WIDTH = 144;
+const LABEL_WIDTH = 176;
 const LABEL_GAP = 16;
 /** From this width the method sits beside its band; below it, above. */
 const SIDE_LABELS = 560;
