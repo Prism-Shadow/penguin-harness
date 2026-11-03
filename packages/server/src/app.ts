@@ -50,10 +50,10 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
+import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { SessionsRepo } from "./db/repos/sessions.js";
