@@ -23,6 +23,8 @@
  * - Thinking level: the compaction request goes out at the Session's live level like a turn, and
  *   its Trace-only `request_begin` records that level; with no pin and no default nothing is sent
  *   and nothing is recorded.
+ * - Given a classified compaction failure, its persisted request_end keeps the error code
+ *   and message, including when a later retry succeeds without an error.
  */
 import { mkdtemp, rm, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -926,6 +928,53 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(3);
     // The retry resends the same input (tool results + prompt; only the prompt here).
     expect(payloadTypes(llm1.calls[2]!)).toEqual(["text"]);
+  });
+
+  it.each([
+    { status: "retryable", errorCode: "network" },
+    { status: "retryable", errorCode: "output_truncated" },
+    { status: "fatal", errorCode: "auth" },
+    { status: "aborted", errorCode: "user_abort" },
+  ] as const)("preserves $errorCode on the compaction request in the Trace", async (failure) => {
+    const llm = new ScriptedLLM([
+      { messages: [assistantText("answer"), usage(150, 150)] },
+      { messages: [], outcome: { ...failure, errorMessage: "provider detail" } },
+      { messages: [assistantText("[summary]recovered[/summary]")] },
+    ]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_error_code" });
+    const oldPath = trace.currentPath();
+    const engine = new ContextEngine({
+      llm,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: new ScriptedLLM([]) }),
+      compactionMaxReconnects: 1,
+      reconnectBackoffMs: 0,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    const ends = (await readTrace(oldPath))
+      .filter((m) => (m.payload as { type?: string }).type === "request_end")
+      .map((m) => m.payload);
+    expect(ends[1]).toMatchObject({
+      status: failure.status,
+      error_code: failure.errorCode,
+      error_message: "provider detail",
+      attempt: 1,
+    });
+    if (failure.status === "retryable") {
+      expect(ends).toHaveLength(3);
+      expect(ends[2]).toMatchObject({ status: "completed", attempt: 2 });
+      expect(ends[2]).not.toHaveProperty("error_code");
+      expect(ends[2]).not.toHaveProperty("error_message");
+    } else {
+      expect(ends).toHaveLength(2);
+    }
+    expect(compactionEvents(out)[1]).toMatchObject({
+      status: failure.status === "retryable" ? "completed" : failure.status,
+    });
   });
 
   it("an explicit compactionMaxReconnects overrides the shared maxReconnects budget", async () => {
