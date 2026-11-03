@@ -16,6 +16,7 @@
     "@penguinharness/plugin-machines": "workspace:*",
     "@penguinharness/plugin-models": "workspace:*",
     "@penguinharness/plugin-projects": "workspace:*",
+    "@penguinharness/plugin-settings": "workspace:*",
     "@penguinharness/plugin-terminal": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
