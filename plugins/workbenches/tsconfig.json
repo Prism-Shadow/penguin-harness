@@ -35,6 +35,9 @@
       ],
       "@penguinharness/plugin-plugins/server": [
         "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../db/src/index.ts"
       ]
     }
   },

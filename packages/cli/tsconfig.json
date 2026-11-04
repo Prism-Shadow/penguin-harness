@@ -32,6 +32,9 @@
       ],
       "@prismshadow/penguin-server/api": [
         "../../packages/server/src/api/types.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../../plugins/db/src/index.ts"
       ]
     }
   },
