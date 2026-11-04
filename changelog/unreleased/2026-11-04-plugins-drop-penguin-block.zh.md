@@ -11,7 +11,7 @@
 
 ## 细节
 
-- 官网的插件页从 `package.json` 读取插件的 npm 字段，从构建出的 `ifaces.json` 读取卡片、Skill、钩子包与 Workbench；缺 `ifaces.json` 的插件使站点构建失败，并指出该文件。`pnpm build:site` 先构建 core 与各插件，再构建官网。
+- 官网的插件页从 `package.json` 读取插件的 npm 字段，从构建出的 `ifaces.json` 读取卡片、Skill、钩子包与 Workbench；缺 `ifaces.json` 的插件使站点构建失败，并指出该文件。官网把各插件包列为 `workspace:*` 的 devDependencies，pnpm 因此先构建它们的表；`pnpm build:site` 也先构建 core 与各插件。
 - `plugin-porting` Skill 按新形态写出插件包。新增的 `write-module.mjs` 脚本把卡片、每个 Skill 与 MCP Server 声明在 `src/index.ts` 中，写出 `tsconfig.json`，并添加 `build` 脚本与构建所需的 devDependencies（与插件移植时 PenguinHarness 版本一致的 `@prismshadow/penguin-core`，以及 `typescript`）；该 Skill 随后以 `npm install` 与 `npm run build` 构建插件包，再执行 `penguin plugin install`。`port-mcp.mjs` 输出 `mcpServers` 贡献条目，每条带 `<plugin>.mcp.<name>` 形式的 id。仍为已退场形态的包，同样转成新形态。
 - `scripts/check-plugin-versions.mjs` 从基线与当前提交的 `src/index.ts` 读取 hooks 贡献：改了钩子脚本或该贡献中的命令，必须递增它的 `version`；只改卡片则不必。
 - 导入弹窗给 Agent 的提示词把插件包描述为 `package.json`、`src/index.ts` 以及构建写出的 `ifaces.json`。
