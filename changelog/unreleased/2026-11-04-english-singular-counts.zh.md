@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1459](https://github.com/Prism-Shadow/penguin-harness/pull/1459)
 
 [English](2026-11-04-english-singular-counts.md)
 
