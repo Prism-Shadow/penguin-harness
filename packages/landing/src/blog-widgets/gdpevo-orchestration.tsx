@@ -1,12 +1,16 @@
 /**
  * Progressive, grid-aligned orchestration diagram for Section 4 of the GDPEVO blog post.
  *
- * Geometry is locked to two horizontal axes:
- * - Top Orchestration Axis (y = 28): `General Agent` sits at the exact midpoint (x = 313) between
- *   `1 Shared Docker` (x = 133) and `Isolated Dockers` (x = 492), dispatching symmetrically
- *   through two vertical `Harbor` nodes. `Final Result` sits at x = 658 directly above `Offline Verifier`.
- * - Main Execution Axis (CY = 172): `Base Agent`, `T1..T5` (3+2 closed loop), `Evolved Agent`,
- *   the 5 stacked `Test 1..5` containers, and `Offline Verifier` all center on y = 172.
+ * Geometry is locked to a strict 4-column horizontal pipeline (all centered on CY = 170,
+ * outer columns spanning y = 92..248, h = 156):
+ *   Col 1 (x = 8..242):   `1 Shared Docker` — Base Agent + 3+2 closed-circuit training loop
+ *   Col 2 (x = 262..356): `Evolved Agent (+ SKILL.md)` — frozen skill handoff
+ *   Col 3 (x = 390..542): `Isolated Dockers` — 5 stacked Test 1..5 containers (x3 runs)
+ *   Col 4 (x = 576..712): `Offline Verifier` — dedicated full-height Scoreboard column showing
+ *                         per-task verified score bars and the final 68.95 ± 0.74 summary.
+ *
+ * Above Col 1 and Col 3 (on TY = 26), `General Agent` sits at the exact midpoint (x = 295)
+ * and dispatches symmetrically through two `Harbor` nodes.
  */
 import { useEffect, useState } from "react";
 import { SitePlaybackButton } from "@prismshadow/penguin-ui/site";
@@ -28,26 +32,32 @@ const STAGE_TABS: readonly StageTab[] = [
   { id: "train", labelZh: "1. 多轮训练循环", labelEn: "1. Multi-Round Train", startTick: 0, endTick: 11 },
   { id: "freeze", labelZh: "2. 产出进化 Agent", labelEn: "2. Evolved Agent", startTick: 12, endTick: 13 },
   { id: "test", labelZh: "3. 隔离容器盲测", labelEn: "3. Isolated Dockers", startTick: 14, endTick: 17 },
-  { id: "result", labelZh: "4. 判分汇总结果", labelEn: "4. Final Result", startTick: 18, endTick: 21 },
+  { id: "result", labelZh: "4. 离线判分出分", labelEn: "4. Scoreboard", startTick: 18, endTick: 21 },
 ];
 
 /**
- * 3+2 training task cards inside `1 Shared Docker` (x=12..254, y=92..248, CY=172):
- * Top row (T1, T2, T3) centers on y = 149; Bottom row (T4, T5) centers on y = 195.
- * Clockwise loop runs: Base Agent (102,149) -> T1 -> T2 -> T3 -> (225,195) -> T5 -> T4 -> Base Agent (102,195).
- * Note: T4 is at left (136..170) and T5 is at right (178..212), so the clockwise flow visits
- * T1 -> T2 -> T3 on top, then steps down into the bottom row and returns straight into Base Agent.
+ * 3+2 training task cards inside `1 Shared Docker` (x=8..242, y=92..248):
+ * Natural reading order: Top row T1, T2, T3 (left to right); Bottom row T4, T5 (left to right).
  */
 const TRAIN_CARDS = [
-  { label: "T1", x: 124, y: 132, w: 34, h: 34 },
-  { label: "T2", x: 166, y: 132, w: 34, h: 34 },
-  { label: "T3", x: 208, y: 132, w: 34, h: 34 },
-  { label: "T4", x: 136, y: 178, w: 34, h: 34 },
-  { label: "T5", x: 178, y: 178, w: 34, h: 34 },
+  { label: "T1", x: 124, y: 142, w: 32, h: 32 },
+  { label: "T2", x: 161, y: 142, w: 32, h: 32 },
+  { label: "T3", x: 198, y: 142, w: 32, h: 32 },
+  { label: "T4", x: 142, y: 182, w: 32, h: 32 },
+  { label: "T5", x: 180, y: 182, w: 32, h: 32 },
 ] as const;
 
-/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Dockers (centered on CY=172). */
-const TEST_ROWS_Y = [108, 140, 172, 204, 236] as const;
+/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Dockers (centered on CY=170). */
+const TEST_ROWS_Y = [106, 138, 170, 202, 234] as const;
+
+/** Per-task verified scores displayed inside the rightmost Offline Verifier Scoreboard column. */
+const VERIFIER_SCORES = [
+  { label: "E1", score: 74.3, width: 44 },
+  { label: "E2", score: 65.8, width: 39 },
+  { label: "E3", score: 80.7, width: 48 },
+  { label: "E4", score: 63.9, width: 38 },
+  { label: "E5", score: 73.7, width: 44 },
+] as const;
 
 function tickDelayMs(tick: number): number {
   if (tick === 5 || tick === 11) return 850;
@@ -55,7 +65,7 @@ function tickDelayMs(tick: number): number {
   if (tick === 13) return 850;
   if (tick >= 14 && tick <= 17) return 620;
   if (tick === 21) return 2800;
-  return 680;
+  return 650;
 }
 
 export function GdpevoOrchestrationWidget() {
@@ -107,8 +117,9 @@ export function GdpevoOrchestrationWidget() {
   const showStage2 = tick >= 12;
   const showStage3 = tick >= 14;
   const completedTestRuns = tick < 15 ? 0 : tick === 15 ? 1 : tick === 16 ? 2 : 3;
-  const showVerifier = tick >= 18;
-  const showFinalResult = tick >= 20;
+  const showStage4 = tick >= 18;
+  const revealedScores = tick < 18 ? 0 : tick === 18 ? 2 : tick === 19 ? 4 : 5;
+  const showFinalMean = tick >= 20;
 
   const copy = isZh
     ? {
@@ -155,9 +166,9 @@ export function GdpevoOrchestrationWidget() {
         />
       </div>
 
-      {/* Compact, Strictly Grid-Aligned Open-Canvas SVG */}
+      {/* Strictly Left-to-Right 4-Column Grid SVG */}
       <svg
-        viewBox="0 0 720 258"
+        viewBox="0 0 720 256"
         className="block w-full select-none overflow-visible"
         role="img"
         aria-label="PenguinHarness GDPEVO experiment orchestration"
@@ -198,10 +209,10 @@ export function GdpevoOrchestrationWidget() {
           </marker>
         </defs>
 
-        {/* ==================== TOP ORCHESTRATOR: GENERAL AGENT (Centered at x=313, y=26) ==================== */}
+        {/* ==================== TOP ORCHESTRATOR: GENERAL AGENT (Centered at x=295, y=26) ==================== */}
         <g>
           <rect
-            x="240"
+            x="222"
             y="6"
             width="146"
             height="40"
@@ -210,7 +221,7 @@ export function GdpevoOrchestrationWidget() {
             className="fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
           />
           <text
-            x="313"
+            x="295"
             y="31"
             textAnchor="middle"
             className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
@@ -219,11 +230,11 @@ export function GdpevoOrchestrationWidget() {
           </text>
         </g>
 
-        {/* ==================== PHASE 1: HARBOR -> 1 SHARED DOCKER (CENTER X1=133, CY=172) ==================== */}
+        {/* ==================== COL 1: HARBOR -> 1 SHARED DOCKER (x=8..242, y=92..248, CY=170) ==================== */}
         <g>
-          {/* Left Symmetric Arm: General Agent (240, 26) -> (133, 26) -> Harbor -> 1 Shared Docker (133, 90) */}
+          {/* Left Symmetric Arm: General Agent (222, 26) -> (125, 26) -> Harbor -> 1 Shared Docker (125, 90) */}
           <path
-            d="M240,26 L133,26 L133,90"
+            d="M222,26 L125,26 L125,90"
             fill="none"
             strokeWidth="1.5"
             strokeLinejoin="round"
@@ -231,7 +242,7 @@ export function GdpevoOrchestrationWidget() {
             markerEnd="url(#pg-arrow-brand)"
           />
           <rect
-            x="104"
+            x="96"
             y="44"
             width="58"
             height="20"
@@ -240,7 +251,7 @@ export function GdpevoOrchestrationWidget() {
             className="fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-600"
           />
           <text
-            x="133"
+            x="125"
             y="58"
             textAnchor="middle"
             className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
@@ -248,12 +259,12 @@ export function GdpevoOrchestrationWidget() {
             Harbor
           </text>
 
-          {/* 1 Shared Docker Boundary (x=12..254, y=92..232, h=140) */}
+          {/* 1 Shared Docker Boundary (x=8..242, y=92..248, h=156, center CY=170) */}
           <rect
-            x="12"
+            x="8"
             y="92"
-            width="242"
-            height="140"
+            width="234"
+            height="156"
             rx="10"
             strokeWidth="1.5"
             strokeDasharray="6 4"
@@ -264,7 +275,7 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="24"
+            x="20"
             y="113"
             className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
           >
@@ -272,9 +283,9 @@ export function GdpevoOrchestrationWidget() {
           </text>
           {/* Live Round Pill in top-right of 1 Shared Docker */}
           <rect
-            x="174"
+            x="164"
             y="100"
-            width="68"
+            width="66"
             height="18"
             rx="4"
             className={
@@ -284,7 +295,7 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="208"
+            x="197"
             y="113"
             textAnchor="middle"
             className={
@@ -296,63 +307,46 @@ export function GdpevoOrchestrationWidget() {
             {tick < 12 ? `Round ${trainRound}/2` : "2/2 Done"}
           </text>
 
-          {/* Clean Clockwise Stadium Training Loop (All Solid Lines, Rounded Corners):
-              Top Rail (y=149): Base Agent (102,149) -> T1 -> T2 -> T3
-              Right Link (x=225): T3 bottom (225,166) -> (225,195) -> T5 right (212,195)
-              Bottom Return Rail (y=195): T5 -> T4 -> Base Agent (104,195) */}
+          {/* Clean Bidirectional Loop between Base Agent (x=94) and 3+2 Task Pool (x=118..234):
+              Top Arrow (y=166): Base Agent -> Task Pool (T1 -> T2 -> T3 -> T4 -> T5 light up in order)
+              Bottom Arrow (y=192): Task Pool -> Base Agent (returns feedback to upgrade Skill) */}
+          <rect
+            x="118"
+            y="134"
+            width="116"
+            height="88"
+            rx="8"
+            strokeWidth="1"
+            className="fill-gray-50/80 stroke-gray-200 dark:fill-gray-800/40 dark:stroke-gray-700"
+          />
           <path
-            d="M102,149 L124,149 M158,149 L166,149 M200,149 L208,149 M225,166 L225,195 L212,195 M178,195 L170,195"
+            d="M94,166 L116,166"
             fill="none"
             strokeWidth="1.5"
-            strokeLinejoin="round"
             className={
               activeTaskIdx >= 0
                 ? "stroke-brand-500 dark:stroke-brand-400"
-                : "stroke-gray-300 dark:stroke-gray-600"
+                : "stroke-gray-400 dark:stroke-gray-500"
             }
+            markerEnd={activeTaskIdx >= 0 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
           />
-          {/* Straight 32px Horizontal Return Arrow from T4 (136,195) -> Base Agent (104,195) */}
           <path
-            d="M136,195 L104,195"
+            d="M118,192 L96,192"
             fill="none"
             strokeWidth={isSkillUpdating ? "2" : "1.5"}
             className={
               isSkillUpdating
                 ? "stroke-emerald-600 dark:stroke-emerald-400"
-                : activeTaskIdx >= 0
-                  ? "stroke-brand-500 dark:stroke-brand-400"
-                  : "stroke-gray-300 dark:stroke-gray-600"
+                : "stroke-gray-400 dark:stroke-gray-500"
             }
-            markerEnd={
-              isSkillUpdating
-                ? "url(#pg-arrow-emerald)"
-                : activeTaskIdx >= 0
-                  ? "url(#pg-arrow-brand)"
-                  : "url(#pg-arrow-gray)"
-            }
+            markerEnd={isSkillUpdating ? "url(#pg-arrow-emerald)" : "url(#pg-arrow-gray)"}
           />
-          {running && tick < 12 && (
-            <circle
-              r="3"
-              className={
-                isSkillUpdating
-                  ? "fill-emerald-500 dark:fill-emerald-400"
-                  : "fill-brand-600 dark:fill-brand-300"
-              }
-            >
-              <animateMotion
-                dur="1.4s"
-                repeatCount="indefinite"
-                path="M102,149 L225,149 L225,195 L104,195"
-              />
-            </circle>
-          )}
 
-          {/* Base Agent Node inside 1 Shared Docker (x=24..102, y=136..208, h=72, center CY=172) */}
+          {/* Base Agent Node inside 1 Shared Docker (x=20..94, y=142..214, h=72) */}
           <rect
-            x="24"
-            y="136"
-            width="78"
+            x="20"
+            y="142"
+            width="74"
             height="72"
             rx="8"
             strokeWidth="1.5"
@@ -363,16 +357,16 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="63"
-            y="162"
+            x="57"
+            y="168"
             textAnchor="middle"
             className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
           >
             Base Agent
           </text>
           <rect
-            x="31"
-            y="174"
+            x="25"
+            y="180"
             width="64"
             height="22"
             rx="4"
@@ -385,8 +379,8 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="63"
-            y="189"
+            x="57"
+            y="195"
             textAnchor="middle"
             className={
               tick < 5
@@ -399,7 +393,7 @@ export function GdpevoOrchestrationWidget() {
             {skillBadge}
           </text>
 
-          {/* 3+2 Training Task Cards (T1..T5) */}
+          {/* 3+2 Training Task Cards (T1..T5 in natural left-to-right reading order) */}
           {TRAIN_CARDS.map((card, i) => {
             const isCurrentTask = i === activeTaskIdx;
             const doneRound2 = tick > 6 + i;
@@ -429,7 +423,7 @@ export function GdpevoOrchestrationWidget() {
                   strokeWidth={isCurrentTask ? "1.75" : "1.25"}
                   className={cardStyle}
                 />
-                <text x={card.x + card.w / 2} y={card.y + 21} textAnchor="middle" className={textStyle}>
+                <text x={card.x + card.w / 2} y={card.y + 20} textAnchor="middle" className={textStyle}>
                   {card.label}
                 </text>
               </g>
@@ -437,36 +431,36 @@ export function GdpevoOrchestrationWidget() {
           })}
         </g>
 
-        {/* ==================== PHASE 2: EVOLVED AGENT (+ SKILL.MD) (CENTER X2=325, CY=172) ==================== */}
+        {/* ==================== COL 2: EVOLVED AGENT (+ SKILL.MD) (x=262..356, CY=170) ==================== */}
         {showStage2 && (
           <g className="anim-block">
             <path
-              d="M254,172 L274,172"
+              d="M242,170 L260,170"
               fill="none"
               strokeWidth="1.75"
               className="stroke-emerald-600 dark:stroke-emerald-400"
               markerEnd="url(#pg-arrow-emerald)"
             />
             <rect
-              x="276"
-              y="136"
-              width="98"
+              x="262"
+              y="134"
+              width="94"
               height="72"
               rx="8"
               strokeWidth="1.5"
               className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
             />
             <text
-              x="325"
-              y="166"
+              x="309"
+              y="164"
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
               Evolved Agent
             </text>
             <text
-              x="325"
-              y="188"
+              x="309"
+              y="186"
               textAnchor="middle"
               className="fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
             >
@@ -475,12 +469,12 @@ export function GdpevoOrchestrationWidget() {
           </g>
         )}
 
-        {/* ==================== PHASE 3: HARBOR -> ISOLATED DOCKERS (CENTER X3=492, CY=172) ==================== */}
+        {/* ==================== COL 3: HARBOR -> ISOLATED DOCKERS (x=390..542, CY=170) ==================== */}
         {showStage3 && (
           <g className="anim-block">
-            {/* Right Symmetric Arm: General Agent (386, 26) -> (492, 26) -> Harbor -> Isolated Dockers (492, 76) */}
+            {/* Right Symmetric Arm: General Agent (368, 26) -> (466, 26) -> Harbor -> Isolated Dockers (466, 74) */}
             <path
-              d="M386,26 L492,26 L492,76"
+              d="M368,26 L466,26 L466,74"
               fill="none"
               strokeWidth="1.5"
               strokeLinejoin="round"
@@ -488,7 +482,7 @@ export function GdpevoOrchestrationWidget() {
               markerEnd="url(#pg-arrow-brand)"
             />
             <rect
-              x="463"
+              x="437"
               y="44"
               width="58"
               height="20"
@@ -497,7 +491,7 @@ export function GdpevoOrchestrationWidget() {
               className="fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-600"
             />
             <text
-              x="492"
+              x="466"
               y="58"
               textAnchor="middle"
               className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
@@ -506,17 +500,17 @@ export function GdpevoOrchestrationWidget() {
             </text>
 
             <text
-              x="492"
-              y="90"
+              x="466"
+              y="88"
               textAnchor="middle"
               className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
             >
               Isolated Dockers
             </text>
 
-            {/* 1-to-5 Orthogonal Fork Tree (x=374..410, y=108..236, center CY=172) */}
+            {/* 1-to-5 Orthogonal Fork Tree (x=356..390, y=106..234, center CY=170) */}
             <path
-              d="M374,172 L392,172 M392,108 L392,236"
+              d="M356,170 L373,170 M373,106 L373,234"
               fill="none"
               strokeWidth="1.5"
               strokeLinejoin="round"
@@ -525,7 +519,7 @@ export function GdpevoOrchestrationWidget() {
             {TEST_ROWS_Y.map((ry, idx) => (
               <path
                 key={`fork-${idx}`}
-                d={`M392,${ry} L408,${ry}`}
+                d={`M373,${ry} L388,${ry}`}
                 fill="none"
                 strokeWidth="1.5"
                 className="stroke-brand-500 dark:stroke-brand-400"
@@ -533,37 +527,37 @@ export function GdpevoOrchestrationWidget() {
               />
             ))}
 
-            {/* 5 Vertically Stacked Horizontal Isolated Dockers (x=410..574, h=26, spanning y=95..249) */}
+            {/* 5 Vertically Stacked Horizontal Isolated Dockers (x=390..542, h=26, y=93..247) */}
             {TEST_ROWS_Y.map((ry, idx) => {
               const topY = ry - 13;
               return (
                 <g key={`test-row-${idx}`}>
                   <rect
-                    x="410"
+                    x="390"
                     y={topY}
-                    width="164"
+                    width="152"
                     height="26"
                     rx="6"
                     strokeWidth="1.25"
                     className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
                   />
                   <text
-                    x="424"
+                    x="402"
                     y={ry + 4}
                     className="fill-gray-800 font-mono text-xs font-semibold tabular-nums dark:fill-gray-200"
                   >
                     {`Test ${idx + 1}`}
                   </text>
                   <line
-                    x1="478"
+                    x1="454"
                     y1={topY + 5}
-                    x2="478"
+                    x2="454"
                     y2={topY + 21}
                     strokeWidth="1"
                     className="stroke-gray-200 dark:stroke-gray-700"
                   />
                   <text
-                    x="490"
+                    x="466"
                     y={ry + 4}
                     className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
                   >
@@ -574,9 +568,9 @@ export function GdpevoOrchestrationWidget() {
                     return (
                       <rect
                         key={rNum}
-                        x={516 + (rNum - 1) * 16}
+                        x={490 + (rNum - 1) * 15}
                         y={ry - 6}
-                        width="12"
+                        width="11"
                         height="12"
                         rx="2.5"
                         className={
@@ -593,21 +587,21 @@ export function GdpevoOrchestrationWidget() {
           </g>
         )}
 
-        {/* ==================== PHASE 4: OFFLINE VERIFIER -> FINAL RESULT (CENTER X4=658) ==================== */}
-        {showVerifier && (
+        {/* ==================== COL 4: OFFLINE VERIFIER SCOREBOARD COLUMN (x=576..712, y=92..248, CY=170) ==================== */}
+        {showStage4 && (
           <g className="anim-block">
-            {/* 5-to-1 Collector Tree (x=574..610, y=108..236 -> CY=172) */}
+            {/* Symmetric 5-to-1 Collector Tree (x=542..576, y=106..234 -> CY=170) */}
             {TEST_ROWS_Y.map((ry, idx) => (
               <path
                 key={`join-${idx}`}
-                d={`M574,${ry} L592,${ry}`}
+                d={`M542,${ry} L559,${ry}`}
                 fill="none"
                 strokeWidth="1.5"
                 className="stroke-emerald-600 dark:stroke-emerald-400"
               />
             ))}
             <path
-              d="M592,108 L592,236 M592,172 L608,172"
+              d="M559,106 L559,234 M559,170 L574,170"
               fill="none"
               strokeWidth="1.5"
               strokeLinejoin="round"
@@ -615,70 +609,104 @@ export function GdpevoOrchestrationWidget() {
               markerEnd="url(#pg-arrow-emerald)"
             />
 
-            {/* Offline Verifier Node (x=610..706, y=136..208, h=72, center X4=658, CY=172) */}
+            {/* Full-Height Scoreboard Column (x=576..712, y=92..248, h=156 — matches Col 1 height) */}
             <rect
-              x="610"
-              y="136"
-              width="96"
-              height="72"
-              rx="8"
+              x="576"
+              y="92"
+              width="136"
+              height="156"
+              rx="10"
               strokeWidth="1.5"
               className="fill-white stroke-emerald-600 dark:fill-gray-900 dark:stroke-emerald-400"
             />
             <text
-              x="658"
-              y="166"
+              x="644"
+              y="112"
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              Offline
+              Offline Verifier
             </text>
-            <text
-              x="658"
-              y="186"
-              textAnchor="middle"
-              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-            >
-              Verifier
-            </text>
-          </g>
-        )}
 
-        {showFinalResult && (
-          <g className="anim-block">
-            {/* Straight Vertical Arrow from Offline Verifier (658, 136) -> Final Result (658, 48) */}
-            <path
-              d="M658,136 L658,48"
-              fill="none"
-              strokeWidth="1.75"
-              className="stroke-emerald-600 dark:stroke-emerald-400"
-              markerEnd="url(#pg-arrow-emerald)"
-            />
-            {/* Final Result Node at Top Right (x=598..718, y=6..46, h=40, center X4=658, TY=26) */}
+            {/* 5 Per-Task Verified Score Bars inside the Scoreboard Column */}
+            {VERIFIER_SCORES.map((item, idx) => {
+              const sy = 128 + idx * 15;
+              const shown = idx < revealedScores;
+              return (
+                <g key={item.label}>
+                  <text
+                    x="588"
+                    y={sy + 4}
+                    className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
+                  >
+                    {`T${idx + 1}`}
+                  </text>
+                  <rect
+                    x="610"
+                    y={sy - 3}
+                    width="54"
+                    height="7"
+                    rx="3.5"
+                    className="fill-gray-100 dark:fill-gray-800"
+                  />
+                  {shown && (
+                    <rect
+                      x="610"
+                      y={sy - 3}
+                      width={item.width}
+                      height="7"
+                      rx="3.5"
+                      className="fill-emerald-500 dark:fill-emerald-400"
+                    />
+                  )}
+                  <text
+                    x="700"
+                    y={sy + 4}
+                    textAnchor="end"
+                    className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
+                  >
+                    {shown ? item.score.toFixed(1) : "--"}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Final Aggregated Mean Badge at Bottom of Scoreboard Column (x=586..702, y=206..240) */}
             <rect
-              x="598"
-              y="6"
-              width="120"
-              height="40"
-              rx="8"
-              strokeWidth="1.5"
-              className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
+              x="586"
+              y="206"
+              width="116"
+              height="34"
+              rx="6"
+              className={
+                showFinalMean
+                  ? "fill-emerald-600 dark:fill-emerald-500"
+                  : "fill-gray-100 dark:fill-gray-800"
+              }
             />
             <text
-              x="658"
-              y="23"
+              x="644"
+              y="220"
               textAnchor="middle"
-              className="fill-emerald-900 text-xs font-semibold dark:fill-emerald-100"
+              className={
+                showFinalMean
+                  ? "fill-emerald-100 font-mono text-xs font-medium dark:fill-gray-900"
+                  : "fill-gray-400 font-mono text-xs dark:fill-gray-500"
+              }
             >
-              Final Result
+              Final Score
             </text>
             <text
-              x="658"
-              y="39"
+              x="644"
+              y="234"
               textAnchor="middle"
-              className="fill-emerald-700 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-300"
+              className={
+                showFinalMean
+                  ? "fill-white font-mono text-xs font-semibold tabular-nums dark:fill-gray-950"
+                  : "fill-gray-400 font-mono text-xs tabular-nums dark:fill-gray-500"
+              }
             >
-              68.95 ± 0.74
+              {showFinalMean ? "68.95 ± 0.74" : "..."}
             </text>
           </g>
         )}
