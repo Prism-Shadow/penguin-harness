@@ -24,7 +24,7 @@ import {
   type PinnedSessionsStorage,
 } from "../src/features/session-list/pinned-sessions";
 
-import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
+import { isSidebarRow, pinnedFirst } from "@prismshadow/penguin-web/internal";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Minimal SessionInfo (session-grouping.test.ts convention: only the fields the logic reads matter). */

@@ -16,7 +16,7 @@ import {
   getAgentTraceEvents,
   workspaceFileUrl,
 } from "../src/api/endpoints";
-import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+import { forgetSessionMachines, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
 import { json, stubFetch } from "./helpers/fetch";
 
 afterEach(() => forgetSessionMachines());

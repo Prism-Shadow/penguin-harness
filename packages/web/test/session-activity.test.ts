@@ -15,7 +15,7 @@ import {
   sessionActivityLabel,
   sessionBackgroundTasks,
   type SessionActivity,
-} from "../src/lib/session-activity";
+} from "@prismshadow/penguin-web/internal";
 
 type Activity = Exclude<SessionActivity, null>;
 const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];

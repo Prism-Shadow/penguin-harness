@@ -4,7 +4,7 @@
  * order, total, so equal timestamps do not reshuffle between refreshes.
  */
 import { describe, expect, it } from "vitest";
-import { mergeCounts, mostRecentFirst } from "../src/lib/session-merge";
+import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
 
 describe("mergeCounts", () => {
   it("sums each category across the sources that reported", () => {

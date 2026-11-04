@@ -11,7 +11,7 @@ import {
   machineForSession,
   rememberSessionMachine,
   sessionIdInPath,
-} from "../src/lib/session-machines";
+} from "@prismshadow/penguin-web/internal";
 
 afterEach(() => forgetSessionMachines());
 

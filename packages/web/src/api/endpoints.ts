@@ -250,9 +250,9 @@ import type {
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type { RunRequest } from "@prismshadow/amsp";
 import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
-import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
+import { machineForSession, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam, type ActivityKey } from "@prismshadow/penguin-web/internal";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -922,7 +922,7 @@ export const listDirectorySkills = (projectId: string, path: string) =>
  * The Session is created THERE because that is where its workspace is: that server runs the
  * agent, holds the messages, writes the trace. The id it hands back is recorded against that
  * machine, so every later call about the Session routes itself without any call site knowing
- * (see lib/session-machines.ts).
+ * (see plugins/sessions/src/web/lib/session-machines.ts).
  *
  * `machineId` is the workspace's, not a preference — a path names a different directory on
  * every machine, so creating a Session for `/srv/app` on the wrong one is not a degraded
@@ -951,7 +951,7 @@ export const forkSession = (sessionId: string, body: SessionForkRequest) =>
 /**
  * One Session's row. `machineId` names the server to ask when the caller knows and the id map
  * does not yet — a Session the list has never fetched, announced by a machine's own event
- * stream. Omitted, the id routes itself (lib/session-machines.ts).
+ * stream. Omitted, the id routes itself (plugins/sessions/src/web/lib/session-machines.ts).
  */
 export const getSession = (sessionId: string, machineId?: string | null) =>
   apiFetch<SessionResponse>(
@@ -1514,7 +1514,7 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
  * <a>/<img>/<iframe>/fetch).
  *
  * Routed like every other Session call, by hand: this is a URL, not a call, so it never
- * passes through the fetch wrapper that applies the rule (lib/session-machines.ts). Left
+ * passes through the fetch wrapper that applies the rule (plugins/sessions/src/web/lib/session-machines.ts). Left
  * bare, every preview, image, PDF and download of a Session that lives on a machine asked
  * THIS server for a Session it does not have — and the workspace browser reports the
  * resulting failure as "preview not supported for this type", since a file it cannot read

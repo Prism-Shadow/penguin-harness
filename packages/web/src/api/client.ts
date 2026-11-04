@@ -10,7 +10,7 @@
 import type { ErrorDetails } from "@prismshadow/penguin-server/api";
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
-import { machineForPath } from "../lib/session-machines";
+import { machineForPath } from "@prismshadow/penguin-web/internal";
 
 /**
  * Unified API error: carries the HTTP status code and server error code (server error body
@@ -68,7 +68,7 @@ export interface ApiFetchOptions {
    * Which machine answers this call, when the caller knows and the path does not say.
    *
    * Omitted, a Session-scoped path routes itself to the machine that Session lives on (see
-   * lib/session-machines.ts) and everything else stays here — the window never moves. Pass
+   * plugins/sessions/src/web/lib/session-machines.ts) and everything else stays here — the window never moves. Pass
    * `null` to force this server, or an id to send one request through that machine's
    * connection; browsing another machine's directories to pick a workspace on it, or asking
    * a machine for ITS Agents, are the calls that need it.

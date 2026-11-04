@@ -31,9 +31,9 @@ import { describe, expect, it } from "vitest";
 import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 import { subscribeMachinesChanged } from "../src/state/machines";
-import { isSessionUnread, markSessionSeen, type SessionSeenState } from "../src/lib/session-seen";
+import { isSessionUnread, markSessionSeen, type SessionSeenState } from "@prismshadow/penguin-web/internal";
 
-import { sessionBackgroundTasks, sessionRowActivity } from "../src/lib/session-activity";
+import { sessionBackgroundTasks, sessionRowActivity } from "@prismshadow/penguin-web/internal";
 
 const CREATED = "2026-08-19T09:00:00.000Z";
 /** When the user last had the Session open — every fixture's starting `lastActiveAt`. */

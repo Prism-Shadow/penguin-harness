@@ -28,12 +28,12 @@ import { publishMachinesChanged, useMachines } from "./machines";
 import type { UserEventHandler } from "./user-events";
 import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
 import { publishUserEvent } from "../lib/omni/user-events";
-import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
+import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
 import {
   forgetSessionMachines,
   machineForSession,
   rememberSessionMachine,
-} from "../lib/session-machines";
+} from "@prismshadow/penguin-web/internal";
 import {
   cachedMachineAgents,
   cachedMachineSessions,
@@ -54,7 +54,7 @@ import {
   workspaceGroupQuery,
   type ActivityKey,
   type StreamPosition,
-} from "../lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 
 import { useProject } from "./project";
 

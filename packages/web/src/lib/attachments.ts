@@ -19,7 +19,7 @@
  */
 import { ICONS } from "@prismshadow/penguin-ui";
 import { apiUrl } from "./server-context";
-import { machineForSession } from "./session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import {
   ATTACHED_FILE_PREFIX,
   ATTACHED_IMAGE_PREFIX,

@@ -10,7 +10,7 @@
  */
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { S } from "./strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The sources a program opens a Session for: a person's, a subagent and a company Session are none of them. */
 export type ProgramSource = Extract<SessionSource, "api" | "schedule" | "cli" | "workbench">;

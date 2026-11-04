@@ -32,7 +32,7 @@ import {
   ticketSessionTitles,
   withDeskMessagingChannel,
 } from "../src/features/company/org-sessions";
-import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
+import { isOrgSession, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
 
 const liveStatuses = (entries: Record<string, SessionStatus>): ReadonlyMap<string, SessionStatus> =>
   new Map(Object.entries(entries));

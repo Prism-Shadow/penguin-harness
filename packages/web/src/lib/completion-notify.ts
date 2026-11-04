@@ -11,7 +11,7 @@
  * otherwise double-notify the same finish.
  */
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { isSidebarRow } from "./session-grouping";
+import { isSidebarRow } from "@prismshadow/penguin-web/internal";
 
 export interface ObservedSession {
   sessionId: string;

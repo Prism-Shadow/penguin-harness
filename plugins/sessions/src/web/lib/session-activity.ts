@@ -1,7 +1,7 @@
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { isSessionUnread, type SessionSeenState } from "./session-seen";
 
-import { S } from "./strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /**
  * Visual state carried by a Session row / chat header. Three states, and `null` for "say

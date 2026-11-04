@@ -19,7 +19,7 @@
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../lib/server-context";
-import { machineForSession } from "../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 
 /** The server pings every 20 s: this much silence means the connection is gone. */
 const SILENCE_MS = 50_000;

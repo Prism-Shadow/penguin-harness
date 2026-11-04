@@ -16,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream, type StreamRenderContext } from "../src/features/chat/message-stream";
 
 import type { ChatItem } from "../src/lib/omni/stream-model";
-import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+import { forgetSessionMachines, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
 import { LocaleProvider } from "../src/state/locale";
 import { stubLocalStorage } from "./helpers/storage";
 

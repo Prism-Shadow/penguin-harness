@@ -24,7 +24,7 @@ import {
   type GroupOrderStorage,
 } from "../src/features/session-list/group-order";
 
-import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "../src/lib/session-grouping";
+import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "@prismshadow/penguin-web/internal";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;
