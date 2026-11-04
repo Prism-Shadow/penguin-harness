@@ -6,6 +6,10 @@
  * names (`plugin.modules`, `plugin.replaces`) count, with their children. The site reads the
  * entries as written: the server's reader checks them field by field, and a shipped plugin whose
  * entries do not check fails its own tests before it reaches the site.
+ *
+ * The tables are build output, so the landing lists every plugin package as a `workspace:*`
+ * devDependency: pnpm then builds them before the landing, in `pnpm -r build` and in a CI shard
+ * that builds `landing...` alike. A new plugin joins that list.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
