@@ -201,7 +201,14 @@ export function indexChannelOf(entry: PluginIndexEntry): {
       fault: `${entry.name}'s index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.`,
     };
   }
-  if (!listed.url.startsWith("https://")) {
+  // Plain http is refused everywhere but the loopback: a self-hosted index on this very
+  // machine serves its assets locally too, and the sha512 the entry pins is what actually
+  // guards the bytes — a man in the middle on any http hop cannot make a tampered tarball
+  // match. Off the machine the channel is https, no exceptions.
+  if (
+    !listed.url.startsWith("https://") &&
+    !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/.test(listed.url)
+  ) {
     return {
       channel: null,
       fault: `${entry.name}'s github channel is not an https link; it is not installable.`,

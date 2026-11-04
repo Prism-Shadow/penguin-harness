@@ -372,6 +372,57 @@ export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
   return actual;
 }
 
+/** The size step a no-length answer reports by: every mebibyte read, rather than every chunk. */
+const PROGRESS_MIB = 1024 * 1024;
+
+/**
+ * The response's body, whole. With `onProgress` the body is read chunk by chunk and the
+ * reader is told as it goes — the bytes received and the total when the answer names one —
+ * but only in steps: one call per percent of a known size, one per mebibyte without it. A
+ * call per chunk would be thousands for one asset, none the caller could show. Without an
+ * `onProgress` nothing streams, and the body arrives as it always did.
+ */
+async function readAsset(
+  res: Awaited<ReturnType<typeof fetch>>,
+  onProgress: ((received: number, total: number | null) => void) | undefined,
+): Promise<Uint8Array> {
+  const totalHeader = Number(res.headers.get("content-length"));
+  const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
+  if (res.body === null || onProgress === undefined) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    onProgress?.(bytes.byteLength, total ?? bytes.byteLength);
+    return bytes;
+  }
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  let lastStep = -1;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    // The step counter doubles as the mebibyte counter when no total is known; either way a
+    // step is a call, and a chunk is not.
+    const step =
+      total === null
+        ? Math.floor(received / PROGRESS_MIB)
+        : Math.min(100, Math.floor((received / total) * 100));
+    if (step > lastStep) {
+      lastStep = step;
+      onProgress(received, total);
+    }
+  }
+  onProgress(received, total ?? received);
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return bytes;
+}
+
 /**
  * Installs a version through an index entry's github channel: the release asset is
  * fetched, verified against the entry's sha512, and only the verified bytes are written —
@@ -383,7 +434,9 @@ export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
  * that was not what the index published, and the caller's post-install vetting cannot end up
  * vetting, or uninstalling, the wrong one. The verified bytes are written to a temporary file
  * first and renamed into place, so a concurrent install never sees a half-written archive.
- * `fetchImpl` and `install` are injectable so a test stands in for the network and npm.
+ * `fetchImpl` and `install` are injectable so a test stands in for the network and npm;
+ * `onProgress`, when given, is called as the asset is read — the bytes received so far and
+ * the total when the answer carries a content-length — in steps a progress bar can show.
  */
 export async function installPluginChannel(
   root: string,
@@ -391,9 +444,11 @@ export async function installPluginChannel(
   {
     fetchImpl = fetch,
     install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
+    onProgress = undefined,
   }: {
     fetchImpl?: typeof fetch;
     install?: (prefix: string, spec: string) => Promise<void>;
+    onProgress?: (received: number, total: number | null) => void;
   } = {},
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
@@ -408,7 +463,7 @@ export async function installPluginChannel(
   if (!res.ok) {
     throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
+  const bytes = new Uint8Array(await readAsset(res, onProgress));
   const digest = verifyIntegrity(bytes, channel.integrity);
   const archives = path.join(prefix, ARCHIVES_DIR);
   await fs.mkdir(archives, { recursive: true });
@@ -448,7 +503,12 @@ export async function installPluginChannel(
       `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
     );
   }
-  const file = `${base}-${digest.slice(0, 16)}.tgz`;
+  // The digest tags the archive file. Base64 carries `/` and `+`, neither of which belongs in
+  // a file name (a `/` would make the rename a write into a directory that does not exist), so
+  // the tag is the digest's first sixteen file-safe characters — still collision-proof, since
+  // a sha512's base64 is 44 characters of which almost all are safe.
+  const tag = (digest.match(/[A-Za-z0-9._~-]/g) ?? []).slice(0, 16).join("");
+  const file = `${base}-${tag}.tgz`;
   await fs.rename(staging, path.join(archives, file));
   try {
     await run(prefix, `./${ARCHIVES_DIR}/${file}`);
