@@ -34,7 +34,7 @@ We use our adaptation of [SkillAdam](https://arxiv.org/abs/2609.08944v1) (`skill
 
 To address both issues, SkillAdam adapts the Adam optimizer's "first-order momentum + second-order variance step-size scaling" into a four-step natural-language evolution loop inside the training container:
 
-<figure class="post-figure"><img src="/figures/skilladam-overview-v2.png" alt="SkillAdam in-container four-step self-evolution loop and EIT Issue Ledger" width="1536" height="640" /><figcaption>SkillAdam evolution loop inside the training container: left executes the 5 training tasks in one shared container to collect scores and deltas, while right iterates through diagnosis, variance budget calculation, bounded local editing, and strict mean gating around the EIT Issue Ledger.</figcaption></figure>
+<figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>5 training tasks run sequentially inside 1 shared container to measure score deltas</li><li>Adam controller dynamically scales the 1-to-4 block edit budget from cross-task score variance</li><li>Strict Mean Gate accepts only mean-improving revisions and rolls back regressive edits</li></ol><figcaption>Interactive SkillAdam in-container adaptive evolution loop (switch between the convergent track and the gate-rollback track, or step through rounds R0–R3).</figcaption></figure>
 
 - **Zero-Shot Attempt and Initial Distillation**: Training begins with a zero-shot pass over all 5 training tasks without any domain skill attached, distilling an initial `SKILL.md` from the execution trajectories and diagnostic feedback. In each subsequent round, the Agent evaluates the current or candidate skill across the training tasks to collect per-question scores, score deltas, and failure causes.
 - **Evolving Issue Tracker (EIT)**: Throughout training, the algorithm maintains a persistent ledger tracking observed error patterns, attempted fixes, and their measured outcomes. Even when a candidate edit is rejected for failing to improve the mean score, that failed attempt is recorded in the EIT so later iterations do not repeat the same ineffective modification.
@@ -96,7 +96,7 @@ To run the full experiment across all six scenarios, send:
 
 Once the launch prompt is sent in the Web UI, the controller Agent automatically orchestrates the entire four-stage workflow in the background:
 
-<figure class="post-figure"><img src="/figures/gdpevo-workflow-v2.png" alt="Four-stage GDPEVO experiment execution and Harbor Docker isolation pipeline" width="1536" height="640" /><figcaption>Four-stage orchestration pipeline executed by the controller Agent: continuous training shares one container per scenario, while held-out evaluation launches a fresh container and session for every question and repetition.</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Training Phase: continuous rollout across Train 1–5 inside 1 shared container</li><li>Artifact Handoff: freeze and export SKILL.md as a read-only skill</li><li>Testing Phase: 1-to-5 fan-out into isolated containers across 3 repetitions (15 fresh containers total), converging 5-to-1 into the Offline Verifier</li></ol><figcaption>Interactive orchestration pipeline driven by the PenguinHarness controller Agent (step through phases 1–5 to inspect shared-container training, skill freezing, and 5×3 isolated-container evaluation).</figcaption></figure>
 
 ### 1. Baseline Branch Freezing
 

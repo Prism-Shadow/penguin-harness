@@ -34,7 +34,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 针对这两个痛点，SkillAdam 原论文借鉴了深度学习中 Adam 优化器“一阶动量 + 二阶方差自适应步长”的设计思路。在我们的插件适配中，训练容器内的目标 Agent 按以下四步闭环迭代演进 `SKILL.md`：
 
-<figure class="post-figure"><img src="/figures/skilladam-overview-v2.png" alt="SkillAdam 容器内四步自进化闭环与 EIT 演进问题追踪器" width="1536" height="640" /><figcaption>SkillAdam 在单容器连续训练中的演进闭环：左侧在共享容器内执行 5 道训练题并产出得分与分差，右侧围绕演进问题追踪器（EIT）依次完成失误诊断、方差预算计算、局部受限修改与严格均分门控。</figcaption></figure>
+<figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>5 道训练题在单容器内连续试跑并记录分差</li><li>Adam 控制器按跨题分差方差动态收缩或恢复 1 至 4 块编辑预算</li><li>严格均值门控仅采纳均分提升的候选版本，退化版本当场拦截并回滚</li></ol><figcaption>SkillAdam 在单容器连续训练中的自适应演进闭环（可点击切换稳步收敛轨迹与退化回滚轨迹，或按轮次步进查看方差预算与门控状态）。</figcaption></figure>
 
 - **无技能初测与初版提炼**：训练启动后，Agent 首先在不挂载任何业务技能的状态下完成 5 道训练题的初次尝试，根据执行轨迹与评分反馈提炼出初版 `SKILL.md`。在随后的每一轮迭代中，Agent 均使用当前或候选技能文档在训练题上实测作答，收集各题得分、新旧分差与具体失误原因。
 - **演进问题追踪器（EIT）**：算法在迭代全程维护一份问题账本，持续追踪训练题中暴露的错误模式、历次尝试过的修复方案及其实际效果。即便某一轮提出的候选修改最终因为没有提分而被拒绝，这次失败尝试的记录也会更新回 EIT 中，避免后续轮次重复无效修改。
@@ -96,7 +96,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 当实验人员在 Web 界面发出启动指令后，主控 Agent 便会自动接管实验现场，在后台按以下四个阶段完成从基准构建、连续训练冻结到多轮独立评测的全流程编排：
 
-<figure class="post-figure"><img src="/figures/gdpevo-workflow-v2.png" alt="GDPEVO 实验在 PenguinHarness 中的四阶段执行与 Harbor Docker 容器隔离流程" width="1536" height="640" /><figcaption>主控 Agent 在后台自动编排的四阶段实验流程：训练阶段在单容器内连续演进并冻结技能，测试阶段为每一道题的每一轮评测拉起全新容器，严格隔离状态与反馈。</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>训练阶段：1 个共享容器内完成 Train 1–5 连续试错与技能演进</li><li>技能冻结：导出只读 SKILL.md 挂载至 Evolved Agent</li><li>测试阶段：一分五并发注入 5 个独立测试容器并重复 3 轮（共 15 个全新容器），五合一汇入 Offline Verifier 离线判分</li></ol><figcaption>PenguinHarness 主控 Agent 在后台自动编排的实验流程（可点击上方阶段按钮步进查看单容器训练、技能冻结与 5×3 隔离容器盲测的动态流转）。</figcaption></figure>
 
 ### 1. 基线分支冻结
 
