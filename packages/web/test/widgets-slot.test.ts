@@ -84,7 +84,8 @@ describe("widgetStore", () => {
       .mockResolvedValueOnce({ widgets: [], pages: [], fileRenderers: [], pageRemovals: [], agentTabs: [], sessionTabs: [] });
     const store = widgetStore();
     await store.refresh();
-    expect(store.current()).toEqual([iframeWidget]);
+    const { from: _attribution, ...drawn } = iframeWidget;
+    expect(store.current()).toEqual([drawn]);
     const seen: Array<unknown> = [];
     const stop = store.subscribe(() => seen.push(store.current()));
     await store.refresh();
