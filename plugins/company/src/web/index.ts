@@ -10,9 +10,9 @@ export { CompanyModule } from "./company/module.js";
  * company context, the desk-model switch, the org-key parser), exported beside the
  * module so a host page names one address.
  */
-export { useCompany } from "./company/company-state.js";
+export { useCompany } from "./company/company-context.js";
 export { switchDeskModel } from "./company/desk-model.js";
-export { parseOrgKey } from "./company/index.js";
+export { parseOrgKey } from "./company/company-nav.js";
 export { DEFAULT_CHANNEL_ID } from "./company/channel-list.js";
 export * from "./company/company-nav.js";
 export * from "./company/company-context.js";
