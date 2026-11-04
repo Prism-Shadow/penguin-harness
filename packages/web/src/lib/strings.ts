@@ -1186,7 +1186,6 @@ export const zh = {
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    fileCount: (n: number) => `${n} 个文件`,
     importAction: "导入 zip",
     importTitle: "导入工作台",
     importUploadDesc:

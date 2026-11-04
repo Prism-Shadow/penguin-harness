@@ -1053,7 +1053,6 @@ export const en: Strings = {
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    fileCount: (n: number) => `${n} files`,
     importAction: "Import zip",
     importTitle: "Import workbench",
     importUploadDesc:

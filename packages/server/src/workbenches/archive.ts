@@ -25,6 +25,7 @@ import {
 } from "../services/skill-import-limits.js";
 import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
 import { HARNESS_DIR } from "./harness-types.js";
+import { isGitName } from "./repo.js";
 import {
   STATE_FILE,
   TMP_SUFFIX,
@@ -63,6 +64,7 @@ function notSource(name: string): string | null {
     if (key.startsWith(".")) return "dot entries are the server's";
     if (key === "node_modules") return "node_modules is never imported";
     if (isTempName(key)) return "a staging file of the server's";
+    if (isGitName(segment)) return "a name git reserves";
     if (
       WINDOWS_FORBIDDEN.test(segment) ||
       WINDOWS_RESERVED.test(segment) ||
@@ -282,13 +284,14 @@ function conflict(message: string): HttpError {
 
 /**
  * The files readFolder counts as a folder's source (./store.ts), whether or not it has a
- * package.json yet: regular files, minus the root `state.json`, dot entries, `node_modules` and
- * staging files. A link is not followed.
+ * package.json yet: regular files, minus the root `state.json`, dot entries, `node_modules`,
+ * staging files and names git reserves. A link is not followed.
  */
 async function sourceFiles(dir: string, prefix = ""): Promise<string[]> {
   const out: string[] = [];
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".") || isTempName(entry.name)) {
+    const name = entry.name;
+    if (name === "node_modules" || name.startsWith(".") || isTempName(name) || isGitName(name)) {
       continue;
     }
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;

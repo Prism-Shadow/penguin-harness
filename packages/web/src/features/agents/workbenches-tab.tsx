@@ -271,14 +271,11 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
         )}
         <ul className="divide-y divide-line">
           {history?.versions.map((version, index) => (
-            <li
-              key={`${version.savedAt}:${version.revision}`}
-              className="flex flex-wrap items-center gap-3 py-3 text-sm"
-            >
+            <li key={version.commit} className="flex flex-wrap items-center gap-3 py-3 text-sm">
               <span className="font-mono">{version.revision}</span>
               <span className="text-fg-muted">{formatDateTime(version.savedAt)}</span>
               <span className="flex-1" />
-              {/* One row is current: the newest with the files the workbench has now. */}
+              {/* A restore records an old revision again: only its newest entry is the current one. */}
               {index === currentVersionAt(history) ? (
                 <span>{S.workbenches.current}</span>
               ) : (

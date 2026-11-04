@@ -5,15 +5,15 @@
  * - An export holds the source under `<id>/` and nothing else — no `state.json`, no `.build/`,
  *   `.harness/`, `.plugin.json` or other dot entry, no `node_modules/` — and is named after the id
  *   and package.json's version when it has one.
- * - The export imports into another Agent unchanged, under its top-level directory's name, and
- *   loads there.
+ * - The export imports into another Agent unchanged, under its top-level directory's name, loads
+ *   there, and its History lists that load as the one version.
  * - A root-layout zip takes package.json's name as the id, and a load that fails is still an
  *   import, with the failure in the answer; a scoped name is refused, naming the fix.
  * - A folder holding data but no package.json is no workbench yet: an import into it keeps its
  *   `state.json` and leaves none of the stray files beside it.
  * - Each of these is refused before anything is written: `state.json` in any letter case, a dot
  *   entry, `node_modules/` in any case, a `../`, absolute, drive-letter or backslash path, a
- *   control character, a name Windows cannot hold, a link, two names a disk that folds case or
+ *   control character, a name Windows cannot hold, a name git reserves, a link, two names a disk that folds case or
  *   Unicode normal form takes for one, an entry that is both a file and a directory, an unusable
  *   package.json, a layout with no one workbench, and a root-layout id that is `node_modules` or a
  *   staging name.
@@ -32,8 +32,7 @@
  *   not export.
  * - Someone outside the Project reaches neither route; a missing Agent or workbench is a 404.
  * - An import into an Agent still in the layout before Agent State migrates it first: its old
- *   workbenches stay listed, with their data, beside the imported one. (Skipped where the
- *   migration does not move that layout.)
+ *   workbenches stay listed, with their data, beside the imported one.
  *
  * Every successful load runs the TypeScript compiler, so only two scenarios load a workbench that
  * compiles; the rest write folders by hand or are refused before a load.
@@ -47,9 +46,9 @@ import type {
   ProjectCreateResponse,
   WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
+  WorkbenchVersion,
 } from "../src/api/types.js";
 import { agentDir } from "@prismshadow/penguin-core";
-import { migrateWorkbenches } from "../src/workbenches/migrate.js";
 import { workbenchesDir } from "../src/workbenches/store.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -235,6 +234,10 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     expect(listed.workbenches.map((w) => [w.id, w.revision])).toEqual([
       ["todo", workbench.revision],
     ]);
+    const history = await member.get(`${base("copy_agent")}/todo/history`);
+    expect(
+      ((await history.json()) as { versions: WorkbenchVersion[] }).versions.map((v) => v.revision),
+    ).toEqual([workbench.revision]);
   });
 
   it("the root layout takes package.json's name as the id, a failing load is in the answer, and a scoped name is refused naming the fix", async () => {
@@ -321,6 +324,7 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     ["a reserved device name", { ...valid, "todo/ui/CON.html": "" }, "a name Windows cannot hold"],
     ["a colon", { ...valid, "todo/ui/x:y.js": "" }, "a name Windows cannot hold"],
     ["a trailing dot", { ...valid, "todo/ui/trail.": "" }, "a name Windows cannot hold"],
+    ["a name git reserves", { ...valid, "todo/git~1/x.ts": "" }, "a name git reserves"],
     [
       "a symbolic link",
       { ...valid, "todo/ui/lib": ["../../secret", { os: 3, attrs: 0o120777 << 16 }] },
@@ -538,20 +542,9 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     );
   });
 
-  it("an import into an Agent in the layout before Agent State migrates it first, so its old workbenches stay listed beside the new one", async (ctx) => {
+  it("an import into an Agent in the layout before Agent State migrates it first, so its old workbenches stay listed beside the new one", async () => {
     await createAgent("legacy_agent");
     const home = agentDir(t.root, projectId, "legacy_agent");
-    // Whether this build's migration moves `<agentDir>/workbenches/` to where the listing reads.
-    const probe = path.join(t.root, "layout-probe");
-    const listedAt = path.relative(home, workbenchesDir(t.root, projectId, "legacy_agent"));
-    await writeFiles(path.join(probe, "workbenches", "x"), { "package.json": "{}" });
-    await migrateWorkbenches(probe);
-    const moves = await fs.stat(path.join(probe, listedAt, "x")).then(
-      () => true,
-      () => false,
-    );
-    if (!moves) ctx.skip();
-
     // Neither package loads, so neither compiles: what is asserted is where the folders are.
     await writeFiles(path.join(home, "workbenches", "legacy"), {
       "package.json": brokenPkg("legacy"),
