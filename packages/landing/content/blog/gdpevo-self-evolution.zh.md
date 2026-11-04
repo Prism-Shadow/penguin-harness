@@ -9,19 +9,16 @@ excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 六大�
 
 ## 1. GDPEVO Essential 的数据与任务设定
 
-[GDPevo](https://github.com/Prism-Shadow/GDPevo)（[arXiv:2608.03764](https://arxiv.org/abs/2608.03764)）是面向真实企业工作流的 Agent 自进化评测基准，完整版包含 24 个有状态业务任务组、共 240 道业务题目。**GDPEVO Essential** 从中精选了覆盖 CRM、ERP、金融、医疗、法律与数据分析六大领域的 **6 个代表性企业场景**。
+GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 道测试题（合计 60 道题）。每个场景在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库中均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道同领域的保留测试题：
 
-每个场景均配备 **1 个共享业务容器环境**、**5 道训练题（Train）**与 **5 道保留测试题（Test）**，六个场景合计 **30 道训练题与 30 道测试题（共 60 道题）**。在 PenguinHarness 0.2.19 的评估中心与 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages) 仓库中，这六个场景以 **12 个内置 Benchmark 包**（6 个训练包 + 6 个测试包）的形式发布，各场景的数据明细如下：
-
-| 业务场景 | 所属领域 | 上游任务组 | 场景标识与数据目录 | 训练题数 | 测试题数 | 业务 API 端点数 | 任务概述 |
-| :--- | :--- | :--- | :--- | ---: | ---: | ---: | :--- |
-| 服务工单处理 | CRM | `task_group_003` | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 | 5 | 28 | 查询客服后台记录，完成离线工单核实、移动端分流与企业投诉调查 |
-| 财务管控 | ERP | `task_group_005` | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 | 5 | 26 | 核对报销单据、应付账款、供应商合规、预付摊销与总账关账记录 |
-| 投资组合管理 | 金融 | `task_group_010` | [portfolio-management](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 | 5 | 14 | 分析能源与固收交易策略、跨市场相关性以及多资产主动配置权重 |
-| 医保审核 | 医疗 | `task_group_014` | [coverage-review](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 | 5 | 13 | 对照医保政策完成事前授权、拒赔申诉、同行评议与支付完整性审核 |
-| 法院书记员业务 | 法律 | `task_group_018` | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 | 5 | 12 | 综合案卷、罚单与政策记录，处理案件裁定、财务登记与缓刑转介 |
-| 工程项目组合分析 | 数据分析 | `task_group_024` | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 | 5 | 12 | 汇总工程工作项分类、可靠性与安全 SLA 时效、发布就绪度与依赖阻塞项 |
-| **合计（6 个场景）** | **6 大领域** | **6 个任务组** | **12 个内置包（6 Train + 6 Test）** | **30** | **30** | **105** | **每题输出结构化 JSON，由原始加权评分器按百分制判分** |
+| 业务场景 | 场景标识 | 题目数量 | 任务概述 |
+| :--- | :--- | :--- | :--- |
+| 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练 / 5 测试 | 查询客服后台记录，核实并处理待办工单 |
+| 财务管控 | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练 / 5 测试 | 根据财务系统数据完成账目核对与结账核算 |
+| 投资组合管理 | [portfolio-management](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 训练 / 5 测试 | 读取资管平台数据，计算持仓估值与调仓方案 |
+| 医保审核 | [coverage-review](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 训练 / 5 测试 | 对照医保条款与申报材料，给出理赔审核结论 |
+| 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练 / 5 测试 | 核对立案卷宗材料，整理案件排期与归档信息 |
+| 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练 / 5 测试 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
 
 在 GDPEVO Essential 的 Benchmark 设定下，每个场景的实验遵循以下三项规则：
 
