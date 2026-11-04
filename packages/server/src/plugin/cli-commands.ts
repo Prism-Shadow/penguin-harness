@@ -39,6 +39,8 @@ import type { Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson, requireString } from "../http/validate.js";
 import { pluginHostFrom } from "./host.js";
+import { mergeState } from "./pet-state.js";
+import type { Settings } from "../mechanisms/settings.js";
 
 /** One plugin command the server holds: its package, its data half, its bound code half. */
 export interface PluginCliCommand {
@@ -55,6 +57,26 @@ export abstract class PluginCliCommands {
   abstract list(): readonly PluginCliCommand[];
   /** Parses `args` against the named plugin's commands; null when the plugin has none. */
   abstract run(request: PluginCliCommandRunRequest): Promise<PluginCliCommandRunResponse | null>;
+}
+
+/**
+ * The state channel a plugin command's code half reaches its own package's state through,
+ * on top of the contract's `messages`: the same document the plugin state routes serve
+ * (widgets.ts, key `plugin-state:<package>` in the shared settings store), read and merged
+ * in-process — a run has no HTTP client, so the host hands the accessor instead. Merging
+ * goes through the same shallow rule the PATCH route runs, so the faces stay consistent.
+ */
+export interface PluginCommandState {
+  /** The stored document, as GET /api/plugins/<package>/state answers it; `{}` when none. */
+  read(): unknown;
+  /** Merges an update shallowly (null drops its key) and returns the merged document. */
+  merge(update: Record<string, unknown>): Record<string, unknown>;
+}
+
+/** The host bundle a SERVER-run plugin command receives: the locale plus its state channel. */
+export interface PluginCliCommandHost {
+  messages: { language: "en" | "zh" };
+  state: PluginCommandState;
 }
 
 export interface PluginCliCommandsSlots {
@@ -136,8 +158,9 @@ let runs: Promise<unknown> = Promise.resolve();
 export async function runPluginCommands(
   commands: readonly PluginCliCommand[],
   request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
+  stateOf?: (pkg: string) => PluginCommandState,
 ): Promise<PluginCliCommandRunResponse> {
-  const run = runs.then(() => runPluginCommandOnce(commands, request));
+  const run = runs.then(() => runPluginCommandOnce(commands, request, stateOf));
   runs = run.catch(() => undefined);
   return run;
 }
@@ -145,6 +168,7 @@ export async function runPluginCommands(
 async function runPluginCommandOnce(
   commands: readonly PluginCliCommand[],
   request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
+  stateOf?: (pkg: string) => PluginCommandState,
 ): Promise<PluginCliCommandRunResponse> {
   const stdout = { text: "" };
   const stderr = { text: "" };
@@ -167,10 +191,13 @@ async function runPluginCommandOnce(
       for (const c of commands) {
         const node = commandAt(program, c.key).description(c.summary[request.language]);
         // The server host holds no shared command vocabulary yet, so its bundle is the
-        // locale the caller resolved — the one thing every host's bundle guarantees.
+        // locale the caller resolved — the one thing every host's bundle guarantees. The
+        // state channel is the command's own package's, when the host hands one: a code
+        // half typed against the bare contract never reads it.
         c.code.register(node as unknown as CliCommandProgram, {
           messages: { language: request.language },
-        });
+          state: stateOf?.(c.package),
+        } as never);
       }
       // Only print help when no args given, so unknown words are reported as they are.
       if (request.args.length === 0) {
@@ -259,6 +286,7 @@ export function pluginCliCommandRoutes(commands: PluginCliCommands): Hono<AppEnv
 })
 export class PluginCliCommandsProvider {
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly settings!: Settings;
   @Provide() pluginCliCommands!: PluginCliCommands;
   @Bind("PluginCliCommandsProvider.routes") routes!: Hono<AppEnv>;
 
@@ -289,7 +317,30 @@ export class PluginCliCommandsProvider {
       list,
       run: async (request) => {
         const own = list().filter((cmd) => cmd.package === request.package);
-        return own.length === 0 ? null : runPluginCommands(own, request);
+        if (own.length === 0) return null;
+        // The state channel mirrors the plugin state routes (widgets.ts): same key, same
+        // merge, in-process — a run has no HTTP client to reach the routes with.
+        const stateOf = (pkg: string): PluginCommandState => {
+          const key = `plugin-state:${pkg}`;
+          const read = (): unknown => {
+            const raw = this.settings.get(key);
+            if (raw === null) return {};
+            try {
+              return JSON.parse(raw) as unknown;
+            } catch {
+              return {};
+            }
+          };
+          return {
+            read,
+            merge: (update) => {
+              const next = mergeState(read(), update);
+              this.settings.set(key, JSON.stringify(next));
+              return next;
+            },
+          };
+        };
+        return runPluginCommands(own, request, stateOf);
       },
     };
     this.pluginCliCommands = pluginCliCommands;

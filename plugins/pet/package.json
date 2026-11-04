@@ -1,0 +1,35 @@
+{
+  "name": "@penguinharness/pet",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pet plugin: a small companion the web app docks as a widget, with `penguin pet` commands and its state in the server's shared store.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "ui",
+    "README.md",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "commander": "^14.0.1",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}

@@ -31,6 +31,7 @@ import { AppInfoDialog } from "../components/account/app-info-dialog";
 
 import { setDockScope } from "../features/dock";
 import { FindBar } from "../components/find/find-bar";
+import { useContributedWidgets, widgetStore, type ContributedWidget } from "../lib/widgets";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -40,6 +41,77 @@ import { FindBar } from "../components/find/find-bar";
  */
 function pinnedSidebarOnScreen(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+}
+
+/**
+ * The plugin widget dock: the widgets the server contributed (`WebModule.widgets`), one tile
+ * each, docked at the layout's bottom-right corner. A tile shows the widget's initial (its
+ * title's first grapheme) until clicked, then opens its iframe over the dock — a small
+ * always-visible surface a page would be too heavy for. Only an iframe widget draws today;
+ * builtin names are contributed but wait for a registry entry.
+ */
+function WidgetDock() {
+  const widgets = useContributedWidgets();
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    void widgetStore().refresh().then(() => setLoaded(true));
+  }, []);
+  if (!loaded || widgets.length === 0) return null;
+  const open = widgets.find((w) => w.key === openKey) ?? null;
+  return (
+    <div className="fixed right-3 bottom-10 z-40 flex flex-col items-end gap-2 print:hidden">
+      {open !== null && "iframe" in open.renderer && (
+        <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
+          <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
+            <span>{open.titleZh ?? open.title ?? open.key}</span>
+            <button
+              type="button"
+              className="ml-3 cursor-pointer text-content-faint hover:text-content"
+              aria-label="Close widget"
+              onClick={() => setOpenKey(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <iframe
+            src={open.renderer.iframe.src}
+            title={open.titleZh ?? open.title ?? open.key}
+            className="h-64 w-72 border-0 bg-transparent"
+          />
+        </div>
+      )}
+      <div className="flex gap-2">
+        {widgets.map((w) => (
+          <WidgetTile key={w.id} widget={w} open={w.key === openKey} onToggle={() => setOpenKey(w.key === openKey ? null : w.key)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WidgetTile({
+  widget,
+  open,
+  onToggle,
+}: {
+  widget: ContributedWidget;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const title = widget.titleZh ?? widget.title ?? widget.key;
+  const initial = [...title][0] ?? "?";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={open}
+      title={title}
+      className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border-subtle bg-surface text-base shadow-md hover:bg-surface-muted"
+    >
+      {initial}
+    </button>
+  );
 }
 
 export function AppLayout() {
@@ -216,6 +288,11 @@ export function AppLayout() {
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <Outlet />
       </main>
+      {/* The plugin widget dock: one collapsed tile per contributed widget above the status
+          bar's corner, clicked open into its frame. The widgets' own fetch runs beside the
+          page table's (the dock mounts outside the router), so a plugin install shows here
+          on the next refresh. */}
+      <WidgetDock />
       {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
           mounted once here, outside every page, so navigating never remounts or re-parents
           one — a terminal would reconnect, a built-in browser's webview would reload. */}

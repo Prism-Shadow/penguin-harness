@@ -6433,12 +6433,40 @@ export type WebPageRemovalData = {
 /** A page removal as GET /api/contributions answers it. */
 export type WebPageRemovalContribution = WebContribution & WebPageRemovalData;
 
+/**
+ * The data of one `WebModule.widgets` contribution: a small always-visible widget the web app
+ * docks beside the status bar — a plugin's companion surface, smaller than a page. The iframe
+ * renderer works as a page's does (an own `ui/` document the server serves same-origin), so a
+ * widget reads and writes its state through the plugin state routes with the user's cookie.
+ */
+export type WebWidgetData = {
+  key: string;
+  title?: string;
+  titleZh?: string;
+  /** `small` sits one dock cell wide; `wide` takes the dock's full row. */
+  size?: "small" | "wide";
+  renderer: RendererRef;
+};
+
+/** A widget contribution as GET /api/contributions answers it. */
+export type WebWidgetContribution = WebContribution & WebWidgetData;
+
 export interface ContributionsResponse {
   pages: WebPageContribution[];
   fileRenderers: WebFileRendererContribution[];
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  widgets: WebWidgetContribution[];
+}
+
+/**
+ * The stored state of one plugin package, as GET /api/plugins/<package>/state answers it:
+ * a JSON document the package owns — the server keeps it whole and never reads inside.
+ */
+export interface PluginStateResponse {
+  package: string;
+  state: unknown;
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */

@@ -16,6 +16,8 @@ import type {
   WebPageData,
   WebPageRemovalContribution,
   WebPageRemovalData,
+  WebWidgetContribution,
+  WebWidgetData,
 } from "../../api/types.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
@@ -62,6 +64,8 @@ export interface WebShellSlots {
     titleZh?: string;
     renderer: { builtin: string } | { iframe: { src: string } };
   };
+  /** A small always-visible widget the web app docks beside the status bar (WebWidgetData). */
+  widgets: WebWidgetData;
 }
 
 @Module({
@@ -93,6 +97,7 @@ export class WebModule {
       pageRemovals: collect<WebPageRemovalContribution>("pageRemovals"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
+      widgets: collect<WebWidgetContribution>("widgets"),
     };
     const web: WebShell = { contributions: () => response };
     this.web = web;
