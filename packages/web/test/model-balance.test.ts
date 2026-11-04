@@ -2,12 +2,14 @@
  * Group balances in the Web App: how an amount reads (balance.ts) — in the vendor's own figures
  * and in the display currency — what the header and the sidebar show for each state of a
  * reading (group-balance.tsx), how the per-account pin is read back out of the free-form prefs,
- * and the TokenDance banner: its per-browser dismissal, and a sweep that rides the brand name.
+ * and the TokenDance banner: its per-browser dismissal, and the brand name set apart for the
+ * sweep that rides it.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ModelBalanceResponse } from "@prismshadow/penguin-server/api";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   displayBalance,
   formatAmount,
@@ -22,8 +24,8 @@ import {
   bannerDismissed,
   splitBrand,
 } from "../src/features/models/tokendance-banner";
-import { S, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { S } from "../src/lib/strings";
+import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 
 const reading: ModelBalanceResponse = {
   ok: true,
@@ -176,15 +178,18 @@ describe("the TokenDance banner's dismissal", () => {
 });
 
 describe("the TokenDance banner's sweep", () => {
-  it("rides the brand name alone, in both languages", () => {
-    for (const text of [zh.models.tokenDanceBanner, en.models.tokenDanceBanner]) {
-      const parts = splitBrand(text, "TokenDance");
-      expect(parts, text).not.toBeNull();
-      expect(`${parts![0]}TokenDance${parts![1]}`).toBe(text);
-    }
+  it("sets the brand name in an element of its own, and the sentence still reads whole", () => {
+    expect(splitBrand("Connect TokenDance to start", "TokenDance")).toEqual([
+      "Connect ",
+      " to start",
+    ]);
+    const brand = providerInfo("tokendance")!.label;
     const html = renderToStaticMarkup(createElement(TokenDanceBanner, { onConnect: () => {} }));
-    expect(html.match(/banner-shimmer/g)).toHaveLength(1);
-    expect(html).toContain('<span class="banner-shimmer">TokenDance</span>');
+    const sentence = elementsOf(readMarkup(html)).find((el) => el.tag === "p")!;
+    expect(seenText(sentence)).toBe(S.models.tokenDanceBanner);
+    expect(sentence.children.filter((child) => typeof child !== "string").map(seenText)).toEqual([
+      brand,
+    ]);
   });
 
   it("leaves a wording without the name plain", () => {

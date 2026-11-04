@@ -74,49 +74,22 @@ describe("matchesQuery", () => {
 describe("groupModelRows", () => {
   it("groups by the row's provider (order follows MODEL_PROVIDERS), custom last, custom-built groups appended after", () => {
     const groups = groupModelRows(rows, "");
-    expect(groups.map((g) => g.provider.id)).toEqual([
-      "anthropic",
-      "moonshot",
-      "minimax",
-      "custom",
-      "unknown-vendor",
-    ]);
-    expect(groups[0]!.rows.map((r) => r.modelId)).toEqual(["claude-sonnet-4-6", "claude-opus-4-8"]);
-    expect(groups[2]!.provider.label).toBe("MiniMax");
-    expect(groups[2]!.rows.map((r) => r.modelId)).toEqual(["MiniMax-M3"]);
-    expect(groups[3]!.rows.map((r) => r.modelId)).toEqual(["my-proxy-model"]);
+    // The built-in groups stand in the catalog's own order, whatever it is curated to be.
+    const builtIn = ["anthropic", "moonshot", "minimax"].sort(
+      (a, b) =>
+        MODEL_PROVIDERS.findIndex((p) => p.id === a) - MODEL_PROVIDERS.findIndex((p) => p.id === b),
+    );
+    expect(groups.map((g) => g.provider.id)).toEqual([...builtIn, "custom", "unknown-vendor"]);
+    const rowsOf = (id: string) =>
+      groups.find((g) => g.provider.id === id)!.rows.map((r) => r.modelId);
+    expect(rowsOf("anthropic")).toEqual(["claude-sonnet-4-6", "claude-opus-4-8"]);
+    expect(rowsOf("minimax")).toEqual(["MiniMax-M3"]);
+    expect(rowsOf("custom")).toEqual(["my-proxy-model"]);
     // Custom-built group: synthesized provider info — label is the group name, OpenAI-protocol semantics (env falls back to OPENAI_*).
-    expect(groups[4]!.provider.label).toBe("unknown-vendor");
-    expect(groups[4]!.provider.envKey).toBe("OPENAI_API_KEY");
-    expect(groups[4]!.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
-    // Group order matches MODEL_PROVIDERS, whose sequence is hand-curated (gateways and
-    // first-party vendors interleaved): the recommended TokenDance first, then Penguin Go,
-    // OpenCode Go and DeepSeek, with custom last. This is the page's DEFAULT — the
-    // stored per-Project order applied below overrides it.
-    expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
-      "tokendance",
-      "penguin-go",
-      "opencode-go",
-      "deepseek",
-      "openrouter",
-      "fireworks",
-      "google",
-      "openai",
-      "anthropic",
-      "siliconflow",
-      "atlascloud",
-      "runcrate",
-      "zhipu",
-      "moonshot",
-      "minimax",
-      "qwen-pay-as-you-go",
-      "qwen-token-plan",
-      "modelscope",
-      "vllm",
-      "custom",
-    ]);
-    expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");
-    expect(MODEL_PROVIDERS.find((p) => p.id === "minimax")!.label).toBe("MiniMax");
+    const built = groups.at(-1)!;
+    expect(built.provider.label).toBe("unknown-vendor");
+    expect(built.provider.envKey).toBe("OPENAI_API_KEY");
+    expect(built.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
   });
 
   it("the custom group always shows without a search query (returned even when empty, hosting the add entry point)", () => {
@@ -430,7 +403,7 @@ describe("discountedPrice", () => {
     expect(discountedPrice(row, PEAK)).toBeUndefined();
   });
 
-  it("each scheduled row follows its own seller's windows, and the badge's title names them", () => {
+  it("each scheduled row follows its own seller's windows", () => {
     // Qwen bills the DeepSeek models it sells at peak 08:00-22:00 Beijing on every day, while
     // DeepSeek's own peak is weekday office hours: a Saturday morning parts the two.
     const saturdayMorning = new Date("2026-09-05T02:00:00Z"); // 10:00 Beijing
@@ -443,32 +416,38 @@ describe("discountedPrice", () => {
     );
     const qwenOff = discountedPrice(qwen, lateEvening)!;
     expect(qwenOff.percent).toBe(50);
-    expect(qwenOff.peak).toEqual({
-      days: [[1, 7]],
-      everyDay: true,
-      hours: [[8, 22]],
-    });
+    expect(qwenOff.peak).toEqual(peakWindows(QWEN_OFF_PEAK));
+  });
 
-    expect(peakWindows(DEEPSEEK_OFF_PEAK)).toEqual({
-      days: [[1, 5]],
-      everyDay: false,
-      hours: [
+  it("spells a schedule's peak windows into the badge's title, in both languages", () => {
+    // Two schedules of this file's own: split weekday windows, and one window every day.
+    const weekdays = peakWindows({
+      rate: 0.5,
+      utcOffsetMinutes: 480,
+      peakDays: [1, 2, 3, 4, 5],
+      peakHours: [
         [9, 12],
         [14, 18],
       ],
     });
-    // The hover text is spelled from the schedule in both dictionaries, so neither vendor's
-    // windows are described with the other's.
-    expect(zh.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+    const everyDay = peakWindows({
+      rate: 0.5,
+      utcOffsetMinutes: 480,
+      peakDays: [1, 2, 3, 4, 5, 6, 7],
+      peakHours: [[8, 22]],
+    });
+    expect(weekdays).toMatchObject({ days: [[1, 5]], everyDay: false });
+    expect(everyDay).toMatchObject({ days: [[1, 7]], everyDay: true });
+    expect(zh.models.offPeakTitle(50, weekdays)).toBe(
       "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00",
     );
-    expect(en.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+    expect(en.models.offPeakTitle(50, weekdays)).toBe(
       "Off-peak rate: 50% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday",
     );
-    expect(zh.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+    expect(zh.models.offPeakTitle(50, everyDay)).toBe(
       "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间每天 8:00–22:00",
     );
-    expect(en.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+    expect(en.models.offPeakTitle(50, everyDay)).toBe(
       "Off-peak rate: 50% off list. Peak hours bill at list price — 08:00–22:00 Beijing time, every day",
     );
   });

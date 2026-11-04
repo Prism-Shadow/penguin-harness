@@ -1,19 +1,20 @@
 /**
- * What a compaction row shows (lib/amsp/compaction-summary.ts and the dictionaries' mode-aware
- * titles). The section timings are stream-model.test.ts's.
+ * What a compaction row shows (lib/amsp/compaction-summary.ts, and the row's title in
+ * features/chat/compaction-banner.tsx). The section timings are stream-model.test.ts's.
  *
  * - The result section reads the summary as prose: tags stripped, an unclosed block shown as
  *   far as it streamed, tagless output verbatim, and nothing when nothing streamed.
  * - The result section stays hidden while the request only thinks, appears with the first
  *   summary text, and stays for a completed row but not for a failed one.
- * - A discard is never titled as a compaction, and an unknown mode falls back to the
- *   compaction title.
- * - The running and settled titles differ, in both modes and both languages, and a discard
- *   never reads as compacting in either state.
+ * - A discard row is never titled as a compaction, running or settled, and a running row never
+ *   reads as settled; an unknown mode is titled as a compaction.
  */
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
+import type { CompactionMode } from "@prismshadow/amsp";
+import { CompactionBanner } from "../src/features/chat/compaction-banner";
+import { S } from "../src/lib/strings";
 import { compactionResultVisible, compactionSummaryText } from "../src/lib/amsp/compaction-summary";
 
 describe("compactionSummaryText", () => {
@@ -60,54 +61,35 @@ describe("compactionResultVisible (the result section waits for the thinking to 
   });
 });
 
-describe("compactionTitle (the row is titled by its mode)", () => {
-  it("never labels a discard as compaction — the whole point of titling by mode", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      expect(dict.chat.compactionTitle("summarize"), locale).toBeTruthy();
-      expect(
-        dict.chat.compactionTitle("discard"),
-        `${locale} still calls a discard a compaction`,
-      ).not.toBe(dict.chat.compactionTitle("summarize"));
-    }
+describe("a compaction row's title", () => {
+  /** The row as the transcript draws it: running, or settled as completed. */
+  const row = (mode: string, running: boolean) =>
+    renderToStaticMarkup(
+      createElement(CompactionBanner, {
+        item: {
+          kind: "compaction",
+          id: 1,
+          reason: "manual",
+          mode: mode as CompactionMode,
+          running,
+          ...(running ? {} : { status: "completed" as const }),
+        },
+      }),
+    );
+
+  it("never titles a discard as a compaction, running or settled", () => {
+    expect(row("discard", true)).toContain(S.chat.compactionRunning("discard"));
+    expect(row("discard", true)).not.toContain(S.chat.compactionRunning("summarize"));
+    expect(row("discard", false)).toContain(S.chat.compactionDone("discard"));
+    expect(row("discard", false)).not.toContain(S.chat.compactionDone("summarize"));
   });
 
-  it("falls back to the compaction title for any other mode (an unknown/legacy value)", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      for (const mode of ["", "future-mode"]) {
-        expect(dict.chat.compactionTitle(mode), `${locale} ${mode}`).toBe(
-          dict.chat.compactionTitle("summarize"),
-        );
-      }
-    }
+  it("never titles a running row as settled", () => {
+    expect(row("summarize", true)).toContain(S.chat.compactionRunning("summarize"));
+    expect(row("summarize", true)).not.toContain(S.chat.compactionDone("summarize"));
   });
-});
 
-describe("compactionRunning / compactionDone (the title doubles as the status, as the work group's does)", () => {
-  it("keeps the two states and the two modes apart in both dictionaries", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      for (const mode of ["summarize", "discard"]) {
-        expect(dict.chat.compactionRunning(mode), `${locale} ${mode}`).toBeTruthy();
-        expect(
-          dict.chat.compactionRunning(mode),
-          `${locale} ${mode} running reads as settled`,
-        ).not.toBe(dict.chat.compactionDone(mode));
-      }
-      // A discard never reads as compacting, in either state — the point of titling by mode.
-      expect(dict.chat.compactionRunning("discard"), locale).not.toBe(
-        dict.chat.compactionRunning("summarize"),
-      );
-      expect(dict.chat.compactionDone("discard"), locale).not.toBe(
-        dict.chat.compactionDone("summarize"),
-      );
-    }
+  it("titles a mode it does not know as a compaction", () => {
+    expect(row("future-mode", false)).toContain(S.chat.compactionDone("summarize"));
   });
 });

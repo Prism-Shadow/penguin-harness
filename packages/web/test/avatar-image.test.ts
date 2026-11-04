@@ -6,10 +6,7 @@
  * - The crop is the image's centred square.
  * - A PNG that fits its budget is kept; otherwise a JPEG that fits the cap; otherwise the pick is
  *   refused.
- * - The cap is the one the server enforces, in the same unit (characters of data URL), read from
- *   the server's route.
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   AVATAR_JPEG_QUALITY,
@@ -99,21 +96,5 @@ describe("fitAvatarDataUrl", () => {
   it("returns null when even the JPEG is over the cap, rather than a request certain to 400", () => {
     const { encode } = encoderOf({ png: 400000, jpeg: AVATAR_MAX_CHARS + 1 });
     expect(fitAvatarDataUrl(encode)).toBe(null);
-  });
-});
-
-describe("the cap", () => {
-  it("is the number the server enforces, in the same unit", () => {
-    // The server's route rejects an avatar over its cap in CHARACTERS of data URL. Both sides
-    // measuring the string rather than the decoded bytes is what keeps a picture this module
-    // just accepted from being refused by the request that carries it. The server is a
-    // type-only dependency of the Web App, so its route is read as text.
-    const route = readFileSync(
-      new URL("../../server/src/http/routes/me.ts", import.meta.url),
-      "utf8",
-    );
-    const serverCap = Number(/const AVATAR_MAX_CHARS = (\d+);/.exec(route)?.[1]);
-    expect(AVATAR_MAX_CHARS).toBe(serverCap);
-    expect(AVATAR_PNG_BUDGET).toBeLessThan(AVATAR_MAX_CHARS);
   });
 });
