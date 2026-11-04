@@ -5,9 +5,9 @@
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
- *   versioned, titled, described and licensed as the package names itself, described in both languages
- *   and drawn with the icon of its own package.json `penguin` block and icon.svg (which it
- *   publishes), and serves each one's own shipped README.md; a listed package not on this
+ *   versioned, titled, described and licensed as the package names itself, described in both
+ *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
+ *   it publishes), and serves each one's own shipped README.md; a listed package not on this
  *   machine, a name it does not list and a remote registry have no readme.
  * - A package on this machine describes itself in the listing over what its row says (its card
  *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
@@ -28,11 +28,15 @@
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
  *   name the deployment does not list and needs the name.
  */
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
+import type { LibraryContributions } from "@prismshadow/penguin-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginIndexEntry, PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
@@ -175,15 +179,6 @@ interface PackageManifest {
   description?: string;
   license?: string;
   files?: string[];
-  /** The product's own fields: what the package says of itself for its card. */
-  penguin?: {
-    title?: string;
-    title_zh?: string;
-    description_zh?: string;
-    short_description?: string;
-    short_description_zh?: string;
-    category?: string;
-  };
 }
 
 const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
@@ -194,6 +189,42 @@ for (const dir of readdirSync(PLUGINS_DIR)) {
     readFileSync(`${PLUGINS_DIR}${dir}/package.json`, "utf8"),
   ) as PackageManifest;
   packages.set(manifest.name, { dir, manifest });
+}
+
+const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", import.meta.url));
+const tables = new Map<string, Promise<NonNullable<LibraryContributions["card"]>>>();
+
+/**
+ * A sandbox backend's card as its build writes it: the generator its `build` runs, over the
+ * package's own tsconfig, into a temp table read by core's reader. Generated here rather than
+ * read from the package — the backends are no dependency of the server, so nothing before this
+ * suite built them — and from the source as it is, so a stale table cannot pass.
+ */
+function sandboxCard(dir: string): Promise<NonNullable<LibraryContributions["card"]>> {
+  let card = tables.get(dir);
+  if (card === undefined) {
+    card = (async () => {
+      const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-table-"));
+      try {
+        await promisify(execFile)(process.execPath, [
+          GENERATOR,
+          "--project",
+          path.join(PLUGINS_DIR, dir, "tsconfig.json"),
+          "--out",
+          path.join(out, "ifaces.json"),
+        ]);
+        const table = readPluginTable(out)!;
+        const warnings: string[] = [];
+        const read = libraryContributions(table, warnings).card ?? {};
+        expect(warnings, dir).toEqual([]);
+        return read;
+      } finally {
+        await rm(out, { recursive: true, force: true });
+      }
+    })();
+    tables.set(dir, card);
+  }
+  return card;
 }
 
 /**
@@ -290,23 +321,27 @@ describe("the builtin catalogue and the packages it lists", () => {
 
   /**
    * The row is the card on a server the package is not installed on, so it repeats what the
-   * package says of itself — its package.json's `penguin` block and its icon.svg — and the
-   * package publishes both, for the card of a server it is installed on.
+   * package says of itself — its card contribution, in the ifaces.json its build writes, and its
+   * icon.svg — and the package publishes both, for the card of a server it is installed on.
    */
-  it("describes each backend in both languages with the package's own penguin block and icon.svg", async () => {
-    for (const entry of await builtinPluginRegistry().index()) {
+  it("describes each backend in both languages with the package's own card and icon.svg", async () => {
+    const index = await builtinPluginRegistry().index();
+    await Promise.all(index.map((entry) => sandboxCard(packages.get(entry.name)!.dir)));
+    for (const entry of index) {
       const { dir, manifest } = packages.get(entry.name)!;
+      const card = await sandboxCard(dir);
       expect(entry, entry.name).toMatchObject({
-        title: manifest.penguin?.title,
-        titleZh: manifest.penguin?.title_zh,
+        title: card.title,
+        titleZh: card.titleZh,
         description: manifest.description,
-        descriptionZh: manifest.penguin?.description_zh,
-        shortDescription: manifest.penguin?.short_description,
-        shortDescriptionZh: manifest.penguin?.short_description_zh,
+        descriptionZh: card.descriptionZh,
+        shortDescription: card.shortDescription,
+        shortDescriptionZh: card.shortDescriptionZh,
         icon: readFileSync(`${PLUGINS_DIR}${dir}/icon.svg`, "utf8"),
-        categories: [manifest.penguin?.category],
+        categories: [card.category],
       });
       expect(manifest.files, entry.name).toContain("icon.svg");
+      expect(manifest.files, entry.name).toContain("ifaces.json");
     }
   });
 
