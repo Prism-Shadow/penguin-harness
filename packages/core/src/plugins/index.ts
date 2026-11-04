@@ -11,7 +11,7 @@
  * `agent_state/skills/`), a hook package (`hooks/*.mjs`, installed into
  * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`) and MCP servers
  * (`penguin.mcp_servers`, merged into the Agent's `tools.mcpServers`), plus workbenches
- * (`workbenches/<name>/`, copied into the Agent's workbenches folder). The files are the
+ * (`workbenches/<name>/`, copied into the Agent's `agent_state/workbenches/`). The files are the
  * runtime source of truth — read and parsed on every call, no caching (files are small, calls
  * are infrequent) — so editing a file takes effect immediately. The shipped plugins are
  * committed content reached through declared dependencies, so one that fails to load — or
