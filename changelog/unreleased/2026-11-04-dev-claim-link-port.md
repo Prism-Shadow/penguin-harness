@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `server`, `tooling`
+- **PR:** [#1454](https://github.com/Prism-Shadow/penguin-harness/pull/1454)
 
 [中文版](2026-11-04-dev-claim-link-port.zh.md)
 
