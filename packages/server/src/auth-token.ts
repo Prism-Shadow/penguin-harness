@@ -6,7 +6,7 @@
  */
 import path from "node:path";
 import fs from "node:fs";
-import { openExistingDatabase } from "./db/database.js";
+import { openExistingDatabase } from "@prismshadow/penguin-db";
 import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
 import type { SessionViaValue } from "@penguinharness/plugin-settings/server";
 import { UsersRepo } from "@penguinharness/plugin-settings/server";

@@ -1,0 +1,28 @@
+{
+  "name": "@prismshadow/penguin-db",
+  "version": "0.2.16",
+  "type": "module",
+  "description": "PenguinHarness's SQLite database core: the connection, the frozen schema, and the migrations. Server-only (node:sqlite); the repos that give the tables their shapes stay with the server.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3"
+  }
+}

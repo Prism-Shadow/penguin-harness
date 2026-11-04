@@ -90,7 +90,7 @@ import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { UnsatisfiedPlugin } from "../api/types.js";
-import { migrate } from "../db/migrations.js";
+import { migrate } from "@prismshadow/penguin-db";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "@penguinharness/plugin-settings/server";
 

@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { hashPassword } from "./auth/password.js";
 import { ADMIN_USER_ID, generateInitialAdminPassword } from "./auth/service.js";
-import { openDatabase } from "./db/database.js";
+import { openDatabase } from "@prismshadow/penguin-db";
 import { UsersRepo } from "@penguinharness/plugin-settings/server";
 import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
 import { clearInitialAdminPassword } from "./initial-password.js";

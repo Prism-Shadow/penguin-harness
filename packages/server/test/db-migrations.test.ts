@@ -23,8 +23,8 @@ import {
   migrate,
   rollbackTo,
   schemaVersion,
-} from "../src/db/migrations.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
+} from "@prismshadow/penguin-db";
+import { SCHEMA_SQL } from "@prismshadow/penguin-db";
 
 const sqlite = process.getBuiltinModule("node:sqlite");
 

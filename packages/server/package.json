@@ -104,6 +104,7 @@
     "@penguinharness/plugin-workbenches": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-db": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "commander": "^13.0.0",
     "dotenv": "^17.0.0",
