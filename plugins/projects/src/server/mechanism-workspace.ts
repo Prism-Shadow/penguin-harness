@@ -7,7 +7,7 @@ import type {
   WorkspaceFileReadOptions,
   WorkspaceFileStat,
 } from "@penguinharness/plugin-projects/server";
-import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
+import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "@prismshadow/penguin-server/api";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
 @Interface()

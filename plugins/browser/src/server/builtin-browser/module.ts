@@ -1,3 +1,34 @@
+/**
+ * The agent browser's place in the platform tree: one group, two nodes.
+ *
+ * - `ProcessShellPort` answers which port reaches the desktop shell — Electron's
+ *   `process.parentPort`, absent under a plain `penguin server|web` — and is the node a test
+ *   replaces with a fake shell.
+ * - `BuiltinBrowserRoutes` builds the generation's BuiltinBrowser — the built-in browser over
+ *   that port, and the users' own Chromes through the extension hub — mounts the routes, and
+ *   provides the gate the runtime's WebSocket upgrade (extension-ws.ts) hands sockets to. The
+ *   browser (and with it the port listener and every extension socket) is disposed with the
+ *   App: a hot swap hands the port to the next generation's link, and the extensions reconnect
+ *   to the next generation's hub (close 1012).
+ *
+ * The built-in browser's UI events go to every admin who has the event stream open (it is the
+ * admins' tool, see routes.ts); a user's Chrome's go to that user. A channel nobody listens on
+ * is not opened for them.
+ */
+import type { DatabaseSync } from "node:sqlite";
+import { buildInfo } from "@prismshadow/penguin-core";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { Hono } from "hono";
+import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import { BrowserExtensionsRepo } from "../repos/browser-extensions.js";
+import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-server/internal";
+import type { Channels, Clock, Db, Desktop, Log, Paths } from "@prismshadow/penguin-server/internal";
+import { userChannelKey } from "@prismshadow/penguin-server/internal";
+import { ensureInstallId } from "@prismshadow/penguin-server/internal";
+
+||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
 import type { Users } from "@prismshadow/penguin-server/internal";
 
 import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-server/internal";

@@ -16,7 +16,7 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserUnavailableReason,
 } from "@prismshadow/penguin-server/api";
-import type { BrowserExtensionRow, BrowserExtensionStore } from "@prismshadow/penguin-server/internal";
+import type { BrowserExtensionRow, BrowserExtensionStore } from "../repos/browser-extensions.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BackendRuntimeDeps } from "./backend-runtime.js";
 import { CLOSE, ExtensionLink } from "./extension-link.js";

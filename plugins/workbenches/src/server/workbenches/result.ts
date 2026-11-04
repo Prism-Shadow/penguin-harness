@@ -1,5 +1,6 @@
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { WorkbenchResult } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchResult } from "../mechanism.js";
+
 
 
 export function workbenchResult(status: string, messages: readonly AmspRecord[]): WorkbenchResult {

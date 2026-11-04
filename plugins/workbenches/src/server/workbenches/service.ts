@@ -1,12 +1,20 @@
-import { isSafeRelPath } from "@prismshadow/penguin-server/internal";
+import { workbenchResult } from "./result.js";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchInfo, WorkbenchInput, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchVersion, Workbenches } from "../mechanism.js";
 
-import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
-import type { ServerEvent } from "@prismshadow/penguin-server/api";
-import type { Channels, Clock, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
-import { userChannelKey } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-server/internal";
-import type { Traces } from "@prismshadow/penguin-server/internal";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
+import { migrateWorkbenches } from "./migrate.js";
+import { compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 
+||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
+  WorkbenchInfo,
+  WorkbenchInput,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchTab,
+  WorkbenchVersion,
+  Workbenches,
 import { checkIfaces, ifaceQuestions } from "@prismshadow/penguin-server/internal";
 import { loadTypeScript } from "@prismshadow/penguin-server/internal";
 

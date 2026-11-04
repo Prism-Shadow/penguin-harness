@@ -1,5 +1,6 @@
 import { agentDir } from "@prismshadow/penguin-core";
-import type { WorkbenchVersion } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchVersion } from "../mechanism.js";
+
 
 
 export const STATE_FILE = "state.json";

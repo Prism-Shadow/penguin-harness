@@ -1,4 +1,16 @@
-import type { WorkbenchVersion } from "@prismshadow/penguin-server/internal";
+/**
+ * One-time Workflow → Workbench conversion. Originals stay in .workbench-migration/backup;
+ * only a fully prepared copy is published. The ready marker makes interrupted renames resumable.
+ * Compatibility owner: the Workbench maintainers. Keep through 0.2.x; remove when the minimum
+ * supported data version is 0.3 and upgrades from Workflow builds no longer need conversion.
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { readFolder } from "./store.js";
+import type { WorkbenchVersion } from "../mechanism.js";
+
+
+||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
 
 
 const pairs = [

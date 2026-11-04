@@ -1,8 +1,11 @@
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { uiFileResponse } from "@prismshadow/penguin-server/internal";
-import { requireValidId } from "@prismshadow/penguin-server/internal";
-import type { Access } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchRequest, WorkbenchResponse, Workbenches } from "../mechanism.js";
+
+import { WorkbenchNotFound } from "./service.js";
+
+||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
+  WorkbenchRequest,
+  WorkbenchResponse,
+  Workbenches,
 
 } from "@prismshadow/penguin-server/internal";
 

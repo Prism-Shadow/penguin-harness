@@ -2,7 +2,7 @@
  * The plugin mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { InstalledPackage } from "../plugin/install.js";
+import type { InstalledPackage } from "./plugin/install.js";
 
 /**
  * PluginPackages: how plugin packages reach and leave the data root's npm prefix, as

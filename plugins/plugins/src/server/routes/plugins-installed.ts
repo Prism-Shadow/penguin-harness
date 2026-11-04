@@ -1,12 +1,30 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  effectivePluginTable,
+  isLibraryPackage,
+  PLUGIN_MACHINE_ID,
+  type PluginRequirement,
+  type PluginTables,
+} from "@prismshadow/penguin-core";
+import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "@prismshadow/penguin-server/internal";
+import {
+  discoverBuiltinPlugins,
+  PACKAGE_NAME,
+  loadPlugins,
+  PLUGINS_FILE,
+  pluginBases,
+  readPluginClosure,
+  readPluginDeclaration,
+} from "../plugin/loader.js";
+import type { PluginPackages } from "../mechanism.js";
+import {
+  installedPackageDir,
+  PluginInstallError,
+  pluginsPrefix,
+  readInstalledVersion,
+  type InstalledPackage,
 
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-
+||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
 } from "../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../plugin/source.js";
 import { parsePluginArchive } from "../services/plugin-archive.js";
