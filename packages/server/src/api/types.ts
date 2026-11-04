@@ -5186,6 +5186,26 @@ export interface SkillArchiveInstallRequest {
   overwrite?: boolean;
 }
 
+/**
+ * POST /api/projects/:p/agents/:a/workbenches/archive: import one workbench's source from an
+ * uploaded zip. Layout: package.json at the zip root (its `name` is then the id), or under exactly
+ * one top-level directory (the directory name is then the id); source only — `state.json`, dot
+ * entries and `node_modules/` are refused. An id whose folder has a package.json is 409
+ * `workbench_exists` (`details.workbenchId` names it) unless `overwrite`. GET
+ * …/workbenches/:id/archive is the matching export, which round-trips through this POST.
+ */
+export interface WorkbenchArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace the source of a workbench with that id (its state.json stays) instead of answering 409. */
+  overwrite?: boolean;
+}
+
+/** 201 of the workbench archive import: the workbench as its load left it (`error` set when the files do not load). */
+export interface WorkbenchArchiveInstallResponse {
+  workbench: WorkbenchInfo;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------

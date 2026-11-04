@@ -2,10 +2,12 @@
  * Agent-scoped workbench routes, mounted at /api/projects/:projectId/agents/:agentId/workbenches:
  *
  *   GET    /                       the Agent's workbenches (loads any that changed on disk)
+ *   POST   /archive {dataBase64, overwrite?}  import one workbench's source from a zip, then load it
+ *   GET    /:id/archive            the workbench's source as a zip, which imports back unchanged
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
- *   GET    /:id/history            recorded versions, newest first
+ *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
- *   DELETE /:id                    remove the folder and its recorded versions
+ *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
  *   GET    /:id/sdk/ui/*           the page runtime compiled pages import (see ui-runtime.ts)
@@ -19,21 +21,36 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { zipSync } from "fflate";
 import { Hono } from "hono";
+import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { WorkbenchArchiveInstallResponse } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
+import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
-import { requireValidId } from "../http/validate.js";
+import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access } from "../mechanisms/projects.js";
+import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import type {
   WorkbenchRequest,
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
+import {
+  collectWorkbenchArchive,
+  folderNameFor,
+  parseWorkbenchArchive,
+  workbenchArchiveName,
+  writeWorkbenchSource,
+} from "./archive.js";
+import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchNotFound } from "./service.js";
+import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -82,6 +99,12 @@ const isJson = (contentType: string | undefined): boolean => {
     type?.type === "application" && (type.subtype === "json" || type.subtype.endsWith("+json"))
   );
 };
+
+const isFile = (file: string): Promise<boolean> =>
+  fs.stat(file).then(
+    (stat) => stat.isFile(),
+    () => false,
+  );
 
 function parseJson(bytes: Uint8Array): unknown {
   try {
@@ -212,6 +235,9 @@ function streamOf(chunks: AsyncIterable<Uint8Array | string>): ReadableStream<Ui
 export interface WorkbenchRouteDeps {
   access: Access;
   workbenches: Workbenches;
+  /** The archive routes write and read the folders themselves, under this data root. */
+  root: string;
+  agentConfig: Pick<AgentConfig, "requireExists">;
 }
 
 export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
@@ -234,6 +260,82 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
     return c.json({ workbenches: await deps.workbenches.list(projectId, agentId) });
+  });
+
+  /**
+   * The folders these routes touch, once an older layout has been converted: a write that came
+   * first would take the place the conversion publishes into, and stop it.
+   */
+  const folders = async (projectId: string, agentId: string): Promise<string> => {
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
+    return workbenchesDir(deps.root, projectId, agentId);
+  };
+
+  /**
+   * Imports into one Agent run one at a time: which folder an id lands in, whether it is taken
+   * and what is written there are decided together, or two uploads of one id would both find it
+   * free and write into each other.
+   */
+  const importing = new Map<string, Promise<unknown>>();
+  const oneAtATime = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+    const next = (importing.get(key) ?? Promise.resolve()).catch(() => undefined).then(run);
+    importing.set(key, next);
+    void next
+      .finally(() => {
+        if (importing.get(key) === next) importing.delete(key);
+      })
+      .catch(() => undefined);
+    return next;
+  };
+
+  // Import one workbench from an uploaded zip (member-level, like the Skills archive route). Its
+  // source is written and loaded at once, so the answer carries what the load came to.
+  app.post("/archive", async (c) => {
+    const { projectId, agentId } = scope(c);
+    await deps.agentConfig.requireExists(projectId, agentId);
+    const body = await readJson(c);
+    const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
+    const overwrite = body.overwrite === true;
+    const archive = Buffer.from(dataBase64, "base64");
+    if (archive.byteLength === 0) throw badRequest("The zip archive is empty.");
+    if (archive.byteLength > MAX_ARCHIVE_BYTES) {
+      throw badRequest("The zip archive exceeds the 14MB limit.");
+    }
+    const parsed = parseWorkbenchArchive(archive);
+    const workbench = await oneAtATime(`${projectId}/${agentId}`, async () => {
+      const base = await folders(projectId, agentId);
+      // An id that differs from a folder's only in letter case is that folder.
+      const id = await folderNameFor(base, parsed.id);
+      const dir = path.join(base, id);
+      // Taken means what the listing means by a workbench: the folder has a package.json.
+      if (!overwrite && (await isFile(path.join(dir, "package.json")))) {
+        throw new HttpError(409, "workbench_exists", `Workbench already exists: ${id}`, undefined, {
+          workbenchId: id,
+        });
+      }
+      await writeWorkbenchSource(dir, parsed.files);
+      return deps.workbenches.reload(projectId, agentId, id).catch(notFound);
+    });
+    return c.json({ workbench } satisfies WorkbenchArchiveInstallResponse, 201);
+  });
+
+  // Export one workbench's source: a direct binary attachment (the Skill export's shape), which
+  // the POST above takes back unchanged.
+  app.get("/:id/archive", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const folder = isWorkbenchId(id)
+      ? await readFolder(path.join(await folders(projectId, agentId), id), id)
+      : null;
+    if (folder === null) throw new HttpError(404, "not_found", `No such workbench: ${id}`);
+    const zip = zipSync(await collectWorkbenchArchive(folder));
+    return new Response(new Uint8Array(zip), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(workbenchArchiveName(folder))}`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
 
   app.post("/:id/reload", async (c) => {
@@ -374,8 +476,15 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 export class WorkbenchRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly paths!: Paths;
+  @Use() private readonly agentConfig!: AgentConfig;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = workbenchRoutes({ access: this.access, workbenches: this.workbenches });
+    this.routes = workbenchRoutes({
+      access: this.access,
+      workbenches: this.workbenches,
+      root: this.paths.root,
+      agentConfig: this.agentConfig,
+    });
   }
 }

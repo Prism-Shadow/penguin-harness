@@ -2687,6 +2687,15 @@ router
       workbenches: [],
     }),
   )
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
+    readOnly("import a workbench archive"),
+  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.workbenchId}.zip"`,
+    }),
+  )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>
     notFound("Workbench"),
   )
