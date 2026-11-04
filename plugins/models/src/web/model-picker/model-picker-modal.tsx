@@ -57,9 +57,9 @@ import {
   SearchInput,
   navRowClass,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { hasConfiguredKey, sameModelRef, loadModelGroupOrder } from "@penguinharness/plugin-models/web";
-import { useProject } from "../../state/project";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import {
   entryRow,
   groupShortcutIndex,

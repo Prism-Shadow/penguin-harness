@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { FormPicker, ICONS, MenuSelect, MenuSelectBody } from "@prismshadow/penguin-ui";
 import type { MenuSelectOption } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 
 export function ThinkingLevelSelect({

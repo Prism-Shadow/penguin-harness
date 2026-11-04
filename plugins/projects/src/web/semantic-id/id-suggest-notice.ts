@@ -14,7 +14,7 @@
  * code would be the worse failure.
  */
 import type { SemanticIdSuggestResponse } from "@prismshadow/penguin-server/api";
-import type { Strings } from "../../lib/strings";
+import type { Strings } from "@prismshadow/penguin-web/internal";
 
 /** The field's own dictionary slice — `S.semanticId.idSuggest`. */
 export type IdSuggestStrings = Strings["semanticId"]["idSuggest"];
