@@ -89,7 +89,7 @@ import type {
   ModelsUpdateRequest,
 } from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-db";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachineAnswers } from "../src/machines/answer-cache.js";
 import { MachinesService } from "../src/machines/service.js";

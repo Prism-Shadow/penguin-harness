@@ -1,46 +1,7 @@
-/**
- * Goal mode on the server: SessionManager.startGoal and the goal events it derives.
- *
- * On a fake Session (the goal plugin's start answered in its place, no scripts, no LLM):
- * - A goal run maps its round inputs and the goal hook's answers to goal_round and
- *   goal_finished events.
- * - The recorded objective leaves the attached images out, so the display copy stays path-free.
- * - A background completion notice inside a round is not a round boundary.
- * - A second goal while one runs is a 409.
- * - An Agent without the goal hook package is a 409 goal_plugin_not_installed before its
- *   Session is loaded; with the package on disk but no goal start hook in the Session, the
- *   same 409 comes after the load.
- * - A throw after the terminal event publishes no contradicting outcome; a stream that ends
- *   without the terminal event closes the goal as aborted.
- *
- * On a real core Session running the installed scripts against a loopback model, with a
- * hand-written every-prompt package beside the goal package (both for the package the library
- * ships and for one installed before user_prompt ran on every Prompt):
- * - A goal start runs the goal's start by name, and the other package's context rides round 1
- *   without counting as a round.
- * - An ordinary Task starts no goal; only the other package's hook runs for it.
- */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { wire } from "@prismshadow/penguin-core/kernel";
-import type { DatabaseSync } from "node:sqlite";
-import {
-  assistantText,
-  buildSkillsMessage,
-  createAgent,
-  hookEvent,
-  hooksDir,
-  imageUrlMessage,
-  installPlugin,
-  libraryPlugin,
-  saveProjectConfig,
-  sessionScratchpadDir,
-  tokenUsage,
-  userText,
-} from "@prismshadow/penguin-core";
-import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
+import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
+import { openDatabase } from "@prismshadow/penguin-db";
+
+||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";

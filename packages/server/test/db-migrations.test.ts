@@ -1,26 +1,7 @@
-/**
- * The migration ledger: which migrations run, in what order, what is recorded, and what an
- * older build, another PR line, a hot push and an operator's rollback each see. What every
- * single migration changes is pinned in db-migration-steps.test.ts.
- *
- * Three properties carry everything else: a database with no ledger — a 0.2.4 one, a root
- * stamped by any line's numbering, a new one — reaches exactly the shape a fresh one is
- * created with; every migration is re-runnable, which is what makes that adoption safe; and
- * a migration commits with its ledger row, so an interrupted run is never half-applied.
- */
-import { describe, expect, it } from "vitest";
-import type { DatabaseSync } from "node:sqlite";
-import {
-  IrreversibleMigrationError,
-  MIGRATIONS,
-  type Migration,
-  UnknownMigrationError,
-  appliedMigrations,
-  migrate,
-  rollbackTo,
-} from "../src/db/migrations/index.js";
-import * as runner from "../src/db/migrations/runner.js";
-import {
+  schemaVersion,
+} from "@prismshadow/penguin-db";
+import { SCHEMA_SQL } from "@prismshadow/penguin-db";
+
   columns,
   contents,
   hasTable,
@@ -31,7 +12,7 @@ import {
   record,
   shape,
   sqlite,
-} from "./db-migrations-fixtures.js";
+||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
 
 const userVersion = (db: DatabaseSync): number =>
   (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

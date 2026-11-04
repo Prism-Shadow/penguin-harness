@@ -74,7 +74,7 @@ import type {
   TextPayload,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-db";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";

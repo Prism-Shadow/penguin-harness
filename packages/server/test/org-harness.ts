@@ -8,7 +8,7 @@ import { saveProjectConfig } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-db";
 import { MembersRepo } from "../src/db/repos/members.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";

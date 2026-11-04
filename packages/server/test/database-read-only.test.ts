@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { openDatabase, openDatabaseReadOnly } from "../src/db/database.js";
+import { openDatabase, openDatabaseReadOnly } from "@prismshadow/penguin-db";
 
 describe("openDatabaseReadOnly", () => {
   it("answers reads and refuses every write", () => {

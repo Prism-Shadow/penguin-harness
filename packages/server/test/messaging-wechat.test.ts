@@ -76,7 +76,7 @@ import {
   wechatConfigOf,
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-db";
 import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import { MessagingConversationsRepo } from "../src/db/repos/messaging-conversations.js";
 import { forwardingTo } from "./fixtures/forwarding.js";

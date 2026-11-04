@@ -1,26 +1,7 @@
-/**
- * Organization runtime semantics with doubles and a controlled clock — no real LLM, no
- * core Session: creation writes the files and opens the CEO's desk with an init run; a hire
- * opens the newcomer's desk and the reconcile pass opens the desks nothing else did (a
- * hand-added employee, a session deleted from under the ledger, which is listed nowhere until
- * then); an employee whose Agent is gone is marked, offers no desk and stays until it leaves; a
- * calendar event registered after its time is not backfilled and fires on its next slot to
- * the employee's desk (queued when busy, held when the organization or the employee is
- * paused, held silently when the master switch is off); ticket changes are noticed once;
- * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
- * resume (a zero budget being over before anything is spent); a ticket session the runner
- * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
- * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
- * employee whose company plugins fell behind the library back up to it.
- */
-import { existsSync } from "node:fs";
-import fs from "node:fs/promises";
-import { wire } from "@prismshadow/penguin-core/kernel";
-import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
-import type { AmspRecord } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
+import type { OmniMessage } from "@prismshadow/penguin-core";
+import { openDatabase } from "@prismshadow/penguin-db";
+
+||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
 import { MembersRepo } from "../src/db/repos/members.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";

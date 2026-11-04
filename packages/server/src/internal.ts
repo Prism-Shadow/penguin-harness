@@ -112,7 +112,6 @@ export type { FileReveal, WorkspaceFiles } from "@penguinharness/plugin-projects
 export type { BrowserExtensionsRepo } from "@penguinharness/plugin-browser/server";
 export type { BrowserExtensionRow, BrowserExtensionStore } from "@penguinharness/plugin-browser/server";
 export * from "../../../plugins/settings/src/server/repos/server-settings.js";
-export * from "./db/database.js";
 export * from "./db/repos/machines.js";
 export * from "./mechanisms/agent-api.js";
 export * from "./lock.js";

@@ -1,15 +1,8 @@
-/**
- * A Session's sandbox policy is its own: snapshotted at creation, changed only on that Session,
- * and bounded for non-admins by the server's settings. Editing the settings afterwards must
- * not reach a Session that already exists.
- */
-import { describe, expect, it } from "vitest";
-import { wire } from "@prismshadow/penguin-core/kernel";
-import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { openDatabase } from "../src/db/database.js";
-import { migrate } from "../src/db/migrations/index.js";
-import { stampThrough } from "./db-migrations-fixtures.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
+import { openDatabase } from "@prismshadow/penguin-db";
+import { migrate } from "@prismshadow/penguin-db";
+import { SCHEMA_SQL } from "@prismshadow/penguin-db";
+
+||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SessionSandbox } from "../src/api/types.js";
