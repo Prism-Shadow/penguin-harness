@@ -58,6 +58,16 @@ import {
 } from "../src/model-catalog/index.js";
 
 /**
+ * The band a billed rate lies in, USD per million tokens. Wide on purpose — no row's value is
+ * restated — yet narrow enough that a per-token figure left unconverted (x1e-6) or a slipped
+ * digit (x1000) leaves it.
+ */
+const MIN_RATE_USD_PER_MTOK = 1e-4;
+const MAX_RATE_USD_PER_MTOK = 1000;
+/** The smallest context window a catalog row may carry, in tokens. */
+const MIN_CONTEXT_WINDOW = 32_768;
+
+/**
  * What a stored row is used with, the way a Session builds it: the row's own values, then its
  * group's table in `table` (a new Project's, presetProviderTable, unless a test says otherwise).
  */
@@ -282,7 +292,7 @@ describe("model-catalog", () => {
     });
   });
 
-  it("every entry is priced or deliberately unpriced; context_window is a positive integer", () => {
+  it("every entry is priced or deliberately unpriced, its buckets in order and plausible, and its context window at least 32K tokens", () => {
     // An absent `pricing` is a supported state — the model card leaves the row unbadged and the
     // cost center reports the usage as uncosted, which is what "nobody has read this vendor's
     // price" should look like. This list is what keeps it deliberate: a row belongs here only
@@ -316,14 +326,26 @@ describe("model-catalog", () => {
           0, 0, 0,
         ]);
       } else {
-        expect(m.pricing, m.modelId).toBeDefined();
-        expect(m.pricing!.unit).toBe("usd_per_mtok");
-        expect(m.pricing!.cache_read).toBeGreaterThan(0);
-        expect(m.pricing!.cache_write).toBeGreaterThan(0);
-        expect(m.pricing!.output).toBeGreaterThan(0);
+        const ref = `${m.provider}/${m.modelId}`;
+        expect(m.pricing, ref).toBeDefined();
+        expect(m.pricing!.unit, ref).toBe("usd_per_mtok");
+        const { cache_read, cache_write, output } = m.pricing!;
+        // A cache hit never bills above a cache write, nor a write above the output: an
+        // argument-order slip in a row's buckets (a seller's list is rarely in the catalog's
+        // cache-read / cache-write / output order) fails here.
+        expect(cache_read, ref).toBeLessThanOrEqual(cache_write);
+        expect(cache_write, ref).toBeLessThanOrEqual(output);
+        // Every billed bucket is a plausible USD-per-million-token rate: a per-token figure left
+        // unconverted, or a slipped digit, falls outside the band.
+        for (const rate of [cache_read, cache_write, output]) {
+          expect(rate, ref).toBeGreaterThanOrEqual(MIN_RATE_USD_PER_MTOK);
+          expect(rate, ref).toBeLessThanOrEqual(MAX_RATE_USD_PER_MTOK);
+        }
       }
-      expect(Number.isInteger(m.contextWindow)).toBe(true);
-      expect(m.contextWindow!).toBeGreaterThan(0);
+      // A context window is a whole number of tokens no model of the catalog's generation is
+      // below: a dropped digit would compact a Session on every turn.
+      expect(Number.isInteger(m.contextWindow), m.modelId).toBe(true);
+      expect(m.contextWindow!, m.modelId).toBeGreaterThanOrEqual(MIN_CONTEXT_WINDOW);
     }
   });
 
