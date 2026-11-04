@@ -1,14 +1,7 @@
-/**
- * Mints an API session by inserting a row into the root's `web.db` — no running server needed.
- * Authorized by being able to read and write that root, which already holds every credential
- * the token could reach. On a multi-user box that means the OS account running the server;
- * everyone else signs in with `penguin auth login --server <url>`.
- */
-import path from "node:path";
-import fs from "node:fs";
-import { openExistingDatabase } from "@prismshadow/penguin-db";
+import { openExistingDatabase } from "@penguinharness/plugin-db/server";
 
 ||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
+||||||| parent of e167a8c271 (db core becomes plugins/db (@penguinharness/plugin-db, parked platform group like company): packages/db publishing shape is gone, server/machines/tests read the face)
 import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
 import type { SessionViaValue } from "@penguinharness/plugin-settings/server";
 import { UsersRepo } from "@penguinharness/plugin-settings/server";

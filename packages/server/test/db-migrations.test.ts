@@ -1,6 +1,6 @@
   schemaVersion,
-} from "@prismshadow/penguin-db";
-import { SCHEMA_SQL } from "@prismshadow/penguin-db";
+} from "@penguinharness/plugin-db/server";
+import { SCHEMA_SQL } from "@penguinharness/plugin-db/server";
 
   columns,
   contents,

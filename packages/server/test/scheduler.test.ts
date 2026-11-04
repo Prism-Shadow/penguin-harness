@@ -27,7 +27,7 @@ import {
   saveProjectConfig,
   scheduleDir,
 } from "@prismshadow/penguin-core";
-import { openDatabase } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
 import { ProjectsRepo } from "../src/db/repos/projects.js";
 import { SchedulesRepo } from "../src/db/repos/schedules.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";

@@ -10,7 +10,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
-import { openDatabase } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { AuthSessionsRepo } from "../src/db/repos/auth-sessions.js";
 import { initialAdminPasswordPath } from "../src/initial-password.js";

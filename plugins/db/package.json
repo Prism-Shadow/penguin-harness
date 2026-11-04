@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/plugin-db",
+  "version": "0.2.16",
+  "private": true,
+  "type": "module",
+  "description": "The database core as one parked platform group: the connection, the frozen schema and the migrations. Server-only (node:sqlite); the repos that give the tables their shapes stay with the server.",
+  "exports": {
+    "./server": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  },
+  "penguin": {
+    "parked": true
+  }
+}
