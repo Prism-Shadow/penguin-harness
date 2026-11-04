@@ -7,7 +7,7 @@
  */
 import { isLongPressPointer, type AnchorRect } from "@prismshadow/penguin-ui";
 
-import type { ExcerptReference } from "./workspace-tree";
+import type { ExcerptReference } from "@prismshadow/penguin-web/internal";
 
 /** What the rules need to know about a gesture and the selection it found. */
 export interface SelectionMenuRequest {
