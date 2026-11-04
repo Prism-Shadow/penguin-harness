@@ -70,6 +70,10 @@
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
+    },
+    "./db/repos/organizations": {
+      "types": "./dist/db/repos/organizations.d.ts",
+      "import": "./dist/db/repos/organizations.js"
     }
   },
   "main": "./dist/index.js",
