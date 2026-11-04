@@ -187,7 +187,7 @@ import {
   UsageQueries,
   UsageRecording,
   UsageStore,
-} from "./mechanisms/observability.js";
+} from "@penguinharness/plugin-usage/server";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 

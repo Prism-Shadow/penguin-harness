@@ -69,6 +69,7 @@ import type { PricingLookup, TieredRates } from "./usage-service.js";
 import type { ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import {
   cloneScanState,
+  decodeCursor,
   deserializePrefix,
   encodeCursor,
   finalizeScan,
@@ -76,13 +77,13 @@ import {
   mergedIntervalMs,
   scanMessages,
   serializePrefix,
-} from "@prismshadow/penguin-server/internal";
+} from "./message-window.js";
 import type {
   ChildAggregate,
   MessageCursor,
   ScanState,
   WindowPriorStats,
-} from "@prismshadow/penguin-server/internal";
+} from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "@prismshadow/penguin-server/internal";
 import { listCategory, listingMarksOf, readRecordedSource } from "@prismshadow/penguin-server/internal";
