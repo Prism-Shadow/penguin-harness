@@ -22,7 +22,7 @@
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { SiteCodeCard } from "../src/components/site/site-code";
+import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
 import { SiteNavLinks } from "../src/components/site/site-header";
 import type { SiteLinkProps } from "../src/components/site/site-header";
@@ -230,6 +230,9 @@ describe("the site bar", () => {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
     amsp: "AMSP",
     docs: "Docs",
     gallery: "Gallery",
@@ -238,23 +241,37 @@ describe("the site bar", () => {
     closeMenu: "Close menu",
   };
 
-  it("lists every page in order and marks /download/ as the download page", () => {
-    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt("/download/") });
+  const anchorsAt = (pathname: string) => {
+    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) });
     const html = renderStatic(h(SiteNavLinks, { links }));
-    const anchors = [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+    return [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
       text,
       current: attrs!.includes('aria-current="page"'),
     }));
-    expect(anchors.map((anchor) => anchor.text)).toEqual([
+  };
+  const currentAt = (pathname: string) =>
+    anchorsAt(pathname)
+      .filter((anchor) => anchor.current)
+      .map((anchor) => anchor.text);
+
+  it("lists every page in order and marks /download/ as the download page", () => {
+    expect(anchorsAt("/download/").map((anchor) => anchor.text)).toEqual([
       "Home",
       "Blog",
       "Download",
+      "Plugins",
+      "Benchmarks",
+      "Leaderboards",
       "AMSP",
       "Docs",
       "Gallery",
     ]);
-    expect(anchors.filter((anchor) => anchor.current).map((anchor) => anchor.text)).toEqual([
-      "Download",
-    ]);
+    expect(currentAt("/download/")).toEqual(["Download"]);
+  });
+
+  it("marks a list page as current on its detail pages, and nothing on a lookalike path", () => {
+    expect(currentAt("/plugins/goal/")).toEqual(["Plugins"]);
+    expect(currentAt("/leaderboards")).toEqual(["Leaderboards"]);
+    expect(currentAt("/benchmarks-old")).toEqual([]);
   });
 });

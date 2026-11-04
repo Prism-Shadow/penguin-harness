@@ -60,9 +60,7 @@ function CatalogRow({
         <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
           {count}
         </span>
-        <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
-          {label}
-        </span>
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</span>
       </dt>
       {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
       <dd className="mt-2.5 sm:mt-0">
@@ -107,9 +105,7 @@ export function Hero() {
             alt=""
             className="h-12 w-12 sm:h-16 sm:w-16"
           />
-          <span className="text-[1.7rem] font-semibold tracking-tight sm:text-4xl">
-            {S.siteName}
-          </span>
+          <span className="text-2xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
         </h1>
 
         <p
@@ -148,7 +144,7 @@ export function Hero() {
           >
             <DownloadIcon className="h-4 w-4" />
             <span>{S.hero.downloadCta}</span>
-            <span className="border-l border-white/25 pl-2 text-xs font-medium text-white/70 tabular-nums dark:border-gray-900/20 dark:text-gray-900/60">
+            <span className="text-xs font-medium text-gray-400 tabular-nums dark:text-gray-600">
               {RELEASE_VERSION}
             </span>
           </Link>
@@ -170,7 +166,7 @@ export function Hero() {
               <dt className="mx-auto mt-1 min-h-8 max-w-64 text-xs leading-4 text-gray-500 sm:min-h-0 sm:leading-5 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-[22px] dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-xl dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>

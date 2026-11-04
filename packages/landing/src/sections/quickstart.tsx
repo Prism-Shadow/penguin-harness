@@ -1,4 +1,7 @@
-/** Two-step quick start: choose installation first, then a launch mode for CLI installs. */
+/**
+ * Two-step quick start: choose installation first, then a launch mode for CLI installs. Each step
+ * is named in its heading, the step's ordinal in the muted ink before the title.
+ */
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import type { ReactNode } from "react";
@@ -37,7 +40,7 @@ const LAUNCH_MODES: Array<{ id: LaunchMode; icon: typeof MonitorIcon }> = [
 function NumberedItem({ index, children }: { index: number; children: ReactNode }) {
   return (
     <li className="flex gap-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-semibold text-white dark:bg-gray-100 dark:text-gray-900">
+      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white dark:bg-gray-100 dark:text-gray-900">
         {index}
       </span>
       <span>{children}</span>
@@ -47,12 +50,10 @@ function NumberedItem({ index, children }: { index: number; children: ReactNode 
 
 function StepHeading({ step, title }: { step: string; title: string }) {
   return (
-    <div className="mb-4 flex items-center gap-3">
-      <span className="text-xs font-semibold tracking-wide text-brand-600 uppercase dark:text-brand-300">
-        {step}
-      </span>
-      <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-    </div>
+    <h3 className="mb-4 text-lg font-semibold tracking-tight">
+      <span className="mr-2 text-gray-500 dark:text-gray-400">{step}</span>
+      {title}
+    </h3>
   );
 }
 
@@ -93,7 +94,7 @@ export function Quickstart() {
         : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
     }`;
   const osBtn = (active: boolean) =>
-    `rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+    `rounded px-3 py-1.5 text-xs font-medium transition-colors ${
       active
         ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
         : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
@@ -133,10 +134,7 @@ export function Quickstart() {
           >
             <div className="grid gap-8 p-6 sm:p-8 md:grid-cols-[1fr_1.15fr] md:items-center">
               <div>
-                <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
-                  <DownloadIcon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-5 text-xl font-semibold tracking-tight">
+                <h3 className="text-xl font-semibold tracking-tight">
                   {S.quickstart.desktop.title}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
@@ -221,7 +219,7 @@ export function Quickstart() {
                       <DownloadIcon className="h-4 w-4 shrink-0" />
                       <span className="min-w-0">
                         <strong className="block text-xs font-semibold">{variant}</strong>
-                        <span className="block truncate font-mono text-[10px] text-gray-500 dark:text-gray-400">
+                        <span className="block truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                           {file}
                         </span>
                       </span>
