@@ -60,13 +60,17 @@ export interface PluginArchive {
   modules: boolean;
 }
 
-/** `unzipSync` bounded by the plugin caps, read from each entry's declared size before it inflates. */
+/**
+ * `unzipSync` bounded by the plugin caps, read from each entry's declared size before it inflates.
+ * A directory entry is turned away before them: it carries no content, yet fflate inflates whatever
+ * bytes an accepted entry holds, so it is never inflated, never returned and counts towards nothing.
+ */
 function unzipBounded(archive: Uint8Array): Record<string, Uint8Array> {
   let files = 0;
   let declared = 0;
   return unzipSync(archive, {
     filter: ({ name, originalSize }) => {
-      if (name.endsWith("/")) return true;
+      if (name.endsWith("/")) return false;
       files += 1;
       declared += originalSize;
       if (

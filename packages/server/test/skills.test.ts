@@ -16,6 +16,8 @@
  *   to overwrite, and exports byte-identically.
  * - Too many archive entries are refused without installing any files.
  * - Oversized declared entries or totals are refused before inflation, without installing files.
+ * - A directory entry is never inflated: a 262 KB zip whose directory entry holds 256 MB of
+ *   zeros installs its files without that memory ever being taken.
  * - The Agent list's pluginUpdates names a Skill once the library moves past it (the legacy
  *   version spelling reading as the same version), never one the library does not carry, and
  *   never a directory with no readable SKILL.md.
@@ -46,6 +48,7 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
 
 describe("skills api", () => {
   let t: TestApp;
@@ -619,6 +622,27 @@ describe("skills api", () => {
     await expect(
       fs.stat(path.join(skillsDir(t.root, projectId, "zip_declared_agent"), "zip-skill")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("archive: a directory entry is never inflated: 256 MB of zeros in it cost no memory", async () => {
+    await createPlainAgent("zip_dir_bomb_agent");
+    const url = `${base("zip_dir_bomb_agent")}/archive`;
+    const zip = zeroDirectoryZip(
+      { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) },
+      "zip-skill/pad/",
+      256,
+    );
+    expect(zip.byteLength).toBeLessThan(300 * 1024);
+    const dataBase64 = Buffer.from(zip).toString("base64");
+    let status = 0;
+    const growth = await peakRssGrowth(async () => {
+      status = (await owner.post(url, { dataBase64 })).status;
+    });
+    expect(status).toBe(201);
+    // Inflating the entry takes all 256 MB at once, however soon they are dropped again.
+    expect(growth).toBeLessThan(128 * 1024 * 1024);
+    const dir = path.join(skillsDir(t.root, projectId, "zip_dir_bomb_agent"), "zip-skill");
+    expect(await fs.readdir(dir)).toEqual(["SKILL.md"]);
   });
 
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {
