@@ -1,31 +1,7 @@
-/**
- * The task-completion notification's opt-in, and the OS permission it depends on
- * (state/use-completion-notifications.ts is the only reader of both).
- *
- * Two separate facts decide whether a notification can be shown, and neither implies the
- * other: the user asked for notifications (a preference of the account, cached here under
- * `penguin.notifications` and synced by lib/account-sync), and the platform granted THIS
- * browser permission to show them. The first follows the person to every browser; the second
- * never does — a browser that holds the account's "on" without a grant shows nothing until the
- * switch is turned on there, which is the gesture that asks. A browser reports the second as `Notification.permission`, and it starts at
- * "default" — no code path grants it, and on macOS a window that never calls
- * `requestPermission()` is not even listed in System Settings → Notifications.
- *
- * THE PROMPT IS TIED TO THE SWITCH, never to a page load. `requestPermission()` opens the
- * system dialog, an unexpected dialog is reflexively dismissed, and a dismissal is not a
- * question the platform asks twice: once denied, later calls resolve "denied" without
- * prompting and the only way back is the system's own settings. So permission is asked for
- * at the moment the user turns the preference on — an action that already says yes — and
- * the preference is stored only if that request came back granted.
- *
- * The store follows features/dock/dock-launcher-state.ts: a module-level version counter
- * read through `useSyncExternalStore`, with the value itself read separately, so the
- * settings row and the app-wide hook stay in step without either owning the state.
- */
+import { PENGUIN_LOGO_URL } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
-import { PENGUIN_LOGO_URL } from "./brand-logo";
-import { S } from "./strings";
-import { subscribeAccountApplied, writeCached } from "./account-sync/cache";
+||||||| parent of 53df88c5aa (settings/pref cluster: settings-request, settings-sections, notification-pref, instant-setting move to plugin-settings web/lib; host reads via internal):packages/web/src/lib/notification-pref.ts
 
 /** localStorage key of the opt-in; only NOTIFICATIONS_ON counts as on. */
 export const NOTIFICATIONS_KEY = "penguin.notifications";

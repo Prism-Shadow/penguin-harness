@@ -1306,7 +1306,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
+  /** Task-completion notifications (window unfocused; opt-in, see plugins/settings/src/web/lib/notification-pref.ts). */
   notify: {
     enabledTitle: "System notifications enabled",
     enabledBody:

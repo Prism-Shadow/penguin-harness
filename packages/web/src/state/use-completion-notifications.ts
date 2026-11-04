@@ -25,7 +25,7 @@ import {
   notificationsEnabledVersion,
   readNotificationsEnabled,
   subscribeNotificationsEnabled,
-} from "../lib/notification-pref";
+} from "@prismshadow/penguin-web/internal";
 import { useProject } from "./project";
 import { useSessions } from "./sessions";
 

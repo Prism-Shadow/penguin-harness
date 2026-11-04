@@ -1415,7 +1415,7 @@ export const zh = {
     listSeparator: "、",
   },
 
-  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
+  /** Task-completion notifications (window unfocused; opt-in, see plugins/settings/src/web/lib/notification-pref.ts). */
   notify: {
     enabledTitle: "系统通知已开启",
     enabledBody: "当窗口在后台时，Task 完成会通过这里通知你。",

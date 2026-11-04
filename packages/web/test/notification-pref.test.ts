@@ -31,7 +31,7 @@ import {
   requestNotificationPermission,
   subscribeNotificationsEnabled,
   writeNotificationsEnabled,
-} from "../src/lib/notification-pref";
+} from "@prismshadow/penguin-web/internal";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 interface RecordedNotice {
