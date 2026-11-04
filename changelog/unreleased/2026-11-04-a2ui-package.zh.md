@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `a2ui`, `core`, `ui`, `cli`, `server`
+- **PR:** [#1474](https://github.com/Prism-Shadow/penguin-harness/pull/1474)
 - **Breaking:** yes — 移除 `@prismshadow/penguin-core/a2ui`，改从 `@prismshadow/a2ui` 引用
 
 [English](2026-11-04-a2ui-package.md)
