@@ -98,10 +98,10 @@ const KATEX_OPTIONS = {
 } as const;
 
 /**
- * The remark (Markdown -> mdast) stage. It reads a reply in the chat dialect core defines
- * (`@prismshadow/penguin-core/markdown`) — GFM, with a bare URL made of ASCII URL characters only
- * and CJK-friendly emphasis — which the server's chat channels parse with too, so a reply links
- * and bolds the same characters in the transcript and in every chat.
+ * The remark (Markdown -> mdast) stage. It reads a reply in the chat dialect core defines (its
+ * `markdown` subpath) — GFM, with a bare URL made of ASCII URL characters only and CJK-friendly
+ * emphasis — which the server's chat channels parse with too, so a reply links and bolds the same
+ * characters in the transcript and in every chat.
  */
 export const REMARK_PLUGINS: PluginList = [
   remarkChatMarkdown,
