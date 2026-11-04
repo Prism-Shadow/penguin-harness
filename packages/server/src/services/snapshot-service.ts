@@ -3,8 +3,9 @@
  *
  * A snapshot = `snapshots/v<version>.tar.gz`, packaging `agent_state/` (archive
  * entries are rooted at `agent_state/`), **excluding `.vault.toml`** (secrets never
- * go into a snapshot) and each workbench's emitted code and installed packages
- * (`.build/`, `node_modules/`); if a snapshot for the same version already exists, it
+ * go into a snapshot), the server's staging leftovers (`*.penguin-tmp*`) and each
+ * workbench's emitted code and installed packages (`.build/`, `node_modules/`); if a
+ * snapshot for the same version already exists, it
  * isn't repacked. Import goes by the `version` inside the package and keeps the current
  * vault; before it, the current State is always packed afresh into a file of its own,
  * `snapshots/import-backup-v<version>-<time>-<random>.tar.gz` (a same-version snapshot can
@@ -36,6 +37,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { Snapshots } from "../mechanisms/agents.js";
 import { isGitName } from "../workbenches/repo.js";
+import { isTempName } from "../workbenches/store.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
@@ -53,12 +55,12 @@ function segmentsOf(entryPath: string): string[] {
 }
 
 /**
- * What a snapshot leaves out and an import never takes from a package: any vault, and each
- * workbench's emitted code and installed packages.
+ * What a snapshot leaves out and an import never takes from a package: any vault, the server's
+ * staging leftovers (`*.penguin-tmp*`), and each workbench's emitted code and installed packages.
  */
 function isLeftOut(entryPath: string): boolean {
   const segments = segmentsOf(entryPath);
-  if (segments.at(-1) === VAULT_BASENAME) return true;
+  if (segments.at(-1) === VAULT_BASENAME || segments.some(isTempName)) return true;
   const [top, child, ...rest] = segments;
   // Anywhere inside `agent_state/workbenches/<id>/`.
   return (

@@ -17,6 +17,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { removeLeftovers } from "./leftovers.js";
 import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
 
 export const STATE_FILE = "state.json";
@@ -25,8 +26,10 @@ export const UI_DIR = "ui";
 export interface WorkbenchFolder {
   id: string;
   dir: string;
-  /** Relative paths, sorted, excluding state.json. */
+  /** Relative paths of the source, sorted (no state.json). */
   files: string[];
+  /** Files left out of the source because git refuses their names; a load logs them. */
+  refused: string[];
   revision: string;
   uiRev: string | null;
   pkg: { name: string; version: string | null };
@@ -44,20 +47,29 @@ export function isSafeRelPath(rel: string): boolean {
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
 }
 
-/**
- * A name the folder's source can hold: not the server's (dot entries, staged writes), not
- * installed packages, and not a name git reserves (no version could hold it).
- */
+/** A name the folder's source can hold: not the server's (dot entries, staged writes), not installed packages. */
 function isSourceName(name: string): boolean {
-  return name !== "node_modules" && !name.startsWith(".") && !isTempName(name) && !isGitName(name);
+  return name !== "node_modules" && !name.startsWith(".") && !isTempName(name);
 }
 
-/** A path inside the folder that is part of its source, and so what a restore may write. */
+/** The workbench's own document at the folder's root, under any case a disk may fold onto it. */
+const isStateName = (name: string): boolean => name.toLowerCase() === STATE_FILE;
+
+/**
+ * A path inside the folder that is part of its source, and so what a restore may write: nothing
+ * at or under `state.json`, and no name git refuses (no version could hold it).
+ */
 export function isSourcePath(rel: string): boolean {
-  return isSafeRelPath(rel) && rel !== STATE_FILE && rel.split("/").every(isSourceName);
+  const segments = rel.split("/");
+  return (
+    isSafeRelPath(rel) &&
+    !isStateName(segments[0] ?? "") &&
+    segments.every((segment) => isSourceName(segment) && !isGitName(segment))
+  );
 }
 
-async function walk(dir: string, prefix = ""): Promise<string[]> {
+/** The folder's source files; a name git refuses goes into `refused` instead. */
+async function walk(dir: string, refused: string[], prefix = ""): Promise<string[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -66,9 +78,10 @@ async function walk(dir: string, prefix = ""): Promise<string[]> {
   }
   const out: string[] = [];
   for (const e of entries) {
-    if (!isSourceName(e.name)) continue;
+    if (!isSourceName(e.name) || (prefix === "" && isStateName(e.name))) continue;
     const rel = prefix === "" ? e.name : `${prefix}/${e.name}`;
-    if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), rel)));
+    if (isGitName(e.name)) refused.push(rel);
+    else if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), refused, rel)));
     else if (e.isFile()) out.push(rel);
   }
   return out.sort();
@@ -108,7 +121,8 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   } catch {
     // A broken package.json is still a workbench folder: the loader reports the error.
   }
-  const files = (await walk(dir)).filter((f) => f !== STATE_FILE);
+  const refused: string[] = [];
+  const files = await walk(dir, refused);
   const source = await readFiles(dir, files);
   // The pages' revision is the tree id of `ui/` itself.
   const ui = source
@@ -118,6 +132,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
     id,
     dir,
     files,
+    refused: refused.sort(),
     revision: revisionOf(source),
     uiRev: ui.length === 0 ? null : revisionOf(ui),
     pkg: {
@@ -183,30 +198,29 @@ export async function writeState(dir: string, state: unknown): Promise<void> {
   }
 }
 
-/** Removes what stands where `rel` goes: a file in place of one of its directories, a directory in place of it. */
-async function clearWay(dir: string, rel: string): Promise<void> {
+/** What stands where `rel` goes: a file (or link) in place of one of its directories, or a directory in its place. */
+async function blockerOf(dir: string, rel: string): Promise<string | null> {
   const segments = rel.split("/");
   for (let i = 1; i < segments.length; i++) {
     const ancestor = path.join(dir, ...segments.slice(0, i));
     const stat = await fs.lstat(ancestor).catch(() => null);
-    if (stat === null) return;
-    if (!stat.isDirectory()) {
-      await fs.rm(ancestor, { force: true });
-      return;
-    }
+    if (stat === null) return null;
+    if (!stat.isDirectory()) return ancestor;
   }
   const target = path.join(dir, rel);
-  if ((await fs.lstat(target).catch(() => null))?.isDirectory()) {
-    await fs.rm(target, { recursive: true, force: true });
-  }
+  return (await fs.lstat(target).catch(() => null))?.isDirectory() ? target : null;
 }
 
+const RESTORE_STAGING = `.restore${TMP_SUFFIX}`;
+
 /**
- * Makes the folder's source exactly `files`: the source files it has and they lack are removed,
- * the rest put in place, whatever stood where they go (a file where a directory now is, or the
- * reverse). `state.json` and the dot entries are not source and stay as they are. Everything is
- * validated and written aside first, so a version holding something other than source (one
- * recorded by hand can hold anything) or a failed write leaves the folder as it was.
+ * Makes the folder's source exactly `files`, or leaves it as it was. The version's files are
+ * written aside first; then every current source file, and whatever stands where a file of the
+ * version goes (a file where a directory now is, or the reverse), moves aside, and the new files
+ * move in. A move that fails puts back everything moved so far. `state.json` and the dot entries
+ * are not source and stay where they are. A version holding something other than source (one
+ * recorded by hand can hold anything) is refused before anything is written. Should putting back
+ * fail too, the previous files are kept in the staging folder the error names.
  */
 export async function restoreSource(
   folder: WorkbenchFolder,
@@ -214,22 +228,47 @@ export async function restoreSource(
 ): Promise<void> {
   const foreign = files.find((f) => !isSourcePath(f.rel));
   if (foreign) throw new Error(`that version holds ${foreign.rel}, which is not workbench source`);
-  const staged = await fs.mkdtemp(path.join(folder.dir, `.restore${TMP_SUFFIX}`));
+  await removeLeftovers(folder.dir, RESTORE_STAGING);
+  const staging = await fs.mkdtemp(path.join(folder.dir, RESTORE_STAGING));
+  const incoming = path.join(staging, "new");
+  const aside = path.join(staging, "old");
+  await fs.mkdir(incoming);
+  await fs.mkdir(aside);
+  const moved: Array<{ from: string; to: string }> = [];
+  const move = async (from: string, to: string) => {
+    await fs.mkdir(path.dirname(to), { recursive: true });
+    await fs.rename(from, to);
+    moved.push({ from, to });
+  };
   try {
     for (const [i, file] of files.entries()) {
-      await fs.writeFile(path.join(staged, String(i)), file.body);
+      await fs.writeFile(path.join(incoming, String(i)), file.body);
     }
-    const keep = new Set(files.map((f) => f.rel));
+    let set = 0;
     for (const rel of folder.files) {
-      if (!keep.has(rel)) await fs.rm(path.join(folder.dir, rel), { force: true });
+      const current = path.join(folder.dir, rel);
+      if (await fs.lstat(current).catch(() => null))
+        await move(current, path.join(aside, String(set++)));
     }
     for (const [i, file] of files.entries()) {
-      await clearWay(folder.dir, file.rel);
-      const target = path.join(folder.dir, file.rel);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.rename(path.join(staged, String(i)), target);
+      const blocker = await blockerOf(folder.dir, file.rel);
+      if (blocker !== null) await move(blocker, path.join(aside, String(set++)));
+      await move(path.join(incoming, String(i)), path.join(folder.dir, file.rel));
     }
-  } finally {
-    await fs.rm(staged, { recursive: true, force: true });
+  } catch (err) {
+    try {
+      for (const { from, to } of moved.reverse()) {
+        await fs.mkdir(path.dirname(from), { recursive: true });
+        await fs.rename(to, from);
+      }
+    } catch (undo) {
+      throw new AggregateError(
+        [err, undo],
+        `The restore failed and the previous files could not all be put back; they are kept in ${aside}.`,
+      );
+    }
+    await fs.rm(staging, { recursive: true, force: true });
+    throw err;
   }
+  await fs.rm(staging, { recursive: true, force: true });
 }
