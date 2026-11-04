@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `plugins`, `docs`, `landing`, `tooling`, `ci`
+- **PR:** [#1479](https://github.com/Prism-Shadow/penguin-harness/pull/1479)
 
 [English](2026-11-04-plugins-drop-penguin-block.md)
 
