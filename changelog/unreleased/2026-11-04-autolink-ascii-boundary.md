@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-04
 - **Type:** fix
-- **Scope:** `core`, `ui`, `server`, `web`
+- **Scope:** `chat-markdown`, `ui`, `server`, `web`
 - **PR:** [#1466](https://github.com/Prism-Shadow/penguin-harness/pull/1466)
 
 [中文版](2026-11-04-autolink-ascii-boundary.zh.md)
@@ -15,6 +15,6 @@ In a chat reply, `**http://localhost:7367/**，要看的博文：http://localhos
 - A `]` the URL did not open ends it; balanced brackets (`?a[0]=1`) and parentheses (`x_(y)`) stay in it. A URL written as a link's text (`[https://a.com](https://b.com)`) renders as that text, so the reply has one link.
 - A URL pasted with unencoded CJK in its path (`…/wiki/中文`) is cut before the CJK; the same URL percent-encoded links whole.
 - Emphasis follows the CJK-friendly flanking rule ([`micromark-extension-cjk-friendly`](https://github.com/tats-u/markdown-cjk-friendly)), so `**粗体（注）**后面` and `请**打开 http://127.0.0.1:4321/**查看` render bold.
-- The rule lives in one place, `@prismshadow/penguin-core/markdown`, which packages/ui's chat pipeline and the server's messaging parser both register in place of `remark-gfm`. The trim pass that cut a link after parsing (`remark-autolink-boundary.ts`) was removed.
+- The rule lives in one place, a new package `@prismshadow/chat-markdown` (`packages/chat-markdown`), which packages/ui's chat pipeline (bundled into its published modules) and the server's messaging parser both register in place of `remark-gfm`. The trim pass that cut a link after parsing (`remark-autolink-boundary.ts`) was removed.
 - The plain-text linkifier for plugin descriptions ends an address at its last ASCII character too.
 - The blog and the docs site keep GitHub-flavoured Markdown unchanged.

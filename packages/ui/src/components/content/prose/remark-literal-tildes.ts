@@ -7,7 +7,7 @@
  * between them, which reads as content the model withdrew. The rendered message then says the
  * opposite of what was written.
  *
- * The chat dialect (core's `markdown` subpath) still parses GFM's strikethrough, and
+ * The chat dialect (packages/chat-markdown) still parses GFM's strikethrough, and
  * this pass runs on the tree it produced and turns every `delete` node back into its own text:
  * the opening tildes, the children as they were parsed (so a `**bold**` inside stays bold), the
  * closing tildes. The markers are read from the source at the node's offset, so `~` stays one

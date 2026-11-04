@@ -1,5 +1,5 @@
 /**
- * The chat Markdown dialect (src/markdown): what a reply's bare URLs and emphasis parse to, read
+ * The chat Markdown dialect (src/index.ts): what a reply's bare URLs and emphasis parse to, read
  * the way both hosts read it — remark-parse with `remarkChatMarkdown` — and shown as the inline
  * markup the tree stands for.
  *
@@ -26,7 +26,7 @@
 import { describe, expect, it } from "vitest";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { remarkChatMarkdown } from "../src/markdown/index.js";
+import { remarkChatMarkdown } from "../src/index.js";
 
 interface Node {
   type: string;

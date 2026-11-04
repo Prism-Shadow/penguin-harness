@@ -11,11 +11,11 @@
  * <base>gallery/), then the docs and gallery dists are copied into the landing dist under docs/
  * and gallery/. The result is a single artifact — one GitHub Pages deployment hosts all three.
  *
- * The gallery compiles the Web App's source, which imports core and amsp from their built dist
- * and the model catalog from the server's (`server/dist/model-catalog.js`; the UI package is
- * source-only), so those build first. The server's build inlines hmr, so hmr builds before it,
- * and JavaScript only: nothing here reads the server's declarations (PENGUIN_BUILD_JS_ONLY, see
- * packages/server/tsup.config.ts).
+ * The gallery compiles the Web App's source, which imports core, amsp and chat-markdown from
+ * their built dist and the model catalog from the server's (`server/dist/model-catalog.js`; the UI
+ * package is source-only), so those build first. The server's build inlines hmr, so hmr builds
+ * before it, and JavaScript only: nothing here reads the server's declarations
+ * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts).
  */
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -46,7 +46,9 @@ const run = (cmd, BASE_PATH, extra = {}) => {
 
 run("pnpm --filter @prismshadow/penguin-landing build", base);
 run("pnpm --filter @prismshadow/penguin-docs build", `${base}docs/`);
-run("pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp build");
+run(
+  "pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp --filter @prismshadow/chat-markdown build",
+);
 run(
   "pnpm --filter @prismshadow/penguin-hmr --filter @prismshadow/penguin-server build",
   undefined,

@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-04
 - **Type:** fix
-- **Scope:** `core`, `ui`, `server`, `web`
+- **Scope:** `chat-markdown`, `ui`, `server`, `web`
 - **PR:** [#1466](https://github.com/Prism-Shadow/penguin-harness/pull/1466)
 
 [English](2026-11-04-autolink-ascii-boundary.md)
@@ -15,6 +15,6 @@
 - URL 自身没有打开的 `]` 会让它结束；成对的方括号（`?a[0]=1`）与圆括号（`x_(y)`）保留在 URL 内。写作链接文字的 URL（`[https://a.com](https://b.com)`）按文字显示，回复里只有一条链接。
 - 路径里带未编码中文的 URL（`…/wiki/中文`）在中文之前截断；同一个 URL 百分号编码后整段成为链接。
 - 强调按对 CJK 友好的左右侧规则判定（[`micromark-extension-cjk-friendly`](https://github.com/tats-u/markdown-cjk-friendly)），`**粗体（注）**后面` 与 `请**打开 http://127.0.0.1:4321/**查看` 都能显示为粗体。
-- 规则只有一处实现：`@prismshadow/penguin-core/markdown`。packages/ui 的对话渲染管线与服务端的消息渠道解析器都用它取代 `remark-gfm`。原先在解析之后截断链接的处理（`remark-autolink-boundary.ts`）已删除。
+- 规则只有一处实现：新包 `@prismshadow/chat-markdown`（`packages/chat-markdown`）。packages/ui 的对话渲染管线（打包进其发布产物）与服务端的消息渠道解析器都用它取代 `remark-gfm`。原先在解析之后截断链接的处理（`remark-autolink-boundary.ts`）已删除。
 - 插件说明所用的纯文本链接识别同样让地址止于最后一个 ASCII 字符。
 - 博客与文档站仍按 GitHub 风格的 Markdown 渲染，不受影响。

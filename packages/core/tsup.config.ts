@@ -23,10 +23,6 @@ export default defineConfig({
     // same parser and fallback the checker script uses (cli.ts is bundled separately by
     // scripts/build-a2ui-check.mjs and is deliberately not an entry here).
     "src/a2ui/index.ts",
-    // The chat Markdown dialect (bare URLs, CJK-friendly emphasis): no Node dependency, so the
-    // Web App's renderer bundles the same parser extensions the server's chat channels read
-    // replies with.
-    "src/markdown/index.ts",
   ],
   format: ["esm"],
   target: "node24",

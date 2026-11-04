@@ -9,9 +9,9 @@
  * about what the model wrote, and the same reply would then carry different content in two
  * chats.
  *
- * The parser is `remark-parse` over `unified` with core's chat dialect
- * (`@prismshadow/penguin-core/markdown`: GFM, a bare URL made of ASCII URL characters only,
- * and CJK-friendly emphasis) — the plugin the Web App renders a reply with, so the transcript
+ * The parser is `remark-parse` over `unified` with the chat dialect
+ * (`@prismshadow/chat-markdown`: GFM, a bare URL made of ASCII URL characters only, and
+ * CJK-friendly emphasis) — the plugin the Web App renders a reply with, so the transcript
  * and every chat link and bold the same characters. A parser is not something to hand-roll
  * here: emphasis, links and fenced code are context-sensitive, and a substitution pass
  * mangles exactly the replies (code containing asterisks, nested emphasis, links with
@@ -28,7 +28,7 @@
  * beside the adapter that sends its output. Nothing in this module knows any channel's
  * markup.
  */
-import { remarkChatMarkdown } from "@prismshadow/penguin-core/markdown";
+import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { Nodes, Root, RootContent } from "mdast";

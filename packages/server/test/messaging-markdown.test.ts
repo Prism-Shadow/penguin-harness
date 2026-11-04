@@ -51,7 +51,7 @@ describe("parseMarkdown", () => {
 
   it("links each bare URL in Chinese prose on its own, and keeps the bold around the first", () => {
     // The report behind the shared dialect, as a Telegram chat receives it: the same links and
-    // the same bold the Web App renders (packages/core/test/markdown-chat-dialect.test.ts).
+    // the same bold the Web App renders (packages/chat-markdown/test/chat-markdown.test.ts).
     const blog = "http://localhost:7367/blog/keeping-the-prompt-cache-hot";
     expect(telegramHtmlOf(`**http://localhost:7367/**，要看的博文：${blog}`)).toBe(
       '<b><a href="http://localhost:7367/">http://localhost:7367/</a></b>，要看的博文：' +

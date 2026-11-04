@@ -4,7 +4,7 @@
  * without reading the text as Markdown. An address runs from `http://` or `https://` over the
  * ASCII characters a URL may hold (RFC 3986) and stops at anything else — a space, a quote, a
  * bracket, or any non-ASCII character, so Chinese text or punctuation right after it stays text,
- * as it does in a chat reply (`@prismshadow/penguin-core/markdown`). Trailing sentence
+ * as it does in a chat reply (`@prismshadow/chat-markdown`). Trailing sentence
  * punctuation stays text too, so "see https://example.com." links the address without its full
  * stop.
  */

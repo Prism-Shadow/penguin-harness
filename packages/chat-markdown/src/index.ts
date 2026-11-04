@@ -1,8 +1,8 @@
 /**
- * `@prismshadow/penguin-core/markdown`: the Markdown dialect a reply is read in, wherever it is
- * read — the Web App's transcript and user bubbles (packages/ui's REMARK_PLUGINS) and the chat
- * channels a reply is relayed to (packages/server's messaging parser). One plugin, so the two
- * cannot disagree about what the model wrote: which characters are a link and which are bold.
+ * `@prismshadow/chat-markdown`: the Markdown dialect a reply is read in, wherever it is read —
+ * the Web App's transcript (packages/ui's REMARK_PLUGINS) and the chat channels a reply is
+ * relayed to (packages/server's messaging parser). One plugin, so the two cannot disagree about
+ * what the model wrote: which characters are a link and which are bold.
  *
  * The dialect is CommonMark plus GFM's tables, task lists, footnotes and strikethrough, with two
  * changes, both made while parsing:
@@ -16,8 +16,8 @@
  *
  * Strikethrough is still parsed: each host shows its tildes as written, in a pass of its own.
  *
- * Browser-safe, like the `./a2ui` subpath: the Web App bundles this module, and so does the
- * published packages/ui. remark-parse is the host's; this only registers extensions on it.
+ * Browser-safe: the server imports it as a dependency, and packages/ui bundles it into its
+ * published modules. remark-parse is the host's; this only registers extensions on it.
  */
 import { cjkFriendlyExtension } from "micromark-extension-cjk-friendly";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";

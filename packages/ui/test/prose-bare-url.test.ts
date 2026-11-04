@@ -1,7 +1,7 @@
 /**
  * A reply's bare URLs and bold as the transcript renders them (`Md`, through REMARK_PLUGINS). The
  * rule itself — which characters a bare URL holds, when a bold span closes beside CJK — is the
- * chat dialect's, and core's markdown-chat-dialect.test.ts walks it case by case; these pin that
+ * chat dialect's, and packages/chat-markdown's own suite walks it case by case; these pin that
  * the rendered reply carries it, alongside the math and tilde passes the shared stage adds.
  *
  * - Given the report — `**http://localhost:7367/**，要看的博文：http://…` — the first URL renders
