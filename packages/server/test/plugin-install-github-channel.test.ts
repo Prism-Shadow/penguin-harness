@@ -71,7 +71,7 @@ describe("verifyIntegrity", () => {
 describe("installPluginChannel", () => {
   it("fetches the asset, writes the verified bytes to the prefix's archives, and installs that tarball", async () => {
     const root = await tempRoot();
-    const fetchImpl = vi.fn(async () => new Response(asset as unknown as BodyInit, { status: 200 }));
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(asset), { status: 200 }));
     const installedSpecs: string[] = [];
     const installed = await installPluginChannel(root, channel, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -102,7 +102,7 @@ describe("installPluginChannel", () => {
     const install = vi.fn(async () => undefined);
     await expect(
       installPluginChannel(root, { ...channel, integrity: digest(wrong) }, {
-        fetchImpl: (async () => new Response(asset as unknown as BodyInit, { status: 200 })) as unknown as typeof fetch,
+        fetchImpl: (async () => new Response(new Uint8Array(asset), { status: 200 })) as unknown as typeof fetch,
         install,
       }),
     ).rejects.toThrow(/does not match the sha512/);
