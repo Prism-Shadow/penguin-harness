@@ -40,7 +40,7 @@ import { reserveStart } from "./admission.js";
 import { pendingApprovals } from "./approvals.js";
 import type { ApprovalsDeps } from "./approvals.js";
 import { AMSP_PREFIX, amspCors } from "./cors.js";
-import { amspGate } from "./gate.js";
+import { amspGate, requireAgentApiOn, requireApiSession } from "./gate.js";
 import type { AmspEnv, AmspGateDeps } from "./gate.js";
 import { parseRunInput } from "./run-input.js";
 import { runStream } from "./run-stream.js";
@@ -104,7 +104,12 @@ export function amspRoutes(deps: AmspRouteDeps): Hono<AppEnv> {
   });
 
   app.get("/sessions/:sessionId/stream", (c) =>
-    amspSessionStream(c, deps.channels.get(c.var.amsp.session!.sessionId)),
+    amspSessionStream(c, deps.channels.get(c.var.amsp.session!.sessionId), {
+      authorize: () => {
+        requireAgentApiOn(deps.settings);
+        requireApiSession(deps, c.var.amsp.session!.sessionId, c.req.header("authorization"));
+      },
+    }),
   );
 
   app.get("/sessions/:sessionId/messages", (c) =>
