@@ -12,7 +12,7 @@ import type {
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import type { OrgCache } from "@prismshadow/penguin-server/internal";
+import type { OrgCache } from "../mechanisms-organization.js";
 import type { Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-server/internal";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { OrgStore } from "../organization/store.js";

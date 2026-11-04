@@ -4,7 +4,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { OrgCacheRepo } from "../db/repos/organizations.js";
+import type { OrgCacheRepo } from "./db/repos/organizations.js";
 
 /**
  * OrgCache: the mechanism OrgCacheRepo implements. The whole repo, except that

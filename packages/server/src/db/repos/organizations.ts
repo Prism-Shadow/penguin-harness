@@ -10,7 +10,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
+import type { OrgCache } from "@penguinharness/plugin-company/server";
 import type { OrgCalendarOutcome, OrgTicketChange } from "../../api/types.js";
 
 export interface OrgSessionRow {

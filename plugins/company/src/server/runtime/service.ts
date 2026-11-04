@@ -57,7 +57,7 @@ import { latestSlotAt, nextSlotAfter, slotInWindow } from "@penguinharness/plugi
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import type { Channels, Clock, Config, Log } from "@prismshadow/penguin-server/internal";
 import type { ChannelHub } from "@prismshadow/penguin-server/internal";
-import type { OrgCache } from "@prismshadow/penguin-server/internal";
+import type { OrgCache } from "../mechanisms-organization.js";
 import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
 import type {
   AgentIndex,
