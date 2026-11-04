@@ -56,7 +56,11 @@ export interface UnzipLimits {
  *
  * Bounding against the declared sizes is sound in the other direction too: the buffer is exactly
  * the declared size and fflate never grows it, so an entry can only ever yield fewer bytes than
- * it claimed. Directory entries carry no content and are left to the caller to filter.
+ * it claimed.
+ *
+ * A directory entry is turned away before every cap: it is never inflated, never returned and
+ * counts towards nothing. It carries no content (the files' paths recreate the directories), yet
+ * fflate inflates whatever bytes an accepted entry holds, whatever its name says.
  *
  * Throws the caps as 400s unless `limits.tooLarge` says otherwise, matching the archive route this
  * was factored out of; a corrupt archive still throws whatever fflate throws, for the caller to
@@ -72,7 +76,7 @@ export function unzipBounded(
   let declared = 0;
   return unzipSync(archive, {
     filter: ({ name, originalSize }) => {
-      if (name.endsWith("/")) return true;
+      if (name.endsWith("/")) return false;
       files += 1;
       if (files > maxFiles) {
         throw tooLarge(`The zip archive exceeds the ${maxFiles}-file limit.`);
