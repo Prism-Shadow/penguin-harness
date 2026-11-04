@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** process
 - **Scope:** `server`
+- **PR:** [#1476](https://github.com/Prism-Shadow/penguin-harness/pull/1476)
 
 [English](2026-11-04-shipped-benchmarks-test-projects-once.md)
 
