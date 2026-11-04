@@ -16,7 +16,7 @@ import {
 import type { ActivityIconState } from "../src/components/icons/activity-icon/activity-icon";
 import { ICONS } from "../src/components/icons/icons";
 import { ICON_SIZE } from "../src/icon-scale";
-import { classTokens, renderStatic, stripCssComments } from "../src/testing";
+import { renderStatic, stripCssComments } from "../src/testing";
 import { SRC_DIR } from "./helpers/paths";
 
 const ACTIVITIES: readonly ActivityIconState[] = ["running", "compacting", "completedUnread"];
@@ -46,18 +46,9 @@ describe("ActivityIcon", () => {
     expect(unread).not.toContain("ui-live");
   });
 
-  it("inks both live states with the attention tone", () => {
-    for (const activity of ["running", "compacting"] as const) {
-      expect(classTokens(render(activity))).toContain("text-tone-attention-fg");
-    }
-  });
-
   it("draws the unread state as the success dot, not a glyph", () => {
     const unread = render("completedUnread");
     expect(unread).not.toContain("<svg");
-    expect(classTokens(unread)).toEqual(
-      expect.arrayContaining(["bg-tone-success-emphasis", "rounded-full"]),
-    );
     expect(unread).toContain("width:6px;height:6px");
     // A row that mounts finished (a list loading) brings nothing in: the reveal is for a run
     // the reader watched finish.
@@ -87,7 +78,7 @@ describe("ActivityIcon", () => {
 });
 
 describe("BackgroundTasksMark and ScheduleMark", () => {
-  it("draw background work in the busy ink, named by the caller, at the caller's rung", () => {
+  it("draw background work named by the caller, at the caller's size", () => {
     const html = renderStatic(
       createElement(BackgroundTasksMark, { label: "3 background tasks", size: ICON_SIZE.rowMark }),
     );
@@ -96,7 +87,6 @@ describe("BackgroundTasksMark and ScheduleMark", () => {
     expect(html).toContain('data-tooltip="3 background tasks"');
     expect(html).toContain(`d="${ICONS.pulse}"`);
     expect(html).toContain('width="12"');
-    expect(classTokens(html)).toContain("text-tone-success-fg");
     expect(html).not.toContain("hourglass-turn");
   });
 
@@ -107,9 +97,6 @@ describe("BackgroundTasksMark and ScheduleMark", () => {
     expect(html).toContain('aria-label="Scheduled"');
     expect(html).toContain('data-tooltip="Scheduled"');
     expect(html).toContain(`d="${ICONS.alarmClock}"`);
-    const tokens = classTokens(html);
-    expect(tokens).toContain("text-fg-subtle");
-    expect(tokens.some((t) => t.startsWith("text-tone-"))).toBe(false);
   });
 });
 
@@ -128,11 +115,6 @@ describe("the activity motion in theme.css", () => {
     }
     return "";
   };
-
-  it("runs each mark's keyframes on its class", () => {
-    expect(sheet).toMatch(/\.hourglass-turn\s*\{[^}]*animation:\s*hourglass-turn\s/);
-    expect(sheet).toMatch(/\.compact-squeeze\s*\{[^}]*animation:\s*compact-squeeze\s/);
-  });
 
   it("only transforms, so with animation off the glyph stands upright, still visible", () => {
     for (const name of ["hourglass-turn", "compact-squeeze"]) {

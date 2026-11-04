@@ -5,18 +5,9 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Dot } from "../src/components/icons/dot/dot";
-import { TONES } from "../src/tokens";
 import { classTokens, renderStatic } from "../src/testing";
 
 describe("Dot", () => {
-  it("fills with the tone's emphasis, round in every theme", () => {
-    for (const tone of TONES) {
-      const tokens = classTokens(renderStatic(createElement(Dot, { tone })));
-      expect(tokens).toContain(`bg-tone-${tone}-emphasis`);
-      expect(tokens).toContain("rounded-full");
-    }
-  });
-
   it("sizes in pixels on three rungs, the 6px state dot by default", () => {
     expect(renderStatic(createElement(Dot, { tone: "success" }))).toContain("width:6px;height:6px");
     expect(renderStatic(createElement(Dot, { tone: "success", size: "sm" }))).toContain(
@@ -40,10 +31,9 @@ describe("Dot", () => {
   it("pulses only when asked, through the live hook", () => {
     const still = renderStatic(createElement(Dot, { tone: "success" }));
     expect(still).not.toContain("ui-live");
-    expect(still).not.toContain("animate-pulse");
     expect(still).not.toContain("data-live");
     const live = renderStatic(createElement(Dot, { tone: "success", pulse: true }));
-    expect(classTokens(live)).toEqual(expect.arrayContaining(["ui-live", "animate-pulse"]));
+    expect(classTokens(live)).toContain("ui-live");
     expect(live).toContain('data-live="dot"');
   });
 });

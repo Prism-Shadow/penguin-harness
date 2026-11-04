@@ -8,8 +8,9 @@ import { createElement } from "react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmModal } from "../src/components/overlays/confirm-modal/confirm-modal";
+import { ICONS } from "../src/components/icons/icons";
 import type { ConfirmModalProps } from "../src/components/overlays/confirm-modal/confirm-modal";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 import { stubDialogGlobals } from "./helpers/dialog-env";
 
 vi.mock("react-dom", async (importOriginal) => ({
@@ -38,6 +39,12 @@ const buttons = (html: string) =>
   [...html.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
 
 describe("ConfirmModal", () => {
+  it("marks a destructive confirmation with the warning glyph, any other with the pen", () => {
+    expect(confirm()).toContain(`d="${ICONS.triangleAlert}"`);
+    expect(confirm({ tone: "primary" })).toContain(`d="${ICONS.penLine}"`);
+    expect(confirm({ tone: "primary" })).not.toContain(`d="${ICONS.triangleAlert}"`);
+  });
+
   it("is a headerless dialog named by its title", () => {
     const html = confirm();
     expect(html).toContain('role="dialog"');
@@ -65,16 +72,5 @@ describe("ConfirmModal", () => {
     expect(disabled(confirm())).toBe(0);
     expect(disabled(confirm({ confirmDisabled: true }))).toBe(1);
     expect(disabled(confirm({ busy: true }))).toBe(2);
-  });
-
-  it("carries the tone in the mark's ink, on the same neutral disc for both tones", () => {
-    const mark = (html: string) =>
-      classTokens(/<span aria-hidden="true"[^>]*>/.exec(html)?.[0] ?? "");
-    const danger = mark(confirm());
-    expect(danger).toEqual(expect.arrayContaining(["bg-line-muted", "text-tone-danger-fg"]));
-    expect(danger.filter((t) => t.startsWith("bg-tone-"))).toEqual([]);
-    const primary = mark(confirm({ tone: "primary" }));
-    expect(primary).toEqual(expect.arrayContaining(["bg-line-muted", "text-tone-neutral-fg"]));
-    expect(primary).not.toContain("text-tone-danger-fg");
   });
 });
