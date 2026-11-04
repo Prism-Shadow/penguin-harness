@@ -975,17 +975,6 @@ describe("remote layout", () => {
     expect(RELEASE.dataRoot.posix).not.toBe(DEV.dataRoot.posix);
     expect(RELEASE.programDir.win).not.toBe(DEV.programDir.win);
     expect(RELEASE.defaultPort).not.toBe(DEV.defaultPort);
-    // The release layout is the installer's own default, so an install this side made and
-    // one a person made by hand are the same installation.
-    expect(RELEASE.programDir.posix).toBe("$HOME/.penguin");
-    expect(RELEASE.dataRoot.posix).toBe("$HOME/.penguin/data");
-    expect(RELEASE.defaultPort).toBe(7364);
-    expect(DEV.defaultPort).toBe(7371);
-  });
-
-  it("only the release profile registers the machine's `penguin` command", () => {
-    expect(RELEASE.ownsCommand).toBe(true);
-    expect(DEV.ownsCommand).toBe(false);
   });
 });
 

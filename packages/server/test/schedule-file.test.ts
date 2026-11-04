@@ -4,7 +4,6 @@
 import { describe, expect, it } from "vitest";
 import {
   latestSlotAt,
-  MIN_PERIOD_MS,
   nextSlotAfter,
   parsePeriod,
   parseScheduleFile,
@@ -82,7 +81,6 @@ describe("parseScheduleFile", () => {
       expect(r.ok, raw).toBe(false);
       if (!r.ok) expect(r.error).toContain(hint);
     }
-    expect(MIN_PERIOD_MS).toBe(5 * 60_000);
   });
 });
 

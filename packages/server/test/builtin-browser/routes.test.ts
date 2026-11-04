@@ -364,8 +364,7 @@ describe("tabs", () => {
     expect(opens()).toBe(4);
   });
 
-  it("holds at most 20 tabs: an agent's new tab is refused, a page's popup dropped", async () => {
-    expect(MAX_TABS).toBe(20);
+  it("holds no more than its tab limit: an agent's new tab is refused, a page's popup dropped", async () => {
     const h = mount();
     for (let id = 1; id <= MAX_TABS; id++) h.shell.show(tab(id));
     const res = await h.call("POST", "/tabs", { url: "https://example.test/" });

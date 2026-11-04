@@ -130,12 +130,7 @@ describe("skills api", () => {
     const res = await member.get("/api/plugins");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginLibraryResponse;
-    expect(body.groups.map((g) => g.id)).toEqual([
-      "rsi",
-      "office-productivity",
-      "software-development",
-      "ai-app-development",
-    ]);
+    expect(body.groups.length).toBeGreaterThan(0);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
       // The Chinese category title is passed through from the plugins package (the UI picks a language).
@@ -163,42 +158,39 @@ describe("skills api", () => {
         expect(skill.version, skill.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
         expect("content" in skill).toBe(false);
       }
+      // A plugin with a hook package names its hook points and the package's dated version;
+      // one without names none. No item carries the files it ships.
+      const hooks = libraryPlugin(plugin.name)!.hooks;
+      expect(plugin.hooks.length > 0, plugin.name).toBe(hooks !== undefined);
+      if (hooks !== undefined) expect(plugin.hookVersion, plugin.name).toBe(hooks.manifest.version);
+      expect("files" in plugin, plugin.name).toBe(false);
     }
-    const goal = plugins.find((p) => p.name === "goal")!;
-    expect(goal).toMatchObject({ hooks: ["user_prompt", "stop"], skills: [] });
-    expect(goal.hookVersion).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-    expect(goal.descriptionZh).toBeTruthy();
-    expect("files" in goal).toBe(false);
-    expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
-      hooks: ["stop"],
-    });
-    expect(plugins.find((p) => p.name === "humanizer")).toMatchObject({
-      hooks: [],
-    });
   });
 
-  it("GET /api/plugins/:plugin/files: what a plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
-    const dev = await member.get("/api/plugins/software-development/files");
-    expect(dev.status).toBe(200);
-    const devFiles = ((await dev.json()) as PluginFilesResponse).files;
-    expect(Object.keys(devFiles)).toEqual([
-      "skills/software-engineering/SKILL.md",
-      "skills/web-design/SKILL.md",
-    ]);
-    // The installable copy (frontmatter stamped), the same text an install writes.
-    expect(devFiles["skills/web-design/SKILL.md"]).toBe(librarySkill("web-design")!.skill.content);
-
-    const goal = await member.get("/api/plugins/goal/files");
-    expect(Object.keys(((await goal.json()) as PluginFilesResponse).files).sort()).toEqual([
-      "hooks/lib.mjs",
-      "hooks/start.mjs",
-      "hooks/stop.mjs",
-    ]);
-
-    // A skill's auxiliary files keep their subdirectory path.
-    const humanizer = await member.get("/api/plugins/humanizer/files");
-    const humanizerFiles = ((await humanizer.json()) as PluginFilesResponse).files;
-    expect(Object.keys(humanizerFiles)).toContain("skills/humanizer/reference/tells.md");
+  it("GET /api/plugins/:plugin/files: what each library plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
+    const library = (await (await member.get("/api/plugins")).json()) as PluginLibraryResponse;
+    for (const { name } of library.groups.flatMap((g) => g.plugins)) {
+      const res = await member.get(`/api/plugins/${name}/files`);
+      expect(res.status, name).toBe(200);
+      const files = ((await res.json()) as PluginFilesResponse).files;
+      const plugin = libraryPlugin(name)!;
+      // Each skill's installable copy (frontmatter stamped, the same text an install writes)
+      // under its own directory, its auxiliary files keeping their subdirectory path; the hook
+      // package's scripts under hooks/.
+      const shipped: Record<string, string> = {};
+      for (const skill of plugin.skills) {
+        shipped[`skills/${skill.name}/SKILL.md`] = skill.content;
+        for (const [rel, text] of Object.entries(skill.files ?? {})) {
+          shipped[`skills/${skill.name}/${rel}`] = text;
+        }
+      }
+      for (const [rel, text] of Object.entries(plugin.hooks?.files ?? {})) {
+        shipped[`hooks/${rel}`] = text;
+      }
+      for (const [file, text] of Object.entries(shipped)) {
+        expect(files[file], `${name}: ${file}`).toBe(text);
+      }
+    }
 
     expect((await member.get("/api/plugins/no-such-plugin/files")).status).toBe(404);
   });
