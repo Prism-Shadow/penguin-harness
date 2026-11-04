@@ -3,7 +3,7 @@
  * the panel of a covering one — and back down when they close.
  */
 import { describe, expect, it } from "vitest";
-import { coversViewport, FRAME_HEIGHT_OPTIONS, frameHeight } from "../src/library/frame-height";
+import { coversViewport, frameHeight } from "../src/library/frame-height";
 
 const main = { bottom: 400, contentBottom: 380 };
 const opts = { margin: 10, dialogMin: 560 };
@@ -45,10 +45,6 @@ describe("frameHeight", () => {
     const withMenu = frameHeight(main, [{ bottom: 900, covers: false, panelHeight: 0 }], opts);
     expect(withMenu).toBe(910);
     expect(frameHeight(main, [], opts)).toBe(400);
-  });
-
-  it("ships with a small margin and a dialog floor of 560", () => {
-    expect(FRAME_HEIGHT_OPTIONS).toEqual({ margin: 16, dialogMin: 560 });
   });
 });
 

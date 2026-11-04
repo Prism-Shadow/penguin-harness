@@ -88,93 +88,34 @@ describe("parseAuthors / formatAuthors", () => {
   });
 });
 
-describe("frontmatter mapping (author / pinned / category)", () => {
-  it("defaults authors and pinned when the frontmatter omits them", () => {
-    const post = getPost("july-2026-updates", "en");
-    expect(post?.authors).toEqual([DEFAULT_AUTHOR]);
-    expect(post?.pinned).toBe(false);
-  });
-
-  it("reads the explicit author list and the practice category", () => {
-    const post = getPost("local-agents-on-amd-gpus", "en");
-    expect(post?.authors).toEqual([
-      "Ning Zhang (AMD)",
-      "Yuyang Gao (AMD)",
-      "Yaowei Zheng (PrismShadow)",
-    ]);
-    expect(post?.category).toBe("practice");
-    expect(post?.pinned).toBe(false);
-  });
-
-  it("reads the pinned flag and sorts the pinned post first", () => {
+/**
+ * The post lists, over whatever posts content/blog holds.
+ *
+ * - Given the blog in either language, each post is listed once, in that language, pinned posts
+ *   first and the rest newest first.
+ * - Given a category, the list holds exactly that category's posts, in the whole list's order.
+ */
+describe("the post lists", () => {
+  it("list each post once, in the reader's language, pinned first and then newest", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      // The launch post stays the single pinned post; newer posts sort under it by date.
-      expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
-        "introducing-penguinharness",
-      ]);
-      expect(posts[0]?.slug).toBe("introducing-penguinharness");
-      // Pinning beats recency: the runner-up is strictly newer than the pinned post. Asserted
-      // as a relation rather than a slug, because the newest date is shared by several posts
-      // and the slug tie-break makes any single winner churn whenever a post is added.
-      expect(posts[1]!.date > posts[0]!.date).toBe(true);
+      expect(posts.length).toBeGreaterThan(0);
+      expect(new Set(posts.map((p) => p.slug)).size).toBe(posts.length);
+      expect(posts.every((p) => p.lang === locale)).toBe(true);
+      const pinned = posts.map((p) => p.pinned);
+      expect(pinned).toEqual([...pinned].sort((a, b) => Number(b) - Number(a)));
+      const dates = posts.filter((p) => !p.pinned).map((p) => p.date);
+      expect(dates).toEqual([...dates].sort().reverse());
     }
   });
 
-  it("filters by the practice category, newest first", () => {
-    expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
-      "testing-agent-harnesses",
-      // Posts that share a date are ordered by slug, ascending.
-      "build-agent-apps-with-workflows",
-      "call-agents-with-the-agent-api",
-      "let-agents-use-the-browser",
-      "run-agents-on-remote-machines",
-      "self-evolve-agents-with-rsi-toolkits",
-      "connect-agents-to-feishu-qq-telegram-wechat",
-      "create-evaluate-evolve-agents",
-      "natural-language-training-loop",
-      "penguin-harness-self-improvement-with-amd-gpu",
-      "local-agents-on-amd-gpus",
-    ]);
-  });
-
-  it("filters by the news category, newest first", () => {
-    expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
-      "introducing-penguinharness",
-      "penguinharness-magpie",
-      "penguinharness-0-2-17",
-      "penguinharness-0-2-16",
-      "tokendance-agent-challenge",
-      "penguinharness-0-2-15",
-      "penguinharness-0-2-13",
-      "penguinharness-0-2-11",
-      "penguinharness-0-2-6",
-      "penguinharness-0-2-4",
-      "penguinharness-0-2-3",
-      "penguinharness-0-2-2",
-      "penguinharness-0-2-1",
-      "penguinharness-0-2-0",
-      "penguinharness-0-1-5",
-      "penguinharness-0-1-4",
-      "free-models-in-penguin-harness",
-      "gemini-3-6-in-penguinharness",
-      "fireworks-credits-amd",
-    ]);
-  });
-
-  it("filters by the perspectives category", () => {
-    expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
-      // The next four share 2026-10-19, so slug ascending is the tie-break.
-      "context-slope",
-      "from-a2ui-to-a2app",
-      "personal-agents-need-a-computer",
-      "rules-for-vibe-coding",
-      "agent-company-mode",
-      // The next three share 2026-07-22, so slug ascending is the tie-break.
-      "ai-infrastructure-past-present-future",
-      "easiest-way-to-build-ai-agents-2026",
-      "simple-harness-is-all-you-need",
-    ]);
+  it("filter by category, in the whole list's order", () => {
+    for (const locale of ["en", "zh"] as const) {
+      const all = postsFor(locale);
+      for (const category of ["news", "practice", "perspectives", "changelog"] as const) {
+        expect(postsFor(locale, category)).toEqual(all.filter((p) => p.category === category));
+      }
+    }
   });
 });
 
@@ -200,13 +141,13 @@ describe("latestPosts", () => {
  * The index and the bodies, which the site reads separately: the index in the main bundle, each
  * body on demand.
  *
- * - Given any post file, its index entry carries the title, date and excerpt its frontmatter
- *   states, in its own language.
+ * - Given any post file, its index entry carries the title, date, excerpt, byline (the default
+ *   one when it names none) and pin its frontmatter states, in its own language.
  * - Given a post not opened yet, its body is not at hand; once loaded it is the file's text
  *   without the frontmatter, and is then at hand at once — each language its own text.
  */
 describe("blog index and post bodies", () => {
-  it("indexes every post file with the title, date and excerpt its frontmatter states", () => {
+  it("indexes every post file with the title, date, excerpt, byline and pin its frontmatter states", () => {
     const files = readdirSync(contentDir).filter((f) => f.endsWith(".md"));
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
@@ -219,12 +160,14 @@ describe("blog index and post bodies", () => {
         title: meta.title,
         date: meta.date,
         excerpt: meta.excerpt,
+        authors: parseAuthors(meta.author),
+        pinned: meta.pinned === "true",
       });
     }
   });
 
   it("loads a post's body on demand, without its frontmatter, in each language", async () => {
-    const slug = "introducing-penguinharness";
+    const { slug } = postsFor("en")[0]!;
     for (const lang of ["en", "zh"] as const) {
       const post = getPost(slug, lang)!;
       expect(loadedPostBody(post)).toBeUndefined();

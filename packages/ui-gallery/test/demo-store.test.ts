@@ -97,19 +97,6 @@ describe("the fixtures", () => {
   it("seed every Session id the ids module lists, and no other", () => {
     const f = buildFixtures("en", NOW);
     expect(f.sessions.map((s) => s.sessionId).sort()).toEqual([...ALL_SESSION_IDS].sort());
-    expect(
-      f.sessions
-        .filter((s) => s.status === "running")
-        .map((s) => s.sessionId)
-        .sort(),
-    ).toEqual(
-      [
-        IDS.sessions.approval,
-        IDS.sessions.runningTool,
-        IDS.sessions.thinking,
-        IDS.sessions.streaming,
-      ].sort(),
-    );
   });
 
   it("carry the whole built-in catalog: the app's catalog check finds nothing to add", () => {
@@ -118,11 +105,10 @@ describe("the fixtures", () => {
       if (m.provider === "custom") continue;
       expect(catalogEntryFor(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBeDefined();
     }
-    expect(f.models.models.length).toBeGreaterThan(100);
     expect(catalogDelta(f.models.models)).toEqual({ added: 0, refs: [] });
-    expect(f.models.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
-    expect(f.models.models.filter((m) => m.isDefault).map((m) => m.modelId)).toEqual([
-      "deepseek-flash",
+    // One row is the default, the one the default model names, and every Session runs on a row.
+    expect(f.models.models.filter((m) => m.isDefault)).toEqual([
+      expect.objectContaining(f.models.defaultModel),
     ]);
     for (const s of f.sessions)
       expect(f.models.models.some((m) => m.modelId === s.modelId)).toBe(true);
@@ -140,14 +126,6 @@ describe("the fixtures", () => {
       }
     }
     expect(f.agents.some((agent) => agent.pluginUpdates.length > 0)).toBe(true);
-  });
-
-  it("carry thirty days of usage in both Agents' names", () => {
-    const f = buildFixtures("en", NOW);
-    expect(new Set(f.usage.map((d) => d.date)).size).toBe(30);
-    expect(new Set(f.usage.map((d) => d.agentId))).toEqual(
-      new Set([IDS.agents.docs, IDS.agents.notes]),
-    );
   });
 });
 

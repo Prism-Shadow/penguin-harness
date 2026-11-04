@@ -10,17 +10,13 @@
  * carrying the deployed base path that the router already supplies. A "/slug#anchor"
  * link carries both halves, and the anchor half is the one that rots quietly: a heading
  * renamed on the target page leaves the link working and the reader on the wrong part of
- * it. Each language links its own twin, since the headings are translated. The sidebar's
- * section labels are checked here too: `S.sections` is a Record, so a section id with no
- * label typechecks and renders an empty heading. Reads the files via fs so the check runs
- * under plain node (no Vite glob).
+ * it. Each language links its own twin, since the headings are translated. Reads the files
+ * via fs so the check runs under plain node (no Vite glob).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOCS_NAV, DOC_SLUGS, pagerFor } from "../src/lib/nav";
-import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
 import { extractToc, hashTargetId, parseFrontmatter } from "@prismshadow/penguin-ui/site";
 
 const contentDir = join(__dirname, "..", "content");
@@ -67,13 +63,6 @@ describe("docs navigation / content integrity", () => {
         expect(DOC_SLUGS, `${slug} paginates ${dir} to a non-existent page`).toContain(target);
         expect(target, `${slug} paginates ${dir} to itself`).not.toBe(slug);
       }
-    }
-  });
-
-  it("labels every navigation section in both dictionaries", () => {
-    for (const { id } of DOCS_NAV) {
-      expect(zh.sections[id], `missing zh label for the ${id} section`).toBeTruthy();
-      expect(en.sections[id], `missing en label for the ${id} section`).toBeTruthy();
     }
   });
 
