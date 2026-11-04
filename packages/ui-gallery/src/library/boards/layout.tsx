@@ -153,7 +153,7 @@ export function LayoutBoard() {
       </BoardGroup>
       <BoardGroup title={t.entity}>
         <EntityHeader
-          media={<AgentAvatar id={AGENT_ID} name={t.entityName} size={40} />}
+          media={<AgentAvatar id={AGENT_ID} size={40} />}
           name={t.entityName}
           meta={
             <>

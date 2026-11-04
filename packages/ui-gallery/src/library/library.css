@@ -140,6 +140,18 @@ html[data-framed] body {
   align-items: center;
   gap: 0.375rem;
 }
+/* The avatars board's palette: one size of avatars in a row, its caption under it. */
+.lib-palette {
+  display: grid;
+  justify-items: start;
+  gap: 0.375rem;
+}
+.lib-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
 /* A caption under a specimen: the caption rung in the subtle ink. */
 .lib-caption {
   font-size: var(--ui-text-caption-size);

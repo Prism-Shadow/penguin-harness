@@ -1,25 +1,82 @@
 /**
- * The avatars' markup: an agent tile inks its initial through one scheme-following value (no
- * dark-mode class), an account's disc is drawn in tokens, and a stack shows a few avatars then
- * a count, with the avatars themselves hidden from assistive technology.
+ * The avatars' markup.
+ *
+ * - Given an Agent, its avatar draws the mascot once per theme's drawing under the avatar hook, so
+ *   the theme's CSS picks one; every drawing paints the head in the Agent's colour, the same
+ *   colour in every theme; no letter is drawn and no dark-mode class is needed.
+ * - Given a pinned drawing, only that drawing is drawn, outside the hook, so no theme hides it.
+ * - Given two Agents in different palette slots, their heads differ.
+ * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
+ *   scales to the box, antialiased.
+ * - An account's disc is drawn in tokens, and a stack shows a few avatars then a count, with the
+ *   avatars themselves hidden from assistive technology.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { AgentAvatar } from "../src/components/icons/avatars/agent-avatar";
-import { avatarTile } from "../src/components/icons/avatars/avatar";
+import { agentColors, agentSlot } from "../src/components/icons/avatars/agent-palette";
 import { AvatarStack } from "../src/components/icons/avatars/avatar-stack";
 import { USER_AVATAR_SIZE, UserAvatar } from "../src/components/icons/avatars/user-avatar";
 import { classTokens, renderStatic } from "../src/testing";
 
+/** Each drawing's markup, by the `data-variant` it is written under. */
+function drawings(html: string): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const m of html.matchAll(
+    /<g data-variant="(\w+)">([\s\S]*?)(?=<g data-variant=|<\/svg>)/g,
+  )) {
+    found.set(m[1]!, m[2]!);
+  }
+  return found;
+}
+
+/** The fill of a drawing's first shape: the head (or the ground under it, in `soft`). */
+const headFills = (markup: string) =>
+  [...markup.matchAll(/style="fill:([^"]+)"/g)].map((m) => m[1]!).slice(0, 2);
+
 describe("AgentAvatar", () => {
-  it("draws the name's initial on the id's tile, inked with light-dark()", () => {
-    const html = renderStatic(createElement(AgentAvatar, { id: "docs-expert", name: "docs" }));
-    const tile = avatarTile("docs-expert");
-    expect(html).toContain(`fill="${tile.bg}"`);
-    expect(html).toContain(`fill:${tile.ink}`);
-    expect(html).toContain(">D</text>");
+  it("draws every theme's drawing under the avatar hook, each in the Agent's own colour", () => {
+    const html = renderStatic(createElement(AgentAvatar, { id: "docs-expert" }));
+    const { body } = agentColors("docs-expert");
+    expect(classTokens(html)).toContain("ui-avatar");
+    const drawn = drawings(html);
+    expect([...drawn.keys()]).toEqual(["flat", "soft", "pixel"]);
+    for (const [name, markup] of drawn) {
+      expect(headFills(markup), `${name} paints the head in the Agent's colour`).toContain(body);
+    }
+    expect(html).not.toContain("<text");
     expect(html).not.toContain("dark:");
     expect(html).toContain('aria-hidden="true"');
+  });
+
+  it("draws a pinned drawing alone, outside the hook", () => {
+    const html = renderStatic(createElement(AgentAvatar, { id: "qa", variant: "pixel" }));
+    expect(classTokens(html)).not.toContain("ui-avatar");
+    expect([...drawings(html).keys()]).toEqual(["pixel"]);
+  });
+
+  it("gives two Agents in different slots different heads", () => {
+    const [a, b] = ["agent-0", "agent-1", "agent-2", "agent-3"].filter(
+      (id, i, all) => all.findIndex((other) => agentSlot(other) === agentSlot(id)) === i,
+    );
+    const head = (id: string) =>
+      headFills(drawings(renderStatic(createElement(AgentAvatar, { id }))).get("flat")!)[0];
+    expect(head(a!)).not.toBe(head(b!));
+  });
+
+  it("lays the pixel face on whole pixels from 16px up, and scales it into a smaller box", () => {
+    const pixel = (size: number) =>
+      drawings(renderStatic(createElement(AgentAvatar, { id: "qa", size, variant: "pixel" }))).get(
+        "pixel",
+      )!;
+    // 18px: one pixel a cell, centred one pixel in — 24/18 user units to a pixel.
+    expect(pixel(18)).toContain('transform="translate(1.3333 1.3333) scale(1.3333)"');
+    expect(pixel(18)).toContain('shape-rendering="crispEdges"');
+    // 40px: two pixels a cell, the 32px face four pixels in.
+    expect(pixel(40)).toContain('transform="translate(2.4 2.4) scale(1.2)"');
+    // 14px: no whole-pixel layout fits sixteen cells; scaled and left antialiased.
+    expect(pixel(14)).toContain('transform="scale(1.5)"');
+    expect(pixel(14)).not.toContain("crispEdges");
   });
 });
 

@@ -53,6 +53,8 @@
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
+ * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx) |
+ * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
@@ -228,6 +230,12 @@
  * face (a reading is data) and the illustration's lines square-capped on crisp edges; Primer keeps
  * the host's card. The illustration's loops run on `--ui-live-timing`, so they step in Console and
  * glide elsewhere.
+ *
+ * `ui-avatar` (2026-11-04) is an Agent's default avatar, the penguin mascot, drawn once per
+ * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, Frost
+ * swaps in `soft` and Console `pixel`, and Primer — and any theme with no drawing of its own —
+ * keeps `flat`. Every drawing paints the same colours, the Agent's palette slot, so only the
+ * drawing changes with the theme.
  */
 export const HOOKS = [
   "ui-glass",
@@ -247,6 +255,7 @@ export const HOOKS = [
   "ui-stream",
   "ui-glyph",
   "ui-widget",
+  "ui-avatar",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

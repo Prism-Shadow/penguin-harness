@@ -2362,12 +2362,7 @@ export function Sidebar({
                         open={!collapsed}
                         onToggle={() => toggleGroup(agent.agentId)}
                         icon={
-                          <AgentAvatar
-                            id={agent.agentId}
-                            name={agentDisplayName(agent)}
-                            size={18}
-                            className="shrink-0 rounded"
-                          />
+                          <AgentAvatar id={agent.agentId} size={18} className="shrink-0 rounded" />
                         }
                         label={agentDisplayName(agent)}
                         uppercase

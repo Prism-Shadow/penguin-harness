@@ -539,9 +539,9 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives fifteen of the seventeen a recipe: glass, eyebrow (its ink; the rung is
+   * Frost gives sixteen of the eighteen a recipe: glass, eyebrow (its ink; the rung is
    * theme.css's), display, live, frame, underline-nav, shell, icon-decor, tree, field, activity,
-   * notice, chart, stream, widget. `.ui-scrim` is a documented no-op: the page behind a dialog is
+   * notice, chart, stream, widget, avatar. `.ui-scrim` is a documented no-op: the page behind a dialog is
    * the host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's
    * own, and their duotone bodies show through `--ui-icon-duo-opacity`.
    */
@@ -1085,6 +1085,14 @@
   :root[data-theme="modern"] .ui-widget [data-figure] {
     font-weight: var(--ui-weight-body);
     letter-spacing: -0.02em;
+  }
+
+  /* An Agent's avatar is the soft drawing: a round head with no tile around it. */
+  :root[data-theme="modern"] .ui-avatar > [data-variant="flat"] {
+    display: none;
+  }
+  :root[data-theme="modern"] .ui-avatar > [data-variant="soft"] {
+    display: inline;
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

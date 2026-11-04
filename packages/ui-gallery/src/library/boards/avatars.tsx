@@ -1,16 +1,62 @@
 /**
- * 头像: the user avatar at its two rungs, with and without a nickname, the agent avatar at three
- * sizes, and the avatar stack — agents and an account overlapping, then the count of the rest.
+ * 头像: the user avatar at its two rungs, with and without a nickname; the agent avatar — the
+ * active theme's drawing once in each of the twelve palette colours, then every theme's drawing
+ * pinned side by side, each at 16, 24 and 48 px; and the avatar stack — agents and an account
+ * overlapping, then the count of the rest. The page's mode switch shows the other mode.
  */
 import {
+  AGENT_AVATAR_VARIANT_NAMES,
+  AGENT_PALETTE,
   AgentAvatar,
   AvatarStack,
   ICON_SIZE,
   USER_AVATAR_SIZE,
   UserAvatar,
+  agentSlot,
 } from "@prismshadow/penguin-ui";
+import type { AgentAvatarVariant, ThemeId } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+
+/** The sizes the board draws: the sidebar's row, a list's, and a dialog's face. */
+const SIZES = [16, 24, 48] as const;
+
+/** The theme whose CSS shows each drawing, for its label. */
+const DRAWN_BY: Readonly<Record<AgentAvatarVariant, ThemeId>> = {
+  flat: "github",
+  soft: "modern",
+  pixel: "geek",
+};
+
+/** One sample id per palette slot, in slot order: the first `agent-<n>` that falls in each. */
+const PALETTE_IDS: readonly string[] = (() => {
+  const ids: string[] = [];
+  let found = 0;
+  for (let n = 0; found < AGENT_PALETTE.length; n++) {
+    const id = `agent-${n}`;
+    const slot = agentSlot(id);
+    if (ids[slot] === undefined) {
+      ids[slot] = id;
+      found += 1;
+    }
+  }
+  return ids;
+})();
+
+/** The palette at one size: the active theme's drawing, or the one `variant` pins. */
+function PaletteRow({ size, variant }: { size: number; variant?: AgentAvatarVariant }) {
+  const { S } = useGallery();
+  return (
+    <div className="lib-palette">
+      <div className="lib-palette-row">
+        {PALETTE_IDS.map((id) => (
+          <AgentAvatar key={id} id={id} size={size} {...(variant ? { variant } : {})} />
+        ))}
+      </div>
+      <span className="lib-caption">{S.library.avatars.sizeCaption(size)}</span>
+    </div>
+  );
+}
 
 export function AvatarsBoard() {
   const { S } = useGallery();
@@ -42,19 +88,24 @@ export function AvatarsBoard() {
           </span>
         </div>
       </BoardGroup>
-      <BoardGroup title={t.agent}>
-        <div className="lib-row">
-          {t.agents.map((agent) => (
-            <span key={agent.id} className="lib-cell">
-              <AgentAvatar id={agent.id} name={agent.name} />
-              <span className="lib-caption">{agent.name}</span>
-            </span>
+      <BoardGroup title={t.agent} aside={t.agentAside}>
+        <div className="lib-stack lib-stack-wide" data-avatar-board="active">
+          {SIZES.map((size) => (
+            <PaletteRow key={size} size={size} />
           ))}
-          {[24, 32].map((size) => (
-            <span key={size} className="lib-cell">
-              <AgentAvatar id={t.agents[0]?.id ?? "agent"} name={t.agents[0]?.name} size={size} />
-              <span className="lib-caption">{size}px</span>
-            </span>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.variants} aside={t.variantsAside}>
+        <div className="lib-stack lib-stack-wide">
+          {AGENT_AVATAR_VARIANT_NAMES.map((variant) => (
+            <section key={variant} className="lib-part" data-avatar-board={variant}>
+              <div className="lib-part-head">
+                <h2>{S.rail.themeNames[DRAWN_BY[variant]]}</h2>
+              </div>
+              {SIZES.map((size) => (
+                <PaletteRow key={size} size={size} variant={variant} />
+              ))}
+            </section>
           ))}
         </div>
       </BoardGroup>
