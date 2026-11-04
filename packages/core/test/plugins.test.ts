@@ -225,13 +225,14 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
-  it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
-    // These four methods share one evaluation protocol. Continuous-training methods have
+  it("ACE, APE, AWM, GEPA and OPRO ship the same evaluation reference", () => {
+    // These five methods share one evaluation protocol. Continuous-training methods have
     // their own worker instructions; keep this check on the copies that must stay identical.
     const toolkits = [
       "ace-rsi-toolkit",
       "ape-rsi-toolkit",
       "awm-rsi-toolkit",
+      "gepa-rsi-toolkit",
       "opro-rsi-toolkit",
     ].map((name) => libraryPlugin(name)!);
     expect(toolkits.length).toBeGreaterThan(1);
@@ -350,6 +351,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "ape-rsi-toolkit",
       "awm-rsi-toolkit",
       "default-rsi-toolkit",
+      "gepa-rsi-toolkit",
       "openskill-rsi-toolkit",
       "opro-rsi-toolkit",
       "skilladam-rsi-toolkit",
