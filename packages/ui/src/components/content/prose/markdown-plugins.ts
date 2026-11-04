@@ -51,7 +51,6 @@
  * stays text (`$i$-th` and `\(i\)th` render).
  */
 import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
-import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
@@ -115,15 +114,6 @@ export const REMARK_PLUGINS: PluginList = [
   remarkMathDollars,
 ];
 
-/**
- * The remark stage of the public sites' articles (`SiteMarkdown`): GitHub-flavoured Markdown and
- * nothing else. Their posts and pages are first-party Markdown written for GitHub's renderer —
- * strikethrough means strikethrough, a `$` is a shell prompt, a bare URL ends where GitHub ends
- * it, and their links are written as links — so the chat dialect above, which answers model
- * output, would change how they read.
- */
-export const SITE_REMARK_PLUGINS: PluginList = [remarkGfm];
-
 /** react-markdown's rehype plugin-list type. */
 type RehypePluginList = NonNullable<Options["rehypePlugins"]>;
 
@@ -175,11 +165,3 @@ export const STREAMING_REHYPE_PLUGINS: RehypePluginList = [
   rehypeSingleDollarEdge,
   rehypeMathPunctuation,
 ];
-
-/**
- * The rehype stage of the public sites' articles (`SiteMarkdown`): the table pass, so a table on
- * the docs site or the blog is boxed and classified the way a chat reply's is. A host that brings
- * its own rehype stage (the blog's raw HTML) gets the pass appended after it, so a table written
- * as raw HTML is shaped too.
- */
-export const SITE_REHYPE_PLUGINS: RehypePluginList = [rehypeMarkdownTables];
