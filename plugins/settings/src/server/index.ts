@@ -4,6 +4,10 @@
  * composition root.
  */
 export * from "./auth/service.js";
+export * from "./mechanism-identity.js";
+export * from "./mechanism-settings.js";
+export * from "./repos/users.js";
+export * from "./repos/auth-sessions.js";
 export * from "./auth/api-token.js";
 export * from "./auth/password.js";
 export * from "./auth/runtime-state.js";

@@ -6,7 +6,7 @@
 import { clampAttachmentMb, DEFAULT_ATTACHMENT_MAX_MB, DEFAULT_ATTACHMENT_TOTAL_MB } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-server/internal";
-import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "../mechanism-settings.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";

@@ -68,6 +68,16 @@ import {
   Traces,
   UsageRepo,
 } from "@penguinharness/plugin-usage/server";
+import {
+  Admin,
+  Auth,
+  AuthSessions,
+  AuthSessionsRepo,
+  Settings,
+  UiPrefsStore,
+  Users,
+  UsersRepo,
+} from "@penguinharness/plugin-settings/server";
 import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
 import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
 import { QQTransportProvider } from "@penguinharness/plugin-messaging/server";
@@ -94,8 +104,6 @@ import {
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { HarnessHistoryStore } from "@penguinharness/plugin-usage/server";
-import { UsersRepo } from "./db/repos/users.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
 import { AgentStateStore } from "./runtime/agent-state.js";
@@ -158,7 +166,6 @@ import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "@penguinharness/plugin-terminal/server";
 import { SessionApiRoutes } from "@penguinharness/plugin-sessions/server";
-import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {
   Access,
   AgentIndex,
@@ -189,7 +196,6 @@ import {
   UsageStore,
 } from "@penguinharness/plugin-usage/server";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
-import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";

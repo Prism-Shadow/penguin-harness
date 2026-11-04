@@ -23,7 +23,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { readJson, requireEnum } from "../http/validate.js";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import { AMSP_PREFIX, amspCors } from "./cors.js";
 import { amspGate } from "./gate.js";
 import type { AmspEnv, AmspGateDeps } from "./gate.js";

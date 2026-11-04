@@ -3,7 +3,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-server/internal";
-import type { UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import type { UiPrefsStore } from "../mechanism-settings.js";
 
 @Component()
 export class UiPrefsRepo implements UiPrefsStore {

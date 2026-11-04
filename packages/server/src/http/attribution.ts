@@ -5,7 +5,7 @@
  */
 import type { Context } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
 
 /**

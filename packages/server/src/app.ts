@@ -49,6 +49,8 @@ import {
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
 import { SchedulesRepo, SessionsRepo } from "@penguinharness/plugin-sessions/server";
+import { UsersRepo, AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
 import { ErrorsRepo, TraceIndexRepo, UsageRepo } from "@penguinharness/plugin-usage/server";
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
@@ -57,8 +59,6 @@ import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-import { UsersRepo } from "./db/repos/users.js";
-import type { UserRow } from "./db/repos/users.js";
 import { jsonOnlyWrites } from "./auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
@@ -69,7 +69,6 @@ import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -167,10 +166,10 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "@penguinharness/plugin-machines/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "./mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process

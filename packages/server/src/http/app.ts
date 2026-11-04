@@ -11,10 +11,10 @@ import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
-import type { Auth } from "../mechanisms/identity.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Errors } from "@penguinharness/plugin-usage/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
 @Interface()

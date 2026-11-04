@@ -27,7 +27,7 @@ import { streamSSE } from "hono/streaming";
 import type { ServerEvent } from "../api/types.js";
 import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
 import type { LiveStreams } from "../auth/live-streams.js";
-import type { Auth } from "../mechanisms/identity.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
 
 const HEARTBEAT_MS = 20_000;

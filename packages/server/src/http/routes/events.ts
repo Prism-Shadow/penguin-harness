@@ -10,7 +10,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels } from "../../hmr/capabilities.js";
 import { LiveStreams } from "../../auth/live-streams.js";
-import { Auth } from "../../mechanisms/identity.js";
+import { Auth } from "@penguinharness/plugin-settings/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface EventsRouteDeps {

@@ -21,7 +21,7 @@ import type { AgentConfig } from "@penguinharness/plugin-agents/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import type { SessionManager, Sessions, SessionServiceIface } from "@penguinharness/plugin-sessions/server";
 import type { SessionService } from "../services/session-service.js";
 import { amspRoutes } from "./routes.js";

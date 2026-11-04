@@ -7,9 +7,9 @@
 import path from "node:path";
 import fs from "node:fs";
 import { openExistingDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import type { SessionViaValue } from "./db/repos/auth-sessions.js";
-import { UsersRepo } from "./db/repos/users.js";
+import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
+import type { SessionViaValue } from "@penguinharness/plugin-settings/server";
+import { UsersRepo } from "@penguinharness/plugin-settings/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** An hour: long enough for a controller to finish, short enough to forget. */

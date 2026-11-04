@@ -27,7 +27,7 @@ import type {
   ProjectSummary,
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
-import type { UserRow } from "@prismshadow/penguin-server/internal";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
 import type { RawTable, UtilityCompletion } from "@penguinharness/plugin-projects/server";
 import type {
   ListEndpointModelsOptions,
