@@ -21,7 +21,13 @@
  * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
  * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
- * - An edited folder is re-imported, every version recorded and any restorable.
+ * - An edited folder is re-imported and committed once per loaded revision to the Agent State
+ *   repository, made beside agent_state/ at the first load; a rollback restores a version's
+ *   files exactly, keeps the state, and is itself the newest version.
+ * - A repository the server cannot read never stops a load: the version is not recorded and
+ *   the history answers an error the page can retry.
+ * - A file under a name git refuses never stops a load either: it is named in the log and stays
+ *   out of the versions.
  * - An unknown required interface leaves the previous instance serving and names the problem.
  * - A source type error reports the file, line and reason, without duplicate diagnostics.
  * - A JSON response body may be null.
@@ -33,7 +39,7 @@
  * - Several contributed tabs are exposed in order.
  * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
  * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
- * - Removing a workbench removes its folder and recorded versions.
+ * - Removing a workbench removes its folder and its versions are no longer listed.
  * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
  *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
@@ -518,9 +524,10 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   let dir: string;
   let editors = 0;
   let agentId: string;
+  const logged: string[] = [];
 
   beforeAll(async () => {
-    t = await createTestApp();
+    t = await createTestApp({ log: (line) => logged.push(line) });
     owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
     const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
     expect(created.status, await created.text()).toBe(201);
@@ -542,6 +549,9 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   });
 
   const list = () => listOf(owner, base);
+  const versions = async (): Promise<WorkbenchVersion[]> =>
+    ((await (await owner.get(`${base}/demo/history`)).json()) as { versions: WorkbenchVersion[] })
+      .versions;
 
   it("keeps one loaded instance for concurrent first reads", async () => {
     const results = await Promise.all(Array.from({ length: 4 }, () => list()));
@@ -578,12 +588,20 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(res.status, await res.text()).toBe(200);
   });
 
-  it("re-imports an edited folder, records every version and rolls back to any of them", async () => {
+  it("commits each loaded revision once and rolls back to any of them exactly", async () => {
     const [v1] = await list();
+    // The first load made the repository beside the Agent State, and put nothing inside it.
+    const agent = agentDir(t.root, PROJECT, agentId);
+    expect((await fs.stat(path.join(agent, "agent_state.git", "HEAD"))).isFile()).toBe(true);
+    const inside = await fs.readdir(path.join(agent, "agent_state"));
+    expect(inside.filter((name) => name.startsWith(".git"))).toEqual([]);
+    expect((await versions()).map((v) => v.revision)).toEqual([v1!.revision]);
+
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));
     await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
-    const reload = await owner.post(`${base}/demo/reload`);
-    const v2 = ((await reload.json()) as { workbench: WorkbenchInfo }).workbench;
+    await fs.writeFile(path.join(dir, "ui", "extra.html"), "<p>new in v2</p>");
+    await fs.writeFile(path.join(dir, "state.json"), '{"count":5}');
+    const v2 = await reload();
     expect(v2.revision).not.toBe(v1!.revision);
     expect(v2.uiRev).not.toBe(v1!.uiRev);
     expect(
@@ -591,12 +609,9 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     ).toMatchObject({
       greeting: "bonjour",
     });
-
-    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkbenchVersion[];
-    };
-    expect(history.versions.map((v) => v.revision)).toEqual([v2.revision, v1!.revision]);
-    expect(history.versions[1]!.files).toContain("ui/index.html");
+    // Loading the same files again records nothing.
+    await reload();
+    expect((await versions()).map((v) => v.revision)).toEqual([v2.revision, v1!.revision]);
 
     const back = await owner.post(`${base}/demo/rollback`, { revision: v1!.revision });
     expect(back.status).toBe(200);
@@ -604,6 +619,11 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
       v1!.revision,
     );
     expect(await (await owner.get(`${base}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
+    // Exactly that version: the page added since is gone, the workbench's state is not.
+    await expect(fs.stat(path.join(dir, "ui", "extra.html"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await fs.readFile(path.join(dir, "state.json"), "utf8")).toBe('{"count":5}');
     // Only the serving revision keeps its emitted code.
     expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
       [v1!.revision, "status.json"].sort(),
@@ -613,18 +633,49 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     ).toMatchObject({
       greeting: "hello",
     });
-    // The rolled-back revision is now the newest entry, once.
-    const after = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkbenchVersion[];
-    };
-    expect(after.versions.map((v) => v.revision)).toEqual([v1!.revision, v2.revision]);
+    // A rollback is a load like any other: the newest version, in a commit of its own.
+    const after = await versions();
+    expect(after.map((v) => v.revision)).toEqual([v1!.revision, v2.revision, v1!.revision]);
+    expect(after[0]!.commit).not.toBe(after[2]!.commit);
     expect((await owner.post(`${base}/demo/rollback`, { revision: "000000000000" })).status).toBe(
       404,
     );
   });
 
+  it("a file under a name git refuses loads, is named in the log, and stays out of the versions", async () => {
+    await fs.writeFile(path.join(dir, "git~1"), "kept on disk, not in history");
+
+    const [listed] = await list();
+
+    expect(listed!.error).toBe(null);
+    expect(logged.some((line) => line.includes("git refuses the name: git~1"))).toBe(true);
+    expect((await versions()).map((v) => v.revision)).toEqual([listed!.revision]);
+  });
+
+  it("a repository it cannot read never stops a load: the version is not recorded, history is an error", async () => {
+    const repo = path.join(agentDir(t.root, PROJECT, agentId), "agent_state.git");
+    await fs.mkdir(repo, { recursive: true });
+    await fs.writeFile(path.join(repo, "HEAD"), "garbage\n");
+
+    const [listed] = await list();
+    expect(listed!.error).toBe(null);
+    expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
+      greeting: "hello",
+    });
+    expect(
+      logged.some((line) =>
+        line.includes(`${agentId}/demo@${listed!.revision}: version not recorded`),
+      ),
+    ).toBe(true);
+    const history = await owner.get(`${base}/demo/history`);
+    expect(history.status).toBe(500);
+    expect(((await history.json()) as { error: { code: string } }).error.code).toBe(
+      "workbench_history_unreadable",
+    );
+  });
+
   it("keeps the previous instance serving when an edit does not load, and names the problem", async () => {
-    await list();
+    const [loaded] = await list();
     await fs.writeFile(
       path.join(dir, "package.json"),
       packageJson([
@@ -643,9 +694,8 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
     });
-    expect(await (await owner.get(`${base}/demo/history`)).json()).toMatchObject({
-      versions: [{ name: "Demo" }],
-    });
+    // Only what loaded is a version.
+    expect((await versions()).map((v) => v.revision)).toEqual([loaded!.revision]);
   });
 
   it("refuses source that does not type-check, with the compiler's file, line and reason", async () => {
@@ -803,7 +853,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
   });
 
-  it("removes the folder and its recorded versions on request", async () => {
+  it("removes the folder on request, and its versions are no longer listed", async () => {
     const count = async () => {
       const response = (await (
         await owner.get(`/api/projects/${PROJECT}/agents`)
@@ -819,9 +869,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     await expect(fs.stat(dir)).rejects.toThrow();
     expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);
     expect((await owner.delete(`${base}/demo`)).status).toBe(404);
-    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkbenchVersion[];
-    };
-    expect(history.versions).toEqual([]);
+    // The removal is a commit of its own: the history walk stops there.
+    expect(await versions()).toEqual([]);
   });
 });
