@@ -78,8 +78,8 @@ describe("widgetsOf", () => {
 describe("widgetStore", () => {
   it("fetches once, shares the answer, and refresh asks again", async () => {
     getContributions
-      .mockResolvedValueOnce({ widgets: [iframeWidget] as never })
-      .mockResolvedValueOnce({ widgets: [] as never });
+      .mockResolvedValueOnce({ widgets: [iframeWidget], pages: [], fileRenderers: [], pageRemovals: [], agentTabs: [], sessionTabs: [] })
+      .mockResolvedValueOnce({ widgets: [], pages: [], fileRenderers: [], pageRemovals: [], agentTabs: [], sessionTabs: [] });
     const store = widgetStore();
     await store.refresh();
     expect(store.current()).toEqual([iframeWidget]);
