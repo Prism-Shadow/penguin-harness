@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `landing`, `agents`
+- **PR:** [#1458](https://github.com/Prism-Shadow/penguin-harness/pull/1458)
 - **Issue:** [#1452](https://github.com/Prism-Shadow/penguin-harness/issues/1452)
 
 [中文版](2026-11-04-landing-original-benchmarks.zh.md)
