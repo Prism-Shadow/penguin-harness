@@ -25,6 +25,7 @@ import {
 } from "../services/skill-import-limits.js";
 import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
 import { HARNESS_DIR } from "./harness-types.js";
+import { removeLeftovers } from "./leftovers.js";
 import { isGitName } from "./repo.js";
 import {
   STATE_FILE,
@@ -381,35 +382,14 @@ async function removeSource(dir: string, rel: string): Promise<void> {
   }
 }
 
-/** How long a staging directory may sit before an import takes it for one a crash left behind. */
-const STALE_STAGING_MS = 60 * 60 * 1000;
-
-/** A staging directory as writeWorkbenchSource names one: `.<id>.penguin-tmp<12 hex>`. */
-const STAGING_NAME = new RegExp(`^\\..+${TMP_SUFFIX.replace(/[.]/g, "\\.")}[0-9a-f]{12}$`);
+/**
+ * Where an import stages its archive: `.archive.penguin-tmp-<id>-<12 hex>` beside the folders. A
+ * dot entry, so never a workbench id: neither the listing nor the watcher sees it.
+ */
+const STAGING_PREFIX = `.archive${TMP_SUFFIX}-`;
 
 const stagingName = (dir: string): string =>
-  `.${path.basename(dir)}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`;
-
-/**
- * Removes the staging directories in `base` older than an hour: what an import that never got to
- * its cleanup (a crash, a kill) left behind. A younger one may belong to an import still running,
- * and is left.
- */
-async function removeStaleStaging(base: string, now: number): Promise<void> {
-  let names: string[];
-  try {
-    names = await fs.readdir(base);
-  } catch {
-    return;
-  }
-  for (const name of names.filter((n) => STAGING_NAME.test(n))) {
-    const at = path.join(base, name);
-    const stat = await fs.lstat(at).catch(() => null);
-    if (stat?.isDirectory() && now - stat.mtimeMs > STALE_STAGING_MS) {
-      await fs.rm(at, { recursive: true, force: true });
-    }
-  }
-}
+  `${STAGING_PREFIX}${path.basename(dir)}-${randomBytes(6).toString("hex")}`;
 
 /**
  * Makes `dir`'s source exactly `files`. Everything is checked first (planRemovals) and the
@@ -417,8 +397,8 @@ async function removeStaleStaging(base: string, now: number): Promise<void> {
  * leaves the folder as it was. Then old files in the way are removed, each new file is renamed into
  * place, the remaining old source is removed, and `.harness/` goes so the next load writes this
  * host's types — as a plugin update does. `state.json`, `.plugin.json` and `.build/` stay. The
- * staging directory is a dot entry beside the folder: never a workbench id, so neither the
- * listing nor the watcher sees it. One older than an hour is a crash's leftover and goes first.
+ * archive is staged beside the folder (stagingName); a staging directory untouched for an hour is
+ * a crash's leftover and goes first.
  */
 export async function writeWorkbenchSource(
   dir: string,
@@ -426,7 +406,7 @@ export async function writeWorkbenchSource(
 ): Promise<void> {
   const removals = await planRemovals(dir, files);
   const base = path.dirname(dir);
-  await removeStaleStaging(base, Date.now());
+  await removeLeftovers(base, STAGING_PREFIX);
   await fs.mkdir(base, { recursive: true });
   const staging = path.join(base, stagingName(dir));
   try {

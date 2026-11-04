@@ -328,6 +328,11 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     ["a trailing dot", { ...valid, "todo/ui/trail.": "" }, "a name Windows cannot hold"],
     ["a name git reserves", { ...valid, "todo/git~1/x.ts": "" }, "a name git reserves"],
     [
+      "a name that is .. once HFS+ drops what it ignores",
+      { ...valid, "todo/\u200c../x.ts": "" },
+      "a name git reserves",
+    ],
+    [
       "a symbolic link",
       { ...valid, "todo/ui/lib": ["../../secret", { os: 3, attrs: 0o120777 << 16 }] },
       "a link or a special file: todo/ui/lib",
@@ -476,8 +481,8 @@ describe("workbench archives", { timeout: 30_000 }, () => {
   it("a staging folder an import left behind over an hour ago is removed by the next import into that Agent", async () => {
     await createAgent("leftover_agent");
     const workbenches = workbenchesDir(t.root, projectId, "leftover_agent");
-    const old = ".todo.penguin-tmp0123456789ab";
-    const young = ".todo.penguin-tmpba9876543210";
+    const old = ".archive.penguin-tmp-todo-0123456789ab";
+    const young = ".archive.penguin-tmp-todo-ba9876543210";
     for (const name of [old, young, ".kept"]) {
       await writeFiles(path.join(workbenches, name), { "package.json": brokenPkg("todo") });
     }
@@ -566,11 +571,17 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     await createAgent("legacy_agent");
     const home = agentDir(t.root, projectId, "legacy_agent");
     // Neither package loads, so neither compiles: what is asserted is where the folders are.
-    await writeFiles(path.join(home, "workbenches", "legacy"), {
+    const legacy = path.join(home, "workbenches", "legacy");
+    await writeFiles(legacy, {
       "package.json": brokenPkg("legacy"),
       "index.ts": SOURCE["index.ts"]!,
       "state.json": SERVER_FILES["state.json"]!,
     });
+    // Written long ago, as an upgraded install's are: a folder still being written is left be.
+    const longAgo = new Date(Date.now() - 60 * 60 * 1000);
+    for (const file of ["package.json", "index.ts", "state.json"]) {
+      await fs.utimes(path.join(legacy, file), longAgo, longAgo);
+    }
     const res = await member.post(`${base("legacy_agent")}/archive`, {
       dataBase64: zipB64({ "package.json": brokenPkg("notes"), "index.ts": SOURCE["index.ts"]! }),
     });
@@ -579,6 +590,8 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     expect(listed.status).toBe(200);
     const { workbenches } = (await listed.json()) as { workbenches: WorkbenchInfo[] };
     expect(workbenches.map((w) => w.id)).toEqual(["legacy", "notes"]);
+    // The old place leads to the same folders now.
+    expect((await fs.readdir(path.join(home, "workbenches"))).sort()).toEqual(["legacy", "notes"]);
     expect(
       await fs.readFile(path.join(folder("legacy_agent", "legacy"), "state.json"), "utf8"),
     ).toBe(SERVER_FILES["state.json"]);
