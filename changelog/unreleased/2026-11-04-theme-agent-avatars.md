@@ -3,7 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feat
 - **Scope:** `ui`, `web`, `ui-gallery`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1467](https://github.com/Prism-Shadow/penguin-harness/pull/1467)
 
 [中文版](2026-11-04-theme-agent-avatars.zh.md)
 
