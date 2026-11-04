@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GDPEVO Blog 配图 — 竖排 5 行 vs. 横排 5 列对比</title>
+  <title>GDPEVO Blog 配图 — 6 版同风格 SkillAdam 候选图对比</title>
   <style>
     body {
       margin: 0;
@@ -25,6 +25,12 @@
       color: #475569;
       margin-bottom: 32px;
       font-size: 15px;
+    }
+    h2 {
+      font-size: 21px;
+      margin: 44px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #cbd5e1;
     }
     .card {
       background: #ffffff;
@@ -73,31 +79,73 @@
 </head>
 <body>
   <div class="container">
-    <h1>GDPEVO 博客配图 — Evolved Agent 移出容器外 + 后半部分“竖排 5 行 vs. 横排 5 列”对比</h1>
-    <p class="sub">两版的前半部分均已将绿色的 <code>🤖🔥 Evolved Agent (+ SKILL.md)</code> 移到 <code>🐳 1 Shared Container</code> 外侧（作为训练容器完成后的导出产物）；后半部分分别展示<strong>“一行一行竖着叠放 5 个横向容器”</strong>与<strong>“并列横着排 5 个竖向容器”</strong>。博客正文页：<a href="/blog/gdpevo-self-evolution">/blog/gdpevo-self-evolution</a>。</p>
+    <h1>GDPEVO 博客配图 — 图 1（SkillAdam 自进化机制）6 版同风格设计对比</h1>
+    <p class="sub">完全沿用已定稿的图 2（版本 1）的视觉设计语言（衬线粗体大标题、左浅蓝/右浅紫圆角大面板、3+2 训练题池、极简文字密度），设计了 <strong>6 种不同构图的 SkillAdam 机制图（SA-V1 ～ SA-V6）</strong>。博客正文页：<a href="/blog/gdpevo-self-evolution">/blog/gdpevo-self-evolution</a>。</p>
+
+    <h2>一、图 1（SkillAdam 容器内自进化机制）— 6 版候选对比</h2>
 
     <div class="card">
       <div class="card-head">
-        <strong>版本 1（竖着一行一行排 — f2-compare-vertical-fixed.png?v=2）：左出 Evolved Agent 水平一分五 → 5 行横向测试容器 → 五合一水平进 Offline Verifier</strong>
-        <span class="badge badge-green">当前默认挂载 · 全图共享同一条水平中轴线，一分五/五合一最对称顺畅</span>
+        <strong>版本 SA-V1：对称双大框（左浅蓝 Task Rollout vs. 右浅紫 SkillAdam Revision）</strong>
+        <span class="badge badge-green">当前默认挂载 · 与图 2 的左蓝右紫双大框 100% 呼应</span>
       </div>
-      <img src="/figures/f2-compare-vertical-fixed.png?v=2" alt="Vertical Stack" />
+      <p class="desc"><strong>构图特点</strong>：左边浅蓝框 <code>Task Rollout (1 Shared Container)</code> 展示 <code>SKILL.md → 3+2 训练题池 → Online Judge</code>；右边浅紫框 <code>SkillAdam Revision</code> 将 <code>Issue Tracker (EIT)</code> 与 <code>Edit Budget (▼→●○○○ / ▲→●●●●)</code> 合并为 <code>Bounded Patch</code>，再经 <code>Mean Gate</code> 分出采纳回流与拒绝记账。</p>
+      <img src="/figures/sa-v1-two-panel.png?v=1" alt="SA-V1" />
     </div>
 
     <div class="card">
       <div class="card-head">
-        <strong>版本 2（横着并列排 — f2-compare-horizontal.png）：左出 Evolved Agent 向上绕顶一分五 → 5 列竖向测试容器 → 底部五合一进 Offline Verifier</strong>
-        <span class="badge">对比：横向并列排布</span>
+        <strong>版本 SA-V2：左中右三阶段色块（1. Task Rollout → 2. Adam Controller → 3. Mean Gate）</strong>
+        <span class="badge">浅蓝 + 浅紫 + 浅绿三段式</span>
       </div>
-      <img src="/figures/f2-compare-horizontal.png" alt="Horizontal Columns" />
+      <p class="desc"><strong>构图特点</strong>：把流程拆成左（实测判分）、中（一阶 EIT 账本 + 二阶方差预算 → 受限补丁）、右（均值门控采纳/回退）三个独立色块面板，层次分明。</p>
+      <img src="/figures/sa-v2-three-panel.png?v=1" alt="SA-V2" />
     </div>
 
     <div class="card">
       <div class="card-head">
-        <strong>配套同风格图 1（f1-match-v1.png — SkillAdam 容器内演进闭环）</strong>
-        <span class="badge badge-green">当前默认挂载</span>
+        <strong>版本 SA-V3：上下顺时针双轨闭环（上排从左到右 Rollout → 下排从右到左 Revision → 右侧导出 Evolved Agent）</strong>
+        <span class="badge">顺时针闭环 · 无外部长回流线</span>
       </div>
-      <img src="/figures/f1-match-v1.png" alt="M1 SkillAdam" />
+      <p class="desc"><strong>构图特点</strong>：在同一个 <code>1 Shared Container</code> 内，上轨从左向右执行 <code>Agent + SKILL.md → 3+2 训练题池 → Online Judge</code>，下轨从右向左完成 <code>EIT & Budget → Bounded Patch → Mean Gate</code>，左侧直接向上闭环更新 <code>SKILL.md</code>，右侧导出绿色的 <code>Evolved Agent (+ SKILL.md)</code>。</p>
+      <img src="/figures/sa-v3-clockwise-track.png?v=1" alt="SA-V3" />
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <strong>版本 SA-V4：纯水平中轴分叉-汇合树（1 → 2 → 1 → 2 对称树，零外部回流线）</strong>
+        <span class="badge">复刻图 2 版本 1 的水平中轴对称分叉树</span>
+      </div>
+      <p class="desc"><strong>构图特点</strong>：完全采用图 2 版本 1 的“水平中轴分叉-汇合”结构——左边 <code>Base Agent 🔄 3+2 训练题池 → Online Judge</code>，进入右边浅紫框后水平一分二为 <code>Issue Tracker (EIT)</code> 和 <code>Edit Budget</code>，二合一进入 <code>Bounded Patch → Mean Gate</code>，最后水平一分二输出 <code>✔ Accept</code> 与 <code>⊗ Reject</code>，全图没有任何绕外圈的回流线。</p>
+      <img src="/figures/sa-v4-fork-join-tree.png?v=1" alt="SA-V4" />
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <strong>版本 SA-V5：左全景 + 右放大（左边直接复用图 2 的训练容器框，右边放大展开中间的循环符号 🔄）</strong>
+        <span class="badge">左宏观 + 右微观 Zoom-In</span>
+      </div>
+      <p class="desc"><strong>构图特点</strong>：左边浅蓝框与图 2 的左半部分完全一致（<code>Base Agent 🔄 3+2 训练题池 → Evolved Agent</code>），右边浅紫框专门把中间的 <code>🔄</code> 放大展开为 <code>Online Judge → [EIT + Edit Budget] → Bounded Patch → Mean Gate</code>。</p>
+      <img src="/figures/sa-v5-macro-zoom.png?v=1" alt="SA-V5" />
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <strong>版本 SA-V6：上主干四步直线流 + 下通栏持久状态底座（Persistent SkillAdam State）</strong>
+        <span class="badge">极简上下分栏</span>
+      </div>
+      <p class="desc"><strong>构图特点</strong>：上方 4 张等高卡片从左到右直线排列（<code>5 Train Tasks → Online Judge → Bounded Patch → Mean Gate</code>）；下方一条通栏紫色底座并列放置 <code>Issue Tracker (EIT)</code> 与 <code>Volatility Edit Budget</code>，仅用两根垂直短箭头与上方主干交互。</p>
+      <img src="/figures/sa-v6-memory-bar.png?v=1" alt="SA-V6" />
+    </div>
+
+    <h2>二、已定稿的图 2（版本 1 — 竖排 5 行测试容器版）</h2>
+
+    <div class="card">
+      <div class="card-head">
+        <strong>图 2 定稿版（f2-compare-vertical-fixed.png）</strong>
+        <span class="badge badge-green">已定稿锁定</span>
+      </div>
+      <img src="/figures/f2-compare-vertical-fixed.png?v=2" alt="Final Figure 2" />
     </div>
   </div>
 </body>
