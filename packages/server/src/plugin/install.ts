@@ -378,7 +378,10 @@ export async function installPluginChannel(
   verifyIntegrity(bytes, channel.integrity);
   // A file name under the prefix's archives, derived from the index's own fields: a package
   // name's safe characters with the scope slash joined, and a version's.
-  const base = `${channel.name.split("/").filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part)).join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
+  const base = `${channel.name
+    .split("/")
+    .filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part))
+    .join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
   if (base === "-" || base.length < 3) {
     throw new PluginInstallError(
       `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
