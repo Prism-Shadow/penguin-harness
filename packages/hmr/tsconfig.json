@@ -1,15 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "paths": {
-      "@penguinharness/plugin-sandbox/server": [
-        "../../plugins/sandbox/src/server/index.ts"
-      ]
-    }
+    "rootDir": "."
   },
-  "include": [
-    "src",
-    "test"
-  ]
+  "include": ["src", "test"]
 }
