@@ -37,7 +37,8 @@
  * - A settled workbench written to the old place after the Agent's were listed is listed next time.
  * - An id taken in Agent State leaves the old folder in place, and the list still answers.
  * - A snapshot import on an un-migrated Agent moves its workbenches in first (they are in the
- *   backup taken before the import), and the link still leads to the imported State's.
+ *   backup taken before the import), and the link still leads to the imported State's; after
+ *   importing a State without workbenches, a write through the old place lands at once.
  * - Deleting a linked Agent removes every entry once: the purge does not walk the link.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -576,6 +577,18 @@ describe(
       await expectLinked(dir);
       expect(await fs.readFile(oldPlace(dir, "pkg", "package.json"), "utf8")).toContain("Pkg");
       expect((await listOf(route)).map((w) => w.id)).toEqual(["pkg"]);
+      // A State without workbenches: a write through the old place right after still lands.
+      const empty = await newAgent();
+      const bare = Buffer.from(await (await owner.get(`${empty.route}/export`)).arrayBuffer());
+      const again = await owner.post(`${route}/import`, {
+        dataBase64: bare.toString("base64"),
+        confirm: true,
+      });
+      expect(again.status, await again.text()).toBe(200);
+      await fs.mkdir(oldPlace(dir, "after"), { recursive: true });
+      await fs.writeFile(oldPlace(dir, "after", "package.json"), JSON.stringify({ name: "A" }));
+      expect(await fs.readFile(inState(dir, "after", "package.json"), "utf8")).toContain("A");
+      await expectLinked(dir);
     });
 
     it("deletes a linked Agent entry by entry, without walking the link", async () => {
