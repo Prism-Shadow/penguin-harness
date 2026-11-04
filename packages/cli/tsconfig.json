@@ -1,7 +1,36 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "."
+    "rootDir": ".",
+    "paths": {
+      "@penguinharness/plugin-plugins/server": [
+        "../../plugins/plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../../plugins/sandbox/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../../plugins/sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../../plugins/company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../../plugins/projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-messaging/server": [
+        "../../plugins/messaging/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-models/server": [
+        "../../plugins/models/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "../../packages/server/src/db/repos/organizations.ts"
+      ]
+    }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }
