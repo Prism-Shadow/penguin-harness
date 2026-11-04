@@ -117,7 +117,6 @@ export * from "./lib/omni/user-events.js";
 export * from "./lib/plugin-config-event.js";
 export * from "./lib/plugins-incompatible-only.js";
 export * from "./lib/profile-form.js";
-export * from "./lib/sandbox-backend-prompt.js";
 export * from "./lib/semantic-id.js";
 export * from "./lib/shortcuts/chord.js";
 export * from "./lib/shortcuts/conflicts.js";

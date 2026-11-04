@@ -6,3 +6,4 @@ export * from "./lib/settings-request.js";
 export * from "./lib/settings-sections.js";
 export * from "./lib/notification-pref.js";
 export * from "./lib/instant-setting.js";
+export * from "./lib/sandbox-backend-prompt.js";
