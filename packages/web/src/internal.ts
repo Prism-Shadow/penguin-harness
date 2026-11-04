@@ -1,3 +1,90 @@
+/**
+ * The web app's internals the parked plugin groups compile against, one surface: each
+ * functional group under plugins/ consumes the web host through this subpath while it is
+ * parked there (`@prismshadow/penguin-web/internal`), so the group's imports name one
+ * seam instead of reaching into the host's file tree.
+ *
+ * Deliberately a re-export hub and nothing more: no logic, no defaults.
+ */
+export * from "./api/client";
+export * from "./api/session-probe";
+export * from "./api/endpoints";
+export * from "./components/ui/avatar-crop-dialog";
+export * from "./components/account/version-stamp";
+export * from "./components/ui/group-list";
+export * from "./components/ui/session-row-menu";
+export * from "./components/ui/truncated";
+export * from "@penguinharness/plugin-agents/web";
+export * from "@penguinharness/plugin-sessions/web";
+export * from "@penguinharness/plugin-terminal/web";
+export * from "@penguinharness/plugin-messaging/web";
+export * from "@penguinharness/plugin-models/web";
+export * from "@penguinharness/plugin-plugins/web";
+export * from "@penguinharness/plugin-settings/web";
+export * from "@penguinharness/plugin-projects/web";
+export * from "@penguinharness/plugin-usage/web";
+export * from "./lib/api-error";
+export * from "./lib/browser-start-sites";
+export * from "./lib/dock-panel-empty";
+export * from "./lib/file-path";
+export * from "./lib/reader-find";
+export * from "./lib/notice-dismissals";
+export * from "./state/machines";
+export * from "./lib/shortcuts/use-keymap";
+export * from "./lib/shortcuts/types";
+export * from "./lib/shortcuts/reserved";
+export * from "./lib/shortcuts/registry";
+export * from "./lib/shortcuts/recorder";
+export * from "./lib/shortcuts/format";
+export * from "./lib/shortcuts/dispatcher";
+export * from "./lib/shortcuts/conflicts";
+export * from "./lib/shortcuts/chord";
+export * from "./lib/workbench-tabs";
+export * from "./lib/workbench-theme";
+export * from "./rescue/palette";
+export * from "./components/ui/stat-hint";
+export * from "./lib/benchmark-merge";
+export * from "./lib/card-open";
+export * from "./lib/context";
+export * from "./lib/rsi-methods";
+export * from "./lib/stop-reason-tone";
+export * from "./lib/todo-dismissals";
+export * from "./lib/usage-controls";
+export * from "./lib/use-project-todos";
+export * from "./lib/use-rsi-toolkits";
+export * from "./lib/use-update-badges";
+export * from "./lib/workspace-machines";
+export * from "./lib/avatar-image";
+export * from "./lib/category-colors";
+export * from "./lib/clipboard";
+export * from "@penguinharness/plugin-company/web";
+export * from "./lib/format";
+export * from "./lib/nav-icons";
+export * from "./lib/semantic-id";
+export * from "./lib/sidebar-contributions";
+export * from "./lib/stat-icons";
+export * from "./lib/server-context";
+export * from "./lib/shortcuts/platform";
+export * from "./lib/shortcuts/store";
+export * from "./lib/shortcuts/terminal-clipboard";
+export * from "./lib/shortcuts/terminal-keys";
+export * from "./lib/strings";
+export * from "./lib/textarea-fit";
+export * from "./lib/tone";
+export * from "./lib/use-coarse-pointer";
+export * from "./lib/use-document-title";
+export * from "./lib/use-visual-viewport-height";
+export * from "./lib/web-app-pages";
+export * from "./lib/work-mode";
+export * from "./state/auth";
+export * from "./state/locale";
+export * from "./state/project";
+export * from "./state/sessions.module";
+export * from "./state/theme";
+export * from "./state/user-events";
+
+
+||||||| parent of 40a2ac2df6 (internal: drop missed settings-request star)
 /** useMachines: the machines account state wins over the api/endpoints hook of the same name. */
 export { useMachines } from "./state/machines";
 export { useMachines as useMachinesApi } from "./api/endpoints.js";
