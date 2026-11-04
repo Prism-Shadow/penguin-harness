@@ -1,8 +1,25 @@
-import type { Errors } from "@penguinharness/plugin-usage/server";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Hono } from "hono";
+import type { AppEnv } from "../auth/middleware.js";
+import { Config, Log } from "../hmr/capabilities.js";
+import type { MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { authMiddleware, bearerToken, jsonOnlyWrites } from "../auth/middleware.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
+import { HttpError, handleError } from "./errors.js";
+import { attributedProjectId } from "./attribution.js";
+import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { declined } from "../hmr/hono-seam.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
+import type { Access } from "@penguinharness/plugin-projects/server";
+
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
+import type { Settings } from "@penguinharness/plugin-settings/server";
 
 ||||||| parent of 4828df32ae (projects: mechanism and repos move into plugin-projects)
 ||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
-import type { Settings } from "../mechanisms/settings.js";
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.

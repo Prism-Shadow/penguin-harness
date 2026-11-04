@@ -17,7 +17,7 @@
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import type { UserRow } from "@prismshadow/penguin-server/internal";
+import type { UserRow } from "../repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "@prismshadow/penguin-server/internal";
 

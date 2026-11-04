@@ -1,13 +1,7 @@
-import type { AgentConfig } from "@penguinharness/plugin-agents/server";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 
 ||||||| parent of 66b8653cb4 (agents: mechanism and repo move into plugin-agents)
-import type { Settings } from "../mechanisms/settings.js";
-import { toAttachmentLimits } from "../services/attachment-limits.js";
-import { sessionMessages, sessionTraceImage } from "../services/session-history.js";
-import type { SessionHistoryDeps } from "../services/session-history.js";
-import { reserveStart } from "./admission.js";
-import { pendingApprovals } from "./approvals.js";
-import type { ApprovalsDeps } from "./approvals.js";
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 import { AMSP_PREFIX, amspCors } from "./cors.js";
 import { amspGate } from "./gate.js";
 import type { AmspEnv, AmspGateDeps } from "./gate.js";

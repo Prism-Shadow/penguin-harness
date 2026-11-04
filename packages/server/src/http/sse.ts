@@ -1,42 +1,7 @@
-/**
- * SSE endpoint adapter:
- * writes the runtime/channel event stream as an SSE response, shared by both the Session
- * channel and the user channel — over HTTP. When the socket transported the call, the same
- * stream is answered as the frames it already are (socket/stream-answer.ts): no SSE text is
- * written or parsed on that transport.
- *
- * - Response headers: text/event-stream, no-cache, `X-Accel-Buffering: no` (disables
- *   buffering on reverse proxies);
- * - Heartbeat: a named `ping` event (`data: {}`, no `id:` line) right after the initial
- *   events and every 20s after. A browser hides comment lines from the page, so only an
- *   event lets it tell a quiet stream from a dead one (web api/sse.ts); without an id it
- *   moves neither Last-Event-ID nor the replay cursor. A peer that stops reading is cut off
- *   by the host's idle timeout ({@link STREAM_IDLE_MS}, app.ts);
- *   User and machine-aggregate streams also send a `heartbeat` server event.
- * - Replay protocol: a fresh subscription without Last-Event-ID does not replay the buffer
- *   (history is served by the messages endpoint) — it only sends the initial events the
- *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
- *   replay resumes from there; on a miss, `resync_required` is sent first, then the
- *   connection continues. An AMSP stream answers a miss before it starts instead: an HTTP
- *   409 `resync_required`, and no stream. A page cannot set headers on an EventSource it
- *   opens itself, so the id may come as the `lastEventId` query parameter instead; the
- *   header wins.
- * - Revocation: a stream is authorised at connect and never again by the request path, so
- *   an authenticated route hands over {@link SseRevocation} — the registry that can end
- *   this stream from outside, and the check the heartbeat runs on it.
- * Docs: /docs/server-api § "Delivery Guarantees".
- */
-import type { Context } from "hono";
-import { getCookie } from "hono/cookie";
-import { streamSSE } from "hono/streaming";
-import type { ServerEvent } from "../api/types.js";
-import { HttpError } from "./errors.js";
-import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
-import type { LiveStreams } from "../auth/live-streams.js";
-import type { Auth } from "../mechanisms/identity.js";
-import { bearerToken, sessionCookies } from "../auth/middleware.js";
-import { answerOf } from "../socket/stream-answer.js";
-import type { StreamAnswer } from "../socket/stream-answer.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
+import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
+
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 
 /** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
 export const HEARTBEAT_MS = 20_000;

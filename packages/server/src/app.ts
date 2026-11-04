@@ -1,12 +1,66 @@
-import { migrate } from "./db/migrations.js";
+/**
+ * The HMR layer's app assembly.
+ *
+ * `bootAppDeps(config)` builds the process's core (database, channels, HmrHost), publishes
+ * it into the resource registry (see hmr/capabilities.ts), boots the platform — which builds
+ * the business surface over what it claims there — and returns the boot. `createApp(boot)`
+ * mounts the layer's HTTP surface: the network guards, `/api/hmr`, the platform seam, and
+ * static hosting. Neither listens on a port: tests inject requests via `app.request()`, and
+ * the startup entry point is index.ts.
+ *
+ * Every other route is the platform's (http/app.ts, `HttpModule`), assembled at every App
+ * creation from `platformImpl.create` (hmr/platform.ts), so it travels with the platform
+ * version rather than with this build. Swap semantics for anything the platform holds that
+ * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
+ */
+import { createHash } from "node:crypto";
+import zlib from "node:zlib";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { Hono } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
+import type { HttpBindings } from "@hono/node-server";
+import { bodyLimit } from "hono/body-limit";
+import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import type { DatabaseSync } from "node:sqlite";
+import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
+import type { ServerConfig } from "./config.js";
+import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
+import {
+  HMR_INTERFACES,
+  HMR_INTERFACES_RESOURCE_ID,
+  HMR_AUTH_STATE_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
+  HMR_CONFIG_RESOURCE_ID,
+  HMR_DB_RESOURCE_ID,
+  HMR_DESKTOP_RESOURCE_ID,
+  HMR_HOST_RESOURCE_ID,
+  HMR_CONTROL_RESOURCE_ID,
+  HMR_OVERRIDES_RESOURCE_ID,
+  HMR_TEST_PLUGINS_RESOURCE_ID,
+  type Replacements,
+  HMR_PROXY_RESOURCE_ID,
+  HmrCapabilities,
+  ConsoleLog,
+  type Log,
+  type ProxyControl,
+} from "./hmr/capabilities.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
+import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
+import { SchedulesRepo, SessionsRepo } from "@penguinharness/plugin-sessions/server";
+import { UsersRepo, AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
+import { ErrorsRepo, TraceIndexRepo, UsageRepo } from "@penguinharness/plugin-usage/server";
+import { AgentsRepo } from "@penguinharness/plugin-agents/server";
+import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
+import { openDatabase } from "./db/database.js";
+import { MachinesRepo } from "./db/repos/machines.js";
 
-||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
-import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
-import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-import { UsersRepo } from "./db/repos/users.js";
-import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
-import { originRule } from "./http/public-origin.js";
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
+import { jsonOnlyWrites } from "./auth/middleware.js";
+
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "@penguinharness/plugin-terminal/server";
@@ -16,7 +70,6 @@ import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -114,10 +167,10 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "@penguinharness/plugin-machines/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "./mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process

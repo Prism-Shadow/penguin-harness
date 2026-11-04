@@ -99,7 +99,7 @@ import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";
-import type { Auth } from "../mechanisms/identity.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms

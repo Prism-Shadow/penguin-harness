@@ -26,7 +26,7 @@ import { HttpError } from "../http/errors.js";
 import type { AgentApi, AgentApiRow } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "@penguinharness/plugin-agents/server";
 import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import { hashAgentApiKey } from "./keys.js";
 
 /** What the gate resolved a request to: the Agent it is for, the key it presented, the Session it names. */

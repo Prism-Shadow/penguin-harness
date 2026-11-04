@@ -1,17 +1,8 @@
-/**
- * Mints an API session by inserting a row into the root's `web.db` — no running server needed.
- * Authorized by being able to read and write that root, which already holds every credential
- * the token could reach. On a multi-user box that means the OS account running the server;
- * everyone else signs in with `penguin auth login --server <url>`.
- */
-import path from "node:path";
-import fs from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
-import { openExistingDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import type { SessionViaValue } from "./db/repos/auth-sessions.js";
-import { UsersRepo } from "./db/repos/users.js";
-import { liveServerLock } from "./lock.js";
+import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
+import type { SessionViaValue } from "@penguinharness/plugin-settings/server";
+import { UsersRepo } from "@penguinharness/plugin-settings/server";
+
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** An hour: long enough for a controller to finish, short enough to forget. */

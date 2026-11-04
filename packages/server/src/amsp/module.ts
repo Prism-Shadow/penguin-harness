@@ -1,29 +1,7 @@
-/**
- * The Agent API's place in the platform tree: one group holding the per-Agent settings and keys
- * (AgentApiRepo, exported as the AgentApi mechanism for the Agent list, the API tab's routes and
- * the deletion cascades) and the public AMSP routes.
- *
- * The public group is contributed `auth: "none"` at order 5, with `/api/auth`, `/api/desktop`
- * and `/api/hmr`: ahead of the `/api/*` cookie gate, which `HttpModule` installs in front of the
- * first `auth: "user"` group (order 10 and up). The API tab's own routes are an ordinary
- * signed-in group, mounted beside the other Agent sub-groups (services/agent-routes.ts); its Try
- * it route is contributed here instead, as a second, signed-in group (try-route.ts), since it
- * runs the public group's handler with the same dependencies. Its order, one below the tab's
- * group, only fixes the mount order: that group has no catch-all to shadow it.
- */
-import { Bind, Component, Module, Use } from "@prismshadow/penguin-core/kernel";
-import type { Hono } from "hono";
-import type { AppEnv } from "../auth/middleware.js";
-import { AgentApiRepo } from "../db/repos/agent-api.js";
-import type { Channels, Clock, Log } from "../hmr/capabilities.js";
-import { AgentApi } from "../mechanisms/agent-api.js";
-import type { AgentConfig } from "@penguinharness/plugin-agents/server";
-import type { Access } from "@penguinharness/plugin-projects/server";
-import type { Errors } from "@penguinharness/plugin-usage/server";
-import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 
 ||||||| parent of 66b8653cb4 (agents: mechanism and repo move into plugin-agents)
+||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 import type { SessionManager, Sessions, SessionServiceIface } from "@penguinharness/plugin-sessions/server";
 
 import type { SessionService } from "../services/session-service.js";

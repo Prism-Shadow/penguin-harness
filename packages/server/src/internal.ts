@@ -16,10 +16,8 @@ export * from "./hmr/capabilities.js";
 export * from "./http/errors.js";
 export * from "./http/routes/events.js";
 export * from "./http/validate.js";
-export * from "./mechanisms/identity.js";
 export * from "./mechanisms/organization.js";
 export * from "./mechanisms/workbenches.js";
-export * from "./mechanisms/settings.js";
 export * from "./runtime/channel.js";
 export * from "./runtime/agent-state.js";
 export * from "./runtime/stream-error-watcher.js";
@@ -76,6 +74,17 @@ export type {
   UsageRecording,
   UsageStore,
 } from "@penguinharness/plugin-usage/server";
+export type {
+  Admin,
+  Auth,
+  AuthSessionRow,
+  AuthSessions,
+  SessionViaValue,
+  Settings,
+  UiPrefsStore,
+  UserRow,
+  Users,
+} from "@penguinharness/plugin-settings/server";
 export * from "./services/task-attachments.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
@@ -103,7 +112,6 @@ export * from "./db/repos/browser-extensions.js";
 export * from "../../../plugins/settings/src/server/repos/server-settings.js";
 export * from "./db/database.js";
 export * from "./db/repos/machines.js";
-export * from "./db/repos/users.js";
 export * from "./mechanisms/agent-api.js";
 export * from "./lock.js";
 export * from "./carried-store.js";
@@ -136,7 +144,6 @@ export type { ServerHmrHost } from "./hmr/platform.js";
 
 export * from "./amsp/keys.js";
 export * from "./config.js";
-export * from "./db/repos/auth-sessions.js";
 export { Clock } from "./hmr/capabilities.js";
 export { adminPluginConfigRoutes } from "@penguinharness/plugin-plugins/server";
 export type { PluginsRouteDeps } from "@penguinharness/plugin-plugins/server";

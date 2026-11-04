@@ -21,7 +21,7 @@ import {
 import type { MemberInfo, ProjectRole, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { ProjectRow } from "@prismshadow/penguin-server/internal";
-import type { UserRow } from "@prismshadow/penguin-server/internal";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
 import type { SessionManager } from "@prismshadow/penguin-server/internal";
 import { PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN, SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "@prismshadow/penguin-server/internal";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";

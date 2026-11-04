@@ -6,7 +6,7 @@ import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import type { ChannelEvent } from "../runtime/channel.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import { toAttachmentLimits } from "../services/attachment-limits.js";

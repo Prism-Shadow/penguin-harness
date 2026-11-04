@@ -32,7 +32,7 @@ import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "@penguinharness/plugin-agents/server";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Access, ProjectConfigStore, ProjectLifecycle } from "@penguinharness/plugin-projects/server";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
 import type { OrgService } from "@penguinharness/plugin-company/server";
 import type { UtilityCompletion } from "@penguinharness/plugin-projects/server";
 import { SEMANTIC_ID_RULES, projectIdRule } from "@penguinharness/plugin-projects/server";
