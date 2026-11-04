@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "paths": {
       "@penguinharness/plugin-plugins/server": [
         "../plugins/src/server/index.ts"
@@ -21,8 +23,16 @@
       ],
       "@prismshadow/penguin-server/ifaces.json": [
         "../../packages/server/src/ifaces.json"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "../../packages/server/src/db/repos/organizations.ts"
       ]
     }
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

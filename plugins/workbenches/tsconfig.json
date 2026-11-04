@@ -6,12 +6,12 @@
       "ES2023"
     ],
     "paths": {
-        "@penguinharness/plugin-company/server": [
-          "../company/src/server/index.ts"
-        ],
-        "@penguinharness/plugin-sessions/server": [
-          "../sessions/src/server/index.ts"
-        ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
       "@penguinharness/plugin-workbenches/server": [
         "./src/server/index.ts"
       ],
@@ -32,6 +32,9 @@
       ],
       "@penguinharness/plugin-schedules/server": [
         "../schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
       ]
     }
   },
