@@ -499,9 +499,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // only is downloaded THERE, by that machine, when the list reaches it.
     const shipped = await shippedNames();
     const installed =
-      runsHere && !shipped.includes(source.name)
-        ? await installSpecifier(source)
-        : null;
+      runsHere && !shipped.includes(source.name) ? await installSpecifier(source) : null;
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
     // loads it.
     const kinds = installed !== null ? await vetInstalled(installed) : null;

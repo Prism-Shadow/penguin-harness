@@ -22,11 +22,7 @@ import {
   pluginsPrefix,
   verifyIntegrity,
 } from "../src/plugin/install.js";
-import {
-  indexChannelLookup,
-  indexChannelOf,
-  type IndexChannel,
-} from "../src/plugin/registry.js";
+import { indexChannelLookup, indexChannelOf, type IndexChannel } from "../src/plugin/registry.js";
 import { installNamedOrChanneled } from "../src/http/routes/plugins-installed.js";
 
 const roots: string[] = [];
@@ -41,7 +37,8 @@ const tempRoot = async () => {
   return root;
 };
 
-const digest = (bytes: Uint8Array) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+const digest = (bytes: Uint8Array) =>
+  `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 const asset = new TextEncoder().encode("a release tarball's bytes");
 const integrity = digest(asset);
 
@@ -88,10 +85,13 @@ describe("installPluginChannel", () => {
         // What npm records in the prefix's manifest for a file: install — the record that
         // keeps the tarball in archives past a prune.
         const manifestPath = path.join(prefix, "package.json");
-        const manifest = JSON.parse(
-          await fs.readFile(manifestPath, "utf8").catch(() => "{}"),
-        ) as { dependencies?: Record<string, string> };
-        manifest.dependencies = { ...(manifest.dependencies ?? {}), [channel.name]: `file:${spec.replace(/^\.\//, "")}` };
+        const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8").catch(() => "{}")) as {
+          dependencies?: Record<string, string>;
+        };
+        manifest.dependencies = {
+          ...(manifest.dependencies ?? {}),
+          [channel.name]: `file:${spec.replace(/^\.\//, "")}`,
+        };
         await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
       },
     });
@@ -110,10 +110,15 @@ describe("installPluginChannel", () => {
     const wrong = new TextEncoder().encode("not what the index pinned");
     const install = vi.fn(async () => undefined);
     await expect(
-      installPluginChannel(root, { ...channel, integrity: digest(wrong) }, {
-        fetchImpl: (async () => new Response(new Uint8Array(asset), { status: 200 })) as unknown as typeof fetch,
-        install,
-      }),
+      installPluginChannel(
+        root,
+        { ...channel, integrity: digest(wrong) },
+        {
+          fetchImpl: (async () =>
+            new Response(new Uint8Array(asset), { status: 200 })) as unknown as typeof fetch,
+          install,
+        },
+      ),
     ).rejects.toThrow(/does not match the sha512/);
     expect(install).not.toHaveBeenCalled();
   });
@@ -181,9 +186,7 @@ describe("indexChannelLookup", () => {
   }
 
   it("answers an entry's channel from the published index, fetched once per TTL", async () => {
-    const fetchImpl = vi.fn(async () =>
-      Response.json(index),
-    );
+    const fetchImpl = vi.fn(async () => Response.json(index));
     let time = 0;
     const lookup = indexChannelLookup("https://registry.example/index.json", {
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -213,7 +216,12 @@ describe("indexChannelLookup", () => {
 });
 
 describe("npm first, the channel only on its failure (the route's install)", () => {
-  const spec = { kind: "name" as const, spec: "@penguinharness/language-typst", name: "@penguinharness/language-typst", version: "0.0.2" };
+  const spec = {
+    kind: "name" as const,
+    spec: "@penguinharness/language-typst",
+    name: "@penguinharness/language-typst",
+    version: "0.0.2",
+  };
 
   it("a name npm installs never consults the index", async () => {
     const channelOf = vi.fn();
@@ -232,7 +240,9 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     const installChannel = vi.fn(async () => ({ name: channel.name, version: channel.version }));
     const installed = await installNamedOrChanneled("/root", spec, {
       install: async () => {
-        throw new PluginInstallError("404 Not Found - GET https://registry.npmjs.org/@penguinharness%2flanguage-typst");
+        throw new PluginInstallError(
+          "404 Not Found - GET https://registry.npmjs.org/@penguinharness%2flanguage-typst",
+        );
       },
       channelOf: async () => ({ channel, fault: null }),
       installChannel,
@@ -250,7 +260,9 @@ describe("npm first, the channel only on its failure (the route's install)", () 
         channelOf: async () => ({ channel: null, fault: null }),
         installChannel: vi.fn(),
       }),
-    ).rejects.toThrow(/npm said: not found\. The published plugin index lists no installable github channel/);
+    ).rejects.toThrow(
+      /npm said: not found\. The published plugin index lists no installable github channel/,
+    );
   });
 
   it("a channel listed without an integrity refuses with the reason, not an install", async () => {
@@ -262,7 +274,8 @@ describe("npm first, the channel only on its failure (the route's install)", () 
         },
         channelOf: async () => ({
           channel: null,
-          fault: "@penguinharness/language-typst's index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.",
+          fault:
+            "@penguinharness/language-typst's index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.",
         }),
         installChannel,
       }),
