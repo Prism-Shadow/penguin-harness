@@ -106,13 +106,13 @@ describe("plugin list", () => {
     // does), not a reason to keep every other Project's deployment from coming up.
     await writeProject("p2", 'models = []\n[plugins]\n"@acme/two" = "*"\n');
     await mkdir(path.join(root, "p1", PLUGINS_FILE), { recursive: true });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await expect(readProjectPluginList(root, "p1")).resolves.toEqual([]);
       expect(await readPluginClosure(root)).toEqual(["@acme/two"]);
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/p1: .*could not be read/));
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/p1: .*could not be read/));
     } finally {
-      warn.mockRestore();
+      err.mockRestore();
     }
   });
 
