@@ -16,13 +16,14 @@ export interface AgentTransferRouteDeps {
   agentConfigService: AgentConfig;
   access: Access;
   snapshots: Snapshots;
-  workbenches: Pick<Workbenches, "releaseAgent">;
+  workbenches: Pick<Workbenches, "whileReleased">;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
+import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -74,11 +75,14 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const confirm = body.confirm === true;
     // The workbenches live inside agent_state/. Ones still in an older layout move in first, so
     // the backup taken before the swap holds them and the package's cannot take their ids; then
-    // what the server holds open there lets go (Windows cannot rename a watched directory).
+    // what the server holds open there lets go, and stays let go until the swap is over
+    // (Windows cannot rename a watched directory).
     await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
-    await deps.workbenches.releaseAgent(projectId, agentId);
-    const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, {
-      confirm,
+    const { version } = await deps.workbenches.whileReleased(projectId, agentId, async () => {
+      const imported = await deps.snapshots.importArchive(projectId, agentId, archive, { confirm });
+      // A State without workbenches would leave the old place's link leading nowhere.
+      await ensureWorkbenchLinkTarget(agentDir(deps.root, projectId, agentId));
+      return imported;
     });
     const res: AgentImportResponse = { version };
     return c.json(res);

@@ -25,6 +25,7 @@ import {
 } from "../services/skill-import-limits.js";
 import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
 import { HARNESS_DIR } from "./harness-types.js";
+import { removeLeftovers } from "./leftovers.js";
 import { isGitName } from "./repo.js";
 import {
   STATE_FILE,
@@ -382,13 +383,22 @@ async function removeSource(dir: string, rel: string): Promise<void> {
 }
 
 /**
+ * Where an import stages its archive: `.archive.penguin-tmp-<id>-<12 hex>` beside the folders. A
+ * dot entry, so never a workbench id: neither the listing nor the watcher sees it.
+ */
+const STAGING_PREFIX = `.archive${TMP_SUFFIX}-`;
+
+const stagingName = (dir: string): string =>
+  `${STAGING_PREFIX}${path.basename(dir)}-${randomBytes(6).toString("hex")}`;
+
+/**
  * Makes `dir`'s source exactly `files`. Everything is checked first (planRemovals) and the
  * archive is written out in full beside the folder, so a refusal or a file the disk will not take
  * leaves the folder as it was. Then old files in the way are removed, each new file is renamed into
  * place, the remaining old source is removed, and `.harness/` goes so the next load writes this
  * host's types — as a plugin update does. `state.json`, `.plugin.json` and `.build/` stay. The
- * staging directory is a dot entry beside the folder: never a workbench id, so neither the
- * listing nor the watcher sees it.
+ * archive is staged beside the folder (stagingName); a staging directory untouched for an hour is
+ * a crash's leftover and goes first.
  */
 export async function writeWorkbenchSource(
   dir: string,
@@ -396,11 +406,9 @@ export async function writeWorkbenchSource(
 ): Promise<void> {
   const removals = await planRemovals(dir, files);
   const base = path.dirname(dir);
+  await removeLeftovers(base, STAGING_PREFIX);
   await fs.mkdir(base, { recursive: true });
-  const staging = path.join(
-    base,
-    `.${path.basename(dir)}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`,
-  );
+  const staging = path.join(base, stagingName(dir));
   try {
     for (const [rel, body] of files) {
       await fs.mkdir(path.dirname(path.join(staging, rel)), { recursive: true });
