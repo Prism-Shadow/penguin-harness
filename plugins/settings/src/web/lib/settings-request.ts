@@ -8,7 +8,7 @@
  * in, the layout is not up) is kept and delivered the moment it subscribes, so "open Settings on
  * Appearance" is honoured however early it is asked.
  */
-import type { SettingsSectionKey } from "./settings-sections";
+import type { SettingsSectionKey } from "./settings-sections.js";
 
 export interface SettingsRequest {
   /** The page to open on; absent opens the viewer's first page, as the menu row does. */

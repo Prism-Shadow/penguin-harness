@@ -21,8 +21,8 @@
  * settings row and the app-wide hook stay in step without either owning the state.
  */
 
-import { PENGUIN_LOGO_URL } from "./brand-logo";
-import { S } from "./strings";
+import { PENGUIN_LOGO_URL } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** localStorage key of the opt-in; only NOTIFICATIONS_ON counts as on. */
 export const NOTIFICATIONS_KEY = "penguin.notifications";

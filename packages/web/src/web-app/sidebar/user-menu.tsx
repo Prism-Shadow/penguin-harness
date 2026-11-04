@@ -32,7 +32,7 @@ import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { AppInfoRow } from "../../components/account/app-info-row";
 import { openAppInfo } from "../../lib/use-update-flow";
-import { requestSettings } from "../../lib/settings-request";
+import { requestSettings } from "@prismshadow/penguin-web/internal";
 
 export function UserMenu({
   trigger,

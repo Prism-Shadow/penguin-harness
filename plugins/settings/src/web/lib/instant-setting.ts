@@ -16,7 +16,7 @@
  */
 import { useState } from "react";
 import { toastError } from "@prismshadow/penguin-ui";
-import { apiErrorText } from "./api-error";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
 
 export interface InstantSetting<T> {
   /** What the control shows: the value being written, else the stored one. */

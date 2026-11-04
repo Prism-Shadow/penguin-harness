@@ -18,7 +18,7 @@ import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
-} from "../src/lib/settings-sections";
+} from "@prismshadow/penguin-web/internal";
 
 /** Admin signed into a plain `penguin server` through the login form. */
 const admin = visibleSettingsSections({
