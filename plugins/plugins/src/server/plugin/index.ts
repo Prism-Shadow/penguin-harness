@@ -10,7 +10,7 @@
  * is its contract) or an abstract interface class (`extends Interface<…>()`) declared
  * beside its owner — reachable as `<module>#<Export>` in a manifest's `requires`. Types only.
  */
-export type { Sandbox, SandboxSlots } from "@prismshadow/penguin-server/internal";
+export type { Sandbox, SandboxSlots } from "@penguinharness/plugin-sandbox/server";
 export type { Terminals } from "@penguinharness/plugin-terminal/server";
 export type { Sessions, SessionServiceIface } from "@prismshadow/penguin-server/internal";
 export type { AgentService } from "@penguinharness/plugin-agents/server";

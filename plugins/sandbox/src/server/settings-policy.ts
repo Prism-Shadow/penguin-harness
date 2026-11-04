@@ -17,8 +17,8 @@ import type {
   PluginConfigNotice,
   PluginConfiguration,
   SessionSandboxPreset,
-} from "../api/types.js";
-import { resolveTable } from "../plugin/config.js";
+} from "@prismshadow/penguin-server/api";;
+import { resolveTable } from "@penguinharness/plugin-plugins/server";;
 import { requestedDimensions } from "./dimensions.js";
 
 /** The preset a new Session starts from while the card has never chosen one. */

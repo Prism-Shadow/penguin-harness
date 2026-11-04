@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023"],
+    "paths": {
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "./src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ]
+    }
+  },
+  "include": ["src"]
+}

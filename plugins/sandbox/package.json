@@ -1,0 +1,14 @@
+{
+  "name": "@penguinharness/plugin-sandbox",
+  "version": "0.2.16",
+  "type": "module",
+  "private": true,
+  "description": "The sandbox capability: the service that routes each spawn's policy to whatever backend implements it, plus the settings behind it. Backends are separate plugin packages (sandbox-bwrap/seatbelt/wsl/dsh).",
+  "exports": {
+    "./server": "./src/server/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  }
+}

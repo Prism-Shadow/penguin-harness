@@ -13,7 +13,7 @@
  * is `SandboxSettingsStatus`, in settings-status.ts.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { PluginConfig } from "../plugin/config.js";
+import { PluginConfig } from "@penguinharness/plugin-plugins/server";;
 import { Sandbox, SandboxModule } from "./service.js";
 import { sandboxStartOf } from "./settings-policy.js";
 

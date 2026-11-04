@@ -63,7 +63,7 @@ import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
 import type { Identity } from "@penguinharness/plugin-terminal/server";
 import { platformDef } from "../platform.js";
-import { SandboxModule } from "../sandbox/service.js";
+import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
 import ifaceTable from "../ifaces.json" with { type: "json" };
 import { declined, seamHttp } from "./hono-seam.js";
 import {
