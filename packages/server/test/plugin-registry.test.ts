@@ -192,39 +192,52 @@ for (const dir of readdirSync(PLUGINS_DIR)) {
 }
 
 const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", import.meta.url));
-const tables = new Map<string, Promise<NonNullable<LibraryContributions["card"]>>>();
+type Card = NonNullable<LibraryContributions["card"]>;
 
 /**
- * A sandbox backend's card as its build writes it: the generator its `build` runs, over the
- * package's own tsconfig, into a temp table read by core's reader. Generated here rather than
- * read from the package — the backends are no dependency of the server, so nothing before this
- * suite built them — and from the source as it is, so a stale table cannot pass.
+ * The sandbox backends' cards as their builds write them: the generator each `build` runs, over
+ * the package's own compiler options with its entry alone as the root (its tests are not part of
+ * its table), into a temp table read by core's reader. Generated here rather than read from the
+ * packages — they are no dependency of the server, so nothing before this suite built them — and
+ * from the source as it is, so a stale table cannot pass. Two at a time: each is a TypeScript
+ * program of its own, beside the suite's other workers.
  */
-function sandboxCard(dir: string): Promise<NonNullable<LibraryContributions["card"]>> {
-  let card = tables.get(dir);
-  if (card === undefined) {
-    card = (async () => {
-      const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-table-"));
-      try {
-        await promisify(execFile)(process.execPath, [
-          GENERATOR,
-          "--project",
-          path.join(PLUGINS_DIR, dir, "tsconfig.json"),
-          "--out",
-          path.join(out, "ifaces.json"),
-        ]);
-        const table = readPluginTable(out)!;
-        const warnings: string[] = [];
-        const read = libraryContributions(table, warnings).card ?? {};
-        expect(warnings, dir).toEqual([]);
-        return read;
-      } finally {
-        await rm(out, { recursive: true, force: true });
-      }
-    })();
-    tables.set(dir, card);
+async function sandboxCards(dirs: readonly string[]): Promise<Map<string, Card>> {
+  const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-tables-"));
+  const cards = new Map<string, Card>();
+  const generate = async (dir: string) => {
+    const at = path.join(out, dir);
+    await mkdir(at, { recursive: true });
+    const tsconfig = path.join(at, "tsconfig.json");
+    await writeFile(
+      tsconfig,
+      JSON.stringify({
+        extends: path.join(PLUGINS_DIR, dir, "tsconfig.json"),
+        include: [],
+        files: [path.join(PLUGINS_DIR, dir, "src", "index.ts")],
+      }),
+    );
+    await promisify(execFile)(process.execPath, [
+      GENERATOR,
+      "--project",
+      tsconfig,
+      "--out",
+      path.join(at, "ifaces.json"),
+    ]);
+    const warnings: string[] = [];
+    cards.set(dir, libraryContributions(readPluginTable(at)!, warnings).card ?? {});
+    expect(warnings, dir).toEqual([]);
+  };
+  try {
+    const queue = [...dirs];
+    const worker = async () => {
+      for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) await generate(dir);
+    };
+    await Promise.all([worker(), worker()]);
+    return cards;
+  } finally {
+    await rm(out, { recursive: true, force: true });
   }
-  return card;
 }
 
 /**
@@ -303,6 +316,12 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
+  let cards: Map<string, Card>;
+  beforeAll(async () => {
+    const index = await builtinPluginRegistry().index();
+    cards = await sandboxCards(index.map((entry) => packages.get(entry.name)!.dir));
+  });
+
   it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
     const index = await builtinPluginRegistry().index();
     // Valid under the format every registry is held to.
@@ -325,11 +344,9 @@ describe("the builtin catalogue and the packages it lists", () => {
    * icon.svg — and the package publishes both, for the card of a server it is installed on.
    */
   it("describes each backend in both languages with the package's own card and icon.svg", async () => {
-    const index = await builtinPluginRegistry().index();
-    await Promise.all(index.map((entry) => sandboxCard(packages.get(entry.name)!.dir)));
-    for (const entry of index) {
+    for (const entry of await builtinPluginRegistry().index()) {
       const { dir, manifest } = packages.get(entry.name)!;
-      const card = await sandboxCard(dir);
+      const card = cards.get(dir)!;
       expect(entry, entry.name).toMatchObject({
         title: card.title,
         titleZh: card.titleZh,
