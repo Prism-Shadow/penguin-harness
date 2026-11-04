@@ -25,6 +25,7 @@ import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import type {
   CliCommandCode,
+  CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
@@ -204,9 +205,12 @@ async function runPluginCommandOnce(
               throw new Error("this run handed no state channel");
             },
           } satisfies PluginCommandState);
+        // The collected code half is typed against the bare contract, whose bundle knows
+        // only `language`; the server-run bundle narrows the host's shape onto it, so the
+        // context is cast to the host the slot's contributors type their code halves with.
         c.code.register(node as unknown as CliCommandProgram, {
           messages: { language: request.language, state },
-        });
+        } as CliCommandContext<PluginCliCommandHost>);
       }
       // Only print help when no args given, so unknown words are reported as they are.
       if (request.args.length === 0) {
