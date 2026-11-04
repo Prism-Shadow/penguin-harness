@@ -12,6 +12,9 @@
       ],
       "@prismshadow/penguin-server/api": [
         "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
       ]
     }
   },
