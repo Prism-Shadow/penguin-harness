@@ -47,7 +47,14 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Button, Dropdown, ICON_GAP, MenuLabel, noAutofill } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Dropdown,
+  ICON_GAP,
+  MenuLabel,
+  noAutofill,
+  WallpaperSurface,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { PrincipalChip } from "./shared";
@@ -353,7 +360,10 @@ export function ChannelComposer({
           menuClass="w-80"
           focusOnOpen={false}
           button={
-            <div className="relative rounded-md bg-white dark:bg-gray-900">
+            <WallpaperSurface
+              variant="panel"
+              className="relative rounded-md bg-white dark:bg-gray-900"
+            >
               <div
                 ref={layerRef}
                 aria-hidden
@@ -451,7 +461,7 @@ export function ChannelComposer({
                 onKeyDown={onKeyDown}
                 className={`relative block max-h-40 min-h-10 w-full resize-none border-gray-300 bg-transparent placeholder:text-gray-400 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 disabled:opacity-60 dark:border-gray-700 dark:placeholder:text-gray-500 ${BOX_METRICS}`}
               />
-            </div>
+            </WallpaperSurface>
           }
         >
           <div id={listId} role="listbox" aria-label={S.company.channels.mentionPanel}>
