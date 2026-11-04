@@ -62,7 +62,7 @@
     position: fixed;
     inset: 0 0 auto;
     height: env(titlebar-area-height, 0px);
-    z-index: var(--ui-layer-behind);
+    z-index: var(--layer-behind);
     -webkit-app-region: drag;
     app-region: drag;
   }

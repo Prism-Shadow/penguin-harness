@@ -363,7 +363,7 @@
   position: absolute;
   top: 0.625rem;
   left: 1rem;
-  z-index: var(--ui-layer-window-overlay);
+  z-index: var(--layer-window-overlay);
   white-space: nowrap;
 }
 .gf-card {
@@ -482,7 +482,7 @@
 }
 .gf-dialog {
   position: relative;
-  z-index: var(--ui-layer-raised);
+  z-index: var(--layer-raised);
   display: grid;
   gap: 0.5rem;
   margin-top: 0.5rem;
@@ -499,7 +499,7 @@
 }
 .gf-toast {
   position: absolute;
-  z-index: var(--ui-layer-raised);
+  z-index: var(--layer-raised);
   right: 1rem;
   bottom: 1rem;
   display: flex;

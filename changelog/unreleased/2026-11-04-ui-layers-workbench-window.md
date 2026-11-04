@@ -25,6 +25,6 @@ The chat page's tab strip now switches between two sibling windows in the area b
 
 ## One layer scale
 
-- `packages/ui/src/layers.css` declares the layers in paint order: `behind`, `sticky`, `sticky-head`, `raised`, `handle`, `window-overlay`, `dock`, `dock-handle`, `menu`, `modal`, `popover`, `toast`, `tooltip`, `drag-preview`, as `--ui-layer-*` properties and `z-<layer>` utilities; `layer("<name>")` names one in an inline style.
+- `packages/ui/src/layers.css` declares the layers in paint order: `behind`, `sticky`, `sticky-head`, `raised`, `handle`, `window-overlay`, `dock`, `dock-handle`, `menu`, `modal`, `popover`, `toast`, `tooltip`, `drag-preview`, as `--layer-*` properties and `z-<layer>` utilities; `layer("<name>")` names one in an inline style.
 - Every window (Chat, a Workbench window, the full-page workbench) is its own stacking context, and every overlay is portaled to `document.body` above them.
 - Every z-index in `packages/web/src`, `packages/ui/src` and the gallery's chrome names a layer, and the UI package's `layer-scale` test fails on a raw value or an undeclared name.

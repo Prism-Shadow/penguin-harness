@@ -1,6 +1,6 @@
 /*
  * The layer scale: the one place a z-index is a number. Everything else names a layer, as the
- * `z-<layer>` utility (`z-sticky`, `z-modal`), as `var(--ui-layer-<layer>)` in a stylesheet, or
+ * `z-<layer>` utility (`z-sticky`, `z-modal`), as `var(--layer-<layer>)` in a stylesheet, or
  * through `layer("<name>")` (layers.ts) in an inline style. The names are in paint order, low to
  * high, and only this order is a contract; the numbers between them are spacing.
  *
@@ -31,40 +31,41 @@
  * tooltip         the hover hint, over everything it can describe
  * drag-preview    what follows the pointer through a drag (a dock's drop targets, a ticket card)
  *
- * Imported by theme.css (the app, the gallery, the published sheet) and site.css (landing and
- * docs), so every Tailwind entry gets the utilities and every page the custom properties.
+ * The order is not a theme's to change, so the properties sit outside the `--ui-*` token
+ * contract. Imported by theme.css (the app, the gallery, the published sheet) and site.css
+ * (landing and docs), so every Tailwind entry gets the utilities and every page the properties.
  */
 :root {
-  --ui-layer-behind: -1;
-  --ui-layer-sticky: 10;
-  --ui-layer-sticky-head: 20;
-  --ui-layer-raised: 30;
-  --ui-layer-handle: 40;
-  --ui-layer-window-overlay: 50;
-  --ui-layer-dock: 60;
-  --ui-layer-dock-handle: 70;
-  --ui-layer-menu: 80;
-  --ui-layer-modal: 90;
-  --ui-layer-popover: 100;
-  --ui-layer-toast: 110;
-  --ui-layer-tooltip: 120;
-  --ui-layer-drag-preview: 130;
+  --layer-behind: -1;
+  --layer-sticky: 10;
+  --layer-sticky-head: 20;
+  --layer-raised: 30;
+  --layer-handle: 40;
+  --layer-window-overlay: 50;
+  --layer-dock: 60;
+  --layer-dock-handle: 70;
+  --layer-menu: 80;
+  --layer-modal: 90;
+  --layer-popover: 100;
+  --layer-toast: 110;
+  --layer-tooltip: 120;
+  --layer-drag-preview: 130;
 }
 
 /* `z-<layer>` utilities, each reading its custom property directly (`inline`). */
 @theme inline {
-  --z-index-behind: var(--ui-layer-behind);
-  --z-index-sticky: var(--ui-layer-sticky);
-  --z-index-sticky-head: var(--ui-layer-sticky-head);
-  --z-index-raised: var(--ui-layer-raised);
-  --z-index-handle: var(--ui-layer-handle);
-  --z-index-window-overlay: var(--ui-layer-window-overlay);
-  --z-index-dock: var(--ui-layer-dock);
-  --z-index-dock-handle: var(--ui-layer-dock-handle);
-  --z-index-menu: var(--ui-layer-menu);
-  --z-index-modal: var(--ui-layer-modal);
-  --z-index-popover: var(--ui-layer-popover);
-  --z-index-toast: var(--ui-layer-toast);
-  --z-index-tooltip: var(--ui-layer-tooltip);
-  --z-index-drag-preview: var(--ui-layer-drag-preview);
+  --z-index-behind: var(--layer-behind);
+  --z-index-sticky: var(--layer-sticky);
+  --z-index-sticky-head: var(--layer-sticky-head);
+  --z-index-raised: var(--layer-raised);
+  --z-index-handle: var(--layer-handle);
+  --z-index-window-overlay: var(--layer-window-overlay);
+  --z-index-dock: var(--layer-dock);
+  --z-index-dock-handle: var(--layer-dock-handle);
+  --z-index-menu: var(--layer-menu);
+  --z-index-modal: var(--layer-modal);
+  --z-index-popover: var(--layer-popover);
+  --z-index-toast: var(--layer-toast);
+  --z-index-tooltip: var(--layer-tooltip);
+  --z-index-drag-preview: var(--layer-drag-preview);
 }

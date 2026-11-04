@@ -238,7 +238,7 @@
 .code-gutter {
   position: sticky;
   left: 0;
-  z-index: var(--ui-layer-sticky);
+  z-index: var(--layer-sticky);
   justify-self: start;
   align-self: start;
   box-sizing: content-box;

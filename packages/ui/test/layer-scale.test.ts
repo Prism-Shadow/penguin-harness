@@ -76,8 +76,8 @@ describe("the layer scale", () => {
       "panel.css",
       [
         ".a { z-index: 40; }",
-        ".b { z-index: var(--ui-layer-sky); }",
-        ".ok { z-index: var(--ui-layer-modal); }",
+        ".b { z-index: var(--layer-sky); }",
+        ".ok { z-index: var(--layer-modal); }",
         ".ok2 { z-index: auto; }",
       ].join("\n"),
     );
@@ -86,7 +86,7 @@ describe("the layer scale", () => {
     );
     expect(found).toEqual([
       "panel.css:1 raw: z-index: 40",
-      "panel.css:2 unknown layer: var(--ui-layer-sky)",
+      "panel.css:2 unknown layer: var(--layer-sky)",
       "panel.tsx:1 raw: z-10",
       "panel.tsx:2 raw: z-[60]",
       "panel.tsx:2 raw: md:-z-1",

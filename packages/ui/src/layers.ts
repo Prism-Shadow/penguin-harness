@@ -21,7 +21,7 @@ export type Layer =
   | "tooltip"
   | "drag-preview";
 
-/** The layer's z-index as a CSS value, `var(--ui-layer-<name>)`. */
+/** The layer's z-index as a CSS value, `var(--layer-<name>)`. */
 export function layer(name: Layer): string {
-  return `var(--ui-layer-${name})`;
+  return `var(--layer-${name})`;
 }

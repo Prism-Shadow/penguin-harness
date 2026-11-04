@@ -10,8 +10,8 @@
  *   a minus; `z-10`, `z-[60]`, `z-(--x)` and an arbitrary `[z-index:…]` are raw.
  * - **Inline styles and style writes** in TypeScript: a `zIndex` property, an assignment to
  *   `.zIndex` and `setProperty("z-index", …)` must take `layer("<layer>")` (layers.ts).
- * - **Stylesheets**: a `z-index` declaration must be `auto` or `var(--ui-layer-<layer>)`.
- * - **Names**: a layer named anywhere — `z-<layer>`, `layer("<layer>")`, `var(--ui-layer-<layer>)` —
+ * - **Stylesheets**: a `z-index` declaration must be `auto` or `var(--layer-<layer>)`.
+ * - **Names**: a layer named anywhere — `z-<layer>`, `layer("<layer>")`, `var(--layer-<layer>)` —
  *   must be one the scale declares, or it would silently paint at no layer at all.
  *
  * A file the allowlist names, with the reason it needs a raw value, is skipped whole.
@@ -30,19 +30,19 @@ export interface LayerHit {
   readonly problem: "raw" | "unknown layer";
 }
 
-/** The layers a scale file declares: the names of its `--ui-layer-*` custom properties. */
+/** The layers a scale file declares: the names of its `--layer-*` custom properties. */
 export function declaredLayers(scaleCss: string): Set<string> {
   const names = new Set<string>();
   for (const rule of parseCssRules(scaleCss)) {
     for (const declaration of rule.declarations) {
-      const match = /^--ui-layer-([\w-]+)$/.exec(declaration.name);
+      const match = /^--layer-([\w-]+)$/.exec(declaration.name);
       if (match !== null) names.add(match[1]!);
     }
   }
   return names;
 }
 
-const VAR_LAYER = /var\(\s*--ui-layer-([\w-]+)\s*\)/g;
+const VAR_LAYER = /var\(\s*--layer-([\w-]+)\s*\)/g;
 
 /** A `z-*` utility's verdict: null when it names a declared layer or is `z-auto`. */
 function classProblem(utility: string, layers: ReadonlySet<string>): LayerHit["problem"] | null {
@@ -137,7 +137,7 @@ function stylesheetHits(file: SourceFile, layers: ReadonlySet<string>): LayerHit
         }
       }
       if (name !== "z-index") continue;
-      if (value === "auto" || /^var\(\s*--ui-layer-[\w-]+\s*\)$/.test(value)) continue;
+      if (value === "auto" || /^var\(\s*--layer-[\w-]+\s*\)$/.test(value)) continue;
       hits.push({ file: file.id, line, found: `z-index: ${value}`, problem: "raw" });
     }
   }
@@ -158,7 +158,7 @@ export function layerHits(
   for (const file of files) {
     if (matchesPolicyPath(file.rel, exempt)) continue;
     // Most files spell no layer at all; only the ones that might are parsed.
-    if (!/z-|zIndex|--ui-layer/.test(file.text)) continue;
+    if (!/z-|zIndex|--layer/.test(file.text)) continue;
     const analysis = analyzeFile(file);
     for (const token of analysis.tokens) {
       const problem = classProblem(token.utility, layers);

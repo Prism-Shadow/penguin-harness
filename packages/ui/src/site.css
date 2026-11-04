@@ -61,7 +61,7 @@
   .site-ui-header {
     position: sticky;
     top: 0;
-    z-index: var(--ui-layer-window-overlay);
+    z-index: var(--layer-window-overlay);
     border-bottom: 1px solid var(--site-line);
   }
   .site-ui-brand {
@@ -85,7 +85,7 @@
   }
   .site-ui-nav-link {
     position: relative;
-    z-index: var(--ui-layer-raised);
+    z-index: var(--layer-raised);
     flex-shrink: 0;
     padding: 6px 8px;
     border-radius: 6px;

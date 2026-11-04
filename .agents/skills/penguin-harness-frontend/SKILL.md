@@ -570,7 +570,7 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 
 Every z-index is a layer of one scale, `packages/ui/src/layers.css`, the only file where a z-index
 is a number. A class names it (`z-sticky`, `z-modal`), a stylesheet reads it
-(`z-index: var(--ui-layer-dock)`), and an inline style or a frame loop writes `layer("dock")`
+(`z-index: var(--layer-dock)`), and an inline style or a frame loop writes `layer("dock")`
 (`layers.ts`). In paint order:
 
 | layer | for |

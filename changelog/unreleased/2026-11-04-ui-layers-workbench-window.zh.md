@@ -25,6 +25,6 @@
 
 ## 统一的层级
 
-- `packages/ui/src/layers.css` 按绘制顺序声明各层：`behind`、`sticky`、`sticky-head`、`raised`、`handle`、`window-overlay`、`dock`、`dock-handle`、`menu`、`modal`、`popover`、`toast`、`tooltip`、`drag-preview`，形式为 `--ui-layer-*` 属性与 `z-<层名>` 工具类；行内样式用 `layer("<层名>")` 取用。
+- `packages/ui/src/layers.css` 按绘制顺序声明各层：`behind`、`sticky`、`sticky-head`、`raised`、`handle`、`window-overlay`、`dock`、`dock-handle`、`menu`、`modal`、`popover`、`toast`、`tooltip`、`drag-preview`，形式为 `--layer-*` 属性与 `z-<层名>` 工具类；行内样式用 `layer("<层名>")` 取用。
 - 每个窗口（聊天、工作台窗口、全页工作台）各自是一个层叠上下文，所有浮层都经 portal 挂到 `document.body`，位于各窗口之上。
 - `packages/web/src`、`packages/ui/src` 与画廊外壳中的每个 z-index 都改为具名层；共享 UI 包的 `layer-scale` 测试遇到裸数值或未声明的层名即失败。
