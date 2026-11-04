@@ -39,8 +39,6 @@ export * from "./lib/shortcuts/format";
 export * from "./lib/shortcuts/dispatcher";
 export * from "./lib/shortcuts/conflicts";
 export * from "./lib/shortcuts/chord";
-export * from "./lib/workbench-tabs";
-export * from "./lib/workbench-theme";
 export * from "./rescue/palette";
 export * from "./components/ui/stat-hint";
 export * from "./lib/benchmark-merge";
@@ -138,7 +136,6 @@ export * from "./lib/tone.js";
 export * from "./lib/unsaved/scopes.js";
 export * from "./lib/use-document-title.js";
 export * from "./lib/use-update-badges.js";
-export * from "./lib/workbench-tabs.js";
 export * from "./lib/workspace-machines.js";
 
 export * from "./state/auth.js";

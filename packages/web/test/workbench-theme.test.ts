@@ -14,7 +14,7 @@ import {
   WORKBENCH_THEME_HREF,
   WORKBENCH_THEME_VARS,
   type WorkbenchTheme,
-} from "../src/lib/workbench-theme";
+} from "@prismshadow/penguin-web/internal";
 
 const appRoot = (classes: string[], fontSize: string, attrs: Record<string, string> = {}) => ({
   classList: { contains: (t: string) => classes.includes(t) },

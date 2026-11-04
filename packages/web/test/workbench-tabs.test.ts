@@ -1,27 +1,6 @@
-/** @vitest-environment jsdom */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createElement as h } from "react";
-import { MemoryRouter } from "react-router";
-import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import {
-  appPageTab,
-  settleActiveTab,
-  workbenchAppPath,
-  workbenchNoticesOf,
-  workbenchTabsOf,
-  workbenchUiUrl,
-} from "../src/lib/workbench-tabs";
-import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
-import { LocaleProvider } from "../src/state/locale";
-import { ThemeProvider } from "../src/state/theme";
-import type { MainChatView } from "../src/features/chat/body/main-chat-view";
-import { renderMainChatToolbar } from "../src/features/chat/toolbar/main-chat-toolbar";
-import { renderMainChatBody } from "../src/features/chat/body/main-chat-body";
-import { click, mount, settle, unmountAll } from "./helpers/dom";
-import { json, stubFetch } from "./helpers/fetch";
-import { S } from "../src/lib/strings";
+} from "@prismshadow/penguin-web/internal";
+
+||||||| parent of f458c43380 (workbench-tabs/theme to plugin-workbenches web/lib; theme-color stays in host (host theme.tsx only consumer))
 
 const UI = "/api/projects/p/agents/a/workbenches/demo/ui";
 const tab = (key: string, file: string) => ({

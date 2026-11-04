@@ -1,26 +1,6 @@
-/**
- * Current Project / Agent context:
- * - Project list (owned + authorized); the current selection is remembered in localStorage and
- *   synced to server-side prefs (lastProjectId, best-effort);
- * - the current Project's Agent list and current Agent (switched via the top-bar breadcrumb
- *   dropdown; remembered per Project).
- *
- * State lives in a zustand vanilla store (one instance per Provider mount, so an unmount
- * still resets everything); the Provider is a thin lifecycle component that triggers the
- * initial fetches and republishes the store's state through the same context value as before.
- *
- * The Agent list follows lib/project-scope.ts: it is held tagged with the Project it was listed
- * for, an answer is applied only while that Project is still current (a late list of the
- * Project just left is dropped), and the context publishes only the current Project's list.
- */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "@prismshadow/penguin-web/internal";
 
-import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
-import { useStore } from "zustand/react";
-import { createStore } from "zustand/vanilla";
-import * as api from "../api/endpoints";
-import { isCurrentProject, scoped, scopedValue, type Scoped } from "../lib/project-scope";
-import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../lib/workbench-tabs";
+||||||| parent of f458c43380 (workbench-tabs/theme to plugin-workbenches web/lib; theme-color stays in host (host theme.tsx only consumer))
 
 const PROJECT_KEY = "penguin.lastProjectId";
 const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;

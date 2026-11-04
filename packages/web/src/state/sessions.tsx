@@ -1,4 +1,36 @@
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
+import type {
+  ServerEvent,
+  SessionBackgroundTasks,
+  SessionBatchResult,
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionInfo,
+  SessionStatus,
+} from "@prismshadow/penguin-server/api";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
+import * as api from "../api/endpoints";
+import { ApiError } from "../api/client";
+import { probeSession } from "../api/session-probe";
+import { openUserEvents } from "../api/sse";
+import { publishMachinesChanged, useMachines } from "./machines";
+import type { UserEventHandler } from "./user-events";
+import { WORKBENCH_UPDATED_EVENT } from "@prismshadow/penguin-web/internal";
+import { publishUserEvent } from "../lib/omni/user-events";
+import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
 import {
+
+||||||| parent of f458c43380 (workbench-tabs/theme to plugin-workbenches web/lib; theme-color stays in host (host theme.tsx only consumer))
   forgetSessionMachines,
   machineForSession,
   rememberSessionMachine,

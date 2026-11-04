@@ -8,7 +8,7 @@
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import { useWorkbenchTabs } from "../src/features/workbenches/workbench-tabs";
-import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
+import { WORKBENCH_UPDATED_EVENT } from "@prismshadow/penguin-web/internal";
 import { json, stubFetch } from "./helpers/fetch";
 import { button, click, mount, run, unmountAll } from "./helpers/dom";
 

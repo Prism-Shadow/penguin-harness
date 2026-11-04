@@ -13,7 +13,7 @@
  * the strip pointing at nothing.
  */
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
-import { apiUrl } from "./server-context";
+import { apiUrl } from "@prismshadow/penguin-web/internal";
 
 export interface WorkbenchTab {
   /** `<workbenchId>/<key>`: what the strip selects by. */
