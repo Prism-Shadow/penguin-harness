@@ -38,7 +38,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
-import { openDatabase } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";

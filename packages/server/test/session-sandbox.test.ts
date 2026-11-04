@@ -6,9 +6,9 @@
 import { describe, expect, it } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { openDatabase } from "@prismshadow/penguin-db";
-import { migrate } from "@prismshadow/penguin-db";
-import { SCHEMA_SQL } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
+import { migrate } from "@penguinharness/plugin-db/server";
+import { SCHEMA_SQL } from "@penguinharness/plugin-db/server";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SessionSandbox } from "../src/api/types.js";

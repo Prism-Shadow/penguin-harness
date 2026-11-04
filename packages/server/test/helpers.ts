@@ -46,7 +46,7 @@ import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
-import { openDatabase } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { TraceIndexService } from "../src/services/trace-index.js";

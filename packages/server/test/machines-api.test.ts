@@ -77,7 +77,7 @@ import type {
   ModelsUpdateRequest,
 } from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openDatabase } from "@prismshadow/penguin-db";
+import { openDatabase } from "@penguinharness/plugin-db/server";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
