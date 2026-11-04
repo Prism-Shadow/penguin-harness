@@ -1,24 +1,25 @@
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { appliedMigrations, migrate, rollbackTo } from "../src/db/migrations/index.js";
-import { namesAfter, openFresh, record, shape, sqlite } from "./db-migrations-fixtures.js";
-function open13(): DatabaseSync {
+import { namesAfter, openFresh, record, shape } from "./db-migrations-fixtures.js";
+/** A root whose line never declared 2026-10-10-agent-api, though it declared everything else. */
+function openSkipped(): DatabaseSync {
   const db = openFresh();
   db.exec(
     "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
   );
-  // A root that has run everything but agent-api: the fixture names what it lacks, so the
-  // migration list growing after it (this line's own later migrations) never widens `applied`.
-  record(db, namesAfter(null).filter((name) => name !== "agent-api"));
-  db.exec("PRAGMA user_version = 13");
+  record(
+    db,
+    namesAfter(null).filter((n) => n !== "2026-10-10-agent-api"),
+  );
   return db;
 }
-describe("named agent-api migration", () => {
+describe("named 2026-10-10-agent-api migration", () => {
   it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
-    const db = open13();
+    const db = openSkipped();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["agent-api"]);
-      expect(appliedMigrations(db)).toContain("agent-api");
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-10-agent-api"]);
+      expect(appliedMigrations(db)).toContain("2026-10-10-agent-api");
       const enable = () =>
         db
           .prepare(
@@ -38,7 +39,7 @@ describe("named agent-api migration", () => {
   });
 
   it("creates the keys table, which holds one key per token hash and only keys a user created", () => {
-    const db = open13();
+    const db = openSkipped();
     try {
       migrate(db);
       db.exec("PRAGMA foreign_keys = ON");
@@ -66,23 +67,26 @@ describe("named agent-api migration", () => {
   });
 
   it("down drops the settings and every key, and a second up recreates both empty", () => {
-    const db = open13();
-    const at13 = open13();
+    const db = openSkipped();
+    const atSkipped = openSkipped();
     try {
       migrate(db);
       db.exec(
         "INSERT INTO agent_api (project_id, agent_id, enabled, updated_at)" +
           " VALUES ('p1', 'coder', 1, '2026-10-07T00:00:00.000Z')",
       );
-      const previous = [...appliedMigrations(db)].filter((name) => name !== "agent-api").at(-1)!;
-      rollbackTo(db, previous);
-      expect(appliedMigrations(db)).not.toContain("agent-api");
-      expect(shape(db)).toBe(shape(at13));
+      // 2026-10-10-agent-api ran last on this root: rolling back to the last other name undoes only it.
+      const lastOther = namesAfter(null)
+        .filter((n) => n !== "2026-10-10-agent-api")
+        .at(-1)!;
+      rollbackTo(db, lastOther);
+      expect(appliedMigrations(db)).not.toContain("2026-10-10-agent-api");
+      expect(shape(db)).toBe(shape(atSkipped));
       migrate(db);
       expect(db.prepare("SELECT COUNT(*) AS n FROM agent_api").get()).toEqual({ n: 0 });
     } finally {
       db.close();
-      at13.close();
+      atSkipped.close();
     }
   });
 });

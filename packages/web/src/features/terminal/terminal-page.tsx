@@ -1,9 +1,10 @@
 /**
- * Standalone terminal page (`/terminal`): a full-window terminal outside the app shell.
- * This is where the in-app dock "detach"es to (Codex-style), and it is deep-linkable:
+ * Standalone terminal page (`/terminal`): a full-window terminal outside the app shell, reached
+ * by address only (the dock keeps its terminals as tabs and never opens it). Its shells belong
+ * to no conversation. It is deep-linkable:
  *
  *   /terminal                 reattach to this page's last terminal, else create one in `~`
- *   /terminal?id=<id>         attach exactly that terminal (the detach handoff)
+ *   /terminal?id=<id>         attach exactly that terminal
  *   /terminal?cwd=/some/dir   create the terminal in that directory
  *   /terminal?name=<name>     display/session name for a newly created terminal
  *   /terminal?machine=<id>    the machine the pty is on (absent = this server)
@@ -84,7 +85,7 @@ async function attachOrCreate(
   cols: number,
   rows: number,
 ): Promise<TerminalInfo> {
-  // 1. An explicit id wins — this is the detach handoff. A dead-but-not-yet-reaped
+  // 1. An explicit id wins (a deep link). A dead-but-not-yet-reaped
   //    terminal is still returned so the user sees its final screen and exit status.
   if (params.id) {
     // Seeded before the probe, so this and every later call about it — attach, resize,

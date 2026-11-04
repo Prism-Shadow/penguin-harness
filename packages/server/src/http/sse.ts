@@ -1,7 +1,9 @@
 /**
  * SSE endpoint adapter:
  * writes the runtime/channel event stream as an SSE response, shared by both the Session
- * channel and the user channel.
+ * channel and the user channel — over HTTP. When the socket transported the call, the same
+ * stream is answered as the frames it already are (socket/stream-answer.ts): no SSE text is
+ * written or parsed on that transport.
  *
  * - Response headers: text/event-stream, no-cache, `X-Accel-Buffering: no` (disables
  *   buffering on reverse proxies);
@@ -15,8 +17,10 @@
  *   (history is served by the messages endpoint) — it only sends the initial events the
  *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
  *   replay resumes from there; on a miss, `resync_required` is sent first, then the
- *   connection continues. A page cannot set headers on an EventSource it opens itself, so
- *   the id may come as the `lastEventId` query parameter instead; the header wins.
+ *   connection continues. An AMSP stream answers a miss before it starts instead: an HTTP
+ *   409 `resync_required`, and no stream. A page cannot set headers on an EventSource it
+ *   opens itself, so the id may come as the `lastEventId` query parameter instead; the
+ *   header wins.
  * - Revocation: a stream is authorised at connect and never again by the request path, so
  *   an authenticated route hands over {@link SseRevocation} — the registry that can end
  *   this stream from outside, and the check the heartbeat runs on it.
@@ -26,10 +30,13 @@ import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import type { ServerEvent } from "../api/types.js";
+import { HttpError } from "./errors.js";
 import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
 import type { LiveStreams } from "../auth/live-streams.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { bearerToken, sessionCookies } from "../auth/middleware.js";
+import { answerOf } from "../socket/stream-answer.js";
+import type { StreamAnswer } from "../socket/stream-answer.js";
 
 /** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
 export const HEARTBEAT_MS = 20_000;
@@ -62,7 +69,26 @@ export interface SseEndpointOptions {
    * line both being invisible to a stream's consumer.
    */
   heartbeatEvent?: boolean;
+  /**
+   * Write the channel as AMSP (amsp/session-stream.ts): its records and the `ping` beat only.
+   * A channel event with a name — the Web App's `server_event` — is never written, and a
+   * `Last-Event-ID` the buffer no longer holds (evicted, or of an epoch before a restart) is
+   * refused before the stream starts, with {@link resyncRequired}, instead of the `server_event`
+   * the internal stream writes. Initial events and the heartbeat event do not apply.
+   */
+  amsp?: boolean;
 }
+
+/**
+ * The answer to an AMSP resume the buffer cannot serve: the reader reads the history again and
+ * opens the stream without an id.
+ */
+export const resyncRequired = (): HttpError =>
+  new HttpError(
+    409,
+    "resync_required",
+    "The id to resume from has left the server's buffer: read the history, then open the stream without it.",
+  );
 
 /**
  * The revocation wiring an authenticated SSE route hands {@link sseEndpoint}. One
@@ -85,7 +111,7 @@ export function streamRevocation(
   const cookies =
     bearerToken(c.req.header("authorization")) !== null
       ? []
-      : sessionCookies(getCookie(c), c.req.header("host"));
+      : sessionCookies(getCookie(c), c.req.url);
   const token =
     cookies.find((cookie) => deps.auth.sessionIsLive(cookie.token))?.token ??
     cookies[0]?.token ??
@@ -97,11 +123,34 @@ export function streamRevocation(
   };
 }
 
+/** What the adapter reads of a channel. */
+export type StreamedChannel = Pick<Channel, "subscribe" | "replayAfter" | "sendTo">;
+
+/**
+ * What AMSP carries of a Session's channel: its unnamed events, the records. A named one — the
+ * Web App's `server_event` — belongs to the internal stream alone. Both doors' streams and a
+ * workbench's `host.subscribe` (workbenches/subscribe.ts) keep exactly these.
+ */
+export const isAmspRecord = (evt: ChannelEvent): boolean => evt.event === undefined;
+
 /** Stream out a Channel as an SSE response. */
-export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptions = {}): Response {
+export function sseEndpoint(
+  c: Context,
+  channel: StreamedChannel,
+  opts: SseEndpointOptions = {},
+): Response {
   // The header wins: the browser sets it on its own reconnects, and it is newer than the id
   // the page wrote into the URL when it opened this EventSource.
   const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
+  // AMSP refuses a resume it cannot serve while it can still answer with a status: once the
+  // stream has started, only its frames are left.
+  if (opts.amsp === true && lastEventId !== undefined && !channel.replayAfter(lastEventId).hit) {
+    throw resyncRequired();
+  }
+  // A stream the socket transported is answered directly, as the frames it already are
+  // (socket/stream-answer.ts); an HTTP reader gets the SSE text below, as ever.
+  const answered = answerOf(c.req.raw);
+  if (answered !== null) return channelAnswered(c, channel, opts, answered);
   const revocation = opts.revocation;
   c.header("X-Accel-Buffering", "no");
   c.header("Cache-Control", "no-cache");
@@ -136,6 +185,8 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
           .catch(() => finish());
       };
       const listener: ChannelListener = (evt: ChannelEvent) => {
+        // AMSP carries records alone: a named channel event is the Web App's own.
+        if (opts.amsp === true && !isAmspRecord(evt)) return;
         enqueue(() =>
           stream.writeSSE({
             data: evt.data,
@@ -153,14 +204,23 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
       if (lastEventId !== undefined) {
         const replay = channel.replayAfter(lastEventId);
         if (!replay.hit) {
-          const resync: ServerEvent = { type: "resync_required" };
-          channel.sendTo(listener, resync, "server_event");
+          if (opts.amsp === true) {
+            // Checked before the stream started; should the buffer have moved since, end the
+            // stream: the reader reopens it with the same id and is answered the 409.
+            finish();
+            return;
+          } else {
+            const resync: ServerEvent = { type: "resync_required" };
+            channel.sendTo(listener, resync, "server_event");
+          }
         } else {
           for (const evt of replay.events) listener(evt);
         }
       }
-      for (const event of opts.initialEvents ?? []) {
-        channel.sendTo(listener, event, "server_event");
+      if (opts.amsp !== true) {
+        for (const event of opts.initialEvents ?? []) {
+          channel.sendTo(listener, event, "server_event");
+        }
       }
       // The first beat goes out at once, so a client knows from the first second that this
       // stream pings — not only after the first interval has passed.
@@ -178,7 +238,7 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
           return;
         }
         enqueue(() => stream.writeSSE(PING));
-        if (opts.heartbeatEvent === true) {
+        if (opts.heartbeatEvent === true && opts.amsp !== true) {
           // Unicast: the beat is this subscriber's own liveness, so it consumes a seq (as any
           // event does) but is neither buffered nor broadcast to the channel's other readers.
           const beat: ServerEvent = { type: "heartbeat" };
@@ -194,4 +254,112 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
       release();
     }
   });
+}
+
+/**
+ * The same stream as {@link sseEndpoint}'s, answered on the socket directly
+ * (socket/stream-answer.ts): the events go out as the frames they already are, in the same
+ * order — buffered replay (or resync_required), initial events, ping, live stream — with no
+ * SSE text written. What the HTTP stream gets from its host — its abort, its finally — this
+ * stream gets from the call's own Request signal, which is the one release path on that
+ * transport; the route's Response carries nothing, and serve.ts drops it.
+ */
+function channelAnswered(
+  c: Context,
+  channel: StreamedChannel,
+  opts: SseEndpointOptions,
+  answer: StreamAnswer,
+): Response {
+  const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
+  const revocation = opts.revocation;
+  let closed = false;
+  let unsubscribe: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let finish: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    finish = () => {
+      if (closed) return;
+      closed = true;
+      if (heartbeat !== null) clearInterval(heartbeat);
+      unsubscribe?.();
+      resolve();
+    };
+  });
+
+  // Claimed before anything that can throw and released when the stream ends — a finally
+  // could not do it, for this stream outlives the return: the registry holds an entry for
+  // exactly as long as the connection lives, and one left behind would name a stream
+  // nobody could close again.
+  const release = revocation?.streams.add(revocation.userId, finish) ?? (() => {});
+  void done.then(() => {
+    release();
+    answer.end("closed");
+  });
+  try {
+    answer.start(200, { "content-type": "text/event-stream" });
+    const listener: ChannelListener = (evt: ChannelEvent) => {
+      if (opts.amsp === true && !isAmspRecord(evt)) return;
+      answer.event(
+        // Event id is an opaque string generated by the channel (`<epoch>-<seq>`), passed through as-is.
+        evt.event ?? "message",
+        evt.id,
+        evt.data,
+      );
+    };
+
+    unsubscribe = channel.subscribe(listener);
+    // Subscribe first (to avoid dropping events in a race with broadcasts), then replay
+    // synchronously — event order as above: the answer has begun, so nothing is dropped.
+    if (lastEventId !== undefined) {
+      const replay = channel.replayAfter(lastEventId);
+      if (!replay.hit) {
+        if (opts.amsp === true) {
+          // As on HTTP: refused before the answer started; a buffer that moved since ends it.
+          finish();
+          return new Response(null, { status: 200 });
+        } else {
+          const resync: ServerEvent = { type: "resync_required" };
+          channel.sendTo(listener, resync, "server_event");
+        }
+      } else {
+        for (const evt of replay.events) listener(evt);
+      }
+    }
+    if (opts.amsp !== true) {
+      for (const event of opts.initialEvents ?? []) {
+        channel.sendTo(listener, event, "server_event");
+      }
+    }
+    // The first beat goes out at once, so a client knows from the first second that this
+    // stream pings — not only after the first interval has passed.
+    answer.event(PING.event, null, PING.data);
+
+    heartbeat = setInterval(() => {
+      // The same re-check as the HTTP heartbeat: one beat bounds how long a window whose
+      // session was revoked keeps streaming, and the check must not renew the session.
+      if (revocation !== undefined && !revocation.sessionIsLive()) {
+        finish();
+        return;
+      }
+      answer.event(PING.event, null, PING.data);
+      if (opts.heartbeatEvent === true && opts.amsp !== true) {
+        // Unicast: the beat is this subscriber's own liveness, so it consumes a seq (as any
+        // event does) but is neither buffered nor broadcast to the channel's other readers.
+        const beat: ServerEvent = { type: "heartbeat" };
+        channel.sendTo(listener, beat, "server_event");
+      }
+    }, HEARTBEAT_MS);
+
+    // The one release path (socket/serve.ts): a cancel frame, the socket closing, the
+    // client lagging past the watermark — the call's Request is aborted, and this stream
+    // ends exactly as the aborted hono stream ends the HTTP one.
+    answer.signal.addEventListener("abort", finish, { once: true });
+    if (answer.signal.aborted) finish();
+  } catch (err) {
+    // What the HTTP stream answers with a dropped connection, this answers with a clean
+    // end: the client re-issues, and the route's own error handling answers that.
+    finish();
+    throw err;
+  }
+  return new Response(null, { status: 200 });
 }

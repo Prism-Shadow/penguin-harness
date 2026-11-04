@@ -8,10 +8,13 @@
  * - On a non-secure origin the copy command runs without suspending, copies exactly the text
  *   from an element kept out of layout, removes that element whatever the copy did, and hands
  *   the page's selection and focus back.
+ * - The copy command writes the text as `text/plain` alone and cancels the browser's own copy of
+ *   that element, which would add HTML carrying the page's inherited ink.
  * - A copy command that reports failure or throws resolves false, never a rejection, and never
  *   falls back to a prompt.
- * - In a secure context the Clipboard API is used and no copy command runs; when it refuses the
- *   write, the copy command takes over.
+ * - In a secure context the Clipboard API writes one item holding `text/plain` alone and no copy
+ *   command runs; when it refuses the write, or the browser has no ClipboardItem (Firefox before
+ *   127), the copy command takes over, still plain text alone.
  * - Guard: no other module writes to `navigator.clipboard` or imports `copy-to-clipboard`.
  */
 import { readFileSync, readdirSync } from "node:fs";
@@ -31,12 +34,26 @@ afterEach(() => {
   vi.resetModules();
 });
 
+/** The copy event the element's own listener receives when the copy command runs on it. */
+interface FakeCopyEvent {
+  clipboardData: { setData(type: string, data: string): void };
+  preventDefault(): void;
+  stopPropagation(): void;
+}
+
 interface FakeElement {
   tagName: string;
   textContent: string;
   style: Record<string, string>;
   parentElement: null;
-  addEventListener(): void;
+  copyListeners: ((event: FakeCopyEvent) => void)[];
+  addEventListener(type: string, listener: (event: FakeCopyEvent) => void): void;
+}
+
+/** What one copy command put on the clipboard through the copied element's event. */
+interface CopyEventRecord {
+  writes: [string, string][];
+  cancelled: boolean;
 }
 
 interface FakeRange {
@@ -47,6 +64,8 @@ interface FakeRange {
 interface FakeDom {
   /** The document's copy command calls, each with what the selection held at that moment. */
   execCalls: { command: string; selected: (FakeElement | null)[] }[];
+  /** The copy events those commands raised on the selected elements, and what they wrote. */
+  copyEvents: CopyEventRecord[];
   appended: FakeElement[];
   /** Elements still attached to the body. */
   attached: FakeElement[];
@@ -57,13 +76,26 @@ interface FakeDom {
   focusLog: string[];
 }
 
+/** A minimal ClipboardItem: the flavours it was built with, by type. */
+class FakeClipboardItem {
+  constructor(readonly items: Record<string, Blob>) {}
+}
+
+/** The Clipboard API as the library reaches it; `write` is what it calls once it has an item. */
+interface FakeClipboard {
+  write?: (items: FakeClipboardItem[]) => Promise<void>;
+  writeText?: (text: string) => Promise<void>;
+}
+
 /**
- * Installs the three globals the library touches. The page starts with one selected range
- * and a focused textarea (xterm's input), so the library's hand-back is observable.
+ * Installs the globals the library touches. The page starts with one selected range and a
+ * focused textarea (xterm's input), so the library's hand-back is observable. `ClipboardItem`
+ * exists only when asked for, as in a browser that has it.
  */
 function stubDom(opts: {
   secure: boolean;
-  clipboard?: { writeText: (text: string) => Promise<void> };
+  clipboard?: FakeClipboard;
+  clipboardItem?: boolean;
   exec?: () => boolean;
 }): FakeDom {
   const range = (): FakeRange => ({
@@ -75,6 +107,7 @@ function stubDom(opts: {
   const pageRange = range();
   const dom: FakeDom = {
     execCalls: [],
+    copyEvents: [],
     appended: [],
     attached: [],
     pageRange,
@@ -103,6 +136,7 @@ function stubDom(opts: {
   };
   vi.stubGlobal("window", { isSecureContext: opts.secure, prompt: vi.fn() });
   vi.stubGlobal("navigator", opts.clipboard ? { clipboard: opts.clipboard } : {});
+  if (opts.clipboardItem) vi.stubGlobal("ClipboardItem", FakeClipboardItem);
   vi.stubGlobal("document", {
     activeElement: focused,
     fullscreenElement: null,
@@ -122,12 +156,30 @@ function stubDom(opts: {
       textContent: "",
       style: {},
       parentElement: null,
-      addEventListener() {},
+      copyListeners: [],
+      addEventListener(type, listener) {
+        if (type === "copy") this.copyListeners.push(listener);
+      },
     }),
     createRange: range,
     getSelection: () => selection,
     execCommand(command: string) {
-      dom.execCalls.push({ command, selected: dom.ranges.map((r) => r.node) });
+      const selected = dom.ranges.map((r) => r.node);
+      dom.execCalls.push({ command, selected });
+      // The command raises a copy event on the selected element before it copies anything.
+      for (const node of selected) {
+        if (node === null) continue;
+        const record: CopyEventRecord = { writes: [], cancelled: false };
+        const event: FakeCopyEvent = {
+          clipboardData: { setData: (type, data) => record.writes.push([type, data]) },
+          preventDefault: () => {
+            record.cancelled = true;
+          },
+          stopPropagation: () => {},
+        };
+        for (const listener of node.copyListeners) listener(event);
+        dom.copyEvents.push(record);
+      }
       return (opts.exec ?? (() => true))();
     },
   });
@@ -156,6 +208,16 @@ describe("writeClipboard: the library's behaviour contract", () => {
     expect(dom.execCalls[0]?.selected).toEqual([mark]);
     expect(mark?.style.position).toBe("fixed");
     expect(mark?.style.clip).toBe("rect(0, 0, 0, 0)");
+  });
+
+  it("writes the text as text/plain alone through the copy command, cancelling the browser's own copy", async () => {
+    const dom = stubDom({ secure: false });
+    const writeClipboard = await loadEntry();
+
+    await writeClipboard("line one\nline two");
+    expect(dom.copyEvents).toEqual([
+      { writes: [["text/plain", "line one\nline two"]], cancelled: true },
+    ]);
   });
 
   it("resolves false, not a rejection, when the copy command reports failure", async () => {
@@ -219,13 +281,20 @@ describe("writeClipboard: the library's behaviour contract", () => {
     },
   );
 
-  it("uses the Clipboard API in a secure context, and runs no copy command", async () => {
-    const writeText = vi.fn(async (_text: string) => {});
-    const dom = stubDom({ secure: true, clipboard: { writeText } });
+  it("uses the Clipboard API in a secure context — one item, plain text alone — and runs no copy command", async () => {
+    const written: FakeClipboardItem[][] = [];
+    const dom = stubDom({
+      secure: true,
+      clipboardItem: true,
+      clipboard: { write: async (items) => void written.push(items) },
+    });
     const writeClipboard = await loadEntry();
 
     await expect(writeClipboard("hello")).resolves.toBe(true);
-    expect(writeText).toHaveBeenCalledWith("hello");
+    expect(written).toHaveLength(1);
+    const [item] = written[0]!;
+    expect(Object.keys(item!.items)).toEqual(["text/plain"]);
+    expect(await item!.items["text/plain"]!.text()).toBe("hello");
     expect(dom.execCalls).toEqual([]);
     expect(dom.appended).toEqual([]);
   });
@@ -233,8 +302,9 @@ describe("writeClipboard: the library's behaviour contract", () => {
   it("falls back to the copy command when the Clipboard API refuses the write", async () => {
     const dom = stubDom({
       secure: true,
+      clipboardItem: true,
       clipboard: {
-        writeText: async () => {
+        write: async () => {
           throw new Error("NotAllowedError");
         },
       },
@@ -243,6 +313,17 @@ describe("writeClipboard: the library's behaviour contract", () => {
 
     await expect(writeClipboard("x")).resolves.toBe(true);
     expect(dom.execCalls.map((c) => c.command)).toEqual(["copy"]);
+    expect(dom.copyEvents).toEqual([{ writes: [["text/plain", "x"]], cancelled: true }]);
+  });
+
+  it("takes the copy command where the browser has no ClipboardItem, still plain text alone", async () => {
+    const write = vi.fn(async (_items: FakeClipboardItem[]) => {});
+    const dom = stubDom({ secure: true, clipboard: { write } });
+    const writeClipboard = await loadEntry();
+
+    await expect(writeClipboard("x")).resolves.toBe(true);
+    expect(write).not.toHaveBeenCalled();
+    expect(dom.copyEvents).toEqual([{ writes: [["text/plain", "x"]], cancelled: true }]);
   });
 });
 

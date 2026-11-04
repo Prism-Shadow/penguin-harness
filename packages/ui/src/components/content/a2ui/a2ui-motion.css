@@ -10,7 +10,8 @@
  * - the bolt flashes twice and rests: a storm;
  * - wind streams along its lines as travelling dashes.
  *
- * The hourly forecast's line draws in once, left to right, because it is a trace through time.
+ * The hourly forecast's line is a line chart's, and its draw-in is the chart's
+ * (charts/cartesian/line-chart.css).
  *
  * What a theme owns is the timing: the loops run on `--ui-live-timing`, so Console's steps make
  * them jump the way its other live signals do while Frost and Primer glide. A repeated part
@@ -20,7 +21,7 @@
  * Still: the gallery's switch on the root, then the system preference, then anything scrolled
  * away (a widget's surface carries `data-offscreen`). Every keyframe changes transform, opacity
  * or the dashes only, and every part is drawn at rest in full, so a still widget is the whole
- * picture: the wind's dashes and the line's draw-in exist only while they run.
+ * picture: the wind's dashes exist only while they run.
  */
 [data-art] [data-anim] {
   animation-timing-function: var(--ui-live-timing, linear);
@@ -65,12 +66,6 @@
 [data-art] [data-anim="wind"] {
   animation-name: a2ui-stream;
   animation-duration: 1.6s;
-}
-
-/* The line's length is measured once it is drawn (`--a2ui-len` on the group); until then, and
-   wherever it is missing, the dashes compute to nothing and the line simply shows. */
-.ui-chart [data-anim="line"] path {
-  animation: a2ui-draw 900ms var(--ui-ease-out, ease-out) backwards;
 }
 
 @keyframes a2ui-rays-turn {
@@ -155,25 +150,15 @@
     stroke-dashoffset: -24;
   }
 }
-@keyframes a2ui-draw {
-  from {
-    stroke-dasharray: var(--a2ui-len) var(--a2ui-len);
-    stroke-dashoffset: var(--a2ui-len);
-  }
-  to {
-    stroke-dasharray: var(--a2ui-len) var(--a2ui-len);
-    stroke-dashoffset: 0;
-  }
-}
 
-:root[data-motion="reduced"] :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+:root[data-motion="reduced"] [data-art] [data-anim] {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+  [data-art] [data-anim] {
     animation: none;
   }
 }
-[data-offscreen] :is([data-art] [data-anim], .ui-chart [data-anim] path) {
+[data-offscreen] [data-art] [data-anim] {
   animation-play-state: paused;
 }

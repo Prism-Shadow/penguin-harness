@@ -28,7 +28,6 @@ import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { Terminal } from "../terminal/manager.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Errors } from "../mechanisms/observability.js";
-import { machineFaultInto, type MachineFault } from "./machine-sockets.js";
 import type { Machines } from "./service.js";
 
 const SEP = "@";
@@ -86,8 +85,6 @@ export interface RelayDeps {
     machineId: string,
   ): Promise<{ agent: http.Agent; port: number; cookie: string } | null>;
   isAdmin(userId: string): boolean;
-  /** Files a relay that failed into the error table beside its log line (see MachineFault). */
-  fault?: MachineFault;
 }
 
 /**
@@ -223,7 +220,6 @@ export async function relayTerminalStream(
   });
   socket.on("error", (err) => {
     log(`[machines] terminal relay to ${ref.remote.machineId}: ${err.message}`);
-    deps.fault?.({ machineId: ref.remote.machineId, code: "machine_terminal_relay_failed", err });
     closeBoth(1011, "relay failed");
   });
   // Either end closing takes the other with it: a half-open pipe to a shell is a pane that
@@ -267,7 +263,6 @@ export class TerminalRelay implements RemoteTerminals {
       {
         proxyTarget: (machineId) => this.machines.proxyTarget(machineId),
         isAdmin: (userId) => this.auth.isAdmin(userId),
-        ...(this.errors !== undefined ? { fault: machineFaultInto(this.errors) } : {}),
       },
       log,
     );

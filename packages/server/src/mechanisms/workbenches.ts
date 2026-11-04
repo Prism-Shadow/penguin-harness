@@ -6,14 +6,15 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it, a small state document, a log line.
+ *   the way the SDK does it and followed live, a small state document, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
  *
  * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
- * serve a UI file, and the version history every successful load appends to — which is
- * what makes an Agent's own edits to its workbench reversible.
+ * serve a UI file (and the page runtime compiled pages import), and the version history
+ * every successful load appends to — which is what makes an Agent's own edits to its
+ * workbench reversible.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
@@ -71,6 +72,25 @@ export interface WorkbenchResult {
   error: string | null;
 }
 
+/**
+ * One AMSP record as `WorkbenchHost.subscribe` hands it over: the envelope every Trace line and
+ * every unnamed event of a Session's stream is. `type` is `session_meta`, `model_msg` or
+ * `event_msg`; `payload.type` names the record (`task_begin`, `partial_text`, `tool_call`,
+ * `task_end`, …; a `session_meta` payload has none); `origin` is the chain of child Session ids
+ * a subagent's record came through, outer to inner, and is absent on the main Session's own.
+ *
+ * Typed by its envelope rather than by every payload AMSP defines: a workbench keeps the types
+ * it was written against (`.harness/`), and a record type that grew with each new payload would
+ * stop fitting them.
+ */
+export interface WorkbenchRecord {
+  /** ISO 8601 UTC. */
+  timestamp: string;
+  type: string;
+  payload: { type?: string; [key: string]: unknown };
+  origin?: string[];
+}
+
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
 export abstract class WorkbenchMain {
@@ -104,6 +124,18 @@ export abstract class WorkbenchHost {
   abstract sessionTitle(sessionId: string): string | null;
   /** A snapshot, not a wait: running until the latest task ends, then its final answer or failure. No tool or thinking messages. */
   abstract sessionResult(sessionId: string): Promise<WorkbenchResult>;
+  /**
+   * Follows a Session of this Project live: `listener` receives each record the Session
+   * publishes from now on — exactly the records `GET /api/sessions/:id/amsp` streams, partial
+   * deltas and a subagent's (`origin`) included. Nothing is replayed, so subscribe before
+   * `run`. Returns the unsubscribe function; calling it again does nothing. A listener runs
+   * after the publish, never inside it, records in order; one that throws is logged and the
+   * subscription carries on. A main `task_end` (no `origin`) arrives before the Session reads
+   * idle, and `sessionResult` answers `running` until it does. Every subscription ends with the
+   * workbench's tree (a reload, a removal), and one whose Session has sat idle with nothing
+   * published for the channel hub's idle window ends by itself.
+   */
+  abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
@@ -164,6 +196,33 @@ export interface WorkbenchInfo {
   hints: string[];
 }
 
+/**
+ * What the HTML of a compiled page is served with: the page runtime's import map and its
+ * stylesheet, each a file of the runtime (`…/workbenches/:id/sdk/ui/<file>`).
+ */
+export interface WorkbenchUiRuntime {
+  /** Bare specifier → the runtime file it loads. */
+  imports: Record<string, string>;
+  stylesheet: string;
+}
+
+/** A file of a workbench's pages, as `uiFile` finds it. */
+export interface WorkbenchUiFile {
+  /** Absolute path: a file under `ui/`, or the `.js` a TSX page compiled to under `.build/`. */
+  path: string;
+  /**
+   * Set on an HTML page of a workbench whose pages are compiled: the runtime its import map
+   * names. Null on every file served exactly as it is on disk.
+   */
+  compiled: WorkbenchUiRuntime | null;
+}
+
+/** A file of this server's page runtime, with a strong validator of its bytes. */
+export interface WorkbenchUiRuntimeFile {
+  body: Uint8Array;
+  etag: string;
+}
+
 export interface WorkbenchVersion {
   revision: string;
   savedAt: string;
@@ -184,18 +243,16 @@ export abstract class Workbenches {
     workbenchId: string,
     request: WorkbenchRequest,
   ): Promise<WorkbenchResponse>;
-  /** Absolute path of a file under the workbench's `ui/`, or null when absent/unsafe. */
+  /**
+   * A file of the workbench's `ui/`: the one on disk, else — for a `.js` a TSX page compiles
+   * to — what the serving instance emitted. Null when absent or unsafe.
+   */
   abstract uiFile(
     projectId: string,
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<string | null>;
-  /**
-   * The workbench's plugin icon as SVG text (its package's `penguin.icon`, read through the
-   * plugin library's own reader), or null when it ships none or the icon is refused. Server
-   * side only — the icon never enters a `WorkbenchInfo`.
-   */
+  ): Promise<WorkbenchUiFile | null>;
   /**
    * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
    * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA
@@ -206,6 +263,16 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<{ kind: "svg" | "png"; data: string } | null>;
+  /**
+   * A file of the page runtime this server serves compiled pages with (React and the shared
+   * components), under a workbench that exists; null otherwise.
+   */
+  abstract uiRuntimeFile(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    rel: string,
+  ): Promise<WorkbenchUiRuntimeFile | null>;
   abstract history(
     projectId: string,
     agentId: string,
@@ -219,4 +286,10 @@ export abstract class Workbenches {
   ): Promise<WorkbenchInfo>;
   /** Deletes the folder and its recorded versions; the instance goes with them. */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  /**
+   * Lets go of everything held for one Agent before its folder is deleted: the folder watcher,
+   * pending reloads, loads in flight and the loaded instances. A later listing takes them up
+   * again, so an Agent whose deletion is then refused loses nothing.
+   */
+  abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
 }

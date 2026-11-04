@@ -62,6 +62,7 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -168,7 +169,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       (e: unknown) => {
         if (cancelled) return;
         if (machine === null) {
-          toastError(apiErrorText(e));
+          toastApiError(e);
           return;
         }
         // A machine that cannot answer — no connection, or a build without these routes —
@@ -250,7 +251,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       if (res.ok) toastSuccess(message);
       else toastError(message);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(null);
     }
@@ -287,14 +288,14 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     await installInOrder(
       offered,
       async (pkg) => {
-        const to = (target ??= (await api.getInstalledPlugins(projectId)).machineId);
+        const to = (target ??= (await api.getInstalledPlugins(projectId, null)).machineId);
         const res = await api.installPlugin(projectId, pkg, to);
         return res.plugins.find((p) => p.specifier === pkg)?.error;
       },
       {
         installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
         failed: (pkg, error) => toastError(S.plugins.deploymentFailedToast(pkg, error)),
-        threw: (e) => toastError(apiErrorText(e)),
+        threw: (e) => toastApiError(e),
       },
     );
     closePrompt(dontAskAgain);
@@ -302,7 +303,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       const config = await api.adminGetPluginConfig(machine);
       setEntries((prev) => withLiveParts(prev ?? [], config.plugins));
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setInstalling(false);
     }

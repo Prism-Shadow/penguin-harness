@@ -222,7 +222,7 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     usage: row.library === undefined ? null : { usedBy: [], behind: [] },
     categoryTitle: "Agent Sandbox",
     showCategory: true,
-    agents: [],
+    targets: [],
     installed: new Map(),
     canQuickStart: true,
     isAdmin,

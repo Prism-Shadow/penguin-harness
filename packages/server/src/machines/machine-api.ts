@@ -38,8 +38,17 @@ export interface MachineApi {
   ): Promise<{ status: number; text: string }>;
 }
 
-/** One client per (machine, session): `agent` dials the machine's server through its session, `port` is the server's port over there. */
-export function machineApi(agent: http.Agent, port: number, cookie: string): MachineApi {
+/**
+ * One client per (machine, session): `agent` dials the machine's server through its session,
+ * `port` is the server's port over there. `headers` ride on every call (the adoption time a
+ * reading of that machine's Sessions carries, see runtime/session-sources.ts).
+ */
+export function machineApi(
+  agent: http.Agent,
+  port: number,
+  cookie: string,
+  headers: Record<string, string> = {},
+): MachineApi {
   const send = (
     method: string,
     path: string,
@@ -48,7 +57,10 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
     timeoutMs: number,
     extra: Record<string, string> = {},
   ): Promise<{ status: number; text: string }> =>
-    sendTo(agent, port, cookie, method, path, payload, contentType, timeoutMs, extra);
+    sendTo(agent, port, cookie, method, path, payload, contentType, timeoutMs, {
+      ...headers,
+      ...extra,
+    });
 
   return {
     request: (method, path, body, timeoutMs) =>

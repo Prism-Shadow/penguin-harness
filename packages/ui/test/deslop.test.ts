@@ -10,7 +10,8 @@
  *
  * The package holds itself to the rules outright. Where a rule names a home — the one spinner
  * file, the motion files, the pulse of a dot or a skeleton — it is in {@link POLICY}; an occurrence
- * a later wave removes would go in {@link ALLOWLIST} with that wave, and the list starts empty.
+ * a later wave removes goes in {@link ALLOWLIST} with that wave, and only the chart marks' label
+ * sizes are there.
  *
  * A rule with nothing to read on this branch is a named skip, never a pass: the markup rules wait
  * for the first `.tsx` (the screens, #763; the modules, #764; the components, W1), and the
@@ -52,7 +53,8 @@ import { REPO_ROOT, SRC_DIR } from "./helpers/paths";
 /** The homes §3 names. Bare file names match wherever the file lands. */
 const POLICY: DeslopPolicy = {
   // Rule 1: the chevron rotates; the sheet, the launcher fan and the drawer move.
-  transformMotion: ["chevron.tsx", "sheet.tsx", "launcher.tsx", "drawer.tsx"],
+  // site-prose.css turns a <details> marker the way the chevron turns.
+  transformMotion: ["chevron.tsx", "sheet.tsx", "launcher.tsx", "drawer.tsx", "site-prose.css"],
   // Rule 1: the `data-layout-motion` rule in the theme foundation transitions a width or a grid
   // row on the theme's layout tokens; site.css owns the public header pill and mobile fold.
   layoutMotion: ["theme.css", "site.css"],
@@ -70,8 +72,14 @@ const POLICY: DeslopPolicy = {
   hexHomes: ["avatar.ts", "tokens.ts"],
 };
 
-/** Occurrences a named wave removes, by root-relative path. The package starts with none. */
-const ALLOWLIST: DeslopAllowlist = {};
+/**
+ * Occurrences a named wave removes, by root-relative path. The chart marks set their axis and
+ * value labels at 9 and 11 px: raising every chart's type to the 12px floor moves each plot's
+ * label strides and padding, so it waits for the chart wave that re-lays them out.
+ */
+const ALLOWLIST: DeslopAllowlist = {
+  "components/charts/marks/marks.tsx": { 23: [2, "chart type size"] },
+};
 
 /** Not UI: the test machinery spells the patterns the rules look for, and hooks.ts is a list. */
 const NOT_UI = ["testing/", "hooks.ts"];
@@ -132,8 +140,12 @@ describe("de-slop rules over packages/ui/src", () => {
           POLICY,
           surface,
         );
+        // Each surface answers for its own files' entries only.
+        const allowed = Object.fromEntries(
+          Object.entries(ALLOWLIST).filter(([rel]) => extension.test(rel)),
+        );
         expect(
-          allowlistProblems(hits, rule, ALLOWLIST, (hit) => relOf(hit.file)),
+          allowlistProblems(hits, rule, allowed, (hit) => relOf(hit.file)),
           `K-redesign §3 rule ${rule}: ${DESLOP_RULES[rule]}.`,
         ).toEqual([]);
       });
@@ -270,18 +282,17 @@ describe("the rule checks, on known shapes", () => {
     expect(found("theme.css", ".a { transition-property: width, border-radius; }")).toEqual([
       "1:transition-property: border-radius",
     ]);
-    // The stream's veil may hold its gradient through its fade-out with a discrete transition;
-    // the same hold on another hook, or an interpolating one on the stream, is refused.
-    const hold =
-      "opacity var(--ui-dur-reveal) var(--ui-ease-out), background-image var(--ui-dur-reveal) step-end allow-discrete";
-    expect(found("t.css", `:root .ui-stream::after { transition: ${hold}; }`)).toEqual([]);
+    // The stream's veil eases its registered strength away; the same property on another hook,
+    // another custom property on the stream, or a gradient transition there is refused.
+    const veil = "--_stream-veil var(--ui-dur-reveal) var(--ui-ease-out)";
+    expect(found("t.css", `:root .ui-stream { transition: ${veil}; }`)).toEqual([]);
     expect(
       found(
         "t.css",
-        `:root .ui-frame::after { transition: ${hold}; }\n` +
-          ":root .ui-stream::after { transition: opacity 150ms, background-image 150ms; }",
+        `:root .ui-frame { transition: ${veil}; }\n` +
+          ":root .ui-stream { transition: --ui-other 150ms, background-image 150ms; }",
       ),
-    ).toEqual(["1:transition: background-image", "1:transition: background-image"]);
+    ).toEqual(["1:transition: --_stream-veil", "1:transition: --ui-other, background-image"]);
   });
 
   it("rule 2 — hover and press transforms", () => {
@@ -382,6 +393,18 @@ describe("the rule checks, on known shapes", () => {
     expect(tsx('<div className="border-l-4 border-tone-attention-line" />')).toEqual([
       "8:border-l-4 in a colour",
     ]);
+    // Any width, the brand scale included, and the stylesheet spelling.
+    expect(
+      tsx(
+        '<><div className="border-l border-brand-500" /><i className="border-s-[3px] border-accent" /></>',
+      ),
+    ).toEqual(["8:border-l in a colour", "8:border-s-[3px] in a colour"]);
+    expect(
+      found(
+        "x.css",
+        ".a { border-left: 2px solid var(--site-brand-600); }\n.b { border-left: 1px solid var(--site-gray-200); }",
+      ),
+    ).toEqual(["8:.a { border-left: 2px solid var(--site-brand-600) }"]);
     expect(found("x.css", ".q { @apply border-l-2 border-amber-400; }", PALETTE_OK)).toEqual([
       "8:border-l-2 in a colour",
     ]);
@@ -446,6 +469,8 @@ describe("the rule checks, on known shapes", () => {
     expect(tsx('<i className="text-[11px] text-[0.6875rem]" />')).toEqual([
       "13:text-[11px]",
       "13:text-[0.6875rem]",
+      "23:text-[11px]",
+      "23:text-[0.6875rem]",
     ]);
     expect(tsx('<i className="text-xs text-[0.85em] text-[var(--ui-text-code-size)]" />')).toEqual(
       [],
@@ -456,6 +481,20 @@ describe("the rule checks, on known shapes", () => {
     expect(tsx('<i className="uppercase tracking-wide" />')).toEqual([
       "14:uppercase",
       "14:tracking-wide",
+    ]);
+    expect(tsx('<i className="tracking-[0.08em] tracking-[-0.02em] tracking-tight" />')).toEqual([
+      "14:tracking-[0.08em]",
+    ]);
+    // A public-site rule does not borrow the app's hook to letter-space or uppercase a label.
+    expect(
+      found(
+        "s.css",
+        ".site-eyebrow.ui-eyebrow { text-transform: uppercase; letter-spacing: 0.025em; }\n" +
+          ".ui-eyebrow { letter-spacing: 0.04em; }\n.title { letter-spacing: -0.025em; }",
+      ),
+    ).toEqual([
+      "14:.site-eyebrow.ui-eyebrow { text-transform: uppercase }",
+      "14:.site-eyebrow.ui-eyebrow { letter-spacing: 0.025em }",
     ]);
     expect(tsx('<div><p className="ui-eyebrow">Group</p><h2>Title</h2></div>')).toEqual([
       "14:eyebrow directly above <h2>",
@@ -541,18 +580,20 @@ describe("the rule checks, on known shapes", () => {
           ':root .ui-activity[data-state="done"] { background: linear-gradient(red, blue); }',
       ),
     ).toEqual(['18::root .ui-activity[data-state="done"] { background: …gradient() }']);
-    // A streaming reply's veil may paint one too (its newest lines fade in through it); the
-    // finished reply, or the stream's rules outside the streaming state, may not.
+    // A streaming reply's veil may mask with one too (its newest lines fade in through it), and
+    // so may the host while the veil eases away (`data-settling`); the finished reply, or the
+    // stream's rules outside those states, may not.
     expect(
       found(
         "t.css",
-        ':root .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after { background-image: linear-gradient(transparent, #000), radial-gradient(closest-side, red, transparent); }\n' +
-          ":root .ui-stream::after { background-image: linear-gradient(red, blue); }\n" +
-          ':root .ui-stream[data-state="done"]::after { mask-image: linear-gradient(red, blue); }',
+        ':root .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child) { mask-image: linear-gradient(#000, transparent); }\n' +
+          ":root .ui-stream[data-settling] { -webkit-mask-image: linear-gradient(#000, transparent); }\n" +
+          ":root .ui-stream { mask-image: linear-gradient(red, blue); }\n" +
+          ':root .ui-stream[data-state="done"]::after { background-image: linear-gradient(red, blue); }',
       ),
     ).toEqual([
-      "18::root .ui-stream::after { background-image: …gradient() }",
-      '18::root .ui-stream[data-state="done"]::after { mask-image: …gradient() }',
+      "18::root .ui-stream { mask-image: …gradient() }",
+      '18::root .ui-stream[data-state="done"]::after { background-image: …gradient() }',
     ]);
     // A chart may paint a gradient as a mask (an area's fade, a bar's hatch); a mask gradient on
     // any other hook is the tell like a background one.
@@ -641,6 +682,36 @@ describe("the rule checks, on known shapes", () => {
       'c.tsx: 1 left of 2 — shrink the entry to [1, "W6"]',
       "d.tsx: none left of 1 (W7) — delete the entry",
     ]);
+  });
+
+  it("rule 23 — no text below 12px", () => {
+    expect(tsx('<i className="text-[11px] text-[0.625rem] text-[12px]" />', PALETTE_OK)).toEqual([
+      "13:text-[11px]",
+      "13:text-[0.625rem]",
+      "13:text-[12px]",
+      "23:text-[11px]",
+      "23:text-[0.625rem]",
+    ]);
+    expect(tsx("<svg><text fontSize={9} /><text fontSize={12} /></svg>")).toEqual([
+      "23:<text fontSize=9>",
+    ]);
+    expect(
+      found(
+        "x.css",
+        ".a { font-size: 11px; }\n.b { font-size: 0.75rem; }\n.c { font-size: 0.8em; }",
+      ),
+    ).toEqual(["23:.a { font-size: 11px }"]);
+  });
+
+  it("rule 24 — no middle dot between items", () => {
+    expect(
+      found(
+        "strings.ts",
+        'export const S = { os: "Linux · Windows · macOS", name: "Zhang·San", c: "© 2026, Apache-2.0" };',
+      ),
+    ).toEqual(["24:Linux · Windows · macOS"]);
+    expect(tsx('<p>{date}{" · "}{kind}</p>')).toEqual(["24:<p> holds a lone middle dot"]);
+    expect(tsx("<p><span>{date}</span><span>{kind}</span></p>")).toEqual([]);
   });
 
   it("rule 21 — emoji in copy", () => {

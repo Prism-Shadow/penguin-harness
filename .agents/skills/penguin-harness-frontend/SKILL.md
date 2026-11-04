@@ -35,11 +35,25 @@ shared component. Verify the shared change in the gallery and in a representativ
 ### Landing, docs and gallery chrome
 
 Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
-`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons. Import
-`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors. This entry is
-independent of the app renderer and full theme; public sites do not need the app's bundled fonts
-or Markdown renderer just to render navigation. Their wrappers only adapt routes, labels and
-preferences. Do not restore copied navbar markup, language-menu event handlers or theme cycles.
+`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons, and for what the sites'
+pages share: `SiteFooter`, `SiteCodeCard`, `SiteCopyButton`, `SitePill`, `SiteMarkdown` (article
+prose with `SiteCodeBlock` and `SiteCodeTabs`; the docs pass `SITE_DOC_REMARK_PLUGINS` and every
+site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSidebarNav`,
+`SiteSearchDialog`, `SiteExternalLink`, the preference providers (`SiteThemeProvider`,
+`SiteLocaleProvider`, the shared `penguin-site.*` keys) and `useRouteScroll`. Import
+`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
+Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
+ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
+do not need the app's bundled fonts just to render a page, nor the theme icon sets: a site control
+draws line icons (`site-icons`, `CheckLineIcon`) and builds menu rows with `MenuRow`, never
+`GlyphIcon`, `MenuItem` or a mark drawn in every set, any of which carries the sets into the
+landing and docs bundles. Their wrappers only adapt routes, labels, content and preferences. Do
+not restore copied navbar markup, language-menu event handlers, theme cycles, footers, copy
+buttons or Markdown typography in a site package.
+
+A site component is held to the package's de-slop rules like any other: its look lives in
+`site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
+dark ramp), never as palette utilities, `dark:` variants or literal font sizes in its markup.
 
 Public-site controls keep their fixed visual identity through the gallery's theme changes.
 Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and
@@ -82,6 +96,19 @@ Rules:
   squeezing compress mark do, and it is legible to a reader who cannot separate hues.
 - **Never make colour the only carrier.** Every status mark also names its state in an accessible
   name or in adjacent text.
+- **No coloured dot carries a status on its own** (owner, 2026-10-15: 「不要用意义不明的颜色点」,
+  after the Machines page's blue dot). A dot whose meaning lives only in its hue and a hover is a
+  mark the reader has to decode. A state is a **labelled pill** — `Pill` in the state's tone, its
+  word on screen and no glyph, the reason on the pill's `tooltip` (`MachineStatusPill` is the
+  pattern) — or, where a row has no room for a word, an **icon** whose shape says the state and
+  whose tooltip and `aria-label` name it. A dot stays only as decoration beside words that already
+  say the state, or as a pulse on something live.
+- **One shape for every short label on a row** (owner, 2026-10-15: 「运行中胶囊和本服务端统一一下，用
+  ui 库抽象」). A state, a kind or a fact beside a name ("Running", "this server", "v0.2.16",
+  "vision", "CLI") is a `Pill`: the badge at its small size in its soft weight, words only, with
+  only the tone to choose. Two labels side by side never differ in height, padding, radius, type
+  or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
+  solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
   surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
   *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
@@ -115,6 +142,16 @@ character, and the placeholder says what blank means, so a visible line would on
 
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
+
+### Placeholders: what blank does, or what to do
+
+A placeholder says what happens if the field is left as it is, or the next step to take (owner,
+2026-10-24): 「留空则使用环境变量 DEEPSEEK_API_KEY」 says what blank does, 「请填写 API key」 what
+to do, 「留空使用默认 base URL」 both. A field whose blank state means something, or that must be
+filled, never has an empty placeholder. No bare status word (「未设置」) and no value dump
+(「默认发往 <url>」): the placeholder speaks to the reader's next move, not to the configuration.
+A required field with a stored value shows the value itself; the placeholder covers the empty
+state only.
 
 ### Tooltips: when a mark gets one
 
@@ -285,6 +322,11 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
+**A toolbar is one height.** `Button`'s `sm` and `base` rungs are the controls' own heights, so a
+search box, a `Select` and a button of one rung line up. A choice in a toolbar is the package's
+`Select` at that rung (the machine picker is one), never a button dressed as a select with a fixed
+`h-*`: the old machine picker, a button with `h-8`, stood about 5px above the controls beside it.
+
 **A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
 state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form
@@ -319,7 +361,11 @@ mode, machines, workflows:
   `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
   write only that value, settle on the server's answer; on failure roll back **and**
   `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
-  (`lib/instant-setting.ts`) does all three. A consequential switch asks first through
+  (`lib/instant-setting.ts`) does all three. The one exception is a personal preference that
+  follows the account (`lib/account-sync`: theme, language, background, notifications…): it is
+  written to the browser's cache through `writeCached` and applies at once, and its server write
+  is batched and retried in the background — a failed write is neither rolled back nor toasted.
+  A consequential switch asks first through
   `ConfirmModal` and shows the stored state until confirmed — and joins
   `test/consequential-confirms.test.ts`. A switch that acts on a typed value acts on the *saved*
   value: while that value has unsaved edits (or is missing, where the switch means nothing
@@ -410,6 +456,11 @@ Never let a button overflow its container or scroll the page sideways, and never
 label instead. A width passed to `Input` or `Select` through `className` loses to the control's own
 `w-full` (the built sheet emits `.w-full` after `.w-44`), and a full-width field beside a button is
 what squeezes it: put the width on a box around the field.
+
+**A row's text gives way; its actions never do.** Items with actions are `ListRow` rows: text
+`min-w-0` + `truncate` (whole on hover, no attribute), actions keep their width and wrap under the
+text, never clipped. A box that sizes to its content (a grid's `auto` column, a fold body) holds
+its child with `min-w-0`, or one long line widens every row past the card (ui-gallery `test:e2e`).
 
 The trap is a `Segmented` with long labels in a `PrefRow`: the row's control column is
 `minmax(0, max-content)` and its slot is `justify-end`, so a control that no longer fits overflows
@@ -521,6 +572,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 
 ## The rest of the house style
 
+- **Local first, remote lazy** (owner principle, 2026-10-26): a page and the sidebar's local
+  Session list render from this server's answer alone. A machine (connected, connecting or
+  offline) and the public internet are asked after that, and only where the part that shows
+  them is needed (`lib/local-first.ts` gates the shell's own remote reads); each joins with its
+  own state and timeout. Never put a local read and a remote one in one `Promise.all` or behind
+  one skeleton, and never make a route await a machine or the network before it answers with
+  local data.
 - **Stacking contexts**: chrome creates none; dropdown/user menus `z-40`; modal and drawer overlays
   `z-50`; portaled panels `z-[60]`. `styles.css`'s header states this.
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an
@@ -534,6 +592,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

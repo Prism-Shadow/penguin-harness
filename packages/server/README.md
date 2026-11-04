@@ -1,6 +1,6 @@
 # @prismshadow/penguin-server
 
-The PenguinHarness Web backend — the Web implementation of the SDK's Human boundary. HTTP carries Prompt input, approvals and interrupts; Server-Sent Events stream the OmniMessage output. Adds multi-user auth, Project authorization, Session runtime, scheduling and usage accounting on top of `@prismshadow/penguin-core`.
+The PenguinHarness Web backend — the Web implementation of the SDK's Human boundary. HTTP carries Prompt input, approvals and interrupts; Server-Sent Events stream the output as AMSP records. Adds multi-user auth, Project authorization, Session runtime, scheduling and usage accounting on top of `@prismshadow/penguin-core`.
 
 ## Architecture
 

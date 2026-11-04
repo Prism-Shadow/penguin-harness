@@ -1,8 +1,13 @@
 /**
  * A metrics widget: one to eight readings as tiles — a measurement (CPU 37 %), a share of a whole
  * used (disk 320 of 512 GB) or left (a quota, a budget), or how far a job got — each its label,
- * its number large, and what the model gave it: a ring or a bar for a reading out of a whole, the
+ * its number large, and what the model gave it: a gauge or a bar for a reading out of a whole, the
  * change since the last reading, a sparkline of its history, one quiet line of detail.
+ *
+ * The tile (`MetricTile`) is built from the basic charts — the Gauge (the figure, and a ring of
+ * the share beside it), the Sparkline, the ProgressBar — and is the one tile every reading is
+ * drawn with: a metrics block's grid, a `chart` block of kind gauge (one tile on its own), and
+ * the resource board's readings.
  *
  * The model sets the judgement, the tile only shows it: `warn` and `danger`, read along `worse`
  * (high is bad for a load, low for a quota), ink the number and its gauge in the attention or the
@@ -14,7 +19,6 @@
  */
 import {
   formatDelta,
-  formatMetricValue,
   formatNumber,
   metricDetail,
   resolveMetric,
@@ -24,7 +28,7 @@ import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useChartWidth } from "../../charts/chart-frame/chart-frame";
-import { Ring } from "../../charts/ring/ring";
+import { Gauge } from "../../charts/gauge/gauge";
 import { Sparkline } from "../../charts/sparkline/sparkline";
 import { ProgressBar } from "../../feedback/progress-bar/progress-bar";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
@@ -97,7 +101,8 @@ function Delta({
   );
 }
 
-function MetricTile({
+/** One reading as a tile: its label and figure, its gauge or bar, its history and its detail. */
+export function MetricTile({
   metric,
   lone,
   lang,
@@ -115,25 +120,31 @@ function MetricTile({
   const share = resolved.share ?? 0;
   const unit = metric.unit;
   const detail = metric.detail ?? metricDetail(metric, lang);
-  const figure = lone ? "text-4xl" : "text-2xl";
-  const meter =
-    metric.max !== undefined
-      ? {
-          role: "meter" as const,
-          "aria-label": metric.label,
-          "aria-valuemin": metric.min ?? 0,
-          "aria-valuemax": metric.max,
-          "aria-valuenow": metric.value,
-          "aria-valuetext": formatMetricValue(metric, lang),
-        }
-      : {};
+  const figure = `${metric.prefix ?? ""}${formatNumber(metric.value, lang, metric.decimals)}`;
   return (
     <div data-tile className="flex min-w-0 flex-col gap-1 rounded-sm bg-surface-muted p-2">
       <span className="truncate text-xs text-fg-muted">{metric.label}</span>
-      <div {...meter} className="flex items-end justify-between gap-2">
+      {metric.max !== undefined ? (
+        // A reading out of a whole is a gauge: a ring beside the figure, or the figure alone
+        // over the progress bar below.
+        <Gauge
+          value={metric.value}
+          max={metric.max}
+          {...(metric.min !== undefined ? { min: metric.min } : {})}
+          figure={figure}
+          {...(unit !== undefined ? { unit } : {})}
+          {...(tone !== undefined ? { tone } : {})}
+          label={metric.label}
+          lone={lone}
+          ring={resolved.gauge === "ring"}
+        />
+      ) : (
         <span className="min-w-0">
-          <span data-figure className={`${figure} leading-none font-medium tabular-nums ${ink}`}>
-            {`${metric.prefix ?? ""}${formatNumber(metric.value, lang, metric.decimals)}`}
+          <span
+            data-figure
+            className={`${lone ? "text-4xl" : "text-2xl"} leading-none font-medium tabular-nums ${ink}`}
+          >
+            {figure}
           </span>
           {unit !== undefined && (
             <span className="text-sm text-fg-muted">
@@ -141,13 +152,7 @@ function MetricTile({
             </span>
           )}
         </span>
-        {resolved.gauge === "ring" && (
-          // The ring takes the number's ink, or the accent while the reading is fine.
-          <span className={`shrink-0 ${ink === "" ? "text-accent" : ink}`}>
-            <Ring segments={[{ value: share }]} max={1} size={40} width={5} trackOpacity={0.18} />
-          </span>
-        )}
-      </div>
+      )}
       {resolved.gauge === "bar" && (
         <ProgressBar size="sm" value={share * 100} max={100} tone={tone} label={metric.label} />
       )}

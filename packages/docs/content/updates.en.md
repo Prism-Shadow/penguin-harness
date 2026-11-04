@@ -10,6 +10,7 @@ Check which version of PenguinHarness you are running, and update it in the way 
 - **Using the desktop app?** See [Update the desktop app](#update-the-desktop-app).
 - **Installed the CLI?** See [Update a CLI install](#update-a-cli-install).
 - **Running in Docker?** See [Update a Docker deployment](#update-a-docker-deployment).
+- **Have remote machines?** See [Update remote machines](#update-remote-machines).
 - **Don't want update checks?** See [Turn off the update check](#turn-off-the-update-check).
 
 ## Check the running version
@@ -106,6 +107,14 @@ docker compose pull && docker compose up -d
 ```
 
 Updating from inside the container is not supported. See [Upgrade the container](/quickstart-docker#upgrade-the-container) for the details.
+
+## Update remote machines
+
+A remote machine must run the same version as the server it is connected to. When the versions differ, the server cannot connect to the machine: conversations on it stop updating live, although their lists still load.
+
+After updating the server, bring every machine to the same version from the **Machines** page: **Update** on one machine, or **Update all**. Each update reinstalls the program on that machine and restarts its server, so anyone using it is briefly cut off.
+
+If a machine already shows the server's version but still cannot connect, use **Restart server** on it. If it still cannot connect, reinstall the server's version on that machine.
 
 ## Turn off the update check
 

@@ -10,8 +10,8 @@ import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
 import type { PermissionPick } from "../../lib/permission-level";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/amsp/memory-changes";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import type { StreamRenderContext } from "./message-stream";
 import type { SessionStreamState } from "./use-session-stream";
@@ -58,7 +58,8 @@ export interface ChatDockState {
   /** Jump command: land the Memory tab on this memory's detail, or on the list (null target). */
   memoryRequest: { target: MemoryLocateTarget | null } | null;
   /** Opens this Agent's settings on the memory tab, where add / edit / delete live. */
-  openMemorySettings: (agentId: string) => void;
+  /** Opens an Agent's memory tab: on this server (`machineId` null) or on that machine. */
+  openMemorySettings: (agentId: string, machineId: string | null) => void;
   /** Writes a prompt into this conversation's composer and stops there: nothing is sent. */
   prefillComposer: (text: string) => void;
 }

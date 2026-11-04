@@ -163,7 +163,7 @@ describe("the snapshot on the Session's row", () => {
     try {
       db.exec(SCHEMA_SQL);
       db.exec("ALTER TABLE sessions DROP COLUMN sandbox");
-      stampThrough(db, "company-mode-desk-notices");
+      stampThrough(db, "2026-09-16-company-mode-desk-notices");
       migrate(db, { swapPath: true });
       const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
       expect(cols.some((c) => c.name === "sandbox")).toBe(true);

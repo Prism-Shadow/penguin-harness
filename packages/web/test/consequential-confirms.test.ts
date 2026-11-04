@@ -3,8 +3,8 @@
  *
  * Each entry names a module and the function in it that does the consequential thing — removes
  * a member, restores the default command rules, imports a snapshot over an Agent State, deletes
- * a machine from the Project, stops a machine's server, uninstalls the program from a machine,
- * stops a running process, restores a workbench revision, runs a plugin's action,
+ * a machine from the Project, stops a machine's server, uninstalls the program from a machine or
+ * installs it there again, stops a running process, restores a workbench revision, runs a plugin's action,
  * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
  * extension connections off server-wide, turns an Agent's API off, opens it to keyless callers, deletes one of its keys, turns
  * the Agent API off server-wide, turns company mode off server-wide, deletes an archived conversation from its stub or the archive page. Every reference to that function must
@@ -26,6 +26,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],
+  ["features/machines/machines-page.tsx", "reinstall"],
   ["features/chat/chat-page.tsx", "onKillProcess"],
   ["features/workbenches/workbench-tabs.tsx", "rollback"],
   ["features/settings/plugins-section.tsx", "runAction"],

@@ -8,6 +8,10 @@
  * (`border-line`): the tint alone says which tone it is, and a tinted box that also took its
  * tone's line would say it twice.
  *
+ * A strip in the page declares itself a tone surface (`data-wallpaper-surface="tone"`), so on a
+ * custom background it keeps its tone as a thinner tint over the image (wallpaper.css). A pressed
+ * notice is a toast: it floats over content and keeps its surface, so it declares nothing.
+ *
  * It carries the `ui-notice` hook, so a theme can render notices its own way — a floating card
  * with a tone dot, a console status line with a tone tag — without a call site knowing.
  * `data-tone` names the tone in the hook's words ({@link NOTICE_TONE}). Children may mark their
@@ -73,6 +77,7 @@ export function NoticeStrip({
       {...(Tag === "button" ? { type: "button" as const } : {})}
       data-tone={NOTICE_TONE[tone]}
       data-banner={banner ? "" : undefined}
+      data-wallpaper-surface={Tag === "button" ? undefined : "tone"}
       className={`ui-notice ${className} border-line ${TONE_CLASS[tone]}`}
     >
       {children}

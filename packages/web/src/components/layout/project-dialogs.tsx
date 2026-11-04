@@ -36,7 +36,6 @@ import {
   Switch,
   discardUnsaved,
   guardLeave,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -63,6 +62,7 @@ import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Every form on the settings dialog's tabs: a tab switch and the dialog's close ask about these,
@@ -353,7 +353,7 @@ function GeneralSection({
       await reloadProjects();
       if (next) setCurrentProjectId(next.projectId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -471,7 +471,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -481,7 +481,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -604,8 +604,9 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
 
   useEffect(() => {
     let cancelled = false;
+    // This server's Project config: the copy every machine the Project uses is synced from.
     api
-      .getChatDefaults(projectId)
+      .getChatDefaults(projectId, null)
       .then((res) => {
         if (!cancelled) setSaved(res);
       })
@@ -613,7 +614,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
         if (!cancelled) setLoadError(apiErrorText(e));
       });
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })
@@ -692,7 +693,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
       form.adopt(landed);
       if (changed) toastSuccess(S.common.saved);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       if (changed) dispatchChatDefaultsChanged(changed);
       setBusy(false);
@@ -1075,7 +1076,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
       form.adopt(stored.rules);
       toastSuccess(S.common.saved);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

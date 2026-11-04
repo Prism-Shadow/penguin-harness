@@ -5,7 +5,7 @@
  * heading instead of only opening the top of a long page.
  */
 import type { DocPage } from "./docs";
-import { slugifyHeading } from "./toc";
+import { slugifyHeading } from "@prismshadow/penguin-ui/site";
 
 export interface SearchRecord {
   slug: string;

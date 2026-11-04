@@ -31,7 +31,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 
 Replace `sk-...` with your API key. The CLI writes the model to the data root, and the SDK can use it right away.
 
-You can also keep credentials off disk entirely. When a model entry has no inline `api_key` and its requests go to the vendor's own endpoint, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+You can also keep credentials off disk entirely. When a model has no `api_key` of its own or its group's, and neither it nor its group names a `base_url` other than the vendor's default endpoint, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically. The SDK itself carries no model catalog, so on a data root only the SDK touches, add your models with `addModel` and leave their group's base URL empty; see [Configuration](/configuration#provider-credential-variables).
 
 ## Run your first program
 
@@ -57,12 +57,12 @@ The program asks the agent to create `hello.txt`, using the current directory as
 ### How the program works
 
 - `createAgent` loads an agent's configuration by id: its prompts, tools and runtime parameters. `default_agent` is the agent seeded when the data root is initialized.
-- `session.run()` returns an async iterator that yields OmniMessages one by one. The guard in the loop picks out complete model text messages; tool calls, thinking blocks and everything else arrive on the same stream.
+- `session.run()` returns an async iterator that yields AMSP records one by one. The guard in the loop picks out complete model text messages; tool calls, thinking blocks and everything else arrive on the same stream.
 - `approve` is the approval callback, and returning `"allow"` permits everything. [Tools & Approval](/tools) describes how the four approval modes map onto tools.
 
 ## Next steps
 
 - [Core Interfaces](/interfaces): the contracts behind `createAgent`, `Session`, LLM and Environment.
-- [The OmniMessage Protocol](/omni-message): the shape of what `session.run()` yields.
+- [AMSP Records](/amsp-records): the shape of what `session.run()` yields.
 - [The Agent Loop](/agent-loop): what happens inside a single Task.
 - [Sessions & Traces](/sessions-and-traces): how conversations and execution records are stored.

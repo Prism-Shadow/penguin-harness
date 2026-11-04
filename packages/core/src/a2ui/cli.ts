@@ -16,8 +16,8 @@ import type { A2uiLangOption } from "./types.js";
 export const USAGE = `usage: node check.mjs [draft.md] [--lang zh|en|auto] [--json] [--rubric]
 
 Checks a reply that carries a2ui or mermaid blocks: L1 validity per block, L2 heuristics across
-blocks, the STE-lite prose lint, and a score. Reads the file, or stdin when no file is given.
-  --lang      prose rules and rubric language; auto (default) picks zh when CJK dominates
+blocks, and a score. Reads the file, or stdin when no file is given.
+  --lang      rubric language; auto (default) picks zh when CJK dominates
   --json      print the report as JSON instead of text
   --rubric    append the self-review questions
 exit code: 0 no errors · 1 at least one error · 2 usage or I/O failure`;

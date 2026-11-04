@@ -193,7 +193,7 @@ export function moduleParts(
       : view.remote?.machineId === view.machineId
         ? view.remote
         : null;
-  const shippedList = answer?.shipped ?? [];
+  const shippedList = (view?.remote ?? deployment)?.shipped ?? [];
   const seen = new Set(parts.map((p) => p.specifier));
   for (const { name } of index) {
     if (listed.has(name) || seen.has(name)) continue;

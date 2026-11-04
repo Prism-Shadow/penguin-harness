@@ -1,6 +1,7 @@
 /**
  * The menu rows (src/components/overlays/menu/menu.tsx): one row family at two densities, built
  * on the menu panel's row states, taking the menu roles inside a `Menu` and none outside one.
+ * `MenuRow` is the same row drawing the marks its caller hands it.
  */
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -11,6 +12,7 @@ import {
   MenuItem,
   MenuLabel,
   MenuRadioItem,
+  MenuRow,
   MenuSeparator,
 } from "../src/components/overlays/menu/menu";
 import { classTokens, renderStatic } from "../src/testing";
@@ -126,5 +128,32 @@ describe("MenuItem", () => {
     const tokens = classTokens(render({ label: "Row", glyph: ICONS.pencil, checked: true }));
     expect(tokens.filter((t) => /gray|dark:|red-|white/.test(t))).toEqual([]);
     expect(tokens).not.toContain("font-mono");
+  });
+});
+
+describe("MenuRow", () => {
+  const row = (checked: boolean) =>
+    inMenu(
+      "md",
+      createElement(MenuRow, {
+        key: "a",
+        label: "English",
+        role: "menuitemradio",
+        checked,
+        lead: createElement("i", { className: "lead" }),
+        check: createElement("b", { className: "mark" }),
+      }),
+    );
+
+  it("draws the caller's lead, and the caller's check on the current choice only", () => {
+    const on = row(true);
+    expect(on).toContain('role="menuitemradio" aria-checked="true"');
+    expect(on).toContain('<i class="lead"></i>');
+    expect(on).toMatch(
+      /<span aria-hidden="true" class="[^"]*w-3[^"]*"><b class="mark"><\/b><\/span>/,
+    );
+    // Nothing of the theme icon sets comes with the row itself.
+    expect(on).not.toContain("ui-glyph");
+    expect(row(false)).toMatch(/<span aria-hidden="true" class="[^"]*w-3[^"]*"><\/span><\/button>/);
   });
 });

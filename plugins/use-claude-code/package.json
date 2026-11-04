@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-claude-code",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "description": "Run Claude Code on a remote host over SSH — a persistent expect-driven login session, headless claude -p with the stdin fix, the interactive TUI inside a remote tmux driven by send-keys/capture-pane (one keystroke at a time, capture-verified; relayed user messages go through verbatim), and multi-turn continuity via --session-id/--resume or stream-json; hosts and credentials are placeholders resolved at runtime from the user or the vault, never hardcoded.",
   "keywords": [
     "penguin-plugin",
@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -29,8 +33,8 @@
     "icon": "icon.svg",
     "preinstall": false,
     "quick_start": {
-      "prompt": "Check whether ssh and the claude CLI are available on this machine, then show the exact commands you would use to run a headless Claude Code task on a remote host. The task should look around the chosen Workspace and summarize what the project is and how to build and test it. Do not start the remote task or run builds or tests; leave hosts, credentials and the Workspace as placeholders until I choose them.",
-      "prompt_zh": "检查这台机器上 ssh 和 claude CLI 是否可用，然后给出在远程主机上以无界面方式运行一次 Claude Code 任务的具体命令。该任务应浏览选定工作区，概括项目是什么，以及如何构建和测试它。不要启动远程任务或运行构建测试；主机、凭据和工作区在我选择之前保留为占位符。",
+      "prompt": "Check whether ssh and the claude CLI are available on this machine, then show the exact commands you would use to run a headless Claude Code task on a remote host.",
+      "prompt_zh": "检查这台机器上 ssh 和 claude CLI 是否可用，然后给出在远程主机上以无界面方式运行一次 Claude Code 任务的具体命令。",
       "skills": [
         "remote-claude-code"
       ]
@@ -43,6 +47,6 @@
   },
   "devDependencies": {
     "@prismshadow/skills": "workspace:*",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   }
 }

@@ -2,7 +2,8 @@
  * Radio buttons: `Radio` is one native `<input type="radio">` drawn as a small token disc, and
  * `RadioGroup` is the usual way to use it — a `<fieldset>` whose `<legend>` names the choice, one
  * row per option, all sharing a `name` so the browser gives the group its arrow-key walk and
- * exactly one tab stop.
+ * exactly one tab stop. `RadioDisc` is the same disc as a drawing, for a pressable option that is
+ * not a native radio but reads as one (a card of a single-choice group).
  *
  * A radio group is for a small, always-visible choice whose options each need a sentence (an
  * import mode and what it does to existing data). A short choice without explanations is a
@@ -10,6 +11,7 @@
  */
 import { useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
+import { FieldLegend } from "../field/field";
 import { sizeTextClass } from "../input/input";
 import type { ControlSize } from "../input/input";
 
@@ -28,14 +30,44 @@ export interface RadioProps extends Omit<
   size?: ControlSize;
 }
 
-const DISC =
-  "size-3.5 shrink-0 appearance-none rounded-full border transition-colors duration-150 " +
-  "disabled:cursor-not-allowed " +
+/**
+ * The disc, one drawing for the native radio and for {@link RadioDisc}: a ring in the control
+ * line at rest, the accent with a dot in its middle once selected.
+ */
+const DISC_SHAPE = "size-3.5 shrink-0 rounded-full border transition-colors duration-150";
+const DISC_OFF = "border-line-emphasis bg-surface";
+const DISC_ON = "border-accent bg-accent";
+
+/** What only the native radio adds: no browser widget, the closed state, its own focus ring. */
+const NATIVE =
+  "appearance-none disabled:cursor-not-allowed " +
   "focus-visible:[outline:var(--ui-focus-ring)] " +
   "focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
 
-const DISC_OFF = "border-line-emphasis bg-surface hover:border-fg-subtle";
-const DISC_ON = "border-accent bg-accent";
+/** The dot in a selected disc, centred over it whatever the disc is drawn on. */
+function DiscDot() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 m-auto size-1.5 rounded-full bg-accent-fg"
+    />
+  );
+}
+
+/**
+ * The radio's disc as a drawing: decorative, so whatever holds it says the state (a button's
+ * `aria-pressed`). It has no hover of its own; the control around it takes the hover.
+ */
+export function RadioDisc({ on, className = "" }: { on: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`relative inline-block ${DISC_SHAPE} ${on ? DISC_ON : DISC_OFF} ${className}`}
+    >
+      {on && <DiscDot />}
+    </span>
+  );
+}
 
 export function Radio({
   checked,
@@ -66,15 +98,12 @@ export function Radio({
         onChange={(event) => {
           if (event.target.checked) onChange();
         }}
-        className={`${DISC} ${checked ? DISC_ON : DISC_OFF}`}
+        className={`${DISC_SHAPE} ${NATIVE} ${
+          checked ? DISC_ON : `${DISC_OFF} hover:border-fg-subtle`
+        }`}
         {...rest}
       />
-      {checked && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 m-auto size-1.5 rounded-full bg-accent-fg"
-        />
-      )}
+      {checked && <DiscDot />}
     </span>
   );
   if (bare) return disc;
@@ -137,9 +166,7 @@ export function RadioGroup<T extends string>({
   const groupName = name ?? generatedName;
   return (
     <fieldset className={`min-w-0 ${className}`} disabled={disabled}>
-      {label != null && (
-        <legend className="mb-1 text-xs font-semibold text-fg-muted">{label}</legend>
-      )}
+      {label != null && <FieldLegend>{label}</FieldLegend>}
       <div
         className={
           orientation === "vertical" ? "flex flex-col gap-2" : "flex flex-wrap gap-x-4 gap-y-2"

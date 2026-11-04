@@ -1,6 +1,6 @@
 /**
  * Prose and Md: Markdown in its reading box, the three densities, the link default and the
- * resolver that overrides it, fenced code routed into CodeBlock, and the stylesheet the box reads.
+ * resolver that overrides it, fenced code routed into CodeBlock, and the stylesheets the box reads.
  * How the pipeline typesets math is prose-math.test.ts; where a bare URL ends is
  * remark-autolink-boundary.test.ts.
  */
@@ -146,5 +146,27 @@ describe("the content stylesheet", () => {
     expect(css.indexOf(".code-surface :is(pre, textarea) {")).toBeGreaterThan(
       css.indexOf(".md-body pre {"),
     );
+  });
+});
+
+describe("the Markdown table stylesheet", () => {
+  const rules = read("markdown-table.css").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("is loaded wherever Markdown renders: by the app's Markdown and by the sites' prose", () => {
+    expect(read("prose.tsx")).toMatch(
+      /import "\.\/prose\.css";\s*import "\.\/markdown-table\.css";/,
+    );
+    expect(readFileSync(join(SRC_DIR, "site.css"), "utf8")).toMatch(
+      /@import "\.\/components\/content\/prose\/markdown-table\.css";/,
+    );
+  });
+
+  it("stays unlayered and free of Tailwind directives, so it needs no build pass and beats utilities", () => {
+    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
+  });
+
+  it("names no palette of its own, so every host's palette and mode can map onto it", () => {
+    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(/i);
+    expect(rules).not.toMatch(/--color-|--ui-|--site-|\.dark\b/);
   });
 });

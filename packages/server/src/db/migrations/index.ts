@@ -47,29 +47,31 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Migration } from "./migration.js";
 import * as runner from "./runner.js";
-import { agentApi } from "./steps/agent-api.js";
-import { agentApiConcurrency } from "./steps/agent-api-concurrency.js";
-import { agentApiSessionSettings } from "./steps/agent-api-session-settings.js";
-import { browserExtensions } from "./steps/browser-extensions.js";
-import { companyModeChannels } from "./steps/company-mode-channels.js";
-import { companyModeDeskNotices } from "./steps/company-mode-desk-notices.js";
-import { companyModeOrgCaches } from "./steps/company-mode-org-caches.js";
-import { dropGoalState } from "./steps/drop-goal-state.js";
-import { machines } from "./steps/machines.js";
-import { machinesColumns } from "./steps/machines-columns.js";
-import { messagingBindings } from "./steps/messaging-bindings.js";
-import { messagingConversations } from "./steps/messaging-conversations.js";
-import { messagingDeliveryFlags } from "./steps/messaging-delivery-flags.js";
-import { modelPromotions } from "./steps/model-promotions.js";
-import { modelProviderAuthTokens } from "./steps/model-provider-auth-tokens.js";
-import { sessionsKeptAt } from "./steps/sessions-kept-at.js";
-import { sessionsSandbox } from "./steps/sessions-sandbox.js";
-import { userProfile } from "./steps/user-profile.js";
+import { messagingBindings } from "./steps/2026-08-31-messaging-bindings.js";
+import { messagingDeliveryFlags } from "./steps/2026-08-31-messaging-delivery-flags.js";
+import { dropGoalState } from "./steps/2026-09-02-drop-goal-state.js";
+import { machines } from "./steps/2026-09-04-machines.js";
+import { userProfile } from "./steps/2026-09-14-user-profile.js";
+import { companyModeChannels } from "./steps/2026-09-16-company-mode-channels.js";
+import { companyModeDeskNotices } from "./steps/2026-09-16-company-mode-desk-notices.js";
+import { companyModeOrgCaches } from "./steps/2026-09-16-company-mode-org-caches.js";
+import { modelPromotions } from "./steps/2026-09-17-model-promotions.js";
+import { modelProviderAuthTokens } from "./steps/2026-09-21-model-provider-auth-tokens.js";
+import { sessionsSandbox } from "./steps/2026-09-22-sessions-sandbox.js";
+import { machinesColumns } from "./steps/2026-09-23-machines-columns.js";
+import { modelTablesAdoption } from "./steps/2026-09-23-model-tables-adoption.js";
+import { browserExtensions } from "./steps/2026-10-04-browser-extensions.js";
+import { agentApi } from "./steps/2026-10-10-agent-api.js";
+import { messagingConversations } from "./steps/2026-10-12-messaging-conversations.js";
+import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
+import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
+import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
+import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
+import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 import { portForwards } from "./steps/port-forwards.js";
 import { portForwardsLegacyShape } from "./steps/port-forwards-legacy-shape.js";
 import { portForwardsAdoption } from "./steps/port-forwards-adoption.js";
 import { portForwardsDirection } from "./steps/port-forwards-direction.js";
-import { modelTablesAdoption } from "./steps/model-tables-adoption.js";
 import { machineDefinitions } from "./steps/machine-definitions.js";
 import { companyModeDeskMentions } from "./steps/company-mode-desk-mentions.js";
 import { errorRecordsContext } from "./steps/error-records-context.js";
@@ -80,9 +82,10 @@ export type { MigrateResult } from "./runner.js";
 
 /**
  * Every migration this build declares, in the order a database that lacks them applies them.
- * A new migration is appended — unless it must run before an existing one on a root that lacks
- * both (port-forwards-legacy-shape); on a root that ran the later one, it then runs last. An
- * existing one is never moved, renamed or removed while some root may still lack it.
+ * A new migration is appended, its name carrying the `yyyy-mm-dd-` date it was introduced
+ * (migration.ts); an existing one is never moved, renamed or removed while some root may
+ * still lack it — which is why the port-forwards steps keep their pre-convention names: they
+ * are frozen qa-round migrations, not new ones.
  */
 export const MIGRATIONS: readonly Migration[] = [
   messagingBindings,
@@ -103,14 +106,16 @@ export const MIGRATIONS: readonly Migration[] = [
   portForwards,
   portForwardsAdoption,
   portForwardsDirection,
-  modelTablesAdoption,
-  machineDefinitions,
-  companyModeDeskMentions,
-  errorRecordsContext,
   messagingConversations,
   sessionsKeptAt,
   agentApiSessionSettings,
   agentApiConcurrency,
+  machinesAdoptedAt,
+  modelTablesAdoption,
+  machineDefinitions,
+  companyModeDeskMentions,
+  errorRecordsContext,
+  userDrafts,
 ];
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/goal",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "description": "Goal mode: a stop hook that keeps the session working toward an objective — re-injecting it every round and checking the goal file — until the goal is complete, blocked, or out of token budget.",
   "keywords": [
     "penguin-plugin",
@@ -8,6 +8,10 @@
     "hooks"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -34,7 +38,7 @@
       "goal": true
     },
     "hooks": {
-      "version": "2026.10.04.1",
+      "version": "2026.10.26.1",
       "user_prompt": [
         {
           "command": "start.mjs",

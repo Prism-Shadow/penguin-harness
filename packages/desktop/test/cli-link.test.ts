@@ -108,6 +108,17 @@ describe("syncSymlink (the macOS form)", () => {
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(false);
   });
 
+  it("refuses to force a directory at the target rather than deleting it", () => {
+    // Even the forced menu-item path only replaces a link or a file; a directory is refused
+    // with ERR_FS_EISDIR and stays where it was.
+    const desired = packApp("PenguinHarness.app");
+    const link = path.join(tmp, "bin", "penguin");
+    fs.mkdirSync(path.join(link, "inside"), { recursive: true });
+
+    expect(() => syncSymlink(link, desired, true)).toThrow(/EISDIR/);
+    expect(fs.lstatSync(path.join(link, "inside")).isDirectory()).toBe(true);
+  });
+
   it("never follows a foreign symlink either", () => {
     const desired = packApp("PenguinHarness.app");
     const theirs = path.join(tmp, "dot-penguin", "bin", "penguin");

@@ -1,21 +1,60 @@
+// @vitest-environment jsdom
 /**
  * MessageStream hands the links in its Markdown the conversation's Workspace and file opener
- * (react-dom/server static markup, node env, no DOM). Static markup carries no handlers, so
- * replyLinkBehavior is wrapped rather than replaced: every call still returns the real behaviour,
- * and the test keeps what the link adapter spread onto each rendered anchor in order to click it.
- * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
- * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
- * while it is the stream's last item and no Task runs.
+ * (react-dom/server static markup; the one press below is driven in a live DOM). Static markup
+ * carries no handlers, so replyLinkBehavior is wrapped rather than replaced: every call still
+ * returns the real behaviour, and the test keeps what the link adapter spread onto each rendered
+ * anchor in order to click it.
+ * It also draws a run-ending LLM failure as its error line. The line a run ended on — that line,
+ * the marker of a run the user stopped, or a retry ladder that gave up — offers Retry while it is
+ * the stream's last item and no Task runs.
+ *
+ * A model request that failed:
+ * - Given each state of a retry ladder (waiting, going out, sent, given up) and a fatal error,
+ *   it is one notice line with its presses after it — Retry now and Stop retrying while it waits,
+ *   Retry on the last line, and Details on every one — and no "?" anywhere; the provider's own
+ *   words are not on the line.
+ * - Given Details pressed, the page is handed the failure: the provider's words, the attempts so
+ *   far and the model the request went to.
+ *
+ * Older history above the transcript:
+ * - Given the previous window failed to load, the top says so on a notice line with a Retry, the
+ *   error in it.
+ * - Given the window is being loaded again, the failure and its Retry are gone (the transfer
+ *   line takes the row; its own words are history-loading's).
+ * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
+ *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
+ *
+ * What a prompt carried is drawn as one message, the way the composer showed it:
+ * - Given a prompt's text and the image items right behind it, the images sit above the text in
+ *   the same message (one outline anchor), not as messages of their own.
+ * - Given a prompt with no text, its images make one message.
+ * - Given files attached to a prompt, each file is named in its own tile above the text.
+ * - Given a prompt that follows a reply, its images do not join the earlier prompt.
+ *
+ * A reply's form shows what answered it:
+ * - Given the form as the open question, it takes input and starts at its defaults.
+ * - Given the person's message with the filled text after it, the form is read-only and shows
+ *   those answers.
+ * - Given the same transcript read back from history after a reload, under the other interface
+ *   language, it shows the same answers.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
-import type { StreamRenderContext } from "../src/features/chat/message-stream";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type {
+  A2uiActions,
+  OlderHistoryControls,
+  StreamRenderContext,
+} from "../src/features/chat/message-stream";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { LocaleProvider } from "../src/state/locale";
+import { button, click, mount, unmountAll } from "./helpers/dom";
+import { stubLocalStorage } from "./helpers/storage";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
 const rendered = vi.hoisted(() => new Map<string | undefined, LinkBehavior>());
@@ -36,6 +75,11 @@ const WS = "/home/user/workspaces/tmp-1";
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
+/** The names of every rendered button: its label, or its words with the tags dropped. */
+const pressNames = (html: string) =>
+  [...html.matchAll(/<button\b([^>]*)>(.*?)<\/button>/g)].map(
+    (m) => /aria-label="([^"]*)"/.exec(m[1]!)?.[1] ?? m[2]!.replace(/<[^>]*>/g, ""),
+  );
 
 describe("MessageStream links", () => {
   it("a reply's link to a Workspace file renders without a target, and its click opens the file", () => {
@@ -107,216 +151,313 @@ describe("MessageStream error banner", () => {
         onAddExcerpt: () => {},
       }),
     );
-  const retry = `>${S.chat.retryRun}</button>`;
+  const offersRetry = (html: string) => pressNames(html).includes(S.chat.retryRun);
   // A Retry run's reply lands right after the line: the held input has been sent again.
   const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
+  const gaveUp: ChatItem = {
+    kind: "reconnect",
+    id: 1,
+    status: "retryable",
+    attempt: 6,
+    retrying: false,
+    gaveUp: true,
+    errorCode: "network",
+    errorMessage: "503 upstream overloaded",
+  };
 
   it.each<[string, ChatItem]>([
     ["a failed run's banner", { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" }],
     ["a stopped run's marker", { kind: "abort", id: 1, errorCode: "user_abort" }],
+    ["a retry ladder that gave up", gaveUp],
   ])("%s offers Retry as the last line while no Task runs, and not otherwise", (_, ended) => {
-    expect(stream([ended])).toContain(retry);
-    expect(stream([ended, reply])).not.toContain(retry);
-    expect(stream([ended], true)).not.toContain(retry);
+    expect(offersRetry(stream([ended]))).toBe(true);
+    expect(offersRetry(stream([ended, reply]))).toBe(false);
+    expect(offersRetry(stream([ended], true))).toBe(false);
+  });
+
+  const t = S.chat.requestRetry;
+  const ladder = (over: Partial<Extract<ChatItem, { kind: "reconnect" }>>): ChatItem => ({
+    ...(gaveUp as Extract<ChatItem, { kind: "reconnect" }>),
+    attempt: 2,
+    gaveUp: false,
+    ...over,
+  });
+  const failures = (items: ChatItem[]) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items,
+        version: 1,
+        ctx: {
+          ...ctx,
+          onRetry: async () => {},
+          onRetryNow: () => {},
+          onGiveUp: () => {},
+          onShowFailure: () => {},
+        },
+        onAddExcerpt: () => {},
+      }),
+    );
+
+  it.each<[string, ChatItem, string[]]>([
+    [
+      "a ladder waiting for its next attempt",
+      ladder({ plannedDelayMs: 30_000, arrivedAtMs: Date.now() }),
+      [t.retryNow, t.stop, S.chat.failureReport.open],
+    ],
+    ["a ladder sending its next attempt", ladder({}), [S.chat.failureReport.open]],
+    ["a ladder whose attempt went out", ladder({ retrying: true }), [S.chat.failureReport.open]],
+    ["a ladder that gave up", gaveUp, [S.chat.retryRun, S.chat.failureReport.open]],
+    [
+      "a fatal error",
+      { kind: "llm_error", id: 1, errorCode: "auth", errorMessage: "401 invalid x-api-key" },
+      [S.chat.retryRun, S.chat.failureReport.open],
+    ],
+  ])(
+    "%s is one notice line with its presses and Details, no ?, and no provider words",
+    (_, item, presses) => {
+      const html = failures([item]);
+      expect(pressNames(html)).toEqual(presses);
+      expect(html).not.toContain("upstream overloaded");
+      expect(html).not.toContain("invalid x-api-key");
+    },
+  );
+
+  it("Details hands the page the failure: the provider's words, the attempts and the model", async () => {
+    const onShowFailure = vi.fn();
+    await mount(
+      createElement(MessageStream, {
+        items: [{ ...gaveUp, model: { provider: "custom", modelId: "claude-4-8" } } as ChatItem],
+        version: 1,
+        ctx: { ...ctx, onShowFailure },
+        onAddExcerpt: () => {},
+      }),
+    );
+    await click(button(S.chat.failureReport.open));
+    expect(onShowFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        phase: "gaveUp",
+        attempt: 6,
+        errorCode: "network",
+        message: "503 upstream overloaded",
+        model: { provider: "custom", modelId: "claude-4-8" },
+      }),
+    );
+    await unmountAll();
   });
 });
 
+describe("MessageStream older history", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  const reply: ChatItem = { kind: "assistant_text", id: 1, text: "Done.", streaming: false };
+  const top = (over: Partial<OlderHistoryControls>) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: {
+          hasMore: true,
+          loading: false,
+          error: null,
+          prependedCount: 0,
+          onLoad: () => {},
+          ...over,
+        },
+      }),
+    );
 
-/**
- * The streamed-history read (web/src/lib/amsp/stream-controller.ts loadFrames over
- * deps.loadMessageFrames), driven the way the wire delivers it — NDJSON frames handed to
- * onFrame one line at a time:
- * - The skeleton frames arrive first and fix every row's position in one pass: prompts and
- *   the inserted kinds (steering chips) all become rows before any content fills in.
- * - The meat frames fill the interiors with zero row movement: a steering chip's row never
- *   re-inserts after layout, and the fill of a finished Task only appends inside it.
- * - A resumed read replays frames the client already holds; the dedup drops those and the
- *   sequence continues where the interrupted stream stopped.
- */
-import { assistantText, toolCall, toolCallOutput, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
-import { userSteeringText } from "@prismshadow/penguin-core/markers";
-import { createStreamController } from "../src/lib/omni/stream-controller";
-import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream-controller";
-import type { MessagesHistoryFrame } from "../src/api/endpoints";
-
-type FrameSink = (frame: MessagesHistoryFrame) => void;
-
-/** Item kinds of the model, in order. */
-const kinds = (h: Harness): string[] => h.controller.model.items.map((i) => i.kind);
-
-/** The texts of the user_text rows, in order. */
-const userTexts = (h: Harness): Array<string | null> =>
-  h.controller.model.items.map((i) => (i.kind === "user_text" ? i.text : null));
-
-interface Harness {
-  controller: StreamController;
-  errors: Array<string | null>;
-  served: Array<MessagesPageQuery | undefined>;
-  /** Deliver the scripted frames for one load call. */
-  serve: () => void;
-}
-
-/**
- * A frames harness: each load() takes one script entry and delivers its frames line by
- * line (the NDJSON wire's delivery), then resolves.
- */
-function createFramesHarness(script: Array<{ frames: MessagesHistoryFrame[] }>): Harness {
-  const served: Array<MessagesPageQuery | undefined> = [];
-  const errors: Array<string | null> = [];
-  let cursor = 0;
-  const controller = createStreamController({
-    sessionId: "s1",
-    loadMessages: () => {
-      throw new Error("the JSON read must not run when the frames path serves");
-    },
-    loadMessageFrames: (page: MessagesPageQuery | undefined, onFrame: FrameSink) => {
-      served.push(page);
-      const entry = script[cursor++]!;
-      for (const frame of entry.frames) onFrame(frame);
-      return Promise.resolve({ serverNowMs: null });
-    },
-    onTaskState: () => {},
-    onPendingSteering: () => {},
-    onReturnedSteering: () => {},
-    onPendingFollowUps: () => {},
-    onLoading: () => {},
-    onError: (e) => errors.push(e),
-    onModelChange: () => {},
-    onPendingChange: () => {},
-    now: () => 1_000_000,
+  it("a window that failed to load is said at the top on a notice line with a Retry, its error in it", () => {
+    const html = top({ error: "socket closed: ECONNRESET" });
+    expect(html).toContain(S.chat.loadEarlierFailed("socket closed: ECONNRESET"));
+    expect(pressNames(html)).toEqual([S.common.retry]);
   });
-  return { controller, errors, served, serve: () => {} };
-}
 
-function at<M extends OmniMessage>(msg: M, ts: string): M {
-  return { ...msg, timestamp: ts };
-}
+  it("while the window loads again, the failure and its Retry are gone", () => {
+    const html = top({ loading: true, error: "socket closed: ECONNRESET" });
+    expect(html).not.toContain("ECONNRESET");
+    expect(pressNames(html)).not.toContain(S.common.retry);
+  });
 
-const T = (m: number, s: string) => `2026-07-05T00:0${m}:0${s}.000Z`;
-
-/** The page envelope frame for a full tail read (zeroed priors). */
-const pageFrame = (): MessagesHistoryFrame => ({
-  type: "page",
-  earlierTurns: 0,
-  prior: { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 },
+  it("a Retry that started no load stays pressable, and the next press asks again", async () => {
+    // A press that starts nothing: the failure, and so the row's state, stay as they were.
+    const onLoad = vi.fn();
+    await mount(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: { hasMore: true, loading: false, error: "socket closed", prependedCount: 0, onLoad },
+      }),
+    );
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(button(S.common.retry).disabled).toBe(false);
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(2);
+    await unmountAll();
+  });
 });
 
-describe("the streamed-history read", () => {
-  it("REGRESSION (2026-10-31 53531 mis-ordering): frames arriving in trace order lay the transcript out in trace order — an older unit's tool work never lands after a newer unit's prompt", async () => {
-    // Three units with tool work, the window covering all of them, the server emitting
-    // the fixed shape: openers of units older than the window first (none here), then
-    // the window's own stream — each unit's opener immediately followed by its
-    // interior, split across chunked frames. The reducer appends; arrival order is
-    // trace order, so the rows come out right. (The defect shape — every opener of
-    // the transcript emitted ahead of all interiors — produced q1|q2|q3|tool|a1|…)
-    const units = [1, 2, 3].map((n) => ({
-      prompt: at(userText(`q${n}`), T(n - 1, "0")),
-      call: at(toolCall({ name: "exec", arguments: "{}", toolCallId: `t${n}` }), T(n - 1, "2")),
-      output: at(toolCallOutput({ output: "done", toolCallId: `t${n}` }), T(n - 1, "4")),
-      reply: at(assistantText(`a${n}`), T(n - 1, "6")),
-    }));
-    const stream: MessagesHistoryFrame[] = [];
-    for (const u of units) {
-      stream.push({ type: "meat", cursor: "0:0", messages: [u.prompt] });
-      stream.push({ type: "meat", cursor: "0:0", messages: [u.call, u.output] });
-      stream.push({ type: "meat", cursor: "0:0", messages: [u.reply] });
-    }
-    const h = createFramesHarness([{ frames: [pageFrame(), ...stream] }]);
-    await h.controller.load();
-    expect(h.errors.filter((e) => e !== null)).toEqual([]);
-    // A finished unit's ledger row (task_stats) settles each unit before the next
-    // prompt — exactly where the JSON path puts it; the last unit's row lands at
-    // finalizeHistory (end of the frames read).
-    expect(kinds(h)).toEqual([
-      "user_text", "tool_call", "assistant_text", "task_stats",
-      "user_text", "tool_call", "assistant_text", "task_stats",
-      "user_text", "tool_call", "assistant_text",
+describe("MessageStream prompts with attachments", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  // A message the person sent carries its time in the reader's locale.
+  beforeEach(() => {
+    stubLocalStorage().setItem("penguin.lang", "en");
+  });
+  afterEach(() => {
+    setActiveStrings(zh);
+    vi.unstubAllGlobals();
+  });
+  const stream = (items: ChatItem[]) =>
+    renderToStaticMarkup(
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      ),
+    );
+  const anchorCount = (html: string) => html.match(/data-outline-anchor=/g)?.length ?? 0;
+  const imageCount = (html: string) => html.match(/<img\b/g)?.length ?? 0;
+  const image = (id: number, imageUrl: string): ChatItem => ({ kind: "user_image", id, imageUrl });
+  const DIR = "/home/u/.penguin/data/p1/agents/a1/scratchpad/s1";
+
+  it("a prompt's text and the images behind it are one message, images above the text", () => {
+    const html = stream([
+      { kind: "user_text", id: 1, text: "Why is this red?" },
+      image(2, "data:image/png;base64,AAAA"),
+      image(3, "data:image/png;base64,BBBB"),
     ]);
-    // userTexts maps one entry per item: only the prompts carry text.
-    expect(userTexts(h)).toEqual([
-      "q1", null, null, null,
-      "q2", null, null, null,
-      "q3", null, null,
-    ]);
+    expect(anchorCount(html)).toBe(1);
+    expect(imageCount(html)).toBe(2);
+    expect(html.indexOf("BBBB")).toBeLessThan(html.indexOf("Why is this red?"));
   });
 
-  it("openers of units older than the window ride leading skeleton frames, then the window's interleaved stream — one pass, correct final order", async () => {
-    // The server's tail-of-one shape over three units: q1, q2 as leading skeleton
-    // rows (units older than the window), then unit 3's opener interleaved with its
-    // interior.
-    const u = [1, 2, 3].map((n) => ({
-      prompt: at(userText(`q${n}`), T(n - 1, "0")),
-      reply: at(assistantText(`a${n}`), T(n - 1, "6")),
-    }));
-    const h = createFramesHarness([
+  it("a prompt with only images is one message", () => {
+    const html = stream([
+      image(1, "data:image/png;base64,AAAA"),
+      image(2, "data:image/png;base64,BBBB"),
+    ]);
+    expect(anchorCount(html)).toBe(1);
+    expect(imageCount(html)).toBe(2);
+  });
+
+  it("each attached file is named above the text", () => {
+    const html = stream([
       {
-        frames: [
-          pageFrame(),
-          { type: "skeleton", cursor: "0:0", messages: [u[0]!.prompt, u[1]!.prompt] },
-          { type: "meat", cursor: "0:0", messages: [u[2]!.prompt, u[2]!.reply] },
-        ],
+        kind: "user_text",
+        id: 1,
+        text: `Review these\n\n[attached file: ${DIR}/report.pdf]\n[attached file: ${DIR}/rows.csv]`,
       },
     ]);
-    await h.controller.load();
-    expect(h.errors.filter((e) => e !== null)).toEqual([]);
-    // The last unit's stats row only lands at finalizeHistory when the stream's
-    // status is idle; this harness runs no task_state, so it stays open — no row.
-    expect(kinds(h)).toEqual(["user_text", "user_text", "user_text", "assistant_text"]);
-    expect(userTexts(h)).toEqual(["q1", "q2", "q3", null]);
+    for (const name of ["report.pdf", "rows.csv"]) {
+      expect(html).toContain(`>${name}</span>`);
+      expect(html.indexOf(name)).toBeLessThan(html.indexOf("Review these"));
+    }
+    expect(html).not.toContain(DIR);
   });
 
-  it("the skeleton fixes every row's position first — prompts and inserted kinds together — and meat fills with zero row movement", async () => {
-    // One transcript: a prompt, a steering chip inside the running Task, the Task's tool
-    // work, then a second prompt. The skeleton carries all four rows; the meat carries
-    // the tool work and the reply.
-    const prompt1 = at(userText("first question"), T(0, "0"));
-    const steering = at(userText(userSteeringText("go deeper")), T(0, "2"));
-    const call = at(toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }), T(0, "4"));
-    const output = at(toolCallOutput({ output: "done", toolCallId: "t1" }), T(0, "6"));
-    const reply = at(assistantText("all done"), T(0, "8"));
-    const prompt2 = at(userText("second question"), T(1, "0"));
-    const all = [prompt1, steering, call, output, reply, prompt2];
-
-    const skeleton: MessagesHistoryFrame = {
-      type: "skeleton",
-      cursor: "0:0",
-      messages: [prompt1, steering, prompt2],
-    };
-    const meat1: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [call, output] };
-    const meat2: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [reply] };
-
-    const h = createFramesHarness([{ frames: [pageFrame(), skeleton, meat1, meat2] }]);
-    const p = h.controller.load();
-    await p;
-    expect(h.errors.filter((e) => e !== null)).toEqual([]);
-    // The rows exist in transcript order; the steering chip's row position was fixed by
-    // the skeleton and the meat fill never re-inserted it.
-    expect(kinds(h)).toEqual(["user_text", "user_steering", "user_text", "tool_call", "assistant_text"]);
-    expect(userTexts(h)).toContain("first question");
-    expect(userTexts(h)).toContain("second question");
-  });
-
-  it("a resumed read replays frames the client already holds; the dedup drops them and nothing doubles", async () => {
-    const prompt1 = at(userText("only question"), T(0, "0"));
-    const reply = at(assistantText("the answer"), T(0, "4"));
-    const skeleton: MessagesHistoryFrame = {
-      type: "skeleton",
-      cursor: "0:0",
-      messages: [prompt1],
-    };
-    const meat: MessagesHistoryFrame = { type: "meat", cursor: "0:0", messages: [reply] };
-
-    // First read: skeleton + meat arrive; the stream is interrupted before a second
-    // meat frame. Re-entry replays the same envelope and frames.
-    const h = createFramesHarness([
-      { frames: [pageFrame(), skeleton, meat] },
-      { frames: [pageFrame(), skeleton, meat] },
+  it("images after a reply belong to the next prompt, not the one before", () => {
+    const html = stream([
+      { kind: "user_text", id: 1, text: "First" },
+      { kind: "assistant_text", id: 2, text: "Answer.", streaming: false },
+      image(3, "data:image/png;base64,AAAA"),
     ]);
-    await h.controller.load();
-    // Re-entry: a fresh model rebuilds from the replayed frames; the dedup drops the
-    // already-held envelope rows so nothing doubles.
-    await h.controller.retry();
-    expect(kinds(h)).toEqual(["user_text", "assistant_text"]);
+    expect(anchorCount(html)).toBe(2);
+    expect(html.indexOf("AAAA")).toBeGreaterThan(html.indexOf("Answer."));
+  });
+});
+
+describe("MessageStream answered A2UI blocks", () => {
+  const FORM = {
+    type: "form",
+    title: "Deployment",
+    fields: [
+      { id: "service", label: "Service name", kind: "text", required: true },
+      {
+        id: "replicas",
+        label: "Replicas",
+        kind: "number",
+        min: 1,
+        max: 10,
+        unit: "pods",
+        default: 2,
+      },
+      { id: "notify", label: "Notify me", kind: "switch", default: true },
+    ],
+  };
+  const question = `Give the details in one go:\n\n\`\`\`a2ui\n${JSON.stringify(FORM)}\n\`\`\``;
+  // What the form's fill button put in the composer, as the person sent it.
+  const answer = "Service name: billing-api\nReplicas: 5 pods\nNotify me: No";
+  afterEach(() => {
+    setActiveStrings(zh);
+    vi.unstubAllGlobals();
+  });
+  /** The stream as the chat page draws it, in the interface language `lang`. */
+  const stream = (items: ChatItem[], lang: A2uiActions["lang"] = "en") => {
+    stubLocalStorage().setItem("penguin.lang", lang);
+    return renderToStaticMarkup(
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, {
+          items,
+          version: 1,
+          ctx: {
+            pendingApprovals: new Map(),
+            onApprove: async () => {},
+            origin: [],
+            taskRunning: false,
+            a2uiActions: { interactive: true, fill: () => {}, lang },
+          },
+          onAddExcerpt: () => {},
+        }),
+      ),
+    );
+  };
+  /** The opening tags of `name` carrying every one of `attrs`. */
+  const tags = (html: string, name: string, ...attrs: string[]) =>
+    (html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? []).filter((tag) =>
+      attrs.every((attr) => tag.includes(attr)),
+    );
+  const transcript = (first: number): ChatItem[] => [
+    { kind: "user_text", id: first, text: "Deploy the billing service" },
+    { kind: "assistant_text", id: first + 1, text: question, streaming: false },
+    { kind: "user_text", id: first + 2, text: answer },
+  ];
+
+  it("the open question takes input and starts at its defaults", () => {
+    const html = stream(transcript(1).slice(0, 2));
+    expect(tags(html, "button", 'type="submit"')).toHaveLength(1);
+    expect(tags(html, "input", 'value="2"')).toHaveLength(1);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
+  });
+
+  it("once answered, the form is read-only and shows the answers that were sent", () => {
+    const html = stream(transcript(1));
+    expect(tags(html, "button", 'type="submit"')).toHaveLength(0);
+    expect(tags(html, "input", 'value="billing-api"', 'disabled=""')).toHaveLength(1);
+    expect(tags(html, "input", 'value="5"')).toHaveLength(1);
+    expect(tags(html, "input", 'value="2"')).toHaveLength(0);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
+  });
+
+  it("after a reload, read back from history under the other language, shows the same answers", () => {
+    // History windows arrive as new items with their own ids; the interface is in Chinese now.
+    const html = stream(transcript(-40), "zh");
+    expect(tags(html, "input", 'value="billing-api"', 'disabled=""')).toHaveLength(1);
+    expect(tags(html, "input", 'value="5"')).toHaveLength(1);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
   });
 });

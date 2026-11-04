@@ -13,11 +13,13 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, createElement as h, Fragment } from "react";
+import type { ReactNode } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { MessagingPanel } from "../src/features/messaging/messaging-panel";
 import { MessagingBindingModal } from "../src/features/messaging/messaging-binding-modal";
+import { ProjectProvider } from "../src/state/project";
 import { confirmClose } from "../src/features/dock/close-guard";
 import { tabKey } from "../src/features/dock/dock-state";
 import { json, stubFetch } from "./helpers/fetch";
@@ -35,9 +37,30 @@ import {
 
 const MESSAGING_TAB = tabKey({ kind: "panel", panel: "messaging" });
 
+/** A server whose one Project has no Agents, and whose conversations have nothing bound. */
 function noBindings() {
-  stubFetch(() => json({ bindings: [] }));
+  stubFetch(({ path }) => {
+    if (path === "/api/projects") {
+      return json({
+        projects: [
+          {
+            projectId: "proj",
+            name: "Project",
+            role: "owner",
+            ownerUserId: "admin",
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+    }
+    if (path === "/api/projects/proj/agents") return json({ agents: [] });
+    return json({ bindings: [] });
+  });
 }
+
+/** The editors read the current Project (where a bot's other holders are asked about). */
+const inProject = (...children: ReactNode[]) =>
+  h(ProjectProvider, null, h(Fragment, null, ...children));
 
 const promptOpen = () => hasButton(en.common.discard);
 
@@ -62,9 +85,7 @@ describe("the messaging dock panel", () => {
 
   async function openPanel() {
     noBindings();
-    await mount(
-      h(Fragment, null, h(MessagingPanel, { sessionId: "s1", active: false }), h(UnsavedPrompt)),
-    );
+    await mount(inProject(h(MessagingPanel, { sessionId: "s1", active: false }), h(UnsavedPrompt)));
     await waitFor(() => document.querySelector(`input[aria-label="${en.feishu.appId}"]`) !== null);
   }
 
@@ -110,7 +131,7 @@ describe("the messaging binding dialog", () => {
     noBindings();
     const onClose = vi.fn();
     await mount(
-      h(Fragment, null, h(MessagingBindingModal, { sessionId: "s1", onClose }), h(UnsavedPrompt)),
+      inProject(h(MessagingBindingModal, { sessionId: "s1", onClose }), h(UnsavedPrompt)),
     );
     await waitFor(() => document.querySelector(`input[aria-label="${en.feishu.appId}"]`) !== null);
     await type(field(en.feishu.appId), "cli_a1b2");
@@ -129,9 +150,7 @@ describe("the messaging binding dialog", () => {
     noBindings();
     const onClose = vi.fn();
     await mount(
-      h(
-        Fragment,
-        null,
+      inProject(
         h(MessagingPanel, { sessionId: "s2", active: false }),
         h(MessagingBindingModal, { sessionId: "s1", onClose }),
         h(UnsavedPrompt),

@@ -3,6 +3,8 @@
  * Public-site controls share the app's menu behaviour without its theme provider.
  * - Opening the language menu moves focus into it; arrows walk the choices, selection updates
  *   the host and closes the menu, and reopening announces the new checked choice.
+ * - The current language is checked with a line mark alone, never with the app's mark drawn in
+ *   every theme's icon set, which the sites would otherwise have to ship.
  * - Escape restores focus to the trigger; an outside click closes without changing language.
  * - Cycling the theme updates the host through light, dark and system and exposes the current mode.
  * - Mobile route links keep router navigation and close their host's disclosure after selection.
@@ -46,6 +48,14 @@ describe("public-site controls", () => {
     expect(
       choices().find((choice) => choice.getAttribute("aria-checked") === "true")?.textContent,
     ).toBe("中文");
+  });
+
+  it("checks the current language with a line mark, not the app's icon sets", async () => {
+    await mount(h(LanguageHost));
+    await click(menuTrigger());
+    const current = choices().find((choice) => choice.getAttribute("aria-checked") === "true");
+    expect(current?.querySelector("svg path")).not.toBeNull();
+    expect(document.querySelector('[role="menu"] [data-set]')).toBeNull();
   });
 
   it("Escape returns focus and outside dismissal does not change the selected language", async () => {

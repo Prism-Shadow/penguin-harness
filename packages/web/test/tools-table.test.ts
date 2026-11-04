@@ -161,7 +161,7 @@ describe("the built-in tools table", () => {
     const sent = tableSent(server, 1);
     expect(sent.find((t) => t.name === "exec_command")?.timeoutMs).toBe(90000);
     expect(sent.find((t) => t.name === "read_file")?.call_description).toBe(true);
-    await waitFor(async () => (await save()).disabled);
+    await waitFor(() => hasUnsaved() === false);
     expect(hasUnsaved()).toBe(false);
   });
 

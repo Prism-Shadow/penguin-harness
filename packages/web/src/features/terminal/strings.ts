@@ -8,8 +8,12 @@
  */
 
 export const terminalZh = {
+  /** The dock picker's entry for the terminal panel. */
+  shellEntry: "命令行终端",
   title: "终端",
   newShell: "新建终端",
+  /** The terminal panel's strip of shells, for assistive technology. */
+  tabsLabel: "终端标签页",
   /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
   killShell: "关闭此终端",
   /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -60,8 +64,12 @@ export const terminalZh = {
 export type TerminalStrings = typeof terminalZh;
 
 export const terminalEn: TerminalStrings = {
+  /** The dock picker's entry for the terminal panel. */
+  shellEntry: "Command-line terminal",
   title: "Terminal",
   newShell: "New terminal",
+  /** The terminal panel's strip of shells, for assistive technology. */
+  tabsLabel: "Terminal tabs",
   killShell: "Kill this terminal",
   createFailed: "Could not start a terminal",
   noTerminalApi:

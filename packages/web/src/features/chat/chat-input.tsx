@@ -38,8 +38,8 @@
  * The "+" menu carries the input add-ons: image upload, file attachment (any type, several at a
  * time — they ride the task request as base64 data URLs, and the server writes them into the
  * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
- * opens them by path), and goal mode; selected files show as removable chips above the text
- * body, next to the image thumbnails, and — like images — an attachments-only message is
+ * opens them by path), and goal mode; staged images and files show as removable tiles at the
+ * top of the card — the images first, each at its own ratio — and an attachments-only message is
  * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
  * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
  * with an overlay bounded to that region while the drag is over it.
@@ -68,7 +68,8 @@
  *
  * This module is the composer's container: the draft, sending, attachments, slash matching, IME,
  * paste and drop, history recall and the draft cache live here. What it draws with is the UI
- * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the `MenuSelect` pickers on
+ * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the attachment tiles
+ * (`AttachmentList`, `AttachmentImage`, `AttachmentFile`), the `MenuSelect` pickers on
  * `ToolbarTrigger`s, `SendButton`, `SlashMenu` and `SlashPicker` — and the model picker bound to
  * the catalog (model-select.tsx) and the context gauge (context-gauge.tsx).
  */
@@ -97,7 +98,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
-  Button,
+  AttachmentFile,
+  AttachmentImage,
+  AttachmentList,
   CheckIcon,
   ChevronDown,
   Chip,
@@ -109,14 +112,12 @@ import {
   ICONS,
   ICON_SIZE,
   MenuSelect,
-  NoticeStrip,
+  Notice,
   PickerList,
   ProviderLogo,
   SendButton,
   SlashMenu,
   SlashPicker,
-  TagInput,
-  ZoomableImage,
   noAutofill,
   toastError,
   toastInfo,
@@ -143,6 +144,8 @@ import { matchSlash, removeSlashToken } from "./slash-token";
 import { ThinkingLevelSelect } from "./thinking-level-select";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { useGoalPluginGate } from "./goal-plugin-gate";
+import type { GoalPluginGate } from "./goal-plugin-gate";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
 import {
@@ -153,7 +156,6 @@ import {
 } from "./input-history";
 import type { HistoryStep } from "./input-history";
 import { isStopAction, midRunAction } from "./composer-send";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
@@ -162,6 +164,8 @@ import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { compressImage, shouldCompress } from "../../lib/image-compress";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
+import { readSteerMode, writeSteerMode } from "./steer-mode";
+import type { SteerMode } from "./steer-mode";
 
 /**
  * Agent candidate panel for the `/agent` switch picker, on the shared PickerList (search, scroll
@@ -216,22 +220,9 @@ function AgentMenuList({
 }
 
 /**
- * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
- * (queued server-side until the run ends). A remembered per-user UI preference, persisted
- * the same way as the sidebar grouping mode (validated localStorage read under a
- * `penguin.*` key); configurable from the "+" menu's settings row in draft state and active
- * sessions alike.
- */
-type SteerMode = "steer" | "followup";
-const STEER_MODE_KEY = "penguin.steerMode";
-function initialSteerMode(): SteerMode {
-  return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
-}
-
-/**
  * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
- * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
- * "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * Queue as a follow-up / Interrupt, the full explanation hover-only via each pill's title (the
+ * toolbar's "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
  * the control where an item's description sits — so the menu reads as one list. Clicking a
  * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
  * the preference is settable before and during a run.
@@ -275,6 +266,7 @@ function SteerModeRow({
       >
         {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
         {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        {modeButton("interrupt", S.chat.steerModeInterrupt, S.chat.steerModeInterruptHint)}
       </div>
     </div>
   );
@@ -435,19 +427,37 @@ function steeringSummary(p: { text: string; images: number; files: number }): st
  * `shrink-0` next to the truncating label so it survives narrow widths. It carries the icon
  * set's gray (a step darker than the hint text it sits beside), not the label's: gray-400 on
  * white is under the 3:1 an interactive control owes, and this one is interactive.
+ *
+ * Before the recall button, when the line can be sent now, an "Interrupt" text link: it stops
+ * the run and sends the message right after the turn it cut. Text rather than an icon, because
+ * what it does is a sentence of its own and the line already carries one icon control; the
+ * link wears the hint text's size and the recall icon's gray, so it reads as part of the line.
  */
 function QueuedMessageLine({
   label,
   onRecall,
+  onInterrupt,
   disabled,
 }: {
   label: string;
   onRecall?: () => void;
+  onInterrupt?: () => void;
   disabled: boolean;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-1">
       <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onInterrupt && (
+        <button
+          type="button"
+          data-tooltip={S.chat.interruptQueuedTitle}
+          disabled={disabled}
+          onClick={onInterrupt}
+          className="shrink-0 whitespace-nowrap px-0.5 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          {S.chat.interruptQueued}
+        </button>
+      )}
       {onRecall && (
         <button
           type="button"
@@ -541,6 +551,9 @@ export function ChatInput({
   queuedFollowUps = 0,
   pendingFollowUps = [],
   onRecallFollowUp,
+  onInterruptSend,
+  onInterruptFollowUp,
+  onInterruptSteering,
   onStop,
   onCompact,
   modelRef,
@@ -572,6 +585,7 @@ export function ChatInput({
   skills,
   initialSkills,
   initialGoal,
+  goalPlugin = null,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -648,6 +662,17 @@ export function ChatInput({
   pendingFollowUps?: PendingFollowUpInfo[];
   /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
   onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
+  /**
+   * Interrupt, then send (session state only): posts the full input with `interrupt` — a busy
+   * session stops its run and sends this right after the turn it cut; undelivered steering
+   * comes back to the draft as it does on Stop. Offered as the "interrupt" choice of the
+   * mid-run mode switch.
+   */
+  onInterruptSend?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Turns one queued follow-up into an interrupt (the Interrupt link on its line); false when it failed. */
+  onInterruptFollowUp?: (followUpId: string) => Promise<boolean>;
+  /** Turns one undelivered steering message into an interrupt (the Interrupt link on its line). */
+  onInterruptSteering?: (steerId: string) => Promise<boolean>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -772,6 +797,12 @@ export function ChatInput({
   initialSkills?: string[];
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
+  /**
+   * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
+   * goal chip is engaged and the plugin is missing, a notice above the input offers to install
+   * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
+   */
+  goalPlugin?: GoalPluginGate | null;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -902,6 +933,7 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
+  const goalGate = useGoalPluginGate(goalPlugin, goalOn);
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -923,7 +955,8 @@ export function ChatInput({
   // combined with the editor refusing to close over an invalid draft (below), no click sequence
   // can fire a goal with a stale committed budget.
   // Images may come along with a goal objective (they ride its round-1 message), but they don't
-  // substitute for the text; file attachments cannot — the server refuses them on a goal.
+  // substitute for the text; file attachments cannot — the server refuses them on a goal. Nor
+  // does a goal go out while its Agent lacks the goal plugin (the notice above says so).
   const canSend =
     !running &&
     !compacting &&
@@ -932,7 +965,8 @@ export function ChatInput({
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
         goalBudget !== null &&
-        !(goalBudgetOpen && goalBudgetDraftInvalid)
+        !(goalBudgetOpen && goalBudgetDraftInvalid) &&
+        !goalGate.holdsSend
       : draftHasContent);
 
   /**
@@ -1015,14 +1049,15 @@ export function ChatInput({
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered mid-run
   // as a [user_steering] input) and "follow-up" (held server-side and auto-sent as an ordinary
   // next task once this run finishes). Set from the "+" menu's settings row — available in
-  // draft state and active sessions alike — and **remembered** across sessions/reloads
-  // (localStorage, see STEER_MODE_KEY).
-  const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
+  // draft state and active sessions alike — and **remembered** across sessions, reloads and
+  // browsers (a preference of the account, see steer-mode.ts).
+  const [steerMode, setSteerModeState] = useState<SteerMode>(() => readSteerMode());
   const setSteerMode = (mode: SteerMode): void => {
     setSteerModeState(mode);
-    localStorage.setItem(STEER_MODE_KEY, mode);
+    writeSteerMode(mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  const interruptMode = steerMode === "interrupt" && onInterruptSend !== undefined;
   // Which of the two channels this draft can use, or Stop when neither will take it — the whole
   // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
   // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
@@ -1033,7 +1068,9 @@ export function ChatInput({
     goalOn,
     canSteerChannel: onSteer !== undefined,
     canQueueChannel: onQueueFollowUp !== undefined,
+    canInterruptChannel: onInterruptSend !== undefined,
     followUpMode,
+    interruptMode,
     stagedRoute,
     hasHandoffTarget: target !== null,
     hasPendingModel: pendingModel !== null,
@@ -1044,8 +1081,14 @@ export function ChatInput({
   });
   const steerAction = running && midRun === "steer";
   const queueAction = running && midRun === "queue";
-  const canMidRunSend = steerAction || queueAction;
-  const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
+  const interruptAction = running && midRun === "interrupt";
+  const canMidRunSend = steerAction || queueAction || interruptAction;
+  const midRunSendLabel =
+    midRun === "queue"
+      ? S.chat.followUpSend
+      : midRun === "interrupt"
+        ? S.chat.interruptSend
+        : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
   // Display-only model badge text (see the badge below): the catalog's display name when the
   // model is known, the raw id otherwise.
@@ -1156,6 +1199,23 @@ export function ChatInput({
         setSteerPending(false);
         applyRecalled(r);
       }
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  /**
+   * The Interrupt link on a queued line: the server stops the run and sends that message as
+   * soon as the run settles. Shares the recall's one-at-a-time flag, since both act on the
+   * same queue.
+   */
+  const interruptQueued = async (id: string, interrupt: (id: string) => Promise<boolean>) => {
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      // A steering message it took leaves the mirror without a delivery; drop the post-202
+      // bridge flag too, or the bare "steering queued" hint would come back.
+      if (await interrupt(id)) setSteerPending(false);
     } finally {
       setRecallingId(null);
     }
@@ -1694,6 +1754,12 @@ export function ChatInput({
 
   const send = async () => {
     if (running) {
+      // Interrupt branch: the whole draft goes out through the normal composition path, posted
+      // with `interrupt` — the server stops this run and sends it right after the turn it cut.
+      if (interruptAction) {
+        await sendNormal(onInterruptSend!);
+        return;
+      }
       // Queue branch: the whole draft goes out through the normal composition path, posted
       // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
       // switch still opens its new chat directly: neither the handoff target nor the model fork
@@ -2139,48 +2205,6 @@ export function ChatInput({
         </SlashPicker>
       )}
 
-      {images.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {images.map((url, i) => (
-            <div key={i} className="anim-pop relative">
-              <ZoomableImage
-                src={url}
-                alt={S.chat.imageAlt}
-                className="h-16 w-16 rounded-md border border-gray-200 object-cover dark:border-gray-700"
-              />
-              <button
-                type="button"
-                aria-label={S.chat.removeImage}
-                onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-xs text-white transition-colors duration-150 hover:bg-gray-900"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Attached files, right below the image thumbnails: one removable chip each (name +
-          size), since there is nothing to preview. The name is the picked file's — the server
-          sanitizes it when writing to the scratchpad, and the message's banner then shows the
-          on-disk name. */}
-      {attachments.length > 0 && (
-        <TagInput
-          variant="outline"
-          className="mb-2"
-          chips={attachments.map((file, i) => ({
-            key: String(i),
-            label: file.name,
-            glyph: <GlyphIcon d={PAPERCLIP_ICON} size={13} className="shrink-0 text-fg-subtle" />,
-            meta: formatBytes(file.size),
-            tooltip: file.name,
-            removeLabel: `${S.chat.removeFile} ${file.name}`,
-          }))}
-          onRemove={(key) => setAttachments((prev) => prev.filter((_, j) => String(j) !== key))}
-        />
-      )}
-
       {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
           at the window's edge instead of at the number the user set. Amber rather than muted
           body text like the notices below it: the other two describe what the composer is about
@@ -2191,36 +2215,52 @@ export function ChatInput({
           to their own line and the text takes the full width. Squeezing the text column instead
           grew the notice to ~490px at 390 wide and crushed the conversation above it. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
-        // The buttons keep their labels whole, so where the sentence would be left a few
-        // characters a line beside them (a phone at a large text size), they drop to a row
-        // of their own instead; the sentence keeps a readable width either way.
-        <NoticeStrip
+        // The shared notice: its buttons keep their labels whole, so where the sentence would
+        // be left a few characters a line beside them (a phone at a large text size), they
+        // drop to a row of their own instead.
+        <Notice
           tone="attention"
-          className="anim-fade mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs"
+          className="anim-fade mb-1"
+          dismiss={{
+            label: S.chat.contextWindowUnderThresholdDismiss,
+            onClick: () => {
+              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
+              setWindowNoticeDismissed(true);
+            },
+          }}
+          {...(onOpenAgentSettings
+            ? {
+                action: {
+                  label: S.chat.contextWindowUnderThresholdAction,
+                  onClick: onOpenAgentSettings,
+                },
+              }
+            : {})}
         >
-          <p className="min-w-0 grow basis-56">
-            {S.chat.contextWindowUnderThreshold(
-              humanizeTokens(contextWindow),
-              humanizeTokens(compactionLimit),
-            )}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-                setWindowNoticeDismissed(true);
-              }}
-            >
-              {S.chat.contextWindowUnderThresholdDismiss}
-            </Button>
-            {onOpenAgentSettings && (
-              <Button size="sm" variant="primary" onClick={onOpenAgentSettings}>
-                {S.chat.contextWindowUnderThresholdAction}
-              </Button>
-            )}
-          </div>
-        </NoticeStrip>
+          {S.chat.contextWindowUnderThreshold(
+            humanizeTokens(contextWindow),
+            humanizeTokens(compactionLimit),
+          )}
+        </Notice>
+      )}
+
+      {/* Goal mode on an Agent without the goal plugin: the goal could not start, so Send is held
+          and the plugin is offered right here — installed on the Agent this composer sends to.
+          `attention`, like the threshold notice above: it waits on the user. */}
+      {goalOn && (goalGate.status === "missing" || goalGate.status === "installing") && (
+        <Notice
+          tone="attention"
+          glyph={GOAL_ICON}
+          role="status"
+          className="anim-fade mb-1"
+          action={{
+            label: S.chat.goalPluginInstall,
+            onClick: () => void goalGate.install(),
+            busy: goalGate.status === "installing",
+          }}
+        >
+          {S.chat.goalPluginMissing}
+        </Notice>
       )}
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,
@@ -2246,8 +2286,9 @@ export function ChatInput({
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
           #140) — plus a recall button that takes the message back into this input for
-          editing and resending (#287). The local steerPending flag only bridges the gap
-          between the 202 and the first task_state that carries the mirror. */}
+          editing and resending (#287), and an Interrupt link that sends it now. The local
+          steerPending flag only bridges the gap between the 202 and the first task_state
+          that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
@@ -2257,6 +2298,9 @@ export function ChatInput({
               disabled={recallingId !== null || busy}
               {...(onRecallSteering && p.id
                 ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+              {...(onInterruptSteering && p.id
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptSteering) }
                 : {})}
             />
           ))}
@@ -2270,18 +2314,26 @@ export function ChatInput({
       )}
 
       {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
-          queued message with its content and a recall button (#287) — task_state-fed, so it
-          survives reloads; the bare count stays as the fallback for a server that predates
-          the per-entry list. */}
+          queued message with its content, an Interrupt link and a recall button (#287) —
+          task_state-fed, so it survives reloads; the bare count stays as the fallback for a
+          server that predates the per-entry list. An interrupt waiting for the run it stopped
+          to settle says so and has no link: it is already going out first. */}
       {pendingFollowUps.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingFollowUps.map((p) => (
             <QueuedMessageLine
               key={p.id}
-              label={S.chat.followUpQueuedItem(steeringSummary(p))}
+              label={
+                p.interrupt
+                  ? S.chat.interruptQueuedItem(steeringSummary(p))
+                  : S.chat.followUpQueuedItem(steeringSummary(p))
+              }
               disabled={recallingId !== null || busy}
               {...(onRecallFollowUp
                 ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+              {...(onInterruptFollowUp && !p.interrupt
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptFollowUp) }
                 : {})}
             />
           ))}
@@ -2320,6 +2372,34 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        attachments={
+          // The staged images, then the staged files, as one row of tiles at the top of the
+          // card: the same tiles the message shows once sent. A file's name is the picked
+          // file's — the server sanitizes it when writing to the scratchpad, and the sent
+          // message then shows the on-disk name.
+          images.length > 0 || attachments.length > 0 ? (
+            <AttachmentList>
+              {images.map((url, i) => (
+                <AttachmentImage
+                  key={`image-${i}`}
+                  src={url}
+                  alt={S.chat.imageAlt}
+                  removeLabel={S.chat.removeImage}
+                  onRemove={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+              {attachments.map((file, i) => (
+                <AttachmentFile
+                  key={`file-${i}`}
+                  name={file.name}
+                  size={formatBytes(file.size)}
+                  removeLabel={`${S.chat.removeFile} ${file.name}`}
+                  onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+            </AttachmentList>
+          ) : undefined
+        }
         chips={
           // Chip row above the text body: the goal chip, the staged switch target (an /agent
           // handoff or a /model fork — never both), the selected skills, and whatever the Files
@@ -2390,17 +2470,21 @@ export function ChatInput({
           onKeyDown,
           onPaste,
           placeholder:
-            running && followUpMode
+            running && interruptMode
               ? narrow
-                ? S.chat.followUpPlaceholderShort
-                : S.chat.followUpPlaceholder
-              : running && onSteer
+                ? S.chat.interruptPlaceholderShort
+                : S.chat.interruptPlaceholder
+              : running && followUpMode
                 ? narrow
-                  ? S.chat.steerPlaceholderShort
-                  : S.chat.steerPlaceholder
-                : narrow
-                  ? S.chat.inputPlaceholderShort
-                  : S.chat.inputPlaceholder,
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder,
         }}
         tools={
           // The three icon buttons — +, permission, skills — sit as one tight cluster: the row's
@@ -2430,7 +2514,7 @@ export function ChatInput({
                   },
                   {
                     key: "file",
-                    icon: PAPERCLIP_ICON,
+                    icon: ICONS.paperclip,
                     label: S.chat.uploadFile,
                     // The description doubles as the explanation of where the file ends up:
                     // it is filed into the session scratchpad and reached by path, never

@@ -20,8 +20,10 @@
  *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
  *   anchored on html.dark and cannot express a light subtree inside a dark app.
  * - Theme colour: the meta tag follows the canvas the mode and theme paint (lib/theme-color.ts).
- * All preferences persist to localStorage. Reading them back, with validation and the legacy
- * text-size migration, lives in theme-prefs.ts.
+ * All preferences follow the account: each is cached in localStorage for the first frame and
+ * written through lib/account-sync, which carries an edit to the account and, when the account's
+ * copy arrives, has this provider read the cache again. Reading them back, with validation and
+ * the legacy text-size migration, lives in theme-prefs.ts.
  * The pre-paint script in index.html (the package's BOOT_SCRIPT) applies mode, theme, accent,
  * text size and font pairing before the first frame; the effects here keep them in sync
  * afterwards, through the same applyThemeAttributes the package defines.
@@ -32,7 +34,8 @@ import { ACCENT_PRESETS, THEME_OWN_ACCENTS } from "@prismshadow/penguin-ui";
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
-import { readThemePrefs } from "./theme-prefs";
+import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY, readThemePrefs } from "./theme-prefs";
+import { subscribeAccountApplied, writeCached } from "../lib/account-sync/cache";
 import { syncThemeColor } from "../lib/theme-color";
 import type { FontCjk, FontLatin, TextSize } from "./theme-prefs";
 
@@ -58,9 +61,6 @@ const TEXT_SIZE_KEY = THEME_STORAGE_KEYS.textSize;
 const FONT_LATIN_KEY = THEME_STORAGE_KEYS.fontLatin;
 const FONT_CJK_KEY = THEME_STORAGE_KEYS.fontCjk;
 const ACCENT_KEY = THEME_STORAGE_KEYS.accent;
-const CURRENCY_KEY = "penguin.currency";
-const TERMINAL_KEY = "penguin.terminal.theme";
-const TOOL_ALIASES_KEY = "penguin.toolAliases";
 
 interface ThemeContextValue {
   mode: ThemeMode;
@@ -102,7 +102,7 @@ function initialMode(): ThemeMode {
 }
 
 function initialTerminalMode(): TerminalThemeMode {
-  const stored = localStorage.getItem(TERMINAL_KEY);
+  const stored = localStorage.getItem(TERMINAL_THEME_KEY);
   if (stored === "light" || stored === "dark" || stored === "app") return stored;
   return "app";
 }
@@ -133,6 +133,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
   const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
+
+  // The account's preferences replaced the cached ones at sign-in:
+  // read every one again. The attribute effects below then repaint from the new state.
+  useEffect(
+    () =>
+      subscribeAccountApplied(() => {
+        const next = readThemePrefs(localStorage);
+        setModeState(initialMode());
+        setThemeIdState(next.themeId);
+        setTextSizeState(next.textSize);
+        setFontLatinState(next.fontLatin);
+        setFontCjkState(next.fontCjk);
+        setAccentState(next.accent);
+        setCurrencyState(initialCurrency());
+        setTerminalModeState(initialTerminalMode());
+        setToolAliasesState(initialToolAliases());
+      }),
+    [],
+  );
 
   const dark = mode === "system" ? sysDark : mode === "dark";
   const terminalDark = terminalMode === "app" ? dark : terminalMode === "dark";
@@ -176,47 +195,47 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode]);
 
   const setMode = useCallback((next: ThemeMode) => {
-    localStorage.setItem(MODE_KEY, next);
+    writeCached(MODE_KEY, next);
     setModeState(next);
   }, []);
 
   const setThemeId = useCallback((next: ThemeId) => {
-    localStorage.setItem(THEME_ID_KEY, next);
+    writeCached(THEME_ID_KEY, next);
     setThemeIdState(next);
   }, []);
 
   const setTextSize = useCallback((next: TextSize) => {
-    localStorage.setItem(TEXT_SIZE_KEY, next);
+    writeCached(TEXT_SIZE_KEY, next);
     setTextSizeState(next);
   }, []);
 
   const setFontLatin = useCallback((next: FontLatin) => {
-    localStorage.setItem(FONT_LATIN_KEY, next);
+    writeCached(FONT_LATIN_KEY, next);
     setFontLatinState(next);
   }, []);
 
   const setFontCjk = useCallback((next: FontCjk) => {
-    localStorage.setItem(FONT_CJK_KEY, next);
+    writeCached(FONT_CJK_KEY, next);
     setFontCjkState(next);
   }, []);
 
   const setAccent = useCallback((next: Accent) => {
-    localStorage.setItem(ACCENT_KEY, next);
+    writeCached(ACCENT_KEY, next);
     setAccentState(next);
   }, []);
 
   const setCurrency = useCallback((next: Currency) => {
-    localStorage.setItem(CURRENCY_KEY, next);
+    writeCached(CURRENCY_KEY, next);
     setCurrencyState(next);
   }, []);
 
   const setTerminalMode = useCallback((next: TerminalThemeMode) => {
-    localStorage.setItem(TERMINAL_KEY, next);
+    writeCached(TERMINAL_THEME_KEY, next);
     setTerminalModeState(next);
   }, []);
 
   const setToolAliases = useCallback((next: boolean) => {
-    localStorage.setItem(TOOL_ALIASES_KEY, next ? "1" : "0");
+    writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");
     setToolAliasesState(next);
   }, []);
 

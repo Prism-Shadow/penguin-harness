@@ -15,6 +15,9 @@
  *   creates nothing either.
  * - When creating the Session fails, the message is kept and the next Enter sends it again:
  *   from a pipe as an empty line, on a terminal from the input line it is put back into.
+ * - When the server refuses the first message (a goal without its plugin), the Session just
+ *   created for it is deleted and the message kept; the next Enter creates a new one with the
+ *   same flags and level and sends it there. A refused later message deletes nothing.
  */
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -241,5 +244,43 @@ describe("a first message whose Session cannot be created", () => {
     await afterTurn();
     tty.type("/exit\r");
     await tty.done;
+  });
+});
+
+describe("a first message the server refuses", () => {
+  const deletes = () => server.requests.filter((r) => r.method === "DELETE");
+
+  it("deletes the Session it created and keeps the message; the next Enter starts over with the same settings", async () => {
+    server.refuseTasks = ["goal_plugin_not_installed"];
+    const out = await driveChat(
+      ["/thinking high", "/goal fix it", "", "/exit"],
+      ["--workspace", "/srv/ws", "--approve", "read-only"],
+    );
+    expect(out).toContain("Refused: goal_plugin_not_installed.");
+    expect(out).toContain(t.chatMessageKept());
+    // The refused Session is gone, not left as an empty conversation.
+    const [first, second] = creates();
+    expect(deletes()).toHaveLength(1);
+    expect(server.sessions.size).toBe(1);
+    // The second create carries what the first did, and its own level pin.
+    expect(second!.body).toEqual(first!.body);
+    const [only] = [...server.sessions.values()];
+    expect(only!.patches).toEqual([{ thinkingLevel: "high" }]);
+    expect(only!.tasks).toEqual([
+      { input: [{ type: "text", text: "fix it" }], goal: { budget: -1 } },
+    ]);
+  });
+
+  it("deletes nothing when a later message is refused", async () => {
+    // The first task goes through and arms a refusal for the next: by then the Session ran.
+    server.onTask = () => {
+      server.refuseTasks = ["goal_plugin_not_installed"];
+      return [];
+    };
+    const out = await driveChat(["first", "/goal fix it", "/exit"]);
+    expect(out).toContain("Refused: goal_plugin_not_installed.");
+    expect(deletes()).toEqual([]);
+    expect(server.sessions.size).toBe(1);
+    expect(out).not.toContain(t.chatMessageKept());
   });
 });

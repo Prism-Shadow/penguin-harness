@@ -1,28 +1,35 @@
 /**
  * Event streams: a Session's output, the user-level server events, and the machines aggregate.
  *
- * - OmniMessage uses the default event (no `event:` line); data is the message envelope as
+ * - Records use the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
  * - Server events use `event: server_event` (approval_request / task_state / resync_required /
  *   credentials_updated / hello, and `heartbeat` — the stream's own beat);
  * - The machines aggregate uses `event: machine_event`, data `{machineId, event}` — one
  *   machine's own server event, tagged with the machine it came from.
+ * - A history read (`history`, `trace-body`) is a stream too, of named events only — `progress`,
+ *   `page`, `records`, `part`, `done`, `filled`, `error` — with acknowledged flow and a 5 s
+ *   `ping`. It is a read with an end, so its reader closes it once the read is over: the socket
+ *   re-issues any stream the server ends, which here would read the window again.
  * - A stream is a call on the page's one API socket (api/socket.ts, PRFC-0011), which
  *   re-issues it with `last-event-id` after any interruption (the server replays from its
- *   ring buffer; if the event was already evicted, it pushes resync_required instead). When
- *   the socket is not to be had, the same stream is an EventSource: the browser then
- *   auto-reconnects with the same header, and auth rides the same-origin cookie either way.
+ *   ring buffer; if the event was already evicted, it pushes resync_required instead). There
+ *   is no second transport for a stream: without a socket it waits for one, in silence.
  * - Liveness: a connection can die without any error (half-open TCP, a stuck proxy or NAT).
- *   Once a stream has sent a `ping` (the server's heartbeat, every 20 s), {@link SILENCE_MS}
- *   without any event closes it and opens a new one with `?lastEventId=` set to the last id
- *   seen; the tab becoming visible checks at once, since background timers run late. A stream
- *   that never pinged (an older server), or that the browser gave up on, is left as it is.
+ *   Once a stream has carried its beat (`heartbeat` every 20 s), {@link STREAM_HEARTBEAT_MS}
+ *   without any frame of its own ends it and re-issues it from its last event id.
  * Docs: /docs/server-api § "Streaming (SSE)".
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type {
   HostedBrowserFrame,
   HostedBrowserViewport,
+} from "@prismshadow/penguin-server/api";
+import type {
+  HistoryPage,
+  HistoryProgress,
+  HistoryRecords,
+  HistoryStreamError,
   MachineEvent,
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
@@ -40,33 +47,30 @@ import type { StreamOptions } from "./socket";
  */
 export const STREAM_HEARTBEAT_MS = 20_000;
 
-/** The server pings every 20 s: this much silence means the connection is gone. */
-const SILENCE_MS = 50_000;
-
 export interface StreamHandlers {
   /**
-   * A single OmniMessage (full/streaming/event, envelope as-is). `eventId` is the SSE
+   * A single AmspRecord (full/streaming/event, envelope as-is). `eventId` is the SSE
    * event id assigned by the server channel (`<epoch>-<seq>`; null if the event carried
    * none) — stream-controller uses it to align buffered events with the live-tail cursor
    * that GET /messages returns.
    */
-  onOmniMessage: (msg: OmniMessage, eventId: string | null) => void;
-  /** A single server event (`eventId`: same as onOmniMessage). */
+  onRecord: (msg: AmspRecord, eventId: string | null) => void;
+  /** A single server event (`eventId`: same as onRecord). */
   onServerEvent: (event: ServerEvent, eventId: string | null) => void;
   /**
    * A frame whose `event:` name this module does not dispatch by itself — the machines
    * aggregate's `machine_event` is the one caller today (openMachineEvents below). `data` is
    * the parsed JSON, `eventId` as on the two handlers above. A stream that supplies none keeps
-   * reading such a frame as an OmniMessage, which is what every stream did before named
+   * reading such a frame as a record, which is what every stream did before named
    * dispatch existed; `heartbeat` never reaches here either way, it is liveness only.
    */
   onEvent?: (name: string, data: unknown, eventId: string | null) => void;
   /** Connection established (including a successful auto-reconnect, and a reopen after silence). */
   onOpen?: () => void;
   /**
-   * Connection error. `closed` is true when the browser has deemed the connection fatally
-   * broken and closed it (e.g. the handshake returned 401/403, so it won't auto-reconnect);
-   * when false, the browser will auto-reconnect and no manual handling is needed.
+   * Connection error. `closed` is true when the stream is over for good — the endpoint
+   * answered with a fatal status (401, 403, 404…) — and false when it is being retried,
+   * which is this module's own doing: the caller needs no reconnection of its own.
    */
   onError?: (closed: boolean) => void;
 }
@@ -76,117 +80,16 @@ export interface StreamConnection {
 }
 
 /**
- * A stream is a call on the page's one API socket; when the socket is not to be had, the same
- * stream runs as an EventSource instead — the browser's own reconnect carries a last event id
- * forward, and auth rides the same-origin cookie either way.
- *
- * The socket's heartbeat watchdog and EventSource's named-ping watchdog each reopen their own
- * stream from its last event id; neither treats traffic on another stream as this one's beat.
+ * A stream is a call on the page's one API socket, which owns the reconnection and the
+ * per-stream heartbeat watchdog: each stream is re-issued from its last event id after any
+ * interruption, and traffic on another stream is never read as this one's beat.
  */
 function subscribe(
   url: string,
   handlers: StreamHandlers,
   options: StreamOptions = {},
 ): StreamConnection {
-  return apiSocket.stream(url, handlers, () => subscribeEventSource(url, handlers), options);
-}
-
-/** The EventSource fallback retains its heartbeat watchdog. */
-function subscribeEventSource(url: string, handlers: StreamHandlers): StreamConnection {
-  let source: EventSource | undefined;
-  /** The newest event id seen on any of this subscription's connections. */
-  let lastEventId = "";
-  let lastHeard = 0;
-  /** The stream has pinged, so silence means a dead connection. */
-  let armed = false;
-  let watchdog: ReturnType<typeof setTimeout> | undefined;
-
-  const heard = (e: MessageEvent<string>) => {
-    lastHeard = Date.now();
-    if (e.lastEventId) lastEventId = e.lastEventId;
-  };
-  const onMessage = (e: MessageEvent<string>) => {
-    heard(e);
-    try {
-      // Every server event carries an `id:` line; lastEventId is "" only if none did.
-      handlers.onOmniMessage(JSON.parse(e.data) as OmniMessage, e.lastEventId || null);
-    } catch {
-      // Ignore lines that fail to parse (the protocol guarantees single-line JSON data, so this shouldn't normally happen).
-    }
-  };
-  const onServerEvent = (e: MessageEvent<string>) => {
-    heard(e);
-    try {
-      // On the aggregate this is the hub's own frame (`hello` / `resync_required`), which the
-      // aggregate's onServerEvent adapter routes to onHubEvent; on every other stream it is a
-      // server event like any other.
-      const event = JSON.parse(e.data) as ServerEvent;
-      if (event.type === "heartbeat") return;
-      handlers.onServerEvent(event, e.lastEventId || null);
-    } catch {
-      // Same as above.
-    }
-  };
-  const onPing = (e: MessageEvent<string>) => {
-    heard(e);
-    armed = true;
-    check();
-  };
-  const onError = () => {
-    const closed = source?.readyState === EventSource.CLOSED;
-    // The browser gave up on the connection: what happens next is the caller's call, as before.
-    if (closed) disarm();
-    handlers.onError?.(closed);
-  };
-  const connect = () => {
-    source?.close();
-    lastHeard = Date.now();
-    source = new EventSource(
-      lastEventId ? `${url}?lastEventId=${encodeURIComponent(lastEventId)}` : url,
-    );
-    source.onmessage = onMessage;
-    source.addEventListener("server_event", onServerEvent);
-    source.addEventListener("ping", onPing);
-    source.addEventListener("machine_event", (e: MessageEvent<string>) => {
-      heard(e);
-      try {
-        handlers.onEvent?.(
-          "machine_event",
-          JSON.parse(e.data) as MachineEvent,
-          e.lastEventId || null,
-        );
-      } catch {
-        // Ignore malformed frames, as for other event names.
-      }
-    });
-    if (handlers.onOpen) source.onopen = handlers.onOpen;
-    source.onerror = onError;
-  };
-
-  /** Reopens a stream silent for the whole window; otherwise waits out the rest of it. */
-  const check = () => {
-    clearTimeout(watchdog);
-    if (!armed) return;
-    if (Date.now() - lastHeard >= SILENCE_MS) connect();
-    watchdog = setTimeout(check, lastHeard + SILENCE_MS - Date.now());
-  };
-  const disarm = () => {
-    armed = false;
-    clearTimeout(watchdog);
-  };
-  const onVisibility = () => {
-    if (document.visibilityState === "visible") check();
-  };
-
-  document.addEventListener("visibilitychange", onVisibility);
-  connect();
-  return {
-    close: () => {
-      disarm();
-      document.removeEventListener("visibilitychange", onVisibility);
-      source?.close();
-    },
-  };
+  return apiSocket.stream(url, handlers, options);
 }
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */
@@ -244,9 +147,9 @@ export function openMachineEvents(
 ): StreamConnection {
   const path = `/api/projects/${encodeURIComponent(projectId)}/machines/events`;
   const streamHandlers: StreamHandlers = {
-    // No unnamed frames on this stream: a machine's `message` would be an OmniMessage from a
+    // No unnamed frames on this stream: a machine's `message` would be a record from a
     // Session, which the aggregate does not carry (`machine_event` carries server events only).
-    onOmniMessage: () => undefined,
+    onRecord: () => undefined,
     onServerEvent: (event, eventId) => handlers.onHubEvent?.(event, eventId),
     onEvent: (name, data, eventId) => {
       if (name !== "machine_event") return;
@@ -262,6 +165,146 @@ export function openMachineEvents(
     onError: handlers.onError,
   };
   return subscribe(path, streamHandlers, { heartbeatMs: STREAM_HEARTBEAT_MS });
+}
+
+/**
+ * The beat a history stream speaks at: the server writes a `ping` every 5 s while it has nothing
+ * else to send (while the machine behind it is slow, or out of reach and being retried). Two
+ * silent beats end the stream here and re-issue it from its last event id, which the server
+ * continues the same window from.
+ */
+export const HISTORY_STREAM_BEAT_MS = 5_000;
+
+/**
+ * One read of a Session's history over the `history` stream: the newest `limit` Tasks (`tail`,
+ * cut at `budget` bytes of records when given, and with `fill` the stream stays open after the
+ * window to bring the rest of the Session to the server that serves this page), the Tasks before
+ * a cursor (`before`), the whole transcript (`full`), or no window at all — only one Trace file
+ * made whole on this page's server (`fill`, the Trace panel's read, of the Agent's file `file`;
+ * this server's own Session answers `filled` at once).
+ */
+export type HistoryStreamQuery =
+  | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
+  | { kind: "before"; cursor: string; limit: number; budget?: number }
+  | { kind: "full" }
+  | { kind: "fill"; file: number; agent?: string };
+
+/** What a history or trace-body stream says, event by event. */
+export interface HistoryStreamHandlers {
+  /** How far the bytes behind the read have come, and whether the machine is being waited for. */
+  onProgress?: (progress: HistoryProgress) => void;
+  /** A window begins: what it holds beside its records. A new window id replaces any window in part. */
+  onPage?: (page: HistoryPage) => void;
+  /** Whole record lines (`records`), or a piece of one record longer than a frame (`part`). */
+  onRecords?: (frame: HistoryRecords, kind: "records" | "part") => void;
+  /** The window (or the body, or a `fill` read) is complete. */
+  onDone?: (windowId: string | null) => void;
+  /** After a window read with `fill`: the rest of the Session is on this page's server. */
+  onFilled?: () => void;
+  /**
+   * The read is over and failed: the server's `error` event, or the stream refused for good (it
+   * answered 401, 403 or 404 — reported as `not_found`). A stream that dropped is not an error:
+   * the socket re-issues it from its last event id by itself.
+   */
+  onError: (error: HistoryStreamError) => void;
+}
+
+/**
+ * A history or trace-body stream on the page's one socket, with acknowledged flow: the server
+ * keeps no more than its window of unacknowledged data in flight, so a long history never holds
+ * back the socket's other calls. Event names are dispatched to the handlers; the beat (`ping`)
+ * is the socket's own business.
+ */
+function subscribeHistory(path: string, handlers: HistoryStreamHandlers): StreamConnection {
+  return subscribe(
+    path,
+    {
+      // Every event of these streams is named; an unnamed frame would be no record of theirs.
+      onRecord: () => undefined,
+      onServerEvent: () => undefined,
+      onEvent: (name, data) => {
+        switch (name) {
+          case "progress":
+            handlers.onProgress?.(data as HistoryProgress);
+            return;
+          case "page":
+            handlers.onPage?.(data as HistoryPage);
+            return;
+          case "records":
+          case "part":
+            handlers.onRecords?.(data as HistoryRecords, name);
+            return;
+          case "done":
+            handlers.onDone?.((data as { windowId?: string } | null)?.windowId ?? null);
+            return;
+          case "filled":
+            handlers.onFilled?.();
+            return;
+          case "error":
+            handlers.onError(data as HistoryStreamError);
+            return;
+        }
+      },
+      onError: (closed) => {
+        if (closed) handlers.onError({ code: "not_found", message: "the stream was refused" });
+      },
+    },
+    { flow: true, heartbeatMs: HISTORY_STREAM_BEAT_MS },
+  );
+}
+
+/** The query string of a history read, in the server's grammar (the `/messages` one plus `budget` and `fill`). */
+function historyQuery(query: HistoryStreamQuery): string {
+  const params = new URLSearchParams();
+  switch (query.kind) {
+    case "tail":
+      params.set("tailLimit", String(query.limit));
+      if (query.budget !== undefined) params.set("budget", String(query.budget));
+      if (query.fill === true) params.set("fill", "1");
+      break;
+    case "before":
+      params.set("before", query.cursor);
+      params.set("limit", String(query.limit));
+      if (query.budget !== undefined) params.set("budget", String(query.budget));
+      break;
+    case "full":
+      break;
+    case "fill":
+      params.set("fill", "only");
+      params.set("file", String(query.file));
+      if (query.agent !== undefined) params.set("agent", query.agent);
+      break;
+  }
+  const text = params.toString();
+  return text === "" ? "" : `?${text}`;
+}
+
+/**
+ * Reads a Session's history over the `history` stream (GET /api/sessions/:sessionId/history),
+ * routed like every other Session call: a Session on a machine is answered by this page's server
+ * from what it holds of that machine's Trace, asking the machine only for what it lacks.
+ */
+export function openHistoryStream(
+  sessionId: string,
+  query: HistoryStreamQuery,
+  handlers: HistoryStreamHandlers,
+): StreamConnection {
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/history${historyQuery(query)}`;
+  return subscribeHistory(apiUrl(path, machineForSession(sessionId)), handlers);
+}
+
+/**
+ * Reads the whole of one value a history record carried as a preview (GET
+ * /api/sessions/:sessionId/trace-body?ref=): its pieces arrive as `part` events in order, then
+ * `done`. `ref` is the history record's own handle for the value, opaque here.
+ */
+export function openTraceBodyStream(
+  sessionId: string,
+  ref: string,
+  handlers: HistoryStreamHandlers,
+): StreamConnection {
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/trace-body?ref=${encodeURIComponent(ref)}`;
+  return subscribeHistory(apiUrl(path, machineForSession(sessionId)), handlers);
 }
 
 export interface BrowserViewHandlers {

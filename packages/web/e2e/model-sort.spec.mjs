@@ -14,6 +14,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 
@@ -29,8 +30,8 @@ const cards = (section) =>
   );
 
 test("models: a group's gear sorts its models and still opens its settings", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
   await provisionAndLogin(page.request, "modelsortuser", "password123");
+  await setAccountPrefs(page.request, { lang: "en" });
   await page.goto(`${BASE}/models`);
 
   const openRouter = page.getByRole("button", { name: /^OpenRouter\s*\d+ models/ });

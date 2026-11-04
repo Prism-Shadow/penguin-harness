@@ -1,17 +1,17 @@
 # Cases run through Harbor
 
-A Case is run through Harbor when its `statement/README.md` has a `## How this case is run` section that names the [Harbor](https://github.com/harbor-framework/harbor) framework, links a repository at a 40-character commit and gives the `harbor run` launch. Its task is a Harbor task directory kept in that repository, not in the Case directory: the Case directory is `CASE-NNN-<task>`, the statement describes the task and how it is launched, and `rubric/README.md` scores the verifier's reward out of 100. One evaluation cell is one Harbor trial: Harbor starts the task's container in Docker, the PenguinHarness adapter installs the PenguinHarness CLI inside it and runs the Test Agent there, and the task's own verifier grades what the agent left.
+A Case is run through Harbor when its `statement/README.md` has a `## How this case is run` section that names the [Harbor](https://github.com/harbor-framework/harbor) framework, links a repository and gives the `harbor run` launch. Its task is a Harbor task directory kept in that repository, not in the Case directory: the Case directory is `CASE-NNN-<task>`, the statement describes the task and how it is launched, and `rubric/README.md` scores the verifier's reward out of 100. One evaluation cell is one Harbor trial: Harbor starts the task's container in Docker, the PenguinHarness adapter installs the PenguinHarness CLI inside it and runs the Test Agent there, and the task's own verifier grades what the agent left.
 
 The repository's README section *Running a task (for agents)*, which the statement links, is the authority on how a trial is run: fetching the repository at a commit, the launch, concurrency and Docker networks, retries, what `result.json` holds, credentials and failures. This file says only what PenguinHarness adds: where the checkout lives, what the Test Agent's State is, and how a trial becomes a protocol result. It replaces the Workspace launch, the Trace binding and the Rubric judgement of `SKILL.md` for such a Case; the Contract, the visibility rules, the failure codes and the Return format stay as `SKILL.md` states them.
 
 **The model, and no credentials.** Every cell runs the request's `provider` / `model_id`, which the caller fixes as `SKILL.md`'s "For the caller" says: the pair its own instructions name, else its own Session's model from its Environment. When it cannot determine the model, the caller stops and asks the user. Neither the caller nor a cell ever reads the server's `api-token` file, a Project's `.project_config.toml` (it holds the model keys) or the server's auth database `web.db`, and neither calls the server's HTTP API with a token read from disk — not to find the model, and not to check its key. The adapter reads the saved model entry itself, and the repository's helper prints the one host a cell needs (§B.3).
 
-**What the statement gives.** Nothing in `benchmark_config.toml` marks such a Benchmark or names its repository; every value below is read from the Case's statement:
+**What the statement gives.** The Case's statement names the task repository, commit and launch:
 
 | Value | In the statement |
 | --- | --- |
 | `REPO` | The repository: the **Task** line's link up to `/tree/` |
-| `SHA` | The commit in that link, `/tree/<SHA>/`; the run-rules link and the checkout sentence name the same one |
+| `SHA` | The full 40-character lowercase commit in the Task link; the run-rules link and checkout sentence name the same commit |
 | `TASK_PATH`, `TASK` | `-p <TASK_PATH>` and `-i <TASK>` of the launch |
 | `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
 | `AGENT` | `-a <AGENT>` of the launch: the adapter inside the repository's `agents/` |
@@ -20,14 +20,16 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
 | The overlay line | `--extra-docker-compose tools/docker/shared-network.yaml`: present only where the repository allows the shared network (§A.9) |
 
-`SHA` must be 40 lowercase hexadecimal characters, and the Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. So is a statement that links a branch or a tag: never resolve one to a commit. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
+Require an explicit full commit for task sources: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree. Record the repository URL and commit with the evaluation, and pass that `SHA` to every worker. All cells and later evaluations of the same package use that checkout. This requirement applies to running tasks; the display package may be fetched from `main`.
+
+The Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
 
 ## A. The caller: shared setup once, then the cells
 
 The agent that fans out the cells performs steps 1–10 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted, apart from the install bundle step 10 adds under its `bundles/` — cells of this evaluation and of any other read it at the same time.
 
 1. **Tools.** Require `docker info` to reach a daemon as the current user, `docker compose version` to report v2, `uv --version` (it provides `uvx`), `tar`, `python3`, and `curl` or `git`. When one is missing the evaluation cannot run on this machine: a caller says which tool is missing and stops; a worker returns `evaluation_failed`.
-2. **The checkout's place,** named by the statement's commit:
+2. **The checkout's place,** named by the pinned commit:
 
    ```bash
    PROJECT_DIR="<app_data_dir>"

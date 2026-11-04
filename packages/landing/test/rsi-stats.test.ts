@@ -1,15 +1,13 @@
 /**
  * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
- * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
- * Benchmarks, one entry per upstream repository core records for them, linked to it, so a new
- * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
+ * whose package.json files them under the `rsi` category, and BENCHMARKS the shipped packages' upstream repositories,
+ * one entry per source, so a new toolkit or upstream fails here instead of leaving the landing page behind. Every
  * link is absolute https, and only the Default toolkit has none; and both dictionaries carry one
  * kind per Benchmark and no derived count in the stat tiles (the hero derives the algorithm and
  * Benchmark counts from these lists).
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
 import { zh } from "../src/lib/strings";
@@ -39,20 +37,20 @@ const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
   .map((entry) => entry.name)
   .sort();
 
-/**
- * Core's built-in Benchmarks. Imported at run time through a URL rather than statically: a
- * static import would pull core's sources, and everything they import, into this package's
- * typecheck.
- */
-async function builtinBenchmarks(): Promise<Array<{ id: string; upstream: string }>> {
-  const file = join(__dirname, "..", "..", "core", "src", "state", "builtin-benchmarks-data.ts");
-  const data = (await import(pathToFileURL(file).href)) as {
-    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string; upstream: { url: string } }>;
-  };
-  return data.BUILTIN_BENCHMARKS.map((benchmark) => ({
-    id: benchmark.id,
-    upstream: benchmark.upstream.url,
-  }));
+/** The catalogue prepared from the same packages that ship in the application. */
+function builtinUpstreams(): string[] {
+  const file = join(__dirname, "../../../node_modules/.cache/penguin-benchmarks/catalog.json");
+  const packages = JSON.parse(readFileSync(file, "utf8")) as Array<{
+    cases: Array<{ statement: string }>;
+  }>;
+  return [
+    ...new Set(
+      packages.map(
+        (benchmark) =>
+          /^- Upstream: (https:\/\/\S+)/m.exec(benchmark.cases[0]!.statement)?.[1] ?? "",
+      ),
+    ),
+  ].sort();
 }
 
 const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
@@ -67,11 +65,7 @@ describe("hero catalogue ↔ its sources", () => {
   });
 
   it("BENCHMARKS names core's built-in Benchmarks, one entry per upstream, linked to it", async () => {
-    expect(
-      BENCHMARKS.flatMap((benchmark) =>
-        benchmark.ids.map((id) => ({ id, upstream: benchmark.href })),
-      ),
-    ).toEqual(await builtinBenchmarks());
+    expect(BENCHMARKS.map((benchmark) => benchmark.href).sort()).toEqual(builtinUpstreams());
     const hrefs = BENCHMARKS.map((benchmark) => benchmark.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });

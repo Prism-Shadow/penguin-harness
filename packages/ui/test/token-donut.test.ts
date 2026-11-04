@@ -1,7 +1,8 @@
 /**
  * The token donut (src/components/charts/token-donut): its name and tooltip in the caller's
  * words and figures, three arcs in the Token kinds' colours over a track in the ring's own ink,
- * and the remainder's warning at 80% and 95% of the limit.
+ * and the remainder's warning at 80% and 95% of the limit. Drawn inside a control that names it
+ * and opens its figures, it carries neither a name nor a hint of its own.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -10,7 +11,7 @@ import { classTokens, renderStatic } from "../src/testing";
 
 const LABELS = { usage: "Kontext", cacheRead: "Lesen", cacheWrite: "Schreiben", output: "Ausgabe" };
 
-const donut = (cacheRead: number, cacheWrite: number, output: number, max = 100) =>
+const donut = (cacheRead: number, cacheWrite: number, output: number, max = 100, hint = true) =>
   renderStatic(
     createElement(TokenDonut, {
       cacheRead,
@@ -19,6 +20,7 @@ const donut = (cacheRead: number, cacheWrite: number, output: number, max = 100)
       max,
       labels: LABELS,
       format: (n: number) => `${n}t`,
+      hint,
     }),
   );
 
@@ -30,6 +32,14 @@ describe("TokenDonut", () => {
     expect(html).toContain(`aria-label="${name}"`);
     expect(html).toContain(`data-tooltip="${name}"`);
     expect(classTokens(html)).toContain("ui-chart");
+  });
+
+  it("inside a control that names it, carries no name and no hint of its own", () => {
+    const html = donut(40, 5, 10, 100, false);
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain("aria-label=");
+    expect(html).not.toContain("data-tooltip=");
+    expect(html).not.toContain('role="img"');
   });
 
   it("draws one arc per non-empty kind over the track, in the kinds' colours", () => {

@@ -1,11 +1,10 @@
 /**
- * Home: the hero with the app live under it, three rows of the app at work, the self-evolution
+ * Home: one live walkthrough, the self-evolution
  * loop with its demo, the one-sentence case, what PenguinHarness is made of, what is already
  * built around the agent, the cost comparison, customer scenarios, the latest posts, how to
  * install, and the close.
  */
 import { Hero } from "../sections/hero";
-import { Showcase } from "../sections/showcase";
 import { SelfImprove } from "../sections/self-improve";
 import { Cases } from "../sections/cases";
 import { Pillars } from "../sections/pillars";
@@ -16,12 +15,13 @@ import { Updates } from "../sections/updates";
 import { Quickstart } from "../sections/quickstart";
 import { Cta } from "../sections/cta";
 import { Community } from "../sections/community";
+import { SiteScrollTop } from "@prismshadow/penguin-ui/site";
+import { S } from "../lib/strings";
 
 export function HomePage() {
   return (
     <>
       <Hero />
-      <Showcase />
       <SelfImprove />
       <Cases />
       <Pillars />
@@ -32,6 +32,7 @@ export function HomePage() {
       <Quickstart />
       <Cta />
       <Community />
+      <SiteScrollTop label={S.backToTop} targetId="home-top" />
     </>
   );
 }

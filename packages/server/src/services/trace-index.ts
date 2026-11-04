@@ -45,7 +45,7 @@ import {
   normalizeSessionSource,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
@@ -89,7 +89,7 @@ function factsFromRecords(
   projectId: string,
   agentId: string,
   sessionId: string,
-  records: OmniMessage[],
+  records: AmspRecord[],
 ): TraceSessionRow {
   const meta = records.find(isSessionMeta);
   let firstPrompt: string | null = null;
@@ -181,6 +181,8 @@ export class TraceIndexService implements TraceIndex {
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */
   async reconcileProject(projectId: string, opts: { force?: boolean } = {}): Promise<void> {
     for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
+      // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+      if (agentId.startsWith(".")) continue;
       await this.reconcileAgent(projectId, agentId, opts);
     }
   }
@@ -288,7 +290,7 @@ export class TraceIndexService implements TraceIndex {
     const earliest = files[0];
     if (earliest === undefined) return;
     this.counters.headReads += 1;
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       records = await readTraceHead(traceFilePath(this.root, earliest));
     } catch {
@@ -311,7 +313,7 @@ export class TraceIndexService implements TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void {
     this.repo.upsertFile({
       projectId: args.projectId,

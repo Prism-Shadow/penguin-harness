@@ -1,5 +1,5 @@
 /**
- * What a compaction row shows (lib/omni/compaction-summary.ts and the dictionaries' mode-aware
+ * What a compaction row shows (lib/amsp/compaction-summary.ts and the dictionaries' mode-aware
  * titles). The section timings are stream-model.test.ts's.
  *
  * - The result section reads the summary as prose: tags stripped, an unclosed block shown as
@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
-import { compactionResultVisible, compactionSummaryText } from "../src/lib/omni/compaction-summary";
+import { compactionResultVisible, compactionSummaryText } from "../src/lib/amsp/compaction-summary";
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {

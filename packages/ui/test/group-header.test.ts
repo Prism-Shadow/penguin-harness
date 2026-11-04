@@ -58,6 +58,25 @@ describe("GroupHeader", () => {
     expect(header(true, false)).not.toContain("data-tooltip");
   });
 
+  it("keeps the qualifier whole beside a label that gives way", () => {
+    // Two machines can hold groups of the same name; the machine is what tells them apart, so a
+    // narrow column cuts the label, never the qualifier after it.
+    const html = inZh(
+      createElement(GroupHeader, {
+        open: true,
+        onToggle: () => {},
+        label: "Temporary workspaces",
+        qualifier: "[SSH: box]",
+      }),
+    );
+    const spanOf = (text: string) =>
+      new RegExp(`<span class="([^"]*)">${text.replace(/[[\]]/g, "\\$&")}</span>`).exec(html)?.[1];
+    expect(spanOf("Temporary workspaces")?.split(" ")).toContain("truncate");
+    const qualifier = spanOf("[SSH: box]")?.split(" ");
+    expect(qualifier).toContain("shrink-0");
+    expect(qualifier).not.toContain("truncate");
+  });
+
   it("names its toggle by what pressing it does, in the interface's words", () => {
     expect(header(true, false)).toContain('aria-expanded="true" aria-label="折叠"');
     expect(header(false, false)).toContain('aria-expanded="false" aria-label="展开"');

@@ -37,6 +37,16 @@ export function uiStringsOf(dict: Strings): UiStrings {
     a2ui: dict.chat.a2ui,
     resizeWidth: dict.common.resizeWidth,
     resizeHeight: dict.common.resizeHeight,
+    reader: {
+      outline: dict.find.outline,
+      find: dict.find.inDocument,
+      findPlaceholder: dict.find.documentPlaceholder,
+      previousMatch: dict.find.prev,
+      nextMatch: dict.find.next,
+      closeFind: dict.find.close,
+      noResults: dict.find.noResults,
+    },
+    report: dict.report,
   };
 }
 

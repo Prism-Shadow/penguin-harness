@@ -3,7 +3,7 @@
  *
  * Some providers don't produce a real call id: e.g. Gemini's functionCall has no id, so MMSP
  * uses the **function name** as the `tool_call_id` — consecutive/parallel calls to the same tool then
- * all share one id. But the OmniMessage world (engine dispatch/pairing, approval routing, frontend
+ * all share one id. But the record world (engine dispatch/pairing, approval routing, frontend
  * tool-card attribution) keys on `tool_call_id`, and a collision lets a later call overwrite the
  * earlier one (parallel same-name calls in one turn can even be dropped entirely).
  *
@@ -17,7 +17,7 @@
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
 export class ToolCallIdAllocator {
-  /** OmniMessage-level tool_call_ids already taken in this Session (history-seeded + allocated). */
+  /** Record-level tool_call_ids already taken in this Session (history-seeded + allocated). */
   private used = new Set<string>();
 
   /** Register an already-used id (for resume seeding); registering twice is harmless. */

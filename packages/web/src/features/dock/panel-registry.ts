@@ -25,6 +25,8 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type { ComponentType } from "react";
 import { ICONS } from "@prismshadow/penguin-ui";
+import type { CommandId } from "../../lib/shortcuts/types";
+import type { DockPosition } from "./dock-state";
 
 /** A panel kind's id, also its tab's stored key. Built-ins keep their existing ids. */
 export type PanelId = string;
@@ -44,8 +46,15 @@ export interface DockPanelDefinition {
   order: number;
   /** Whether surfaces offer it here (the built-in browser: desktop shell only). Default: always. */
   offered?: () => boolean;
-  /** Change feed for `offered`. */
+  /**
+   * Change feed for `offered`. Followed from registration for good, so it must only listen — a
+   * feed that starts work for its first subscriber (a poll) would run it everywhere, forever.
+   */
   subscribeOffered?: (listener: () => void) => () => void;
+  /** The dock its tab lands in when it has none yet and nothing asked for one. Default: right. */
+  defaultPosition?: DockPosition;
+  /** A command that opens or toggles it; the empty dock's picker shows its keys on the row. */
+  shortcut?: CommandId;
   /** The tab's body. */
   Body: ComponentType<DockPanelBodyProps>;
 }

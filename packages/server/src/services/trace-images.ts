@@ -7,8 +7,9 @@
  * one image from the Trace record, so a page costs its text and the browser fetches each
  * picture as it draws it. The parameterless full read is left alone.
  *
- * URL: `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`,
- * where (file, ordinal) is the record's `tracePosition`; without `i` it names the record's
+ * URL: `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+ * (under `/api/amsp/v1/sessions` on the Agent API's own pages: each door references its own
+ * route), where (file, ordinal) is the record's `tracePosition`; without `i` it names the record's
  * `image_url`, with `i` the tool output's `images[k]`. A Trace record never changes, so the
  * route answers it as immutable.
  *
@@ -17,11 +18,7 @@
  * `text/html` data URL served there would be a document, not a picture. Any other data URL
  * stays inline, where it is as harmless as it always was.
  */
-import type {
-  ImageUrlPayload,
-  OmniMessage,
-  ToolCallOutputPayload,
-} from "@prismshadow/penguin-core";
+import type { ImageUrlPayload, AmspRecord, ToolCallOutputPayload } from "@prismshadow/penguin-core";
 import type { HistoryMessage, TracePosition } from "../api/types.js";
 
 /** Image types the trace-image route serves (core's own supported set). */
@@ -43,10 +40,18 @@ function referableImage(url: string): { mime: string; dataStart: number } | null
   return REFERENCED_IMAGE_MIMES.has(mime) ? { mime, dataStart: comma + 1 } : null;
 }
 
-/** The route URL of one image slot of the record at `at` (`slot` = index into a tool output's `images`). */
-export function traceImageUrl(sessionId: string, at: TracePosition, slot?: number): string {
+/** Where the Web App's Session routes are served: the default base of an image reference. */
+export const SESSION_ROUTES_BASE = "/api/sessions";
+
+/** The route URL of one image slot of the record at `at` (`slot` = index into a tool output's `images`), under `base`. */
+export function traceImageUrl(
+  sessionId: string,
+  at: TracePosition,
+  slot?: number,
+  base: string = SESSION_ROUTES_BASE,
+): string {
   const query = `file=${at.fileIndex}&ordinal=${at.ordinal}${slot !== undefined ? `&i=${slot}` : ""}`;
-  return `/api/sessions/${encodeURIComponent(sessionId)}/trace-image?${query}`;
+  return `${base}/${encodeURIComponent(sessionId)}/trace-image?${query}`;
 }
 
 /**
@@ -55,7 +60,11 @@ export function traceImageUrl(sessionId: string, at: TracePosition, slot?: numbe
  * messages carry no position and stay inline. The input is never mutated; a message with
  * nothing to replace is returned as is.
  */
-export function withImagesByReference(sessionId: string, msg: HistoryMessage): HistoryMessage {
+export function withImagesByReference(
+  sessionId: string,
+  msg: HistoryMessage,
+  base: string = SESSION_ROUTES_BASE,
+): HistoryMessage {
   const at = msg.tracePosition;
   if (at === undefined || msg.type !== "model_msg") return msg;
   const kind = (msg.payload as { type?: string }).type;
@@ -64,7 +73,10 @@ export function withImagesByReference(sessionId: string, msg: HistoryMessage): H
     if (typeof payload.image_url !== "string" || referableImage(payload.image_url) === null) {
       return msg;
     }
-    return { ...msg, payload: { ...payload, image_url: traceImageUrl(sessionId, at) } };
+    return {
+      ...msg,
+      payload: { ...payload, image_url: traceImageUrl(sessionId, at, undefined, base) },
+    };
   }
   if (kind === "tool_call_output") {
     const payload = msg.payload as ToolCallOutputPayload;
@@ -73,7 +85,7 @@ export function withImagesByReference(sessionId: string, msg: HistoryMessage): H
     const images = payload.images.map((image, k) => {
       if (typeof image !== "string" || referableImage(image) === null) return image;
       replaced = true;
-      return traceImageUrl(sessionId, at, k);
+      return traceImageUrl(sessionId, at, k, base);
     });
     if (replaced) return { ...msg, payload: { ...payload, images } };
   }
@@ -86,7 +98,7 @@ export function withImagesByReference(sessionId: string, msg: HistoryMessage): H
  * the route serves — the same test the page applied before it handed out the URL.
  */
 export function traceRecordImage(
-  record: OmniMessage,
+  record: AmspRecord,
   slot: number | undefined,
 ): { mime: string; bytes: Buffer } | null {
   if (record.type !== "model_msg") return null;

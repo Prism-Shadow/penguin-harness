@@ -108,13 +108,15 @@ describe("formatModelRows: the connection a model is used with", () => {
     expect(own).toMatch(/api_key=\*{4}9999$/);
   });
 
-  it("a group base URL pointing at a proxy is the model's endpoint, and the environment no longer covers it", () => {
-    const [line] = formatModelRows(
-      { providers: { deepseek: { base_url: "https://proxy.example/v1" } }, models: [row] },
-      env,
-    );
-    expect(line).toContain("base_url=https://proxy.example/v1 (provider)");
-    expect(line).toContain("api_key=-");
+  it("a group base URL is the model's endpoint; the environment covers it only at the client's own default endpoint", () => {
+    const show = (baseUrl: string) =>
+      formatModelRows({ providers: { deepseek: { base_url: baseUrl } }, models: [row] }, env)[0]!;
+    const proxied = show("https://proxy.example/v1");
+    expect(proxied).toContain("base_url=https://proxy.example/v1 (provider)");
+    expect(proxied).toContain("api_key=-");
+    const own = show("https://api.deepseek.com");
+    expect(own).toContain("base_url=https://api.deepseek.com (provider)");
+    expect(own).toContain("api_key=****7777 (env)");
   });
 
   it("a gateway row with no group table shows no endpoint or protocol: the catalog fills nothing in", () => {

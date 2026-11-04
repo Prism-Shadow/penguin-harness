@@ -168,6 +168,7 @@ export function GroupHeader({
   icon,
   glyph,
   label,
+  qualifier,
   uppercase = false,
   muted = false,
   count,
@@ -191,6 +192,12 @@ export function GroupHeader({
    */
   glyph?: string;
   label: string;
+  /**
+   * What tells this group from another of the same name, said after the label and never cut
+   * off: the machine a Workspace is on (`[SSH: alias]`). The label gives way first — a narrow
+   * column that shortened the pair from the end would hide exactly the part that differs.
+   */
+  qualifier?: string;
   /** A group label rather than a name whose casing matters: set on the eyebrow rung. */
   uppercase?: boolean;
   /** Dim the label one step (a group with nothing active of its own); the count keeps its ink. */
@@ -264,6 +271,9 @@ export function GroupHeader({
         >
           {label}
         </span>
+        {qualifier !== undefined && (
+          <span className="shrink-0 text-xs text-fg-subtle">{qualifier}</span>
+        )}
         {count !== undefined && (
           <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{count}</span>
         )}

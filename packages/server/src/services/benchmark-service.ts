@@ -514,8 +514,9 @@ export class BenchmarkService implements Benchmarks {
       );
     } catch (error) {
       // Taken before this copy was renamed in: by another import of the same id after the check
-      // above, or, under `overwrite`, by another overwrite whose copy went in first. Either way the
-      // id now holds someone else's copy, which the person may choose to overwrite in turn.
+      // above, or, under `overwrite`, by another process's copy (this process places one at a
+      // time). Either way the id now holds someone else's copy, which the person may choose to
+      // overwrite in turn.
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOTEMPTY" || code === "EEXIST") throw benchmarkExists(manifest.id);
       throw error;

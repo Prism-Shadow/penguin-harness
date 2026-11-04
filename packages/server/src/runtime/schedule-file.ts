@@ -1,8 +1,9 @@
 /**
  * Schedule file parsing, validation, and trigger-time computation.
  *
- * `agent_state/schedule/<name>.toml` is declarative intent; the system never writes it
- * back. This module does pure parsing and pure time math only: an invalid file returns
+ * `agent_state/schedule/<name>.toml` is declarative intent; the system never rewrites its
+ * content (a settled task's file is only moved, unchanged, into `schedule/expired/`). This
+ * module does pure parsing and pure time math only: an invalid file returns
  * an error (the scheduler skips it and records the error); runtime state (fired /
  * missed / disabled) doesn't live here — it belongs to SQLite (db/repos/schedules.ts).
  * Docs: /docs/configuration § "Schedules".

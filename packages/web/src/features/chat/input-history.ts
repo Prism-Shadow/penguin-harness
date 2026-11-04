@@ -22,7 +22,7 @@
  *   entry, ↑/↓ first walk the caret through the lines; only ↑ on the first line / ↓ on the
  *   last line step the history.
  */
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 import { splitAttachments } from "../../lib/attachments";
 import { parseUserMessageBody } from "./user-message-body";
 

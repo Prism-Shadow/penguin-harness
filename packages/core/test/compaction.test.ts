@@ -20,6 +20,9 @@
  *   only the paired compaction events are emitted; the dialogue is written to the old trace, and
  *   on success the trace rotates into a new file (index+1, the new file starts with session_meta;
  *   rotation is deferred until the new context has its first message to write).
+ * - Thinking level: the compaction request goes out at the Session's live level like a turn, and
+ *   its Trace-only `request_begin` records that level; with no pin and no default nothing is sent
+ *   and nothing is recorded.
  */
 import { mkdtemp, rm, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -42,15 +45,15 @@ import {
   toolCallOutput,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   CompactionBeginPayload,
   CompactionEndPayload,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TextPayload,
   TokenUsagePayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -71,23 +74,22 @@ import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 // ---------------------------------------------------------------------------
 
 interface ScriptedResponse {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   outcome?: LLMOutcome;
 }
 
 /** Fake LLM that responds according to a script, recording each input it receives. */
 class ScriptedLLM implements LLMInterface {
-  calls: OmniMessage[][] = [];
+  calls: AmspRecord[][] = [];
   /** The per-request thinking level of each call, in the same order as `calls`. */
   levels: (ThinkingLevelName | undefined)[] = [];
   constructor(
     private readonly responses: ScriptedResponse[],
     readonly label = "llm",
+    readonly defaultThinkingLevel?: ThinkingLevelName,
   ) {}
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls.push(params.newMessages);
     this.levels.push(params.thinkingLevel);
     const next = this.responses.shift();
@@ -108,6 +110,7 @@ const fakeEnvironment: EnvironmentInterface = {
     yield toolCallOutput({
       output: "tool ran",
       toolCallId: tc.payload.tool_call_id,
+      status: "completed",
     });
   },
   toolPermission() {
@@ -118,7 +121,7 @@ const fakeEnvironment: EnvironmentInterface = {
 const allowAll: ApproveFn = async () => "allow";
 
 /** Builds a token_usage: request.total is the context-usage figure, session.total is the cumulative one. */
-const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
+const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   tokenUsage(
     { cache_read: 0, cache_write: 0, output: 0, total: sessionTotal },
     { cache_read: 0, cache_write: 0, output: 0, total: requestTotal },
@@ -143,17 +146,17 @@ const metaMessage = sessionMeta({
   source: "user",
 });
 
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for await (const msg of gen) all.push(msg);
   return all;
 }
 
 /** Like collect, but also captures the run generator's return value (RunCutoff | null). */
 async function collectWithReturn<R>(
-  gen: AsyncGenerator<OmniMessage, R>,
-): Promise<{ all: OmniMessage[]; cutoff: R }> {
-  const all: OmniMessage[] = [];
+  gen: AsyncGenerator<AmspRecord, R>,
+): Promise<{ all: AmspRecord[]; cutoff: R }> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return { all, cutoff: res.value };
@@ -163,7 +166,7 @@ async function collectWithReturn<R>(
 
 type CompactionEventPayload = CompactionBeginPayload | CompactionEndPayload;
 
-const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
+const compactionEvents = (msgs: AmspRecord[]): CompactionEventPayload[] =>
   msgs
     .filter((m) => {
       const t = (m.payload as { type?: string }).type ?? "";
@@ -171,10 +174,10 @@ const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
     })
     .map((m) => m.payload as CompactionEventPayload);
 
-const payloadTypes = (msgs: OmniMessage[]): (string | undefined)[] =>
+const payloadTypes = (msgs: AmspRecord[]): (string | undefined)[] =>
   msgs.map((m) => (m.payload as { type?: string }).type);
 
-const textOf = (m: OmniMessage): string => (m.payload as TextPayload).text;
+const textOf = (m: AmspRecord): string => (m.payload as TextPayload).text;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -286,9 +289,9 @@ describe("context compaction", () => {
 
   it("carries no thinking level when the Session has no pin, on a turn or a compaction", async () => {
     // The pinned half of the rule is engine.test.ts's "applies setThinkingLevel to every
-    // request of the Session". This is the other half: with no pin the request says nothing at
-    // all and the LLM object's construction default — the level the context was opened with —
-    // stands. The engine must not start inventing one for either kind of request.
+    // request of the Session". This is the other half: with no pin and no construction default
+    // on the LLM object the request says nothing at all, so the provider default stands. The
+    // engine must not invent one for either kind of request — on the wire or in the Trace.
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(150, 150)] },
@@ -297,18 +300,59 @@ describe("context compaction", () => {
       "llm1",
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" });
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
-      trace: new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" }),
+      trace,
       sessionMeta: metaMessage,
       compaction: settings(),
       openNextContext: () => ({ llm: llm2 }),
     });
+    const oldPath = trace.currentPath();
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
 
     expect(llm1.levels).toEqual([undefined, undefined]);
+    const begins = (await readTrace(oldPath)).filter(
+      (m) => (m.payload as { type?: string }).type === "request_begin",
+    );
+    expect(begins).toHaveLength(2);
+    expect(begins.every((m) => !("thinking_level" in m.payload))).toBe(true);
+  });
+
+  it("the compaction request's Trace-only request_begin records the pinned level it went out at", async () => {
+    // The LLM object's default is medium; the Session pins high before the run. The turn and
+    // the compaction request both go out at high, and the old file says so for both.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]the distilled summary[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+      "medium",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact_pinned" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+    const oldPath = trace.currentPath();
+    engine.setThinkingLevel("high");
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(compactionEvents(out).at(-1)).toMatchObject({ status: "completed" });
+    expect(llm1.levels).toEqual(["high", "high"]);
+    const levels = (await readTrace(oldPath))
+      .filter((m) => (m.payload as { type?: string }).type === "request_begin")
+      .map((m) => (m.payload as { thinking_level?: string }).thinking_level);
+    expect(levels).toEqual(["high", "high"]);
   });
 
   it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
@@ -427,7 +471,7 @@ describe("context compaction", () => {
     });
     const firstPath = trace.currentPath();
 
-    const out1: OmniMessage[] = [];
+    const out1: AmspRecord[] = [];
     for await (const msg of engine.run([userText("task one")], { approve: allowAll })) {
       out1.push(msg);
       if (msg === connectBegin) beginSeen = true;
@@ -552,8 +596,8 @@ describe("context compaction", () => {
     expect(
       out.some(
         (m) =>
-          (m.payload as { type?: string }).type === "text" &&
-          textOf(m).includes("reached max turns (1)"),
+          (m.payload as { type?: string; error_code?: string }).type === "abort" &&
+          (m.payload as { error_code?: string }).error_code === "max_turns",
       ),
     ).toBe(true);
     expect(llm2.calls).toHaveLength(1);
@@ -900,7 +944,7 @@ describe("context compaction", () => {
       ],
       "llm1",
     );
-    const recorded: OmniMessage[] = [];
+    const recorded: AmspRecord[] = [];
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
@@ -1091,13 +1135,13 @@ describe("context compaction", () => {
       const repair = retry[0]!.payload as {
         tool_call_id: string;
         output: string;
-        stop_reason?: string;
+        status?: string;
       };
       expect(repair.tool_call_id).toBe(`c${attempt - 1}`);
       expect(repair.output).toBe(
         "[tool error] the compaction request expects a summary, not tool calls",
       );
-      expect(repair.stop_reason).toBe("fatal");
+      expect(repair.status).toBe("fatal");
       expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
       expect(textOf(retry[2]!)).toBe("COMPACT NOW");
     }
@@ -1234,13 +1278,13 @@ describe("context compaction", () => {
     const repair = retry[0]!.payload as {
       tool_call_id: string;
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(repair.tool_call_id).toBe("c1");
     expect(repair.output).toBe(
       "[tool error] the compaction request expects a summary, not tool calls",
     );
-    expect(repair.stop_reason).toBe("fatal");
+    expect(repair.status).toBe("fatal");
     expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
     expect(textOf(retry[2]!)).toBe("COMPACT NOW");
 
@@ -1259,49 +1303,6 @@ describe("context compaction", () => {
       "[context_summary]\nreal summary\n[/context_summary]",
       "task two",
     ]);
-  });
-
-  it("a non-completed tool_call (interruption-closure shape) does not reject the summary", async () => {
-    // Same filter as the ordinary turn loop: only stop_reason === "completed" tool_calls are
-    // real requests. A tool_call synthesized to close out an interruption carries the
-    // interruption reason — it is structural, gets no synthesized repair, and must not cost
-    // a rejection attempt.
-    const llm1 = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer"), usage(150, 150)] },
-        {
-          messages: [
-            toolCall({ name: "t", arguments: "", toolCallId: "cz", stopReason: "retryable" }),
-            assistantText("[summary]still fine[/summary]"),
-          ],
-        },
-      ],
-      "llm1",
-    );
-    const llm2 = new ScriptedLLM([{ messages: [assistantText("ok"), usage(10, 200)] }], "llm2");
-    const trace = new Writer({ tracesDir: traces, sessionId: "sess_closure" });
-    const engine = new ContextEngine({
-      llm: llm1,
-      environment: fakeEnvironment,
-      trace,
-      sessionMeta: metaMessage,
-      compaction: settings(),
-      openNextContext: () => ({ llm: llm2 }),
-    });
-    const oldPath = trace.currentPath();
-
-    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    expect(compactionEvents(out)[1]).toMatchObject({
-      type: "compaction_end",
-      status: "completed",
-    });
-    // One compaction attempt, no retry, and no repair synthesized for the closure call.
-    expect(llm1.calls).toHaveLength(2);
-    const closureRepairs = (await readTrace(oldPath)).filter((m) => {
-      const p = m.payload as { type?: string; tool_call_id?: string };
-      return p.type === "tool_call_output" && p.tool_call_id === "cz";
-    });
-    expect(closureRepairs).toEqual([]);
   });
 
   it("mid-task: a committed rejection absorbs the turn's tool outputs — retries never resend them, and an empty-handed abandonment ends the run by the interruption flow", async () => {
@@ -1992,7 +1993,7 @@ describe("context compaction", () => {
     // available, so a silent no-op leaves it waiting for a banner that never arrives.
     const resumedLLM = new ScriptedLLM([{ messages: [assistantText("[summary]s[/summary]")] }]);
     const newContextLLM = new ScriptedLLM([{ messages: [assistantText("on it")] }]);
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = new Session({
       meta: metaMessage.payload,
       // Like the real opener, the bootstrap publishes the context's toolset record.
@@ -2042,7 +2043,7 @@ describe("context compaction", () => {
     // context, and compacting it must not bootstrap — trace records (session_meta /
     // tool_list_ready) would make an untouched session look resumable.
     let bootstrapped = false;
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = new Session({
       meta: metaMessage.payload,
       bootstrap: async () => {
@@ -2091,7 +2092,7 @@ describe("context compaction", () => {
       approve: approveThenAbort,
       signal: controller.signal,
     });
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for await (const msg of runGen) {
       out.push(msg);
       // Simulates a user abort right after the compaction start event (the compaction request then returns aborted).
@@ -2118,7 +2119,7 @@ describe("compaction summary streaming (issue #290)", () => {
   });
 
   /** The text messages the compaction span pushed to the stream, in order. */
-  const streamedTexts = (msgs: OmniMessage[]): string[] =>
+  const streamedTexts = (msgs: AmspRecord[]): string[] =>
     msgs
       .filter((m) => {
         const t = (m.payload as { type?: string }).type;
@@ -2206,7 +2207,7 @@ describe("compaction summary streaming (issue #290)", () => {
   });
 
   /** The thinking messages the compaction span pushed to the stream, in order. */
-  const streamedThinking = (msgs: OmniMessage[]): string[] =>
+  const streamedThinking = (msgs: AmspRecord[]): string[] =>
     msgs
       .filter((m) => {
         const t = (m.payload as { type?: string }).type;
@@ -2273,7 +2274,7 @@ describe("compaction summary streaming (issue #290)", () => {
         {
           messages: [
             thinkingMessage("whole thought"),
-            thinkingMessage("", "completed", { signature: "opaque" }),
+            thinkingMessage("", { signature: "opaque" }),
             assistantText("[summary]whole[/summary]"),
             usage(160, 310),
           ],
@@ -2378,7 +2379,11 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
         async *executeTool({ toolCall: tc }) {
           dispatched.push(tc.payload.tool_call_id);
           await gate;
-          yield toolCallOutput({ output: "tool ran", toolCallId: tc.payload.tool_call_id });
+          yield toolCallOutput({
+            output: "tool ran",
+            toolCallId: tc.payload.tool_call_id,
+            status: "completed",
+          });
         },
         toolPermission() {
           return "rw";
@@ -2464,7 +2469,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     });
 
     const gen = engine.run([userText("go")], { approve: allowAll });
-    const seen: OmniMessage[] = [];
+    const seen: AmspRecord[] = [];
     // Drive until the tool has been dispatched but not yet answered.
     for (;;) {
       const next = gen.next();
@@ -2501,7 +2506,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
         yield toolCallOutput({
           output: "[tool error] boom",
           toolCallId: tc.payload.tool_call_id,
-          stopReason: "fatal",
+          status: "fatal",
         });
       },
       toolPermission() {
@@ -2528,9 +2533,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     await collect(engine.run([userText("go")], { approve: allowAll }));
     const compactionInput = llm1.calls[1]!;
     expect(payloadTypes(compactionInput)).toEqual(["tool_call_output", "text"]);
-    const out = compactionInput[0]!.payload as { output: string; stop_reason?: string };
+    const out = compactionInput[0]!.payload as { output: string; status?: string };
     expect(out.output).toBe("[tool error] boom");
-    expect(out.stop_reason).toBe("fatal");
+    expect(out.status).toBe("fatal");
   });
 
   it("a denied tool still pairs: the denial output rides the compaction request", async () => {

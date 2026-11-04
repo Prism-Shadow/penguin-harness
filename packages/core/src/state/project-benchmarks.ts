@@ -17,8 +17,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
-import { writeBuiltinBenchmark, type BuiltinBenchmark } from "./builtin-benchmarks.js";
+import {
+  readBuiltinBenchmarks,
+  writeBuiltinBenchmark,
+  type BuiltinBenchmark,
+} from "./builtin-benchmarks.js";
 import { EXAMPLE_BENCHMARK_ID, writeExampleBenchmark } from "./example-benchmark.js";
 import { benchmarksDir } from "./paths.js";
 
@@ -56,6 +59,14 @@ export interface PlaceBenchmarkOptions {
 }
 
 /**
+ * The last placement asked for per `benchmarks/` directory, settled either way: the next one
+ * starts after it. Two that overlap race each other's renames — one can move the other's fresh
+ * copy aside and fail to put its own old one back, which then stays under `.seeding/` for good —
+ * and one finishing removes `.seeding/` while the next is about to stage in it.
+ */
+const placing = new Map<string, Promise<void>>();
+
+/**
  * Writes the Benchmark `id` into `dir`, a Project's `benchmarks/`: `write` fills a temporary
  * directory under `.seeding/`, which is then renamed to `<dir>/<id>`. A write that fails part-way
  * leaves nothing under the id, and the staging directory goes as soon as it is empty.
@@ -67,12 +78,34 @@ export interface PlaceBenchmarkOptions {
  * what is under the id is moved aside, the new copy is renamed in, and only then is the old one
  * removed: the id never holds a half-written copy, and holds nothing only between the two renames.
  * A symlink under the id is moved and removed as a link; what it points to is never touched.
+ *
+ * Placements into one `dir` made by this process run one at a time, in the order they were asked
+ * for (see {@link placing}); the other writer above is another process.
  */
-export async function placeBenchmark(
+export function placeBenchmark(
   dir: string,
   id: string,
   write: (benchDir: string) => Promise<void>,
   options: PlaceBenchmarkOptions = {},
+): Promise<void> {
+  const key = path.resolve(dir);
+  const placed = (placing.get(key) ?? Promise.resolve()).then(() => place(dir, id, write, options));
+  const settled = placed.then(
+    () => {},
+    () => {},
+  );
+  placing.set(key, settled);
+  void settled.then(() => {
+    if (placing.get(key) === settled) placing.delete(key);
+  });
+  return placed;
+}
+
+async function place(
+  dir: string,
+  id: string,
+  write: (benchDir: string) => Promise<void>,
+  options: PlaceBenchmarkOptions,
 ): Promise<void> {
   const staging = path.join(dir, STAGING_DIR);
   await fs.mkdir(staging, { recursive: true });
@@ -88,7 +121,7 @@ export async function placeBenchmark(
       throw error;
     }
   } finally {
-    // Empty once this Benchmark is out of it, unless another placement is still writing there.
+    // Empty once this Benchmark is out of it, unless another process is still writing there.
     await fs.rmdir(staging).catch(() => {});
   }
 }
@@ -140,19 +173,19 @@ async function swapIn(incoming: string, target: string): Promise<void> {
 
 /**
  * The Benchmarks every new Project starts with: the example and the built-in ones. `builtins`
- * defaults to the shipped definitions. Called only where a Project is created (the server's
+ * defaults to the shipped packages. Called only where a Project is created (the server's
  * project-service); an id whose directory exists is skipped, never written into.
  */
 export async function provisionProjectBenchmarks(
   root: string,
   projectId: string,
-  builtins: readonly BuiltinBenchmark[] = BUILTIN_BENCHMARKS,
+  builtins?: readonly BuiltinBenchmark[],
 ): Promise<void> {
   const dir = benchmarksDir(root, projectId);
   await fs.mkdir(dir, { recursive: true });
   const seeds: BenchmarkSeed[] = [
     { id: EXAMPLE_BENCHMARK_ID, write: writeExampleBenchmark },
-    ...builtins.map((bench) => ({
+    ...(builtins ?? (await readBuiltinBenchmarks())).map((bench) => ({
       id: bench.id,
       write: (benchDir: string) => writeBuiltinBenchmark(benchDir, bench),
     })),

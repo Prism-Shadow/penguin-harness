@@ -5,6 +5,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Auth } from "../../mechanisms/identity.js";
 import { HttpError } from "../errors.js";
 import { readJson } from "../validate.js";
+import { mediaType } from "../media-type.js";
 
 export interface RemoteSessionResponse {
   cookieName: typeof SESSION_COOKIE;
@@ -24,8 +25,7 @@ export function remoteRoutes(deps: { authService: Auth }): Hono<AppEnv> {
         "Only the local API token may issue a remote browser session.",
       );
     }
-    const contentType = c.req.header("content-type")?.toLowerCase();
-    if (!contentType?.startsWith("application/json")) {
+    if (mediaType(c.req.header("content-type"))?.essence !== "application/json") {
       throw new HttpError(
         415,
         "unsupported_media_type",

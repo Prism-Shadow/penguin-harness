@@ -275,6 +275,7 @@ describe("the parked-pty declaration", () => {
       exit: null,
       info: () => ({ id: "t1", name: "sh" }),
       rename: () => undefined,
+      setSession: () => undefined,
       capture: () => ({ lines: [] }),
       write: () => undefined,
       resize: () => undefined,

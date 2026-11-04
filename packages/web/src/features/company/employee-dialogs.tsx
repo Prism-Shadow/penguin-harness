@@ -43,7 +43,6 @@ import {
   Select,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -81,6 +80,7 @@ import {
   effectiveThinkingLevel,
   thinkingLevelLabel,
 } from "../chat/thinking-level";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -132,7 +132,7 @@ export function HireDialog({ open, ...props }: HireDialogProps) {
     if (!open || library !== null) return;
     let cancelled = false;
     void api
-      .getPluginLibrary()
+      .getPluginLibrary(null)
       .then((res) => {
         if (cancelled) return;
         setLibrary(
@@ -289,7 +289,7 @@ function HireForm({
       onHired();
     } catch (e) {
       setStdioConfirmOpen(false);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -563,15 +563,16 @@ export function EmployeeEditDialog({
 
   // The thinking level lives in the Agent's config, the Project default stands in for an Agent
   // without one, and the desk Session may carry a pin of its own: all three are read before
-  // anything is offered. Only the config is required; the other two degrade to "unknown".
+  // anything is offered. Only the config is required; the other two degrade to "unknown". An
+  // organization's employees are this server's Agents, so all three are read here.
   useEffect(() => {
     if (edit !== "thinkingLevel") return;
     setLevels(null);
     let cancelled = false;
     const deskId = employee.desk?.sessionId;
     Promise.all([
-      api.getAgentConfig(projectId, employee.agentId),
-      api.getChatDefaults(projectId).catch(() => null),
+      api.getAgentConfig(projectId, employee.agentId, null),
+      api.getChatDefaults(projectId, null).catch(() => null),
       deskId === undefined ? null : api.getSession(deskId).catch(() => null),
     ]).then(
       ([config, defaults, desk]) => {
@@ -588,7 +589,7 @@ export function EmployeeEditDialog({
       },
       (e: unknown) => {
         if (cancelled) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
         onClose();
       },
     );
@@ -625,9 +626,12 @@ export function EmployeeEditDialog({
     try {
       if (edit === "thinkingLevel") {
         // The PUT carries only this key: the server merges it into the YAML, nothing else moves.
-        await api.putAgentConfig(projectId, employee.agentId, {
-          config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          employee.agentId,
+          { config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } } },
+          null,
+        );
         toastSuccess(S.common.saved);
       } else {
         await api.patchOrgEmployee(
@@ -640,7 +644,7 @@ export function EmployeeEditDialog({
       }
       onSaved();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -1007,7 +1011,7 @@ function DeskRenewForm({
       discardUnsaved(form.scope);
       onRenewed(desk.sessionId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       if (patched) onChartChanged();
     } finally {
       setBusy(false);

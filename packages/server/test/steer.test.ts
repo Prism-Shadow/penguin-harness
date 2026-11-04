@@ -25,7 +25,7 @@ import {
   userSteeringText,
   userText,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
@@ -34,28 +34,28 @@ import type { TestApp } from "./helpers.js";
 const PROJECT = "steerer-default_project";
 
 /** A recorded steering input, one `text:`/`img:` line per message, in delivered order. */
-const shape = (input: OmniMessage[]): string[] =>
+const shape = (input: AmspRecord[]): string[] =>
   input.map((m) => {
     const p = m.payload as { type: string; text?: string; image_url?: string };
     return p.type === "image_url" ? `img:${p.image_url}` : `text:${p.text}`;
   });
 
 /** Fake Session that parks on one approval (keeps the Task running) and records steer calls. */
-function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): RuntimeSession {
+function steeringFakeSession(sessionId: string, steered: AmspRecord[][]): RuntimeSession {
   return fakeSession(sessionId, {
-    steer: (input: OmniMessage[]) => {
+    steer: (input: AmspRecord[]) => {
       steered.push(input);
       return true;
     },
     // Same contract as core: withdraw by input-list identity, false once "delivered"
     // (tests simulate delivery by emptying `steered`).
-    unsteer: (input: OmniMessage[]) => {
+    unsteer: (input: AmspRecord[]) => {
       const i = steered.indexOf(input);
       if (i < 0) return false;
       steered.splice(i, 1);
       return true;
     },
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
       yield tc;
       yield approvalDecision(await opts.approve(tc), "tc-steer");
@@ -68,7 +68,7 @@ describe("steer route", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let SID: string;
-  let steered: OmniMessage[][];
+  let steered: AmspRecord[][];
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -354,14 +354,14 @@ describe("steer route", () => {
     // The mirror is shifted as each [user_steering] message appears on the stream, and the
     // handback runs after that stream is drained. A delivered message must therefore not
     // return to the composer as though the user still owed it.
-    const delivering: OmniMessage[][] = [];
+    const delivering: AmspRecord[][] = [];
     const sid2 = uniqueSessionId();
     const session = steeringFakeSession(sid2, delivering);
     adoptSession(
       t.deps,
       {
         ...session,
-        async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+        async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
           const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
           yield tc;
           yield approvalDecision(await opts.approve(tc), "tc-steer");

@@ -109,7 +109,7 @@ On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
 | `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); before the first message, the Session is created pinned to it. The level is never written back to the agent config. |
 | `/switch-model` | Shows this Session's current model. |
-| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model. When the current model is unavailable or the compaction fails, the new model gets the path of the conversation's Trace file instead of a summary, and a line names that file; a compaction you interrupt keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
@@ -374,7 +374,7 @@ penguin schedule update <name> [options]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 ```
 
-`penguin schedule ls` lists the scheduled tasks of all agents, or of one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound Session's short id, or `new session`), last fired, and a status marker for every state other than active (`expired`, `done`, `missed` or `invalid`). Schedule files that cannot be parsed are listed too, marked `invalid`.
+`penguin schedule ls` lists the scheduled tasks of all agents, or of one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound Session's short id, or `new session`), last fired, and a status marker for every state other than active (`expired`, `done`, `missed` or `invalid`). Schedule files that cannot be parsed are listed too, marked `invalid`. Done, missed and expired tasks are archived by the server and soon drop out of the list; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
 
 `add`, `update` and `rm` go through the API, which writes the schedule's TOML file. The file stays the single source of truth, and the CLI acts as a validated writer, the same pattern model config and the vault follow: updates go through the system interface, validation happens at the interface layer, and hand edits stay possible. API errors are printed verbatim, so an agent gets validation right away instead of waiting for the reconcile pass that a hand edit goes through.
 
@@ -383,9 +383,9 @@ Options of `add` and `update`:
 | Option | Description | Default |
 | --- | --- | --- |
 | `--prompt <text>` | The text each firing sends. Required on `add`. | — |
-| `--start-at <ISO\|now>` | First fire time, in ISO 8601 or the literal `now` for the current instant. Required on `add`. | — |
+| `--start-at <ISO\|now>` | First fire time, in ISO 8601 or the literal `now` for the current instant. A one-shot task needs a time that is still ahead, so `now` only suits a task with `--period`. Required on `add`. | — |
 | `--period <duration>` | Fixed interval, at least `5m` (for example `30m`, `12h`, `1d`, `7d`). | One-shot |
-| `--end-at <ISO>` | Stops firing after this instant. | — |
+| `--end-at <ISO>` | Stops firing after this instant, which cannot be in the past. | — |
 | `--session-id <id>` | Binds firings to one Session. Use either this or the new-session options, not both. | — |
 | `--workspace <path>` / `--model-id <id> --provider <group>` | New-session mode: each firing creates a Session on this Workspace and model. The model pair is both-or-neither. | A temporary Workspace; the Project's default model |
 | `--disabled` (`add`) | Creates the task disabled. | Enabled |
@@ -398,7 +398,7 @@ Options of `add` and `update`:
 
 ```bash
 penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
-penguin schedule add once-now --prompt "check the deploy" --start-at now --session-id 402a2e24
+penguin schedule add deploy-watch --prompt "check the deploy" --start-at now --period 30m --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```
@@ -662,6 +662,7 @@ An error is one line on stderr, `error: <code>: <message>`, and the command exit
 - `browser_unavailable`: the browser cannot be driven. With a reason, the message is the one the `note:` of `status` gives. Without one, it is the server's, such as the user having paused the extension in Chrome.
 - `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs).
 - `tab_released`: the user took the tab back in their Chrome. Do not retry it; open a new tab.
+- `keyboard_focus_failed`: the built-in browser could not give the tab keyboard focus in the app window, so nothing was typed. `type` reports it as a failed result with this message; a raw `cdp` keyboard command answers with the code. Retry once.
 - `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
 - `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
 - `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
@@ -710,9 +711,9 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 | `--set-default` | Also sets the entry as the Project's default model. | — |
 
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
-- A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
+- A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL, and `vllm`'s `openai-chat-vllm-adapter` and local base URL `http://127.0.0.1:8000/v1`, on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud`, `runcrate` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - `penguin-go`'s protocol is fixed to `mmsp`, as on the Models page and its API: any other `--client-type` is refused, unless it is the value the entry or group already stores, and so is `--clear-client-type` on the group.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
@@ -903,7 +904,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth token
 
-`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. Use it where there is no password to give:
+`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. If a server is still starting there, with its port answering but its accounts not yet created, `token` waits up to 20 seconds for them instead of failing. Use it where there is no password to give:
 
 - A machine whose admin password someone set by hand.
 - A script that must not hold a password.

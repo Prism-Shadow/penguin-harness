@@ -17,8 +17,8 @@ import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
   isAddableGroup,
-} from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 
 /**
@@ -64,7 +64,7 @@ export function groupKeyStored(group: ProviderConnectionDto | undefined): boolea
 
 /**
  * Whether a row's key comes from the server's environment — DeepSeek's DEEPSEEK_API_KEY, say,
- * which the credential rule lends only on the vendor's own endpoint. It does not make a group
+ * which MMSP's client reads only for the vendor's own endpoint. It does not make a group
  * "connected"; it does let the balance be read.
  */
 export function groupKeyFromEnv(rows: readonly EnvKeyedRowLike[]): boolean {

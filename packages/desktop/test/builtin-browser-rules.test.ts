@@ -10,6 +10,7 @@ import {
   MAX_DATA_FAVICON_CHARS,
   MAX_FAVICON_URL_CHARS,
   clearDataPlan,
+  focusGuestScript,
   guestContextMenu,
   hardenGuestPreferences,
   isGrantedPermission,
@@ -22,6 +23,7 @@ import {
   privateMemoryKB,
   procStatusPrivateKB,
   tabLoads,
+  typesIntoGuest,
 } from "../src/builtin-browser-rules.js";
 import type { GuestMenuInput } from "../src/builtin-browser-rules.js";
 
@@ -486,5 +488,67 @@ describe("Project partitions", () => {
         ).toEqual({ id: "1", error: "bad_command" });
       }
     }
+  });
+});
+
+describe("keyboard focus before typing", () => {
+  /** The embedder's page as the focus script sees it: its <webview> elements and its focus. */
+  function embedder(views: Array<{ id: number | null; focusable?: boolean }>) {
+    const focusCalls: Array<{ id: number | null; options: unknown }> = [];
+    const page = { activeElement: null as unknown, querySelectorAll: (_s: string) => elements };
+    const elements = views.map((view) => {
+      const element = {
+        getWebContentsId(): number {
+          if (view.id === null) throw new Error("The webview is not attached yet.");
+          return view.id;
+        },
+        focus(options: unknown) {
+          focusCalls.push({ id: view.id, options });
+          if (view.focusable !== false) page.activeElement = element;
+        },
+      };
+      return element;
+    });
+    const run = (script: string): unknown =>
+      (new Function("document", `return ${script};`) as (d: unknown) => unknown)(page);
+    return { page, elements, focusCalls, run };
+  }
+
+  it("waits for focus only before commands that type, not before mouse input or scripts", () => {
+    for (const method of [
+      "Input.insertText",
+      "Input.dispatchKeyEvent",
+      "Input.imeSetComposition",
+    ]) {
+      expect(typesIntoGuest(method)).toBe(true);
+    }
+    for (const method of ["Input.dispatchMouseEvent", "Runtime.evaluate", "Page.navigate"]) {
+      expect(typesIntoGuest(method)).toBe(false);
+    }
+  });
+
+  it("focuses the guest's own element without scrolling, past one not attached yet", () => {
+    const page = embedder([{ id: null }, { id: 7 }, { id: 9 }]);
+    expect(page.run(focusGuestScript(9))).toBe(true);
+    expect(page.focusCalls).toEqual([{ id: 9, options: { preventScroll: true } }]);
+    expect(page.page.activeElement).toBe(page.elements[2]);
+  });
+
+  it("leaves a guest that already holds focus alone", () => {
+    const page = embedder([{ id: 9 }]);
+    page.page.activeElement = page.elements[0];
+    expect(page.run(focusGuestScript(9))).toBe(true);
+    expect(page.focusCalls).toEqual([]);
+  });
+
+  it("reports a guest with no element, or one whose element does not take focus", () => {
+    expect(embedder([{ id: 7 }]).run(focusGuestScript(9))).toBe(false);
+    const refusing = embedder([{ id: 9, focusable: false }]);
+    expect(refusing.run(focusGuestScript(9))).toBe(false);
+  });
+
+  it("builds the script only for a real webContents id", () => {
+    expect(() => focusGuestScript(Number.NaN)).toThrow("bad_command");
+    expect(() => focusGuestScript(1.5)).toThrow("bad_command");
   });
 });

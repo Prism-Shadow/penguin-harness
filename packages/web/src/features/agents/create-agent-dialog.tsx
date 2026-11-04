@@ -12,6 +12,12 @@
  * in (Cancel, Esc, the ×, a press outside) asks before it is thrown away. The form is mounted
  * only while the dialog is open, so every opening starts empty — the spec's 「创建弹窗不留草稿」.
  * A rejection from the server lands under the id, and the dialog stays open as it was.
+ *
+ * Where a machine is connected, the first field is where the Agent is created: this server, or
+ * that machine — where it then lives (lib/agent-location.ts). On a machine the whole create runs
+ * there: the plugins on offer are that machine's library, the Skills directory is browsed on it,
+ * the snapshot goes to it, and it decides whether the id is free. A new location drops the plugins
+ * and the directory picked for the old one, which would name things the new one may not have.
  */
 import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -30,7 +36,9 @@ import {
   FormPicker,
   HiddenFileInput,
   ICONS,
+  InfoPopover,
   Input,
+  MenuSelectBody,
   Modal,
   Textarea,
   discardUnsaved,
@@ -58,8 +66,28 @@ import {
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
 
+/**
+ * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
+ * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
+ * puzzle piece rather than the book.
+ */
+export function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
+}
+
+/** The location picker's value for this server: a machine id is never empty. */
+const HERE = "";
+
+/** A connected machine the Agent can be created on: its id, and its SSH alias to show. */
+export interface LocationChoice {
+  value: string;
+  label: string;
+}
+
 /** The dialog's form: what Create sends, as typed and picked. */
 interface CreateAgentDraft {
+  /** The machine the Agent is created on; null for this server. */
+  location: string | null;
   name: string;
   agentId: string;
   description: string;
@@ -82,6 +110,7 @@ interface CreateAgentDraft {
 }
 
 const EMPTY: CreateAgentDraft = {
+  location: null,
   name: "",
   agentId: "",
   description: "",
@@ -113,13 +142,15 @@ const normalizeCreate = (draft: CreateAgentDraft) => ({
 export interface CreateAgentDialogProps {
   open: boolean;
   projectId: string | null;
-  /** The plugin library as picker rows; null until the page's fetch succeeds. */
+  /** This server's plugin library as picker rows; null until the page's fetch succeeds. */
   library: PluginPickItem[] | null;
   /** Why the library could not be read, in place of the field's hint. */
   libraryError: string | null;
+  /** The connected machines an Agent can be created on; empty (the field hidden) when none is. */
+  machines?: readonly LocationChoice[];
   onClose: () => void;
-  /** The Agent was created: the page closes the dialog and goes to it. */
-  onCreated: (agentId: string) => Promise<void>;
+  /** The Agent was created on `machineId` (null: this server): the page closes the dialog and goes to it. */
+  onCreated: (agentId: string, machineId: string | null) => Promise<void>;
 }
 
 export function CreateAgentDialog(props: CreateAgentDialogProps) {
@@ -128,19 +159,62 @@ export function CreateAgentDialog(props: CreateAgentDialogProps) {
 
 function CreateAgentForm({
   projectId,
-  library,
-  libraryError,
+  library: libraryHere,
+  libraryError: libraryErrorHere,
+  machines = [],
   onClose,
   onCreated,
 }: CreateAgentDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeCreate });
-  const { name, agentId, description, plugins, skillsDir, dirSkills: pickedDirSkills } = form.draft;
+  const {
+    location,
+    name,
+    agentId,
+    description,
+    plugins,
+    skillsDir,
+    dirSkills: pickedDirSkills,
+  } = form.draft;
+  /** A machine's own library, read when it is picked: the plugins it would install from. */
+  const [machineLibrary, setMachineLibrary] = useState<{
+    machineId: string;
+    items: PluginPickItem[] | null;
+    error: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (location === null) return;
+    let cancelled = false;
+    setMachineLibrary({ machineId: location, items: null, error: null });
+    api.getPluginLibrary(location).then(
+      (res) => {
+        if (cancelled) return;
+        const items = pluginPickItems(res.groups.flatMap((g) => g.plugins));
+        setMachineLibrary({ machineId: location, items, error: null });
+      },
+      (e: unknown) => {
+        if (!cancelled)
+          setMachineLibrary({ machineId: location, items: null, error: apiErrorText(e) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [location]);
+  const onMachine =
+    location === null ? null : machineLibrary?.machineId === location ? machineLibrary : null;
+  /** The library the picked location installs from, and why it could not be read. */
+  const library = location === null ? libraryHere : (onMachine?.items ?? null);
+  const libraryError = location === null ? libraryErrorHere : (onMachine?.error ?? null);
+  /** The picked machine's name, for the words that say where a command runs. */
+  const machineLabel =
+    location === null ? undefined : machines.find((m) => m.value === location)?.label;
   const snapshotFile = form.draft.snapshot;
   /** What the server refused, under the id. Cleared by the next edit of the id. */
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
   const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
@@ -184,7 +258,7 @@ function CreateAgentForm({
     setDirSkills(null);
     setDirSkillsError(null);
     api
-      .listDirectorySkills(projectId, skillsDir)
+      .listDirectorySkills(projectId, skillsDir, location)
       .then((res) => {
         if (!cancelled) setDirSkills(res.skills);
       })
@@ -196,7 +270,7 @@ function CreateAgentForm({
     return () => {
       cancelled = true;
     };
-  }, [projectId, skillsDir]);
+  }, [projectId, skillsDir, location]);
 
   // Picked names are dropped when they are no longer on offer, so switching directories cannot
   // submit a name the new one does not carry.
@@ -251,12 +325,12 @@ function CreateAgentForm({
           body.directorySkills = pickedDirSkills;
         }
       }
-      const res = await api.createAgent(projectId, body);
+      const res = await api.createAgent(projectId, body, location);
       // Created: nothing typed is unsaved any more. Forgotten now rather than when the dialog
       // unmounts, since the page navigates to the new Agent right after and the leave guard
       // would otherwise ask about a form that was just saved.
       discardUnsaved(form.scope);
-      await onCreated(res.agent.agentId);
+      await onCreated(res.agent.agentId, location);
     } catch (e) {
       setRefused(apiErrorText(e));
     } finally {
@@ -287,6 +361,43 @@ function CreateAgentForm({
         }
       >
         <div className="space-y-3">
+          {/* Where the Agent is created, first: everything below is read from that server. Only
+            once there is a machine to pick. */}
+          {machines.length > 0 && (
+            <div>
+              <div className="mb-1 flex items-center gap-1">
+                <FieldLabel block={false}>{S.agent.createLocation}</FieldLabel>
+                <InfoPopover label={S.agent.createLocation}>
+                  {S.agent.createLocationInfo}
+                </InfoPopover>
+              </div>
+              {/* The dialog's own dropdown, as wide as the Plugins field's, over a one-choice menu. */}
+              <FormPicker
+                size="sm"
+                open={locationOpen}
+                setOpen={setLocationOpen}
+                label={location === null ? S.agent.createLocationHere : (machineLabel ?? location)}
+                ariaLabel={S.agent.createLocation}
+                disabled={busy}
+                menuClass="w-[26rem]"
+              >
+                <MenuSelectBody
+                  options={[{ value: HERE, label: S.agent.createLocationHere }, ...machines]}
+                  value={location ?? HERE}
+                  onPick={(next) => {
+                    setLocationOpen(false);
+                    if (next === (location ?? HERE)) return;
+                    form.patch({
+                      location: next === HERE ? null : next,
+                      plugins: [],
+                      skillsDir: "",
+                      dirSkills: [],
+                    });
+                  }}
+                />
+              </FormPicker>
+            </div>
+          )}
           {/* The name comes first and the id is derived from it: an id is the harder half to
             invent, and naming the Agent is where anyone starts anyway. */}
           <Input
@@ -405,9 +516,13 @@ function CreateAgentForm({
               <div>
                 <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
                 <WorkspaceSelect
+                  // Keyed by the location: a picker browsing one server is not reused for another.
+                  key={location ?? HERE}
                   projectId={projectId ?? ""}
                   workspace={skillsDir}
                   onChange={(next) => form.patch({ skillsDir: next })}
+                  machineId={location}
+                  chooseMachine={false}
                   variant="form"
                   fieldLabel={S.agent.createDirSkills}
                   emptyLabel={S.agent.createDirSkillsPick}
@@ -488,7 +603,7 @@ function CreateAgentForm({
         >
           <div className="space-y-3">
             <p className="text-sm font-medium">{S.agent.createStdioQuestion(name.trim() || id)}</p>
-            <StdioDisclosure plugins={stdioSeeds} />
+            <StdioDisclosure plugins={stdioSeeds} machine={machineLabel} />
           </div>
         </ConfirmModal>
       )}

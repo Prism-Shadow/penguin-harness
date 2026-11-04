@@ -35,10 +35,16 @@
  * resource registry and claimed back by the next (shell-session.ts); a generation on its way
  * out closes only its transient sessions (closeAllConnections). No session is ever closed by
  * a pid remembered from before.
+ *
+ * CUT. A target built for this server's automatic work carries that work's signal (the
+ * RemoteTarget's `signal`). When the work is cut, its running command ends the session it
+ * rode, its requests are destroyed, and nothing more is started for it — a person's job on
+ * that machine then has the connection to itself at once.
  */
 import http from "node:http";
 import type net from "node:net";
 import {
+  STOPPED,
   closeAllShells,
   closeShell,
   holdShell,
@@ -63,6 +69,12 @@ export interface RemoteTarget {
   machine: Machine;
   /** The installed program's Node over there, as a POSIX shell word (commands.ts remoteNode). */
   node: string;
+  /**
+   * Present when the target was built for this server's own automatic work on the machine:
+   * aborted when that work is cut, which ends the command it has running and answers every
+   * later one without starting it.
+   */
+  signal?: AbortSignal;
 }
 
 /** The address a machine of `kind` named `name` is known by — the key of every registry in machines/. */
@@ -96,6 +108,24 @@ export interface MachineChannel {
 /** Enough for an installer to download a release, or a store to cross a slow link. */
 const BULK_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * The agents each piece of cut-able work made, destroyed together when it is cut: one abort
+ * listener per signal however many agents the work asks for, which an AbortSignal would
+ * otherwise warn about past ten.
+ */
+const agentsOf = new WeakMap<AbortSignal, Set<http.Agent>>();
+
+function destroyOnCut(signal: AbortSignal, agent: http.Agent): void {
+  let agents = agentsOf.get(signal);
+  if (agents === undefined) {
+    const made = new Set<http.Agent>();
+    signal.addEventListener("abort", () => made.forEach((each) => each.destroy()), { once: true });
+    agentsOf.set(signal, made);
+    agents = made;
+  }
+  agents.add(agent);
+}
+
 export class MachineConnection implements MachineChannel {
   readonly address: string;
 
@@ -107,9 +137,14 @@ export class MachineConnection implements MachineChannel {
     return this.target.machine;
   }
 
+  /** The signal of the work this target was built for, as a shell command's option. */
+  #cut(): { signal?: AbortSignal } {
+    return this.target.signal === undefined ? {} : { signal: this.target.signal };
+  }
+
   /** A command over the session — queued, output merged (shell-session.ts), in ExecResult shape. */
   async exec(command: string): Promise<ExecResult> {
-    const result = await runOnShell(this.address, this.#machine, command);
+    const result = await runOnShell(this.address, this.#machine, command, this.#cut());
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
 
@@ -125,6 +160,7 @@ export class MachineConnection implements MachineChannel {
       input: opts.input,
       ...(opts.onLine === undefined ? {} : { onLine: opts.onLine }),
       timeoutMs: opts.timeoutMs ?? BULK_TIMEOUT_MS,
+      ...this.#cut(),
     });
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
@@ -177,13 +213,28 @@ export class MachineConnection implements MachineChannel {
   /** An http.Agent whose every socket is a dial through the session — for node:http callers. */
   agent(remotePort: number): http.Agent {
     const agent = new http.Agent({ keepAlive: false });
+    // Cut work ends its requests at once: every socket the agent holds is destroyed, and none
+    // is dialled after — a dial that completes after the cut is closed rather than handed over.
+    const signal = this.target.signal;
+    if (signal !== undefined) destroyOnCut(signal, agent);
     // createConnection is documented on Agent (and overridable); the typings omit it.
     (agent as unknown as { createConnection: unknown }).createConnection = (
       _options: unknown,
       callback: (err: Error | null, socket?: net.Socket) => void,
     ) => {
+      if (signal?.aborted === true) {
+        callback(new Error(STOPPED.output));
+        return;
+      }
       this.dial(remotePort).then(
-        (socket) => callback(null, socket),
+        (socket) => {
+          if (signal?.aborted === true) {
+            socket.destroy();
+            callback(new Error(STOPPED.output));
+            return;
+          }
+          callback(null, socket);
+        },
         (err: unknown) => callback(err instanceof Error ? err : new Error(String(err))),
       );
     };

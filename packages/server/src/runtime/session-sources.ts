@@ -69,6 +69,43 @@ export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set([
   "workbench",
 ]);
 
+/**
+ * The request header a server that adopted this one as a machine sends with every call it makes
+ * here (its `/server/<id>` proxy and its own calls): the time it adopted this server, ISO.
+ */
+export const ADOPTED_AT_HEADER = "x-penguin-adopted-at";
+
+/**
+ * Who is reading a list, as far as the listing rule cares: a server that adopted this one as a
+ * machine at `adoptedAt` (read from {@link ADOPTED_AT_HEADER}), or anyone else (`{}`).
+ */
+export interface ListingView {
+  adoptedAt?: string;
+}
+
+/** The view a request asks for: its adoption time when the header carries a valid one. */
+export function listingViewOf(header: string | undefined): ListingView {
+  if (header === undefined || !Number.isFinite(Date.parse(header))) return {};
+  return { adoptedAt: header };
+}
+
+/**
+ * A Session's source as the reader sees it. To a server that adopted this one, a Session created
+ * here before it did — a person's, or one whose source is not read yet — reads as `cli`: nobody
+ * opened it through that server, so it is listed like any other task a program ran here (archived
+ * until kept). Every other reader, and every other Session, sees the source as recorded. Nothing
+ * is stored: this server's own pages and CLI see what they always saw.
+ */
+export function sourceSeenBy(
+  source: SessionSource | undefined,
+  createdAt: string,
+  view: ListingView | undefined,
+): SessionSource | undefined {
+  if (view?.adoptedAt === undefined) return source;
+  if (source !== undefined && source !== "user") return source;
+  return Date.parse(createdAt) < Date.parse(view.adoptedAt) ? "cli" : source;
+}
+
 /** The two marks on a Session's row the listing rule reads (SessionRow.archivedAt / keptAt). */
 export interface ListingMarks {
   archivedAt: string | null;

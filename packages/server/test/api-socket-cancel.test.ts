@@ -46,6 +46,10 @@ describe("a cancel frame for a one-shot call", () => {
           );
         });
       },
+      // This suite's calls are one-shot: a stream call's transport is api-socket.test.ts's.
+      fetchStream: () => {
+        throw new Error("no stream call is made here");
+      },
       origin: "http://localhost:7364",
       log: () => undefined,
     });

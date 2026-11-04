@@ -3,7 +3,7 @@
  * output item for item.
  */
 import { describe, expect, it } from "vitest";
-import type { TokenUsagePayload } from "@prismshadow/penguin-core/omnimessage";
+import type { TokenUsagePayload } from "@prismshadow/amsp";
 import {
   addLlmDuration,
   addToolExecution,
@@ -21,7 +21,7 @@ import {
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
-} from "../src/lib/omni/task-stats";
+} from "../src/lib/amsp/task-stats";
 
 function usage(requestTotal: number, sessionTotal: number): TokenUsagePayload {
   return {

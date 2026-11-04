@@ -1,11 +1,12 @@
 /**
  * @prismshadow/penguin-ui — the shared UI package: token contract, themes, fonts and the
- * component set. Source-only: a consumer's `workspace:*` dependency is linked to this directory,
- * so Vite, vitest and tsc read `src/` through the `exports` map in package.json, never a build.
+ * component set. Inside the repository it is read as source: a consumer's `workspace:*` dependency
+ * is linked to this directory, so Vite, vitest and tsc read `src/` through the `exports` map in
+ * package.json, never a build. The npm package and the Workbench runtime are built from this
+ * module (scripts/build-dist.mjs), so everything exported here is public there.
  *
  * Every component is exported from here, one line per module, grouped by the wave that moved it
- * in. A barrel costs no bundle bytes in a source-only package: the bundlers tree-shake it by
- * module.
+ * in. A barrel costs no bundle bytes: the bundlers tree-shake it by module.
  */
 export * from "./hooks";
 export * from "./tokens";
@@ -33,13 +34,16 @@ export * from "./components/icons/status-icon/status-icon";
 export * from "./components/icons/activity-icon/activity-icon";
 export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
+export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
+export * from "./components/feedback/load-failed/load-failed";
 
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
 export * from "./components/actions/link/link";
+export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
@@ -48,13 +52,16 @@ export * from "./components/actions/hidden-file-input/hidden-file-input";
 export * from "./components/overlays/menu-panel/menu-panel";
 
 // W2-A — forms: the field scaffolding, the text controls and their search box, checkboxes and
-// radios.
+// radios, the choice group of chips or cards, the number input with its stepper, and the slider.
 export * from "./components/forms/field/field";
 export * from "./components/forms/input/input";
 export * from "./components/forms/password-input/password-input";
 export * from "./components/forms/search-input/search-input";
 export * from "./components/forms/checkbox/checkbox";
 export * from "./components/forms/radio/radio";
+export * from "./components/forms/choice-group/choice-group";
+export * from "./components/forms/number-input/number-input";
+export * from "./components/forms/slider/slider";
 
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).
@@ -86,6 +93,17 @@ export * from "./components/overlays/tooltip/tooltip";
 export * from "./components/overlays/esc-layers/esc-layers";
 export * from "./components/overlays/modal/modal";
 export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/report-dialog/report-dialog";
+// The problem report kit: a report, its redaction and its GitHub link, the one rule for which
+// errors offer one, where reports open from, and the crash notice.
+export * from "./components/report/redact";
+export * from "./components/report/error-report";
+export * from "./components/report/seriousness";
+export * from "./components/report/report-store";
+export * from "./components/report/report-host";
+export * from "./components/report/report-action";
+export * from "./components/report/exception-report";
+export * from "./components/report/crash-boundary";
 export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
@@ -105,6 +123,7 @@ export * from "./motion/use-arrived";
 // (with the `toast*` functions and their store).
 export * from "./components/feedback/notice/notice-strip";
 export * from "./components/overlays/toaster/toaster";
+export * from "./components/overlays/progress-toasts/progress-toasts";
 
 // W5 — content: Markdown as reading text and its pipeline, the code surface and block with the
 // language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
@@ -114,11 +133,13 @@ export * from "./components/content/prose/markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
+export * from "./components/content/clamped-text/clamped-text";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
-// through the renderer registry, the four built-in blocks and the four widgets (with the surface
-// they share and the weather drawing), the actions a host hands them, and the ```mermaid diagram.
+// through the renderer registry, the four built-in blocks and the six widgets (with the surface
+// they share and the weather drawing; the chart block and the resource board drawn by the basic
+// charts), the actions a host hands them, and the ```mermaid diagram.
 // Mermaid itself is imported on the first diagram, never by this barrel.
 export * from "./components/content/a2ui/actions";
 export * from "./components/content/a2ui/registry";
@@ -134,6 +155,8 @@ export * from "./components/content/a2ui/weather-block";
 export * from "./components/content/a2ui/clock-block";
 export * from "./components/content/a2ui/countdown-block";
 export * from "./components/content/a2ui/metrics-block";
+export * from "./components/content/a2ui/chart-block";
+export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
 // row and pager, the create pair, the notice with its variants and the page to-do built on it,
@@ -147,6 +170,14 @@ export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
 export * from "./components/feedback/progress-bar/progress-bar";
 export * from "./components/feedback/duration-slot/duration-slot";
+// Retry — the retry and reconnect status every surface shares (trying, waiting with its countdown,
+// gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
+export * from "./components/feedback/retry-status/countdown";
+export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/countdown-text";
+export * from "./components/feedback/retry-status/retry-status";
+// A transfer under way: what comes over, the amount against the whole, and a thin bar.
+export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
 export * from "./components/data/stat-tile/stat-tile";
@@ -183,6 +214,18 @@ export * from "./components/charts/token-donut/token-donut";
 export * from "./components/charts/sparkline/sparkline";
 export * from "./components/charts/ring/ring";
 export * from "./components/charts/legend/legend";
+// The basic charts drawn from data (an A2UI chart block draws one; the composites build on them):
+// the value axis and stacks, the axis captions, the bar, horizontal bar and line charts, the pie,
+// the scatter plot and the gauge.
+export * from "./components/charts/cartesian/cartesian-data";
+export * from "./components/charts/cartesian/plot-layout";
+export * from "./components/charts/cartesian/plot-captions";
+export * from "./components/charts/cartesian/bar-chart";
+export * from "./components/charts/cartesian/hbar-chart";
+export * from "./components/charts/cartesian/line-chart";
+export * from "./components/charts/pie-chart/pie-chart";
+export * from "./components/charts/scatter-chart/scatter-chart";
+export * from "./components/charts/gauge/gauge";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
@@ -192,6 +235,8 @@ export * from "./components/overlays/command-palette/command-palette";
 // behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+// The images and files a message carries: the composer, the sent message and a steer's chip.
+export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
@@ -240,9 +285,10 @@ export * from "./components/navigation/breadcrumbs/crumb-fit";
 export * from "./components/navigation/breadcrumbs/breadcrumbs";
 export * from "./components/content/prose/frontmatter";
 
-// W7-C — the dock: its tab strip, its frame and header buttons, the picker of an empty dock, the
-// toolbar's dock toggles, and the floating launcher's ball and fan.
+// W7-C — the dock: its tab strip and the strip inside a panel, its frame and header buttons, the
+// picker of an empty dock, the toolbar's dock toggles, and the floating launcher's ball and fan.
 export * from "./components/navigation/dock-tabs/dock-tabs";
+export * from "./components/navigation/panel-tabs/panel-tabs";
 export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
 export * from "./components/shell/panels-toolbar/panels-toolbar";
@@ -261,3 +307,28 @@ export * from "./components/shell/session-row/session-row";
 
 // The drag image every draggable row hands the browser: an opaque, themed copy of the row.
 export * from "./components/overlays/drag-preview/drag-preview";
+
+// Machines — the Machines page's presentation: the status pill and the state-to-look mapping, a
+// job's stepper, the machine card and the list it sits in, the Machine dialog's toolbar, and the
+// add dialog's shell (its body, host list and rows, and footer).
+export * from "./components/machines/machine-status/machine-status";
+export * from "./components/machines/machine-stepper/machine-stepper";
+export * from "./components/machines/machine-card/machine-card";
+export * from "./components/machines/machine-list/machine-list";
+export * from "./components/machines/machine-toolbar/machine-toolbar";
+export * from "./components/machines/add-machine/add-machine";
+
+// Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
+// (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
+// reader with its outline model, and the measured width a layout that follows its own room reads.
+export * from "./components/content/find/find-text";
+export * from "./components/content/find/find-dom";
+export * from "./components/content/find/find-field";
+export * from "./components/content/markdown-reader/outline";
+export * from "./components/content/markdown-reader/markdown-reader";
+export * from "./components/layout/measure/use-measured-width";
+
+// The files browser's frame: its layout at the measured width, the toolbar row and the two panes,
+// which the Workspace Files panel and the organization handbook both lay out with.
+export * from "./components/files/files-frame/files-layout";
+export * from "./components/files/files-frame/files-frame";

@@ -3,7 +3,7 @@ title: Message Flow & Ordering
 description: How messages travel between the five actors of a turn, which orderings are guaranteed and which are not, and why stream order differs from context order.
 ---
 
-[The OmniMessage Protocol](/omni-message) defines what messages are. This page explains how they move and in what order they become visible: the delivery paths within a turn, the merge mechanism behind them, and the observable timeline of a turn. It then states which orderings are guaranteed and which are not, and why order on the stream and order in the model context are two different things. Source: `packages/core/src/engine/context-engine.ts`.
+[AMSP Records](/amsp-records) defines what messages are. This page explains how they move and in what order they become visible: the delivery paths within a turn, the merge mechanism behind them, and the observable timeline of a turn. It then states which orderings are guaranteed and which are not, and why order on the stream and order in the model context are two different things. Source: `packages/core/src/engine/context-engine.ts`.
 
 ## Delivery paths within a turn
 
@@ -92,7 +92,7 @@ The two tables below separate what a consumer may rely on from what it may not.
 | Streaming discipline | every segment goes strictly `start → delta* → stop`, complete message right after; concatenated deltas ≡ the complete message |
 | Approval position | `approval_decision` comes after its `tool_call` and before any output of that tool |
 | Pairing | every committed `tool_call` gets exactly one complete `tool_call_output` (a denial gets the synthetic one) |
-| LLM stream tail | on a completed request, `token_usage` is the LLM stream's last message and `request_end` follows immediately; a request that did not complete produces no `token_usage` |
+| LLM stream tail | on a completed request, or one cut off at its output cap, `token_usage` is the LLM stream's last message and `request_end` follows immediately; a request that failed otherwise or was interrupted produces no `token_usage` |
 | Commit criterion | `request_end.status === "completed"` ⇔ the turn was committed by the gateway (replay keeps or drops on this) |
 | Stream order = Trace order | written as streamed; the Trace only filters partials and `origin` messages |
 | Transport ordering | SSE delivers per channel with monotonic ids; reconnects replay from `Last-Event-ID` or get `resync_required` — see [Server API](/server-api) |
@@ -123,12 +123,13 @@ The cases below change the observable order on the stream:
 
 | Case | Observable order on the stream |
 | --- | --- |
-| User interrupt | (messages produced so far) → the `abort` event — the engine's last message of the run (only `hook` events from stop hooks can follow it); carry-over goes to the model context only, never streamed, never written to Trace |
+| User interrupt | (messages produced so far) → the `abort` event — the engine's last message of the run (only `hook` events from stop hooks and the Task's `task_end` can follow it); carry-over goes to the model context only, never streamed, never written to Trace |
 | Automatic reconnect | `request_end(retryable)` carrying `retry_in_ms` → a fresh `request_begin` (up to 5 consecutive fruitless retries, exponential backoff with a 30s ceiling); the `[turn_retried]` block is model-visible only |
-| LLM failure that ends the run | `request_end(fatal)`, or a `request_end(retryable)` without `retry_in_ms` once the retries run out, is the engine's last message of the run (only `hook` events from stop hooks can follow it); no `abort` event follows, because `abort` marks only a user interruption |
+| LLM failure that ends the run | `request_end(fatal)`, or a `request_end(retryable)` without `retry_in_ms` once the retries run out, is the engine's last message of the run (only `hook` events from stop hooks and the Task's `task_end` can follow it); no `abort` event follows, because `abort` marks only a user interruption or the turn cap |
 | Compaction | `compaction_begin` → the compaction request runs against the old context (its raw messages are written to Trace only, except each attempt's `token_usage` and the thinking and summary being generated, which are forwarded as ordinary `partial_thinking`/`partial_text` or `thinking`/`text` inside the span) → `compaction_end(status)` |
-| max_turns reached | a length notice (`[reached max turns (N); stopping]`) → the run ends; unsubmitted input is kept as carry-over |
-| The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it) |
+| max_turns reached | an `abort` event with `error_code: "max_turns"` (and `error_message` `reached max turns (N)`) → the run ends; unsubmitted input is kept as carry-over |
+| Task boundaries | `task_begin` is a Task's first message, before its input; `task_end` is its last, after the stop hooks' `hook` events. A goal round is a Task with its own pair, and its injected input follows its `task_begin`. A Task that throws ends without `task_end` |
+| The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it). The Server echoes it onto the SSE channel right after the run's first `task_begin`, the order the Trace has them in |
 | `session_meta` | emitted on the main Session's stream only by an in-session model switch, as its last message: the new context's meta, naming the model the Session now runs on. Otherwise it lives in the Trace and the history API. A Subagent child stream's first message is the child's `session_meta` |
 
 ## Across Sessions: the origin chain

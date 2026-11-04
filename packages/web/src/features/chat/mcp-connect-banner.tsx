@@ -18,7 +18,7 @@
 import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
+import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/amsp/stream-model";
 
 /**
  * Owner server of a prefixed tool name (`mcp__<server>__<tool>`), matched against the

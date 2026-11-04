@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-firecrawl",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "description": "Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
   "keywords": [
     "penguin-plugin",
@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -42,6 +46,6 @@
   },
   "devDependencies": {
     "@prismshadow/skills": "workspace:*",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   }
 }

@@ -9,20 +9,12 @@
  */
 import { useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import {
-  Badge,
-  Button,
-  ConfirmModal,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  toastError,
-} from "@prismshadow/penguin-ui";
+import { Pill, Button, ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { programSource } from "../../lib/session-source-mark";
 import { S } from "../../lib/strings";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function ArchivedSessionStub({
   session,
@@ -47,7 +39,7 @@ export function ArchivedSessionStub({
       const res = await api.patchSession(session.sessionId, { archived: false });
       onUnarchived(res.session);
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       setBusy(false);
     }
@@ -60,7 +52,7 @@ export function ArchivedSessionStub({
       setConfirming(false);
       onDeleted(session);
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       setBusy(false);
     }
@@ -74,9 +66,7 @@ export function ArchivedSessionStub({
         <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           <span>{formatDateTime(session.lastActiveAt)}</span>
           <span aria-hidden>·</span>
-          <Badge tone="neutral" size="sm">
-            {S.chat.sessionSource[source]}
-          </Badge>
+          <Pill tone="neutral">{S.chat.sessionSource[source]}</Pill>
         </p>
         <p className="text-sm text-fg-muted">{S.chat.archivedStub.note}</p>
         <div className="mt-3 flex items-center gap-2">

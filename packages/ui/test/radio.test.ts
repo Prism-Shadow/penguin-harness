@@ -4,7 +4,7 @@
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { Radio, RadioGroup } from "../src/components/forms/radio/radio";
+import { Radio, RadioDisc, RadioGroup } from "../src/components/forms/radio/radio";
 import { classTokens, renderStatic } from "../src/testing";
 
 const noop = () => {};
@@ -72,5 +72,21 @@ describe("Radio", () => {
     expect(classTokens(on)).toEqual(
       expect.arrayContaining(["border-accent", "bg-accent", "bg-accent-fg", "rounded-full"]),
     );
+  });
+});
+
+describe("RadioDisc", () => {
+  it("draws the radio's disc for a control that is not a radio, hidden from assistive technology", () => {
+    const off = renderStatic(createElement(RadioDisc, { on: false }));
+    expect(off).toMatch(/^<span aria-hidden="true" class="[^"]*"><\/span>$/);
+    expect(classTokens(off)).toEqual(
+      expect.arrayContaining(["border-line-emphasis", "rounded-full"]),
+    );
+    const on = renderStatic(createElement(RadioDisc, { on: true }));
+    expect(classTokens(on)).toEqual(
+      expect.arrayContaining(["border-accent", "bg-accent", "bg-accent-fg"]),
+    );
+    // No hover of its own: the control around it takes the hover.
+    expect(classTokens(off).some((token) => token.startsWith("hover:"))).toBe(false);
   });
 });

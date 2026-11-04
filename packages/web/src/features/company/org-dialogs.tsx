@@ -49,7 +49,6 @@ import {
   Modal,
   Select,
   Textarea,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -79,6 +78,7 @@ import {
   orgDraftKey,
   saveOrgDraft,
 } from "./org-draft";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 
@@ -687,7 +687,7 @@ function OrganizationSettingsForm({
       onClose();
       onDeleted?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -724,7 +724,7 @@ function OrganizationSettingsForm({
       onChanged();
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);

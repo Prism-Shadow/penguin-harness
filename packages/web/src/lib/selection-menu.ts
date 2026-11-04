@@ -8,19 +8,18 @@
 import { isLongPressPointer } from "@prismshadow/penguin-ui";
 import type { AnchorRect } from "@prismshadow/penguin-ui";
 import type { ExcerptReference } from "./workspace-tree";
+import { takesSelectionCopy } from "./selection-copy";
+import type { SelectionCopyRequest } from "./selection-copy";
 
-/** What the rules need to know about a gesture and the selection it found. */
-export interface SelectionMenuRequest {
-  /** The document's selected text at the gesture (`Selection.toString()`); "" when nothing is selected. */
-  selectedText: string;
-  /** How many ranges the selection holds (`Selection.rangeCount`). */
-  rangeCount: number;
+/**
+ * What the rules need to know about a gesture and the selection it found: the copy rule's
+ * request (`onEditable` naming the field the gesture landed on), and where and how it happened.
+ */
+export interface SelectionMenuRequest extends SelectionCopyRequest {
   /** Both ends of the selection's first range lie inside the message stream. */
   firstRangeInStream: boolean;
   /** The pointer behind the gesture ("mouse", "pen", "touch"), or "" when the keyboard asked. */
   pointerType: string;
-  /** The gesture landed on an editable field (an input, a textarea, contenteditable). */
-  onEditable: boolean;
 }
 
 /**
@@ -35,12 +34,13 @@ export interface SelectionMenuRequest {
  *   lies inside the stream: the text such a selection reads is every range's text, so one
  *   range in the composer would ride into the clipboard and into the excerpt, and putting the
  *   highlight back afterwards can only restore the one range that was captured.
+ * Past the pointer and the stream's bounds it is the copy rule itself (selection-copy.ts), so
+ * every selection the menu's Copy row acts on is one ⌘C would copy the same way.
  */
 export function opensSelectionMenu(request: SelectionMenuRequest): boolean {
   if (isLongPressPointer(request.pointerType)) return false;
-  if (request.onEditable) return false;
-  if (request.rangeCount !== 1 || !request.firstRangeInStream) return false;
-  return request.selectedText.trim() !== "";
+  if (!request.firstRangeInStream) return false;
+  return takesSelectionCopy(request);
 }
 
 /** One row of the selection menu. */

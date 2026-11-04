@@ -10,7 +10,8 @@
  * - When the user takes a tab back while an action runs in it, the action answers 409
  *   `tab_released`, and so does every later call on that tab — the agent must not retry it.
  * - When Chrome goes away, the backend is `extension_disconnected` but the tab list stays;
- *   when it comes back, the list is replaced by what Chrome reports.
+ *   when it comes back, it is not available again until the list is replaced by what Chrome
+ *   reports — never offered with the list it had before.
  * - Raw CDP that reaches the user's cookies, stores, the browser, other targets, the disk or the
  *   downloads is refused (403 `cdp_refused`) and never sent to Chrome, and so is a navigation
  *   to anything but a web page (400); a page-level method goes through.
@@ -229,7 +230,7 @@ describe("a tab the user takes back", () => {
 });
 
 describe("Chrome going away and coming back", () => {
-  it("keeps the tab list while disconnected and takes Chrome's list when it reconnects", async () => {
+  it("keeps the tab list while disconnected, and is back only with Chrome's own list", async () => {
     const h = mount();
     const chrome = await h.connect();
     const opened: number[] = [];
@@ -250,10 +251,18 @@ describe("Chrome going away and coming back", () => {
       expect.objectContaining({ type: "builtin_browser_extension", state: "disconnected" }),
     );
 
-    // Back again: Chrome still has the second tab; the first was closed meanwhile.
+    // Back again: Chrome still has the second tab; the first was closed meanwhile. It says
+    // hello at once and lists its tabs late.
     const back = new FakeChrome();
     back.guests.set(opened[1]!, { ...away.tabs[1]! });
-    await h.connect(back);
+    const listTabs = back.holdTabs();
+    const reconnected = h.connect(back);
+    await until(() => back.commands.some((c) => c.op === "tabs"), "the tab list request");
+    const greeted = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
+    expect(greeted).toMatchObject({ available: false, reason: "extension_disconnected" });
+
+    listTabs();
+    await reconnected;
     const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
     expect(status).toMatchObject({ available: true, backend: "chrome" });
     expect(status.tabs.map((t) => t.id)).toEqual([opened[1]]);

@@ -20,10 +20,12 @@ import { S } from "../src/lib/strings";
 const machine = (machineId: string, over: Partial<MachineInfo> = {}): MachineInfo => ({
   id: `ssh:${machineId}`,
   alias: machineId,
+  kind: "ssh",
   machineId,
   installed: { version: "0.2.13", at: "2026-10-01T08:00:00.000Z" },
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: null,
   root: "$HOME/.penguin/data",
@@ -31,6 +33,7 @@ const machine = (machineId: string, over: Partial<MachineInfo> = {}): MachineInf
 });
 const list = (...machines: MachineInfo[]): MachinesResponse => ({
   machines,
+  kinds: [{ kind: "ssh", title: "SSH", form: null }],
   imageVersion: "0.2.13",
   job: null,
   jobs: [],
@@ -49,6 +52,7 @@ describe("a machine as other surfaces read it", () => {
       reconnect: {
         since: "2026-10-10T08:00:00.000Z",
         attempts: 1,
+        maxAttempts: 8,
         nextAt: null,
         lastError: null,
         diagnosis: null,

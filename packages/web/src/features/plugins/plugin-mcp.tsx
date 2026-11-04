@@ -162,21 +162,25 @@ export function PluginMcpSection({ servers }: { servers: readonly PluginMcpServe
  * What installing a plugin with a stdio server says before it runs: a lead line — the question,
  * when the confirm is this one's own (the compact confirm card renders no title, so the body
  * asks), or the plugin's title where several plugins are listed — then each stdio server with
- * the exact command it runs on this server whenever a session of the Agent starts.
+ * the exact command it runs whenever a session of the Agent starts — on this server, or on the
+ * machine the Agent lives on.
  */
 export function StdioInstallBody({
   plugin,
   lead,
+  machine,
 }: {
   plugin: Pick<PluginItem, "mcpServers">;
   lead?: string;
+  /** The machine the Agent lives on, where the command runs; undefined for this server. */
+  machine?: string | undefined;
 }) {
   return (
     <div className="space-y-2 text-sm">
       {lead !== undefined && <p className="font-medium">{lead}</p>}
       {stdioServers(plugin).map((server) => (
         <p key={server.name} className="break-words text-fg-muted">
-          {S.plugins.installStdioBody(server.name, server.target)}
+          {S.plugins.installStdioBody(server.name, server.target, machine)}
         </p>
       ))}
     </div>
@@ -192,10 +196,13 @@ export function StdioInstallBody({
 export function StdioDisclosure({
   plugins,
   className = "",
+  machine,
 }: {
   plugins: ReadonlyArray<Pick<PluginItem, "name" | "title" | "titleZh" | "mcpServers">>;
   /** Spacing from what precedes it; nothing is rendered, spacing included, when no plugin runs a command. */
   className?: string;
+  /** The machine the Agents live on, where the commands run; undefined for this server. */
+  machine?: string | undefined;
 }) {
   const { locale } = useLocale();
   const running = plugins.filter((plugin) => stdioServers(plugin).length > 0);
@@ -207,6 +214,7 @@ export function StdioDisclosure({
           key={plugin.name}
           plugin={plugin}
           lead={localizedText(locale, plugin.title || plugin.name, plugin.titleZh)}
+          machine={machine}
         />
       ))}
     </div>
@@ -248,6 +256,7 @@ const givenValues = (values: Readonly<Record<string, string>>): Record<string, s
 export function McpSetUpModal({
   projectId,
   agentId,
+  machineId = null,
   agentName,
   title,
   plugin,
@@ -256,6 +265,8 @@ export function McpSetUpModal({
 }: {
   projectId: string;
   agentId: string;
+  /** The machine the Agent lives on, whose vault this writes; null for this server. */
+  machineId?: string | null;
   agentName: string;
   /** What the dialogs call the plugin (its card's title). */
   title: string;
@@ -275,14 +286,14 @@ export function McpSetUpModal({
 
   useEffect(() => {
     let cancelled = false;
-    api.getVault(projectId, agentId).then(
+    api.getVault(projectId, agentId, machineId).then(
       (res) => !cancelled && setPresent(new Set(res.entries.map((entry) => entry.key))),
       (e: unknown) => !cancelled && setError(apiErrorText(e)),
     );
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
 
   const save = async () => {
     if (!form.dirty || busy) return;
@@ -290,13 +301,18 @@ export function McpSetUpModal({
     setError(null);
     try {
       // Read again right before writing: a key added since the form opened is kept too.
-      const fresh = await api.getVault(projectId, agentId);
-      await api.putVault(projectId, agentId, {
-        entries: setUpVaultEntries(
-          fresh.entries.map((entry) => entry.key),
-          values,
-        ),
-      });
+      const fresh = await api.getVault(projectId, agentId, machineId);
+      await api.putVault(
+        projectId,
+        agentId,
+        {
+          entries: setUpVaultEntries(
+            fresh.entries.map((entry) => entry.key),
+            values,
+          ),
+        },
+        machineId,
+      );
       toastSuccess(S.agent.savedTakesEffect);
       onSaved();
       onClose();

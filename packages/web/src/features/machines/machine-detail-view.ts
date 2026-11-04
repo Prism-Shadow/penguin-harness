@@ -55,6 +55,9 @@ const CHIP_GLYPH: Record<MachineReading["kind"], string | null> = {
   working: null,
   failed: ICONS.xCircle,
   signInRefused: ICONS.xCircle,
+  reconnectFailed: ICONS.xCircle,
+  reconnectStopped: ICONS.stopCircle,
+  restartNeeded: ICONS.refresh,
   notInstalled: ICONS.download,
   unknown: ICONS.helpCircle,
 };
@@ -578,7 +581,7 @@ export function reconnectView(
     detail: failure?.detail ?? null,
     check:
       r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
-    stopped: r.waitsForPassword === true,
+    stopped: r.waitsForPassword === true || r.gaveUp !== undefined,
   };
 }
 

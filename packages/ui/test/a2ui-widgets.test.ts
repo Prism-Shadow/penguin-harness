@@ -1,6 +1,7 @@
 /**
  * The A2UI widgets (src/components/content/a2ui): weather, clock, countdown and metrics, each on
- * the shared widget surface and registered as the built-in renderer of its type.
+ * the shared widget surface and registered as the built-in renderer of its type (the chart block
+ * and the resource board, the other two widgets, have their own file: a2ui-charts.test.ts).
  *
  * Static markup only, at an instant pinned with fake timers: the live widgets read the time as
  * they render, so the figures a test asserts are the ones that instant shows. Ticking, the
@@ -14,10 +15,12 @@ import type {
   A2uiMetric,
   A2uiWeather,
 } from "@prismshadow/penguin-core/a2ui";
+import { ChartBlock } from "../src/components/content/a2ui/chart-block";
 import { ClockBlock } from "../src/components/content/a2ui/clock-block";
 import { CountdownBlock } from "../src/components/content/a2ui/countdown-block";
 import { MetricsBlock } from "../src/components/content/a2ui/metrics-block";
 import { a2uiRendererFor } from "../src/components/content/a2ui/registry";
+import { ResourcesBlock } from "../src/components/content/a2ui/resources-block";
 import { WeatherBlock } from "../src/components/content/a2ui/weather-block";
 import { renderStatic } from "../src/testing";
 
@@ -30,11 +33,13 @@ afterEach(() => {
 });
 
 describe("the widgets' registry", () => {
-  it("draws the four widget types with their built-ins", () => {
+  it("draws the six widget types with their built-ins", () => {
     expect(a2uiRendererFor("weather")).toBe(WeatherBlock);
     expect(a2uiRendererFor("clock")).toBe(ClockBlock);
     expect(a2uiRendererFor("countdown")).toBe(CountdownBlock);
     expect(a2uiRendererFor("metrics")).toBe(MetricsBlock);
+    expect(a2uiRendererFor("chart")).toBe(ChartBlock);
+    expect(a2uiRendererFor("resources")).toBe(ResourcesBlock);
   });
 });
 
@@ -77,13 +82,16 @@ describe("WeatherBlock", () => {
     expect(html).toContain("Source: Open-Meteo");
   });
 
-  it("draws the next hours as a chart, and the coming days as rows from today", () => {
+  it("draws the next hours as a line chart, and the coming days as range rows from today", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 4, 14, 10));
     const html = renderStatic(createElement(WeatherBlock, { spec: WEATHER }));
     expect(html).toMatch(/<svg[^>]*role="img" aria-label="Next hours: 14:00 18°, 15:00 19°/);
-    expect(html).toContain("ui-chart");
+    expect(html).toContain('data-chart="line"');
     expect(html).toContain('data-condition="cloudy"');
+    // The days are a range chart named by its section, each day's low to high on the week's scale.
+    expect(html).toContain('aria-label="Coming days"');
+    expect(html).toMatch(/data-part="bar"[^>]*style="left:\d+(\.\d+)?%;width:\d+(\.\d+)?%/);
     expect(html).toContain("Today");
     expect(html).toContain("Mon");
     expect(html).toContain("80%");

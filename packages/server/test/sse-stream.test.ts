@@ -12,7 +12,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
@@ -63,7 +63,7 @@ async function readSseFrames(res: Response, count: number, timeoutMs = 3000): Pr
 /** Fake Session that requests one approval (for the running state and approval-replay scenarios). */
 function approvalFakeSession(sessionId: string): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-sse" });
       yield tc;
       yield approvalDecision(await opts.approve(tc), "tc-sse");
@@ -175,7 +175,7 @@ describe("sse-stream", () => {
     const first = channel.publish(userText("m1"));
     channel.publish(userText("m2"));
     const frames = await readSseFrames(await open(first.id), 2);
-    expect(frames[0]!.event).toBeUndefined(); // replayed OmniMessage
+    expect(frames[0]!.event).toBeUndefined(); // replayed AmspRecord
     expect((JSON.parse(frames[0]!.data) as { payload: { text: string } }).payload.text).toBe("m2");
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
   });

@@ -7,10 +7,18 @@
  */
 import type { ReactNode } from "react";
 
-/** One placeholder block; `className` sets its size (a line of text by default). */
+/**
+ * One placeholder block; `className` sets its size (a line of text by default). `data-skeleton`
+ * lets the shell's custom background thin its fill (wallpaper.css): a block stands in for words,
+ * and a solid grey slab would lay a box over the image the words never cover.
+ */
 export function Skeleton({ className }: { className?: string }) {
   return (
-    <div aria-hidden className={`animate-pulse rounded-sm bg-line ${className ?? "h-4 w-full"}`} />
+    <div
+      aria-hidden
+      data-skeleton=""
+      className={`animate-pulse rounded-sm bg-line ${className ?? "h-4 w-full"}`}
+    />
   );
 }
 
@@ -29,7 +37,8 @@ export function SkeletonList({ rows = 3 }: { rows?: number }) {
  * A card loading: the real card's border and radius around a title, a main value and a subline,
  * or the caller's own inner layout. `className` replaces the default `p-4` outright — two
  * utilities for one property resolve by stylesheet order, not by position in the string — so a
- * caller that passes one includes its padding.
+ * caller that passes one includes its padding. Its surface is a panel, like the card it stands in
+ * for: over a custom background it takes the same light fill, never an opaque box.
  */
 export function SkeletonCard({
   className,
@@ -39,7 +48,10 @@ export function SkeletonCard({
   children?: ReactNode;
 }) {
   return (
-    <div className={`rounded-md border border-line bg-surface ${className ?? "p-4"}`}>
+    <div
+      data-wallpaper-surface="panel"
+      className={`rounded-md border border-line bg-surface ${className ?? "p-4"}`}
+    >
       {children ?? (
         <>
           <Skeleton className="h-3 w-20" />

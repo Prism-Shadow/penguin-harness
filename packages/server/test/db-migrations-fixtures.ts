@@ -80,31 +80,21 @@ export function dropCompanyTables(db: DatabaseSync): void {
   `);
 }
 
-/** browser-extensions' table and index: a database from before the Chrome pairings had neither. */
+/** 2026-10-04-browser-extensions' table and index: a database from before the Chrome pairings had neither. */
 export function dropBrowserExtensions(db: DatabaseSync): void {
   db.exec("DROP INDEX IF EXISTS idx_browser_extensions_user");
   db.exec("DROP TABLE IF EXISTS browser_extensions");
-}
-
-/**
- * Takes the port-forwards table off a database built from the current declaration — and
- * everything declared after it, which every database older than port forwarding lacks too.
- */
-export function dropPortForwardsAndLater(db: DatabaseSync): void {
-  db.exec(
-    "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
-  );
-  // And the machine definitions, newer still.
-  db.exec("DROP TABLE IF EXISTS machine_definitions;");
-  // And the desk-mention queue, newer again.
-  db.exec("DROP TABLE IF EXISTS org_desk_mentions;");
   db.exec("DROP TABLE IF EXISTS messaging_conversations");
   db.exec(
     "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
   );
+  // 2026-10-26-user-drafts came later still.
+  db.exec(
+    "DROP INDEX IF EXISTS idx_user_drafts_project; DROP INDEX IF EXISTS idx_user_drafts_session; DROP TABLE IF EXISTS user_drafts; DROP TABLE IF EXISTS user_background_images;",
+  );
 }
 
-/** Takes user-profile's two columns off a database built from the current declaration. */
+/** Takes 2026-09-14-user-profile's two columns off a database built from the current declaration. */
 export function dropProfileColumns(db: DatabaseSync): void {
   db.exec("ALTER TABLE users DROP COLUMN avatar");
   db.exec("ALTER TABLE users DROP COLUMN display_name");
@@ -131,7 +121,6 @@ export function open024(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  dropPortForwardsAndLater(db);
   dropCompanyTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
@@ -141,19 +130,18 @@ export function open024(): DatabaseSync {
   return db;
 }
 
-/** A 0.2.9 database: 0.2.4 plus messaging, still goal_state; through messaging-delivery-flags. */
+/** A 0.2.9 database: 0.2.4 plus messaging, still goal_state; through 2026-08-31-messaging-delivery-flags. */
 export function open029(): DatabaseSync {
   const db = openFresh();
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  dropPortForwardsAndLater(db);
   dropCompanyTables(db);
   db.exec(GOAL_STATE_DDL);
   // No machines tables (the machines migration adds them) and no profile columns.
   db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
   dropProfileColumns(db);
-  stampThrough(db, "messaging-delivery-flags");
+  stampThrough(db, "2026-08-31-messaging-delivery-flags");
   return db;
 }
 
@@ -163,15 +151,14 @@ export function openPreProfile(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  dropPortForwardsAndLater(db);
   dropProfileColumns(db);
   dropCompanyTables(db);
-  stampThrough(db, "machines");
+  stampThrough(db, "2026-09-04-machines");
   return db;
 }
 
 /**
- * The two chat tables as company-mode-org-caches declared them (frozen: chat became channels
+ * The two chat tables as 2026-09-16-company-mode-org-caches declared them (frozen: chat became channels
  * — renamed tables, `channel_id` in the primary keys — and the migration that recreates them
  * must not learn a new shape).
  */
@@ -194,38 +181,36 @@ const PRE_CHANNEL_CHAT_DDL = `
   );
 `;
 
-/** Through company-mode-org-caches: company mode's caches, before chat became channels. */
+/** Through 2026-09-16-company-mode-org-caches: company mode's caches, before chat became channels. */
 export function openOrgCaches(): DatabaseSync {
   const db = openFresh();
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  dropPortForwardsAndLater(db);
   db.exec(PRE_CHANNEL_CHAT_DDL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
-  stampThrough(db, "company-mode-org-caches");
+  stampThrough(db, "2026-09-16-company-mode-org-caches");
   return db;
 }
 
-/** Through company-mode-channels: channels, and no desk-notice queue yet. */
+/** Through 2026-09-16-company-mode-channels: channels, and no desk-notice queue yet. */
 export function openChannels(): DatabaseSync {
   const db = openFresh();
-  dropPortForwardsAndLater(db);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  stampThrough(db, "company-mode-channels");
+  stampThrough(db, "2026-09-16-company-mode-channels");
   return db;
 }
 
-/** Through company-mode-desk-notices: the promotions table does not exist yet. */
+/** Through 2026-09-16-company-mode-desk-notices: the promotions table does not exist yet. */
 export function openDeskNotices(): DatabaseSync {
   const db = openFresh();
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
-  stampThrough(db, "company-mode-desk-notices");
+  stampThrough(db, "2026-09-16-company-mode-desk-notices");
   return db;
 }
 
@@ -272,21 +257,20 @@ export function seedAgentStateHandover(db: DatabaseSync): void {
   db.exec("PRAGMA user_version = 14");
 }
 
-/** Through model-promotions: provider auth refresh tokens do not exist yet. */
+/** Through 2026-09-17-model-promotions: provider auth refresh tokens do not exist yet. */
 export function openPromotions(): DatabaseSync {
   const db = openFresh();
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
-  stampThrough(db, "model-promotions");
+  stampThrough(db, "2026-09-17-model-promotions");
   return db;
 }
 
-/** Through machines-columns: everything before the Chrome pairings. */
+/** Through 2026-09-23-machines-columns: everything before the Chrome pairings. */
 export function openMachinesColumns(): DatabaseSync {
   const db = openFresh();
-  dropPortForwardsAndLater(db);
   dropBrowserExtensions(db);
-  stampThrough(db, "machines-columns");
+  stampThrough(db, "2026-09-23-machines-columns");
   return db;
 }
 

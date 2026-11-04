@@ -8,11 +8,15 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 
-async function openImage(page, name, dataBase64) {
+async function openImage(page, name, dataBase64, theme = null) {
   await provisionAndLogin(page.request, "imagepreview", "password123");
+  // The theme is the account's, and every test signs in as the same user: each states its own,
+  // null being the default (account-prefs.mjs).
+  await setAccountPrefs(page.request, { themeId: theme });
   const { projects } = await (await page.request.get(`${BASE}/api/projects`)).json();
   const created = await page.request.post(
     `${BASE}/api/projects/${projects[0].projectId}/agents/default_agent/sessions`,
@@ -47,8 +51,7 @@ for (const [theme, dimensions] of ["modern", "github", "geek"].flatMap((theme) =
   test(`SVG without fixed dimensions is visible in preview and lightbox (${theme}, ${dimensions || "viewBox"})`, async ({
     page,
   }, testInfo) => {
-    await page.addInitScript((value) => localStorage.setItem("penguin.themeId", value), theme);
-    const image = await openImage(page, "viewbox.svg", svg(dimensions));
+    const image = await openImage(page, "viewbox.svg", svg(dimensions), theme);
     const size = await image.evaluate((img) => ({
       width: img.clientWidth,
       height: img.clientHeight,

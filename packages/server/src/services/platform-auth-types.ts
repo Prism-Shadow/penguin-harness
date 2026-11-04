@@ -32,7 +32,7 @@ export interface PlatformModelCatalog {
 }
 
 /**
- * Catalog merge result. `updated` counts route migrations; existing metadata is preserved.
+ * Catalog merge result. `updated` counts changes to existing prices, promotions or routes.
  */
 export interface PlatformModelApplyResult {
   added: number;

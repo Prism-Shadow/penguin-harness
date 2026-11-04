@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/data-analysis",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "description": "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
   "keywords": [
     "penguin-plugin",
@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -42,6 +46,6 @@
   },
   "devDependencies": {
     "@prismshadow/skills": "workspace:*",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   }
 }

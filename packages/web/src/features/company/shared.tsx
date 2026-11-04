@@ -25,6 +25,7 @@ import {
   InfoPopover,
   Input,
   Notice,
+  Pill,
   ProgressBar,
   Ring,
 } from "@prismshadow/penguin-ui";
@@ -146,14 +147,12 @@ const ORG_STATUS_BADGE: Record<OrgStatusKind, ToneName> = {
 export function OrgStatusPill({ org }: { org: { status: OrgStatus; invalid?: string } }) {
   const kind = orgStatusKind(org);
   return (
-    <span
-      {...(org.invalid !== undefined
-        ? { "data-tooltip": org.invalid, "data-tooltip-extra": true }
-        : {})}
-      className="inline-flex"
+    <Pill
+      tone={ORG_STATUS_BADGE[kind]}
+      {...(org.invalid !== undefined ? { tooltip: org.invalid } : {})}
     >
-      <Badge tone={ORG_STATUS_BADGE[kind]}>{orgStatusLabel(kind)}</Badge>
-    </span>
+      {orgStatusLabel(kind)}
+    </Pill>
   );
 }
 

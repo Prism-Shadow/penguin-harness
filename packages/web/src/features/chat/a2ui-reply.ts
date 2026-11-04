@@ -10,7 +10,7 @@
  * Kept free of React so the rule is testable on its own (test/a2ui-reply.test.ts); the
  * transcript applies it in MessageItems.
  */
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 
 /**
  * Input to the model after a reply: anything the person sent (a prompt, an image, a steer

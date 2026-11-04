@@ -1,8 +1,6 @@
 /**
  * Which machine a terminal lives on (lib/terminal-machines.ts): the same rule Sessions use,
- * over `/api/terminals/<id>`, plus the one thing terminals add — the list must not treat "no
- * machines published yet" as "no machines", because that is the moment it would prune tabs
- * belonging to shells alive elsewhere.
+ * over `/api/terminals/<id>`, plus the sources the list asks — this server, then each machine.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -11,7 +9,6 @@ import {
   rememberTerminalMachine,
   setTerminalMachines,
   terminalIdInPath,
-  terminalMachinesPublished,
   terminalSources,
   terminalUrl,
 } from "../src/lib/terminal-machines";
@@ -42,11 +39,8 @@ describe("addressing a terminal", () => {
 });
 
 describe("the machine set", () => {
-  it("is not published until set, and an empty publication is a real answer", () => {
-    expect(terminalMachinesPublished()).toBe(false);
+  it("asks this server first, then each published machine", () => {
     expect(terminalSources()).toEqual([null]);
-    setTerminalMachines([]);
-    expect(terminalMachinesPublished()).toBe(true);
     setTerminalMachines(["M1", "M2"]);
     expect(terminalSources()).toEqual([null, "M1", "M2"]);
   });
@@ -55,7 +49,7 @@ describe("the machine set", () => {
     setTerminalMachines(["M1"]);
     rememberTerminalMachine("t1", "M1");
     forgetTerminalMachines();
-    expect(terminalMachinesPublished()).toBe(false);
+    expect(terminalSources()).toEqual([null]);
     expect(machineForTerminal("t1")).toBeNull();
   });
 });

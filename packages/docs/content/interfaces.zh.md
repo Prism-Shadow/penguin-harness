@@ -3,7 +3,7 @@ title: 核心接口
 description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签名、内部类型与扩展点。
 ---
 
-`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [OmniMessage](/omni-message)。
+`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [AMSP 记录](/amsp-records)。
 
 本页沿一轮运行的控制流展开：[Human 边界](#human-边界)、[LLM 契约](#llminterface)、[审批回调](#approvefn)和 [Environment 契约](#environmentinterface)。结尾介绍[子 Agent](#子-agent-接口) 和[视觉](#visiondescriberservice)服务，以及[扩展点](#扩展点)。
 
@@ -20,7 +20,7 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
             Human (a boundary, not a class)
             session.run(newMessages, { approve, signal })
                           │ ▲
-                          ▼ │ streamed OmniMessage
+                          ▼ │ streamed AmspRecord
                     context_engine
                      │            │
         LLMInterface │            │ EnvironmentInterface
@@ -37,12 +37,12 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 
 每个接口都遵守两条规则：
 
-- **绝不向引擎抛异常。** 错误会转化成携带 `stop_reason` 的消息或返回值。
-- **遵守流式纪律。** 流按 `start → delta → stop` 推进，完整消息紧随其后。
+- **绝不向引擎抛异常。** 错误会转化成消息（工具结果的 `status`）或返回值（`LLMOutcome.status`，记作 `request_end.status`）。
+- **遵守流式纪律。** 流按 `start → delta → stop` 推进，完整消息紧随其后；被中断截断的条目也一样，完整消息装着已经到达的内容。
 
 ### 消息面与控制面
 
-穿过三条边界的**内容**有且只有 OmniMessage：
+穿过三条边界的**内容**有且只有 AMSP 记录：
 
 - `session.run` 的输入与流式输出
 - `streamGenerate` 的输入数组与产出的流
@@ -56,10 +56,11 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`、`GenerativeModelParameters`、`ToolExecutionRequest` | 中断若要在消息队列里排队等候，就不再是中断。 |
 | `thinkingLevel` | `GenerativeModelParameters` | 逐请求参数，与超时同类：它说明请求怎么执行，而不是要说什么。引擎把当前生效的值保存在自己的状态里（`ContextEngine.setThinkingLevel`，由 `Session.thinkingLevel` setter 供值，一个带软限制的旋钮）。请求未携带时，套用 LLM 对象的构造默认值，也就是上下文的起始等级。`RunOptions` 不携带等级。 |
-| `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调接收一个 OmniMessage 工具调用，返回三值枚举；引擎一拿到结果，立即写成一条 `approval_decision` 消息。 |
+| `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调接收一条 `tool_call` 记录，返回三值枚举；引擎一拿到结果，立即写成一条 `approval_decision` 消息。 |
 | `LLMOutcome` | `streamGenerate` 生成器的返回值 | 请求的终态，引擎的重试与重连策略以此为分支依据。生成器返回值由类型系统保证；「最后产出的消息必须是 `request_end`」只能是运行时约定。引擎据此写出那条 `request_end`。 |
+| `markInterruptedToolCall` | 产出的 `tool_call` 记录上的标记 | 实现因请求提前结束而收束的工具调用，只在进程内有效。记录照常写出；这个标记告诉引擎不要派发它。读流或读 Trace 的一方，从所在 Request 的 `request_end.status` 读出同一事实。 |
 
-其余不属于 OmniMessage 的内容都归 Environment 的管理面，在 [EnvironmentInterface](#environmentinterface) 一节说明。
+其余不属于记录的内容都归 Environment 的管理面，在 [EnvironmentInterface](#environmentinterface) 一节说明。
 
 ## Human 边界
 
@@ -69,9 +70,9 @@ Human 刻意不定义成接口类。SDK 调用方*就是* Human：
 const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
-  newMessages: OmniMessage[],                    // input: the Prompt
+  newMessages: AmspRecord[],                     // input: the Prompt
   opts?: RunOptions,
-): AsyncGenerator<OmniMessage, RunCutoff | null>; // output: streamed OmniMessage; returns null when the run completed
+): AsyncGenerator<AmspRecord, RunCutoff | null>; // output: streamed AmspRecord; returns null when the run completed
 
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
@@ -93,15 +94,17 @@ CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道�
 
 ## LLMInterface
 
-模型侧的完整契约只有一个方法：
+模型侧的完整契约是一个方法，外加一个可选属性：
 
 ```ts
 interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome>;
+  readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
+                                                     // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {
-  newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
+  newMessages: AmspRecord[];     // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
   thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
@@ -115,7 +118,7 @@ interface GenerativeModelParameters {
 interface LLMOutcome {
   status: StopReason;      // completed | aborted | retryable | fatal
   errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
-  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught or the response was cut off;
                            // carried onto request_end as error_message, so the errors panel shows
                            // the real reason behind a retried request
 }
@@ -124,7 +127,7 @@ interface LLMOutcome {
 | status | 含义 | 引擎反应 |
 | --- | --- | --- |
 | `completed` | 正常完成（`token_usage` 已经发出） | 继续执行 |
-| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误或截断的响应，以及一切无法归类的错误 | 在本次运行内按退避阶梯重连 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误的响应，以及一切无法归类的错误。完整送达却停在输出上限的响应也属此类，错误码为 `output_truncated`：实现把这一轮移出有状态的历史，`token_usage` 照常产出（已计费） | 在本次运行内按退避阶梯重连 |
 | `fatal` | 重试救不回来的失败：供应商 4xx 拒绝（408 和 429 除外）、凭证被拒，或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
 | `aborted` | 用户中断 | 停止，把控制权交还用户 |
 
@@ -136,6 +139,7 @@ status 只回答一个问题：这个请求要不要重试？errorCode 则说明
 
 - 绝不抛异常。
 - 不做内部重试。重连是引擎的职责，见 [Agent 运行循环](/agent-loop)。
+- 收束每一个条目。请求被中断、失败或截断时仍在流式输出的条目，要给出 `stop` 和装着已到达内容的完整消息。这样收束的工具调用带原样的参数文本，并经 core 导出的 `markInterruptedToolCall` 标记，引擎因此从不派发它。
 
 ### GenerativeModelConfig
 
@@ -153,7 +157,7 @@ interface GenerativeModelConfig {
   maxTokens?: number;
   fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
-  requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
+  requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 600000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
@@ -169,7 +173,8 @@ interface GenerativeModelConfig {
 
 - `.delta` 转成 `partial_*` 的 delta；该项的第一个片段之前先发出 `start`。
 - `.done` 转成 `partial_*` 的 `stop` 和完整消息（thinking、text 或 tool call），内容只取自 `.done` 项本身。
-- `stop` 事件带来这次请求的 Token 用量和结束原因。结束原因为 `length`（在输出上限处被截断）或 `unknown` 的响应，其最后一项以 `fatal` 结束；没有收到 `stop` 事件就中断的流按 `retryable` 处理。
+- `stop` 事件带来这次请求的 Token 用量和结束原因。结束原因为 `length`（在输出上限处被截断）的响应以 `retryable` 结束，`errorCode` 为 `output_truncated`；结束原因为 `unknown` 的响应同样以 `retryable` 结束，错误码为 `malformed`。两者都会移出有状态的历史，并照常计量。没有收到 `stop` 事件就中断的流按 `retryable` 处理。
+- 请求提前结束时仍在流式输出的条目，以已到达的内容收束；这样收束的工具调用以 `markInterruptedToolCall` 标记。
 
 **思考摘要。** 每次请求都会向网关索取思考摘要（`thinking_summary`）。没有供应商会拒绝这个标记：对没有这项能力的模型家族，网关直接丢弃它；Claude 家族则把它理解为摘要式思考。除了让读者看到模型如何推理，它还能让推理阶段持续有事件到达。
 
@@ -185,7 +190,7 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | 规则 | 行为 |
@@ -206,7 +211,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 ```ts
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
   dispose?(): void;                                        // release runtime resources; idempotent
 }
@@ -214,7 +219,7 @@ interface EnvironmentInterface {
 
 这个接口承载两个面，只有第一个属于 Agent 循环：
 
-- **消息面**是 `executeTool`，`context_engine` 在这里调用的唯一方法。进去一个 OmniMessage 工具调用，出来一条 OmniMessage 流。
+- **消息面**是 `executeTool`，`context_engine` 在这里调用的唯一方法。进去一条 `tool_call` 记录，出来一条记录流。
 - **管理面**是 `listTools`、`toolPermission`、`dispose` 和下面的可选成员。它们都不经过引擎，服务于 Session 组装和宿主自己的 UI，比如 Web App 的进程面板和子 Agent 面板，或者审批模式的权限查询。这些都是返回普通数据的普通方法调用，所以不做成消息形态：把它们改成消息，引擎的边界也不会更纯粹。
 
 | 可选管理成员 | 用途 |
@@ -239,7 +244,7 @@ interface EnvironmentInterface {
 
 ```ts
 interface ToolExecutionRequest {
-  toolCall: OmniMessage<ToolCallPayload>;   // an approved call
+  toolCall: AmspRecord<ToolCallPayload>;    // an approved call
   signal?: AbortSignal;
   approve?: ApproveFn;                      // forwarded to tools that spawn child Sessions (approval inheritance)
 }
@@ -296,7 +301,7 @@ interface EnvironmentServices {
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
-  backgroundForward?: (msg: OmniMessage) => void;           // live message tap of a background subagent (likewise)
+  backgroundForward?: (msg: AmspRecord) => void;            // live message tap of a background subagent (likewise)
 }
 
 interface MCPServerConfig {
@@ -331,7 +336,7 @@ interface BuiltinTool {
     ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
                                      // fs = the file-system port a file tool works through (the sandboxed helper
                                      // when the Session is confined, this process otherwise; fs.sandboxed says which)
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolDefinitionConfig {
@@ -346,7 +351,7 @@ interface ToolDefinitionConfig {
 }
 ```
 
-工具只发出内容 delta。分帧、超时、截断、`stop_reason` 优先级，以及把错误转成消息，全部由 Environment 集中处理，工具作者几乎不可能破坏协议。
+工具只发出内容 delta。分帧、超时、截断、结果 `status` 的优先级，以及把错误转成消息，全部由 Environment 集中处理，工具作者几乎不可能破坏协议。
 
 添加工具就是注册：在 `BUILTIN_TOOL_FACTORIES`（`packages/core/src/environment/tools/registry.ts`）里加一条 `name → factory` 条目。各工具的参数和行为见[工具与审批](/tools)。
 
@@ -368,13 +373,13 @@ interface SubagentRunner {
 
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
-  takeMeta?(): OmniMessage | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
+  takeMeta?(): AmspRecord | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
   run(input: {
-    messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
+    messages: AmspRecord[];   // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>; // returns null when the round completed
-  steer?(messages: OmniMessage[]): boolean; // queue a steering message for a running round; false when none is running
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
+  steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
   dispose(): void;        // release the child Session's runtime resources; idempotent
 }
@@ -384,7 +389,7 @@ interface SubagentHandle {
 
 某一轮中途被切断时，返回值会说明这一点，父级据此把这一轮报告为失败，而不是把半截答案交给模型。
 
-一轮的输入是一个 OmniMessage 列表：和 `steer` 接受的形状相同，也是宿主传给 `EnvironmentInterface.sendToBackgroundSubagent` 的形状。进入子 Session 的两条途径使用同一套词汇。每条消息的 `sender` 由调用方负责。模型自己发起的派发（`run_subagent`、`input_subagent`）会打上 `parent_agent`，宿主面板里来自人的消息则不带标记，子 Agent 的 Trace 由此能记录到底是谁在说话。
+一轮的输入是一个记录列表：和 `steer` 接受的形状相同，也是宿主传给 `EnvironmentInterface.sendToBackgroundSubagent` 的形状。进入子 Session 的两条途径使用同一套词汇。每条消息的 `sender` 由调用方负责。模型自己发起的派发（`run_subagent`、`input_subagent`）会打上 `parent_agent`，宿主面板里来自人的消息则不带标记，子 Agent 的 Trace 由此能记录到底是谁在说话。
 
 ## VisionDescriberService
 

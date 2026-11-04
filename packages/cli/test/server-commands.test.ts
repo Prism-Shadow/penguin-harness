@@ -11,7 +11,7 @@ import {
   hookEvent,
   partialText,
   userText,
-  type OmniMessage,
+  type AmspRecord,
 } from "@prismshadow/penguin-core";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
@@ -19,7 +19,7 @@ import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 
 /** What the engine really streams for one text reply: the partial stream, then the complete message. */
-function streamedText(text: string): OmniMessage[] {
+function streamedText(text: string): AmspRecord[] {
   return [
     partialText("start"),
     partialText("delta", text),

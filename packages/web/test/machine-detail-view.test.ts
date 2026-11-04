@@ -86,6 +86,9 @@ const reconnecting: Extract<MachineReading, { kind: "reconnecting" }> = {
   kind: "reconnecting",
   since: "2026-10-10T07:50:00.000Z",
   attempts: 2,
+  maxAttempts: 8,
+  nextAt: null,
+  message: null,
 };
 const ready: MachineReading = { kind: "ready", port: 7364 };
 
@@ -210,6 +213,7 @@ const job = (over: Partial<MachineJob>): MachineJob => ({
 const lost: MachineReconnect = {
   since: "2026-10-10T07:50:00.000Z",
   attempts: 3,
+  maxAttempts: 5,
   nextAt: "2026-10-10T08:01:20.000Z",
   lastError: "the connection to this machine ended",
   diagnosis: null,
@@ -567,8 +571,10 @@ describe("the facts", () => {
   });
 
   it("say the address the way ssh would be told it: the default port and an absent user unsaid", () => {
-    const address = (over: Partial<typeof block>) =>
-      byKey(machineFacts(edge, { ...block, ...over }, IMAGE, "en", NOW)).get("host")!.value;
+    const address = (over: Partial<typeof block.values>) =>
+      byKey(
+        machineFacts(edge, { ...block, values: { ...block.values, ...over } }, IMAGE, "en", NOW),
+      ).get("host")!.value;
     expect(address({ port: 22 })).toBe("ubuntu@10.0.0.12");
     expect(address({ user: "", port: undefined })).toBe("10.0.0.12");
   });

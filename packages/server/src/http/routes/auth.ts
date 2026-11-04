@@ -35,7 +35,7 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
     const { user, token } = await deps.authService.login(userId, password);
     setCookie(
       c,
-      sessionCookieName(c.req.header("host"), c.req.header("origin") !== undefined),
+      sessionCookieName(c.req.url, c.req.header("origin") !== undefined),
       token,
       cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
     );
@@ -46,7 +46,7 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
     // Signs out every session of THIS server the request holds, under either name. The plain
     // name may carry another instance's token (one that predates per-port names): that token
     // is not ours, and its cookie is left alone.
-    for (const { name, token } of sessionCookies(getCookie(c), c.req.header("host"))) {
+    for (const { name, token } of sessionCookies(getCookie(c), c.req.url)) {
       if (deps.authService.authenticateWithMeta(token) === null) continue;
       deps.authService.logout(token);
       deleteCookie(c, name, { path: "/" });
@@ -82,7 +82,7 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
     setCookie(
       c,
       // A link, so a browser followed it: a navigation carries no Origin to tell by.
-      sessionCookieName(c.req.header("host"), true),
+      sessionCookieName(c.req.url, true),
       session,
       cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
     );

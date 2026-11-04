@@ -47,16 +47,15 @@
  * before the next one is tried. The candidate that answered is reported back as `baseUrl`
  * so the caller can correct the field. Worst case a detection is six short probes.
  *
- * Credential resolution is layered: the caller passes the key typed in the dialog or the
- * entry's stored one, and when there is neither, each probe falls back to the environment
- * variable for the protocol IT speaks (`ANTHROPIC_API_KEY` for `ant-messages`,
- * `OPENAI_API_KEY` for the two OpenAI protocols — see envApiKeyForProtocol) — but only when
- * the probed base URL is that vendor's own endpoint. A gateway or a private server gets an
- * anonymous probe: detection still
- * works with no credential at all (a protocol-shaped 401 identifies the route), and sending
- * the user's vendor key to a URL they typed is exactly what the rule forbids.
+ * Credentials: the caller passes the key typed in the dialog or the entry's stored one. With
+ * neither, each probe takes what MMSP's client for the protocol IT speaks would read (PRN-021,
+ * MMSP's rule — see envApiKeyForProtocol): the protocol's variable only when the probed URL is
+ * that client's own default endpoint, so a gateway or a private server gets an anonymous probe.
+ * Detection still works with no credential at all (a protocol-shaped 401 identifies the route),
+ * and the user's vendor key never goes to a URL they typed.
  */
-import { endpointEnvApiKey, userAgent } from "@prismshadow/penguin-core";
+import { userAgent } from "@prismshadow/penguin-core";
+import { clientEnvKey } from "../model-catalog/env-keys.js";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
@@ -110,15 +109,14 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
 ];
 
 /**
- * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL.
- *
- * Which env var backs a request depends on the protocol being spoken, and detection is
- * precisely the case where the protocol is not yet known — so the resolution happens once
- * per probe rather than once per detection: `ant-messages` reads `ANTHROPIC_API_KEY`,
- * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. Core's endpointEnvApiKey is the
- * same rule the saved model is held to (see modelEnvFallback), so this cannot drift from
- * what the entry will actually be allowed to read: the variable is lent only to the
- * vendor's own endpoint.
+ * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL:
+ * the variable MMSP's client for that protocol reads when handed no key at that URL (the
+ * catalog's clientEnvKey, which asks MMSP's credentials module) — `ANTHROPIC_API_KEY` for
+ * `ant-messages` at Anthropic's default endpoint, `OPENAI_API_KEY` for the two OpenAI protocols
+ * at OpenAI's, and nothing anywhere else. Which variable backs a request depends on the protocol
+ * spoken, and detection is precisely the case where the protocol is not yet known, so it is
+ * resolved once per probe; it is the rule the saved model is held to, so a probe never sends a
+ * key the model would not.
  *
  * Server-side only: the value is placed in a request header and never returned to the
  * browser, echoed in a result, or logged.
@@ -128,7 +126,8 @@ export function envApiKeyForProtocol(
   baseUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  return endpointEnvApiKey(clientType, baseUrl, env);
+  const name = clientEnvKey(clientType, baseUrl);
+  return name !== undefined ? env[name]?.trim() || undefined : undefined;
 }
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
@@ -348,11 +347,11 @@ async function runProbe(
 export async function detectModelProtocol(options: {
   baseUrl: string;
   /**
-   * Explicit credential (the key typed in the dialog, or the entry's stored key). When
-   * absent, each probe falls back to the environment variable for the protocol it speaks,
-   * where the probed URL is allowed one — see envApiKeyForProtocol. An authenticated probe
-   * is what makes the difference between a protocol-shaped error (which identifies the
-   * route) and the generic 401 or gateway HTML that an anonymous request often draws.
+   * Explicit credential (the key typed in the dialog, or the entry's stored key). When absent,
+   * each probe takes the environment variable MMSP's client for its protocol would read at the
+   * probed URL, if any — see envApiKeyForProtocol. An authenticated probe is what makes the
+   * difference between a protocol-shaped error (which identifies the route) and the generic 401
+   * or gateway HTML that an anonymous request often draws.
    */
   apiKey?: string;
   /** Injection point for tests; defaults to global fetch (which routes through the admin proxy settings, see net/proxy.ts). */

@@ -1,6 +1,8 @@
 /**
  * Agent routes:
- * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only).
+ * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only), and
+ * GET /api/projects/:p/agent-deletions/:deletionId (owner only), how far a delete's background
+ * removal has got.
  * The list is the union of DB entries and directory scan results, including active
  * Session count, total Session count, config last-modified time, whether the Agent's API
  * switch is on, and the organizations of the Project that employ it.
@@ -12,6 +14,9 @@
 import { Hono } from "hono";
 import type {
   AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionInfo,
+  AgentDeletionResponse,
   AgentsResponse,
   AgentSummary,
   Employment,
@@ -38,6 +43,9 @@ import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
+import { refuseBuiltinDeletion } from "../../services/agent-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
@@ -52,6 +60,9 @@ export interface AgentsRouteDeps {
   sessionService: SessionService;
   sessionsRepo: SessionIndex;
   traceIndex: TraceIndex;
+  workbenches: Pick<Workbenches, "releaseAgent">;
+  /** Users' unsent drafts, which go with the Agent's Sessions. */
+  drafts: Pick<UserDraftsStore, "deleteByAgent">;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -165,6 +176,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Deletion is a Project-level management operation: owner only.
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    // Refused before any run is touched.
+    refuseBuiltinDeletion(agentId);
     // An employee is refused before anything is touched: deleting its Agent would leave the
     // organization's chart naming an Agent that is gone, and its desk naming a Session that is.
     // Leaving the organization is the way out, and it keeps the Agent.
@@ -172,15 +185,22 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     if (employers.length > 0) throw employedError(agentId, employers);
     // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
     // this window gets 409, preventing the race where a new task recreates the directory
-    // and revives the Agent between abort and rm. Abort cleanup writes the Trace
-    // asynchronously; wait for it to finish before removing the directory, and clear the
-    // deleting flag once deletion completes (success or failure).
+    // and revives the Agent between abort and the move. Abort cleanup writes the Trace
+    // asynchronously; wait for it to finish before moving the directory, and clear the
+    // deleting flag once the move is done (success or failure).
     const runnings = deps.manager.beginAgentDeletion(projectId, agentId);
+    let deletion: AgentDeletionInfo;
     try {
       await settleWithin(runnings, 5000);
-      await deps.agentService.deleteAgent(projectId, agentId);
+      // What the server itself holds open in the folder lets go before it is moved.
+      await deps.workbenches.releaseAgent(projectId, agentId);
+      // One rename takes the folder out of every list and route; its contents are removed in
+      // the background, which the answer reports and GET /agent-deletions/:id follows.
+      deletion = await deps.agentService.deleteAgent(projectId, agentId);
+      // Found through the Session index, so before its rows go.
+      deps.drafts.deleteByAgent(projectId, agentId);
       deps.sessionsRepo.deleteByAgent(projectId, agentId);
-      // Trace-index rows describe files the rm above just removed: drop them with the Agent.
+      // Trace-index rows describe files that just left: drop them with the Agent.
       deps.traceIndex.removeAgent(projectId, agentId);
       // Per-Agent runtime state keyed on the now-removed sessions/agent: drop it so nothing is
       // orphaned (session ids are never reused, so a leftover row is dead weight). Usage records
@@ -193,7 +213,27 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     } finally {
       deps.manager.endAgentDeletion(projectId, agentId);
     }
-    return c.body(null, 204);
+    return c.json({ deletion } satisfies AgentDeleteResponse, 202);
+  });
+
+  return app;
+}
+
+/** GET /api/projects/:projectId/agent-deletions/:deletionId: where a delete's removal stands. */
+export function agentDeletionsRoutes(
+  deps: Pick<AgentsRouteDeps, "access" | "agentService">,
+): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get("/:deletionId", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const deletionId = requireValidId(c, "deletionId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const deletion = deps.agentService.agentDeletion(projectId, deletionId);
+    if (deletion === null) {
+      throw new HttpError(404, "agent_deletion_not_found", "No such deletion is in progress.");
+    }
+    return c.json({ deletion } satisfies AgentDeletionResponse);
   });
 
   return app;

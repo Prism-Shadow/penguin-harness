@@ -152,16 +152,16 @@ describe("the ledger", () => {
   it("applies a migration another line's build skipped, when the root meets it", () => {
     const db = openFresh();
     try {
-      // A root whose builds never declared browser-extensions, though they declared what follows it.
+      // A root whose builds never declared 2026-10-04-browser-extensions, though they declared what follows it.
       db.exec("DROP TABLE browser_extensions");
       record(
         db,
-        namesAfter(null).filter((n) => n !== "browser-extensions"),
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
       );
-      expect(migrate(db).applied).toEqual(["browser-extensions"]);
+      expect(migrate(db).applied).toEqual(["2026-10-04-browser-extensions"]);
       expect(hasTable(db, "browser_extensions")).toBe(true);
       // Recorded where it actually ran: last.
-      expect(appliedMigrations(db).at(-1)).toBe("browser-extensions");
+      expect(appliedMigrations(db).at(-1)).toBe("2026-10-04-browser-extensions");
     } finally {
       db.close();
     }
@@ -179,13 +179,13 @@ describe("the ledger", () => {
         },
         down: null,
       };
-      const half = namesThrough("user-profile").length;
+      const half = namesThrough("2026-09-14-user-profile").length;
       const cut = [...MIGRATIONS.slice(0, half), boom, ...MIGRATIONS.slice(half)];
       expect(() => runner.migrate(db, cut)).toThrow(/stops-here/);
-      expect(appliedMigrations(db)).toEqual(namesThrough("user-profile"));
+      expect(appliedMigrations(db)).toEqual(namesThrough("2026-09-14-user-profile"));
       expect(migrate(db)).toEqual({
         adopted: false,
-        applied: namesAfter("user-profile"),
+        applied: namesAfter("2026-09-14-user-profile"),
         deferred: [],
       });
       expect(shape(db)).toBe(shape(fresh));
@@ -227,19 +227,26 @@ describe("every migration is re-runnable", () => {
 });
 
 describe("the swap path applies every expand migration and leaves contracts pending", () => {
-  it("adopts a numbered root while a pushed platform boots, leaving drop-goal-state for the runtime", () => {
+  it("adopts a numbered root while a pushed platform boots, leaving 2026-09-02-drop-goal-state for the runtime", () => {
     const db = openFresh();
     const fresh = openFresh();
     try {
-      // Every numbered root a build since 0.2.10 opened: no goal_state, a stamp, no ledger.
-      db.exec("DROP TABLE port_forwards; PRAGMA user_version = 13;");
+      // Every numbered root a build since 0.2.10 opened: no goal_state, a stamp, no ledger —
+      // here the one the chain stamped 16 before its restack, without main's two model tables.
+      db.exec(
+        "DROP TABLE model_promotions; DROP TABLE model_provider_auth_tokens; PRAGMA user_version = 16;",
+      );
       const r = migrate(db, { swapPath: true });
       expect(r.adopted).toBe(true);
-      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "drop-goal-state"));
-      expect(r.deferred).toEqual(["drop-goal-state"]);
+      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "2026-09-02-drop-goal-state"));
+      expect(r.deferred).toEqual(["2026-09-02-drop-goal-state"]);
       expect(shape(db)).toBe(shape(fresh));
       // The runtime's next open records it, as the no-op it is here.
-      expect(migrate(db)).toEqual({ adopted: false, applied: ["drop-goal-state"], deferred: [] });
+      expect(migrate(db)).toEqual({
+        adopted: false,
+        applied: ["2026-09-02-drop-goal-state"],
+        deferred: [],
+      });
     } finally {
       db.close();
       fresh.close();
@@ -250,17 +257,17 @@ describe("the swap path applies every expand migration and leaves contracts pend
     const db = open024();
     try {
       const r = migrate(db, { swapPath: true });
-      expect(r.deferred).toEqual(["drop-goal-state"]);
-      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "drop-goal-state"));
+      expect(r.deferred).toEqual(["2026-09-02-drop-goal-state"]);
+      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "2026-09-02-drop-goal-state"));
       expect(hasTable(db, "goal_state")).toBe(true);
       // A second push leaves it pending again, and still boots.
       expect(migrate(db, { swapPath: true })).toEqual({
         adopted: false,
         applied: [],
-        deferred: ["drop-goal-state"],
+        deferred: ["2026-09-02-drop-goal-state"],
       });
       // The runtime's own open, which owns the process, applies it.
-      expect(migrate(db).applied).toEqual(["drop-goal-state"]);
+      expect(migrate(db).applied).toEqual(["2026-09-02-drop-goal-state"]);
       expect(hasTable(db, "goal_state")).toBe(false);
     } finally {
       db.close();
@@ -272,41 +279,6 @@ describe("the swap path applies every expand migration and leaves contracts pend
     try {
       migrate(db);
       expect(migrate(db, { swapPath: true }).applied).toEqual([]);
-    } finally {
-      db.close();
-    }
-  });
-
-  /**
-   * error_records' stack, task and request columns, the same way: every error a pushed
-   * platform records names them, and the recorder swallows its own failures — so without the
-   * migration a live deployment would lose every error silently rather than fail loudly.
-   */
-  it("grows the error context columns on the swap path, and a root that has them migrates the same", () => {
-    const db = openFresh();
-    try {
-      db.exec("DROP INDEX idx_error_session");
-      for (const col of ["stack", "task_id", "request_id"]) {
-        db.exec(`ALTER TABLE error_records DROP COLUMN ${col}`);
-      }
-      stampThrough(db, "model-tables-adoption");
-      const insert = () =>
-        db
-          .prepare(
-            `INSERT INTO error_records (ts, date, source, kind, code, message, stack, task_id, request_id)
-             VALUES ('t', 'd', 'session', 'unexpected', 'c', 'm', 's', 'task', 'req')`,
-          )
-          .run();
-      expect(insert).toThrow(/no column named stack/);
-
-      expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter("model-tables-adoption"));
-      expect(insert).not.toThrow();
-      const indexes = db.prepare("PRAGMA index_list(error_records)").all() as { name: string }[];
-      expect(indexes.map((i) => i.name)).toContain("idx_error_session");
-
-      // Again on a root that already had them (the declarative track got there first).
-      db.exec("DELETE FROM schema_migrations WHERE name = 'error-records-context'");
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["error-records-context"]);
     } finally {
       db.close();
     }
@@ -332,15 +304,15 @@ describe("rollbackTo", () => {
     const db = open024();
     try {
       migrate(db);
-      const r = rollbackTo(db, "messaging-bindings");
-      expect(r.reverted).toEqual(namesAfter("messaging-bindings").reverse());
-      expect(appliedMigrations(db)).toEqual(["messaging-bindings"]);
+      const r = rollbackTo(db, "2026-08-31-messaging-bindings");
+      expect(r.reverted).toEqual(namesAfter("2026-08-31-messaging-bindings").reverse());
+      expect(appliedMigrations(db)).toEqual(["2026-08-31-messaging-bindings"]);
       const cols = columns(db, "messaging_bindings");
       expect(cols).not.toContain("render_markdown");
       expect(cols).not.toContain("final_reply_only");
       expect(hasTable(db, "machines")).toBe(false);
       expect(hasTable(db, "org_channel_reads")).toBe(false);
-      // goal_state, which drop-goal-state dropped, is back.
+      // goal_state, which 2026-09-02-drop-goal-state dropped, is back.
       expect(hasTable(db, "goal_state")).toBe(true);
     } finally {
       db.close();
@@ -353,14 +325,14 @@ describe("rollbackTo", () => {
       db.exec("DROP TABLE browser_extensions");
       record(
         db,
-        namesAfter(null).filter((n) => n !== "browser-extensions"),
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
       );
       migrate(db);
-      // browser-extensions ran last, so it is the only one applied after the last other name.
+      // 2026-10-04-browser-extensions ran last, so it is the only one applied after the last other name.
       const lastOther = namesAfter(null)
-        .filter((n) => n !== "browser-extensions")
+        .filter((n) => n !== "2026-10-04-browser-extensions")
         .at(-1)!;
-      expect(rollbackTo(db, lastOther).reverted).toEqual(["browser-extensions"]);
+      expect(rollbackTo(db, lastOther).reverted).toEqual(["2026-10-04-browser-extensions"]);
       expect(hasTable(db, "browser_extensions")).toBe(false);
     } finally {
       db.close();
@@ -423,23 +395,29 @@ describe("rollbackTo", () => {
   it("rejects a target that was never applied", () => {
     const db = new sqlite.DatabaseSync(":memory:");
     try {
-      expect(() => rollbackTo(db, "machines")).toThrow(/not applied/);
+      expect(() => rollbackTo(db, "2026-09-04-machines")).toThrow(/not applied/);
     } finally {
       db.close();
     }
   });
 });
 
-describe("messaging-conversations on a named-migration root", () => {
+describe("2026-10-12-messaging-conversations on a named-migration root", () => {
   it("creates a unique row per bot and chat on the swap path, and its down drops them", () => {
     const db = openFresh();
     try {
       migrate(db);
       db.exec("DROP TABLE messaging_conversations");
-      db.exec("DELETE FROM schema_migrations WHERE name = 'messaging-conversations'");
-      const previous = namesThrough("messaging-conversations").at(-2)!.name;
+      db.exec("DELETE FROM schema_migrations WHERE name = '2026-10-12-messaging-conversations'");
+      // The migration applied just before the re-applied one on this root: rolling back to it
+      // undoes exactly that one, whatever the later migrations' downs would do.
+      const previous = namesAfter(null)
+        .filter((n) => n !== "2026-10-12-messaging-conversations")
+        .at(-1)!;
       const before = shape(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["messaging-conversations"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-10-12-messaging-conversations",
+      ]);
       const put = () =>
         db
           .prepare(
@@ -451,6 +429,45 @@ describe("messaging-conversations on a named-migration root", () => {
       expect(put).toThrow(/UNIQUE/);
       rollbackTo(db, previous);
       expect(shape(db)).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * error_records' stack, task and request columns, the same way: every error a pushed
+ * platform records names them, and the recorder swallows its own failures — so without the
+ * migration a live deployment would lose every error silently rather than fail loudly.
+ */
+describe("the swap path grows the error context columns, and a root that has them migrates the same", () => {
+  it("grows the error context columns on the swap path", () => {
+    const db = openFresh();
+    try {
+      db.exec("DROP INDEX idx_error_session");
+      for (const col of ["stack", "task_id", "request_id"]) {
+        db.exec(`ALTER TABLE error_records DROP COLUMN ${col}`);
+      }
+      stampThrough(db, "2026-09-23-model-tables-adoption");
+      const insert = () =>
+        db
+          .prepare(
+            `INSERT INTO error_records (ts, date, source, kind, code, message, stack, task_id, request_id)
+             VALUES ('t', 'd', 'session', 'unexpected', 'c', 'm', 's', 'task', 'req')`,
+          )
+          .run();
+      expect(insert).toThrow(/no column named stack/);
+
+      expect(migrate(db, { swapPath: true }).applied).toEqual(
+        namesAfter("2026-09-23-model-tables-adoption"),
+      );
+      expect(insert).not.toThrow();
+      const indexes = db.prepare("PRAGMA index_list(error_records)").all() as { name: string }[];
+      expect(indexes.map((i) => i.name)).toContain("idx_error_session");
+
+      // Again on a root that already had them (the declarative track got there first).
+      db.exec("DELETE FROM schema_migrations WHERE name = 'error-records-context'");
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["error-records-context"]);
     } finally {
       db.close();
     }

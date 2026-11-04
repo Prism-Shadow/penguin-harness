@@ -14,7 +14,7 @@
  * jumping to, unlike in input history (which only recalls what was typed here).
  * Steering messages ride inside a running turn and neither open an entry nor end one.
  */
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 import { parseUserMessageBody } from "./user-message-body";
 
 export interface OutlineEntry {

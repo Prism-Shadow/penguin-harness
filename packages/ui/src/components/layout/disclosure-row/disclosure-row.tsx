@@ -21,6 +21,7 @@ import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
+import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 import { Fold } from "../fold/fold";
 
 /**
@@ -293,6 +294,7 @@ export function DisclosureRow({
           data-kind={activity?.kind}
           data-state={activity?.state}
         >
+          {sticky && <WallpaperBackdrop />}
           {parts}
           <ActivityToggle open={open} />
           <span className="min-w-0 flex-1" />
@@ -301,6 +303,7 @@ export function DisclosureRow({
         // Two buttons, one disclosure: the row's words, and the chevron at its far end past the
         // parts that cannot sit inside a button.
         <div className={rowClass} data-kind={activity?.kind} data-state={activity?.state}>
+          {sticky && <WallpaperBackdrop />}
           <button
             type="button"
             aria-expanded={open}

@@ -93,6 +93,8 @@ export interface BrowserToolbarProps {
   /** Null when the page is not a web page the system browser could open. */
   onOpenExternal: (() => void) | null;
   onDevTools: () => void;
+  /** The hosting panel's own rows on top of the menu (backend-menu.tsx); absent when none. */
+  menuTop?: (close: () => void) => ReactNode;
 }
 
 /** The mark of an agent at work in the browser: an icon in the busy tone, named by its tooltip. */

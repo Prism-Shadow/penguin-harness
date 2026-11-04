@@ -90,6 +90,12 @@ function server() {
         code: "run_failed",
         message: `Error at ${ts}`,
         count: 1,
+        agentId: null,
+        sessionId: null,
+        taskId: null,
+        requestId: null,
+        status: null,
+        stack: null,
       });
     },
     refuseNext: () => {
@@ -109,8 +115,8 @@ async function client() {
   const { ThemeProvider } = await import("../src/state/theme");
   const { ProjectProvider } = await import("../src/state/project");
   const { UsagePage } = await import("../src/features/usage/usage-page");
-  const { useUpdateBadges } = await import("../src/lib/use-update-badges");
-  const { useTodoDismissals, dismissTodo } = await import("../src/lib/todo-dismissals");
+  const { useUpdateBadges } = await import("../src/features/todos/use-update-badges");
+  const { useTodoDismissals, dismissTodo } = await import("../src/features/todos/todo-dismissals");
   const { Toaster } = await import("@prismshadow/penguin-ui");
   const { setActiveStrings } = await import("../src/lib/strings");
   const { en } = await import("../src/lib/strings-en");

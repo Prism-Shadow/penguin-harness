@@ -87,14 +87,6 @@
   .overflow-y-scroll {
     position: relative;
   }
-  /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
-  .no-scrollbar {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
 }
 
 /* The preview is an interior row of Appearance, so only the surrounding settings group's
@@ -104,6 +96,10 @@
 }
 
 /* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */
+
+/* The entrances and exits the shared components name (`anim-pop`, `anim-fade`, `anim-msg`, the
+   toast, drawer and launcher-fan classes) live in the UI package beside its other motion rules:
+   packages/ui/src/animations.css, imported by theme.css. These are the app's own. */
 
 @keyframes rise-in {
   from {
@@ -116,63 +112,10 @@
   }
 }
 
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
 /* Login card entrance (used only on the login page; in-app pages skip entrance animations to avoid a
    transform ancestor hijacking fixed-positioned overlays). */
 .anim-rise {
   animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-/* Dropdown menu / popover entrance. */
-.anim-pop {
-  animation: pop-in 120ms ease-out both;
 }
 /* A status icon replaced by the next one (the composer's permission level): the new icon turns
    and grows in from small, so the change is seen rather than blinked. */
@@ -194,80 +137,11 @@
   display: block;
   animation: icon-swap 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-/* Top toast overlay: slides in from above / slides up while fading out. */
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-}
-.anim-toast-in {
-  animation: toast-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-toast-out {
-  animation: toast-out 160ms ease-in both;
-}
-
-/* Overlay fade-in. */
-.anim-fade {
-  animation: fade-in 120ms ease-out both;
-}
-
-/* The boot status (components/ui/boot-pending.tsx): held invisible for the first 400ms, so a
+/* App-local (the shared entrances live in packages/ui/src/animations.css).
+   The boot status (components/ui/boot-pending.tsx): held invisible for the first 400ms, so a
    fast load never flashes it; `both` keeps it at opacity 0 during the delay. */
 .anim-boot-pending {
   animation: fade-in 200ms ease-out 400ms both;
-}
-
-/* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
-   onto their places on the arc with a slight overshoot, and fold back into it without one.
-   Every entry's box sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from
-   there, set per entry, and that translate is also the entry's resting inline transform — so
-   the reduced-motion block below, which drops the animation outright, leaves each entry
-   standing on the arc instead of collapsed onto the ball or hidden. */
-@keyframes launcher-fan-in {
-  from {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.5);
-  }
-  to {
-    opacity: 1;
-    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
-  }
-}
-@keyframes launcher-fan-out {
-  from {
-    opacity: 1;
-    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
-  }
-  to {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.5);
-  }
-}
-.launcher-fan-in {
-  animation: launcher-fan-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-.launcher-fan-out {
-  animation: launcher-fan-out 140ms ease-in both;
-}
-/* Message item entrance. */
-.anim-msg {
-  animation: msg-in 180ms ease-out both;
 }
 
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
@@ -295,29 +169,6 @@
 }
 .dark .outline-flash {
   animation-name: outline-flash-dark;
-}
-/* Find-in-page highlights (lib/find-dom.ts): the CSS Custom Highlight API, so a search paints
-   ranges without wrapping them in elements — nothing in the DOM changes, which is what lets
-   React re-render a streaming transcript without noticing or fighting the paint. Two names:
-   every hit, and the one hit the bar is currently on. Only `background-color` and `color` are
-   allowed in `::highlight()`, and both rules must stand alone (no selector lists, no nesting).
-   The wash is deliberately translucent so the text under it keeps its own weight; `color:
-   inherit` is spelled out because a highlight otherwise inherits the highlight pseudo's own
-   (user-agent) colour. Theme-independent: the same blue reads on white and on black. */
-::highlight(penguin-find) {
-  background-color: color-mix(in srgb, var(--color-brand-500) 32%, transparent);
-  color: inherit;
-}
-::highlight(penguin-find-current) {
-  background-color: color-mix(in srgb, var(--color-brand-500) 70%, transparent);
-  color: inherit;
-}
-/* Drawer slide-in. */
-.anim-drawer-left {
-  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-drawer-right {
-  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 /* Truncated-title scroll reveal (#309, sidebar conversation rows; truncated.tsx attaches the

@@ -20,8 +20,8 @@ import {
   tokenUsage,
   toolCall,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, TextPayload } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, TextPayload } from "@prismshadow/amsp/records";
 import type { EnvironmentInterface, LLMInterface, LLMOutcome } from "../src/interfaces/index.js";
 import type { TraceSink } from "../src/engine/context-engine.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
@@ -36,14 +36,14 @@ const environment: EnvironmentInterface = {
   toolPermission: () => undefined,
 };
 
-const usage = (): OmniMessage =>
+const usage = (): AmspRecord =>
   tokenUsage(emptyTokenCounts(), { cache_read: 0, cache_write: 0, output: 1, total: 1 });
 
 /** Plays one scripted turn per request and keeps the input each request was sent. */
 function scriptedLLM(
-  turns: Array<() => AsyncGenerator<OmniMessage, LLMOutcome>>,
-): LLMInterface & { inputs: OmniMessage[][] } {
-  const inputs: OmniMessage[][] = [];
+  turns: Array<() => AsyncGenerator<AmspRecord, LLMOutcome>>,
+): LLMInterface & { inputs: AmspRecord[][] } {
+  const inputs: AmspRecord[][] = [];
   return {
     inputs,
     streamGenerate({ newMessages }) {
@@ -56,14 +56,14 @@ function scriptedLLM(
 }
 
 /** A reply that completes. */
-async function* answer(): AsyncGenerator<OmniMessage, LLMOutcome> {
+async function* answer(): AsyncGenerator<AmspRecord, LLMOutcome> {
   yield assistantText("done");
   yield usage();
   return { status: "completed" };
 }
 
-function recordingTrace(): TraceSink & { written: OmniMessage[] } {
-  const written: OmniMessage[] = [];
+function recordingTrace(): TraceSink & { written: AmspRecord[] } {
+  const written: AmspRecord[] = [];
   return {
     written,
     write: async (msg) => {
@@ -72,16 +72,16 @@ function recordingTrace(): TraceSink & { written: OmniMessage[] } {
   };
 }
 
-async function drain(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
-  const out: OmniMessage[] = [];
+async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
   for await (const msg of gen) out.push(msg);
   return out;
 }
 
-const typeOf = (m: OmniMessage): string | undefined => (m.payload as { type?: string }).type;
-const isUserText = (m: OmniMessage): boolean =>
+const typeOf = (m: AmspRecord): string | undefined => (m.payload as { type?: string }).type;
+const isUserText = (m: AmspRecord): boolean =>
   typeOf(m) === "text" && (m.payload as TextPayload).role === "user";
-const textOf = (m: OmniMessage): string => (m.payload as TextPayload).text;
+const textOf = (m: AmspRecord): string => (m.payload as TextPayload).text;
 
 const ASK = "draft the release notes";
 
@@ -90,7 +90,7 @@ describe("Retry after an interruption", () => {
     const llm = scriptedLLM([
       // The user stops the stream half-way through the reply.
       async function* () {
-        yield assistantText("Here are the rel", "aborted");
+        yield assistantText("Here are the rel");
         return { status: "aborted" };
       },
       answer,
@@ -153,7 +153,7 @@ describe("Retry after an interruption", () => {
   it("a message sent after the stop takes the held turn along, leaving nothing to retry", async () => {
     const llm = scriptedLLM([
       async function* () {
-        yield assistantText("Here are", "aborted");
+        yield assistantText("Here are");
         return { status: "aborted" };
       },
       answer,

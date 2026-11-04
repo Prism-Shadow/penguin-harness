@@ -29,6 +29,8 @@ export class FakeChrome implements ExtensionSocket {
   cdp: CdpHandler = () => ({});
   /** False plays an extension that stopped answering pings. */
   answersPings = true;
+  /** `tabs` answers held back by {@link holdTabs}, sent when it is released. */
+  private heldTabs: Array<() => void> | null = null;
   private nextTabId = 100;
   /** cdp commands waiting for their answer, by tab, so a release can fail them. */
   private readonly waiting = new Map<string, number>();
@@ -49,6 +51,16 @@ export class FakeChrome implements ExtensionSocket {
 
   onClose(listener: (code: number) => void): void {
     this.closeListener = listener;
+  }
+
+  /** A slow extension: `tabs` is answered only once the returned release is called. */
+  holdTabs(): () => void {
+    const held: Array<() => void> = [];
+    this.heldTabs = held;
+    return () => {
+      this.heldTabs = null;
+      for (const answer of held.splice(0)) answer();
+    };
   }
 
   /** The extension went away (Chrome closed, the network dropped). */
@@ -98,9 +110,13 @@ export class FakeChrome implements ExtensionSocket {
           },
         });
         return;
-      case "tabs":
-        this.reply(msg.id, { ok: true, result: { tabs: [...this.guests.values()] } });
+      case "tabs": {
+        const answer = () =>
+          this.reply(msg.id, { ok: true, result: { tabs: [...this.guests.values()] } });
+        if (this.heldTabs !== null) this.heldTabs.push(answer);
+        else answer();
         return;
+      }
       case "ping":
         if (this.answersPings) this.reply(msg.id, { ok: true, result: {} });
         return;

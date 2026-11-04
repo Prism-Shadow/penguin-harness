@@ -1,9 +1,14 @@
 /**
- * listEndpointModels: the thin MMSP wrapper — routes by the given client type,
- * resolves the credential itself (the environment lends a key only to the vendor's own
- * endpoint and refuses the listing otherwise, before any client exists), forwards the base
- * URL only when present, names PenguinHarness and its version in the User-Agent, and returns
- * the listing verbatim (order preserved, no dedup: presentation policy belongs to callers).
+ * listEndpointModels: the thin MMSP wrapper — routes by the given client type, passes the key
+ * and the base URL exactly as its caller gives them (nothing for an absent one), names
+ * PenguinHarness and its version in the User-Agent, and returns the listing verbatim (order
+ * preserved, no dedup: presentation policy belongs to callers). What a missing key means is
+ * MMSP's (model-client.test.ts holds it on the wire).
+ *
+ * - Given a key and a base URL, the client is routed by the client type and the listing comes
+ *   back verbatim.
+ * - Given no key, the client is built with no key at all, with the base URL when there is one.
+ * - Given MMSP throws, the error propagates unchanged.
  */
 import { describe, expect, it, vi } from "vitest";
 import { VERSION } from "../src/index.js";
@@ -52,41 +57,21 @@ describe("listEndpointModels", () => {
     ]);
   });
 
-  it("lends the protocol's environment key to the vendor's own endpoint (no base URL = the vendor default)", async () => {
+  it("with no key, builds the client with no key at all, and the base URL when there is one", async () => {
     captured.options.length = 0;
-    await listEndpointModels({
-      clientType: "ant-messages",
-      env: { ANTHROPIC_API_KEY: " sk-env-1 " },
-    });
+    for (const baseUrl of [undefined, "  ", "https://relay.example/api/v1"]) {
+      await listEndpointModels({ clientType: "mmsp", ...(baseUrl ? { baseUrl } : {}) });
+    }
     expect(captured.options).toEqual([
-      { model: "ant-messages", clientType: "ant-messages", apiKey: "sk-env-1", defaultHeaders },
-    ]);
-  });
-
-  it("refuses a keyless listing of a foreign endpoint before a client exists, whatever the environment holds", async () => {
-    captured.options.length = 0;
-    await expect(
-      listEndpointModels({
-        clientType: "openai-chat",
-        baseUrl: "https://gw.example/v1",
-        env: { OPENAI_API_KEY: "sk-env-2" },
-      }),
-    ).rejects.toMatchObject({
-      name: "ModelCredentialError",
-      message: expect.stringContaining("enter the endpoint's API key"),
-    });
-    expect(captured.options).toEqual([]);
-  });
-
-  it("names the unset variable when the vendor's own endpoint has no key to lend", async () => {
-    captured.options.length = 0;
-    await expect(listEndpointModels({ clientType: "ant-messages", env: {} })).rejects.toMatchObject(
+      { model: "mmsp", clientType: "mmsp", defaultHeaders },
+      { model: "mmsp", clientType: "mmsp", defaultHeaders },
       {
-        name: "ModelCredentialError",
-        message: expect.stringContaining("ANTHROPIC_API_KEY is not set"),
+        model: "mmsp",
+        clientType: "mmsp",
+        baseUrl: "https://relay.example/api/v1",
+        defaultHeaders,
       },
-    );
-    expect(captured.options).toEqual([]);
+    ]);
   });
 
   it("propagates MMSP errors unchanged (callers collapse them into their outcome shape)", async () => {

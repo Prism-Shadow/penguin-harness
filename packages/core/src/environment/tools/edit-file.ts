@@ -24,8 +24,8 @@
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
@@ -162,9 +162,9 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       const filePath = args["file_path"];
@@ -172,14 +172,14 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         yield delta(
           describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const oldString = args["old_string"];
       if (typeof oldString !== "string") {
         yield delta(
           describeArgumentError(definition, args, { argument: "old_string", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (oldString.length === 0) {
         yield delta(
@@ -192,20 +192,20 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
             },
           ),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const newString = args["new_string"];
       if (typeof newString !== "string") {
         yield delta(
           describeArgumentError(definition, args, { argument: "new_string", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (oldString === newString) {
         yield delta(
           "old_string and new_string are identical — nothing to change. Make new_string the desired replacement text.",
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const replaceAll = args["replace_all"] === true;
 
@@ -240,10 +240,10 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         }
         throw err;
       });
-      if (outcome.kind === "aborted") return { stopReason: "aborted" };
+      if (outcome.kind === "aborted") return { status: "aborted" };
       if (outcome.kind === "fatal") {
         yield delta(outcome.text);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const { content, replaced } = outcome;
 

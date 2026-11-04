@@ -13,7 +13,7 @@
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -24,8 +24,12 @@ import {
   createMemoryRouter,
   createRoutesFromElements,
   useParams,
+  useRouteError,
 } from "react-router";
 import { PageFrame } from "@prismshadow/penguin-ui";
+import { CrashNotice, setReportRoute } from "@prismshadow/penguin-ui";
+import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
+import { routePattern } from "./lib/route-pattern";
 import { NavigationGuard } from "./lib/unsaved/navigation-guard";
 import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
@@ -195,8 +199,19 @@ function HomeRedirect() {
   return <Navigate to={homePath(workMode)} replace />;
 }
 
-/** The root of every route: the leave guard above the page the route renders. */
+/**
+ * The root of every route: the leave guard above the page the route renders. Until the session is
+ * known no screen shows, and the pre-paint script's boot layer keeps the stored custom background
+ * on the window meanwhile; once it is, the first screen mounts in the same commit — the shell,
+ * painting its own wallpaper, or a screen outside it — and the boot layer ends before that frame
+ * is painted.
+ */
 function RootFrame() {
+  const { user } = useAuth();
+  const settled = user !== undefined;
+  useLayoutEffect(() => {
+    if (settled) releaseBootWallpaper(document.documentElement);
+  }, [settled]);
   return (
     <>
       <NavigationGuard />
@@ -206,12 +221,17 @@ function RootFrame() {
 }
 
 /**
- * The route table. Exported so a suite can pin what the organization layout mounts — the
- * wildcard child that carries the runtime page table among it — without a signed-in app.
+ * What the router shows in place of a route that crashed outside a page body's own boundary (the
+ * shell, a guard): the crash notice over the whole window, with Reload and Report.
  */
+function RouteCrash() {
+  const error = useRouteError();
+  return <CrashNotice error={error} className="h-dvh" />;
+}
+
 export function appRoutes() {
   return createRoutesFromElements(
-    <Route element={<RootFrame />}>
+    <Route element={<RootFrame />} errorElement={<RouteCrash />}>
       <Route path="/login" element={<LoginRoute />} />
       <Route
         path="/terminal"
@@ -286,5 +306,10 @@ export function AppRouter({ initialPath }: { initialPath?: string } = {}) {
       ? (browserRouter ??= createBrowserRouter(appRoutes()))
       : createMemoryRouter(appRoutes(), { initialEntries: [initialPath] }),
   );
+  // A problem report names the page by its route's pattern, never by the ids in the address.
+  useEffect(() => {
+    setReportRoute(() => routePattern(router.state.matches));
+    return () => setReportRoute(null);
+  }, [router]);
   return <RouterProvider router={router} />;
 }

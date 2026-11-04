@@ -103,7 +103,7 @@ describe("the panel", () => {
   });
 
   const panel = () => renderToStaticMarkup(createElement(BuiltinBrowserPanel, { active: true }));
-  const load = (actions: BrowserAction[]) => actions.forEach(dispatchBrowser);
+  const load = (actions: BrowserAction[]) => actions.forEach((a) => dispatchBrowser(a));
 
   it("draws the common sites over a blank tab, and nothing of them over a web page", () => {
     load(hosting(21, "", tab(21)));

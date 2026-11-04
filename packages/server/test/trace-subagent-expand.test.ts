@@ -21,7 +21,7 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type { TraceService } from "../src/services/trace-service.js";
 import { makeTraceHarness } from "./helpers.js";
 
@@ -32,7 +32,7 @@ const PARENT = "session-2026-07-09-10-00-00-aaaa0001";
 const CHILD = "session-2026-07-09-10-00-01-bbbb0002";
 const GRANDCHILD = "session-2026-07-09-10-00-02-cccc0003";
 
-function meta(sessionId: string, agentId: string): OmniMessage {
+function meta(sessionId: string, agentId: string): AmspRecord {
   const payload: SessionMetaPayload = {
     session_id: sessionId,
     model_id: "m",
@@ -50,7 +50,7 @@ async function writeTrace(
   root: string,
   agentId: string,
   sessionId: string,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
 ): Promise<void> {
   const dir = path.join(root, PROJECT, "agents", agentId, "traces", "2026-07-09");
   await fs.mkdir(dir, { recursive: true });
@@ -82,7 +82,7 @@ describe("TraceService.readMessages — sub-session expansion", () => {
       userText("run a sub-agent"),
       toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "c1" }),
       subagentEvent(CHILD), // pointer: holds only the child Session id
-      toolCallOutput({ output: "done", toolCallId: "c1" }),
+      toolCallOutput({ output: "done", toolCallId: "c1", status: "completed" }),
     ]);
     await writeTrace(root, CHILD_AGENT, CHILD, [
       meta(CHILD, CHILD_AGENT),

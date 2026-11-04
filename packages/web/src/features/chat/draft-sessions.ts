@@ -16,11 +16,14 @@
  *
  * The in-memory copy is a module-level store so the sidebar list
  * and the draft page react to every mutation in this tab; parseDraft validates each
- * entry's content field-by-field on load, exactly like the caches it mirrors.
+ * entry's content field-by-field on load, exactly like the caches it mirrors. Like the active
+ * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
+ * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
  */
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
+import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
 import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache, DraftStorage } from "./draft-cache";
 
@@ -78,13 +81,15 @@ const draftsStore = createStore<{ cache: Map<string, DraftSessionEntry[]> }>(() 
 }));
 const EMPTY: DraftSessionEntry[] = [];
 
-function storageOf(injected?: DraftStorage): DraftStorage | null {
-  if (injected) return injected;
-  try {
-    return localStorage;
-  } catch {
-    return null; // No storage at all (privacy mode edge): drafts silently disabled.
-  }
+// The account's drafts were written into the cache: every list is read from it again.
+subscribeAccountApplied(() => draftsStore.setState({ cache: new Map() }));
+
+/**
+ * The injected storage (tests), or the synced one. A store with no storage at all (privacy mode
+ * edge) throws on each call, which readEntries and writeEntries already treat as "no drafts".
+ */
+function storageOf(injected?: DraftStorage): DraftStorage {
+  return injected ?? syncedStorage;
 }
 
 function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
@@ -93,12 +98,10 @@ function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
   if (hit) return hit;
   const s = storageOf(storage);
   let entries: DraftSessionEntry[] = EMPTY;
-  if (s) {
-    try {
-      entries = parseEntries(s.getItem(key));
-    } catch {
-      entries = EMPTY;
-    }
+  try {
+    entries = parseEntries(s.getItem(key));
+  } catch {
+    entries = EMPTY;
   }
   cache.set(key, entries);
   return entries;
@@ -106,13 +109,11 @@ function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
 
 function writeEntries(key: string, entries: DraftSessionEntry[], storage?: DraftStorage): void {
   const s = storageOf(storage);
-  if (s) {
-    try {
-      if (entries.length === 0) s.removeItem(key);
-      else s.setItem(key, JSON.stringify(entries));
-    } catch {
-      // Quota/private mode: the in-memory copy still serves this tab.
-    }
+  try {
+    if (entries.length === 0) s.removeItem(key);
+    else s.setItem(key, JSON.stringify(entries));
+  } catch {
+    // Quota/private mode: the in-memory copy still serves this tab.
   }
   draftsStore.setState((prev) => ({ cache: new Map(prev.cache).set(key, entries) }));
 }

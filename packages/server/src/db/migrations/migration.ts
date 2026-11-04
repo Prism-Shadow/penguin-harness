@@ -2,9 +2,10 @@ import type { DatabaseSync } from "node:sqlite";
 
 interface MigrationBase {
   /**
-   * Kebab-case, names the change. It is the migration's IDENTITY: the ledger records it, and
-   * every build — older or newer, from any PR line — recognises the work by it. Never renamed
-   * once pushed.
+   * Kebab-case, prefixed with the `yyyy-mm-dd-` date the step was introduced: the author date
+   * of the commit that first carried it into `main`. It is the migration's IDENTITY: the
+   * ledger records it, and every build — older or newer, from any PR line — recognises the
+   * work by it. Never renamed once pushed.
    */
   name: string;
   /**
@@ -27,9 +28,9 @@ interface MigrationBase {
 /**
  * EXPAND: strictly additive, or a superset the previous platform still reads and writes.
  *
- * `company-mode-channels` is the one exception, kept because it is frozen: it drops two tables
- * in the step that creates their replacements (see its file). No new migration may follow it —
- * a removal is a contract.
+ * `2026-09-16-company-mode-channels` is the one exception, kept because it is frozen: it drops
+ * two tables in the step that creates their replacements (see its file). No new migration may
+ * follow it — a removal is a contract.
  */
 interface ExpandMigration extends MigrationBase {
   swapSafe: true;

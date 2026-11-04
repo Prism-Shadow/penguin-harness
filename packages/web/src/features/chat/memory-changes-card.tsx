@@ -2,7 +2,7 @@
  * Memory-change summary card, rendered right below the file-summary card at the end of a
  * root Task (the same card, the UI package's ChangesCard): one row per memory topic file the
  * Task changed through the structured file tools, derived by the stream model
- * (TaskStatsItem.memoryChanges — see lib/omni/memory-changes.ts for what qualifies and what is
+ * (TaskStatsItem.memoryChanges — see lib/amsp/memory-changes.ts for what qualifies and what is
  * filtered).
  *
  * Clicking a row opens the Memory side panel directly on that memory's content; the header's
@@ -14,8 +14,8 @@
  */
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
+import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
+import { memoryRowKey } from "../../lib/amsp/memory-changes";
 import { scopeGlyph } from "./memory-view";
 
 export function MemoryChangesCard({

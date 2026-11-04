@@ -24,9 +24,8 @@
 import { useEffect } from "react";
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import { toastApiError } from "../../lib/toast-api-error";
 import type { TodoKey } from "./todo-badges";
 
 /** The `ui_prefs` key the whole map is stored under. */
@@ -139,5 +138,5 @@ export function dismissTodo(projectId: string | null, key: TodoKey, signature: s
       await api.putPrefs({ [TODO_PREFS_KEY]: next });
       dismissStore.setState({ map: next });
     })
-    .catch((e: unknown) => toastError(apiErrorText(e)));
+    .catch((e: unknown) => toastApiError(e));
 }

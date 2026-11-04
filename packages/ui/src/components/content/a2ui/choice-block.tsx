@@ -1,5 +1,7 @@
 /**
- * A choice: one question and its options, which the reader answers by picking.
+ * A choice: one question and its options, which the reader answers by picking. The options are
+ * the package's option group (`ChoiceGroup`), so they read like the option groups elsewhere in
+ * the app and follow the theme.
  *
  * A single-select choice acts on the pick: pressing an option puts its text in the composer at
  * once, so its options are buttons, not radios — a radio's arrow keys would fill the composer on
@@ -14,38 +16,33 @@
  * checkboxes.
  *
  * `allowOther` adds an "Other…" control that fills the composer with nothing, clearing what an
- * earlier pick put there, so the reader writes an answer of their own. The option the model
- * recommends carries a mark. A multi-select's ticks are kept as a draft while it is the open
- * question (draft.ts), so a reload brings them back; a single pick has filled already and keeps
- * nothing.
+ * earlier pick put there, so the reader writes an answer of their own: the group's last entry in
+ * the muted ink, led by a pen on a card, or a ghost button beside a multi-select's fill. The
+ * option the model recommends carries a mark and holds a single-select's tab stop. A
+ * multi-select's ticks are kept as a draft while it is the open question (draft.ts), so a reload
+ * brings them back; a single pick has filled already and keeps nothing.
  *
  * Read-only (the default — an older reply, a Trace), the options stay on screen with every
- * control disabled and no fill button: the question is still part of the record.
+ * control disabled and no fill button: the question is still part of the record. Once the reply
+ * has been answered, the options the message that answered it names are picked (`answeredWith`,
+ * core's `parseChoicePick`), so a reload still shows the pick; an answer the reader wrote
+ * themselves, or any other message, picks nothing.
  */
-import { useId, useState } from "react";
-import type { KeyboardEvent } from "react";
-import { choiceFillText } from "@prismshadow/penguin-core/a2ui";
+import { useId, useMemo, useState } from "react";
+import { choiceFillText, parseChoicePick } from "@prismshadow/penguin-core/a2ui";
 import type { A2uiChoice, A2uiOption } from "@prismshadow/penguin-core/a2ui";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
-import { Checkbox } from "../../forms/checkbox/checkbox";
+import { ChoiceGroup } from "../../forms/choice-group/choice-group";
+import type { ChoiceGroupOption } from "../../forms/choice-group/choice-group";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { useA2uiActions } from "./actions";
 import type { A2uiActions } from "./actions";
 import { useA2uiDraft } from "./draft";
-import {
-  A2UI_CARD,
-  A2UI_CHIP,
-  A2UI_TITLE,
-  InlineText,
-  OptionLabel,
-  pressLook,
-  rovingTarget,
-  shortOptions,
-} from "./parts";
+import { A2UI_TITLE, InlineText, OptionLabel, shortOptions } from "./parts";
 
 /** The text a pick of these options fills: the grammar's own wording, in the reply's language. */
 function fillFor(spec: A2uiChoice, options: readonly A2uiOption[], lang: A2uiActions["lang"]) {
@@ -57,15 +54,26 @@ function fillFor(spec: A2uiChoice, options: readonly A2uiOption[], lang: A2uiAct
 }
 
 /** A multi-select's draft: the ticked labels, or null when none is. */
-function persistPicks(picked: ReadonlySet<string>): string[] | null {
-  return picked.size > 0 ? [...picked] : null;
+function persistPicks(picked: readonly string[]): string[] | null {
+  return picked.length > 0 ? [...picked] : null;
 }
 
-/** A saved draft's labels that the choice still offers; anything else ticks nothing. */
-function restorePicks(spec: A2uiChoice, saved: unknown): ReadonlySet<string> {
-  if (!Array.isArray(saved)) return new Set();
-  const labels = spec.options.map((option) => option.label);
-  return new Set(labels.filter((label) => saved.includes(label)));
+/** A saved draft's labels that the choice still offers, in its order; anything else ticks nothing. */
+function restorePicks(spec: A2uiChoice, saved: unknown): readonly string[] {
+  if (!Array.isArray(saved)) return [];
+  return spec.options.map((option) => option.label).filter((label) => saved.includes(label));
+}
+
+/**
+ * The labels the message that answered the reply picked, or null to show the picks as they
+ * stand: the block is the open question, no message answered it, or the message is not a pick.
+ */
+function useAnsweredPicks(spec: A2uiChoice, actions: A2uiActions): readonly string[] | null {
+  const { interactive, answeredWith } = actions;
+  return useMemo(
+    () => (interactive || answeredWith === undefined ? null : parseChoicePick(spec, answeredWith)),
+    [spec, interactive, answeredWith],
+  );
 }
 
 /** A single-select whose options fit one row of chips: four at most, short, none described. */
@@ -73,38 +81,22 @@ function compactChoice(spec: A2uiChoice): boolean {
   return shortOptions(spec.options, 4, 20);
 }
 
-/**
- * The radio's disc at the head of a card, one line tall so it centres on the label's first line:
- * a ring at rest, the accent with a dot in it once picked — the drawing `Radio` uses, so the card
- * reads as one option of a single-select. Decorative: the button's pressed state says it.
- */
-function OptionDisc({ on }: { on: boolean }) {
-  return (
-    <span aria-hidden className="flex h-[1lh] items-center">
-      <span
-        className={`relative size-3.5 shrink-0 rounded-full border transition-colors duration-150 ${
-          on ? "border-accent bg-accent" : "border-line-emphasis bg-surface"
-        }`}
-      >
-        {on && <span className="absolute inset-0 m-auto size-1.5 rounded-full bg-accent-fg" />}
-      </span>
-    </span>
-  );
+/** An option as the group draws it: its label with the recommended mark, its description under it. */
+function groupOption(option: A2uiOption, value: string, strings: A2uiStrings): ChoiceGroupOption {
+  return {
+    value,
+    label: <OptionLabel option={option} strings={strings} />,
+    ...(option.description !== undefined
+      ? { description: <InlineText text={option.description} /> }
+      : {}),
+  };
 }
 
-/** A card's description under its label, a rung down in the muted ink. */
-function OptionText({ option, strings }: { option: A2uiOption; strings: A2uiStrings }) {
-  return (
-    <span className="flex min-w-0 flex-col gap-1">
-      <OptionLabel option={option} strings={strings} />
-      {option.description !== undefined && (
-        <span className="text-sm text-fg-muted">
-          <InlineText text={option.description} />
-        </span>
-      )}
-    </span>
-  );
-}
+/**
+ * The value of a single-select's "Other…" entry. The options go by their place in the list, so no
+ * label the model writes can be mistaken for it.
+ */
+const OTHER = "other";
 
 function SingleChoice({
   spec,
@@ -117,104 +109,47 @@ function SingleChoice({
   actions: A2uiActions;
   strings: A2uiStrings;
 }) {
-  const [picked, setPicked] = useState<number | null>(null);
-  // The group's one tab stop: the recommended option first, as the place a reader would start.
-  const [stop, setStop] = useState(() =>
-    Math.max(
-      0,
-      spec.options.findIndex((option) => option.recommended === true),
-    ),
-  );
-  const disabled = !actions.interactive;
-  const compact = compactChoice(spec);
-  const shape = compact ? A2UI_CHIP.base : A2UI_CARD;
-  const count = spec.options.length + (spec.allowOther === true ? 1 : 0);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = rovingTarget(stop, event.key, count);
-    if (next === null) return;
-    event.preventDefault();
-    setStop(next);
-    event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-option]")[next]?.focus();
-  };
-
+  const [picked, setPicked] = useState<string | null>(null);
+  const answered = useAnsweredPicks(spec, actions);
+  // The options go by their place in the list (see OTHER); a single choice's answer is one.
+  const shown =
+    answered === null
+      ? picked
+      : String(spec.options.findIndex((option) => option.label === answered[0]));
+  const recommended = spec.options.findIndex((option) => option.recommended === true);
+  const options = spec.options.map((option, i) => groupOption(option, String(i), strings));
+  if (spec.allowOther === true) {
+    options.push({
+      value: OTHER,
+      label: strings.other,
+      // A pen in the disc's place: this one is written, not picked.
+      lead: <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.rowLead} />,
+      muted: true,
+    });
+  }
   return (
-    <div
-      role="group"
+    <ChoiceGroup
+      shape={compactChoice(spec) ? "chip" : "card"}
+      size="base"
+      options={options}
+      value={shown}
+      onChange={(value) => {
+        const option = spec.options[Number(value)];
+        if (value === OTHER || option === undefined) {
+          // The reader's own words replace the pick, in the composer and on the disc.
+          setPicked(null);
+          actions.fill("");
+          return;
+        }
+        setPicked(value);
+        actions.fill(fillFor(spec, [option], actions.lang));
+      }}
+      // The group's one tab stop rests on the recommended option, where a reader would start.
+      {...(recommended >= 0 ? { initialStop: String(recommended) } : {})}
+      disabled={!actions.interactive}
       aria-labelledby={questionId}
-      className={compact ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}
-      onKeyDown={disabled ? undefined : onKeyDown}
-    >
-      {spec.options.map((option, i) => (
-        <button
-          key={option.label}
-          type="button"
-          data-option=""
-          tabIndex={i === stop ? 0 : -1}
-          disabled={disabled}
-          aria-pressed={picked === i}
-          onFocus={() => setStop(i)}
-          onClick={() => {
-            setPicked(i);
-            actions.fill(fillFor(spec, [option], actions.lang));
-          }}
-          className={`${shape} ${pressLook(picked === i)} text-fg`}
-        >
-          {compact ? (
-            <OptionLabel option={option} strings={strings} />
-          ) : (
-            <>
-              <OptionDisc on={picked === i} />
-              <OptionText option={option} strings={strings} />
-            </>
-          )}
-        </button>
-      ))}
-      {spec.allowOther === true && (
-        <button
-          type="button"
-          data-option=""
-          tabIndex={stop === spec.options.length ? 0 : -1}
-          disabled={disabled}
-          onFocus={() => setStop(spec.options.length)}
-          onClick={() => {
-            // The reader's own words replace the pick, in the composer and on the disc.
-            setPicked(null);
-            actions.fill("");
-          }}
-          className={`${shape} ${pressLook(false)} text-fg-muted`}
-        >
-          {compact ? (
-            strings.other
-          ) : (
-            <>
-              {/* A pen in the disc's place: this one is written, not picked. As wide as the
-                  disc, so "Other…" lines up with the labels above it. */}
-              <span aria-hidden className="flex h-[1lh] w-3.5 items-center justify-center">
-                <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.rowLead} />
-              </span>
-              <span>{strings.other}</span>
-            </>
-          )}
-        </button>
-      )}
-    </div>
+    />
   );
-}
-
-/**
- * A multi-select option's card: the checkbox's own `<label>` drawn in the card's shape, so the
- * whole card toggles and the native box keeps the keyboard; ticked, it takes the selected look
- * of {@link pressLook}. A label has no enabled state for an `enabled:` variant to read, so the
- * hover is left out while the question is closed.
- */
-function rowClass(checked: boolean, disabled: boolean): string {
-  const look = checked
-    ? "border-accent bg-accent-muted"
-    : disabled
-      ? "border-line bg-surface"
-      : "border-line bg-surface hover:border-line-emphasis hover:bg-surface-muted";
-  return `w-full rounded-md border px-3 py-2 transition-colors duration-150 ${look}`;
 }
 
 function MultiChoice({
@@ -228,49 +163,30 @@ function MultiChoice({
   actions: A2uiActions;
   strings: A2uiStrings;
 }) {
-  const [picked, setPicked] = useA2uiDraft<ReadonlySet<string>>(
+  const [picked, setPicked] = useA2uiDraft<readonly string[]>(
     (saved) => restorePicks(spec, saved),
     persistPicks,
   );
-  const disabled = !actions.interactive;
-  const toggle = (label: string, on: boolean) =>
-    setPicked((current) => {
-      const next = new Set(current);
-      if (on) next.add(label);
-      else next.delete(label);
-      return next;
-    });
-
+  const answered = useAnsweredPicks(spec, actions);
   return (
-    <fieldset aria-labelledby={questionId} disabled={disabled} className="min-w-0">
-      <div className="flex flex-col gap-2">
-        {spec.options.map((option) => (
-          <Checkbox
-            key={option.label}
-            checked={picked.has(option.label)}
-            onChange={(on) => toggle(option.label, on)}
-            label={<OptionLabel option={option} strings={strings} />}
-            hint={
-              option.description !== undefined ? (
-                <span className="mt-1 block text-sm">
-                  <InlineText text={option.description} />
-                </span>
-              ) : undefined
-            }
-            size="base"
-            disabled={disabled}
-            className={rowClass(picked.has(option.label), disabled)}
-          />
-        ))}
-      </div>
+    <div className="min-w-0">
+      <ChoiceGroup
+        shape="card"
+        multiple
+        options={spec.options.map((option) => groupOption(option, option.label, strings))}
+        value={answered ?? picked}
+        onChange={(labels) => setPicked(() => labels)}
+        disabled={!actions.interactive}
+        aria-labelledby={questionId}
+      />
       {actions.interactive && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
             size="sm"
-            disabled={picked.size === 0}
+            disabled={picked.length === 0}
             onClick={() => {
-              const chosen = spec.options.filter((option) => picked.has(option.label));
+              const chosen = spec.options.filter((option) => picked.includes(option.label));
               actions.fill(fillFor(spec, chosen, actions.lang));
             }}
           >
@@ -283,7 +199,7 @@ function MultiChoice({
           )}
         </div>
       )}
-    </fieldset>
+    </div>
   );
 }
 

@@ -376,7 +376,7 @@ export interface Messages {
     rmDesc: string;
     /** --prompt: the text the firing sends. */
     prompt: string;
-    /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant. */
+    /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant (a one-shot needs a future time, so `now` only suits a periodic task). */
     startAt: string;
     /** --period: fixed interval (30m / 12h / 1d / 7d, minimum 5m); omitted = one-shot. */
     period: string;
@@ -1290,7 +1290,7 @@ export interface Messages {
     elapsed: string;
     elapsedDelta: string;
   }): string;
-  /** Abort line (user interruptions only): the cause localizes from `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim; a legacy Trace without a code renders its English `reason` prose as-is. */
+  /** Abort line (user interruptions, and the turn cap): the cause localizes from `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim, except on the turn cap's line, which is localized whole; a legacy Trace without a code renders its English `reason` prose as-is. */
   abortLabel(abort?: { errorCode?: string; errorMessage?: string; reason?: string }): string;
   /** Run-ending LLM failure (request_end status fatal — no abort event follows); the provider's error text rides verbatim. */
   llmFatalLabel(errorMessage?: string): string;
@@ -1364,7 +1364,7 @@ export interface Messages {
   thinkingHeld(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
-  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
+  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first (or hands over by Trace path when it cannot). */
   switchModelCurrent(model: string): string;
   /** `/switch-model` with anything but exactly `<provider> <model_id>`. */
   switchModelUsage(): string;
@@ -1380,8 +1380,8 @@ export interface Messages {
   switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
   /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
   switchModelUnavailable(model: string, detail: string): string;
-  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
-  switchModelNoCompaction(): string;
+  /** A switch that could not summarize handed the history over by its Trace path: the file the new model reads it from (absent for a Session that records no Trace). */
+  switchModelHandedOver(tracePath?: string): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
   /** `/verbose` toggled off: long tool output is collapsed again from here on. */
@@ -1419,7 +1419,7 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
-  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow and Atlas Cloud). */
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate). */
   modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
@@ -1822,7 +1822,8 @@ const en: Messages = {
       "Update a scheduled task (read-modify-write: unspecified fields keep their stored values)",
     rmDesc: "Delete a scheduled task (no prompt; the server's owner authorization applies)",
     prompt: "The text each firing sends",
-    startAt: "First fire time (ISO 8601), or the literal `now` for the current instant",
+    startAt:
+      "First fire time (ISO 8601), or the literal `now` for the current instant; a one-shot task needs a future time, so `now` only works with --period",
     period: "Fixed interval, minimum 5m (e.g. 30m, 12h, 1d, 7d); omitted = one-shot",
     endAt: "Stop firing after this instant (ISO 8601)",
     sessionId: "Bind firings to one session (excludes --workspace / the model pair)",
@@ -2748,6 +2749,7 @@ const en: Messages = {
   taskStats: (s) =>
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[stopped]: reached the maximum turns per task";
     const cause =
       abort?.errorCode === "user_abort"
         ? "aborted by user"
@@ -2775,9 +2777,11 @@ const en: Messages = {
             ? "network or service temporarily unavailable"
             : kind === "image_rejected"
               ? "the model provider rejected an image in this turn's input (replaced with a note)"
-              : kind === "failed"
-                ? "the model provider returned an error"
-                : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+              : kind === "output_truncated"
+                ? "the model's output was cut off at the output limit"
+                : kind === "failed"
+                  ? "the model provider returned an error"
+                  : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -2850,8 +2854,8 @@ const en: Messages = {
     `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
   switchModelUnavailable: (model, detail) =>
     `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
+  switchModelHandedOver: (tracePath) =>
+    `[model switch] no summary: the new model reads the earlier history from its Trace file${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
   verboseOff: () =>
     "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
@@ -3248,7 +3252,8 @@ const zh: Messages = {
     updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
     rmDesc: "删除定时任务（不做确认；服务端的 owner 授权照旧生效）",
     prompt: "每次触发要发送的内容",
-    startAt: "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻",
+    startAt:
+      "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻；一次性任务须用未来时刻，`now` 只适用于带 --period 的任务",
     period: "固定间隔，下限 5m（如 30m、12h、1d、7d）；省略即一次性任务",
     endAt: "此时刻之后不再触发（ISO 8601）",
     sessionId: "绑定到某个会话触发（与 --workspace / 模型对互斥）",
@@ -4094,6 +4099,7 @@ const zh: Messages = {
   taskStats: (s) =>
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
     const cause =
       abort?.errorCode === "user_abort"
         ? "用户中断"
@@ -4118,9 +4124,11 @@ const zh: Messages = {
             ? "网络或服务暂时不可用"
             : kind === "image_rejected"
               ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-              : kind === "failed"
-                ? "模型服务返回错误"
-                : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+              : kind === "output_truncated"
+                ? "模型输出达到输出上限，被截断"
+                : kind === "failed"
+                  ? "模型服务返回错误"
+                  : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
@@ -4188,8 +4196,8 @@ const zh: Messages = {
     `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
   switchModelUnavailable: (model, detail) =>
     `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
+  switchModelHandedOver: (tracePath) =>
+    `[切换模型] 未生成摘要：新模型按需读取此前的 Trace 文件${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,

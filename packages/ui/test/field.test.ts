@@ -14,6 +14,7 @@ import {
   FieldError,
   FieldHint,
   FieldLabel,
+  FieldLegend,
   RequiredMark,
   controlBase,
 } from "../src/components/forms/field/field";
@@ -45,6 +46,19 @@ describe("FieldLabel, FieldHint and FieldError", () => {
     const span = renderStatic(createElement(FieldLabel, { required: true, children: "Name" }));
     expect(span).toMatch(/^<span class="[^"]*mb-1 block[^"]*">Name<span/);
     expect(span).toContain('aria-hidden="true">*</span>');
+  });
+
+  it("names a fieldset with a legend in the label's look, marked when the group is required", () => {
+    const html = renderStatic(
+      createElement("fieldset", null, createElement(FieldLegend, { children: "Region" })),
+    );
+    expect(html).toMatch(/^<fieldset><legend class="[^"]*text-fg-muted[^"]*">Region<\/legend>/);
+    const required = renderStatic(
+      createElement(FieldLegend, { required: true, children: "Region" }),
+    );
+    expect(required).toContain(
+      'Region<span class="ml-0.5 text-tone-danger-fg" aria-hidden="true">*</span>',
+    );
   });
 
   it("drops the block layout when the label shares a row", () => {

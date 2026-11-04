@@ -1,15 +1,9 @@
 /** Controlled site preferences: persistence and translated labels belong to the host. */
 import { useEffect, useState } from "react";
+import { CheckLineIcon } from "../icons/marks/marks";
 import { Dropdown } from "../overlays/dropdown/dropdown";
-import { Menu, MenuRadioItem } from "../overlays/menu/menu";
-import {
-  GitHubIcon,
-  GlobeIcon,
-  ChevronDownIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
-} from "./site-icons";
+import { Menu, MenuRow } from "../overlays/menu/menu";
+import { GitHubIcon, GlobeIcon, SunIcon, MoonIcon, MonitorIcon } from "./site-icons";
 
 export type SiteThemeMode = "light" | "dark" | "system";
 export type SiteLangPref = "en" | "zh" | "system";
@@ -71,17 +65,20 @@ export function SiteLanguageMenu({
         >
           <GlobeIcon className="h-[18px] w-[18px]" />
           <span className="hidden sm:inline">{labels[value]}</span>
-          <ChevronDownIcon className="h-3.5 w-3.5" />
         </button>
       }
     >
+      {/* The rows bring their own line check: the menu's own is drawn in every theme's icon set,
+          which the sites never show and would otherwise ship. */}
       <Menu label={labels.label} density="md">
         {(["en", "zh", "system"] as const).map((option) => (
-          <MenuRadioItem
+          <MenuRow
             key={option}
+            role="menuitemradio"
             className="site-ui-language-option"
             label={labels[option]}
             checked={value === option}
+            check={<CheckLineIcon className="site-ui-language-check" />}
             onSelect={() => {
               onChange(option);
               setOpen(false);
@@ -119,7 +116,7 @@ export function SiteGitHubLink({
     return () => controller.abort();
   }, [apiUrl]);
   const count = stars?.toLocaleString("en-US");
-  const name = count ? `${label} · ${count} stars` : label;
+  const name = count ? `${label}, ${count} stars` : label;
   return (
     <a
       href={href}

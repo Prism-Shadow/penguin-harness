@@ -22,8 +22,8 @@
  * for good only with the parent Session itself.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
@@ -51,14 +51,14 @@ export function createInputSubagentTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal, approve } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
         yield delta("[input_subagent unavailable: no subagent session manager configured]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const subagentId = args["subagent_id"];
@@ -66,7 +66,7 @@ export function createInputSubagentTool(
         yield delta(
           describeArgumentError(definition, args, { argument: "subagent_id", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       let session = manager.get(subagentId);
       if (!session) {
@@ -99,7 +99,7 @@ export function createInputSubagentTool(
           `[input_subagent error: unknown subagent_id ${subagentId} ` +
             `(not from this conversation, or its session could not be resumed)]`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
@@ -110,7 +110,7 @@ export function createInputSubagentTool(
         definition.timeoutMs,
       );
 
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       // Abort the child's CURRENT run (per-run scope; the session survives). Waiting for the
       // aborted round to settle keeps the follow-up prompt path below deterministic — the
@@ -122,7 +122,7 @@ export function createInputSubagentTool(
         } else {
           yield delta(`[subagent ${subagentId} was already idle; nothing to abort]\n`);
         }
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
       }
 
       // A non-empty prompt: steering while the child runs (the child's own steering queue —
@@ -140,7 +140,7 @@ export function createInputSubagentTool(
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             yield delta(`[input_subagent error: ${message}]`);
-            return { stopReason: "fatal" };
+            return { status: "fatal" };
           }
         } else {
           // Running, but the handle predates steering (an older embedder's SubagentRunner).
@@ -148,7 +148,7 @@ export function createInputSubagentTool(
             `[input_subagent error: subagent ${subagentId} is still running; ` +
               `poll with an empty prompt to collect progress first]`,
           );
-          return { stopReason: "fatal" };
+          return { status: "fatal" };
         }
       }
 
@@ -165,12 +165,12 @@ export function createInputSubagentTool(
       });
 
       // Interruption only aborts this access, it doesn't end the child session.
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
       const latest = session.lastAssistantText;
       if (latest !== null) yield delta(latest);
       if (session.running) {
         return {
-          stopReason: "completed",
+          status: "completed",
           note: `[subagent still running with subagent_id ${subagentId}]` + approvalHint(session),
         };
       }

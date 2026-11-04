@@ -44,7 +44,7 @@ describe("ProjectConfigService.listEndpointModels", () => {
     ]);
   });
 
-  it("omits an absent key; whether the environment may lend one is core's listing's decision (see its tests)", async () => {
+  it("omits an absent key, and adds none: what MMSP does with no key is core's listing's to pass on (see its tests)", async () => {
     const calls: Record<string, unknown>[] = [];
     await service.listEndpointModels(
       { baseUrl: req.baseUrl, clientType: "ant-messages" },

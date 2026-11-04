@@ -1,0 +1,36 @@
+/*
+ * A line chart's draw-in: a line traced left to right once, as it first appears, because a line is
+ * a trace through time. Data motion only — nothing else in a chart moves.
+ *
+ * The chart measures each line's length as it is laid out and writes it on the path
+ * (`--_chart-len`); until then, and wherever it is missing, the dashes compute to nothing and the
+ * line simply shows. It runs once on the theme's ease. Still under the gallery's switch on the
+ * root and the system preference, and paused while its widget is scrolled away
+ * (`data-offscreen` on the surface), so a chart below the fold traces when it is reached.
+ */
+.ui-chart [data-anim="draw"] path {
+  animation: chart-draw 900ms var(--ui-ease-out, ease-out) backwards;
+}
+
+@keyframes chart-draw {
+  from {
+    stroke-dasharray: var(--_chart-len) var(--_chart-len);
+    stroke-dashoffset: var(--_chart-len);
+  }
+  to {
+    stroke-dasharray: var(--_chart-len) var(--_chart-len);
+    stroke-dashoffset: 0;
+  }
+}
+
+:root[data-motion="reduced"] .ui-chart [data-anim="draw"] path {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-chart [data-anim="draw"] path {
+    animation: none;
+  }
+}
+[data-offscreen] .ui-chart [data-anim="draw"] path {
+  animation-play-state: paused;
+}

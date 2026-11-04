@@ -14,7 +14,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText, matchAttachedFileLine } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   DiscordBindingResponse,
   DiscordTestResponse,
@@ -226,7 +226,7 @@ function echoFakeSession(
     compactability: () => "ok" as const,
     steer: () => false,
     skipReconnectWait: () => false,
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },

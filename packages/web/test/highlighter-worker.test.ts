@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-const HIGHLIGHT = join(SRC, "lib/highlight");
+const HIGHLIGHT = join(SRC, "features/chat");
 
 /** Every `.ts`/`.tsx` under src/, as [path relative to src, source text]. */
 function sources(dir: string, rel = ""): Array<[string, string]> {
@@ -50,7 +50,7 @@ describe("the highlighting worker", () => {
         /^import\s(?!type\s)[^;]*from "@prismshadow\/penguin-ui\/highlighter"/m.test(src),
       )
       .map(([path]) => path);
-    expect(importers).toEqual(["lib/highlight/highlighter.worker.ts"]);
+    expect(importers).toEqual(["features/chat/highlighter.worker.ts"]);
   });
 
   it("leaves the client's own use of the engine dynamic, as its fallback", () => {

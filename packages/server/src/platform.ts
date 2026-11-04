@@ -39,6 +39,7 @@ import {
   MessagingModule,
   QQScan,
 } from "./runtime/messaging/bridge.js";
+import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
 import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
 import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
 import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
@@ -69,6 +70,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { UserDraftsRepo } from "./db/repos/user-drafts.js";
+import { BackgroundImagesRepo } from "./db/repos/background-images.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
@@ -99,7 +102,11 @@ import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
-import { ProjectService, ProjectRuns } from "./services/project-service.js";
+import {
+  ProjectService,
+  ProjectRuns,
+  ShippedBuiltinBenchmarkSeeds,
+} from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
@@ -121,6 +128,9 @@ import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organiza
 import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
+import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -135,6 +145,7 @@ import {
 } from "./http/routes/desktop.js";
 import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
+import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
@@ -187,6 +198,7 @@ import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, PullRequests, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+import { BackgroundImageStore, UserDraftsStore } from "./mechanisms/account-data.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache, OrgGateway } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -221,17 +233,39 @@ export class Startup {
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
   @Use() private readonly telemetry?: Telemetry;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly agents!: AgentLifecycle;
 
   async setup() {
-    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
-    await this.scheduler.start();
-    // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
-    // no backfill), only active while this App is.
-    await this.orgScheduler.start();
+    // Every Project's config through the server's read path once, before anything opens one:
+    // its one-time migrations (core's, and the server's own that need the catalog) write back
+    // there, and a Session the schedulers resume reads its file with core's loader, which runs
+    // only core's. A failure must not block the boot; each file is read again, and written
+    // back, at its next read through the server. Goes with the migrations at 0.3.0.
+    await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "config_migration_failed" });
+    });
+    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; and
+    // company mode's scheduler, with the same lifetime and the same startup rule (reconcile
+    // once, no backfill), only active while this App is. Neither first pass is on the boot
+    // path: a pass can fire a missed slot, and a fire can reach the network (a model's
+    // credential refresh) before it is queued — the port is announced and local pages are
+    // served without waiting on it. Each pass still runs, here, as the platform comes up.
+    void this.scheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "scheduler_start_failed" });
+    });
+    void this.orgScheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "org_scheduler_start_failed" });
+    });
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
     const adoption = this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
+    });
+    // Deleted Agents whose files a stopped process had not finished removing: removed now, in
+    // the background, the way the delete itself removes them.
+    void this.agents.resumeDeletions().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "agent_purge_failed" });
     });
     // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
     // so this App booting hands the same build on to any machine still carrying a different
@@ -314,6 +348,7 @@ export class IdentityModule {}
     AgentsRepo,
     ProjectAccess,
     ProjectNotifier,
+    ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
@@ -379,6 +414,17 @@ export class SessionRuntimeModule {}
   exports: [Settings, UiPrefsStore],
 })
 export class SettingsModule {}
+
+/**
+ * What an account keeps on the server beside its preferences: unsent drafts and the custom
+ * background image. A group of its own rather than part of the settings group, so a stand-in
+ * for the settings store does not have to stand in for these too.
+ */
+@Module({
+  children: [UserDraftsRepo, BackgroundImagesRepo],
+  exports: [UserDraftsStore, BackgroundImageStore],
+})
+export class AccountDataModule {}
 
 /**
  * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
@@ -453,6 +499,7 @@ export class WorkspaceModule {}
     MessagingBindingsRepo,
     MessagingConversationsRepo,
     MessagingModule,
+    MessagingAccountsModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
 })
@@ -478,6 +525,7 @@ export class CompanyModule {}
     HttpModule,
     WebModule,
     InstallRoutes,
+    HandshakeRoutes,
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
@@ -524,6 +572,7 @@ export class PackagesModule {}
     RuntimeModule,
     SettingsModule,
     TelemetryModule,
+    AccountDataModule,
     PluginConfigModule,
     IdentityModule,
     ProjectsModule,
@@ -542,6 +591,9 @@ export class PackagesModule {}
     PortForwardsModule,
     TerminalRelay,
     WorkflowsModule,
+    SessionForwardRoutes,
+    HistoryRoutes,
+    HistoryLinesRoutes,
     WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,

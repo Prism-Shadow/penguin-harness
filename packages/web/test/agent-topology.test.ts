@@ -33,23 +33,23 @@ import { describe, expect, it, vi } from "vitest";
 import {
   approvalDecision,
   assistantText,
-  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   sessionMeta,
   toolCall,
   toolCallOutput,
   userText,
   withOrigin,
-} from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp";
 import {
   agentIdFromStatePath,
   approvalKey,
   createStreamModel,
   hasPendingWithinOrigin,
   pushMessage,
-} from "../src/lib/omni/stream-model";
-import type { StreamModel, SubagentItem } from "../src/lib/omni/stream-model";
+} from "../src/lib/amsp/stream-model";
+import type { StreamModel, SubagentItem } from "../src/lib/amsp/stream-model";
 import {
   agentIdFromRunSubagentArgs,
   extractTopology,
@@ -69,7 +69,7 @@ import {
   taskStartCount,
 } from "../src/features/chat/agent-topology";
 
-function meta(sessionId: string, agentState = "/a"): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string, agentState = "/a"): AmspRecord<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -90,7 +90,7 @@ function spawnChild(m: StreamModel, toolCallId: string, sessionId: string, args 
 }
 
 /** Override a message timestamp (the builders default to the current time). */
-function at<M extends OmniMessage>(msg: M, ts: string): M {
+function at<M extends AmspRecord>(msg: M, ts: string): M {
   return { ...msg, timestamp: ts };
 }
 
@@ -100,7 +100,10 @@ describe("extractTopology", () => {
     pushMessage(m, userText("write the paper"));
     spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
     pushMessage(m, withOrigin(assistantText("Working on version 9"), "paper"));
-    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "yielded", toolCallId: "paper-call", status: "completed" }),
+    );
     pushMessage(m, userText("check the references"));
     spawnChild(m, "references-call", "references");
     const live = new Map([
@@ -132,7 +135,10 @@ describe("extractTopology", () => {
     pushMessage(m, userText("write the paper and check its references"));
     spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
     pushMessage(m, withOrigin(assistantText("Writing the paper"), "paper"));
-    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "yielded", toolCallId: "paper-call", status: "completed" }),
+    );
     spawnChild(m, "references-call", "references", '{"description":"Check references"}');
     pushMessage(m, withOrigin(assistantText("Checking references"), "references"));
     pushMessage(m, withOrigin(assistantText("Paper progress"), "paper"));
@@ -194,7 +200,7 @@ describe("extractTopology", () => {
       parentId: "root",
     });
 
-    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }));
     nodes = extractTopology(m, "root", false);
     expect(nodes[1]!.running).toBe(false);
   });
@@ -203,7 +209,7 @@ describe("extractTopology", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));
     spawnChild(m, "t1", "child1");
-    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }));
     pushMessage(m, assistantText("answered"));
 
     // Two plain follow-up messages with no spawns: the panel keeps showing child1's Task —
@@ -227,7 +233,7 @@ describe("extractTopology", () => {
     spawnChild(m, "t1", "child1");
     // The card completed long ago — the heuristic reads done — but the runtime reports the
     // child running again (an input_subagent revival or a panel-started round).
-    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }));
     const live = new Map([["child1", true]]);
     expect(extractTopology(m, "root", false, live)[1]!.running).toBe(true);
 
@@ -297,7 +303,7 @@ describe("extractTopology", () => {
     const m = createStreamModel();
     pushMessage(m, userText("task 1"));
     spawnChild(m, "t1", "child1");
-    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }));
 
     // Task 2 starts with no spawns of its own: the panel stays on Task 1's graph (root ended).
     pushMessage(m, userText("task 2"));
@@ -349,7 +355,7 @@ describe("which call a child belongs to", () => {
   ];
   const [A, B, C] = CALLS as [Call, Call, Call];
 
-  const card = (call: Call): OmniMessage[] => [
+  const card = (call: Call): AmspRecord[] => [
     toolCall({
       name: "run_subagent",
       arguments: JSON.stringify(call.args),
@@ -357,14 +363,14 @@ describe("which call a child belongs to", () => {
     }),
     approvalDecision("allow", call.toolCallId),
   ];
-  const childMeta = (call: Call): OmniMessage =>
+  const childMeta = (call: Call): AmspRecord =>
     withOrigin(meta(call.child, `/data/p/agents/${call.agent}/agent_state`), call.child);
-  const childPrompt = (call: Call): OmniMessage =>
+  const childPrompt = (call: Call): AmspRecord =>
     withOrigin(userText(call.args.prompt as string, "parent_agent"), call.child);
-  const childReply = (call: Call): OmniMessage =>
+  const childReply = (call: Call): AmspRecord =>
     withOrigin(assistantText(`${call.child} done`), call.child);
-  const output = (call: Call, text = "done"): OmniMessage =>
-    toolCallOutput({ output: text, toolCallId: call.toolCallId });
+  const output = (call: Call, text = "done"): AmspRecord =>
+    toolCallOutput({ output: text, toolCallId: call.toolCallId, status: "completed" });
 
   const shown = (m: StreamModel) =>
     Object.fromEntries(
@@ -378,7 +384,7 @@ describe("which call a child belongs to", () => {
     "child-c": ["Draft the summary table", null],
   };
 
-  const build = (messages: OmniMessage[]): StreamModel => {
+  const build = (messages: AmspRecord[]): StreamModel => {
     const m = createStreamModel();
     for (const msg of messages) pushMessage(m, msg);
     return m;
@@ -408,7 +414,7 @@ describe("which call a child belongs to", () => {
   });
 
   it("history: the same run rebuilt from its Trace (each child's Trace spliced at its start) shows the same", () => {
-    const spliced = (call: Call): OmniMessage[] => [
+    const spliced = (call: Call): AmspRecord[] => [
       childMeta(call),
       childPrompt(call),
       childReply(call),
@@ -602,7 +608,7 @@ describe("extractTopologyForChild (historical Task slice)", () => {
     const m = createStreamModel();
     pushMessage(m, userText("task 1"));
     spawnChild(m, "t1", "child1");
-    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }));
     pushMessage(m, userText("task 2"));
     spawnChild(m, "t2", "child2");
     return m;
@@ -686,7 +692,11 @@ describe("per-node elapsed time (wall clock of the spawn, never a sum of items)"
     expect(node.startedMs).toBe(T0 + 2_000);
 
     pushMessage(m, at(withOrigin(assistantText("report"), "child1"), iso(9_000)), 10_000);
-    pushMessage(m, at(toolCallOutput({ output: "done", toolCallId: "t1" }), iso(9_500)), 10_500);
+    pushMessage(
+      m,
+      at(toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }), iso(9_500)),
+      10_500,
+    );
     node = extractTopology(m, "root", false)[1]!;
     expect(node.running).toBe(false);
     expect(node.elapsedMs).toBe(7_000); // child first appeared at +2s, last acted at +9s
@@ -709,7 +719,11 @@ describe("per-node elapsed time (wall clock of the spawn, never a sum of items)"
     pushMessage(m, at(approvalDecision("allow", "t1"), iso(1_500)), LOAD);
     pushMessage(m, at(withOrigin(meta("child1"), "child1"), iso(2_000)), LOAD);
     pushMessage(m, at(withOrigin(assistantText("report"), "child1"), iso(60_000)), LOAD);
-    pushMessage(m, at(toolCallOutput({ output: "done", toolCallId: "t1" }), iso(61_000)), LOAD);
+    pushMessage(
+      m,
+      at(toolCallOutput({ output: "done", toolCallId: "t1", status: "completed" }), iso(61_000)),
+      LOAD,
+    );
 
     // The trap this design avoids: after a replay the local pair spans ~0 (load-relative).
     const sub = m.subagents.get("child1")!;
@@ -934,7 +948,7 @@ describe("background subagents in the topology", () => {
     pushMessage(m, toolCall({ name: "run_subagent", arguments: '{"prompt":"bg"}', toolCallId }));
     pushMessage(m, approvalDecision("allow", toolCallId));
     pushMessage(m, withOrigin(meta(sessionId), sessionId));
-    pushMessage(m, toolCallOutput({ output: LAUNCH(id), toolCallId }));
+    pushMessage(m, toolCallOutput({ output: LAUNCH(id), toolCallId, status: "completed" }));
   }
 
   it("stays running after its card completes, and settles on the completion notice without leaving the panel scope", () => {
@@ -965,6 +979,7 @@ describe("background subagents in the topology", () => {
         output:
           "[subagent idle with subagent_id subagent-99aa88bb; send a follow-up prompt to continue]",
         toolCallId: "t2",
+        status: "completed",
       }),
     );
     expect(extractTopology(m, "root", false)[1]!.running).toBe(false);
@@ -976,6 +991,7 @@ describe("background subagents in the topology", () => {
       toolCallOutput({
         output: "[subagent still running with subagent_id subagent-99aa88bb]",
         toolCallId: "t3",
+        status: "completed",
       }),
     );
     expect(extractTopology(m, "root", false)[1]!.running).toBe(true);

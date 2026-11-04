@@ -8,6 +8,7 @@
  * Getting that backwards would silently disable vision on a working model.
  */
 import { describe, expect, it } from "vitest";
+import { crc32, inflateSync } from "node:zlib";
 import type { LLMOutcome } from "@prismshadow/penguin-core";
 import {
   VISION_PROBE_IMAGE,
@@ -20,15 +21,34 @@ import {
 const failed = (errorMessage: string): LLMOutcome => ({ status: "fatal", errorMessage });
 
 describe("VISION_PROBE_IMAGE", () => {
+  const bytes = Buffer.from(VISION_PROBE_IMAGE.slice("data:image/png;base64,".length), "base64");
+
   it("is a tiny inline PNG data URL, so the probe sends the least it can", () => {
     expect(VISION_PROBE_IMAGE.startsWith("data:image/png;base64,")).toBe(true);
-    const b64 = VISION_PROBE_IMAGE.slice("data:image/png;base64,".length);
-    const bytes = Buffer.from(b64, "base64");
-    // A real PNG signature, and well under 200 bytes.
     expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
     expect(bytes.length).toBeLessThan(200);
-    // Round-trips, i.e. it is valid base64 rather than a truncated paste.
-    expect(bytes.toString("base64")).toBe(b64);
+  });
+
+  it("decodes: every chunk's CRC holds and the IDAT inflates to the pixel bytes the IHDR declares", () => {
+    // A strict decoder (LiteLLM and the gateways built on it) answers a short image with a 400
+    // "unsupported image", which isImageRejection reads as the model refusing images.
+    const channels: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+    expect(bytes.readUInt32BE(16)).toBe(1);
+    expect(bytes.readUInt32BE(20)).toBe(1);
+    const colorType = bytes[25]!;
+    expect(channels[colorType]).toBeDefined();
+    let inflated = Buffer.alloc(0);
+    for (let offset = 8; offset < bytes.length;) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      const data = bytes.subarray(offset + 8, offset + 8 + length);
+      expect(crc32(Buffer.concat([Buffer.from(type, "ascii"), data]))).toBe(
+        bytes.readUInt32BE(offset + 8 + length),
+      );
+      if (type === "IDAT") inflated = Buffer.concat([inflated, inflateSync(data)]);
+      offset += 12 + length;
+    }
+    expect(inflated.length).toBe(1 + channels[colorType]!);
   });
 
   it("caps the probe's output so a success cannot run up a bill", () => {

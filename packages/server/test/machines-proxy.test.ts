@@ -1,7 +1,8 @@
 /**
- * The same-origin proxy: which paths it claims, how a remote's redirects are re-rooted, and
- * what each forwarded request reports having learned. Everything is addressed by the
- * MACHINE'S own id rather than the ssh alias.
+ * The same-origin proxy: which paths it claims, how a remote's redirects are re-rooted, what
+ * it hands the machine (its own session, and when this server adopted it — never a caller's
+ * credential or a caller's adoption time), and what each forwarded request reports having
+ * learned. Everything is addressed by the MACHINE'S own id rather than the ssh alias.
  */
 import http from "node:http";
 import net from "node:net";
@@ -134,6 +135,7 @@ describe("the report", () => {
       agent: new http.Agent(),
       port,
       cookie: "penguin_session=minted",
+      adoptedAt: null,
       session: 1,
     }));
     await proxy(
@@ -152,11 +154,50 @@ describe("the report", () => {
     expect(got!["x-forwarded-prefix"]).toBe(`/server/${A}`);
   });
 
+  it("tells the machine when this server adopted it, and never passes on a caller's own word for it", async () => {
+    // The time decides which of the machine's Sessions read as CLI tasks for this server's
+    // admins: it is this server's record, set from that record or not at all.
+    const heard: (string | string[] | undefined)[] = [];
+    upstream = http.createServer((req, res) => {
+      heard.push(req.headers["x-penguin-adopted-at"]);
+      res.statusCode = 200;
+      res.end("{}");
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
+    );
+    const forged = { headers: { "x-penguin-adopted-at": "2099-01-01T00:00:00.000Z" } };
+    const adopted = machinesProxy(async () => ({
+      agent: new http.Agent(),
+      port,
+      cookie: "penguin_session=x",
+      adoptedAt: "2026-10-15T08:00:00.000Z",
+      session: 1,
+    }));
+    await adopted(new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, forged));
+    const unrecorded = machinesProxy(async () => ({
+      agent: new http.Agent(),
+      port,
+      cookie: "penguin_session=x",
+      adoptedAt: null,
+      session: 1,
+    }));
+    await unrecorded(new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, forged));
+
+    expect(heard).toEqual(["2026-10-15T08:00:00.000Z", undefined]);
+  });
+
   it("says the machine answered on any HTTP answer, refusals included", async () => {
     const port = await listen();
     const seen: [string, { ok: boolean }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));
@@ -170,7 +211,13 @@ describe("the report", () => {
     upstream = null;
     const seen: [string, { ok: boolean; detail?: string }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));
@@ -192,7 +239,7 @@ describe("the report", () => {
     );
     const seen: [string, { ok: boolean; detail?: string }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null, session: 1 }),
       (machineId, outcome) => seen.push([machineId, outcome]),
       undefined,
       {},
@@ -221,7 +268,7 @@ describe("the report", () => {
       upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
     );
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null, session: 1 }),
       undefined,
       undefined,
       {},
@@ -260,6 +307,7 @@ describe("the report", () => {
       agent,
       port: 7364,
       cookie: "penguin_session=x",
+      adoptedAt: null,
       session: 1,
     }));
     const started = Date.now();
@@ -323,6 +371,7 @@ describe("a machine a forward failed to", () => {
           agent: agentOf({ broken: true }, 7364),
           port: 7364,
           cookie: "penguin_session=x",
+          adoptedAt: null,
           session: 1,
         };
       },
@@ -336,7 +385,7 @@ describe("a machine a forward failed to", () => {
     expect(first?.status).toBe(502);
     const second = await proxy(request(A));
     expect(second?.status).toBe(503);
-    expect(second.headers.get("retry-after")).toBe("60");
+    expect(second!.headers.get("retry-after")).toBe("60");
     const body = (await second!.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe("not_connected");
     expect(body.error.message).toContain("retry in 60 s");
@@ -357,7 +406,7 @@ describe("a machine a forward failed to", () => {
     const proxy = machinesProxy(
       async () => {
         resolves += 1;
-        return { agent, port, cookie: "penguin_session=x", session: 1 };
+        return { agent, port, cookie: "penguin_session=x", adoptedAt: null, session: 1 };
       },
       undefined,
       undefined,
@@ -419,7 +468,13 @@ describe("a caller that gives up", () => {
     const { port, closed } = await silentMachine();
     const seen: unknown[] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const controller = new AbortController();
@@ -447,6 +502,7 @@ describe("a caller that gives up", () => {
       agent: new http.Agent(),
       port,
       cookie: "penguin_session=x",
+      adoptedAt: null,
       session: 1,
     }));
     const response = await proxy(

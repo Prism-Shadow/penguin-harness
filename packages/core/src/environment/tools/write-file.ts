@@ -32,8 +32,8 @@ import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
 import { describeFsError, localFsPort, resolveWriteTargetThrough } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { describeArgumentError } from "./tool-arguments.js";
@@ -138,9 +138,9 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       const filePath = args["file_path"];
@@ -148,7 +148,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         yield delta(
           describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       // An empty string is valid content (creates an empty file); only a missing/non-string
       // value is an argument error.
@@ -157,7 +157,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         yield delta(
           describeArgumentError(definition, args, { argument: "content", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
@@ -181,10 +181,10 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         }
         throw err;
       });
-      if (outcome.kind === "aborted") return { stopReason: "aborted" };
+      if (outcome.kind === "aborted") return { status: "aborted" };
       if (outcome.kind === "fatal") {
         yield delta(outcome.text);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const { existed, previous } = outcome;
 

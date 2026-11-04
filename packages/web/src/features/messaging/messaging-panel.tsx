@@ -13,6 +13,10 @@
  * Status polling is gated on `active` (the dock keeps hidden tabs mounted): a hidden tab
  * neither polls nor loses the form state it accumulated.
  *
+ * For a conversation on a machine the panel opens on where its bot connects from; while that
+ * machine is out of reach it shows the machine's last answer read-only under a notice — or the
+ * notice alone when nothing was ever read here — rather than a skeleton that never resolves.
+ *
  * Unsaved edits are registered with the shared guard under this conversation's own scope (apart
  * from the session-row dialog's), so every way of throwing them away asks first: the tab's ×,
  * the one gesture that unmounts this body, and a route change such as opening another
@@ -44,10 +48,14 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
   return (
     <div className="h-full overflow-y-auto p-3">
       {b.form === null ? (
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-24 w-full" />
-        </div>
+        b.access.reason !== null ? (
+          <MessagingBindingBody b={b} />
+        ) : (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           <MessagingBindingBody b={b} />
@@ -57,14 +65,14 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
               id={b.saveButtonId}
               variant="primary"
               size="sm"
-              disabled={b.busy || !b.dirty || !b.valid}
+              disabled={b.busy || !b.dirty || !b.valid || !b.access.live}
               onClick={() => void b.save()}
             >
               {b.busy ? S.common.saving : S.common.save}
             </Button>
           </div>
           {/* Below the save area: the collapsed setup/what/troubleshooting folds. */}
-          <MessagingBindingHelp channel={b.form.channel} />
+          <MessagingBindingHelp channel={b.form.channel} machineAlias={b.location?.alias ?? null} />
         </div>
       )}
     </div>

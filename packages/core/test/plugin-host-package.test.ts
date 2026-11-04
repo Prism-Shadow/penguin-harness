@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { build } from "esbuild";
+import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const LOADER = path.resolve(import.meta.dirname, "../src/plugins/index.ts");
@@ -57,15 +57,12 @@ describe("the plugin library's host package", () => {
     // The store a push lands in: `<root>/hmr/store/platform/<sha>.mjs`, nothing above it a package.
     bundle = path.join(scratch, "root", "hmr", "store", "platform", "platform.mjs");
     fs.mkdirSync(path.dirname(bundle), { recursive: true });
-    await build({
-      entryPoints: [LOADER],
-      bundle: true,
-      platform: "node",
-      format: "esm",
-      target: "node24",
-      outfile: bundle,
-      logLevel: "silent",
-    });
+    // Compiled with the push's own options (scripts/push-bundle.mjs) rather than a hand-written
+    // copy of them: only those carry the banner that declares the `require` a bundled CommonJS
+    // dependency reaches for, and the loader — through @prismshadow/skills — now bundles one
+    // (`yaml`), which without the banner dies at import with "Dynamic require of "process" is
+    // not supported".
+    await compilePushBundle(pushBundleOptions(LOADER, bundle));
   });
 
   afterAll(() => {

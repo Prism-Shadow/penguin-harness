@@ -17,22 +17,21 @@
  */
 import { useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   ChevronDown,
   ConfirmModal,
   Dropdown,
   Menu,
   MenuItem,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
 import { HEADER_TEXT, connectedMenuItems } from "./group-header";
 import type { ConnectedMenuItem } from "./group-header";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {
@@ -219,7 +218,7 @@ export async function disconnectGroup(
     host.adopt(res);
     toastSuccess(S.models.disconnected(provider.label));
   } catch (e) {
-    toastError(apiErrorText(e));
+    toastApiError(e);
   } finally {
     host.setBusy(false);
   }

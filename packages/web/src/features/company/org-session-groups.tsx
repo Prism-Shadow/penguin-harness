@@ -52,14 +52,12 @@ import {
   RailDivider,
   SkeletonList,
   railItemClass,
-  toastError,
   toastSuccess,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { sessionActivityLabel } from "../../lib/session-activity";
-import { apiErrorText } from "../../lib/api-error";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -95,6 +93,7 @@ import {
   useTempSessions,
 } from "./temp-session";
 import type { TempSessionRow } from "./temp-session";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The row's surface — the hover and active fill — on the wrapper rather than on the button,
@@ -151,7 +150,7 @@ function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) 
       void company.reloadOrgSessions();
       openSession(desk.sessionId, agentId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpening(null);
     }

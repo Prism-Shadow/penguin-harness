@@ -18,10 +18,13 @@ import {
   attachedImageLine,
   isSessionMeta,
   isSteeredBackgroundNotice,
+  isTaskBegin,
+  isTaskRecord,
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
   parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
   parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
@@ -29,7 +32,8 @@ import {
   scratchpadDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
+import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
+import { promptLabel } from "./trace-prompt-label.js";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
@@ -68,11 +72,8 @@ import {
   deserializePrefix,
   encodeCursor,
   finalizeScan,
-  frameCutIndexes,
   initialScanState,
-  isSkeletonMessage,
   mergedIntervalMs,
-  planMeatFrames,
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
@@ -81,16 +82,18 @@ import type {
   MessageCursor,
   ScanState,
   WindowPriorStats,
-  MessagesHistoryFrame,
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
+import type { TraceLineIndexEntry } from "./trace-line-index.js";
+import type { RecordSource } from "./history-layout.js";
+import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { MESSAGE_WINDOW_FRAME_MAX_BYTES } from "./message-window.js";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
@@ -99,49 +102,6 @@ import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
-/**
- * Trace-position order: shard index first (files rotate forward), then the ordinal
- * within the shard. Total order — the interleaved frames read depends on it.
- */
-function comparePosition(a: { fileIndex: number; ordinal: number }, b: { fileIndex: number; ordinal: number }): number {
-  return a.fileIndex !== b.fileIndex ? a.fileIndex - b.fileIndex : a.ordinal - b.ordinal;
-}
-
-/**
- * The trace position the window's stream starts at: its FIRST message's position, the
- * point openers older than the window stop before. A window's rows come back from
- * readMessagesPage in trace order already, so the first row's position is the start —
- * undefined when the window is empty (a full read or an empty transcript: no openers
- * precede it, nothing to emit ahead).
- */
-function windowFirstPosition(messages: readonly OmniMessage[]): { fileIndex: number; ordinal: number } | undefined {
-  for (const m of messages) {
-    const pos = (m as HistoryMessage).tracePosition;
-    if (pos !== undefined) return pos;
-  }
-  return undefined;
-}
-
-function chunkFrame(
-  messages: readonly OmniMessage[],
-  maxBytes = MESSAGE_WINDOW_FRAME_MAX_BYTES,
-): OmniMessage[][] {
-  const chunks: OmniMessage[][] = [];
-  let current: OmniMessage[] = [];
-  let bytes = 0;
-  for (const msg of messages) {
-    const size = Buffer.byteLength(JSON.stringify(msg), "utf8") + 1; // + the NDJSON newline
-    if (current.length > 0 && bytes + size > maxBytes) {
-      chunks.push(current);
-      current = [];
-      bytes = 0;
-    }
-    current.push(msg);
-    bytes += size;
-  }
-  if (current.length > 0) chunks.push(current);
-  return chunks;
-}
 
 
 /**
@@ -166,7 +126,7 @@ function forkSessionId(date: Date): string {
   return `session-${formatLocalDate(date)}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
-function isAssistantText(msg: OmniMessage): boolean {
+function isAssistantText(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   return (
     msg.type === "model_msg" &&
@@ -177,7 +137,7 @@ function isAssistantText(msg: OmniMessage): boolean {
   );
 }
 
-function isTaskStartingUser(msg: OmniMessage): boolean {
+function isTaskStartingUser(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   if (msg.type !== "model_msg") return false;
   if (p.type === "image_url") return true;
@@ -189,7 +149,12 @@ function isTaskStartingUser(msg: OmniMessage): boolean {
   return !p.text.startsWith("[context_summary]") && !p.text.startsWith("<context_summary>");
 }
 
-function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad: string): string {
+function rewriteForkText(
+  text: string,
+  sourceScratchpad: string,
+  forkScratchpad: string,
+  sessions: { source: string; fork: string },
+): string {
   const source = modelVisiblePath(sourceScratchpad).replace(/\/$/, "");
   const target = modelVisiblePath(forkScratchpad).replace(/\/$/, "");
   const rewriteTarget = (value: string): string | null => {
@@ -197,9 +162,23 @@ function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad:
     if (value.startsWith(`${source}/`)) return `${target}${value.slice(source.length)}`;
     return null;
   };
+  // An in-session model switch's Trace handoff names the Session itself and one of its Trace
+  // files: in the fork it names the fork and the fork's copy of that file, or the fork would
+  // read it as a /model block pointing at the Session it was cut from.
+  const handoff = parseInPlaceModelSwitch(text, sessions.source) !== null;
   return text
     .split("\n")
     .map((line) => {
+      if (handoff && line.startsWith(`session: ${sessions.source}`)) {
+        return `session: ${sessions.fork}${line.slice(`session: ${sessions.source}`.length)}`;
+      }
+      if (handoff && line.startsWith("trace: ")) {
+        const file = line.slice("trace: ".length);
+        const base = path.basename(file);
+        if (base.startsWith(`${sessions.source}_`)) {
+          return `trace: ${path.join(path.dirname(file), sessions.fork + base.slice(sessions.source.length))}`;
+        }
+      }
       const trimmed = line.trim();
       const image = matchAttachedImageLine(trimmed);
       if (image !== null) {
@@ -217,7 +196,7 @@ function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad:
 }
 
 function positioned(
-  messages: readonly OmniMessage[],
+  messages: readonly AmspRecord[],
   fileIndex: number,
   fromOrdinal = 0,
 ): HistoryMessage[] {
@@ -236,17 +215,60 @@ interface LocatedFile {
 }
 
 /** A windowed history read's request shape (see readMessagesPage). */
-export type MessagesPageRequest =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number };
+export type MessagesPageRequest = (
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number }
+) & {
+  /**
+   * The window's byte budget as the `history` stream sends its records — images by reference
+   * and bodies elided (core's history-elision.ts) — capped at MESSAGES_PAGE_MAX_BYTES. Absent:
+   * MESSAGES_PAGE_MAX_BYTES of records with their bodies whole, as `/messages` serves them.
+   */
+  budget?: number;
+};
+
+/**
+ * A history window with where each record was read from: what `readMessagesPage` (or, for
+ * `full`, `readMessages`) returns, plus `sources`, parallel to `messages` — the input of the
+ * history layout (history-layout.ts) and of each record's body refs.
+ */
+export interface HistoryWindowRead {
+  messages: HistoryMessage[];
+  sources: RecordSource[];
+  /** The window's page facts; absent for the full transcript. */
+  page?: Omit<MessagesPageResult, "messages">;
+}
+
+/** One Trace file of a Session or a descendant, as the machine leg of a history stream reads it. */
+export interface HistoryTraceFile {
+  agentId: string;
+  sessionId: string;
+  fileIndex: number;
+  path: string;
+  /** Inode and device, decimal: an NTFS file id passes 2^53. */
+  ino: string;
+  dev: string;
+  birthtimeMs: number;
+  /** Bytes, as the line index last saw the file. */
+  size: number;
+  /** One past the last `\n`: whole lines end here; an unterminated tail lies beyond. */
+  scanned: number;
+  /** Each record's first byte and one past its last, by ordinal (trace-line-index.ts). */
+  starts: number[];
+  ends: number[];
+  /** A rotated shard (its Session has a newer one): it never changes again. */
+  final: boolean;
+}
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
   /** The window's records with their `tracePosition`, images still inline (the route references them). */
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   /** Cursor of the window's first unit; absent = the window reaches the beginning. */
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+  /** The units (Tasks) the window holds: the scanner's boundaries from its start on. */
+  units: number;
   /**
    * The model of the context the window starts in: the `session_meta` heading the shard its
    * first unit lies in. One shard is one model context, and a window that starts partway into
@@ -279,7 +301,9 @@ interface ExpandCtx {
   projectScanned: boolean;
   ancestry: Set<string>;
   depth: number;
-  raw: Map<string, OmniMessage[] | null>;
+  raw: Map<string, AmspRecord[] | null>;
+  /** Where each record was read from, when the caller asked (readHistoryWindow). */
+  sources?: WeakMap<object, RecordSource>;
 }
 
 /**
@@ -288,7 +312,7 @@ interface ExpandCtx {
  * records the Session id; the sub-session's Agent is located within the Project by
  * its Trace file.
  */
-function subagentPointer(msg: OmniMessage): string | null {
+function subagentPointer(msg: AmspRecord): string | null {
   if (msg.type !== "event_msg") return null;
   const p = msg.payload as { type?: string; session_id?: unknown };
   if (p.type !== "subagent" || typeof p.session_id !== "string" || p.session_id === "") {
@@ -366,10 +390,18 @@ export class TraceService implements Traces {
    */
   observeShardRead?: (path: string) => void;
   /**
-   * Record offsets per Trace file (trace-line-index.ts): the events endpoint and the image
-   * route read only the records they serve. Tests wire their own to observe the reads.
+   * Test observability: every byte range the line index reads from a Trace file (a scan, or a
+   * page of records). Production wiring leaves it unset.
    */
-  private lineIndex = new TraceLineIndex();
+  observeLineRead?: (path: string, start: number, end: number) => void;
+  /**
+   * Record offsets per Trace file (trace-line-index.ts): the events endpoint and the image
+   * route read only the records they serve, and a Session's subagents are found without
+   * reading its Traces again.
+   */
+  private lineIndex = new TraceLineIndex({
+    observeRead: (path, start, end) => this.observeLineRead?.(path, start, end),
+  });
 
   /**
    * All of this Session's Trace files (sorted by index ascending), served from the
@@ -384,7 +416,24 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
   ): Promise<LocatedFile[]> {
-    await this.index.reconcileAgent(projectId, agentId);
+    return this.locateIn(projectId, agentId, sessionId, new Set());
+  }
+
+  /**
+   * `locateAll` within one walk over many Sessions: each Agent's index is reconciled once per
+   * walk (`reconciled` remembers which), not once per Session — a walk over a Session's forty
+   * subagents under one Agent would otherwise gate that Agent's Trace tree forty times.
+   */
+  private async locateIn(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    reconciled: Set<string>,
+  ): Promise<LocatedFile[]> {
+    if (!reconciled.has(agentId)) {
+      await this.index.reconcileAgent(projectId, agentId);
+      reconciled.add(agentId);
+    }
     let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     if (rows.length === 0) {
       await this.index.reconcileAgent(projectId, agentId, { force: true });
@@ -399,7 +448,7 @@ export class TraceService implements Traces {
   }
 
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
-  private async readShard(path: string): Promise<OmniMessage[]> {
+  private async readShard(path: string): Promise<AmspRecord[]> {
     this.observeShardRead?.(path);
     return spanIn(
       this.telemetry,
@@ -429,27 +478,22 @@ export class TraceService implements Traces {
     const seen = new Set<string>([sessionId]);
     const out: Array<{ sessionId: string; agentId: string | null; spawnedAt: string }> = [];
     for (const file of files) {
-      let text: string;
+      // The line index keeps each file's pointers as it scans it: a file it has seen costs no
+      // read here, and one that grew costs only its new bytes. A torn final line is no record,
+      // so it holds no pointer.
+      let pointers: TraceLineIndexEntry["pointers"];
       try {
-        text = await fs.readFile(file.path, "utf8");
+        pointers = (await this.lineIndex.ensure(file.path)).pointers.slice();
       } catch {
         continue; // Vanished mid-walk: nothing in it can be deleted any more either.
       }
-      for (const line of text.split("\n")) {
-        if (!line.includes('"subagent"')) continue;
-        let msg: OmniMessage;
-        try {
-          msg = JSON.parse(line) as OmniMessage;
-        } catch {
-          continue; // A torn final line (a crashed writer) holds no complete pointer.
-        }
-        const child = subagentPointer(msg);
-        if (child === null || seen.has(child)) continue;
-        seen.add(child);
+      for (const pointer of pointers) {
+        if (seen.has(pointer.sessionId)) continue;
+        seen.add(pointer.sessionId);
         out.push({
-          sessionId: child,
-          agentId: await this.resolveChildAgent(projectId, child, ctx),
-          spawnedAt: msg.timestamp,
+          sessionId: pointer.sessionId,
+          agentId: await this.resolveChildAgent(projectId, pointer.sessionId, ctx),
+          spawnedAt: pointer.timestamp,
         });
       }
     }
@@ -486,17 +530,32 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
   ): Promise<HistoryMessage[]> {
+    return this.readAll(projectId, agentId, sessionId);
+  }
+
+  private async readAll(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    sources?: WeakMap<object, RecordSource>,
+  ): Promise<HistoryMessage[]> {
     const ctx: ExpandCtx = {
       projectScanned: false,
       ancestry: new Set([sessionId]),
       depth: 0,
       raw: new Map(),
+      ...(sources !== undefined ? { sources } : {}),
     };
     const files = await this.locateAll(projectId, agentId, sessionId);
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for (const file of files) {
-      const raw = await this.readShard(file.path);
-      out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
+      const raw = positioned(await this.readShard(file.path), file.index);
+      if (sources !== undefined) {
+        raw.forEach((m, ordinal) =>
+          sources.set(m, { agentId, sessionId, fileIndex: file.index, ordinal, chain: null }),
+        );
+      }
+      out.push(...(await this.expandMessages(projectId, raw, ctx)));
     }
     return out;
   }
@@ -525,16 +584,31 @@ export class TraceService implements Traces {
     projectId: string,
     childSid: string,
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[] | null> {
+  ): Promise<AmspRecord[] | null> {
     const cached = ctx.raw.get(childSid);
     if (cached !== undefined) return cached;
     const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
-    let raw: OmniMessage[] | null = null;
+    let raw: AmspRecord[] | null = null;
     if (childAgent) {
       const files = await this.locateAll(projectId, childAgent, childSid);
       if (files.length > 0) {
         raw = [];
-        for (const file of files) raw.push(...(await this.readShard(file.path)));
+        for (const file of files) {
+          const records = await this.readShard(file.path);
+          if (ctx.sources !== undefined) {
+            const sources = ctx.sources;
+            records.forEach((m, ordinal) =>
+              sources.set(m, {
+                agentId: childAgent,
+                sessionId: childSid,
+                fileIndex: file.index,
+                ordinal,
+                chain: [],
+              }),
+            );
+          }
+          raw.push(...records);
+        }
       }
     }
     ctx.raw.set(childSid, raw);
@@ -547,10 +621,10 @@ export class TraceService implements Traces {
    */
   private async expandMessages(
     projectId: string,
-    messages: readonly OmniMessage[],
+    messages: readonly AmspRecord[],
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[]> {
-    const out: OmniMessage[] = [];
+  ): Promise<AmspRecord[]> {
+    const out: AmspRecord[] = [];
     for (const msg of messages) {
       // The depth cap guards against runaway recursion; ancestry guards against a
       // cyclic pointer (a tampered Trace pointing to itself/an ancestor is not expanded).
@@ -560,7 +634,7 @@ export class TraceService implements Traces {
         continue;
       }
       const raw = await this.readChildRaw(projectId, childSid, ctx);
-      let nested: OmniMessage[] = [];
+      let nested: AmspRecord[] = [];
       if (raw !== null) {
         ctx.ancestry.add(childSid);
         nested = await this.expandMessages(projectId, raw, { ...ctx, depth: ctx.depth + 1 });
@@ -571,7 +645,15 @@ export class TraceService implements Traces {
         out.push(msg);
         continue;
       }
-      for (const m of nested) out.push({ ...m, origin: [childSid, ...(m.origin ?? [])] });
+      for (const m of nested) {
+        const copy = { ...m, origin: [childSid, ...(m.origin ?? [])] };
+        // The copy was read where its original was; its chain gains this level.
+        const source = ctx.sources?.get(m);
+        if (source !== undefined) {
+          ctx.sources!.set(copy, { ...source, chain: [childSid, ...(source.chain ?? [])] });
+        }
+        out.push(copy);
+      }
     }
     return out;
   }
@@ -689,22 +771,24 @@ export class TraceService implements Traces {
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult> {
     // The Trace files it reads are this sample's trace.read samples, keyed by the same session.
-    const read = () => this.messagesPage(projectId, agentId, sessionId, req);
+    const read = () => this.readPage(projectId, agentId, sessionId, req);
     return spanIn(this.telemetry, "session.messages", { session: sessionId }, read, (r) => ({
       attrs: { kind: req.kind, messages: r.messages.length },
     }));
   }
 
-  private async messagesPage(
+  private async readPage(
     projectId: string,
     agentId: string,
     sessionId: string,
     req: MessagesPageRequest,
+    sources?: WeakMap<object, RecordSource>,
   ): Promise<MessagesPageResult> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const empty = (): MessagesPageResult => ({
       messages: [],
       prior: initialScanState().totals,
+      units: 0,
     });
     if (files.length === 0) return empty();
     const ctx: ExpandCtx = {
@@ -712,6 +796,7 @@ export class TraceService implements Traces {
       ancestry: new Set([sessionId]),
       depth: 0,
       raw: new Map(),
+      ...(sources !== undefined ? { sources } : {}),
     };
 
     // The window's exclusive end: the newest shard's end (tail), or the cursor (before).
@@ -732,7 +817,7 @@ export class TraceService implements Traces {
 
     // Walk backward from the end, scanning whole shards (each from its cached carry-in)
     // until the window has more units than requested or the beginning is reached.
-    const shardMessages = new Map<number, OmniMessage[]>();
+    const shardMessages = new Map<number, AmspRecord[]>();
     let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
     let startPos = endPos + 1;
     while (boundaries.length <= req.limit && startPos > 0) {
@@ -782,27 +867,55 @@ export class TraceService implements Traces {
           }
           nextUnit += 1;
         }
-        spanRaw.push({
+        const record: HistoryMessage = {
           ...messages[i]!,
           tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+        };
+        sources?.set(record, {
+          agentId,
+          sessionId,
+          fileIndex: files[pos]!.index,
+          ordinal: i,
+          chain: null,
         });
+        spanRaw.push(record);
       }
     }
 
     // Byte budget: newest first, a unit joins while the page stays within it; the first one
-    // always joins. Sized as the route serves it, images by reference (trace-images.ts).
+    // always joins. Sized as the route serves it, images by reference (trace-images.ts). For a
+    // history stream's budget, as that stream sends it: bulky bodies folded (core's
+    // history-elision.ts), and a unit's subagent records counted with it — each unit is
+    // expanded as it is measured, and the window is those expansions joined.
+    const streamed = req.budget !== undefined;
+    const budget = streamed
+      ? Math.min(Math.max(0, req.budget!), MESSAGES_PAGE_MAX_BYTES)
+      : MESSAGES_PAGE_MAX_BYTES;
+    const served = (m: HistoryMessage): HistoryMessage => {
+      const referenced = withImagesByReference(sessionId, m);
+      if (!streamed) return referenced;
+      const source = ctx.sources?.get(m);
+      const position = m.tracePosition;
+      return elideHistoryRecord(
+        referenced,
+        source ??
+          (position !== undefined
+            ? { agentId, sessionId, fileIndex: position.fileIndex, ordinal: position.ordinal }
+            : { agentId, sessionId: m.origin?.at(-1) ?? sessionId, fileIndex: 1, ordinal: 0 }),
+      ).record;
+    };
     let chosen = starts.length - 1;
     let pageBytes = 0;
+    const unitRecords = new Map<number, AmspRecord[]>();
     for (let k = starts.length - 1; k >= 0; k--) {
       const unitEnd = k + 1 < starts.length ? starts[k + 1]!.at : spanRaw.length;
+      const unit = streamed
+        ? await this.expandMessages(projectId, spanRaw.slice(starts[k]!.at, unitEnd), ctx)
+        : spanRaw.slice(starts[k]!.at, unitEnd);
       let unitBytes = 0;
-      for (let i = starts[k]!.at; i < unitEnd; i++) {
-        unitBytes += Buffer.byteLength(
-          JSON.stringify(withImagesByReference(sessionId, spanRaw[i]!)),
-          "utf8",
-        );
-      }
-      if (k < starts.length - 1 && pageBytes + unitBytes > MESSAGES_PAGE_MAX_BYTES) break;
+      for (const m of unit) unitBytes += Buffer.byteLength(JSON.stringify(served(m)), "utf8");
+      if (k < starts.length - 1 && pageBytes + unitBytes > budget) break;
+      if (streamed) unitRecords.set(k, unit);
       pageBytes += unitBytes;
       chosen = k;
     }
@@ -823,14 +936,23 @@ export class TraceService implements Traces {
       start = { pos: 0, ordinal: 0 };
       prior = initialScanState().totals;
     }
+    // The window's units are the boundaries from its start on: all of them when it starts at
+    // the beginning (a preamble before the first prompt opens none), else those from the chosen one.
+    const windowUnits =
+      startBoundary === null ? units.length : units.length - units.indexOf(startBoundary);
     const windowRaw = spanRaw.slice(starts[chosen]?.at ?? 0);
-    const expanded = await this.expandMessages(projectId, windowRaw, ctx);
+    // Expansion is record by record, so the measured units joined are the window expanded.
+    const expanded =
+      streamed && unitRecords.size > 0
+        ? [...unitRecords.keys()].sort((a, b) => a - b).flatMap((k) => unitRecords.get(k)!)
+        : await this.expandMessages(projectId, windowRaw, ctx);
     // The start shard was read for the window above, so its head is on hand.
     const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
     return {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
       prior,
+      units: windowUnits,
       ...(startMeta
         ? {
             contextModel: {
@@ -844,118 +966,101 @@ export class TraceService implements Traces {
   }
 
   /**
-   * The streamed-history read (GET /messages?frames=1): the same windowed read
-   * (readMessagesPage) with its window sorted into NDJSON frames, the transcript's
-   * unit openers INTERLEAVED with their units' content in trace order.
-   *
-   * Shapes (see MessagesHistoryFrame in message-window.ts): one `page` line first —
-   * the window's envelope — then the body frames: the openers of units OLDER than
-   * the window (rows a page boundary would hide, so the outline stays complete
-   * without their interiors) come first, then the window's own stream — each unit's
-   * opener immediately followed by that unit's interior, cut only at group
-   * boundaries, each frame under the 64 KB soft cap (a single oversized group is its
-   * own frame and may exceed it) and always holding at least one group. Arrival
-   * order IS trace order: a consumer that appends as frames land lays the transcript
-   * out exactly as the JSON read does. (The earlier shape — every opener of the
-   * whole transcript ahead of the window's content — mis-ordered: the reducer
-   * appends and never re-inserts by position, so an older unit's interior landed
-   * after a newer unit's prompt; 2026-10-31.) Every
-   * frame carries the cursor to re-enter at through the ordinary `before` protocol.
-   *
-   * Frames are returned as an array and the route writes them out line by line: the
-   * framing decisions all live here (pure, unit-testable), the route only serializes.
-   * The window's own byte budget (MESSAGES_PAGE_MAX_BYTES) still bounds one response —
-   * the client's auto-refill stop line — and a page the budget cut short carries its
-   * `before` cursor exactly as the JSON read does.
+   * A history window as `readMessagesPage` reads it (`full`: the whole transcript, as
+   * `readMessages` does), with the Trace file and ordinal of every record beside it.
    */
-  async readMessagesFrames(
+  async readHistoryWindow(
     projectId: string,
     agentId: string,
     sessionId: string,
-    req: MessagesPageRequest,
-  ): Promise<MessagesHistoryFrame[]> {
-    const result = await this.readMessagesPage(projectId, agentId, sessionId, req);
-    const pageFrame: MessagesHistoryFrame = {
-      type: "page",
-      earlierTurns: result.prior.turns,
-      prior: result.prior,
-      ...(result.before !== undefined ? { before: result.before } : {}),
-      ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
-      ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
+    req: MessagesPageRequest | { kind: "full" },
+  ): Promise<HistoryWindowRead> {
+    const sources = new WeakMap<object, RecordSource>();
+    const sourceOf = (m: HistoryMessage): RecordSource => {
+      const source = sources.get(m);
+      if (source === undefined) throw new Error("a history record was read from nowhere");
+      return source;
     };
+    if (req.kind === "full") {
+      const messages = await this.readAll(projectId, agentId, sessionId, sources);
+      return { messages, sources: messages.map(sourceOf) };
+    }
+    const { messages, ...page } = await this.readPage(projectId, agentId, sessionId, req, sources);
+    return { messages, sources: messages.map(sourceOf), page };
+  }
 
-    // The openers of units OLDER than this window: rows a page boundary hides — a
-    // tail read of the last units still names the units before them, or the outline
-    // (and the resume-position of the window's first unit) would be incomplete.
-    // Chronological, images by reference, cursor at the transcript's very beginning
-    // (these never re-send on a resume).
-    const files = await this.locateAll(projectId, agentId, sessionId);
-    const windowStart = windowFirstPosition(result.messages);
-    const beforeOpeners: OmniMessage[] = [];
-    if (windowStart !== undefined) {
-      for (const file of files) {
-        const raw = await this.readShard(file.path);
-        for (let i = 0; i < raw.length; i++) {
-          const msg = raw[i]!;
-          if (!isSkeletonMessage(msg)) continue;
-          const pos = { fileIndex: file.index, ordinal: i };
-          if (comparePosition(pos, windowStart) >= 0) break;
-          beforeOpeners.push(withImagesByReference(sessionId, { ...msg, tracePosition: pos }) as HistoryMessage);
+  /**
+   * Every Trace file of the Session and of its descendants (subagent children, recursively, by
+   * the same depth and cycle rules the history expansion follows), with their line offsets.
+   */
+  async historyTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<HistoryTraceFile[]> {
+    const out: HistoryTraceFile[] = [];
+    const seen = new Set<string>([sessionId]);
+    const reconciled = new Set<string>();
+    const ctx = { projectScanned: false };
+    // Every file this walk indexes stays indexed until it is done: its children are read from
+    // the same entries, and one walk over more files than the index keeps would drop its own.
+    const releases: Array<() => void> = [];
+    try {
+      // The Session, then its descendants level by level, as deep as the expansion goes.
+      let level: Array<{ agentId: string; sessionId: string }> = [{ agentId, sessionId }];
+      for (let depth = 0; level.length > 0; depth++) {
+        const next: Array<{ agentId: string; sessionId: string }> = [];
+        for (const session of level) {
+          const files = await this.locateIn(
+            projectId,
+            session.agentId,
+            session.sessionId,
+            reconciled,
+          );
+          // The children, from the pointers the same index entries keep (as subagentChildren
+          // finds them, without locating the Session's files a second time).
+          const pointers: TraceLineIndexEntry["pointers"] = [];
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i]!;
+            releases.push(this.lineIndex.retain(file.path));
+            let entry;
+            let stat;
+            try {
+              entry = await this.lineIndex.ensure(file.path);
+              // As bigints: an NTFS file id passes 2^53, which a number would round.
+              stat = await fs.stat(file.path, { bigint: true });
+            } catch {
+              continue; // vanished since it was indexed: absent, as the machine leg reports it
+            }
+            pointers.push(...entry.pointers);
+            out.push({
+              agentId: session.agentId,
+              sessionId: session.sessionId,
+              fileIndex: file.index,
+              path: file.path,
+              ...fileIdentityOf(stat),
+              size: entry.size,
+              scanned: entry.scanned,
+              starts: entry.starts.slice(),
+              ends: entry.ends.slice(),
+              final: i < files.length - 1,
+            });
+          }
+          if (depth >= MAX_SUBAGENT_DEPTH) continue;
+          for (const pointer of pointers) {
+            if (seen.has(pointer.sessionId)) continue;
+            seen.add(pointer.sessionId);
+            const childAgent = await this.resolveChildAgent(projectId, pointer.sessionId, ctx);
+            if (childAgent !== null)
+              next.push({ agentId: childAgent, sessionId: pointer.sessionId });
+          }
         }
+        level = next;
       }
+      return out;
+    } finally {
+      for (const release of releases) release();
     }
-    const beforeFrames: MessagesHistoryFrame[] = [];
-    for (const messages of chunkFrame(beforeOpeners)) {
-      beforeFrames.push({ type: "skeleton", cursor: "0:0", messages });
-    }
-
-    // The window's own stream: every message in trace order — each unit's OPENER
-    // immediately followed by that unit's interior (a cut may fall between units, never
-    // inside a group). Appending as frames land reproduces the JSON read's order
-    // exactly; the client's reducer appends and never re-inserts by position, so the
-    // opener must not precede its own unit's content by more than its interior.
-    const streamRows = [...result.messages].sort((a, b) => {
-      const pa = (a as HistoryMessage).tracePosition;
-      const pb = (b as HistoryMessage).tracePosition;
-      if (pa === undefined || pb === undefined) return 0;
-      return comparePosition(pa, pb);
-    });
-    const byRef = streamRows.map((m) => withImagesByReference(sessionId, m) as HistoryMessage);
-    const meatFrames: MessagesHistoryFrame[] = [];
-    if (byRef.length > 0) {
-      const cuts = frameCutIndexes(byRef);
-      const byteOf = (m: OmniMessage): number =>
-        Buffer.byteLength(JSON.stringify(m), "utf8") + 1; // + the NDJSON newline
-      const frames = planMeatFrames(byteOf, byRef, cuts, MESSAGE_WINDOW_FRAME_MAX_BYTES);
-      const reentryCursor =
-        req.kind === "before"
-          ? encodeCursor(req.cursor)
-          : (() => {
-              // The window's first unit start (its prompt — a user text that is not a
-              // steering block); a window that opens mid-unit starts at its first message.
-              for (const m of result.messages) {
-                const p = m.payload as { type?: string; role?: string; text?: string };
-                if (
-                  m.type === "model_msg" &&
-                  p.type === "text" &&
-                  p.role === "user" &&
-                  typeof p.text === "string" &&
-                  parseUserSteeringText(p.text) === null
-                ) {
-                  const pos = (m as HistoryMessage).tracePosition;
-                  if (pos !== undefined) return encodeCursor({ fileIndex: pos.fileIndex, ordinal: pos.ordinal });
-                }
-              }
-              const first = byRef[0] as HistoryMessage | undefined;
-              return first?.tracePosition !== undefined
-                ? encodeCursor({ fileIndex: first.tracePosition.fileIndex, ordinal: first.tracePosition.ordinal })
-                : "0:0";
-            })();
-      for (const { from, to } of frames) {
-        meatFrames.push({ type: "meat", cursor: reentryCursor, messages: byRef.slice(from, to) });
-      }
-    }
-    return [pageFrame, ...beforeFrames, ...meatFrames];
   }
 
   /**
@@ -976,7 +1081,7 @@ export class TraceService implements Traces {
     const targetFilePos = files.findIndex((file) => file.index === position.fileIndex);
     if (targetFilePos < 0) throw invalid("The selected reply no longer exists in this Session.");
 
-    const shards: OmniMessage[][] = [];
+    const shards: AmspRecord[][] = [];
     for (let i = 0; i <= targetFilePos; i++) shards.push(await this.readShard(files[i]!.path));
     const targetShard = shards[targetFilePos]!;
     const target = targetShard[position.ordinal];
@@ -1006,8 +1111,13 @@ export class TraceService implements Traces {
     for (let i = position.ordinal + 1; i < targetShard.length; i++) {
       const msg = targetShard[i]!;
       const p = msg.payload as { type?: string; status?: string };
-      // The next user Task and housekeeping compaction both belong after the selected reply.
-      if (isTaskStartingUser(msg) || (msg.type === "event_msg" && p.type === "compaction_begin")) {
+      // The next user Task and housekeeping compaction both belong after the selected reply —
+      // the next Task from its task_begin on, so the fork never ends on an unclosed one.
+      if (
+        isTaskStartingUser(msg) ||
+        isTaskBegin(msg) ||
+        (msg.type === "event_msg" && p.type === "compaction_begin")
+      ) {
         break;
       }
       // A Task may contain several assistant segments/requests. Only the final visible reply
@@ -1047,7 +1157,7 @@ export class TraceService implements Traces {
     const forkScratchpad = path.join(scratchpadRoot, newSessionId);
     const written: string[] = [];
 
-    const rewrite = (msg: OmniMessage): OmniMessage => {
+    const rewrite = (msg: AmspRecord): AmspRecord => {
       if (isSessionMeta(msg)) {
         const sourcePrompt = msg.payload.system_prompt;
         const sourceVisible = modelVisiblePath(sourceScratchpad);
@@ -1076,9 +1186,12 @@ export class TraceService implements Traces {
           ...msg,
           payload: {
             ...msg.payload,
-            text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad),
+            text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad, {
+              source: sourceSessionId,
+              fork: newSessionId,
+            }),
           },
-        } as OmniMessage;
+        } as AmspRecord;
       }
       return msg;
     };
@@ -1228,7 +1341,7 @@ export class TraceService implements Traces {
    */
   private async filePricing(
     projectId: string,
-    meta: OmniMessage | undefined,
+    meta: AmspRecord | undefined,
   ): Promise<{ provider: string; modelId: string; rates: TieredRates } | null> {
     if (meta === undefined) return null;
     const { provider, model_id: modelId } = meta.payload as {
@@ -1248,7 +1361,17 @@ export class TraceService implements Traces {
     sessionId: string,
     index: number,
   ): Promise<TraceAnalysisResponse> {
-    const messages = await this.readFileByIndex(projectId, agentId, sessionId, index);
+    return this.analyzeRecords(
+      projectId,
+      await this.readFileByIndex(projectId, agentId, sessionId, index),
+    );
+  }
+
+  /** The analysis of one Trace file's records, however they were read (Traces.analyzeRecords). */
+  async analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
+  ): Promise<TraceAnalysisResponse> {
     // The file's head: the main session's first `session_meta`.
     const meta = messages.find(
       (m) => isSessionMeta(m) && (m.origin === undefined || m.origin.length === 0),
@@ -1299,6 +1422,8 @@ export class TraceService implements Traces {
     /** Inside the image run that follows a `[user_steering]` text (see the turn-start rule below). */
     let steeringImages = false;
     let sawToolCallThisRequest = false;
+    /** The main Request's tool calls so far (cleared at its request_begin). */
+    let requestCallIds: string[] = [];
     // Compaction interval (compaction_begin..compaction_end): the compaction
     // request's request_begin/request_end and token_usage all fall inside it (see
     // core context-engine's summarize flow), which is used to exclude the
@@ -1361,10 +1486,20 @@ export class TraceService implements Traces {
      *   - Other messages belong to the current taskIndex: tool output and
      *     approval decisions arriving after request_end still belong to this
      *     turn (they're the results of tools this turn's Request initiated).
+     *   - A `task_begin` opens the pending span too — it precedes its Task's
+     *     input — but starts no turn by itself: turns are still told apart by
+     *     the markers above, so a Trace counts the same turns with or without
+     *     Task records. A span holding nothing but Task records (a file that
+     *     ends on `compaction_end, task_end, task_begin`) stays with the turn
+     *     before it, and no Task record moves a turn's end time.
      */
     const msgTask: number[] = new Array<number>(messages.length).fill(-1);
     /** The pending new turn's starting point (message index); settled once request_begin determines the taskIndex. */
     let pendingFrom: number | null = null;
+    /** The navigator label of the pending turn: from its first user text that leaves one (see promptLabel). */
+    let pendingPrompt: string | null = null;
+    /** Whether the pending span holds a turn's starting marker, not only a `task_begin` that opened it. */
+    let pendingStartsTurn = false;
 
     for (let mi = 0; mi < messages.length; mi++) {
       const msg = messages[mi]!;
@@ -1415,7 +1550,7 @@ export class TraceService implements Traces {
       // message is a genuine new turn). A subagent's messages pass through without closing it:
       // they belong to another session's stream and say nothing about this one's grouping.
       // The Web answers the same "what is one Task" question over the live stream — see
-      // `openSteering` in web/src/lib/omni/stream-model.ts; the two need to stay in step.
+      // `openSteering` in web/src/lib/amsp/stream-model.ts; the two need to stay in step.
       const isImage = !hasOrigin && msg.type === "model_msg" && p.type === "image_url";
       if (!hasOrigin && !isSteeringText && !(isImage && steeringImages)) steeringImages = false;
       if (isSteeringText) steeringImages = true;
@@ -1429,8 +1564,13 @@ export class TraceService implements Traces {
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
       const startsCompactionTurn =
         !hasOrigin && msg.type === "event_msg" && p.type === "compaction_begin";
+      if (!hasOrigin && isTaskBegin(msg) && pendingFrom === null) pendingFrom = mi;
       if (startsUserTurn || startsCompactionTurn) {
         if (pendingFrom === null) pendingFrom = mi;
+        pendingStartsTurn = true;
+        if (startsUserTurn && p.type === "text" && pendingPrompt === null) {
+          pendingPrompt = promptLabel(p.text as string);
+        }
         // A user Prompt **always starts a new turn**: judging continuation solely
         // by "did the previous turn call a tool" isn't enough — if the previous
         // turn ended in a retryable status (given up after exhausting retries),
@@ -1448,12 +1588,15 @@ export class TraceService implements Traces {
             prevSerialTs = msg.timestamp;
             if (!continuation) taskIndex++; // Not a continuation -> a new Task
             sawToolCallThisRequest = false;
+            requestCallIds = [];
           }
           // Settle taskIndex before opening the span: the span belongs directly to
           // the current Task. Nearest-neighbor pairing: if the previous begin was
           // never closed (process exited mid-run), the span is left open.
           openRequest = { beginTs: msg.timestamp, taskIndex };
           if (compactionActive) openRequest.compaction = true;
+          // The level the request went out at; absent on Traces written before the field.
+          if (typeof p.thinking_level === "string") openRequest.thinkingLevel = p.thinking_level;
           requests.push(openRequest);
           if (!hasOrigin) {
             const t = ensureTask(taskIndex);
@@ -1479,6 +1622,9 @@ export class TraceService implements Traces {
                 if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
               }
               pendingFrom = null;
+              pendingStartsTurn = false;
+              if (pendingPrompt !== null) t.prompt = pendingPrompt;
+              pendingPrompt = null;
             }
             msgTask[mi] = taskIndex;
           }
@@ -1522,6 +1668,18 @@ export class TraceService implements Traces {
           if (!hasOrigin) {
             prevSerialTs = null;
             continuation = sawToolCallThisRequest || retryable;
+            // A Request that did not complete: a call of it with no approval decision was
+            // closed with it and never dispatched (the engine decides every call it dispatches
+            // before the Request ends), so it gets no timeline lane — one would render as an
+            // execution spanning the rest of the timeline.
+            if (status !== undefined && status !== "completed") {
+              for (const id of requestCallIds) {
+                const lane = openSpansById.get(id);
+                if (lane === undefined || lane.approvalTs !== undefined) continue;
+                openSpansById.delete(id);
+                toolSpans.splice(toolSpans.indexOf(lane), 1);
+              }
+            }
           }
           if (retryable) reconnectCount++;
           if (openRequest) {
@@ -1669,21 +1827,17 @@ export class TraceService implements Traces {
       }
       if (p.type === "tool_call" && typeof p.tool_call_id === "string") {
         if (!hasOrigin) sawToolCallThisRequest = true; // This turn called a tool -> the next turn continues the same Task
-        const callStop = typeof p.stop_reason === "string" ? p.stop_reason : undefined;
         const span: ToolCallSpan = {
           toolCallId: p.tool_call_id,
           name: typeof p.name === "string" ? p.name : "",
           startTs: msg.timestamp,
         };
-        if (callStop !== undefined) span.stopReason = callStop;
         openToolCalls.set(p.tool_call_id, span);
         toolCalls.push(span);
-        // The timeline lane only accepts calls that "will actually be executed":
-        // an interrupt-compensation tool_call (stop_reason other than completed)
-        // never gets an approval/output, and putting it on a lane would render as
-        // a phantom "executing" state spanning the whole timeline — so it's
-        // skipped outright.
-        if (!hasOrigin && (callStop === undefined || callStop === "completed")) {
+        // A timeline lane, until the call's Request ends without completing and without having
+        // dispatched it (see request_end).
+        if (!hasOrigin) {
+          requestCallIds.push(p.tool_call_id);
           const timeline: TraceToolSpan = {
             toolCallId: p.tool_call_id,
             name: typeof p.name === "string" ? p.name : "",
@@ -1699,12 +1853,13 @@ export class TraceService implements Traces {
           span.endTs = msg.timestamp;
           const dur = Date.parse(msg.timestamp) - Date.parse(span.startTs);
           if (Number.isFinite(dur)) span.durationMs = dur;
-          if (typeof p.stop_reason === "string") span.stopReason = p.stop_reason;
+          // A result written before tool results carried a status reads as completed.
+          span.status = typeof p.status === "string" ? p.status : "completed";
         }
         const timeline = openSpansById.get(p.tool_call_id);
         if (timeline && timeline.outputTs === undefined) {
           timeline.outputTs = msg.timestamp;
-          if (typeof p.stop_reason === "string") timeline.stopReason = p.stop_reason;
+          timeline.status = typeof p.status === "string" ? p.status : "completed";
         }
       }
     }
@@ -1714,11 +1869,16 @@ export class TraceService implements Traces {
     // and forms its own turn — reattaching it to the previous turn would smear
     // two separate user sends together.
     if (pendingFrom !== null) {
-      taskIndex++;
+      // Task records alone (the next Task's task_begin behind a closing compaction) are no
+      // turn: they stay with the turn before them.
+      if (pendingStartsTurn) taskIndex++;
       for (let k = pendingFrom; k < messages.length; k++) {
         if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
       }
-      ensureTask(taskIndex);
+      if (pendingStartsTurn) {
+        const t = ensureTask(taskIndex);
+        if (pendingPrompt !== null) t.prompt = pendingPrompt;
+      }
     }
 
     // Each turn's message index range and end-of-turn time are always derived from
@@ -1759,6 +1919,9 @@ export class TraceService implements Traces {
       // created, and its timestamp has nothing to do with this turn (it also gets
       // rewritten verbatim at the start of a new file after compaction splits the file).
       if (messages[k]!.type === "session_meta") continue;
+      // Nor do Task records: the next Task's task_begin can sit at the end of this turn's
+      // file (behind a closing compaction), written when that next Task started.
+      if (isTaskRecord(messages[k]!)) continue;
       const ts = messages[k]!.timestamp;
       if (t.endTs === "" || ts > t.endTs) t.endTs = ts;
     }
@@ -1967,7 +2130,7 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
     index: number,
-  ): Promise<OmniMessage[]> {
+  ): Promise<AmspRecord[]> {
     const file = await this.locateByIndex(projectId, agentId, sessionId, index);
     return readTraceTolerant(file.path);
   }
@@ -2019,7 +2182,7 @@ export class TraceService implements Traces {
     content: string,
   ): Promise<TraceImportResponse> {
     const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       // Strict parse: import is the gate for user-supplied files, so a malformed middle
       // line is reported as 400 rather than silently dropped (read paths skip it instead).

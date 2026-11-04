@@ -17,31 +17,32 @@
  * behind it going away), or an answer that was not a stream at all but may become one again
  * (a 503 while a machine reconnects). Fatal answers (401/403/404) stop the retries.
  *
- * The socket is addressed by the signed-in user (the server's reserved terminal-stream id,
- * `apiSocketPath`), and this module finds out who that is BY ITSELF — asking `/api/me` over
- * HTTP once, or being told by the API client when a `/api/me` answer passes through it. No
+ * The socket's address is the server's own route for it (`apiSocketPath`); who it opens as is
+ * its cookie, so this module finds out who that is BY ITSELF — asking `/api/me` over HTTP
+ * once, or being told by the API client when a `/api/me` answer passes through it. No
  * caller has to know the socket exists: `ready()` settles the identity, opens the socket and
  * waits for the handshake, so the page's very first calls ride it rather than race it. A
  * sign-in or sign-out passing through the API client resets the identity, which closes the
  * socket; the next call opens the new user's.
  *
- * Without a socket — the browser cannot open one, or the handshake keeps failing — streams
- * fall back to EventSource (the caller supplies the fallback) and calls fall back to fetch.
+ * A call is never answered by opening a second transport beside the socket: made while it is
+ * not open, the call waits for the next handshake, so the page's requests queue behind one
+ * connection instead of each taking one of the browser's six to this origin. Only a page with
+ * no socket at all — no WebSocket in the browser, nobody signed in, the server unreachable —
+ * refuses them, and its streams wait in silence. A connection that drops and a handshake that
+ * never opens are the same thing to this client: both are retried on the one doubling
+ * backoff, for as long as the tab is open.
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import { apiSocketPath } from "@prismshadow/penguin-server/api";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import type { StreamConnection, StreamHandlers } from "./sse";
 import { perfOn, perfSample, setPerfSwitch } from "../lib/perf/switch";
-import { reportBrowserError } from "../lib/error-report";
 
 /** Reconnect backoff, the ssh reconnect's shape: doubling from the floor to the ceiling. */
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
-/** Consecutive handshakes that never opened before the page gives the socket up for EventSource and fetch. */
-const GIVE_UP_AFTER = 3;
-/** A handshake refused outright (a runtime without the socket) is retried this soon — the backoff is for connections that were up and dropped. */
-const REFUSED_RETRY_MS = 250;
+const backoffMs = (fails: number): number =>
+  Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** fails);
 /** A stream the server ended (or answered without streaming) is re-issued after this. */
 const REISSUE_MS = 1_000;
 /** The server's heartbeat cadence (socket/serve.ts); a socket silent for two beats is dead and is closed to reconnect. */
@@ -88,10 +89,23 @@ interface PendingCall {
   deadline: ReturnType<typeof setTimeout>;
 }
 
+/** A call made while the socket was not open: it waits for a handshake and is sent by it. */
+interface QueuedCall {
+  method: string;
+  path: string;
+  opts: { headers?: Record<string, string>; body?: unknown };
+  resolve: (r: SocketCallResult) => void;
+  reject: (err: Error) => void;
+  /**
+   * The identity generation this call was made under (see `#identityMoved`): a call held
+   * across a sign-in, a sign-out or a different user's `/api/me` is never sent.
+   */
+  generation: number;
+}
+
 interface StreamEntry {
   path: string;
   handlers: StreamHandlers;
-  fallback: () => StreamConnection;
   /** The call id while the stream is issued on the live socket; null between issues. */
   id: number | null;
   /** Fires when the server has not opened the issued stream in time. */
@@ -100,8 +114,6 @@ interface StreamEntry {
   retry: ReturnType<typeof setTimeout> | null;
   /** Issues in a row that did not open; the stream's own backoff, reset when it opens. */
   failures: number;
-  /** Set once the entry has been handed to EventSource; the socket never touches it again. */
-  fallen: StreamConnection | null;
   closed: boolean;
   /**
    * The cadence this stream is expected to speak at, in ms (the caller's `heartbeatMs`), or
@@ -112,6 +124,15 @@ interface StreamEntry {
   heartbeatMs: number | null;
   /** Fires when no frame carrying this stream's id has arrived for two beats. */
   streamDeadline: ReturnType<typeof setTimeout> | null;
+  /** The caller asked for acknowledged flow (`StreamOptions.flow`). */
+  flow: boolean;
+  /**
+   * The current issue's start frame echoed `x-flow: credit`: the server reads acks. Only then
+   * are they sent — a server older than acks closes the whole socket on a frame it does not know.
+   */
+  credited: boolean;
+  /** Event data handled on the current issue (`ping`s aside), the cumulative figure an ack reports. */
+  handled: number;
 }
 
 /** What `stream` may be told beyond the handlers; see `heartbeatMs`. */
@@ -124,6 +145,14 @@ export interface StreamOptions {
    * would end a healthy subscription every two beats forever.
    */
   heartbeatMs?: number;
+  /**
+   * Acknowledged flow (`x-flow: credit`, the server's socket/frames.ts AckFrame): the stream
+   * acknowledges the event data it has handled, and the server keeps no more than its window
+   * of unacknowledged data in flight — for an endpoint that ships bulk, so one big transfer
+   * cannot hold back the socket's other calls. Only an endpoint that paces its events reads
+   * the header; on any other it changes nothing.
+   */
+  flow?: boolean;
 }
 
 type State = "closed" | "connecting" | "open" | "unavailable";
@@ -139,17 +168,6 @@ export interface SocketReport {
   streams: string[];
 }
 
-/**
- * A socket fault the server cannot see — a timeout, a silence, a handshake that never opened:
- * the console line it always was, and a report to the error table while the browser-side
- * switch is on (lib/error-report.ts).
- */
-function fault(code: string, line: string, level: "warn" | "error" = "warn"): void {
-  if (level === "error") console.error(line);
-  else console.warn(line);
-  reportBrowserError({ kind: "socket", code, message: line });
-}
-
 /** Answers the socket cannot make useful: the endpoint refused, and will keep refusing. */
 function fatal(status: number): boolean {
   return status === 401 || status === 403 || status === 404;
@@ -160,26 +178,28 @@ export class ApiSocket {
   #state: State = "closed";
   #next = 1;
   readonly #calls = new Map<number, PendingCall>();
+  /** Calls made before the socket was open, in the order they were made (see call()). */
+  readonly #queued: QueuedCall[] = [];
   readonly #streams = new Map<number, StreamEntry>();
   readonly #waiting = new Set<StreamEntry>();
   #attempts = 0;
   /** Why the last socket closed, as the browser reports it — the one fact a refused handshake leaves behind. */
   #lastClose = "never closed";
-  #neverOpened = 0;
   #reconnect: ReturnType<typeof setTimeout> | null = null;
   /** Calls waiting on a handshake in progress (see ready()). */
   readonly #readyWaiters: ((open: boolean) => void)[] = [];
   /** Who the page is signed in as, once settled (null = nobody); unset until asked. */
   #identity: Promise<string | null> | null = null;
+  /** The user the identity last settled as; undefined until it is first settled. */
+  #identityUser: string | null | undefined = undefined;
+  /**
+   * Which identity the queued calls belong to. Bumped whenever the page's identity is known
+   * to have moved, so a call Alice queued while the socket was down can never be flushed
+   * under Bob's authorization (see `#identityMoved`).
+   */
+  #generation = 0;
   /** The user the current socket was opened for. */
   #openedFor: string | null = null;
-  /**
-   * Whether the identity behind the current handshake was just asked of the server over
-   * HTTP: then the server is reachable, and a handshake that still fails is a refusal worth
-   * counting towards giving up. A failure without that proof is a server that is down or
-   * a network that is gone, and is only retried.
-   */
-  #freshProbe = false;
   /** This client is closing the socket itself (identity changed, watchdog): not a refusal. */
   #closingOnPurpose = false;
   /** Fires when the server has said nothing for two beats. */
@@ -198,7 +218,7 @@ export class ApiSocket {
    */
   /**
    * `available` false starts the socket as unavailable: there is nothing it could connect to,
-   * so callers go straight to HTTP and EventSource without settling an identity first.
+   * so callers go straight to HTTP without settling an identity first.
    */
   constructor(
     private readonly urlFor: (userId: string) => string,
@@ -218,34 +238,30 @@ export class ApiSocket {
       state: this.#state,
       lastFrameAgoMs:
         this.#state === "open" ? Math.round(performance.now() - this.#lastFrameAt) : null,
-      pendingCalls: [...this.#calls.values()].map((c) => `${c.method} ${c.path}`),
+      pendingCalls: [
+        ...this.#queued.map((c) => `${c.method} ${c.path} (waiting for the socket)`),
+        ...[...this.#calls.values()].map((c) => `${c.method} ${c.path}`),
+      ],
       streams: [...this.#streams.values()].map((s) => s.path),
     };
   }
 
-  /** The socket is not coming: callers use HTTP and EventSource. */
+  /** This page has no socket: calls use HTTP, and streams wait for one that never comes. */
   isUnavailable(): boolean {
     return this.#state === "unavailable";
   }
 
   /**
    * The API client saw a `/api/me` answer: the identity is known without asking. A socket
-   * open for someone else (the cookie was replaced under this tab) is closed.
+   * open for someone else (the cookie was replaced under this tab) is closed, and the calls
+   * that waited under the old identity are refused rather than flushed for this one.
    */
   identityIs(userId: string | null): void {
+    const settled = this.#identityUser;
     this.#identity = Promise.resolve(userId);
+    this.#identityUser = userId;
+    if (settled !== undefined && settled !== userId) this.#identityMoved();
     if (this.#ws !== null && this.#openedFor !== userId) this.#closeOnPurpose();
-  }
-
-  /**
-   * The API client has a `/api/me` request on its way: the identity is what that answers. A
-   * call made meanwhile waits for the same answer instead of asking the question a second
-   * time — at boot the page's first calls are made before that request comes back. A request
-   * that fails leaves the identity unsettled, and the next call asks for itself.
-   */
-  identityPending(userId: Promise<string | null>): void {
-    userId.catch(() => {}); // read by ready(), which asks again on a rejection
-    this.#identity = userId;
   }
 
   /**
@@ -255,7 +271,20 @@ export class ApiSocket {
    */
   identityChanged(): void {
     this.#identity = null;
+    this.#identityUser = undefined;
+    this.#identityMoved();
     this.#closeOnPurpose();
+  }
+
+  /**
+   * The page's identity moved under this client. What was queued was made as whoever the
+   * page was then; those calls are refused instead of being sent on the next user's socket —
+   * the one place where the queue's delay could otherwise run one user's write under
+   * another user's authorization. Calls made after this point belong to the new generation.
+   */
+  #identityMoved(): void {
+    this.#generation += 1;
+    this.#refuseQueued("identity_changed");
   }
 
   #closeOnPurpose(): void {
@@ -266,29 +295,65 @@ export class ApiSocket {
 
   /**
    * Whether a call can go over the socket — settling the identity and the handshake first
-   * rather than deciding on the instant. True once open; false when the socket is not to be
-   * had right now (nobody signed in, given up, or the handshake just failed), in which case
-   * the caller uses HTTP.
+   * rather than deciding on the instant. True once open; false when there is no socket to be
+   * had at all right now (this page has no WebSocket, nobody is signed in, the server cannot
+   * be reached), in which case the calls waiting for one are refused rather than carried by
+   * another transport. A handshake that merely failed does not answer false here: it is
+   * retried, and what waits for it keeps waiting.
    */
   async ready(): Promise<boolean> {
     if (this.#state === "open") return true;
-    if (this.#state === "unavailable") return false;
+    if (this.#state === "unavailable") return this.#noSocket();
     if (this.#state === "closed") {
-      let userId: string | null;
-      const fresh = this.#identity === null;
-      try {
-        userId = await (this.#identity ??= this.whoAmI());
-      } catch {
-        this.#identity = null; // could not tell (the server is unreachable): ask again next time
-        return false;
+      // The identity can move while it is being asked (a sign-out lands first): an answer
+      // from before that belongs to the wrong user, so it is asked again rather than acted
+      // on — a stale answer must never open the old user's socket.
+      while (true) {
+        const generation = this.#generation;
+        const asked = (this.#identity ??= this.whoAmI());
+        let userId: string | null;
+        try {
+          userId = await asked;
+        } catch {
+          // Asked across a move (a sign-out, or a `/api/me` that settled the identity first):
+          // the answer is about the page as it was, so it is asked again.
+          if (asked !== this.#identity || generation !== this.#generation) continue;
+          this.#identity = null; // could not tell (the server is unreachable): ask again next time
+          return this.#noSocket();
+        }
+        if (asked !== this.#identity || generation !== this.#generation) continue;
+        const settled = this.#identityUser;
+        if (settled !== undefined && settled !== userId) {
+          // The server says the page is someone else than the identity last settled: what
+          // waited under that one is not this user's to send.
+          this.#identityMoved();
+        }
+        this.#identityUser = userId;
+        if (userId === null) return this.#noSocket();
+        this.#open(this.urlFor(userId), userId);
+        break; // one attempt made; its outcome is read below
       }
-      if (userId === null) return false;
-      this.#freshProbe = fresh;
-      this.#open(this.urlFor(userId), userId);
     }
     const state = this.#stateNow(); // #open() moved it; read it afresh
-    if (state !== "connecting") return state === "open";
+    if (state !== "connecting") return state === "open" ? true : this.#noSocket();
     return new Promise((resolve) => this.#readyWaiters.push(resolve));
+  }
+
+  /** Nothing is going to open: what waited for it is refused, and false says so. */
+  #noSocket(): false {
+    this.#refuseQueued("socket_closed");
+    return false;
+  }
+
+  /**
+   * Asks for a handshake only when nothing else is already arranging one. A drop has its
+   * own backoff timer, and work arriving in the wait must not bring the next attempt
+   * forward: calls and streams ride the one ladder the socket has. With no attempt under
+   * way (a fresh client, or a drop that left nothing to carry), the ask opens at once.
+   */
+  #wake(): void {
+    if (this.#state !== "closed" || this.#reconnect !== null) return;
+    void this.ready();
   }
 
   /** The state through a call, which the type checker cannot narrow across #open()'s mutation. */
@@ -311,8 +376,7 @@ export class ApiSocket {
     if (this.#watchdog !== null) clearTimeout(this.#watchdog);
     this.#watchdog = setTimeout(() => {
       this.#watchdog = null;
-      fault(
-        "socket_silent",
+      console.warn(
         `[api-socket] no frame for ${2 * HEARTBEAT_MS} ms: closing the silent socket to reconnect`,
       );
       this.#closeOnPurpose();
@@ -320,44 +384,144 @@ export class ApiSocket {
   }
 
   /**
-   * One call over the open socket. Rejects with `socket_closed` if the socket drops before
-   * the answer — the caller decides what a lost answer means for its method.
+   * One call, on the socket. Open, it is a frame now; not open, the call waits in the order it
+   * was made for the next handshake to complete — and asks for one only when no attempt is
+   * already arranged: a call arriving during a reconnect's backoff waits for that attempt
+   * rather than starting one of its own. A call is never the reason a fetch is opened beside
+   * the socket, because every one of those is a browser connection to this origin and a page
+   * has six. Rejects with `socket_closed` when there is no socket to be had at all (this page
+   * has no WebSocket, nobody is signed in, the server cannot be reached), with
+   * `identity_changed` when the page's identity moved before it was sent, or when the socket
+   * drops after the frame was sent — the caller decides what a lost answer means for its
+   * method.
    */
   call(
     method: string,
     path: string,
     opts: { headers?: Record<string, string>; body?: unknown } = {},
   ): Promise<SocketCallResult> {
-    if (this.#state !== "open" || this.#ws === null) {
-      return Promise.reject(new Error("socket_closed"));
-    }
-    const id = this.#next++;
-    const frame: Record<string, unknown> = { id, call: { method, path, ...opts } };
-    const framesAtSend = this.#framesSeen;
     return new Promise<SocketCallResult>((resolve, reject) => {
-      const deadline = setTimeout(() => {
-        if (this.#calls.get(id)?.reject !== reject) return;
-        this.#calls.delete(id);
-        const live = this.#state === "open" && this.#framesSeen > framesAtSend;
-        fault(
-          "socket_call_no_answer",
-          `[api-socket] ${method} ${path}: no answer in ${ANSWER_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; ` +
-            (live
-              ? "the socket carried frames meanwhile, so it is the endpoint that is silent"
-              : "the socket itself went quiet"),
-        );
-        // Tell the server too: it keeps working a call nobody waits for any more, and for a
-        // machine that is a forward held open on the very route that is not answering. The
-        // cancel aborts the call's Request there (socket/serve.ts), which the machine proxy
-        // answers by dropping its forward.
-        if (this.#state === "open" && this.#ws !== null) {
-          this.#ws.send(JSON.stringify({ id, cancel: true }));
-        }
-        reject(new SocketTimeoutError(live));
-      }, ANSWER_TIMEOUT_MS);
-      this.#calls.set(id, { method, path, resolve, reject, deadline });
-      this.#ws!.send(JSON.stringify(frame));
+      const entry: QueuedCall = {
+        method,
+        path,
+        opts,
+        resolve,
+        reject,
+        generation: this.#generation,
+      };
+      if (this.#state === "open" && this.#ws !== null) {
+        this.#send(entry);
+        return;
+      }
+      if (this.#state === "unavailable") {
+        reject(new Error("socket_closed"));
+        return;
+      }
+      // A handshake that opens sends it (#flushQueued, from onopen); one that fails is retried
+      // on the same ladder the streams ride, and this call waits through it — a drop is not a
+      // verdict on the request. Only "there is no socket to be had" refuses it, in ready(). A
+      // pending backoff is left to decide when: a call arriving in the wait asks for nothing.
+      this.#queued.push(entry);
+      this.#wake();
     });
+  }
+
+  /**
+   * Puts one call on the live socket as a frame and starts its answer deadline. Never throws
+   * and never leaves the call unaccounted for: a frame that cannot be built or handed to the
+   * socket ends that call here, so a batch can carry on with the next one (see `#flushQueued`).
+   */
+  #send(entry: QueuedCall): void {
+    if (this.#state !== "open" || this.#ws === null) {
+      entry.reject(new Error("socket_closed")); // taken out of the queue but no socket to put it on
+      return;
+    }
+    const { method, path } = entry;
+    const id = this.#next++;
+    const frame: Record<string, unknown> = { id, call: { method, path, ...entry.opts } };
+    let text: string;
+    try {
+      text = JSON.stringify(frame);
+    } catch {
+      // A body that cannot be a JSON frame (a cycle, a BigInt) is this call's failure, not the
+      // socket's: the rest of the batch still goes out on it.
+      console.warn(`[api-socket] ${method} ${path}: could not be framed as JSON; refusing it`);
+      entry.reject(new Error("socket_unserializable"));
+      return;
+    }
+    const framesAtSend = this.#framesSeen;
+    const deadline = setTimeout(() => {
+      if (this.#calls.get(id)?.reject !== entry.reject) return;
+      this.#calls.delete(id);
+      const live = this.#state === "open" && this.#framesSeen > framesAtSend;
+      console.warn(
+        `[api-socket] ${method} ${path}: no answer in ${ANSWER_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; ` +
+          (live
+            ? "the socket carried frames meanwhile, so it is the endpoint that is silent"
+            : "the socket itself went quiet"),
+      );
+      // Tell the server too: it keeps working a call nobody waits for any more, and for a
+      // machine that is a forward held open on the very route that is not answering. The
+      // cancel aborts the call's Request there (socket/serve.ts), which the machine proxy
+      // answers by dropping its forward.
+      this.#cancel(id);
+      entry.reject(new SocketTimeoutError(live));
+    }, ANSWER_TIMEOUT_MS);
+    this.#calls.set(id, {
+      method,
+      path,
+      resolve: entry.resolve,
+      reject: entry.reject,
+      deadline,
+    });
+    try {
+      this.#ws.send(text);
+    } catch {
+      // The frame never left: take the call back out and end it now, rather than wait out a
+      // deadline for an answer that was never asked for. A socket that cannot send anything
+      // is dead; closing it brings the ordinary reconnect for whatever else is waiting.
+      clearTimeout(deadline);
+      this.#calls.delete(id);
+      console.warn(`[api-socket] ${method} ${path}: could not be sent; refusing it`);
+      entry.reject(new Error("socket_closed"));
+      this.#closeOnPurpose();
+    }
+  }
+
+  /**
+   * Sends everything that waited for the handshake, in the order it was asked for. Each entry
+   * stands alone: one that was refused, cannot be framed or cannot be sent ends there and the
+   * rest of the batch still gets its turn — no entry may be dropped between the queue and the
+   * socket, which would leave its caller waiting for a deadline that never comes.
+   */
+  #flushQueued(): void {
+    const queued = this.#queued.splice(0);
+    for (const entry of queued) {
+      if (entry.generation !== this.#generation) {
+        entry.reject(new Error("identity_changed")); // the identity moved after it was queued
+        continue;
+      }
+      this.#send(entry);
+    }
+  }
+
+  /**
+   * The calls waiting for a socket are refused rather than carried by another transport,
+   * which is the whole point of waiting for the socket; `reason` says why they never got one.
+   */
+  #refuseQueued(reason: string): void {
+    for (const entry of this.#queued.splice(0)) entry.reject(new Error(reason));
+  }
+
+  /** Cancel only on the live socket; each caller owns its local cleanup and retry. */
+  #cancel(id: number): void {
+    if (this.#state !== "open" || this.#ws === null) return;
+    try {
+      this.#ws.send(JSON.stringify({ id, cancel: true }));
+    } catch {
+      // The socket is not carrying frames any more; its close (and the reconnect) is the cure,
+      // and the caller has already ended the call this cancel was for.
+    }
   }
 
   /** "open (last frame N ms ago)" or the state — the one fact that separates a dead socket from a silent endpoint. */
@@ -367,53 +531,50 @@ export class ApiSocket {
   }
 
   /**
-   * A streaming subscription that survives every interruption until `close()`. `fallback`
-   * builds the EventSource equivalent, used when the socket is not coming.
+   * A streaming subscription that survives every interruption until `close()`; without a
+   * socket it waits for one, in silence — there is no second transport for a stream.
    */
-  stream(
-    path: string,
-    handlers: StreamHandlers,
-    fallback: () => StreamConnection,
-    options: StreamOptions = {},
-  ): StreamConnection {
+  stream(path: string, handlers: StreamHandlers, options: StreamOptions = {}): StreamConnection {
     const entry: StreamEntry = {
       path,
       handlers,
-      fallback,
       id: null,
       openDeadline: null,
       lastEventId: null,
       retry: null,
       failures: 0,
-      fallen: null,
       closed: false,
       heartbeatMs: options.heartbeatMs ?? null,
       streamDeadline: null,
+      flow: options.flow === true,
+      credited: false,
+      handled: 0,
     };
-    if (this.isUnavailable()) {
-      entry.fallen = fallback();
-    } else {
-      this.#waiting.add(entry);
-      if (this.#state === "open") this.#issue(entry);
-      else void this.ready();
+    this.#waiting.add(entry);
+    if (this.isUnavailable()) return { close: () => this.#dropStream(entry) };
+    if (this.#state === "open") this.#issue(entry);
+    else this.#wake();
+    return { close: () => this.#dropStream(entry) };
+  }
+
+  /** Takes a stream out of every queue it may sit in and ends its call, if it has one. */
+  #dropStream(entry: StreamEntry): void {
+    entry.closed = true;
+    entry.retry = this.#clearTimer(entry.retry);
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
+    entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
+    this.#waiting.delete(entry);
+    if (entry.id !== null) {
+      this.#streams.delete(entry.id);
+      this.#cancel(entry.id);
+      entry.id = null;
     }
-    return {
-      close: () => {
-        entry.closed = true;
-        entry.fallen?.close();
-        if (entry.retry !== null) clearTimeout(entry.retry);
-        this.#clearOpenDeadline(entry);
-        this.#clearStreamDeadline(entry);
-        this.#waiting.delete(entry);
-        if (entry.id !== null) {
-          this.#streams.delete(entry.id);
-          if (this.#ws !== null && this.#state === "open") {
-            this.#ws.send(JSON.stringify({ id: entry.id, cancel: true }));
-          }
-          entry.id = null;
-        }
-      },
-    };
+    // A booked reconnect exists to bring parked streams and queued calls back. With none of
+    // them left it has nothing to carry, and left to fire it would settle an identity and open
+    // a socket for a page that has gone (an unmounted app, a closed workbench); the next ask
+    // opens one. A call still queued behind the handshake is work, so it keeps the ladder.
+    if (this.#waiting.size === 0 && this.#queued.length === 0)
+      this.#reconnect = this.#clearTimer(this.#reconnect);
   }
 
   /** Opens the socket; streams and calls queue behind the handshake. Only from ready(). */
@@ -422,9 +583,8 @@ export class ApiSocket {
     if (typeof WebSocket === "undefined") {
       this.#state = "unavailable";
       console.warn(
-        "[api-socket] this browser has no WebSocket: streams run as EventSources, calls as fetches",
+        "[api-socket] this browser has no WebSocket: calls are refused, streams stay silent",
       );
-      this.#fallBackWaiting();
       this.#settleReady(false);
       return;
     }
@@ -437,7 +597,7 @@ export class ApiSocket {
       ws = new WebSocket(url);
     } catch {
       this.#state = "closed";
-      this.#dropped(false);
+      this.#dropped();
       return;
     }
     this.#ws = ws;
@@ -446,24 +606,21 @@ export class ApiSocket {
       this.#handshakeDeadline = null;
       if (this.#ws !== ws || this.#state !== "connecting") return;
       // Neither opened nor failed: close it ourselves. It counts as a handshake that never
-      // opened (onclose below), so a server that keeps doing this is given up on like one
-      // that keeps refusing — with the reason on record.
+      // opened (onclose below), so a server that keeps doing this is retried like one that
+      // keeps refusing — with the reason on record.
       this.#lastClose = `the handshake neither opened nor failed in ${HANDSHAKE_TIMEOUT_MS} ms`;
-      fault(
-        "socket_handshake_timeout",
-        `[api-socket] ${this.#lastClose}; closing it to try again — ${url}`,
-      );
+      console.warn(`[api-socket] ${this.#lastClose}; closing it to try again — ${url}`);
       ws.close();
     }, HANDSHAKE_TIMEOUT_MS);
     ws.onopen = () => {
       if (this.#ws !== ws) return;
-      this.#clearHandshakeDeadline();
+      this.#handshakeDeadline = this.#clearTimer(this.#handshakeDeadline);
       this.#state = "open";
       this.#attempts = 0;
-      this.#neverOpened = 0;
       this.#lastFrameAt = performance.now();
       this.#armWatchdog();
       this.#settleReady(true);
+      this.#flushQueued();
       for (const entry of [...this.#waiting]) this.#issue(entry);
     };
     ws.onmessage = (e: MessageEvent<string>) => {
@@ -482,7 +639,7 @@ export class ApiSocket {
     };
     ws.onclose = (event?: CloseEvent) => {
       if (this.#ws !== ws) return;
-      this.#clearHandshakeDeadline();
+      this.#handshakeDeadline = this.#clearTimer(this.#handshakeDeadline);
       // The browser's one word on a refused handshake: 1006 with no reason is a handshake the
       // server answered with a status (401, 404, 503…), which the WebSocket API never shows.
       // A handshake this client gave up on keeps the reason it recorded.
@@ -501,47 +658,25 @@ export class ApiSocket {
       if (this.#watchdog !== null) clearTimeout(this.#watchdog);
       this.#watchdog = null;
       if (!opened && !onPurpose) {
-        // A handshake that never opened. Counted towards giving up only when the server was
-        // just shown reachable (the identity was probed for this very attempt); otherwise
-        // the identity is forgotten so the next attempt probes first — a server that is
-        // down must not read as a server without a socket.
-        if (this.#freshProbe) {
-          this.#neverOpened += 1;
-          fault(
-            "socket_handshake_failed",
-            `[api-socket] the handshake did not open (${this.#neverOpened}/${GIVE_UP_AFTER} against a server that answered /api/me): ${this.#lastClose} — ${url}`,
-          );
-        } else {
-          console.warn(
-            `[api-socket] the handshake did not open, not counted (the server was not probed for this attempt): ${this.#lastClose}`,
-          );
-        }
+        // A handshake that never opened: forgetting the identity makes the next attempt probe
+        // the server over HTTP first, so a server that is down does not read as a server
+        // without a socket. The attempt itself is retried on the backoff like any other drop:
+        // nothing counts these up, and nothing ends them.
+        console.warn(`[api-socket] the handshake did not open: ${this.#lastClose} — ${url}`);
         this.#identity = null;
       }
       this.#settleReady(false);
-      this.#dropped(opened || onPurpose);
+      this.#dropped();
     };
     ws.onerror = () => {
       // onclose follows; nothing to do here that it will not do.
     };
   }
 
-  /** The socket is not coming: every stream still waiting on it runs as its EventSource. */
-  #fallBackWaiting(): void {
-    for (const entry of this.#waiting) {
-      if (entry.closed) continue;
-      if (entry.retry !== null) clearTimeout(entry.retry);
-      entry.retry = null;
-      entry.fallen = entry.fallback();
-    }
-    this.#waiting.clear();
-  }
-
   #issue(entry: StreamEntry): void {
     // Whatever issues it — a reconnect or its own retry — the other must not issue it again.
-    if (entry.retry !== null) clearTimeout(entry.retry);
-    entry.retry = null;
-    if (entry.closed || entry.fallen !== null || entry.id !== null) return;
+    entry.retry = this.#clearTimer(entry.retry);
+    if (entry.closed || entry.id !== null) return;
     if (this.#ws === null || this.#state !== "open") return;
     this.#waiting.delete(entry);
     const id = this.#next++;
@@ -549,26 +684,38 @@ export class ApiSocket {
     this.#streams.set(id, entry);
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (entry.lastEventId !== null) headers["last-event-id"] = entry.lastEventId;
-    this.#clearOpenDeadline(entry);
+    // Credit is counted per call: a new issue starts from nothing acknowledged.
+    entry.handled = 0;
+    entry.credited = false;
+    if (entry.flow) headers["x-flow"] = "credit";
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
     entry.openDeadline = setTimeout(() => {
       entry.openDeadline = null;
       if (entry.id !== id || this.#streams.get(id) !== entry) return;
       const delay = this.#streamBackoff(entry);
-      fault(
-        "socket_stream_not_opened",
+      console.warn(
         `[api-socket] stream ${entry.path}: not opened in ${STREAM_OPEN_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; issuing it again in ${delay} ms`,
       );
-      if (this.#ws !== null && this.#state === "open") {
-        this.#ws.send(JSON.stringify({ id, cancel: true }));
-      }
+      this.#cancel(id);
       this.#reissue(entry, delay);
     }, STREAM_OPEN_TIMEOUT_MS);
-    this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
+    try {
+      this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
+    } catch {
+      // The frame never left: hand the stream back to the ones waiting for a socket and let
+      // the reconnect carry it, rather than leave it hanging on a call this socket never got.
+      entry.openDeadline = this.#clearTimer(entry.openDeadline);
+      this.#streams.delete(id);
+      entry.id = null;
+      this.#waiting.add(entry);
+      this.#closeOnPurpose();
+    }
   }
 
-  #clearOpenDeadline(entry: StreamEntry): void {
-    if (entry.openDeadline !== null) clearTimeout(entry.openDeadline);
-    entry.openDeadline = null;
+  /** Clears a timer that may or may not be running; either way there is none afterwards. */
+  #clearTimer(timer: ReturnType<typeof setTimeout> | null): null {
+    if (timer !== null) clearTimeout(timer);
+    return null;
   }
 
   /**
@@ -585,43 +732,30 @@ export class ApiSocket {
     entry.streamDeadline = setTimeout(() => {
       entry.streamDeadline = null;
       if (entry.closed) return; // close() cleared this timer; an entry can outlive a frame, never a close
-      fault(
-        "socket_stream_silent",
+      console.warn(
         `[api-socket] stream ${entry.path}: no frame for ${2 * beatMs} ms (two beats at ${beatMs} ms) — ending it and re-subscribing from its last event id`,
       );
-      if (entry.id !== null && this.#ws !== null && this.#state === "open") {
-        this.#ws.send(JSON.stringify({ id: entry.id, cancel: true }));
-      }
+      if (entry.id !== null) this.#cancel(entry.id);
       entry.handlers.onError?.(false);
       this.#reissue(entry, REISSUE_MS);
     }, 2 * beatMs);
   }
 
-  #clearStreamDeadline(entry: StreamEntry): void {
-    if (entry.streamDeadline !== null) clearTimeout(entry.streamDeadline);
-    entry.streamDeadline = null;
-  }
-
-  #clearHandshakeDeadline(): void {
-    if (this.#handshakeDeadline !== null) clearTimeout(this.#handshakeDeadline);
-    this.#handshakeDeadline = null;
-  }
-
   /** The stream is off the socket for now; issue it again after a pause (or at once on reconnect). */
   #reissue(entry: StreamEntry, delayMs: number): void {
-    this.#clearOpenDeadline(entry);
-    this.#clearStreamDeadline(entry);
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
+    entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
     if (entry.id !== null) {
       this.#streams.delete(entry.id);
       entry.id = null;
     }
     if (entry.closed) return;
     this.#waiting.add(entry);
-    if (entry.retry !== null) clearTimeout(entry.retry);
+    entry.retry = this.#clearTimer(entry.retry);
     entry.retry = setTimeout(() => {
       entry.retry = null;
       if (this.#state === "open") this.#issue(entry);
-      else void this.ready();
+      else this.#wake(); // a pending reconnect decides when; the stream does not start one
     }, delayMs);
   }
 
@@ -639,36 +773,23 @@ export class ApiSocket {
       // Any frame for the id is the server's answer to the issue, opened or not — and it is
       // this stream's own beat: the open `stream` frame, a machine_event, a server_event and a
       // bare `heartbeat` all count.
-      this.#clearOpenDeadline(stream);
+      stream.openDeadline = this.#clearTimer(stream.openDeadline);
       this.#armStreamDeadline(stream);
       if ("event" in frame) {
-        const eventId = (frame.eventId as string | null) ?? null;
-        if (eventId !== null) stream.lastEventId = eventId;
-        let data: unknown;
         try {
-          data = JSON.parse(frame.data as string);
-        } catch {
-          return; // single-line JSON by protocol; anything else is skipped as EventSource would
-        }
-        // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
-        // `message` — the OmniMessage shape. Everything else is named dispatch, with the
-        // handlers this module knows by name first and `onEvent` for the rest.
-        const name = typeof frame.event === "string" ? frame.event : "message";
-        if (name === "server_event") {
-          stream.handlers.onServerEvent(data as ServerEvent, eventId);
-        } else if (name === "message") {
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
-        } else if (name === "heartbeat" || name === "ping") {
-          // Liveness only, and it has already been banked above: the beat is never an
-          // application event, so it reaches no handler.
-        } else if (stream.handlers.onEvent !== undefined) {
-          stream.handlers.onEvent(name, data, eventId);
-        } else {
-          // No named-event handler: an unlisted name is an OmniMessage, exactly as every name
-          // but `server_event` was treated before `onEvent` existed.
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+          this.#streamEvent(stream, frame);
+        } finally {
+          // Handled, however it went (a skipped frame too): an unacknowledged frame would
+          // hold the server's credit window shut for good.
+          // The beat is liveness, not payload: the server does not count it either.
+          if (stream.credited && frame.event !== "ping" && this.#streams.get(id) === stream) {
+            stream.handled += typeof frame.data === "string" ? frame.data.length : 0;
+            this.#ack(id, stream.handled);
+          }
         }
       } else if ("stream" in frame) {
+        const headers = (frame.headers as Record<string, string> | undefined) ?? {};
+        stream.credited = stream.flow && headers["x-flow"] === "credit";
         stream.failures = 0;
         stream.handlers.onOpen?.();
       } else if ("end" in frame) {
@@ -678,10 +799,7 @@ export class ApiSocket {
         // Answered without streaming: the endpoint refused (fatal) or is not ready (retry).
         const status = frame.status as number;
         if (fatal(status)) {
-          fault(
-            "socket_stream_refused",
-            `[api-socket] stream ${stream.path} refused with ${status}; not retried`,
-          );
+          console.warn(`[api-socket] stream ${stream.path} refused with ${status}; not retried`);
           this.#streams.delete(id);
           stream.id = null;
           stream.handlers.onError?.(true);
@@ -711,99 +829,133 @@ export class ApiSocket {
     });
   }
 
-  /** The socket is gone: fail the calls, park the streams, and decide whether to come back. */
-  #dropped(wasOpen: boolean): void {
+  /** One event of a stream, to its handlers. */
+  #streamEvent(stream: StreamEntry, frame: Record<string, unknown>): void {
+    const eventId = (frame.eventId as string | null) ?? null;
+    if (eventId !== null) stream.lastEventId = eventId;
+    let data: unknown;
+    try {
+      data = JSON.parse(frame.data as string);
+    } catch {
+      return; // single-line JSON by protocol; anything else is skipped unread
+    }
+    // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
+    // `message` — the AmspRecord shape. Everything else is named dispatch, with the
+    // handlers this module knows by name first and `onEvent` for the rest.
+    const name = typeof frame.event === "string" ? frame.event : "message";
+    if (name === "server_event") {
+      stream.handlers.onServerEvent(data as ServerEvent, eventId);
+    } else if (name === "message") {
+      stream.handlers.onRecord(data as AmspRecord, eventId);
+    } else if (name === "heartbeat" || name === "ping") {
+      // Liveness only, and it has already been banked above: the beat is never an
+      // application event, so it reaches no handler. `ping` is the session and user
+      // streams' own beat; over HTTP the SSE reader drops it by the same name — and
+      // here it is a frame whose `{}` payload must not be read as a record.
+    } else if (stream.handlers.onEvent !== undefined) {
+      stream.handlers.onEvent(name, data, eventId);
+    } else {
+      // No named-event handler: an unlisted name is a record, exactly as every name
+      // but `server_event` was treated before `onEvent` existed.
+      stream.handlers.onRecord(data as AmspRecord, eventId);
+    }
+  }
+
+  /** Tells the server how much of a flow stream was handled (the server's AckFrame). */
+  #ack(id: number, handled: number): void {
+    if (this.#state !== "open" || this.#ws === null) return;
+    try {
+      this.#ws.send(JSON.stringify({ id, ack: handled }));
+    } catch {
+      // A socket that cannot send is closing; the stream is re-issued on the reconnect.
+    }
+  }
+
+  /** The socket is gone: fail the calls, park the streams, and come back on the backoff. */
+  #dropped(): void {
     for (const pending of this.#calls.values()) {
       clearTimeout(pending.deadline);
       pending.reject(new Error("socket_closed"));
     }
     this.#calls.clear();
     for (const entry of this.#streams.values()) {
-      this.#clearOpenDeadline(entry);
+      entry.openDeadline = this.#clearTimer(entry.openDeadline);
       // The stream is off the socket, so its silence is no longer a fact about it: the drop
       // has already been reported, and the beat is measured again from the next issue's first
       // frame. Left armed, it would warn about a stream that is not there.
-      this.#clearStreamDeadline(entry);
+      entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
       entry.id = null;
       entry.handlers.onError?.(false);
       this.#waiting.add(entry);
     }
     this.#streams.clear();
 
-    if (this.#neverOpened >= GIVE_UP_AFTER) {
-      this.#state = "unavailable";
-      fault(
-        "socket_given_up",
-        `[api-socket] giving up on the API socket: ${GIVE_UP_AFTER} handshakes never opened (last: ${this.#lastClose}). ` +
-          `Every stream now runs as its own EventSource and every call as a fetch until this page reloads — ` +
-          `a browser holds about six such connections per origin, so requests may queue behind the streams.`,
-        "error",
-      );
-      this.#fallBackWaiting();
-      return;
-    }
-    if (this.#waiting.size === 0) return; // nothing to carry: reopen lazily on the next ask
-    // A refusal from a reachable server is retried at once (it is cheap and answers fast);
-    // a dropped connection, or a server that could not be reached, on the backoff.
-    this.#scheduleReconnect(wasOpen || !this.#freshProbe ? this.#backoff() : REFUSED_RETRY_MS);
+    if (this.#waiting.size === 0 && this.#queued.length === 0) return; // nothing to carry: reopen lazily on the next ask
+    // Every drop — a connection that was up and went away, a handshake that never opened, a
+    // server that could not be reached — comes back on the one ladder. It never stops.
+    this.#scheduleReconnect();
   }
 
   /**
    * Comes back for the parked streams. One attempt per timer; an attempt that could not
    * even reach the server (ready() false without a handshake) books the next one itself,
    * so a server that is down keeps being tried on the backoff until it is back.
+   *
+   * The ladder's next step is taken here, after the one-timer guard, so one failed attempt
+   * costs exactly one step however many paths notice it: a handshake that reached the server
+   * and failed has already booked its next timer in `#dropped`, and the continuation below
+   * then finds that timer armed and spends nothing.
    */
-  #scheduleReconnect(delayMs: number): void {
+  #scheduleReconnect(): void {
     if (this.#reconnect !== null) return;
+    const delayMs = this.#backoff();
     this.#reconnect = setTimeout(() => {
       this.#reconnect = null;
       void this.ready().then((open) => {
-        if (open || this.#state !== "closed" || this.#waiting.size === 0) return;
-        this.#scheduleReconnect(this.#backoff());
+        if (open || this.#state !== "closed") return;
+        if (this.#waiting.size === 0 && this.#queued.length === 0) return;
+        this.#scheduleReconnect();
       });
     }, delayMs);
   }
 
   /** A stream's own re-issue delay: the reconnect's doubling shape, counted per stream. */
   #streamBackoff(entry: StreamEntry): number {
-    const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** entry.failures);
-    entry.failures += 1;
-    return ms;
+    return backoffMs(entry.failures++);
   }
 
   #backoff(): number {
-    const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** this.#attempts);
-    this.#attempts += 1;
-    return ms;
+    return backoffMs(this.#attempts++);
   }
-}
-
-/**
- * Who a `/api/me` answer says is signed in: null for a 401, the user id for a success. Rejects
- * on anything else — the answer could not tell.
- */
-export function identityOf(status: number, body: unknown): string | null {
-  if (status === 401) return null;
-  if (status < 200 || status >= 300) throw new Error(`/api/me answered ${status}`);
-  return (body as { user?: { userId?: string } } | null)?.user?.userId ?? null;
 }
 
 /** Who the page is signed in as, asked of the server over HTTP; null when nobody. Rejects when it cannot tell. */
 async function whoAmI(): Promise<string | null> {
   const res = await fetch("/api/me", { credentials: "same-origin" });
-  const body: unknown = res.ok ? await res.json() : null;
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`/api/me answered ${res.status}`);
+  const body = (await res.json()) as { user?: { userId?: string }; telemetry?: boolean };
   // The socket asks before it opens, so the switch is known by the time the handshake is timed.
-  if (res.ok) setPerfSwitch((body as { telemetry?: boolean } | null)?.telemetry === true);
-  return identityOf(res.status, body);
+  setPerfSwitch(body.telemetry === true);
+  return body.user?.userId ?? null;
 }
 
-/** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
+/**
+ * The socket's address: the server's own upgrade route for it, whose cookie names the user.
+ * Spelled here rather than imported because the site build compiles this package without the
+ * server's dist: the `./api` subpath resolves into that dist, so a value import leaves the
+ * gallery build with nothing to resolve (main keeps that subpath type-only, and type imports
+ * are dropped).
+ */
+const apiSocketPath = (): string => "/api/socket";
+
+/** The page's socket: to this origin, same cookie the page holds — whoever it names. */
 // Off a page (no `location` — the Web App's logic under test in Node) there is no origin to
 // open the socket on, so it is unavailable from the start.
 export const apiSocket = new ApiSocket(
-  (userId) => {
+  () => {
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    return `${scheme}://${location.host}${apiSocketPath(userId)}`;
+    return `${scheme}://${location.host}${apiSocketPath()}`;
   },
   whoAmI,
   typeof location !== "undefined" && typeof WebSocket !== "undefined",

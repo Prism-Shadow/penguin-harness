@@ -1,10 +1,11 @@
 /**
  * The LLM stream drops mid-way through writing tool arguments (MMSP cannot parse the
- * half-streamed arguments when the stream ends → malformed): that tool_call was never committed
- * into MMSP's history — the engine never dispatches it and never emits a paired output;
- * reconnect resends the same input verbatim. The frontend settles the broken tool card as soon
- * as the settle reason arrives (no more running timer) and shows a retry hint line (with the
- * attempt count). After a successful retry, subsequent tool calls appear and complete as normal.
+ * half-streamed arguments when the stream ends → malformed): that call is written whole with the
+ * arguments that arrived, in a Request that ends retryable — the engine never dispatches it and
+ * never emits a paired output; reconnect resends the same input verbatim. The frontend settles
+ * the broken tool card when its Request ends (no more running timer) and shows a retry hint line
+ * (with the attempt count). After a successful retry, subsequent tool calls appear and complete
+ * as normal.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -52,39 +53,38 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   // Retry hint line: set to "retry attempt 1 started" once request_begin arrives.
   await expect(page.getByText(/已发起第 1 次重试/)).toBeVisible();
 
-  // Trace: the broken tool_call is persisted (stop_reason=malformed) but **no paired output is
-  // added** — it never entered MMSP's history, so there's nothing to pair; the retry is
-  // represented by a request_end(malformed) event.
+  // Trace: the broken call is recorded whole with the arguments that arrived, and the Request
+  // holding it ended retryable, coded malformed. It never ran, so no output is paired with it;
+  // every other recorded call ran and has its output.
   const msgs = await (await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)).json();
-  const broken = msgs.messages.find(
-    (m) => m.payload.type === "tool_call" && m.payload.stop_reason === "malformed",
+  const unpaired = msgs.messages.filter(
+    (call) =>
+      call.payload.type === "tool_call" &&
+      !msgs.messages.some(
+        (m) =>
+          m.payload.type === "tool_call_output" &&
+          m.payload.tool_call_id === call.payload.tool_call_id,
+      ),
   );
-  expect(broken, "malformed tool_call recorded").toBeTruthy();
-  const paired = msgs.messages.find(
-    (m) =>
-      m.payload.type === "tool_call_output" &&
-      m.payload.tool_call_id === broken.payload.tool_call_id,
-  );
-  expect(paired, "no paired output for a never-dispatched call").toBeFalsy();
-  const retryEnd = msgs.messages.find(
-    (m) => m.payload.type === "request_end" && m.payload.status === "malformed",
-  );
-  expect(retryEnd, "request_end(malformed) recorded").toBeTruthy();
+  expect(unpaired, "only the broken call has no output").toHaveLength(1);
+  const itsEnd = msgs.messages
+    .slice(msgs.messages.indexOf(unpaired[0]))
+    .find((m) => m.payload.type === "request_end");
+  expect(itsEnd?.payload.status, "its Request ended retryable").toBe("retryable");
+  expect(itsEnd?.payload.error_code, "coded malformed").toBe("malformed");
 
-  // UI: after expanding the group, the broken tool card shows malformed and is **settled**
+  // UI: after expanding the group, the broken tool card shows aborted and is **settled**
   // (no more running timer).
   await page
     .getByRole("button", { name: /运行完毕/ })
     .first()
     .click();
   const group = page.locator(".anim-msg.my-2").first();
-  // Visibility is asserted explicitly: `toContainText` walks every descendant except
-  // SCRIPT/NOSCRIPT/STYLE, so the StatusIcon's own SVG <title>malformed</title> satisfies it
-  // even when nothing is drawn. This call never ran, so it has no output block to expand
-  // into — the row's `[malformed]` marker is the only explanation a touch user can reach.
+  // The broken call never ran and gets no result: its status icon names it aborted (the icon's
+  // aria-label and tooltip), the only explanation a touch user can reach.
   await expect(
-    group.getByText("[malformed]").filter({ visible: true }),
-    "the broken tool card shows a visible malformed marker",
+    group.locator('[role="img"][aria-label="aborted"]'),
+    "the broken tool card is settled as aborted",
   ).toHaveCount(1);
   // A running spinner has role=status; none should remain after the turn ends.
   await expect(page.locator('[role="status"]')).toHaveCount(0);

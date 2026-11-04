@@ -11,9 +11,10 @@
  * hosts the module in it, and loads a page holding one good guest, two the module must refuse
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
- * page's canvas and icon, a dialog relayed as a CDP event and answered, a popup, DevTools opened
- * and closed around a command, cookies set and cleared, Project storage shared within a Project
- * and isolated across Projects (including targeted cookie import/clear), the guest's measured load, throttling
+ * page's canvas and icon, typing that reaches the page with the app's composer focused (and
+ * nowhere when the guest cannot take focus), a dialog relayed as a CDP event and answered, a
+ * popup, DevTools opened and closed around a command, cookies set and cleared, Project storage
+ * shared within a Project and isolated across Projects (including targeted cookie import/clear), the guest's measured load, throttling
  * switched on and off, and the guest's renderer killed and the page reloaded — checks that a
  * window the page opens with `webviewTag=yes` cannot attach a guest, and prints
  * `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
@@ -169,6 +170,7 @@ async function run() {
   });
 </script></body>`;
   const appPage = `<!doctype html><title>App</title><body>
+<textarea id="composer"></textarea>
 <webview id="good" partition="persist:penguin-browser" src="${appOrigin}/guest" style="width:800px;height:400px"></webview>
 <webview partition="persist:elsewhere" src="${appOrigin}/guest?wrong=partition" style="width:10px;height:10px"></webview>
 <webview partition="persist:penguin-browser" src="file:///etc/hostname" style="width:10px;height:10px"></webview>
@@ -292,6 +294,78 @@ async function run() {
     (await evaluate(tabId, "typeof require + ':' + typeof process")) === "undefined:undefined",
   );
   check("cdp evaluates in the guest", (await evaluate(tabId, "document.title")) === "Guest");
+
+  // Typing reaches the page, never the app: with the app's composer focused, a guest's keyboard
+  // commands first move the window's keyboard focus into the guest, and a guest that cannot
+  // take it is typed into nowhere.
+  const appState = () =>
+    win.webContents.executeJavaScript(
+      '({ composer: document.getElementById("composer").value, focused: document.activeElement?.id })',
+    );
+  const focusComposer = async () => {
+    win.webContents.focus();
+    await win.webContents.executeJavaScript('document.getElementById("composer").focus(); 1');
+  };
+  await evaluate(tabId, 'document.body.insertAdjacentHTML("beforeend", "<input id=field>"); 1');
+  await focusComposer();
+  await evaluate(tabId, 'document.getElementById("field").focus(); 1');
+  const typed = await send({
+    op: "cdp",
+    tabId,
+    method: "Input.insertText",
+    params: { text: "typed-into-the-page" },
+  });
+  const enter = {
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  };
+  const pressed = await send({
+    op: "cdp",
+    tabId,
+    method: "Input.dispatchKeyEvent",
+    params: { type: "keyDown", ...enter, text: "\r", unmodifiedText: "\r" },
+  });
+  await send({
+    op: "cdp",
+    tabId,
+    method: "Input.dispatchKeyEvent",
+    params: { type: "keyUp", ...enter },
+  });
+  const field = await evaluate(tabId, 'document.getElementById("field").value');
+  const typedApp = await appState();
+  check(
+    "typing lands in the page, not in the app's focused composer",
+    typed.ok &&
+      pressed.ok &&
+      field === "typed-into-the-page" &&
+      typedApp.composer === "" &&
+      typedApp.focused === "good",
+    { typed, pressed, field, app: typedApp },
+  );
+  // An element that does not take focus: its focus() made a no-op here, since
+  // `visibility: hidden` does not stop Electron's <webview> from taking it.
+  await win.webContents.executeJavaScript('document.getElementById("good").focus = () => {}; 1');
+  await focusComposer();
+  const unfocusable = await send({
+    op: "cdp",
+    tabId,
+    method: "Input.insertText",
+    params: { text: "never-typed" },
+  });
+  const refusedApp = await appState();
+  await win.webContents.executeJavaScript('delete document.getElementById("good").focus; 1');
+  check(
+    "a guest that cannot take keyboard focus is typed into nowhere",
+    !unfocusable.ok &&
+      unfocusable.error === "keyboard_focus_failed" &&
+      refusedApp.composer === "" &&
+      (await evaluate(tabId, 'document.getElementById("field").value')) === "typed-into-the-page",
+    { unfocusable, app: refusedApp },
+  );
+  // The checks after these start as before them: the app's page holds the focus.
+  await focusComposer();
 
   // The guest is opaque: a page with no background of its own is drawn on a browser's white
   // canvas, where a transparent guest would show the app behind it (its dark theme, say).

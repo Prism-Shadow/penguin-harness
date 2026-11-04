@@ -23,13 +23,13 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import type {
   AgentSummary,
   CostParts,
+  InterruptRequest,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
   SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
-  SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -78,11 +78,11 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessage,
-} from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd } from "../../lib/omni/task-stats";
+} from "../../lib/amsp/stream-model";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { bucketCostUsd } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -92,6 +92,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
+import { RequestFailureDialog } from "./request-failure-dialog";
+import type { RequestFailure } from "./request-failure-report";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
@@ -119,8 +121,14 @@ import {
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
-import { RouteProbe } from "./route-probe";
-import { machineForSession, rememberLinkedMachine } from "../../lib/session-machines";
+import { useRouteLookup } from "./use-route-lookup";
+import { RouteOfflineNotice } from "./route-offline-notice";
+import { RouteRefusedNotice } from "./route-refused-notice";
+import { machineForSession, rememberLinkedMachine, sessionKnownHere } from "../../lib/session-machines";
+import { useWorkspacePullRequest } from "./use-workspace-pr";
+import { HistoryLoadFailed } from "./history-load-failed";
+import { HistoryLoading } from "./history-loading";
+import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -128,17 +136,23 @@ import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { modelLabel } from "./model-select";
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { useWorkspacePullRequest } from "./use-workspace-pr";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useAgentSkills } from "./use-agent-skills";
+import { useMachineModels } from "../../lib/machine-models";
+import { agentSettingsPath } from "../../lib/agent-location";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { measureComposer } from "../dock/composer-height";
 import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 // importing it registers the built-in panels (their definitions and bodies) with the dock
@@ -146,10 +160,11 @@ import "./builtin-dock-panels";
 import { ChatDockProvider } from "./chat-dock-context";
 import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
-import { setDockCwd } from "../dock/dock-terminal";
+import { reownTerminals, setDockConversation } from "../dock/dock-terminal";
 import {
   adoptDockScope,
   closedDockView,
+  currentDockScope,
   dockViews,
   dockVersion,
   isTabShown,
@@ -166,6 +181,7 @@ import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 import { ArchivedSessionStub } from "./archived-session-stub";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -266,8 +282,10 @@ export function ChatPage() {
     sessions,
     loading: sessionsLoading,
     machineLabels,
-    machinesUnreachable,
     offlineMachineIds,
+    disconnectedMachineIds,
+    askingMachineIds,
+    listRound,
     reload: reloadSessions,
     add: addSession,
     remove: removeSession,
@@ -287,8 +305,14 @@ export function ChatPage() {
   const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** A failed model request whose details are on show (「[详情]」 on its line); null for none. */
+  const [failureShown, setFailureShown] = useState<RequestFailure | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** This server's model configuration for the Project (the page's own while it acts here). */
+  const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
+  // Only the current Project's: the read is reset in an effect, and the draft (remounted per
+  // Project in the same commit) would otherwise resolve its model against the last Project's.
+  const localModels = scopedValue(localModelsRead, projectId);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).
@@ -338,6 +362,8 @@ export function ChatPage() {
   // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Keeps the terminal list fresh while a conversation is on screen — which is also how the
+  // page learns whether this server serves terminals at all (the terminal panel's `offered`).
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
@@ -368,12 +394,18 @@ export function ChatPage() {
   const [subagentTaskScope, setSubagentTaskScope] = useState<{
     anchorSessionId: string;
   } | null>(null);
-  useEffect(() => {
+  // The commands above belong to the conversation they were given in. Dropped while rendering
+  // the route that names another one, not in an effect after it: the panel bodies of the next
+  // conversation would otherwise mount with the last one's command for a render and act on it
+  // (land the Memory panel on its entry, focus the agents panel on its child).
+  const [commandsFor, setCommandsFor] = useState(routeSessionId);
+  if (commandsFor !== routeSessionId) {
+    setCommandsFor(routeSessionId);
     setFileOpenRequest(null);
     setMemoryRequest(null);
     setSubagentFocus(null);
     setSubagentTaskScope(null);
-  }, [routeSessionId]);
+  }
   // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
   // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
@@ -442,7 +474,7 @@ export function ChatPage() {
   const listed =
     draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
       ? null
-      : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -458,15 +490,51 @@ export function ChatPage() {
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
-  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
-  /** The probe that failed did so with a 404: the server has no such Session for this user. */
-  const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
+  /** A row the lookup found while the Session list was still loading, to add once it settles. */
+  const addWhenListed = useRef<SessionInfo | null>(null);
+  /**
+   * The direct lookup of the routed Session (use-route-lookup.ts). The list is paged: a
+   * deep-linked Session (old bookmark, cross-page jump) may sit beyond the loaded pages, so it is
+   * looked up directly and inserted before the auto-select effect below concludes it doesn't
+   * exist. It is NOT gated on `sessionsLoading`: the lookup is what opens the conversation, and
+   * holding it behind the sidebar's list fan-out put seconds of sidebar work in front of the
+   * conversation the reader asked for. Read from `listed`, never from `selected`: the held Session
+   * below keeps the conversation on screen through a refetch, but must not tell the lookup that
+   * the row is loaded.
+   */
+  const routeLookup = useRouteLookup<SessionInfo>({
+    key: draft ? null : probeKey,
+    listLoading: sessionsLoading,
+    listed: listed !== null,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    owner: routeSessionId ? machineForSession(routeSessionId) : null,
+    local: routeSessionId !== null && sessionKnownHere(routeSessionId),
+    offline: offlineMachineIds,
+    asking: askingMachineIds,
+    disconnected: disconnectedMachineIds,
+    listRound,
+    lookup: async () =>
+      sessionForProject((await api.getSession(routeSessionId!)).session, projectId!),
+    onFound: (session, listLoading) => {
+      setFetchedSession(session);
+      // add() invalidates a reload in flight. During the sidebar's first load that threw the
+      // whole load away, leaving the list on this one row and still loading; the conversation
+      // needs only the fetched row, so the list gets it once it has settled.
+      if (listLoading) addWhenListed.current = session;
+      else addSession(session);
+      // A Session of an Agent the list has not loaded (company mode creates Agents
+      // server-side): fetch the list, or the page has no Agent to render under.
+      if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
+    },
+    onMachinesSilent: () => void reloadSessions(),
+  });
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
     listed,
     routeSessionId ?? null,
-    probeKey !== null && probeFailedKey === probeKey,
+    routeLookup.failed,
+    projectId,
   );
   const routed = draft ? null : heldSession.current;
   // Entering a conversation is a choice of mode, as entering an organization route is
@@ -522,6 +590,13 @@ export function ChatPage() {
     : selected === null
       ? null
       : machineForSession(selected.sessionId);
+  /**
+   * The models this page offers and prices by: those of the server it acts on. A draft whose
+   * workspace is on a machine creates its Session over there, and a conversation on a machine
+   * runs there — either way the machine's own models are the ones it can take.
+   */
+  const machineModels = useMachineModels(projectId, pageMachineId);
+  const models = pageMachineId === null ? localModels : machineModels;
   const returnWorkbench = (
     location.state as {
       workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
@@ -567,12 +642,18 @@ export function ChatPage() {
   // which stays live everywhere. With the machine that Workspace is on: the path only means
   // anything on its own filesystem, and a shell for this conversation belongs beside the
   // agent running it.
+  // The docks' terminals belong to this conversation: they are created under its Session id,
+  // start in its Workspace — its files are what a terminal opened here is for — on the machine
+  // it runs on, and only its own are listed. While drafting there is no Session and DraftView
+  // publishes the draft's Workspace instead (a child effect runs before this one, so this must
+  // yield rather than clobber it).
   useEffect(() => {
     if (draft) return;
-    setDockCwd(
-      selected?.workspace ?? null,
-      selected === null ? null : machineForSession(selected.sessionId),
-    );
+    setDockConversation({
+      sessionId: selected?.sessionId ?? null,
+      workspace: selected?.workspace ?? null,
+      machineId: selected === null ? null : machineForSession(selected.sessionId),
+    });
   }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
@@ -674,10 +755,12 @@ export function ChatPage() {
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
@@ -704,6 +787,22 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  /**
+   * The machine the selected Session's Agent lives on (null: this server). A Session on a
+   * machine runs that machine's Agent: its settings — the thinking level and compaction threshold
+   * the composer shows and edits, the settings page it links to — are that Agent's, read and
+   * written over there. The same id on this server is another Agent.
+   */
+  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  // Goal mode's plugin check, against the Session's Agent on the server that holds it
+  // (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () =>
+      projectId && selectedAgentId
+        ? goalPluginGate(projectId, selectedAgentId, selectedAgentMachine)
+        : null,
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -739,37 +838,26 @@ export function ChatPage() {
   // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  // The stream trails a switch by one render (still the previous Session's model and state), so
+  // the tracker is told whose data it is looking at; the panel opens only in this conversation's
+  // own docks, the ones on screen when the effect runs.
+  const streamSessionId = stream.sessionId;
   useEffect(() => {
     const action = advancePanelTaskScope(panelTaskScopeRef.current, {
       sessionId: selectedSessionId,
+      streamSessionId,
       taskCount,
       liveSpawn,
     });
-    if (action === "autoOpen" && !isTabShown("agents")) openPanel("agents");
-    // The tracker only acts on real transitions of these three observed values.
+    if (action === "autoOpen" && currentDockScope() === selectedSessionId && !isTabShown("agents"))
+      openPanel("agents");
+    // The tracker only acts on real transitions of these observed values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, taskCount, liveSpawn]);
+  }, [selectedSessionId, streamSessionId, taskCount, liveSpawn]);
 
-  // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
-  // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
-  // area's selection) before refetching; a failed fetch is silently treated as no skills.
-  // Clearing preserves reference identity (an already-empty array isn't replaced), matching
-  // draft-view's convention.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    if (!projectId || !selectedAgentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, selectedAgentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, selectedAgentId]);
+  // Skills installed on the session's Agent, on its machine (candidates for the input area's
+  // skill dropdown); a switch clears them, which also clears the input area's selection.
+  const { skills: agentSkills } = useAgentSkills(projectId, selectedAgentId, selectedAgentMachine);
 
   // Two readouts come off the session Agent's config, via the same agent-config endpoint the
   // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
@@ -786,7 +874,7 @@ export function ChatPage() {
   useEffect(() => {
     setAgentThinkingLevel("");
     setCompactionLimit(undefined);
-  }, [projectId, selectedAgentId]);
+  }, [projectId, selectedAgentId, selectedAgentMachine]);
   // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
   // the value this composer holds can go stale under it. Routing to the settings page and back
   // remounts this page and refetches anyway; the focus listener covers the other tab editing the
@@ -802,7 +890,7 @@ export function ChatPage() {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, selectedAgentId)
+      .getAgentConfig(projectId, selectedAgentId, selectedAgentMachine)
       .then((res) => {
         if (cancelled) return;
         setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
@@ -812,7 +900,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId, agentConfigTick]);
+  }, [projectId, selectedAgentId, selectedAgentMachine, agentConfigTick]);
   /**
    * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
    * this page holds so the ring, the cutter and the small-window notice all move together.
@@ -826,42 +914,24 @@ export function ChatPage() {
     async (maxContextLength: number): Promise<void> => {
       if (!projectId || !selectedAgentId) return;
       try {
-        await api.putAgentConfig(projectId, selectedAgentId, {
-          config: { compaction: { maxContextLength } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          selectedAgentId,
+          { config: { compaction: { maxContextLength } } },
+          selectedAgentMachine,
+        );
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         throw e;
       }
       setCompactionLimit(configuredCompactionLimit(maxContextLength));
       setAgentConfigTick((n) => n + 1);
       toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
     },
-    [projectId, selectedAgentId],
+    [projectId, selectedAgentId, selectedAgentMachine],
   );
 
-  // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
-  // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
-  // below concludes it doesn't exist; only a failed probe releases that redirect. `probeKey`
-  // and `probeFailedKey` are declared up with `selected`, which needs them to know when to
-  // let the held Session go.
-  /**
-   * The route names a Session we cannot answer for YET: not in the loaded pages, and the
-   * direct lookup that settles it has not failed. Ordinary with a paged list — a deep link,
-   * a Session just created, a row beyond the first page. Shared by the probe effect, the
-   * auto-select effect and the render, so the three cannot disagree about what "pending"
-   * means — their disagreeing is what once painted "no Sessions yet" over a conversation
-   * that was about to appear.
-   */
-  /**
-   * Nobody who could answer for this Session is answering, so a failed lookup settles nothing.
-   *
-   * Two shapes of that. Either no owner is recorded and some machine is out of reach — the
-   * probe then asks THIS server (lib/session-machines.ts: absence means here), which 404s
-   * about a Session that is alive THERE. Or the owner IS recorded and is itself one of the
-   * machines not answering, which is every row restored from the cache. Reading either as
-   * "gone" is what drops the reader into the draft page mid-conversation.
-   */
+  /** The machine the routed Session is on record as living on, or null (this server, or unknown). */
   const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
 
   /**
@@ -873,96 +943,21 @@ export function ChatPage() {
     const machineId = machineForSession(sessionId);
     return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   };
-  const routeSessionUnowned =
-    !!routeSessionId &&
-    // Except one we deleted ourselves. That is the one case where a failed lookup settles it
-    // whoever is out of reach — nobody is going to answer differently — and leaving it open
-    // held the page on a skeleton for as long as some machine stayed down, on the ordinary
-    // act of deleting the conversation you are looking at.
-    !isSessionDeleted(routeSessionId) &&
-    (routeSessionOwner === null
-      ? machinesUnreachable
-      : offlineMachineIds.includes(routeSessionOwner));
-  // Read from `listed`, never from `selected`: the held Session above keeps the conversation
-  // on screen through a refetch, but it must not tell the probe that the row is loaded — a
-  // Session that really is gone has to keep probing until the lookup fails and releases both.
-  const routeSessionPending =
-    !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+  /**
+   * The route names a Session we cannot answer for YET: not in the loaded pages, and the lookup
+   * has settled nothing (use-route-lookup.ts). Shared by the auto-select effect and the render,
+   * so the two cannot disagree about what "pending" means — their disagreeing is what once
+   * painted "no Sessions yet" over a conversation that was about to appear.
+   */
+  const routeSessionPending = routeLookup.pending;
   /**
    * The lookup has failed and the only servers that could still answer for this Session are
    * out of reach. It is not gone — so the redirect must not fire and the row must not be
    * dropped — but it is not loading either, and a skeleton that never resolves reads as a
-   * hung page. Say what is actually the matter instead, and let the machine list open it when
-   * the connection is back — the server says so the moment it is (state/machines.tsx).
+   * hung page. Say what is actually the matter instead; the lookup is made again once the
+   * machines answer (use-route-lookup.ts).
    */
-  const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
-  /** The direct lookup of the routed Session, one per page (route-probe.ts). */
-  const [routeProbe] = useState(() => new RouteProbe());
-  /** A row the lookup found while the Session list was still loading, to add once it settles. */
-  const addWhenListed = useRef<SessionInfo | null>(null);
-  useEffect(() => {
-    routeProbe.track(draft ? null : probeKey, sessionsLoading);
-    // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
-    // holding it behind the sidebar's list fan-out (one first page per Agent per machine)
-    // put seconds of sidebar work in front of the conversation the reader asked for. The
-    // failure path below is the one place the list still matters, and it is handled there.
-    if (draft || !projectId || !routeSessionId || !probeKey) return;
-    // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
-    // key must not be re-probed just because the list's identity churned.
-    if (!routeSessionPending) return;
-    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
-    // lookup below could only 404 (and the server would record that as an error). Deleting
-    // the conversation you are looking at is the normal way to discard a Session fork, so
-    // this path runs on every such delete. Treat it as an already-failed probe, which
-    // releases the redirect effect below to move on to another conversation.
-    if (isSessionDeleted(routeSessionId)) {
-      setProbeFailedKey(probeKey);
-      return;
-    }
-    // Deliberately NOT cancelled on re-run: this lookup is keyed by the routed Session, and
-    // its answer stays valid across the list churn that re-runs this effect. Tying its
-    // lifetime to one run is what made a deep link issue a dozen identical requests. One
-    // lookup per Session in flight, the list's loading read when it settles, and an answer
-    // about a Session the route has left dropped: see route-probe.ts.
-    routeProbe.run(
-      probeKey,
-      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
-      {
-        found: (session, listLoading) => {
-          setFetchedSession(session);
-          // add() invalidates a reload in flight. During the sidebar's first load that threw
-          // the whole load away, leaving the list on this one row and still loading; the
-          // conversation needs only the fetched row, so the list gets it once it has settled.
-          if (listLoading) addWhenListed.current = session;
-          else addSession(session);
-          // A Session of an Agent the list has not loaded (company mode creates Agents
-          // server-side): fetch the list, or the page has no Agent to render under.
-          if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
-        },
-        // Only once the list has settled: a failure while it loads is not a verdict, and
-        // this effect re-runs when it settles and asks again.
-        gone: (cause) => {
-          setProbeFailedKey(probeKey);
-          // Only an answer that the Session does not exist settles it as missing; a failure to
-          // get any answer is not that, and keeps the old way on.
-          if (cause instanceof ApiError && cause.status === 404) setProbeMissingKey(probeKey);
-        },
-      },
-    );
-    // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
-    // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
-    // depending on the array identity cancelled and re-issued it on every user event.
-  }, [
-    draft,
-    projectId,
-    routeSessionId,
-    probeKey,
-    sessionsLoading,
-    routeSessionPending,
-    selected,
-    addSession,
-    isSessionDeleted,
-  ]);
+  const routeSessionOffline = routeLookup.outOfReach;
   // The row found during the list's first load, added once the list has settled and only if
   // it did not bring the row itself (one beyond the first page, or an organization's row,
   // which no list page serves and whose status and title events reach only listed rows).
@@ -985,7 +980,8 @@ export function ChatPage() {
     pending: routeSessionPending,
     routeSessionId,
     deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
-    missing: probeKey !== null && probeMissingKey === probeKey,
+    missing: routeLookup.missing,
+    refused: routeLookup.refused !== null,
   });
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
@@ -1057,8 +1053,11 @@ export function ChatPage() {
       // one-off — so the Project's schedule directories are re-read on this same edge, the way
       // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
       // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
-      // alarm clock come from the same list and cannot disagree.
-      if (projectId !== null) noteScheduleEvent(projectId);
+      // alarm clock come from the same list and cannot disagree. The list re-read is the one on
+      // the server this conversation runs on: a turn on a machine wrote its task files there.
+      if (projectId !== null) {
+        noteScheduleEvent(projectId, machineForSession(selectedSessionId));
+      }
     }
   }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
@@ -1242,7 +1241,7 @@ export function ChatPage() {
           processIds.map((processId) => request(sessionId, processId)),
         );
         const failure = reportableProcessFailure(results, staleStatuses);
-        if (failure !== null) toastError(apiErrorText(failure.error));
+        if (failure !== null) toastApiError(failure.error);
       } finally {
         setProcBusy(null);
         api
@@ -1281,7 +1280,7 @@ export function ChatPage() {
     [runProcessAction, exitedIds],
   );
 
-  // Model config (context window + credential guide): fetched once per Project.
+  // This server's model config (context window + credential guide): fetched once per Project.
   //
   // The credential guide **only ever nags once per lifetime** (first entry after registration):
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
@@ -1292,12 +1291,12 @@ export function ChatPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setModels(null);
+    setLocalModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
-        setModels(res);
+        setLocalModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -1327,11 +1326,11 @@ export function ChatPage() {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
       if (!detail || detail.defaultModel === undefined) return;
-      setModels(null);
+      setLocalModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setLocalModels(scoped(projectId, res));
         })
         .catch(() => undefined);
     };
@@ -1348,10 +1347,12 @@ export function ChatPage() {
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again.
+      // an id nothing routes to again — its shells first, so its tabs stay its own. Only
+      // someone still on the old id is taken to the new one; whoever moved on stays put.
       await adoptBrowserSession(currentId, respondedId);
-      adoptDockScope(respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      await reownTerminals(currentId, respondedId);
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );
@@ -1371,7 +1372,7 @@ export function ChatPage() {
         return true;
       } catch (e) {
         // Returning false -> the input area keeps the draft, letting the user fix it and resend (the error copy includes the session model's upstream id).
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -1437,7 +1438,7 @@ export function ChatPage() {
           // The model may be written and the desk renewed by now; the lists say which.
           void company.reloadOrgChart();
           void company.reloadOrgSessions();
-          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          toastApiError(e, { modelId: ref.modelId });
           return false;
         }
       }
@@ -1467,12 +1468,18 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
-        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
+        toastApiError(e, { modelId: ref.modelId });
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate, company],
+    [projectId, selected, addSession, removeSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1496,10 +1503,14 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -1508,7 +1519,13 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
         toastError(
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
@@ -1516,7 +1533,16 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, currentAgent, selected, addSession, discardSessionDraft, navigate, models],
+    [
+      projectId,
+      currentAgent,
+      selected,
+      addSession,
+      removeSession,
+      discardSessionDraft,
+      navigate,
+      models,
+    ],
   );
 
   const onStop = useCallback(async () => {
@@ -1560,11 +1586,61 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
     [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // Interrupt, then send: post the full input with `interrupt` — a busy session stops its run
+  // and sends this right after the turn it cut (the abort's carry-over goes out ahead of it,
+  // with the undelivered steering), an idle one just starts it. Same success contract as the
+  // queue: the input area clears the draft on true.
+  const onInterruptSend = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastApiError(e, { modelId: selected.modelId });
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
+  const interruptWaiting = useCallback(
+    async (target: InterruptRequest): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postInterrupt(selected.sessionId, target);
+        return true;
+      } catch (e) {
+        toastError(
+          e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
+            ? S.chat.interruptAlreadySent
+            : apiErrorText(e),
+        );
+        return false;
+      }
+    },
+    [selected],
+  );
+  const onInterruptFollowUp = useCallback(
+    (followUpId: string) => interruptWaiting({ followUpId }),
+    [interruptWaiting],
+  );
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
@@ -1593,7 +1669,7 @@ export function ChatPage() {
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return "failed";
       }
     },
@@ -1669,7 +1745,7 @@ export function ChatPage() {
         })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
     [selected, replace],
@@ -1686,7 +1762,7 @@ export function ChatPage() {
       try {
         return await api.recallSteer(selected.sessionId, steerId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1702,7 +1778,7 @@ export function ChatPage() {
         // is pinned to.
         return await api.recallFollowUp(selected.sessionId, followUpId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1736,7 +1812,7 @@ export function ChatPage() {
         await api.postToolCallBackground(selected.sessionId, toolCallId);
       } catch (e) {
         if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     },
     [selected],
@@ -1758,7 +1834,7 @@ export function ChatPage() {
           ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
         .then((res) => replace(res.session))
-        .catch((e: unknown) => toastError(apiErrorText(e)))
+        .catch((e: unknown) => toastApiError(e))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],
@@ -1792,7 +1868,7 @@ export function ChatPage() {
       await syncHealedSessionId(selected.sessionId, res.sessionId);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
       return false;
     }
   }, [selected, syncHealedSessionId]);
@@ -1891,18 +1967,23 @@ export function ChatPage() {
   // a new conversation instead). Re-picking the current model does nothing, and neither does a
   // pick that raced a Task starting (the picker is disabled then, and the server would refuse
   // it anyway); any other pick asks first, worded for what the switch will do: compact the
-  // context on the current model before moving on, or — right after a compaction or a switch,
-  // when there is nothing to compact — continue on the picked model from what is already held.
+  // context on the current model before moving on, hand the picked model the Trace path when
+  // the current one is unavailable, or — right after a compaction or a switch, when there is
+  // nothing to compact — continue on the picked model from what is already held.
   const onPickSessionModel = useCallback(
     (ref: ModelRefDto) => {
       if (!selected || sameModelRef(ref, selected)) return;
       if (sessionModelPickerDisabled(stream.taskState)) return;
       // Read at pick time: the model's items mutate in place. The live tail decides, behind
       // whatever window was backfilled above it.
-      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      const shape = switchContextShape(
+        [...stream.prefixItems, ...stream.model.items],
+        selected,
+        models,
+      );
       setModelSwitchAsk({ to: ref, shape });
     },
-    [selected, stream.taskState, stream.prefixItems, stream.model],
+    [selected, stream.taskState, stream.prefixItems, stream.model, models],
   );
 
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
@@ -1910,8 +1991,7 @@ export function ChatPage() {
   // the Session row once the new context's session_meta names the new model. 200 = the Session
   // never ran and switched inside the request: the row comes back with the response — under a
   // new id when the server had to rebuild a Session that left no Trace, which the page follows.
-  // A refusal (409 busy / same model / not configured / unavailable / compaction not configured)
-  // is a toast.
+  // A refusal (409 busy / same model / target not configured / target unavailable) is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;
@@ -1929,8 +2009,8 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.session.sessionId);
         return;
       }
-      // Only a switch that compacts may say so; one that continues from a held summary runs
-      // no compaction and must not promise one.
+      // Only a switch that compacts may say so; one that continues from what is held, or hands
+      // over by Trace path, runs no compaction and must not promise one.
       toastInfo(
         ask.shape === "compact"
           ? S.chat.modelSwitchInSessionStarted(from, to)
@@ -1939,7 +2019,7 @@ export function ChatPage() {
     } catch (e) {
       // The codes that take a model name are about the model the Session is on (its loader's
       // missing credential); a refusal of the target names it in its own message.
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
     } finally {
       setModelSwitchPosting(false);
       setModelSwitchAsk(null);
@@ -2012,7 +2092,7 @@ export function ChatPage() {
         addSession(created.session);
         navigate(`/chat/${created.session.sessionId}`);
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
       }
     },
     [selected, addSession, navigate],
@@ -2028,6 +2108,7 @@ export function ChatPage() {
   const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
+    bodies: stream.bodies,
     onApprove,
     onSendToBackground,
     origin: [],
@@ -2049,6 +2130,7 @@ export function ChatPage() {
     // Retry after a failed or stopped run: offered only while the composer could send — a
     // Session on screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
+    onShowFailure: setFailureShown,
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
@@ -2101,12 +2183,13 @@ export function ChatPage() {
     views.find((view) => view.position === "bottom") ?? null,
     closedDockView("bottom"),
   );
-  const terminalSupported = terminalApiSupported();
 
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
-  // settings page, on the memory tab.
+  // settings page, on the memory tab — the page of the Agent on the machine the conversation
+  // is on.
   const openMemorySettings = useCallback(
-    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    (memoryAgentId: string, machineId: string | null) =>
+      navigate(agentSettingsPath(memoryAgentId, machineId, "memory")),
     [navigate],
   );
   /**
@@ -2210,6 +2293,9 @@ export function ChatPage() {
       queuedFollowUps={stream.queuedFollowUps}
       pendingFollowUps={stream.pendingFollowUps}
       onRecallFollowUp={onRecallFollowUp}
+      onInterruptSend={onInterruptSend}
+      onInterruptFollowUp={onInterruptFollowUp}
+      onInterruptSteering={onInterruptSteering}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}
@@ -2225,7 +2311,9 @@ export function ChatPage() {
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
       onChangeCompactionLimit={onChangeCompactionLimit}
-      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
+      onOpenAgentSettings={() =>
+        navigate(agentSettingsPath(selected.agentId, selectedAgentMachine, "runtime"))
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
@@ -2243,6 +2331,7 @@ export function ChatPage() {
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      goalPlugin={goalPlugin}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
@@ -2268,6 +2357,18 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
+  /**
+   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
+   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
+   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
+   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
+   * leading edge), and each of them showed through the page — the handle as a line that lit up
+   * under the pointer, took the cursor and resized the hidden dock.
+   */
+  const coveredByWorkbench =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
+      ? "invisible"
+      : "";
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -2277,8 +2378,9 @@ export function ChatPage() {
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
     <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
-          chat (which stays mounted, so its state survives a look at the page) below the
-          strip; the strip is absent when the Agent has no workbench with a UI. */}
+          chat (which stays mounted, so its state survives a look at the page, but is not
+          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
+          no workbench with a UI. */}
       <WorkbenchTabStrip
         tabs={workbenchTabs.tabs}
         notices={workbenchTabs.notices}
@@ -2305,7 +2407,9 @@ export function ChatPage() {
       {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
           nothing of the conversation is read until it is unarchived. */}
       {archivedRow && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
@@ -2313,7 +2417,9 @@ export function ChatPage() {
       )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
@@ -2628,7 +2734,7 @@ export function ChatPage() {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
@@ -2679,19 +2785,25 @@ export function ChatPage() {
                     />
                   ) : selected ? (
                     stream.error ? (
-                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                        <p className="text-sm text-red-600 dark:text-red-400">
-                          {S.chat.historyLoadFailed}：{stream.error}
-                        </p>
-                        <Button onClick={stream.retry}>{S.common.retry}</Button>
-                      </div>
+                      // History failed to load: say why and offer the way on, instead of staying on
+                      // a misleading empty state — for a conversation on a machine out of reach,
+                      // the machine's state rather than the transport's error.
+                      <HistoryLoadFailed
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        error={stream.error}
+                        cause={stream.errorCause}
+                        onRetry={stream.retry}
+                      />
                     ) : stream.loading ? (
-                      <div className="space-y-3 p-6">
-                        <Skeleton className="h-5 w-1/3" />
-                        <Skeleton className="h-5 w-2/3" />
-                        <Skeleton className="h-5 w-1/2" />
-                      </div>
+                      // The skeleton, and past a second, for a conversation on a machine, how far
+                      // its newest messages have come over and how the link stands.
+                      <HistoryLoading
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        progress={stream.transfer.window}
+                        onRetryNow={stream.retryNow}
+                      />
                     ) : (
                       // The empty state shares the same structure as the message stream (message
                       // area + bottom input area): only the message area's content differs, and
@@ -2725,8 +2837,11 @@ export function ChatPage() {
                                 hasMore: stream.older.hasMore,
                                 loading: stream.older.loading,
                                 error: stream.older.error,
+                                errorCause: stream.older.errorCause,
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
+                                transfer: stream.transfer,
+                                beyondTail: stream.older.beyondTail,
                               }}
                               // Tick-rail minimap over the stream's left gutter (zero layout
                               // width; hides itself when the gutter is too narrow or the
@@ -2746,13 +2861,31 @@ export function ChatPage() {
                           {/* The right dock's floating launcher: rides this body's right edge
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
+                          <RequestFailureDialog
+                            failure={failureShown}
+                            sessionId={selected?.sessionId ?? null}
+                            sessionModel={activeModelRef}
+                            workspace={selected?.workspace ?? null}
+                            onClose={() => setFailureShown(null)}
+                          />
                         </div>
-                        <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                        {/* Measured: the bottom dock's docked height stops where this box would
+                            be covered, and gives way as it grows. */}
+                        <WallpaperSurface
+                          ref={measureComposer}
+                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                        >
                           <div className="mx-auto max-w-3xl">
                             {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
                                 during this page's lifetime. The stop button is the composer's
                                 regular stop (one abort ends the whole goal loop). */}
+                            {/* A conversation on a machine whose server needs a restart: its live
+                                updates stay away until then, and this says so instead of the
+                                stream retrying in silence. */}
+                            {!draft && pageMachineId !== null && (
+                              <MachineRestartNotice machineId={pageMachineId} />
+                            )}
                             {stream.goal && <GoalStatusBanner goal={stream.goal} />}
                             {input}
                           </div>
@@ -2760,15 +2893,19 @@ export function ChatPage() {
                       </>
                     )
                   ) : routeSessionOffline ? (
-                    <EmptyState
-                      title={
-                        routeSessionOwner === null
-                          ? S.chat.sessionOnOfflineMachineUnknown
-                          : S.chat.sessionOnOfflineMachine(
-                              machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                            )
-                      }
-                      description={S.chat.sessionOfflineHint}
+                    <RouteOfflineNotice
+                      owner={routeSessionOwner}
+                      offline={routeLookup.silent}
+                      disconnected={routeLookup.disconnected}
+                      labels={machineLabels}
+                    />
+                  ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
+                    // The machine holding it will not show it to this server: said in place,
+                    // neither gone nor out of reach.
+                    <RouteRefusedNotice
+                      machineId={routeLookup.refused.machineId}
+                      alias={routeLookup.refused.alias}
+                      labels={machineLabels}
                     />
                   ) : !sessionsLoading && routeOutcome === "notFound" ? (
                     // A dead link: said in place, with the one way on that fits the mode —
@@ -2806,7 +2943,6 @@ export function ChatPage() {
                 open={rightMount.open}
                 animateEntrance={rightMount.animateEntrance}
                 panelBadges={{ agents: anySubagentPending }}
-                terminalSupported={terminalSupported}
               />
             )}
           </div>
@@ -2817,7 +2953,6 @@ export function ChatPage() {
               open={bottomMount.open}
               animateEntrance={bottomMount.animateEntrance}
               panelBadges={{ agents: anySubagentPending }}
-              terminalSupported={terminalSupported}
             />
           )}
         </div>
@@ -2902,12 +3037,13 @@ export function ChatPage() {
 
       {/* In-conversation model switch confirmation (the session toolbar's model picker), two
           choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
-          always compacts on the current model first, and a failed compaction keeps it. The two
-          shapes with nothing to compact read "switch" instead: an empty transcript (the switch
-          is immediate) and a transcript ending in a completed compaction or a model switch (no
-          compaction runs; the conversation continues from what is already held). The session
-          can start running while the dialog is up (a queued follow-up, a schedule): the confirm
-          is then disabled and the body says why, exactly like the thinking dialog. */}
+          compacts on the current model first, and a failed compaction hands the history over
+          by Trace path. The shapes that compact nothing read "switch" instead: an empty
+          transcript (the switch is immediate), a transcript ending in a completed compaction or
+          a model switch (the conversation continues from what is already held), and a current
+          model that is unavailable (the picked model gets the Trace path). The session can
+          start running while the dialog is up (a queued follow-up, a schedule): the confirm is
+          then disabled and the body says why, exactly like the thinking dialog. */}
       <ConfirmModal
         open={modelSwitchAsk !== null}
         title={S.chat.modelSwitchInSessionTitle}
@@ -2932,7 +3068,9 @@ export function ChatPage() {
               ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
               : modelSwitchAsk.shape === "compacted"
                 ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
-                : S.chat.modelSwitchInSessionBody(
+                : (modelSwitchAsk.shape === "handover"
+                    ? S.chat.modelSwitchInSessionHandoverBody
+                    : S.chat.modelSwitchInSessionBody)(
                     modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
                     modelDisplay(modelSwitchAsk.to),
                   )}

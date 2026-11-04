@@ -2,31 +2,44 @@
  * Base stylesheet for a workbench's own page (features/workbenches/workbench-tabs.tsx injects it
  * into the frame, and a page may link it itself for standalone viewing).
  *
- * A workbench page is a separate document: Tailwind never sees it, and the app's `html.dark`
- * class and accent variables stop at the frame boundary. So the app copies its RESOLVED
- * tokens — the gray scale, the accent pair, the font stack, the root font size — onto this
- * document's root (lib/workbench-theme.ts), and everything here is expressed in those
- * variables. The literal fallbacks are only for a page opened outside the app; the palette
- * has exactly one source of truth, styles.css.
+ * A workbench page is a separate document: Tailwind never sees it, and the app's theme stops at
+ * the frame boundary. So the app copies what it has RESOLVED onto this document's root
+ * (lib/workbench-theme.ts): the `light` / `dark` class, `data-theme`, `data-accent`,
+ * `data-font-latin` / `data-font-cjk`, the root font size, every `--ui-*` token of the shared UI
+ * package's contract (packages/ui/src/tokens.ts), and the bundled fonts' `@font-face` rules.
  *
- * This is a floor, not a framework: it styles the plain HTML an agent writes (headings,
- * lists, forms, tables, code) and gets out of the way. It is injected FIRST in the head, so
- * a page's own rules always win.
+ * Two vocabularies follow from that:
+ * - `--wb-*` and the `wb-*` classes are the workbench's own, stable names. Each `--wb-*` is mapped
+ *   below onto a `--ui-*` token, so it follows the app's theme, mode, accent and font pairing; a
+ *   page restyles one by redeclaring it on `:root`. Names are only ever added here, never renamed
+ *   or removed: published workbenches read them.
+ * - `--ui-*` is the token contract itself, what the app's own components read. A page may read it
+ *   for anything `--wb-*` does not name, and then follows the contract as it changes. It sits on
+ *   the root's inline style, so a page reads it but does not redeclare it.
+ *
+ * The literal fallbacks are only for a page opened outside the app, where no token is stamped:
+ * they are Primer's values, `light-dark()` picking the one for the mode the root's class (or, with
+ * no class, the viewer's system preference) sets.
+ *
+ * This is a floor, not a framework: it styles the plain HTML an agent writes (headings, lists,
+ * forms, tables, code) and gets out of the way. It is injected FIRST in the head, so a page's own
+ * rules always win.
  */
 
 :root {
   color-scheme: light;
-  --wb-bg: #ffffff;
-  --wb-surface: var(--color-gray-50, #f9fafb);
-  --wb-fg: var(--color-gray-900, #111827);
-  --wb-muted: var(--color-gray-500, #6b7280);
-  --wb-border: var(--color-gray-200, #e5e7eb);
-  --wb-hover: var(--color-gray-100, #f3f4f6);
-  --wb-accent: var(--ui-accent, #111827);
-  --wb-accent-fg: var(--ui-accent-fg, #ffffff);
-  --wb-radius: 6px;
+
+  --wb-bg: var(--ui-canvas, light-dark(#ffffff, #121212));
+  --wb-surface: var(--ui-surface-muted, light-dark(#f9fafb, #1a1a1a));
+  --wb-fg: var(--ui-fg, light-dark(#111827, #f5f5f5));
+  --wb-muted: var(--ui-fg-muted, light-dark(#6b7280, #a1a1a1));
+  --wb-border: var(--ui-line, light-dark(#e5e7eb, #333333));
+  --wb-hover: var(--ui-fill-neutral, light-dark(#f3f4f6, #262626));
+  --wb-accent: var(--ui-accent, light-dark(#111827, #f3f4f6));
+  --wb-accent-fg: var(--ui-accent-fg, light-dark(#ffffff, #111827));
+  --wb-radius: var(--ui-radius-md, 6px);
   --wb-font: var(
-    --font-app-sans,
+    --ui-font-ui,
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -36,7 +49,84 @@
     "Microsoft YaHei",
     sans-serif
   );
-  --wb-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --wb-mono: var(
+    --ui-font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace
+  );
+
+  /* The semantic tones, picked by meaning: `success` finished well or healthy (a run in progress
+     takes it too, its word telling the two apart), `attention` unfinished, waiting on time, a
+     queue or the user, `danger` failed or destructive, `done` closed for good, `info` a fact worth
+     a colour, `neutral` a kind, or a state that should recede. `fg` is the ink, `bg` the tint a
+     badge sits on, `line` its rule. */
+  --wb-tone-success-fg: var(
+    --ui-tone-success-fg,
+    light-dark(oklch(50.8% 0.118 165.612), oklch(76.5% 0.177 163.223))
+  );
+  --wb-tone-success-bg: var(
+    --ui-tone-success-bg,
+    light-dark(oklch(97.9% 0.021 166.113), oklch(26.2% 0.051 172.552 / 0.4))
+  );
+  --wb-tone-success-line: var(
+    --ui-tone-success-line,
+    light-dark(oklch(84.5% 0.143 164.978), oklch(50.8% 0.118 165.612))
+  );
+  --wb-tone-attention-fg: var(
+    --ui-tone-attention-fg,
+    light-dark(oklch(55.5% 0.163 48.998), oklch(82.8% 0.189 84.429))
+  );
+  --wb-tone-attention-bg: var(
+    --ui-tone-attention-bg,
+    light-dark(oklch(98.7% 0.022 95.277), oklch(27.9% 0.077 45.635 / 0.4))
+  );
+  --wb-tone-attention-line: var(
+    --ui-tone-attention-line,
+    light-dark(oklch(87.9% 0.169 91.605), oklch(55.5% 0.163 48.998))
+  );
+  --wb-tone-danger-fg: var(
+    --ui-tone-danger-fg,
+    light-dark(oklch(50.5% 0.213 27.518), oklch(70.4% 0.191 22.216))
+  );
+  --wb-tone-danger-bg: var(
+    --ui-tone-danger-bg,
+    light-dark(oklch(97.1% 0.013 17.38), oklch(25.8% 0.092 26.042 / 0.4))
+  );
+  --wb-tone-danger-line: var(
+    --ui-tone-danger-line,
+    light-dark(oklch(80.8% 0.114 19.571), oklch(50.5% 0.213 27.518))
+  );
+  --wb-tone-done-fg: var(
+    --ui-tone-done-fg,
+    light-dark(oklch(49.6% 0.265 301.924), oklch(71.4% 0.203 305.504))
+  );
+  --wb-tone-done-bg: var(
+    --ui-tone-done-bg,
+    light-dark(oklch(97.7% 0.014 308.299), oklch(29.1% 0.149 302.717 / 0.4))
+  );
+  --wb-tone-done-line: var(
+    --ui-tone-done-line,
+    light-dark(oklch(82.7% 0.119 306.383), oklch(49.6% 0.265 301.924))
+  );
+  --wb-tone-neutral-fg: var(--ui-tone-neutral-fg, light-dark(#4b5563, #b0b0b0));
+  --wb-tone-neutral-bg: var(--ui-tone-neutral-bg, light-dark(#f3f4f6, #262626));
+  --wb-tone-neutral-line: var(--ui-tone-neutral-line, light-dark(#e5e7eb, #262626));
+  --wb-tone-info-fg: var(
+    --ui-tone-info-fg,
+    light-dark(oklch(50% 0.134 242.749), oklch(74.6% 0.16 232.661))
+  );
+  --wb-tone-info-bg: var(
+    --ui-tone-info-bg,
+    light-dark(oklch(97.7% 0.013 236.62), oklch(29.3% 0.066 243.157 / 0.4))
+  );
+  --wb-tone-info-line: var(
+    --ui-tone-info-line,
+    light-dark(oklch(82.8% 0.111 230.318), oklch(50% 0.134 242.749))
+  );
 }
 
 /* The app stamps `dark` or `light` on the root; `prefers-color-scheme` only decides for a
@@ -44,23 +134,11 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;
-    --wb-bg: var(--color-gray-950, #121212);
-    --wb-surface: var(--color-gray-900, #1a1a1a);
-    --wb-fg: var(--color-gray-100, #f5f5f5);
-    --wb-muted: var(--color-gray-400, #a1a1a1);
-    --wb-border: var(--color-gray-700, #333333);
-    --wb-hover: var(--color-gray-800, #262626);
   }
 }
 
 :root.dark {
   color-scheme: dark;
-  --wb-bg: var(--color-gray-950, #121212);
-  --wb-surface: var(--color-gray-900, #1a1a1a);
-  --wb-fg: var(--color-gray-100, #f5f5f5);
-  --wb-muted: var(--color-gray-400, #a1a1a1);
-  --wb-border: var(--color-gray-700, #333333);
-  --wb-hover: var(--color-gray-800, #262626);
 }
 
 body {
@@ -69,7 +147,7 @@ body {
   background: var(--wb-bg);
   color: var(--wb-fg);
   font-family: var(--wb-font);
-  font-size: 0.875rem;
+  font-size: var(--ui-text-body-size, 0.875rem);
   line-height: 1.6;
 }
 
@@ -150,7 +228,7 @@ code,
 kbd,
 samp {
   font-family: var(--wb-mono);
-  font-size: 0.8125rem;
+  font-size: var(--ui-text-code-size, 0.8125rem);
 }
 code {
   background: var(--wb-surface);
@@ -251,6 +329,58 @@ button.wb-primary:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* A short label beside a name — a state, a kind, a fact — drawn the way the app draws its label
+   pills: the tone's tint under its ink, the theme's pill radius, tag type and (where the theme
+   draws one) an inset rule in the tone's line. `data-tone` picks the tone; none is `neutral`.
+   Colour never carries the state alone: the word on the badge does. */
+.wb-badge {
+  --_wb-badge-fg: var(--wb-tone-neutral-fg);
+  --_wb-badge-bg: var(--wb-tone-neutral-bg);
+  --_wb-badge-line: var(--wb-tone-neutral-line);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  white-space: nowrap;
+  padding: 1px calc(var(--ui-space-unit, 0.25rem) * 1.5);
+  border-radius: var(--ui-radius-pill, 9999px);
+  color: var(--_wb-badge-fg);
+  background: var(--_wb-badge-bg);
+  box-shadow: inset 0 0 0 var(--ui-badge-soft-ring, 0px) var(--_wb-badge-line);
+  font-size: var(--ui-badge-size, 0.6875rem);
+  line-height: var(--ui-badge-lh, 1rem);
+  font-weight: var(--ui-badge-weight, 600);
+}
+.wb-badge[data-tone="success"] {
+  --_wb-badge-fg: var(--wb-tone-success-fg);
+  --_wb-badge-bg: var(--wb-tone-success-bg);
+  --_wb-badge-line: var(--wb-tone-success-line);
+}
+.wb-badge[data-tone="attention"] {
+  --_wb-badge-fg: var(--wb-tone-attention-fg);
+  --_wb-badge-bg: var(--wb-tone-attention-bg);
+  --_wb-badge-line: var(--wb-tone-attention-line);
+}
+.wb-badge[data-tone="danger"] {
+  --_wb-badge-fg: var(--wb-tone-danger-fg);
+  --_wb-badge-bg: var(--wb-tone-danger-bg);
+  --_wb-badge-line: var(--wb-tone-danger-line);
+}
+.wb-badge[data-tone="done"] {
+  --_wb-badge-fg: var(--wb-tone-done-fg);
+  --_wb-badge-bg: var(--wb-tone-done-bg);
+  --_wb-badge-line: var(--wb-tone-done-line);
+}
+.wb-badge[data-tone="neutral"] {
+  --_wb-badge-fg: var(--wb-tone-neutral-fg);
+  --_wb-badge-bg: var(--wb-tone-neutral-bg);
+  --_wb-badge-line: var(--wb-tone-neutral-line);
+}
+.wb-badge[data-tone="info"] {
+  --_wb-badge-fg: var(--wb-tone-info-fg);
+  --_wb-badge-bg: var(--wb-tone-info-bg);
+  --_wb-badge-line: var(--wb-tone-info-line);
 }
 
 @media (prefers-reduced-motion: reduce) {

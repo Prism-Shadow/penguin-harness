@@ -3,7 +3,7 @@
  * Router provider composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes
  * prompt) beside the router. The shared UI package's copy controls get the app's clipboard
  * writer, and every code surface of the package gets the app's worker-backed code highlighter
- * (lib/highlight/code-highlight.ts).
+ * (features/chat/code-highlight.ts).
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
  * re-fetching auth, avoiding a full-screen white flash from RequireAuth briefly seeing user=undefined.
  * Also installs the app-wide file-drop guard: a file dropped outside the chat area — the only
@@ -16,6 +16,9 @@ import { useEffect } from "react";
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
+  CrashBoundary,
+  ProgressToasts,
+  ReportHost,
   Toaster,
   TooltipLayer,
 } from "@prismshadow/penguin-ui";
@@ -35,8 +38,9 @@ import {
 import { ErrorBoundary } from "./rescue/error-boundary";
 import { RescuePanel } from "./rescue/rescue-panel";
 import { writeClipboard } from "./lib/clipboard";
+import { ReportEnvironmentSync } from "./lib/report-environment";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
-import { highlightCode } from "./lib/highlight/code-highlight";
+import { highlightCode } from "./features/chat/code-highlight";
 
 /**
  * `initialPath`: mount the app on an in-memory router opened at that path instead of the
@@ -66,20 +70,18 @@ export function App({
             <BackgroundProvider>
               <AuthProvider>
                 <LocaleScope>
-                  <ErrorBoundary fallback={(error) => <RescuePanel error={error} />}>
-                    <Root {...(initialPath === undefined ? {} : { initialPath })} />
-                  </ErrorBoundary>
-                  <ErrorBoundary fallback={() => null}>
-                    <AppPalette
-                      suggest={paletteSessionCompletion}
-                      pending={paletteSessionPending}
-                    />
-                  </ErrorBoundary>
-                  <ErrorBoundary fallback={() => null}>
-                    <SafeModeMarker />
-                  </ErrorBoundary>
+                  {/* What every problem report knows of where it ran. */}
+                  <ReportEnvironmentSync />
+                  {/* The last line against a blank window: a crash the routes did not catch. */}
+                  <CrashBoundary className="h-dvh">
+                    <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+                  </CrashBoundary>
                   {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
                   <Toaster />
+                  {/* The problem report opened from a toast, a notice or a crash: one dialog. */}
+                  <ReportHost />
+                  {/* Long operations' progress cards, bottom right (an Agent's files being removed). */}
+                  <ProgressToasts />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the
                     unload guard while a form is dirty. Inside LocaleScope, so it reads the
                     dictionary of the language on screen. */}

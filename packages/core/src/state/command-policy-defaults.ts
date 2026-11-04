@@ -1,6 +1,6 @@
 /**
  * Factory command-policy rules — the seed data for a new project's `[command_policy]`
- * block, kept next to the other seeded catalogs (model-catalog.ts, default-config.ts):
+ * block, kept next to the other seeded data (default-config.ts):
  * `defaultProjectConfig` copies them into every new project, and the enforcement side
  * reads the same constant as its "absent = factory set" fallback. Types only, no
  * behavior — so nothing here can drag the tool chain into the state module.

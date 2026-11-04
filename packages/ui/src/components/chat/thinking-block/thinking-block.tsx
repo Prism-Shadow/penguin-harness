@@ -3,8 +3,11 @@
  * that expands to the full thinking text. It is the shared disclosure row, so its metrics and
  * colour states are the ones every other disclosure row uses, and it shares the run-state icons
  * (in progress, done, failed) with the tool-call rows. As a step of the agent's work it carries
- * the activity hook. Its text streams through `StreamText`, so it arrives the way a reply does.
+ * the activity hook. Its text streams through `StreamText`, so it arrives the way a reply does. A
+ * note of the caller's (`bodyNote`: the rest of a folded thinking still being fetched) follows the
+ * text, mounted only while the row is open.
  */
+import type { ReactNode } from "react";
 import {
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
@@ -18,7 +21,7 @@ import { StreamText } from "../stream-text/stream-text";
 export interface ThinkingBlockProps {
   /** Running while the text streams, failed when it stopped short, done otherwise. */
   state: Extract<RunState, "running" | "done" | "failed">;
-  /** The status icon's accessible name and tooltip ("Running", "Done", the stop reason). */
+  /** The status icon's accessible name and tooltip ("Running", "Done", why a failed step stopped). */
   stateLabel?: string;
   /** The row's label ("Thinking"). */
   label: string;
@@ -28,8 +31,8 @@ export interface ThinkingBlockProps {
   startedAtMs?: number;
   /** The settled duration, once finished. */
   durationMs?: number;
-  /** Why a failed step stopped, shown in brackets after the duration. */
-  stopReason?: string;
+  /** After the text, mounted only while the row is open (the rest of the text being fetched). */
+  bodyNote?: ReactNode;
 }
 
 export function ThinkingBlock({
@@ -39,7 +42,7 @@ export function ThinkingBlock({
   text,
   startedAtMs,
   durationMs,
-  stopReason,
+  bodyNote,
 }: ThinkingBlockProps) {
   const streaming = state === "running";
   return (
@@ -49,21 +52,17 @@ export function ThinkingBlock({
       icon={<StatusIcon state={state} label={stateLabel} />}
       label={label}
       trailing={
-        <>
-          <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
-            {streaming ? (
-              <LiveDuration sinceMs={startedAtMs} />
-            ) : durationMs !== undefined ? (
-              formatDuration(durationMs)
-            ) : null}
-          </span>
-          {state === "failed" && stopReason !== undefined && (
-            <span className="font-mono text-xs text-fg-subtle">[{stopReason}]</span>
-          )}
-        </>
+        <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
+          {streaming ? (
+            <LiveDuration sinceMs={startedAtMs} />
+          ) : durationMs !== undefined ? (
+            formatDuration(durationMs)
+          ) : null}
+        </span>
       }
     >
       <StreamText className={DISCLOSURE_BODY_MD_CLASS} text={text} streaming={streaming} />
+      {bodyNote !== undefined && bodyNote !== null && <div className="px-3 pb-2">{bodyNote}</div>}
     </DisclosureRow>
   );
 }

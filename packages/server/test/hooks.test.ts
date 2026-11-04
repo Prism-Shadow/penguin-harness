@@ -23,7 +23,7 @@ import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hooksDir } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   AgentHooksResponse,
   MessagesResponse,
@@ -522,8 +522,8 @@ describe("hook packages in a conversation", { timeout: 30_000 }, () => {
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle", 20_000);
   }
 
-  const streamed = (events: ChannelEvent[]): OmniMessage[] =>
-    events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as OmniMessage);
+  const streamed = (events: ChannelEvent[]): AmspRecord[] =>
+    events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as AmspRecord);
 
   it("an ordinary task: a hand-written every-prompt package's context follows the user's message, stamped harness, live and in the history", async () => {
     await writeClockPackage(hooksDir(t.root, projectId, "default_agent"));

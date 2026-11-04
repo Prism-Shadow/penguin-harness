@@ -84,9 +84,12 @@ describe("live-tail", () => {
       partialToolCallOutput({ eventType: "delta", output: "line 1\n", toolCallId: "t1" }),
     );
     t.observe(SID, partialToolCall({ eventType: "start", name: "x", toolCallId: "t2" }));
-    t.observe(SID, toolCallOutput({ output: "other", toolCallId: "t9" }));
+    t.observe(SID, toolCallOutput({ output: "other", toolCallId: "t9", status: "completed" }));
     expect(t.fragments(SID)).toHaveLength(2);
-    t.observe(SID, toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "t1" }));
+    t.observe(
+      SID,
+      toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "t1", status: "completed" }),
+    );
     t.observe(SID, toolCall({ name: "x", arguments: "{}", toolCallId: "t2" }));
     expect(t.fragments(SID)).toEqual([]);
   });

@@ -6,7 +6,9 @@
  * The pre-paint pass is what keeps a dark page, or one in any theme but the stylesheet's
  * fallback, from flashing that fallback while the bundle loads, keeps the first frame from
  * rendering at the browser's 16px root and reflowing once React applies the stored text size,
- * and keeps a chosen font pairing from swapping in after the first paint.
+ * keeps a chosen font pairing from swapping in after the first paint, and lays a stored custom
+ * background on the boot layer (wallpaper.css) until the first screen of the app mounts, so a
+ * reload never shows the bare page colour where the image will be.
  *
  * The inline copy in index.html must equal {@link BOOT_SCRIPT} byte for byte; a test asserts it.
  * Change the constants here, then paste the regenerated string there.
@@ -168,6 +170,138 @@ export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
 };
 
 // ---------------------------------------------------------------------------
+// The custom background
+// ---------------------------------------------------------------------------
+
+/**
+ * The browser-scoped keys of the custom background: the image bytes and the display settings,
+ * apart so a slider never rewrites the image. The app's background provider reads and writes
+ * them; the pre-paint script reads them so a reload paints the image from the first frame.
+ */
+export const BACKGROUND_STORAGE_KEYS = {
+  image: "penguin.background.image",
+  settings: "penguin.background.settings",
+} as const;
+
+export const BACKGROUND_MODES = ["cover", "contain", "tile", "original"] as const;
+export const BACKGROUND_POSITIONS = [
+  "left top",
+  "center top",
+  "right top",
+  "left center",
+  "center center",
+  "right center",
+  "left bottom",
+  "center bottom",
+  "right bottom",
+] as const;
+export type BackgroundMode = (typeof BACKGROUND_MODES)[number];
+export type BackgroundPosition = (typeof BACKGROUND_POSITIONS)[number];
+
+export interface BackgroundSettings {
+  /** 0–100: how much of the page colour shows through the image. */
+  transparency: number;
+  mode: BackgroundMode;
+  position: BackgroundPosition;
+}
+
+export const DEFAULT_BACKGROUND_SETTINGS: BackgroundSettings = {
+  transparency: 80,
+  mode: "cover",
+  position: "center center",
+};
+
+/** Only locally encoded raster data is allowed into a CSS image value. */
+const BACKGROUND_IMAGE_PATTERN = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
+
+export function isBackgroundImage(value: unknown): value is string {
+  return typeof value === "string" && BACKGROUND_IMAGE_PATTERN.test(value);
+}
+
+/**
+ * The stored background: the image when it is a valid one, and the settings with every field the
+ * store lacks or garbles taken from the defaults. Storage that throws, or settings that do not
+ * parse, never keep the app from opening.
+ */
+export function readBackground(storage: Pick<Storage, "getItem">): {
+  image: string | null;
+  settings: BackgroundSettings;
+} {
+  let image: string | null = null;
+  let settings = DEFAULT_BACKGROUND_SETTINGS;
+  try {
+    const storedImage = storage.getItem(BACKGROUND_STORAGE_KEYS.image);
+    if (isBackgroundImage(storedImage)) image = storedImage;
+    const stored: unknown = JSON.parse(storage.getItem(BACKGROUND_STORAGE_KEYS.settings) ?? "null");
+    if (stored && typeof stored === "object") {
+      const value = stored as Partial<BackgroundSettings>;
+      settings = {
+        transparency:
+          typeof value.transparency === "number" && Number.isFinite(value.transparency)
+            ? Math.min(100, Math.max(0, value.transparency))
+            : DEFAULT_BACKGROUND_SETTINGS.transparency,
+        mode:
+          BACKGROUND_MODES.find((mode) => mode === value.mode) ?? DEFAULT_BACKGROUND_SETTINGS.mode,
+        position:
+          BACKGROUND_POSITIONS.find((position) => position === value.position) ??
+          DEFAULT_BACKGROUND_SETTINGS.position,
+      };
+    }
+  } catch {
+    // Blocked storage or an incomplete settings value must not prevent the app from opening.
+  }
+  return { image, settings };
+}
+
+/** How the image is laid over the window: its CSS background and its opacity. */
+export interface BackgroundLayerStyle {
+  backgroundImage: string;
+  backgroundSize: string;
+  backgroundRepeat: string;
+  backgroundPosition: string;
+  opacity: number;
+}
+
+export function backgroundLayerStyle(
+  image: string | null,
+  settings: BackgroundSettings,
+): BackgroundLayerStyle {
+  return {
+    backgroundImage: image === null ? "none" : `url("${image}")`,
+    backgroundSize:
+      settings.mode === "tile" || settings.mode === "original" ? "auto" : settings.mode,
+    backgroundRepeat: settings.mode === "tile" ? "repeat" : "no-repeat",
+    backgroundPosition: settings.position,
+    opacity: 1 - settings.transparency / 100,
+  };
+}
+
+/**
+ * The custom properties the pre-paint script writes on `<html>` for a stored image, read by the
+ * boot layer (`:root[data-boot-wallpaper]::before`, wallpaper.css): the layer that stands in for
+ * the shell's own wallpaper until a screen of the app has mounted.
+ */
+export const BOOT_WALLPAPER_PROPERTIES = {
+  image: "--boot-wallpaper-image",
+  size: "--boot-wallpaper-size",
+  repeat: "--boot-wallpaper-repeat",
+  position: "--boot-wallpaper-position",
+  opacity: "--boot-wallpaper-opacity",
+} as const;
+
+/**
+ * Ends the boot layer: called once the first screen of the app has mounted — the shell, which
+ * paints its own wallpaper in the same frame, or a screen outside it (sign-in, a standalone
+ * terminal), which shows none. Idempotent.
+ */
+export function releaseBootWallpaper(root: HTMLElement): void {
+  delete root.dataset.bootWallpaper;
+  for (const property of Object.values(BOOT_WALLPAPER_PROPERTIES)) {
+    root.style.removeProperty(property);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Applying the attributes
 // ---------------------------------------------------------------------------
 
@@ -224,6 +358,8 @@ const chosenFaces = (options: readonly FontOption[]) =>
   optionIds(options).filter((id) => id !== "theme");
 const j = JSON.stringify;
 const K = THEME_STORAGE_KEYS;
+const B = BACKGROUND_STORAGE_KEYS;
+const P = BOOT_WALLPAPER_PROPERTIES;
 
 /**
  * The pre-paint script: a classic, dependency-free IIFE (no globals leak) that mirrors
@@ -245,4 +381,17 @@ export const BOOT_SCRIPT =
   `if(${j(TEXT_SIZES)}.indexOf(z)<0){g=s.getItem(${j(K.fontScale)});o=${j(LEGACY_FONT_SCALES)}.indexOf(g);z=o<0?${j(DEFAULT_TEXT_SIZE)}:${j(LEGACY_FONT_SCALE_SIZES)}[o]}` +
   `d.style.fontSize=${j(TEXT_SIZE_PX)}[z];` +
   `if(g!==null){try{if(o>=0)s.setItem(${j(K.textSize)},z);s.removeItem(${j(K.fontScale)})}catch(e){}}` +
+  // The stored background, as `readBackground` and `backgroundLayerStyle` read it, on the boot
+  // layer's properties. Settings that do not parse fall back as a whole, as the reader's do.
+  `var w=s.getItem(${j(B.image)});` +
+  `if(typeof w==="string"&&${BACKGROUND_IMAGE_PATTERN.toString()}.test(w)){` +
+  `var b=null;try{b=JSON.parse(s.getItem(${j(B.settings)}))}catch(e){}if(!b||typeof b!=="object")b={};` +
+  `var r=b.transparency;r=typeof r==="number"&&isFinite(r)?Math.min(100,Math.max(0,r)):${j(DEFAULT_BACKGROUND_SETTINGS.transparency)};` +
+  `var u=${j(BACKGROUND_MODES)}.indexOf(b.mode)<0?${j(DEFAULT_BACKGROUND_SETTINGS.mode)}:b.mode;` +
+  `var p=${j(BACKGROUND_POSITIONS)}.indexOf(b.position)<0?${j(DEFAULT_BACKGROUND_SETTINGS.position)}:b.position;` +
+  `var y=d.style;y.setProperty(${j(P.image)},'url("'+w+'")');` +
+  `y.setProperty(${j(P.size)},u==="tile"||u==="original"?"auto":u);` +
+  `y.setProperty(${j(P.repeat)},u==="tile"?"repeat":"no-repeat");` +
+  `y.setProperty(${j(P.position)},p);y.setProperty(${j(P.opacity)},String(1-r/100));` +
+  'd.dataset.bootWallpaper=""}' +
   "}catch(e){}})()";

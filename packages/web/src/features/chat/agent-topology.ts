@@ -20,7 +20,7 @@
  * Node boxes are fixed-size (labels truncate inside them), which keeps the layout free of any
  * text measurement; graphs are small (≲15 nodes) and the view scrolls horizontally on overflow.
  */
-import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
+import type { ChatItem, StreamModel } from "../../lib/amsp/stream-model";
 import { parseBackgroundTaskDoneMessage } from "./agent-handoff";
 
 /** Marker tag of a harness completion notice; the cheap prefilter before the marker parse. */

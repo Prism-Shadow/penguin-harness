@@ -1,14 +1,11 @@
 /**
  * The API socket (socket/serve.ts), over a real listening server — an Upgrade is nothing
- * app.request() can exercise. It arrives through the runtime's terminal-stream seam under
- * its reserved id (socket/ref.ts), so the seam is attached exactly as index.ts attaches it.
- * What is pinned: the handshake's gate (cookie, origin, the id's owner), that a call answers
- * exactly as its HTTP twin, which paths never ride the socket, that a stream endpoint arrives
- * as frames and a cancel releases it, and that a malformed frame closes the socket rather
- * than being guessed at. And the gate across a swap window: a handshake that lands while the
- * tree behind it is disposed is authenticated by the generation the listener captured — or
- * refused as the designed 503 when no generation offers an auth face — never by a resolution
- * throw escaping the upgrade listener.
+ * app.request() can exercise. It arrives through the runtime's websocket seam at its own
+ * route, `apiSocketPath()` (terminal/ws.ts, socket/ref.ts), so the seam is attached exactly
+ * as index.ts attaches it. What is pinned: the handshake's gate (cookie, origin), that a call
+ * answers exactly as its HTTP twin and is addressed to the origin the socket was opened on,
+ * which paths never ride the socket, that a stream endpoint arrives as frames and a cancel
+ * releases it, and that a malformed frame closes the socket rather than being guessed at.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
@@ -17,8 +14,8 @@ import { WebSocket } from "ws";
 import { createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";
-import type { TerminalWebSocketDeps } from "../src/terminal/ws.js";
 import { apiSocketPath } from "../src/socket/ref.js";
+import type { TerminalWebSocketDeps } from "../src/terminal/ws.js";
 import type { Auth } from "../src/mechanisms/identity.js";
 
 let t: TestApp;
@@ -53,7 +50,7 @@ type Frame = Record<string, unknown>;
 /** An open socket with a frame queue, or the HTTP status the handshake was refused with. */
 async function open(
   headers: Record<string, string>,
-  path: string = apiSocketPath("admin"),
+  path: string = apiSocketPath(),
   at: number = port,
 ): Promise<
   | {
@@ -128,11 +125,12 @@ describe("handshake", () => {
     if ("ws" in s) s.ws.close();
   });
 
-  it("holds the reserved id's owner to the signed-in user", async () => {
-    // The runtime's owner check: admin's cookie cannot open someone else's socket.
-    expect(await open({ cookie }, apiSocketPath("someone-else"))).toEqual({ refused: 404 });
-    // And an id that is not the reserved form names no terminal either.
-    expect(await open({ cookie }, "/api/terminals/api-socket/stream")).toEqual({ refused: 404 });
+  it("is its own route: no terminal id opens it", async () => {
+    // The socket answers as whoever the cookie is, so there is no id to forge — and the
+    // terminal namespace does not reach it any more.
+    expect(await open({ cookie }, "/api/terminals/api-socket@admin/stream")).toEqual({
+      refused: 404,
+    });
   });
 });
 
@@ -151,10 +149,11 @@ describe("calls", () => {
     s.ws.close();
   });
 
-  it("makes its calls under the host and port the page addressed, not a bare localhost", async () => {
-    // A route that names this server back to the browser — a provider's redirect, or the host
-    // the hub tells a machine it is forwarding for — reads the socket's own origin.
-    const s = await open({ cookie });
+  it("addresses calls to the origin the page opened the socket on, port included", async () => {
+    // A route that builds a URL back to the App reads it off the request: a key-authorization
+    // flow started over the socket must send the provider's redirect to the page's host and
+    // port, not to a port-less `http://localhost`.
+    const s = await open({ cookie, origin: `http://localhost:${port}` });
     if (!("ws" in s)) throw new Error("handshake refused");
     send(s.ws, {
       id: 1,
@@ -166,12 +165,11 @@ describe("calls", () => {
     });
     const frame = await s.next();
     expect(frame.status).toBe(200);
-    const callback = new URL(
-      (frame.body as { authorizeUrl: string }).authorizeUrl,
-    ).searchParams.get("callback_url");
-    expect(callback?.startsWith(`http://localhost:${port}/api/projects/default_project/`)).toBe(
-      true,
-    );
+    const started = frame.body as { authorizeUrl: string; mode: string };
+    expect(started.mode).toBe("callback");
+    const callback = new URL(new URL(started.authorizeUrl).searchParams.get("callback_url") ?? "");
+    expect(callback.origin).toBe(`http://localhost:${port}`);
+    expect(callback.pathname).toBe("/api/projects/default_project/model-oauth/callback");
     s.ws.close();
   });
 
@@ -194,7 +192,7 @@ describe("calls", () => {
     expect((hmr.body as { error: { code: string } }).error.code).toBe("not_on_socket");
     send(s.ws, { id: 2, call: { method: "POST", path: "/api/auth/logout", body: {} } });
     expect((await s.next()).status).toBe(421);
-    send(s.ws, { id: 3, call: { method: "GET", path: apiSocketPath("admin") } });
+    send(s.ws, { id: 3, call: { method: "GET", path: apiSocketPath() } });
     expect((await s.next()).status).toBe(404);
     send(s.ws, { id: 4, call: { method: "GET", path: "/penguin-logo.svg" } });
     expect((await s.next()).status).toBe(404);
@@ -229,7 +227,11 @@ describe("calls", () => {
   it("closes on a reused id", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
-    send(s.ws, { id: 1, call: { method: "GET", path: "/api/events" } });
+    // The stream call as the client makes it: marked by the accept header it always sends.
+    send(s.ws, {
+      id: 1,
+      call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+    });
     expect((await s.next()).stream).toBe(true);
     send(s.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
     expect((await s.closed()).code).toBe(1002);
@@ -240,7 +242,10 @@ describe("streams", () => {
   it("frames a text/event-stream endpoint per event and ends on cancel", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
-    send(s.ws, { id: 7, call: { method: "GET", path: "/api/events" } });
+    send(s.ws, {
+      id: 7,
+      call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+    });
     const start = await s.next();
     expect(start).toMatchObject({ id: 7, status: 200, stream: true });
     const hello = await s.next();
@@ -250,7 +255,10 @@ describe("streams", () => {
     // Cancel releases the subscription silently; a fresh call on the same socket works.
     try {
       send(s.ws, { id: 7, cancel: true });
-      send(s.ws, { id: 8, call: { method: "GET", path: "/api/events" } });
+      send(s.ws, {
+        id: 8,
+        call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      });
       // The endpoint's initial ping may already be queued before the cancel was received.
       // Cancellation cannot retract a frame sent for the old call; match the new call by id.
       let frame = await s.next();
@@ -269,7 +277,11 @@ describe("streams", () => {
     if (!("ws" in s)) throw new Error("handshake refused");
     send(s.ws, {
       id: 1,
-      call: { method: "GET", path: "/api/events", headers: { "last-event-id": "0-999999" } },
+      call: {
+        method: "GET",
+        path: "/api/events",
+        headers: { accept: "text/event-stream", "last-event-id": "0-999999" },
+      },
     });
     expect(await s.next()).toMatchObject({ id: 1, stream: true });
     const first = await s.next();
@@ -330,7 +342,7 @@ describe("the handshake across a swap window", () => {
       // took the process down.
       const s = await open(
         { cookie: own.cookie, origin: `http://localhost:${own.port}` },
-        apiSocketPath("admin"),
+        apiSocketPath(),
         own.port,
       );
       expect("ws" in s).toBe(true);
@@ -353,7 +365,7 @@ describe("the handshake across a swap window", () => {
     try {
       const s = await open(
         { cookie: own.cookie, origin: `http://localhost:${own.port}` },
-        apiSocketPath("admin"),
+        apiSocketPath(),
         own.port,
       );
       expect(s).toEqual({ refused: 503 });

@@ -55,10 +55,15 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 
 /**
  * The time every exported entry carries: fixed, so that exporting an unchanged Benchmark again
- * gives the same bytes. Built from local fields because a zip stores local time — 1980-01-01, the
- * format's first day, reads back as itself in every time zone.
+ * gives the same bytes. A zip stores local time, and fflate reads it off this Date in the zone
+ * the process is in when it zips, so the Date is built from local fields at that moment —
+ * 1980-01-01, the format's first day, then reads back as itself in every time zone. One built
+ * once at load would read as 1979, which fflate refuses, after the zone moved west of the one
+ * it was built in.
  */
-const PACKAGE_MTIME = new Date(1980, 0, 1);
+function packageMtime(): Date {
+  return new Date(1980, 0, 1);
+}
 
 /** Code-unit order: the same on every machine, whatever its locale. */
 function byName(a: { name: string }, b: { name: string }): number {
@@ -335,7 +340,7 @@ export async function packBenchmark(
       await walk(path.join(benchDir, entry.name), entry.name);
     }
   }
-  const zip = zipSync(out, { mtime: PACKAGE_MTIME });
+  const zip = zipSync(out, { mtime: packageMtime() });
   if (zip.byteLength > MAX_ARCHIVE_BYTES) throw tooLarge();
   return zip;
 }

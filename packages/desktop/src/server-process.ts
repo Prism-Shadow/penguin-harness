@@ -138,6 +138,15 @@ export async function startEmbeddedServer(opts: {
       ...(opts.webDist !== null ? { PENGUIN_WEB_DIST: opts.webDist } : {}),
       ...(opts.cliEntry !== null ? { PENGUIN_CLI_ENTRY: opts.cliEntry } : {}),
       HOST: "127.0.0.1",
+      // Reached from outside only through a relay (Penguin Remote), whose last hop sets the
+      // forwarded headers: trusting them is how the server knows the browser's https origin.
+      // Loopback does not keep every web page off the port: a DNS-rebinding page and a preview
+      // page on the loopback preview host reach it and may set any header on their own
+      // same-origin requests. Neither holds the App's cookie, and the guards that keep the
+      // preview host off the API read the raw Host, never a forwarded one. A page on another
+      // origin can set none of these headers on a cross-origin request (it would need a
+      // preflight the server never grants) or on a WebSocket handshake.
+      PENGUIN_TRUST_PROXY: "1",
       PORT: String(requestedPort),
       PENGUIN_DESKTOP_TOKEN: token,
       PENGUIN_PORT_FILE: opts.portFile,

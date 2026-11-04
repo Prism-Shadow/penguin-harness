@@ -7,7 +7,8 @@
  *
  * Each mark is drawn in every icon set, like a registry glyph (`GlyphMark`, the `ui-glyph` hook):
  * the line drawing written here on the mark's own grid, and the Octicon and the pixel drawing
- * its key (`MarkName`) names in the sets.
+ * its key (`MarkName`) names in the sets. The one exception is `CheckLineIcon`, the menu check's
+ * line drawing alone, for the public sites, which do not load the sets.
  */
 import { GlyphMark } from "../glyph-icon/glyph-sets";
 import { ICONS } from "../icons";
@@ -21,12 +22,43 @@ export function ChevronDown({ size = 12, className = "" }: { size?: number; clas
   );
 }
 
+/** The check's line drawing, shared by the mark and its line-only twin so the two cannot drift. */
+function CheckStroke() {
+  return <path d="M5 12l4 4L19 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />;
+}
+
 /** The selected row's checkmark in a menu. */
 export function CheckIcon({ size = 13, className = "" }: { size?: number; className?: string }) {
   return (
     <GlyphMark mark="check" grid={24} size={size} className={`shrink-0 ${className}`}>
-      <path d="M5 12l4 4L19 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <CheckStroke />
     </GlyphMark>
+  );
+}
+
+/**
+ * The same check as its line drawing alone, with no other set beside it: for the public sites'
+ * menus, whose chrome shows the line drawing in every theme and does not load the icon sets.
+ */
+export function CheckLineIcon({
+  size = 13,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+      className={`shrink-0 ${className}`}
+    >
+      <CheckStroke />
+    </svg>
   );
 }
 

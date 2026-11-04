@@ -5,7 +5,7 @@
 # step on the Windows runners — 21s typical and 63s at its worst against ~5s on
 # ubuntu — while `corepack enable` is a shim install with no download of its own.
 # It has to run before setup-node, whose `cache: pnpm` resolves the store path by
-# executing pnpm.
+# executing pnpm, so it runs once more after setup-node: see "Run pnpm on Node 24".
 name: Set up pnpm, Node and dependencies
 description: Enables pnpm via corepack, installs Node 24 with a warm pnpm store, and runs a frozen install.
 
@@ -47,9 +47,22 @@ runs:
         node-version: 24
         cache: pnpm
 
+    # The first `corepack enable` ran on the runner's preinstalled Node and put its shims
+    # next to that node. On Windows a shim starts the node.exe in its own directory, so pnpm
+    # kept running on Node 22 after setup-node put 24 first on PATH. Enabling again from
+    # Node 24 puts shims in its directory, which PATH now finds first.
+    - name: Run pnpm on Node 24
+      shell: bash
+      env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: |
+        corepack enable
+        pnpm --version
+
+    # engine-strict turns "pnpm is running on an older Node" from a warning into a failure.
     - name: Install dependencies
       shell: bash
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --config.engine-strict=true
 
     # Only the requested packages and their dependencies. A shard that tests core
     # alone does not pay for the desktop bundle, which is the slowest target here.

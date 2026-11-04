@@ -1,6 +1,7 @@
 /**
  * The pure half of the "Create with AI" bridge (src/features/ai-create/ai-bridge.ts): what the
- * draft cache and the route state hold once a surface hands its prompt to the draft page.
+ * draft cache and the route state hold once a surface hands its prompt to the draft page — for a
+ * machine's agent, a Workspace on that machine, since its agent runs nowhere else.
  */
 import { describe, expect, it } from "vitest";
 import { aiChatRouteState, buildAiDraft } from "../src/features/ai-create/ai-bridge";
@@ -38,6 +39,28 @@ describe("buildAiDraft", () => {
     expect(pinned.workspace).toBe("");
   });
 
+  it("opens a machine's agent on that machine, in its temporary Workspace unless one is pinned there", () => {
+    const draft = buildAiDraft(
+      { workspace: "/here" },
+      { agentId: "a", text: "t", machineId: "m1" },
+    );
+    expect([draft.workspace, draft.machineId]).toEqual(["", "m1"]);
+    const pinned = buildAiDraft(
+      {},
+      { agentId: "a", text: "t", machineId: "m1", workspace: "/srv" },
+    );
+    expect([pinned.workspace, pinned.machineId]).toEqual(["/srv", "m1"]);
+  });
+
+  it("drops a cached machine when the request pins a Workspace of this server", () => {
+    const draft = buildAiDraft(
+      { workspace: "/srv", machineId: "m1" },
+      { agentId: "a", text: "t", workspace: "/here" },
+    );
+    expect(draft.workspace).toBe("/here");
+    expect("machineId" in draft).toBe(false);
+  });
+
   it("drops a stale handoff target, which would forward the prompt to another agent", () => {
     const draft = buildAiDraft({ handoffAgentId: "other" }, { agentId: "a", text: "t" });
     expect("handoffAgentId" in draft).toBe(false);
@@ -55,6 +78,14 @@ describe("aiChatRouteState", () => {
     expect(aiChatRouteState({ agentId: "a", text: "t", workspace: "" })).toEqual({
       agentId: "a",
       workspace: "",
+    });
+  });
+
+  it("names a machine's agent with its machine and a Workspace there, which the draft applies together", () => {
+    expect(aiChatRouteState({ agentId: "a", text: "t", machineId: "m1" })).toEqual({
+      agentId: "a",
+      workspace: "",
+      machineId: "m1",
     });
   });
 });

@@ -1,8 +1,27 @@
 import dictionaries from "./strings.js";
+import { draftOf, emptyLive, foldLive } from "./live.js";
 
 const $ = (id) => document.getElementById(id);
 const dialog = $("dialog");
 const drafts = new Map();
+// The page SDK the server serves beside this workbench; an older server has none, and then the
+// page polls. Imported only when a question is followed, by a name in a variable so that no
+// tool tries to resolve the file ahead of time.
+const SDK = "../sdk/workbench.js";
+// The open question is followed live and refreshes the page the moment its task ends, so the
+// list can be polled slowly; without the page SDK it is polled at the old pace.
+const POLL_MS = 5000;
+const FALLBACK_POLL_MS = 2500;
+// The answer is saved a moment after the task ends: look again a few times before giving up.
+const SETTLE_RETRY_MS = [0, 400, 1200, 2500];
+// A status's colour: running shares success with answered, its word tells them apart.
+const TONES = {
+  open: "attention",
+  running: "success",
+  answered: "success",
+  resolved: "done",
+  failed: "danger",
+};
 let preferred;
 try {
   preferred = localStorage.getItem("penguin.support.lang") || localStorage.getItem("penguin.lang");
@@ -21,6 +40,13 @@ let loaded = false;
 let requestVersion = 0;
 let listSignature = "";
 let detailSignature = "";
+let sdk; // undefined until tried, null when it cannot be loaded
+let sdkLoad = null;
+let live = null; // the open question's reader: { id, sessionId, reader, view, settling }
+let stopping = null; // null, "ask" or "stopping"
+let liveQueued = false;
+let shownDraft = "";
+let pollTimer;
 
 async function api(route, body) {
   const response = await fetch(
@@ -46,6 +72,14 @@ async function api(route, body) {
 function report(id, error) {
   $(id).textContent = error.message || copy.error;
   $(id).hidden = false;
+}
+
+// A question someone stopped says so in plain words rather than in the server's error.
+const errorText = (ticket) => (ticket.stopped ? copy.stopped : ticket.error);
+
+function badge(element, status) {
+  element.textContent = copy[status] || status;
+  element.dataset.tone = TONES[status] || "neutral";
 }
 
 function translate() {
@@ -93,23 +127,31 @@ function renderList() {
     const button = document.createElement("button");
     const summary = document.createElement("span");
     const title = document.createElement("strong");
-    const status = document.createElement("small");
+    const meta = document.createElement("span");
+    const status = document.createElement("span");
     const time = document.createElement("time");
     title.textContent = ticket.title || copy.newTicket;
-    status.textContent = copy[ticket.status] || ticket.status;
-    if (ticket.status === "running") status.dataset.waiting = ticket.id;
+    meta.className = "meta";
+    status.className = "wb-badge";
+    badge(status, ticket.status);
+    meta.append(status);
+    if (ticket.status === "running") {
+      const estimate = document.createElement("small");
+      estimate.dataset.waiting = ticket.id;
+      meta.append(estimate);
+    }
     time.dateTime = ticket.updatedAt;
     time.textContent = new Date(ticket.updatedAt).toLocaleDateString(language);
     button.dataset.ticket = ticket.id;
     button.onclick = () => showTicket(ticket.id);
-    summary.append(title, status);
+    summary.append(title, meta);
     button.append(summary, time);
     row.append(button);
     return row;
   });
   if (!rows.length) {
     const empty = document.createElement("li");
-    empty.className = "empty muted";
+    empty.className = "empty wb-muted";
     empty.textContent = !loaded
       ? copy.loading
       : query || filter !== "all"
@@ -201,7 +243,7 @@ function renderTicket() {
   if (signature !== detailSignature) {
     detailSignature = signature;
     $("dialog-title").textContent = ticket.title || copy.newTicket;
-    $("status").textContent = ticket.status === "running" ? copy.working : copy[ticket.status];
+    badge($("status"), ticket.status);
     const messages = ticket.messages.map((message) => {
       const article = document.createElement("article");
       const heading = document.createElement("h3");
@@ -214,8 +256,9 @@ function renderTicket() {
       return article;
     });
     $("messages").replaceChildren(...messages);
-    $("dialog-error").hidden = !ticket.error;
-    if (ticket.error) report("dialog-error", new Error(ticket.error));
+    const error = errorText(ticket);
+    $("dialog-error").hidden = !error;
+    if (error) report("dialog-error", new Error(error));
   }
   const disabled = busy || ticket.status === "running";
   $("resolve").textContent = ticket.status === "resolved" ? copy.reopen : copy.resolve;
@@ -247,7 +290,7 @@ function updateWaiting() {
     .forEach((element) => {
       const ticket = tickets.find((item) => item.id === element.dataset.waiting);
       if (!ticket) return;
-      const text = `${copy.running} · ${waitingText(ticket).estimate}`;
+      const text = waitingText(ticket).estimate;
       if (element.textContent !== text) element.textContent = text;
     });
   const ticket = tickets.find((item) => item.id === selected);
@@ -258,11 +301,122 @@ function updateWaiting() {
   }
 }
 
+// Following the open question live: one reader, only while its dialog is open on a question
+// being researched and the page is shown. Everything else, and every server without the page
+// SDK, is polling.
+function loadSdk() {
+  sdkLoad ??= import(SDK).then(
+    (module) => (sdk = module),
+    () => {
+      sdk = null;
+      schedulePoll();
+    },
+  );
+  return sdkLoad;
+}
+
+function syncLive() {
+  const ticket = tickets.find((item) => item.id === selected);
+  const wanted =
+    dialog.open && !document.hidden && ticket?.status === "running" && sdk !== null ? ticket : null;
+  if (live && live.id === wanted?.id && live.sessionId === wanted.sessionId) return;
+  if (live) {
+    live.reader?.close();
+    live = null;
+    stopping = null;
+  }
+  if (!wanted) return;
+  const current = {
+    id: wanted.id,
+    sessionId: wanted.sessionId,
+    reader: null,
+    view: emptyLive(),
+    settling: false,
+  };
+  live = current;
+  loadSdk().then(() => {
+    if (live !== current) return;
+    if (sdk) {
+      try {
+        // The latest task is enough: it holds the Request being written.
+        current.reader = sdk.followSession(current.sessionId, { tailLimit: 1 });
+        current.reader.on("event", ({ record }) => onRecord(current, record));
+        current.reader.on("reset", () => {
+          current.view = emptyLive();
+          queueLive();
+        });
+        // Refused for good (the conversation is gone): polling carries on.
+        current.reader.on("error", () => (current.reader = null));
+      } catch {
+        current.reader = null;
+      }
+    }
+    renderLive();
+  });
+}
+
+function onRecord(current, record) {
+  if (live !== current) return;
+  current.view = foldLive(current.view, record);
+  if (!record.origin?.length && record.payload?.type === "task_end") settle(current);
+  queueLive();
+}
+
+// The task ended: show the answer now instead of at the next poll.
+async function settle(current) {
+  if (current.settling) return;
+  current.settling = true;
+  try {
+    for (const wait of SETTLE_RETRY_MS) {
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (live !== current || current.view.running) return;
+      await refresh();
+      if (tickets.find((item) => item.id === current.id)?.status !== "running") return;
+    }
+  } finally {
+    current.settling = false;
+  }
+}
+
+function queueLive() {
+  if (liveQueued) return;
+  liveQueued = true;
+  queueMicrotask(() => {
+    liveQueued = false;
+    renderLive();
+  });
+}
+
+function setText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
+}
+
+function renderLive() {
+  const ticket = tickets.find((item) => item.id === selected);
+  const running = ticket?.status === "running";
+  $("live").hidden = !running;
+  $("stop").hidden = !running || !sdk || stopping !== null;
+  $("stop-confirm").hidden = !running || stopping === null;
+  $("stop-yes").disabled = $("stop-no").disabled = stopping === "stopping";
+  setText($("stop-ask"), stopping === "stopping" ? copy.stopping : copy.stopAsk);
+  setText($("live-heading"), `${copy.title} · ${copy.draft}`);
+  const view = running && live?.reader ? live.view : emptyLive();
+  const activity = view.running === false ? null : copy.activity[view.activity];
+  setText($("activity"), activity || copy.working);
+  const draft = draftOf(view);
+  if (draft !== shownDraft) {
+    shownDraft = draft;
+    $("draft").replaceChildren(...(draft ? [answerNode(draft)] : []));
+  }
+}
+
 function render() {
   renderList();
   $("new").disabled = busy;
   $("submit").disabled = busy;
   renderTicket();
+  syncLive();
+  renderLive();
   updateWaiting();
 }
 
@@ -279,6 +433,8 @@ function showTicket(id) {
   $("followup").elements.text.value = drafts.get(id) || "";
   openDialog();
   renderTicket();
+  syncLive();
+  renderLive();
   updateWaiting();
   $("dialog-title").focus();
 }
@@ -295,6 +451,16 @@ async function refresh() {
   } catch (error) {
     if (version === requestVersion) report("page-error", error);
   }
+}
+
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, sdk === null ? FALLBACK_POLL_MS : POLL_MS);
+}
+
+async function poll() {
+  if (!document.hidden && !busy) await refresh();
+  schedulePoll();
 }
 
 async function mutate(action) {
@@ -351,11 +517,13 @@ dialog.addEventListener("keydown", (event) => {
   dialog.close();
 });
 dialog.addEventListener("close", () => {
+  syncLive();
   const row = [...$("list").querySelectorAll("button")].find(
     (button) => button.dataset.ticket === selected,
   );
   (row || $("new")).focus();
 });
+document.addEventListener("visibilitychange", render);
 $("create").onsubmit = async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -386,7 +554,34 @@ $("resolve").onclick = () => {
   );
 };
 $("retry").onclick = () => mutate(() => api("/tickets/" + selected, { action: "retry" }));
-$("search").oninput = $("filter").onchange = renderList;
+$("stop").onclick = () => {
+  stopping = "ask";
+  renderLive();
+  $("stop-no").focus();
+};
+$("stop-no").onclick = () => {
+  stopping = null;
+  renderLive();
+  $("stop").focus();
+};
+$("stop-yes").onclick = async () => {
+  const ticket = tickets.find((item) => item.id === selected);
+  if (!sdk || ticket?.status !== "running") return;
+  stopping = "stopping";
+  renderLive();
+  try {
+    // Still "Stopping…" until the question shows as stopped; nothing to wait for when idle.
+    if (!(await sdk.abortSession(ticket.sessionId))) stopping = null;
+  } catch {
+    stopping = null;
+    report("dialog-error", new Error(copy.error));
+  }
+  await refresh();
+};
+$("search").oninput = $("filter").onchange = () => {
+  renderList();
+  updateWaiting();
+};
 $("locale").onchange = () => {
   language = $("locale").value;
   try {
@@ -396,16 +591,7 @@ $("locale").onchange = () => {
 };
 translate();
 refresh();
+schedulePoll();
 setInterval(() => {
   if (!document.hidden) updateWaiting();
 }, 1000);
-let refreshing = false;
-setInterval(async () => {
-  if (document.hidden || refreshing || busy) return;
-  refreshing = true;
-  try {
-    await refresh();
-  } finally {
-    refreshing = false;
-  }
-}, 2500);

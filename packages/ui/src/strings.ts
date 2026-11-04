@@ -13,15 +13,16 @@
  * A key joins the interface when a component that moves into the package needs one; the app's
  * mapping from its dictionaries must then cover it in every language it ships.
  *
- * One group is chrome rather than an accessibility fallback: `a2ui`, the words around the
+ * Two groups are chrome rather than accessibility fallbacks. `a2ui` holds the words around the
  * components a model writes into its reply (a choice's fill button, a callout's tone name, a
  * widget's labels and units). Those blocks render from inside Markdown, where no caller stands
  * between the reply and the block to pass copy down as props, so their few words come from here
- * like the rest.
+ * like the rest. `reader` holds the Markdown reader's controls (its outline and its find), which
+ * the file browser and the preview pane draw for their callers, who pass no copy for them.
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
-import type { A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
 
 /** The words around the A2UI blocks a reply may hold (components/content/a2ui). */
 export interface A2uiStrings {
@@ -52,6 +53,10 @@ export interface A2uiStrings {
   /** A form's number stepper: the buttons that add and subtract one step. */
   stepUp: string;
   stepDown: string;
+  /** A form field's error line when the model gave no hint and the rule has no symbols. */
+  invalid: string;
+  /** A form's dropdown: its empty first row, when the model wrote no placeholder. */
+  choose: string;
   /** The weather conditions a weather widget names, by the catalog's condition key. */
   conditions: Readonly<Record<A2uiWeatherCondition, string>>;
   /** A snapshot widget's head: when its data was read ("As of 14:05"). */
@@ -89,6 +94,69 @@ export interface A2uiStrings {
   /** Which way a reading moved, read out before its change. */
   deltaUp: string;
   deltaDown: string;
+  /**
+   * A chart's kind ("Bar chart"): its accessible name when the model gave no title, and the lead
+   * of the summary a screen reader hears instead of the picture.
+   */
+  chartKind: Readonly<Record<A2uiChartKind, string>>;
+  /** A chart summary's counts: the categories (slices, bins) and the series. */
+  categories: (n: number) => string;
+  seriesCount: (n: number) => string;
+  /** The system-resource board's accessible name when the model named no host. */
+  resources: string;
+  /** The board's readings and sections. */
+  cpu: string;
+  memory: string;
+  swap: string;
+  disk: string;
+  network: string;
+  load: string;
+  uptime: string;
+  /** The network chart's two series. */
+  received: string;
+  sent: string;
+  /** The network chart's caption: its readings carry no times, only their count and order. */
+  lastReadings: (n: number) => string;
+}
+
+/** The Markdown reader's controls (components/content/markdown-reader). */
+export interface ReaderStrings {
+  /** The outline: its rail's title and accessible name, and the name of the button that opens it. */
+  outline: string;
+  /** The find button's name and tooltip. */
+  find: string;
+  /** The find box's placeholder and accessible name. */
+  findPlaceholder: string;
+  /** The find bar's steps and its close. */
+  previousMatch: string;
+  nextMatch: string;
+  closeFind: string;
+  /** The counter while the query matches nothing. */
+  noResults: string;
+}
+
+/** The problem report's words (components/report): its action, its dialog, the crash notice. */
+export interface ReportStrings {
+  /** The text action that opens a report. */
+  action: string;
+  /** The report dialog's title. */
+  title: string;
+  /** The dialog's lead: what an error like this usually is, and what reporting it does. */
+  lead: string;
+  /** The line under it: what was taken out, and to check before sending. */
+  check: string;
+  /** The report block's accessible name. */
+  label: string;
+  /** The press that copies the report, and what it says once it did or could not. */
+  copy: string;
+  copied: string;
+  copyFailed: string;
+  /** The link to the project's bug form. */
+  fileIssue: string;
+  /** The crash notice's line, in the transcript marker's shape ("[Error]: …"). */
+  crashed: string;
+  /** The crash notice's press that reloads the page. */
+  reload: string;
 }
 
 export interface UiStrings {
@@ -134,6 +202,10 @@ export interface UiStrings {
   resizeWidth: string;
   /** The name of the handle on a resizable dialog's bottom border (`PagedDialog`). */
   resizeHeight: string;
+  /** The Markdown reader's words. */
+  reader: ReaderStrings;
+  /** The problem report's words. */
+  report: ReportStrings;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -171,6 +243,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     showSource: "Show source",
     stepUp: "Increase",
     stepDown: "Decrease",
+    invalid: "Not a valid value",
+    choose: "Choose…",
     conditions: {
       clear: "Clear",
       "partly-cloudy": "Partly cloudy",
@@ -208,6 +282,51 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     done: "Done",
     deltaUp: "up",
     deltaDown: "down",
+    chartKind: {
+      line: "Line chart",
+      area: "Area chart",
+      bar: "Bar chart",
+      pie: "Pie chart",
+      scatter: "Scatter plot",
+      histogram: "Histogram",
+      gauge: "Gauge",
+    },
+    categories: (n) => `${n} ${n === 1 ? "category" : "categories"}`,
+    seriesCount: (n) => `${n} series`,
+    resources: "System resources",
+    cpu: "CPU",
+    memory: "Memory",
+    swap: "Swap",
+    disk: "Disks",
+    network: "Network",
+    load: "Load",
+    uptime: "Uptime",
+    received: "Received",
+    sent: "Sent",
+    lastReadings: (n) => `Last ${n} readings`,
+  },
+  reader: {
+    outline: "Outline",
+    find: "Find in document",
+    findPlaceholder: "Find in document…",
+    previousMatch: "Previous match",
+    nextMatch: "Next match",
+    closeFind: "Close find",
+    noResults: "No results",
+  },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
   },
   resizeWidth: "Resize width",
   resizeHeight: "Resize height",

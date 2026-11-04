@@ -24,8 +24,8 @@ import type {
   InlineThinkingPayload,
   McpConnectBeginPayload,
   McpConnectEndPayload,
-  OmniMessage,
-  OmniPayload,
+  AmspRecord,
+  AmspPayload,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -43,10 +43,12 @@ import type {
 } from "@prismshadow/penguin-core";
 import type {
   ForkTraceResult,
+  HistoryTraceFile,
+  HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
 } from "../services/trace-service.js";
-import type { MessageCursor, MessagesHistoryFrame } from "../services/message-window.js";
+import type { MessageCursor } from "../services/message-window.js";
 
 /** TraceIndexStore: the mechanism TraceIndexRepo implements. */
 @Interface()
@@ -111,7 +113,7 @@ export abstract class TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void;
   abstract removeSession(projectId: string, agentId: string, sessionId: string): void;
   abstract removeAgent(projectId: string, agentId: string): void;
@@ -143,14 +145,17 @@ export abstract class Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult>;
-
-  /** Streamed-history read (GET /messages?frames=1): NDJSON frames, see MessagesHistoryFrame. */
-  abstract readMessagesFrames(
+  abstract readHistoryWindow(
     projectId: string,
     agentId: string,
     sessionId: string,
-    req: MessagesPageRequest,
-  ): Promise<MessagesHistoryFrame[]>;
+    req: MessagesPageRequest | { kind: "full" },
+  ): Promise<HistoryWindowRead>;
+  abstract historyTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<HistoryTraceFile[]>;
   abstract forkSessionTrace(
     projectId: string,
     agentId: string,
@@ -188,6 +193,14 @@ export abstract class Traces {
     agentId: string,
     sessionId: string,
     index: number,
+  ): Promise<TraceAnalysisResponse>;
+  /**
+   * The same analysis of one Trace file's records read elsewhere — a machine's file from the
+   * hub's copy (machines/history-routes.ts) — priced with `projectId`'s rates.
+   */
+  abstract analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
   ): Promise<TraceAnalysisResponse>;
   abstract agentTraces(
     projectId: string,

@@ -9,7 +9,7 @@
  * every Chat Completions client posts /chat/completions.
  */
 import { describe, expect, it } from "vitest";
-import { MODEL_CATALOG } from "@prismshadow/penguin-core/model-catalog";
+import { MODEL_CATALOG } from "@prismshadow/penguin-server/model-catalog";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
 
 describe("protocolPathForModel", () => {
@@ -78,6 +78,7 @@ describe("protocolPathForModel", () => {
       "fireworks",
       "siliconflow",
       "atlascloud",
+      "runcrate",
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",

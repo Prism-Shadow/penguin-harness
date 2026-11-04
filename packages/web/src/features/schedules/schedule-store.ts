@@ -26,14 +26,24 @@
  * blanking them for the length of a round trip. Growth is bounded by how many Projects one
  * sitting opens, and an entry is a list already loaded once, so dropping one would trade a few
  * kilobytes back for exactly the blank-then-refetch this cache exists to remove.
+ *
+ * A Project's tasks live on every server that runs its Sessions: this one, and each machine. A
+ * task bound to a Session on a machine is a file in that machine's Agent, and only that machine
+ * lists it, fires it and stores a change to it — so an entry is one Project on ONE server
+ * (`machineId` null for this one). The panel reads the server its conversation is on; the session
+ * list reads this server and every machine whose Sessions it lists, since its rows come from all
+ * of them. A machine's schedule events reach the store through this server's relay, as that
+ * machine's.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 
 interface Entry {
   projectId: string;
+  /** The server whose tasks these are: a machine's own id, or null for this server. */
+  machineId: string | null;
   /** Null until this Project has answered once; a refetch keeps the list it already has. */
   items: ProjectScheduleItem[] | null;
   /** Last failure text, cleared by the next success. The panel shows it only while `items` is null. */
@@ -44,27 +54,31 @@ interface Entry {
   readers: number;
 }
 
-/** One entry per Project, kept for the lifetime of the tab (see the header). */
+/** One entry per Project and server, kept for the lifetime of the tab (see the header). */
 const entries = new Map<string, Entry>();
 
-function entryFor(projectId: string): Entry {
-  const existing = entries.get(projectId);
+const keyOf = (projectId: string, machineId: string | null) => `${projectId}\0${machineId ?? ""}`;
+
+function entryFor(projectId: string, machineId: string | null): Entry {
+  const key = keyOf(projectId, machineId);
+  const existing = entries.get(key);
   if (existing) return existing;
   const created: Entry = {
     projectId,
+    machineId,
     items: null,
     error: null,
     inflight: null,
     readers: 0,
   };
-  entries.set(projectId, created);
+  entries.set(key, created);
   return created;
 }
 
 /** Lookup that creates nothing: a render must not add an entry for a Project nobody is loading. */
-function peek(projectId: string | null): Entry | undefined {
+function peek(projectId: string | null, machineId: string | null): Entry | undefined {
   if (projectId === null) return undefined;
-  return entries.get(projectId);
+  return entries.get(keyOf(projectId, machineId));
 }
 
 let version = 0;
@@ -80,14 +94,37 @@ export function schedulesVersion(): number {
   return version;
 }
 
-/** This Project's loaded list, or null while it has never answered. */
-export function scheduleItems(projectId: string | null): ProjectScheduleItem[] | null {
-  return peek(projectId)?.items ?? null;
+/** This Project's loaded list on that server, or null while it has never answered. */
+export function scheduleItems(
+  projectId: string | null,
+  machineId: string | null = null,
+): ProjectScheduleItem[] | null {
+  return peek(projectId, machineId)?.items ?? null;
 }
 
-/** This Project's last failure text, or null. */
-export function scheduleError(projectId: string | null): string | null {
-  return peek(projectId)?.error ?? null;
+/**
+ * One Project's lists on this server and on each of `machineIds`, joined: Session ids are unique
+ * across servers, so a task's binding still names exactly one row. Null only while this server
+ * has never answered; a machine that has not answered yet adds nothing until it does.
+ */
+export function scheduleItemsAcross(
+  projectId: string | null,
+  machineIds: readonly string[],
+): ProjectScheduleItem[] | null {
+  const local = scheduleItems(projectId);
+  if (local === null) return null;
+  return [
+    ...local,
+    ...machineIds.flatMap((machineId) => scheduleItems(projectId, machineId) ?? []),
+  ];
+}
+
+/** This Project's last failure text on that server, or null. */
+export function scheduleError(
+  projectId: string | null,
+  machineId: string | null = null,
+): string | null {
+  return peek(projectId, machineId)?.error ?? null;
 }
 
 /**
@@ -96,13 +133,16 @@ export function scheduleError(projectId: string | null): string | null {
  * calls for a Project share its request, and a call for another Project issues its own instead of
  * waiting on a promise that will answer about somebody else.
  */
-export function refreshSchedules(projectId: string | null): Promise<void> {
+export function refreshSchedules(
+  projectId: string | null,
+  machineId: string | null = null,
+): Promise<void> {
   if (projectId === null) return Promise.resolve();
-  const entry = entryFor(projectId);
+  const entry = entryFor(projectId, machineId);
   if (entry.inflight) return entry.inflight;
   const request = (async () => {
     try {
-      const res = await api.listProjectSchedules(projectId);
+      const res = await api.listProjectSchedules(projectId, machineId);
       entry.items = res.schedules;
       entry.error = null;
     } catch (e) {
@@ -125,9 +165,12 @@ export function refreshSchedules(projectId: string | null): Promise<void> {
  * spends a request on an answer that would be re-read anyway when it next comes on screen.
  * Releasing keeps the cached list, which is precisely what the reader shows again on return.
  */
-export function retainSchedules(projectId: string | null): () => void {
+export function retainSchedules(
+  projectId: string | null,
+  machineId: string | null = null,
+): () => void {
   if (projectId === null) return () => {};
-  const entry = entryFor(projectId);
+  const entry = entryFor(projectId, machineId);
   entry.readers += 1;
   return () => {
     entry.readers -= 1;
@@ -135,20 +178,21 @@ export function retainSchedules(projectId: string | null): () => void {
 }
 
 /**
- * A schedule event landed for some Project (state/sessions.tsx, chat-page.tsx): refresh only when
- * that Project is on screen, so a task firing in another Project costs no request.
+ * A schedule event landed for some Project on some server (state/sessions.tsx, chat-page.tsx):
+ * refresh only when that Project's list on that server is on screen, so a task firing in another
+ * Project, or on a machine nothing shows, costs no request.
  */
-export function noteScheduleEvent(projectId: string): void {
-  const entry = peek(projectId);
+export function noteScheduleEvent(projectId: string, machineId: string | null = null): void {
+  const entry = peek(projectId, machineId);
   if (entry === undefined || entry.readers === 0) return;
-  void refreshSchedules(projectId);
+  void refreshSchedules(projectId, machineId);
 }
 
-/** Regaining focus re-reads every Project a mounted reader is showing, and no other. */
+/** Regaining focus re-reads every list a mounted reader is showing, and no other. */
 const onFocus = (): void => {
   if (document.visibilityState !== "visible") return;
   for (const entry of [...entries.values()]) {
-    if (entry.readers > 0) void refreshSchedules(entry.projectId);
+    if (entry.readers > 0) void refreshSchedules(entry.projectId, entry.machineId);
   }
 };
 
@@ -181,16 +225,56 @@ export function subscribeSchedules(listener: () => void): () => void {
 export function useProjectSchedules(
   projectId: string | null,
   refreshKey: string,
+  /** The server the reader shows: a machine's own id, or null for this one. */
+  machineId: string | null = null,
 ): { items: ProjectScheduleItem[] | null; error: string | null } {
   useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
   // Held for as long as this reader is mounted, and deliberately not keyed on `refreshKey`:
   // moving between two conversations of one Project must not release the entry and take it again.
-  useEffect(() => retainSchedules(projectId), [projectId]);
+  useEffect(() => retainSchedules(projectId, machineId), [projectId, machineId]);
   useEffect(() => {
-    void refreshSchedules(projectId);
-  }, [projectId, refreshKey]);
+    void refreshSchedules(projectId, machineId);
+  }, [projectId, machineId, refreshKey]);
   return {
-    items: scheduleItems(projectId),
-    error: scheduleError(projectId),
+    items: scheduleItems(projectId, machineId),
+    error: scheduleError(projectId, machineId),
   };
+}
+
+/**
+ * One Project's tasks across servers — this one and each of `machineIds` — for a reader that
+ * draws Sessions of all of them (the session list): {@link scheduleItemsAcross}, held and
+ * refreshed as {@link useProjectSchedules} holds one list.
+ */
+export function useSchedulesAcross(
+  projectId: string | null,
+  machineIds: readonly string[],
+  refreshKey: string,
+): ProjectScheduleItem[] | null {
+  const seen = useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
+  /** The machines as one string: an unchanged set keeps the effects below still. */
+  const machinesKey = machineIds.join(",");
+  useEffect(() => {
+    const sources = [null, ...machinesKey.split(",").filter((id) => id !== "")];
+    const releases = sources.map((machineId) => retainSchedules(projectId, machineId));
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [projectId, machinesKey]);
+  useEffect(() => {
+    for (const machineId of [null, ...machinesKey.split(",").filter((id) => id !== "")]) {
+      void refreshSchedules(projectId, machineId);
+    }
+  }, [projectId, machinesKey, refreshKey]);
+  // One array per store change, not per render: the caller derives its row marks from it.
+  return useMemo(
+    () =>
+      scheduleItemsAcross(
+        projectId,
+        machinesKey.split(",").filter((id) => id !== ""),
+      ),
+    // `seen` is the store's version: the lists read here change exactly when it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [seen, projectId, machinesKey],
+  );
 }

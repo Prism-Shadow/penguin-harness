@@ -162,7 +162,11 @@ export class TitleGenerator implements TitleNotifier {
       // The one-shot request's real consumption is metered as usual (converted to token_usage and handed to recorder, attributed to this Session).
       if (res.usage) {
         try {
-          await this.deps.recorder.record(ctx, tokenUsage(emptyTokenCounts(), res.usage));
+          await this.deps.recorder.record(
+            ctx,
+            tokenUsage(emptyTokenCounts(), res.usage),
+            "standalone",
+          );
         } catch (err) {
           this.log(
             `[title] Usage insert failed: ${err instanceof Error ? err.message : String(err)}`,

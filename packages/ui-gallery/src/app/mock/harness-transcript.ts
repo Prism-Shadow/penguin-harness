@@ -15,7 +15,8 @@
  *    divider the next context's `session_meta` draws;
  * 7. a goal run on the new model: the round-1 protocol behind the person's objective, a steering
  *    message inside that round, the stop hook's injected round 2, and the goal banner;
- * 8. every Task's stats line.
+ * 8. every Task's stats line, and in the Trace every Task's `task_begin` / `task_end` pair (none
+ *    around the model switch, which is no Task).
  *
  * Plus the small desk Session an organization's scheduler opened (`[org_trigger]`), which the
  * development list never shows.
@@ -35,8 +36,8 @@ import {
   markerBlock,
   MARKER_TAGS,
   userSteeringText,
-} from "@prismshadow/penguin-core/markers";
-import type { BackgroundTaskDone } from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
+import type { BackgroundTaskDone } from "@prismshadow/amsp/markers";
 import { IDS } from "./ids";
 import {
   abortEvent,
@@ -45,6 +46,8 @@ import {
   meta,
   requestBegin,
   requestEnd,
+  taskBegin,
+  taskEnd,
   thinking,
   tokenUsage,
   toolCall,
@@ -52,7 +55,7 @@ import {
   userText,
 } from "./transcripts";
 import type { ModelRef, Transcript } from "./transcripts";
-import type { Lang, OmniMessage } from "./types";
+import type { Lang, AmspRecord } from "./types";
 
 const DAY = 86_400_000;
 const MIN = 60_000;
@@ -117,7 +120,7 @@ function backgroundNotice(
   done: BackgroundTaskDone,
   cmd: string,
   output: string,
-): OmniMessage {
+): AmspRecord {
   const verb = done.status === "completed" ? "finished" : "failed";
   const head = `Background command ${verb}: \`${cmd}\` (process_id ${done.id}) — ${done.detail}`;
   return userText(ms, buildBackgroundTaskDoneMessage(done, `${head}\n\n${output}`), "harness");
@@ -167,7 +170,7 @@ function goalRound(objective: string, round: number, tokensUsed: number): string
 }
 
 /** The goal plugin's stop-hook record: its one line for people and its scalar output. */
-function goalHook(ms: number, round: number, tokensUsed: number, done: boolean): OmniMessage {
+function goalHook(ms: number, round: number, tokensUsed: number, done: boolean): AmspRecord {
   const tokens = `tokens ${tokensUsed} / ${GOAL_BUDGET}`;
   return event(ms, {
     type: "hook",
@@ -207,9 +210,10 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
   );
   const checkLinks = (description: string) => ({ cmd: LINKS.cmd, description });
 
-  const history: OmniMessage[] = [
+  const history: AmspRecord[] = [
     // ---- The handoff, the prompt and the first run's bootstrap -------------------------------
     meta(a(0), id, ref, IDS.workspace),
+    taskBegin(a(0)),
     userText(
       a(0),
       buildHandoffMessage({
@@ -308,8 +312,10 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
     ),
     tokenUsage(a(24.1), 21_600, 8_100),
     requestEnd(a(24.1)),
+    taskEnd(a(24.1)),
 
     // ---- Task: the sync's notice starts it; the link check's failure is steered in -----------
+    taskBegin(a(190)),
     backgroundNotice(
       a(190),
       { kind: "command", id: SYNC.id, status: "completed", detail: "exit code 0" },
@@ -374,8 +380,10 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     ),
     tokenUsage(a(214.1), 33_900, 9_400),
     requestEnd(a(214.1)),
+    taskEnd(a(214.1)),
 
     // ---- Task: the weekly schedule fires; the first request reconnects once -------------------
+    taskBegin(b(0)),
     userText(
       b(0),
       buildScheduledMessage(
@@ -417,8 +425,10 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     ),
     tokenUsage(b(47.1), 45_200, 9_800),
     requestEnd(b(47.1)),
+    taskEnd(b(47.1)),
 
     // ---- Task: the person interrupts the reply ------------------------------------------------
+    taskBegin(b(600)),
     userText(
       b(600),
       L("顺便把 hooks.md 的导语也改写一下。", "Rewrite the intro of hooks.md while you're at it."),
@@ -430,12 +440,13 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
         "导语现在先介绍各个钩子点，再引导读者去看",
         "The intro now opens with the hook points and sends readers to",
       ),
-      "aborted",
     ),
     event(b(607.1), { type: "request_end", status: "aborted" }),
     abortEvent(b(607.1)),
+    taskEnd(b(607.1)),
 
     // ---- Task: the provider refuses the request ----------------------------------------------
+    taskBegin(b(660)),
     userText(
       b(660),
       L(
@@ -450,6 +461,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
       error_code: "rejected",
       error_message: "402 Insufficient Balance",
     }),
+    taskEnd(b(662.8)),
 
     // ---- The model switch: a summarize compaction, then the next context on the new model -----
     event(b(720), {
@@ -479,7 +491,9 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     meta(b(741.4), id, SWITCHED_MODEL, IDS.workspace),
 
     // ---- Goal round 1: the objective, the protocol behind it, a steering message inside ------
+    // The switch wrote the summary with the new context's head; the goal's Task opens behind it.
     userText(b(780), buildContextSummaryText(summary)),
+    taskBegin(b(780)),
     userText(b(780), objective),
     userText(b(780), goalRound(objective, 1, 0), "harness"),
     requestBegin(b(780.4)),
@@ -527,8 +541,10 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     tokenUsage(b(829.1), 79_800, 13_700),
     requestEnd(b(829.1)),
     goalHook(b(829.6), 2, 18_200, false),
+    taskEnd(b(829.6)),
 
     // ---- Goal round 2: injected by the stop hook; the goal ends complete ---------------------
+    taskBegin(b(830)),
     userText(b(830), goalRound(objective, 2, 18_200), "harness"),
     requestBegin(b(830.4)),
     thinking(
@@ -573,6 +589,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     tokenUsage(b(878.1), 101_400, 15_200),
     requestEnd(b(878.1)),
     goalHook(b(END_SEC), 2, 31_900, true),
+    taskEnd(b(END_SEC)),
   ];
 
   return {
@@ -593,7 +610,7 @@ export function orgDeskTranscript(lang: Lang, now: number, ref: ModelRef): Trans
   const { startedAt } = orgDeskTimeline(now);
   const s = (sec: number) => startedAt + sec * 1000;
   const weekAgo = iso(startedAt - 7 * DAY).slice(0, 10);
-  const sessionMeta: OmniMessage = {
+  const sessionMeta: AmspRecord = {
     timestamp: iso(s(0)),
     type: "session_meta",
     payload: {

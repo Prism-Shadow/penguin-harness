@@ -8,10 +8,13 @@
  */
 import http from "node:http";
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
+import { MachineEventHub } from "../src/machines/event-hub.js";
+import { MachineSockets } from "../src/machines/machine-sockets.js";
+import type { Sink } from "../src/machines/machine-sockets.js";
 
 /** A machine's socket endpoint the test scripts: `answer` decides what a call frame gets. */
 async function machine(answer: (ws: WebSocket, frame: { id: number }) => void) {
@@ -44,6 +47,78 @@ async function errorCode(res: Response): Promise<string> {
 const opensAll = (ws: WebSocket, frame: { id: number }) =>
   ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
 
+describe("the relay subscription cleanup", () => {
+  const target = { agent: new http.Agent(), port: 1, cookie: "", session: 1 };
+
+  function scripted(begin: (sink: Sink) => void) {
+    const sockets = new MachineSockets(() => undefined);
+    const events = new MachineEventHub(sockets, () => undefined);
+    const detach = vi.fn();
+    let sink: Sink | null = null;
+    vi.spyOn(events, "subscribe").mockImplementation((_machine, _target, _id, reader) => {
+      sink = reader;
+      begin(reader);
+      return detach;
+    });
+    const relay = new MachineSocketRelay(() => undefined, { sockets, events });
+    return { relay, detach, sink: () => sink! };
+  }
+
+  it.each([403, 404])("detaches once after a synchronous non-stream %s answer", async (status) => {
+    const body = { error: { code: "remote", message: "remote refusal" } };
+    const script = scripted((sink) => sink.onResponse(status, body));
+    const response = await script.relay.stream("m", target, {
+      path: "/api/events",
+      lastEventId: null,
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual(body);
+    script.sink().onEnd();
+    script.sink().onResponse(500, null);
+    expect(script.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it("detaches once when begin ends synchronously before opening", async () => {
+    const script = scripted((sink) => sink.onEnd());
+    const response = await script.relay.stream("m", target, {
+      path: "/api/events",
+      lastEventId: null,
+    });
+    expect(response.status).toBe(502);
+    expect(await errorCode(response)).toBe("server_unreachable");
+    script.sink().onEnd();
+    expect(script.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["end", "cancel", "backpressure"])(
+    "detaches once after an open stream's %s",
+    async (mode) => {
+      const script = scripted((sink) => {
+        sink.onStart(200);
+        if (mode === "end") sink.onEnd();
+        if (mode === "backpressure") {
+          sink.onEvent({
+            id: 1,
+            event: "message",
+            eventId: "1",
+            data: "x".repeat(4 * 1024 * 1024),
+          });
+        }
+      });
+      const response = await script.relay.stream("m", target, {
+        path: "/api/events",
+        lastEventId: null,
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(script.detach).toHaveBeenCalledTimes(mode === "cancel" ? 0 : 1);
+      await response.body!.cancel();
+      script.sink().onEnd();
+      expect(script.detach).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
 describe("the machine socket relay", () => {
   let stop: (() => Promise<void>) | null = null;
   afterEach(async () => {
@@ -51,17 +126,13 @@ describe("the machine socket relay", () => {
     stop = null;
   });
 
-  it("cancels one stalled stream before it condemns the socket, and tears the socket down on the second in a row", async () => {
-    // One slow Session stream used to tear down the machine's whole socket at 8 s, taking every
-    // request in flight on it along (2026-10-21). The first stall cancels only that stream.
-    let calls = 0;
+  it("gives up on a stream the machine never opens, tears the socket down, and dials again next time", async () => {
+    let opens = 0;
     const m = await machine((ws, frame) => {
-      if ((frame as { cancel?: boolean }).cancel === true) return; // a cancelled call is no new call
-      calls += 1;
-      // The second call opens — a socket that serves again is not the dead one — and so does
-      // anything on the socket dialled after the tear-down.
-      if (calls === 2 || m.connections.length === 2)
-        ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
+      opens += 1;
+      // The first socket is the dead one: it heartbeats and says nothing. The second answers.
+      if (m.connections.length === 1) return;
+      ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
     });
     stop = m.close;
     const lines: string[] = [];
@@ -72,43 +143,19 @@ describe("the machine socket relay", () => {
       cookie: "penguin_session=x",
       session: 1,
     };
-    const stream = () =>
-      relay.stream("m1", target, { path: "/api/sessions/s1/stream", lastEventId: null });
 
-    const first = await stream();
+    const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(first.status).toBe(504); // answered with the reason — never forwarded over HTTP
     expect(await errorCode(first)).toBe("machine_stream_not_opened");
-    expect(
-      lines.some(
-        (l) => l.includes("not opened in 150 ms") && l.includes("cancelled that stream only"),
-      ),
-    ).toBe(true);
-    expect(m.connections).toHaveLength(1);
-    expect(m.connections[0]!.readyState).toBe(m.connections[0]!.OPEN); // one stall is not the socket
-
-    // A stream that opens clears the streak…
-    const opened = await stream();
-    expect(opened.status).toBe(200);
-    expect(opened.headers.get("content-type")).toBe("text/event-stream");
-
-    // …so the next stall is again the first in a row, and the socket stays.
-    expect((await stream()).status).toBe(504);
-    expect(m.connections[0]!.readyState).toBe(m.connections[0]!.OPEN);
-
-    // A second stall in a row is the socket's own failure: it is torn down…
-    expect((await stream()).status).toBe(504);
+    expect(opens).toBe(1);
+    expect(lines.some((l) => l.includes("not opened in 150 ms") && l.includes("m1"))).toBe(true);
+    // The dead socket was torn down…
     await new Promise((r) => setTimeout(r, 50));
-    expect(
-      lines.some(
-        (l) =>
-          l.includes("2 streams in a row never opened") && l.includes("terminating the socket"),
-      ),
-    ).toBe(true);
     expect(m.connections[0]!.readyState).toBe(m.connections[0]!.CLOSED);
-
     // …and the next stream dials afresh and opens.
-    const after = await stream();
-    expect(after.status).toBe(200);
+    const second = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
+    expect(second.status).toBe(200);
+    expect(second.headers.get("content-type")).toBe("text/event-stream");
     expect(m.connections).toHaveLength(2);
   });
 
@@ -130,12 +177,18 @@ describe("the machine socket relay", () => {
     expect(m.connections[0]!.readyState).toBe(m.connections[0]!.OPEN);
   });
 
-  it("gives up on a dial the machine accepts and never answers, and spares it a new dial for the cooldown", async () => {
+  it("gives up on a dial the machine accepts and never answers, and dials again next time", async () => {
     // A machine that takes the connection and never answers the upgrade: without a deadline
-    // the dial's promise stays pending and every later stream waits behind it. A dial that
-    // FAILED is remembered briefly too — dialling again per stream repeats the failure at once.
+    // the dial's promise stays pending and every later stream waits behind it. It answers no
+    // HTTP either, so it reads as a dial that failed, not as a server to restart.
     const held: net.Socket[] = [];
-    const silent = net.createServer((sock) => held.push(sock));
+    let upgrades = 0;
+    const silent = net.createServer((sock) => {
+      held.push(sock);
+      sock.once("data", (data: Buffer) => {
+        if (/^upgrade: websocket/im.test(data.toString())) upgrades += 1;
+      });
+    });
     await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
     const port = (silent.address() as { port: number }).port;
     stop = () =>
@@ -144,53 +197,18 @@ describe("the machine socket relay", () => {
         silent.close(() => resolve());
       });
     const lines: string[] = [];
-    const relay = new MachineSocketRelay((l) => lines.push(l), {
-      dialTimeoutMs: 100,
-      dialFailedForMs: 60_000,
-    });
+    const relay = new MachineSocketRelay((l) => lines.push(l), { dialTimeoutMs: 100 });
     const target = { agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 };
 
-    // A Session stream, not `/api/events`: the event hub answers its readers from its own
-    // subscription and re-frames the answer, while a relayed stream is handed the answer as is.
-    const stream = () =>
-      relay.stream("m1", target, { path: "/api/sessions/s1/stream", lastEventId: null });
-
     const started = Date.now();
-    const first = await stream();
+    const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(first.status).toBe(502);
     expect(await errorCode(first)).toBe("machine_socket_unavailable");
     expect(lines.some((l) => l.includes("no socket handshake in 100 ms"))).toBe(true);
-    // Inside the cooldown nothing is dialled: the caller is told when to come back.
-    const second = await stream();
-    expect(second.status).toBe(503);
-    expect(await errorCode(second)).toBe("not_connected");
-    expect(second.headers.get("retry-after")).toBe("60");
-    expect(held.length).toBe(1);
-  });
-
-  it("dials again once a failed dial's cooldown has passed", async () => {
-    const held: net.Socket[] = [];
-    const silent = net.createServer((sock) => held.push(sock));
-    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
-    const port = (silent.address() as { port: number }).port;
-    stop = () =>
-      new Promise<void>((resolve) => {
-        for (const sock of held) sock.destroy();
-        silent.close(() => resolve());
-      });
-    const relay = new MachineSocketRelay(() => undefined, {
-      dialTimeoutMs: 50,
-      dialFailedForMs: 40,
-    });
-    const target = { agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 };
-
-    const stream = () =>
-      relay.stream("m1", target, { path: "/api/sessions/s1/stream", lastEventId: null });
-    expect((await stream()).status).toBe(502);
-    await new Promise((r) => setTimeout(r, 80));
-    expect((await stream()).status).toBe(502);
-    expect(held.length).toBe(2);
+    // Not remembered as a refusal: the next stream dials again.
+    await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
+    expect(upgrades).toBe(2);
   });
 
   it("answers a machine that refuses the handshake with its reason, and does not ask again for a while", async () => {
@@ -248,48 +266,5 @@ describe("the machine socket relay", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(m.connections[0]!.readyState).toBe(m.connections[0]!.CLOSED);
     expect(m.connections[1]!.readyState).toBe(m.connections[1]!.OPEN);
-  });
-
-  it("hears at once, in the transport's words, over a closed channel", async () => {
-    // The dial fails the way the ssh kind's does when its SOCKS server does what OpenSSH's -D
-    // does for a port with nothing listening over there — close the connection with no reply
-    // (plugins/machine-ssh, whose test plays the SOCKS side). That must fail the stream now —
-    // before, the dial never settled, and every later stream to the machine waited behind it.
-    let connects = 0;
-    const agent = new http.Agent();
-    (agent as unknown as { createConnection: unknown }).createConnection = (
-      _options: unknown,
-      callback: (err: Error | null, socket?: net.Socket) => void,
-    ) => {
-      connects += 1;
-      setImmediate(() =>
-        callback(
-          new Error(
-            "the session closed the channel to 127.0.0.1:7364 before answering — nothing is listening there, or the session is going down",
-          ),
-        ),
-      );
-    };
-    const lines: string[] = [];
-    const relay = new MachineSocketRelay((l) => lines.push(l));
-    const target = { agent, port: 7364, cookie: "penguin_session=x", session: 1 };
-
-    const started = Date.now();
-    const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
-    expect(first.status).toBe(502); // answered with the transport's reason, never forwarded
-    expect(await errorCode(first)).toBe("machine_socket_unavailable");
-    expect(Date.now() - started).toBeLessThan(1_000);
-    expect(
-      lines.some(
-        (l) =>
-          l.includes("socket to m1 failed") && l.includes("closed the channel to 127.0.0.1:7364"),
-      ),
-    ).toBe(true);
-    // A failed dial, not an answered refusal: the machine is spared another dial for the
-    // cooldown, so the next stream is answered the reason rather than repeating it.
-    const second = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
-    expect(second.status).toBe(503);
-    expect(await errorCode(second)).toBe("not_connected");
-    expect(connects).toBe(1);
   });
 });

@@ -2,11 +2,32 @@
  * The Agent settings suites' world: a server behind the package's fetch fake ({@link stubFetch})
  * and the app frame the page and its dialogs render in.
  *
- * The server holds one Project the signed-in admin owns, with one Agent: its config (a PUT
+ * The server holds one Project the signed-in admin owns (and, when asked, a second one with no
+ * Agent of that id — {@link OTHER_PROJECT_ID}), with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
  * read back what was written with {@link AgentServer.writes}.
+ *
+ * It answers the plugin library too: this server's (`library`) and each machine's own, and an
+ * install on an Agent takes the named plugins' Skills from the library of the server that holds
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}).
+ *
+ * It can hold machines too ({@link FakeMachine}): connected ones answer through their proxy
+ * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
+ * here — and every other Agent request with the same one server's worth of state, the way the
+ * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
+ * A machine lists its own Sessions to the sidebar ({@link FakeMachine.sessions}), and a test can
+ * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
+ * hears of it through `publishMachinesChanged`, as the server's event would tell it). It can be
+ * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
+ * one read fail as an unreachable server does ({@link AgentServer.failNext}); one request, of
+ * any server, can be held on its own ({@link AgentServer.holdNext}), and what was answered so far
+ * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
+ *
+ * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
+ * answers them masked, and the state switch turns one on or off. This server answers which
+ * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -23,13 +44,20 @@ import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  AgentSummary,
   ChatDefaultsDto,
+  MachineInfo,
+  MessagingAccountHoldersResponse,
+  MessagingChannel,
+  MessagingChannelState,
+  PluginItem,
   AgentApiSettings,
   ModelsResponse,
   DirListResponse,
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
+  SessionInfo,
   SessionsBatchRequest,
   WorkbenchInfo,
   WorkbenchVersion,
@@ -39,16 +67,20 @@ import type {
 import { AuthProvider } from "../../src/state/auth";
 import { LocaleProvider } from "../../src/state/locale";
 import { ProjectProvider } from "../../src/state/project";
+import { MachinesProvider } from "../../src/state/machines";
 import { SessionsProvider } from "../../src/state/sessions";
 import { NavigationGuard } from "../../src/lib/unsaved/navigation-guard";
 import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
 import { ADMIN_ME } from "./admin-settings";
 import { mount } from "./dom";
+import { SignedIn } from "./signed-in";
 import { apiError, json, stubFetch } from "./fetch";
 import type { FakeFetch, FetchRequest } from "./fetch";
 
 export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";
+/** The second Project `agentServer({ otherProject: true })` lists: it has no Agent at all. */
+export const OTHER_PROJECT_ID = "other";
 
 const AGENT_PATH = `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}`;
 
@@ -128,8 +160,29 @@ function applyUpdate(res: AgentConfigResponse, update: AgentConfigUpdateRequest)
   };
 }
 
+/** A machine of the Project, installed and reached through this server's proxy. */
+export interface FakeMachine {
+  machineId: string;
+  /** Its ssh alias: what the pages write after a name. */
+  alias: string;
+  /** Being brought back: listed, but not connected, so nothing may be asked of it. */
+  reconnecting?: boolean;
+  /** The ids of its own Agents, in the order its list answers them (and they were created). */
+  agents: string[];
+  /** Its own plugin library (by default empty): what an Agent created there can start with. */
+  library?: PluginItem[];
+  /** The Sessions it lists to the sidebar (by default none), per Agent as its batch read asks. */
+  sessions?: SessionInfo[];
+}
+
 export interface AgentServer {
   fetch: FakeFetch;
+  /** The ids of a machine's own Agents now. */
+  machineAgents(machineId: string): string[];
+  /** The scheduled tasks of the Agent on a machine now (a machine's tasks are its own files). */
+  machineSchedules(machineId: string): ScheduleItem[];
+  /** The Skills installed on an Agent of this server (null) or of a machine. */
+  skillsOn(machineId: string | null, agentId: string): string[];
   /** The Agent's config as the server holds it now. */
   config(): AgentConfigResponse;
   /** The vault keys the server holds now, in order. */
@@ -146,9 +199,28 @@ export interface AgentServer {
   refuseNext(status: number, code: string, message?: string): void;
   /** Writes wait until {@link AgentServer.release} is called (to see a write in flight). */
   hold(): void;
+  /** Holds every answer of the machine until `release()`: a slow machine. */
+  hold(machineId: string): { release(): void };
   release(): void;
+  /** The next read matching `path` on that server (null: this one) answers 502 server_unreachable. */
+  failNext(machineId: string | null, path: RegExp): void;
+  /**
+   * The next read matching `path` on that server (null: this one) answers a web page instead —
+   * what a dev server or proxy that did not forward the request serves.
+   */
+  pageNext(machineId: string | null, path: RegExp): void;
+  /** Every request answered so far. */
+  requests(): ReadonlyArray<{ method: string; path: string; machine: string | null }>;
+  /** Holds the next request matching `path` on that server (null: this one) until `release()`. */
+  holdNext(machineId: string | null, path: RegExp): { release(): void };
+  /** The ids of this server's Agents now (a delete here removes one). */
+  localAgents(): string[];
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
+  /** Takes a machine out of reach (being brought back), or brings it back. */
+  setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
+  messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
 }
 
 export function agentServer(
@@ -159,8 +231,23 @@ export function agentServer(
     chatDefaults?: ChatDefaultsDto;
     workbenches?: WorkbenchInfo[];
     workbenchVersions?: WorkbenchVersion[];
+    machines?: FakeMachine[];
+    /** This server's plugin library (by default empty). */
+    library?: PluginItem[];
+    /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
+    schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
+    /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
+    otherProject?: boolean;
+    /** Saved messaging bindings, per conversation, on a machine when one is named. */
+    messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
+    /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
+    accountHolders?: MessagingAccountHoldersResponse;
   } = {},
 ): AgentServer {
+  /** Installed Skill names by `<machine or "">/<agent>`. */
+  const installs = new Map<string, string[]>();
+  const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
     open: false,
@@ -174,9 +261,45 @@ export function agentServer(
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
-  let schedules: ScheduleItem[] = [];
+  let schedules: ScheduleItem[] = (options.schedules ?? [])
+    .filter((s) => s.machineId === undefined)
+    .map((s) => s.item);
+  /** Each machine's tasks, by machine id: a request through a machine reads and writes these. */
+  const machineSchedules = new Map<string, ScheduleItem[]>();
+  for (const { machineId, item } of options.schedules ?? []) {
+    if (machineId !== undefined) {
+      machineSchedules.set(machineId, [...(machineSchedules.get(machineId) ?? []), item]);
+    }
+  }
+  /** The tasks on the server a request reached, and their replacement. */
+  const schedulesOn = (machine: string | null) =>
+    machine === null ? schedules : (machineSchedules.get(machine) ?? []);
+  const setSchedulesOn = (machine: string | null, next: ScheduleItem[]) => {
+    if (machine === null) schedules = next;
+    else machineSchedules.set(machine, next);
+  };
+  /** Bindings by `<machine or "">/<session>`: each server keeps its own conversations'. */
+  const messagingKey = (machineId: string | null, sessionId: string) =>
+    `${machineId ?? ""}/${sessionId}`;
+  const messaging = new Map<string, MessagingChannelState[]>(
+    (options.messaging ?? []).map((entry) => [
+      messagingKey(entry.machineId ?? null, entry.sessionId),
+      entry.bindings,
+    ]),
+  );
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
+  /** Per held machine, the answers waiting for its release. */
+  const machineHolds = new Map<string, Array<() => void>>();
+  /** Reads to fail once each, oldest first: the server they are on and the path they match. */
+  let failures: Array<{ machine: string | null; path: RegExp }> = [];
+  /** Reads a page answers once each (a proxy that did not forward it), in the same shape. */
+  let pages: Array<{ machine: string | null; path: RegExp }> = [];
+  /** Requests to hold once each, oldest first, with the answers they wait for. */
+  let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
+  /** This server's Agents: the one the suites configure, unless a test deleted it. */
+  let localAgentIds = [AGENT_ID];
+  const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
     tools: [],
@@ -191,8 +314,9 @@ export function agentServer(
     return apiError(status, code, message);
   };
 
-  const summaryOf = (agentId: string) => ({
+  const summaryOf = (agentId: string): AgentSummary => ({
     agentId,
+    createdAt: "2026-01-01T00:00:00Z",
     activeSessionCount: 0,
     sessionCount: 0,
     sessionActivity: [],
@@ -204,33 +328,214 @@ export function agentServer(
     skillCount: 0,
     hookCount: 0,
     workbenchCount: workbenches.length,
+    memoryCount: 0,
+    apiEnabled: false,
+    pluginUpdates: [],
   });
+
+  /** The machines list as this server reports it: itself first, then each machine. */
+  const machinesList = (): MachineInfo[] => [
+    {
+      id: "local",
+      kind: "local",
+      alias: "this-box",
+      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+      machineId: "local-machine",
+      local: true,
+      connection: null,
+      socket: null,
+      api: null,
+      status: null,
+      root: "/data",
+    },
+    ...machines.map((m): MachineInfo => ({
+      id: `ssh:${m.alias}`,
+      kind: "ssh",
+      alias: m.alias,
+      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+      member: true,
+      machineId: m.machineId,
+      local: false,
+      connection: m.reconnecting === true ? null : { pid: 4242 },
+      socket: null,
+      ...(m.reconnecting === true
+        ? {
+            reconnect: {
+              since: "2026-10-15T00:00:00Z",
+              attempts: 2,
+              maxAttempts: 8,
+              nextAt: null,
+              lastError: null,
+              diagnosis: null,
+            },
+          }
+        : {}),
+      keepConnected: true,
+      api: null,
+      status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
+      root: "/home/penguin/.penguin/data",
+    })),
+  ];
+
+  /** What a machine answers itself: its own Agent list; anything else is the shared state below. */
+  const machineAnswer = (request: FetchRequest): Response | null => {
+    const machine = machines.find((m) => m.machineId === request.machine);
+    if (machine === undefined || machine.reconnecting === true) {
+      return apiError(503, "not_connected", `No live forward to ${request.machine}`);
+    }
+    const agentsPath = `/api/projects/${PROJECT_ID}/agents`;
+    if (request.path === agentsPath && request.method === "GET") {
+      // Created on the machine after everything here, one day apart in list order.
+      return json({
+        agents: machine.agents.map((id, i) => ({
+          ...summaryOf(id),
+          name: id,
+          createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+        })),
+      });
+    }
+    if (request.path === agentsPath && request.method === "POST") {
+      const body = request.body as { agentId: string; name?: string };
+      machine.agents.push(body.agentId);
+      return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
+    }
+    if (request.path === "/api/plugins") {
+      return json({ groups: [{ id: "all", title: "All", plugins: machine.library ?? [] }] });
+    }
+    if (request.path === SESSIONS_BATCH_PATH && request.method === "POST") {
+      const { requests } = request.body as SessionsBatchRequest;
+      return json({
+        results: requests.map((r) => ({
+          agentId: r.agentId,
+          ok: true,
+          sessions: (machine.sessions ?? []).filter((s) => s.agentId === r.agentId),
+        })),
+      });
+    }
+    if (request.path.startsWith(`${agentsPath}/`) && request.method === "DELETE") {
+      const agentId = decodeURIComponent(request.path.slice(agentsPath.length + 1));
+      if (!agentId.includes("/")) {
+        machine.agents = machine.agents.filter((id) => id !== agentId);
+        return new Response(null, { status: 204 });
+      }
+    }
+    return null;
+  };
+
+  /** The library of the server a request reached. */
+  const libraryOf = (machineId: string | null): PluginItem[] =>
+    machineId === null
+      ? (options.library ?? [])
+      : (machines.find((m) => m.machineId === machineId)?.library ?? []);
 
   const answer = (request: FetchRequest): Response => {
     const { method, path } = request;
+    if (request.machine !== null) {
+      const own = machineAnswer(request);
+      if (own !== null) return own;
+    }
     if (path === "/api/me") return json(ADMIN_ME);
+    if (path === "/api/plugins") {
+      return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
+    }
+    if (path === "/api/plugins/registry") return json({ plugins: [], failures: [], pending: [] });
+    if (path === `/api/projects/${PROJECT_ID}/plugins/installed` && method === "GET") {
+      return json({
+        machineId: request.machine ?? "local-machine",
+        file: "project.toml",
+        restartPending: false,
+        shipped: [],
+        plugins: [],
+      });
+    }
+    const pluginsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins$/.exec(path);
+    if (pluginsPath !== null) {
+      const key = installKey(request.machine, decodeURIComponent(pluginsPath[1]!));
+      if (method === "POST") {
+        const { names } = request.body as { names: string[] };
+        const library = libraryOf(request.machine);
+        const missing = names.find((name) => !library.some((p) => p.name === name));
+        if (missing !== undefined) return apiError(404, "plugin_not_found", missing);
+        const skills = library
+          .filter((p) => names.includes(p.name))
+          .flatMap((p) => p.skills.map((skill) => skill.name));
+        installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
+      }
+      const version = (name: string) =>
+        libraryOf(request.machine)
+          .flatMap((p) => p.skills)
+          .find((skill) => skill.name === name)?.version ?? "";
+      return json({
+        skills: (installs.get(key) ?? []).map((name) => ({
+          name,
+          description: "",
+          version: version(name),
+        })),
+        hooks: [],
+        mcpServers: [],
+        workbenches: [],
+      });
+    }
     if (path === "/api/projects") {
+      const project = (projectId: string, name: string) => ({
+        projectId,
+        name,
+        role: "owner",
+        ownerUserId: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+      });
       return json({
         projects: [
-          {
-            projectId: PROJECT_ID,
-            name: "Project",
-            role: "owner",
-            ownerUserId: "admin",
-            createdAt: "2026-01-01T00:00:00Z",
-          },
+          project(PROJECT_ID, "Project"),
+          ...(options.otherProject ? [project(OTHER_PROJECT_ID, "Other")] : []),
         ],
       });
     }
+    if (options.otherProject && path === `/api/projects/${OTHER_PROJECT_ID}/agents`) {
+      return json({ agents: [] });
+    }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
-      return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });
+      return json({
+        agents: localAgentIds.map((id) => ({
+          ...summaryOf(id),
+          name: id === AGENT_ID ? stored.config.name : id,
+        })),
+      });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
       return json(options.chatDefaults ?? {});
     if (path === `/api/projects/${PROJECT_ID}/models`)
       return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
-      return json({ machines: [], imageVersion: null, job: null });
+      return json({
+        machines: machinesList(),
+        kinds: [{ kind: "ssh", title: "SSH", form: null }],
+        imageVersion: "0.2.16",
+        job: null,
+        jobs: [],
+      });
+    }
+    if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
+      return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
+    if (messagingPath !== null) {
+      const key = messagingKey(request.machine, decodeURIComponent(messagingPath[1]!));
+      const bindings = messaging.get(key) ?? [];
+      if (messagingPath[2] === undefined) return json({ bindings });
+      const channel = messagingPath[2] as MessagingChannel;
+      const entry = bindings.find((b) => b.binding.channel === channel);
+      if (entry === undefined || method !== "POST") return apiError(404, "not_found");
+      const { enabled } = request.body as { enabled: boolean };
+      const next: MessagingChannelState = {
+        binding: { ...entry.binding, enabled },
+        status: { state: enabled ? "connected" : "disconnected" },
+      };
+      messaging.set(
+        key,
+        bindings.map((b) => (b === entry ? next : b)),
+      );
+      return json(next);
     }
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
@@ -244,6 +549,12 @@ export function agentServer(
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
+    }
+    const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
+    if (localAgent !== null && method === "DELETE" && request.machine === null) {
+      const agentId = decodeURIComponent(localAgent[1]!);
+      localAgentIds = localAgentIds.filter((id) => id !== agentId);
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
@@ -283,14 +594,21 @@ export function agentServer(
       }
       return json({ entries: vault });
     }
+    if (path === `/api/projects/${PROJECT_ID}/schedules` && method === "GET") {
+      // The Project-wide listing: every task stamped with the Agent whose directory holds it.
+      return json({
+        schedules: schedulesOn(request.machine).map((s) => ({ ...s, agentId: AGENT_ID })),
+        invalidFiles: [],
+      });
+    }
     if (path === `${AGENT_PATH}/schedules`) {
       if (method === "POST") {
         const body = request.body as ScheduleItem;
         const item: ScheduleItem = { ...body, status: "active", queued: false };
-        schedules = [...schedules, item];
+        setSchedulesOn(request.machine, [...schedulesOn(request.machine), item]);
         return json(item);
       }
-      return json({ schedules, invalidFiles: [] });
+      return json({ schedules: schedulesOn(request.machine), invalidFiles: [] });
     }
     if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "PUT") {
       const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
@@ -300,8 +618,19 @@ export function agentServer(
         status: "active",
         queued: false,
       };
-      schedules = schedules.map((s) => (s.name === name ? item : s));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).map((s) => (s.name === name ? item : s)),
+      );
       return json(item);
+    }
+    if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "DELETE") {
+      const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).filter((s) => s.name !== name),
+      );
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
@@ -326,17 +655,72 @@ export function agentServer(
     return apiError(404, "not_found");
   };
 
+  /** The failure a read meets, if one was asked for its server and path (it answers one read only). */
+  const failed = (request: FetchRequest): Response | null => {
+    if (!isRead(request)) return null;
+    const match = failures.find((f) => f.machine === request.machine && f.path.test(request.path));
+    if (match === undefined) return null;
+    failures = failures.filter((f) => f !== match);
+    return apiError(
+      502,
+      "server_unreachable",
+      `${request.machine ?? "this server"} did not answer`,
+    );
+  };
+
+  /** The web page a read meets, if one was asked for its server and path (it answers one read only). */
+  const paged = (request: FetchRequest): Response | null => {
+    if (!isRead(request)) return null;
+    const match = pages.find((p) => p.machine === request.machine && p.path.test(request.path));
+    if (match === undefined) return null;
+    pages = pages.filter((p) => p !== match);
+    return new Response("<!doctype html><html><head></head><body></body></html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+  };
+
   const fetch = stubFetch(async (request) => {
     if (held !== null && !isRead(request)) {
       await new Promise<void>((resolve) => held!.push(resolve));
     }
-    return answer(request);
+    const machineHold = request.machine === null ? undefined : machineHolds.get(request.machine);
+    if (machineHold !== undefined) await new Promise<void>((resolve) => machineHold.push(resolve));
+    const oneHold = oneHolds.find(
+      (h) => h.machine === request.machine && h.path.test(request.path),
+    );
+    if (oneHold !== undefined) {
+      oneHolds = oneHolds.filter((h) => h !== oneHold);
+      await new Promise<void>((resolve) => oneHold.waiting.push(resolve));
+    }
+    const response = failed(request) ?? paged(request) ?? answer(request);
+    answered.push({ method: request.method, path: request.path, machine: request.machine });
+    return response;
   });
+  function hold(): void;
+  function hold(machineId: string): { release(): void };
+  function hold(machineId?: string): { release(): void } | void {
+    if (machineId === undefined) {
+      held = [];
+      return;
+    }
+    const waiting = machineHolds.get(machineId) ?? [];
+    machineHolds.set(machineId, waiting);
+    return {
+      release: () => {
+        if (machineHolds.get(machineId) === waiting) machineHolds.delete(machineId);
+        for (const resume of waiting.splice(0)) resume();
+      },
+    };
+  }
   return {
     fetch,
+    machineAgents: (machineId) => machines.find((m) => m.machineId === machineId)?.agents ?? [],
+    skillsOn: (machineId, agentId) => installs.get(installKey(machineId, agentId)) ?? [],
     config: () => stored,
     vaultKeys: () => vault.map((v) => v.key),
     schedules: () => schedules,
+    machineSchedules: (machineId) => machineSchedules.get(machineId) ?? [],
     writes: (path) =>
       fetch.requests.filter(
         (r) =>
@@ -347,9 +731,25 @@ export function agentServer(
     refuseNext: (status, code, message = code) => {
       refusal = { status, code, message };
     },
-    hold: () => {
-      held = [];
+    hold,
+    failNext: (machine, path) => {
+      failures.push({ machine, path });
     },
+    pageNext: (machine, path) => {
+      pages.push({ machine, path });
+    },
+    requests: () => [...answered],
+    holdNext: (machine, path) => {
+      const entry = { machine, path, waiting: [] as Array<() => void> };
+      oneHolds.push(entry);
+      return {
+        release: () => {
+          oneHolds = oneHolds.filter((h) => h !== entry);
+          for (const resume of entry.waiting.splice(0)) resume();
+        },
+      };
+    },
+    localAgents: () => [...localAgentIds],
     release: () => {
       const waiting = held ?? [];
       held = null;
@@ -358,6 +758,11 @@ export function agentServer(
     answerMcpTest: (answer) => {
       mcpTest = answer;
     },
+    setReconnecting: (machineId, reconnecting) => {
+      const machine = machines.find((m) => m.machineId === machineId);
+      if (machine !== undefined) machine.reconnecting = reconnecting;
+    },
+    messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
   };
 }
 
@@ -377,14 +782,6 @@ class SilentEventSource {
     this.readyState = SilentEventSource.CLOSED;
   }
 }
-
-/**
- * The API socket must not come up under jsdom: there is no server behind it, and until its
- * handshake retries give up, every API call queues behind a wait no test can wait out. With
- * no WebSocket at all the socket starts unavailable at its first open attempt and every
- * call rides HTTP, where the page's fetch stub answers.
- */
-const NO_WEBSOCKET: typeof WebSocket | undefined = undefined;
 
 /** A media query that never matches, and never changes. */
 const unmatchedQuery = (media: string) => ({
@@ -410,12 +807,24 @@ export async function mountAgentApp(
           null,
           h(NavigationGuard),
           h(Link, { to: "/chat" }, "Sidebar chat"),
-          h(ProjectProvider, null, h(SessionsProvider, null, h(Outlet))),
+          h(
+            SignedIn,
+            null,
+            h(
+              ProjectProvider,
+              null,
+              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet))),
+            ),
+          ),
         ),
         children: [
           { path: "/chat", element: h("p", null, "Chat page") },
           { path: "/agents", element: h("p", null, "Agents list") },
           { path: route, element },
+          // Where an Agent card or a create lands when the page under test is not that page.
+          ...(route === "/agents/:agentId"
+            ? []
+            : [{ path: "/agents/:agentId", element: h("p", null, "Agent settings") }]),
           // After the page's own route, so a page mounted at a conversation's path still wins.
           { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
         ],
@@ -424,7 +833,6 @@ export async function mountAgentApp(
     { initialEntries: ["/chat", at] },
   );
   vi.stubGlobal("EventSource", SilentEventSource);
-  vi.stubGlobal("WebSocket", NO_WEBSOCKET);
   vi.stubGlobal("matchMedia", unmatchedQuery);
   await mount(
     h(LocaleProvider, null, h(AuthProvider, null, h(RouterProvider, { router }), h(UnsavedPrompt))),

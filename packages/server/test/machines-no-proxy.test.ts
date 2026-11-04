@@ -229,6 +229,7 @@ describe("machine traffic and the proxy settings", () => {
       agent: sessionAgent(socksPort, machinePort),
       port: machinePort,
       cookie: "penguin_session=x",
+      adoptedAt: null,
       session: process.pid,
     }));
 

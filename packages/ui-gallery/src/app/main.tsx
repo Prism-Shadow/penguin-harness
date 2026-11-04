@@ -12,7 +12,8 @@
  *
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
- * the app the guest of the page that frames it (guest-frame.ts).
+ * the app the guest of the page that frames it (guest-frame.ts); `notices=1` raises the notices a
+ * conversation can carry in the demo store (mock/notices.ts).
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,6 +25,8 @@ import { parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
 import { getStore } from "./mock/store";
+import { rsiPrompt } from "./mock/rsi-transcript";
+import { installEvolutionAutoplay } from "./evolution-autoplay";
 
 /** The dialog's pages, as `open=settings.<page>` may name them. */
 const SETTINGS_PAGES = [
@@ -42,7 +45,12 @@ const isSettingsPage = (value: string): value is SettingsSectionKey =>
   (SETTINGS_PAGES as readonly string[]).includes(value);
 
 const params = parseFrameParams(window.location.search);
-getStore({ lang: params.lang, signedIn: !params.signedOut });
+const store = getStore({
+  lang: params.lang,
+  signedIn: !params.signedOut,
+  notices: params.notices === true,
+  evolutionDemo: params.autoplay === "evolution",
+});
 installFetchShim();
 
 // Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
@@ -81,3 +89,13 @@ if (params.open === "settings" || params.open?.startsWith("settings.")) {
 void document.fonts.ready.then(() => {
   document.documentElement.dataset.galleryReady = "1";
 });
+
+if (params.autoplay === "evolution") {
+  const dispose = installEvolutionAutoplay(
+    window,
+    rsiPrompt(params.lang),
+    store.evolutionPlayback,
+    () => store.clearEvolutionRounds(),
+  );
+  import.meta.hot?.dispose(dispose);
+}

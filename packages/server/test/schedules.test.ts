@@ -1,14 +1,19 @@
 /**
  * Integration tests for the schedule routes: CRUD and permissions (any member can read, only the owner can
  * modify, outsiders get 404), 400 validation, 409 on name collision, hand-edited
- * invalid files landing in invalidFiles, expired one-shot tasks marked missed
- * during reconciliation, and the on-disk file shape.
+ * invalid files landing in invalidFiles, and the on-disk file shape.
+ *
+ * - A write that could never fire — a one-shot whose start_at is past, or a task whose end_at is
+ *   past — is refused with 400 on POST and PUT, and nothing is written.
+ * - Settled tasks are archived into schedule/expired/: absent from the agent and Project listings
+ *   and from the agent card's scheduleCount.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scheduleDir } from "@prismshadow/penguin-core";
 import type {
+  AgentsResponse,
   ProjectCreateResponse,
   ProjectSchedulesResponse,
   ScheduleItem,
@@ -18,6 +23,7 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const FUTURE = "2099-01-01T09:00:00Z";
+const PAST = "2020-01-01T00:00:00Z";
 
 describe("schedules api", () => {
   let t: TestApp;
@@ -171,21 +177,112 @@ describe("schedules api", () => {
     expect(list.invalidFiles).toEqual([]);
   });
 
-  it("hand-edited files: invalid ones land in invalidFiles; expired one-shots are marked missed during reconciliation", async () => {
+  it("hand-edited files: invalid ones land in invalidFiles; a valid one is listed with the Project owner as its creator", async () => {
     const dir = scheduleDir(t.root, projectId, "default_agent");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "broken.toml"), "not = toml =", "utf8");
     await fs.writeFile(
-      path.join(dir, "stale.toml"),
-      `prompt = "s"\nenabled = true\nstart_at = "2020-01-01T00:00:00Z"\n`,
+      path.join(dir, "hand.toml"),
+      `prompt = "h"\nenabled = true\nstart_at = "${FUTURE}"\n`,
       "utf8",
     );
     const list = (await (await owner.get(base)).json()) as SchedulesResponse;
     expect(list.invalidFiles.map((f) => f.name)).toEqual(["broken"]);
-    const stale = list.schedules.find((s) => s.name === "stale");
-    expect(stale?.status).toBe("missed");
-    // For a hand-edited file, the creator falls back to the Project owner.
-    expect(stale?.creatorUserId).toBe("owner_a");
+    expect(list.schedules.map((s) => [s.name, s.status, s.creatorUserId])).toEqual([
+      // For a hand-edited file, the creator falls back to the Project owner.
+      ["hand", "active", "owner_a"],
+    ]);
+  });
+
+  it("a one-shot whose start_at is past, or a task whose end_at is past, is refused with 400 and writes nothing", async () => {
+    const refusal = async (res: Response): Promise<[number, string]> => [
+      res.status,
+      ((await res.json()) as { error: { message: string } }).error.message,
+    ];
+    expect(
+      await refusal(
+        await owner.post(base, { name: "late", prompt: "p", enabled: true, startAt: PAST }),
+      ),
+    ).toEqual([400, expect.stringContaining("start_at is already past")]);
+    expect(
+      await refusal(
+        await owner.post(base, {
+          name: "over",
+          prompt: "p",
+          enabled: true,
+          startAt: PAST,
+          period: "1d",
+          endAt: "2021-01-01T00:00:00Z",
+        }),
+      ),
+    ).toEqual([400, expect.stringContaining("end_at is already past")]);
+    // A periodic task may start in the past: later slots are still ahead of it. (Disabled here
+    // only so the test does not fire it.)
+    expect(
+      (
+        await owner.post(base, {
+          name: "daily",
+          prompt: "p",
+          enabled: false,
+          startAt: PAST,
+          period: "1d",
+        })
+      ).status,
+    ).toBe(201);
+    // PUT is held to the same rule, and the stored file is left as it was.
+    const file = path.join(scheduleDir(t.root, projectId, "default_agent"), "daily.toml");
+    const before = await fs.readFile(file, "utf8");
+    expect(
+      await refusal(
+        await owner.put(`${base}/daily`, { prompt: "p2", enabled: true, startAt: PAST }),
+      ),
+    ).toEqual([400, expect.stringContaining("start_at is already past")]);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    const list = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(list.schedules.map((s) => s.name)).toEqual(["daily"]);
+  });
+
+  it("settled tasks are archived: absent from the agent and Project listings and from the agent card's count", async () => {
+    expect(
+      (
+        await owner.post(base, {
+          name: "live",
+          prompt: "p",
+          enabled: true,
+          startAt: FUTURE,
+          period: "30m",
+        })
+      ).status,
+    ).toBe(201);
+    // Hand-edited files the API would refuse: a one-shot already past, a task past end_at.
+    const dir = scheduleDir(t.root, projectId, "default_agent");
+    await fs.writeFile(
+      path.join(dir, "stale.toml"),
+      `prompt = "s"\nenabled = true\nstart_at = "${PAST}"\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "over.toml"),
+      `prompt = "o"\nenabled = true\nstart_at = "${PAST}"\nperiod = "1d"\nend_at = "2021-01-01T00:00:00Z"\n`,
+      "utf8",
+    );
+
+    const project = (await (
+      await member.get(`/api/projects/${projectId}/schedules`)
+    ).json()) as ProjectSchedulesResponse;
+    expect(project.schedules.map((s) => s.name)).toEqual(["live"]);
+    const agent = (await (await member.get(base)).json()) as SchedulesResponse;
+    expect(agent.schedules.map((s) => s.name)).toEqual(["live"]);
+    expect((await owner.get(`${base}/stale`)).status).toBe(404);
+    const cards = (await (
+      await member.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    expect(cards.agents.find((a) => a.agentId === "default_agent")?.scheduleCount).toBe(1);
+    // The files are kept, unchanged, under schedule/expired/.
+    expect((await fs.readdir(path.join(dir, "expired"))).sort()).toEqual([
+      "over.toml",
+      "stale.toml",
+    ]);
   });
 
   it("a hand-edited file is reconciled past a warm mtime cache (an in-place edit moves only the file's mtime)", async () => {

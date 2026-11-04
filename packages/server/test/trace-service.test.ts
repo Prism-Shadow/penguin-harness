@@ -2,6 +2,19 @@
  * Unit tests for the Trace service: multi-file history concatenation, file
  * listing, pagination (following a growing file), performance-analysis derivation
  * (including the head's context window), and Agent-level drill-down browsing.
+ *
+ * Round navigator data, as the Trace view reads it from the analysis:
+ * - Each request carries the thinking level its request_begin records; one written before the
+ *   field carries none (unknown, not a level).
+ * - A round's label is the first line of the user text that started it, marker blocks and
+ *   attachment lines left out, whitespace collapsed, cut at 120 characters.
+ * - A round no user text started (an image-only send, a summarize compaction) has no label; a
+ *   send that never got a request keeps its own.
+ *
+ * Task records (task_begin / task_end), in the analysis:
+ * - Given the same Tasks with and without the pair, the rounds and their times are the same: a
+ *   task_begin heads the round its input starts, no Task record moves a round's end, and a file
+ *   that ends on Task records alone (behind a closing compaction) gains no round.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +22,9 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  attachedFileLine,
   buildBackgroundTaskDoneMessage,
+  buildSkillsMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -18,6 +33,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -26,7 +43,7 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type {
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TokenCounts,
   StopReason,
@@ -50,7 +67,7 @@ const P = "project-t";
 const A = "agent-t";
 const S = "session-2026-07-05-10-00-00-aabbccdd";
 
-function at(ts: string, msg: OmniMessage): OmniMessage {
+function at(ts: string, msg: AmspRecord): AmspRecord {
   return { ...msg, timestamp: ts };
 }
 
@@ -191,7 +208,10 @@ describe("trace-service", () => {
         toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
       ),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-05T10:00:06.500Z", toolCallOutput({ output: "done", toolCallId: "tc-1" })),
+      at(
+        "2026-07-05T10:00:06.500Z",
+        toolCallOutput({ output: "done", toolCallId: "tc-1", status: "completed" }),
+      ),
       at("2026-07-05T10:00:07.000Z", tokenUsage(counts(1000), counts(400))),
       at(
         "2026-07-05T10:00:08.000Z",
@@ -221,7 +241,7 @@ describe("trace-service", () => {
     expect(analysis.toolCalls).toHaveLength(1);
     expect(analysis.toolCalls[0]!.name).toBe("exec_command");
     expect(analysis.toolCalls[0]!.durationMs).toBe(2500);
-    expect(analysis.toolCalls[0]!.stopReason).toBe("completed");
+    expect(analysis.toolCalls[0]!.status).toBe("completed");
 
     expect(analysis.reconnectCount).toBe(1);
     expect(analysis.compactionCount).toBe(1);
@@ -231,7 +251,7 @@ describe("trace-service", () => {
   });
 
   /** One completed text turn: Prompt, one Request, and its usage stamped at `ts` plus three seconds. */
-  const priceTurn = (ts: string, request: TokenCounts): OmniMessage[] => {
+  const priceTurn = (ts: string, request: TokenCounts): AmspRecord[] => {
     const t = Date.parse(ts);
     const plus = (s: number) => new Date(t + s * 1000).toISOString();
     return [
@@ -392,7 +412,10 @@ describe("trace-service", () => {
       ),
       at("2026-07-05T10:00:03.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:03.100Z", tokenUsage(counts(60_000), buckets(50_000, 8_000, 2_000))),
-      at("2026-07-05T10:00:03.500Z", toolCallOutput({ output: "ok", toolCallId: "tc-1" })),
+      at(
+        "2026-07-05T10:00:03.500Z",
+        toolCallOutput({ output: "ok", toolCallId: "tc-1", status: "completed" }),
+      ),
       // Continuation round (same Task): context grows to 65k
       at("2026-07-05T10:00:04.000Z", requestBegin()),
       at("2026-07-05T10:00:06.000Z", requestEnd("completed")),
@@ -412,6 +435,65 @@ describe("trace-service", () => {
     // rounds of 60k/65k" ended up displaying as 125k.
     expect(t.tokens).toEqual({ cacheRead: 108_000, cacheWrite: 12_000, output: 5_000 });
     expect(t.llmMs).toBe(2000 + 2000);
+  });
+
+  it("Task records leave the rounds as they are: a task_begin heads its Task's round, and none moves a round's end or adds one", async () => {
+    const ts = (hhmm: string, s: string) => `2026-07-05T${hhmm}:${s}Z`;
+    const task1 = [
+      at(ts("10:00", "00.000"), userText("first")),
+      at(ts("10:00", "01.000"), requestBegin()),
+      at(ts("10:00", "02.000"), assistantText("one")),
+      at(ts("10:00", "03.000"), requestEnd("completed")),
+      at(ts("10:00", "03.100"), tokenUsage(counts(100), counts(100))),
+    ];
+    // Half an hour later; it ends on a compaction, so its task_end and the next Task's
+    // task_begin (another half hour later) close the file behind compaction_end.
+    const task2 = [
+      at(ts("10:30", "00.000"), userText("second")),
+      at(ts("10:30", "01.000"), requestBegin()),
+      at(ts("10:30", "02.000"), assistantText("two")),
+      at(ts("10:30", "03.000"), requestEnd("completed")),
+      at(ts("10:30", "03.100"), tokenUsage(counts(300), counts(200))),
+      at(
+        ts("10:30", "04.000"),
+        compactionBegin({ reason: "context", mode: "summarize", context: 200, turns: 2 }),
+      ),
+      at(ts("10:30", "04.000"), userText("COMPACT NOW")),
+      at(ts("10:30", "04.100"), requestBegin()),
+      at(ts("10:30", "06.000"), assistantText("[summary]so far[/summary]")),
+      at(ts("10:30", "06.000"), requestEnd("completed")),
+      at(
+        ts("10:30", "06.100"),
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      ),
+    ];
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at(ts("10:00", "00.000"), taskBegin()),
+      ...task1,
+      at(ts("10:00", "03.200"), taskEnd()),
+      at(ts("10:30", "00.000"), taskBegin()),
+      ...task2,
+      at(ts("10:30", "06.200"), taskEnd()),
+      at(ts("11:00", "00.000"), taskBegin()),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 2, [
+      sessionMeta(metaPayload()),
+      ...task1,
+      ...task2,
+    ]);
+
+    const paired = await service.analyze(P, A, S, 1);
+    const plain = await service.analyze(P, A, S, 2);
+    const rounds = (a: typeof plain) =>
+      a.tasks.map((t) => ({ startTs: t.startTs, endTs: t.endTs, prompt: t.prompt }));
+    expect(rounds(paired)).toEqual(rounds(plain));
+    expect(paired.tasks).toHaveLength(3);
+    expect(paired.elapsedMs).toBe(plain.elapsedMs);
+    // The second Task's round starts at its task_begin (index 8), and the trailing task_begin
+    // of the next Task stays with the compaction round, whose rows end the file.
+    expect(paired.tasks[1]!.messageFrom).toBe(8);
+    expect(paired.tasks[2]!.messageTo).toBe(21);
   });
 
   it("human approval waits don't count toward LLM generation time (the TPS denominator)", async () => {
@@ -463,8 +545,14 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:03.000Z", approvalDecision("allow", "tc-1")),
       at("2026-07-05T10:00:04.000Z", approvalDecision("allow", "tc-2")),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-05T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "tc-1" })),
-      at("2026-07-05T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "tc-2" })),
+      at(
+        "2026-07-05T10:00:09.000Z",
+        toolCallOutput({ output: "a", toolCallId: "tc-1", status: "completed" }),
+      ),
+      at(
+        "2026-07-05T10:00:11.000Z",
+        toolCallOutput({ output: "b", toolCallId: "tc-2", status: "completed" }),
+      ),
       at("2026-07-05T10:00:11.000Z", requestBegin()),
       at("2026-07-05T10:00:13.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:13.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
@@ -1011,15 +1099,15 @@ describe("trace-service", () => {
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")), // the user input is sent instantly, so it occupies no segment
       at(T("01.000"), requestBegin()),
-      at(T("03.000"), thinkingMessage("think", "completed")),
+      at(T("03.000"), thinkingMessage("think")),
       at(T("04.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
       // Two async tools: t1 is already in approval/execution while the model keeps decoding t2
       at(T("04.500"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
       at(T("05.000"), requestEnd("completed")),
       at(T("05.500"), approvalDecision("allow", "t1")),
       at(T("06.000"), approvalDecision("allow", "t2")),
-      at(T("07.000"), toolCallOutput({ output: "o1", toolCallId: "t1" })),
-      at(T("08.000"), toolCallOutput({ output: "o2", toolCallId: "t2" })),
+      at(T("07.000"), toolCallOutput({ output: "o1", toolCallId: "t1", status: "completed" })),
+      at(T("08.000"), toolCallOutput({ output: "o2", toolCallId: "t2", status: "completed" })),
       // The model starts the next round only after all outputs are back: the new segment is anchored on request_begin
       at(T("08.500"), requestBegin()),
       at(T("10.000"), assistantText("answer")),
@@ -1057,7 +1145,7 @@ describe("trace-service", () => {
         approvalTs: T("05.500"),
         decision: "allow",
         outputTs: T("07.000"),
-        stopReason: "completed",
+        status: "completed",
         taskIndex: 0,
       },
       {
@@ -1067,7 +1155,7 @@ describe("trace-service", () => {
         approvalTs: T("06.000"),
         decision: "allow",
         outputTs: T("08.000"),
-        stopReason: "completed",
+        status: "completed",
         taskIndex: 0,
       },
     ]);
@@ -1082,7 +1170,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(T("03.500"), requestBegin()),
       at(T("04.000"), assistantText("answer 1")),
       at(T("04.500"), requestEnd("completed")),
@@ -1141,7 +1229,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(T("03.200"), userText("[user_steering]\nalso check the tests\n[/user_steering]")),
       at(T("03.500"), requestBegin()),
       at(T("04.000"), assistantText("answer 1")),
@@ -1222,7 +1310,10 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(
+        T("03.000"),
+        toolCallOutput({ output: "launched", toolCallId: "t1", status: "completed" }),
+      ),
       at(T("08.000"), userText(plain, "harness")),
       at(T("08.500"), requestBegin()),
       at(T("09.000"), assistantText("finished cleanly")),
@@ -1278,7 +1369,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       // Steering with two images: core delivers them right behind the text, and the whole
       // batch stays inside Task 0 — an image is a turn starter everywhere except here.
       at(T("03.200"), userText("[user_steering]\nlike this mock\n[/user_steering]")),
@@ -1313,7 +1404,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       // Task 1: the compaction request.
       at(
         T("04.000"),
@@ -1342,7 +1433,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(
         T("04.000"),
         compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
@@ -1360,31 +1451,103 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
   });
 
-  it("interrupt-compensation tool_calls (stop_reason not completed) stay out of the timeline lanes (no phantom execution segments)", async () => {
+  it("a call its unfinished Request never dispatched gets no timeline lane; one it ran keeps its lane", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 8, [
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")),
       at(T("01.000"), requestBegin()),
-      at(
-        T("02.000"),
-        toolCall({
-          name: "exec_command",
-          arguments: "{}",
-          toolCallId: "t1",
-          stopReason: "retryable",
-        }),
-      ),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t0" })),
+      at(T("02.100"), approvalDecision("allow", "t0")),
+      // Written whole with the arguments that arrived when the stream dropped.
+      at(T("02.200"), toolCall({ name: "exec_command", arguments: '{"cmd":', toolCallId: "t1" })),
       at(T("02.500"), requestEnd("retryable")),
+      at(T("02.700"), toolCallOutput({ output: "ok", toolCallId: "t0", status: "completed" })),
       at(T("03.000"), requestBegin()),
       at(T("04.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
-      at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2" })),
+      at(T("04.200"), approvalDecision("allow", "t2")),
+      at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2", status: "completed" })),
       at(T("05.000"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 8);
-    // A phantom call gets no lane: only t2 goes into toolSpans.
-    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
-    // But the duration list still records t1 (flagged with the interrupted status).
-    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
+    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t0", "t2"]);
+    expect(a.toolCalls.map((c) => c.toolCallId)).toEqual(["t0", "t1", "t2"]);
+    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.status).toBeUndefined();
+    expect(a.toolCalls.find((c) => c.toolCallId === "t0")?.status).toBe("completed");
+  });
+
+  it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {
+    const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 11, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("one")),
+      at(T("01.000"), requestBegin("medium")),
+      at(T("02.000"), requestEnd("completed")),
+      at(T("03.000"), userText("two")),
+      at(T("04.000"), requestBegin("high")),
+      at(T("05.000"), requestEnd("completed")),
+      // Written by a core that predates the field.
+      at(T("06.000"), userText("three")),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 11);
+    expect(a.requests.map((r) => r.thinkingLevel)).toEqual(["medium", "high", undefined]);
+    expect("thinkingLevel" in a.requests[2]!).toBe(false);
+  });
+
+  it("a round's navigator label is the first line of the text that started it, markers and attachment lines left out, cut at 120 characters", async () => {
+    const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
+    const long = "x".repeat(200);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      // A skill invocation prepends a [use_skills] block; the label is the user's own line.
+      at(
+        T("00.000"),
+        userText(buildSkillsMessage(["pdf"], "\n  Fix   the login\tpage  \nand then the tests")),
+      ),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      // An attachment sent with no typed text leaves no line to label.
+      at(T("03.000"), userText(attachedFileLine("/home/u/report.pdf"))),
+      at(T("04.000"), requestBegin()),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("06.000"), userText(long)),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.tasks.map((t) => t.prompt)).toEqual([
+      "Fix the login page",
+      undefined,
+      "x".repeat(120),
+    ]);
+  });
+
+  it("rounds no user text started carry no label — an image-only send, a summarize compaction — and a send that never got a request keeps its own", async () => {
+    const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), imageUrlMessage("data:image/png;base64,AAAA")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      at(
+        T("03.000"),
+        compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
+      ),
+      at(T("03.500"), userText("COMPACT NOW")),
+      at(T("04.000"), requestBegin()),
+      at(T("04.500"), assistantText("[summary]s[/summary]")),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("05.500"), compactionEnd({ reason: "context", mode: "summarize", status: "completed" })),
+      // Interrupted right after sending: no request_begin ever settles this round.
+      at(T("06.000"), userText("are you there?")),
+    ]);
+    const a = await service.analyze(P, A, S, 13);
+    expect(a.tasks.map((t) => [t.compaction ?? false, t.prompt])).toEqual([
+      [false, undefined],
+      [true, undefined],
+      [false, "are you there?"],
+    ]);
   });
 });

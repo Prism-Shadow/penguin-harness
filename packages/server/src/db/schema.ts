@@ -175,6 +175,23 @@ CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON
 );
+CREATE TABLE IF NOT EXISTS user_drafts ( -- a user's unsent drafts (composer text, parked conversations, form answers), so they follow the account to another browser; bounded per user, dropped with the Session or Project they belong to
+  user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  draft_key  TEXT NOT NULL,                   -- <kind>:<id> (api/types.ts DRAFT_KINDS)
+  session_id TEXT,                            -- the Session the key names (session / a2ui kinds); NULL otherwise
+  project_id TEXT,                            -- the Project the key names (chat / parked / org / channel kinds); NULL otherwise
+  value_json TEXT NOT NULL,                   -- the draft as the Web App wrote it
+  updated_at TEXT NOT NULL,                   -- last write (ISO); the oldest go first when the user's bound is exceeded
+  PRIMARY KEY (user_id, draft_key)
+);
+CREATE INDEX IF NOT EXISTS idx_user_drafts_session ON user_drafts(session_id);
+CREATE INDEX IF NOT EXISTS idx_user_drafts_project ON user_drafts(project_id);
+CREATE TABLE IF NOT EXISTS user_background_images ( -- the custom background image of a user's appearance settings, apart from ui_prefs so the megabyte it may hold is read only by the one route that serves it
+  user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+  image      TEXT NOT NULL,                   -- data URL (image/png|jpeg|webp, <= BACKGROUND_IMAGE_MAX_CHARS characters)
+  image_id   TEXT NOT NULL,                   -- content hash; mirrored into ui_prefs.backgroundImageId so a browser fetches the image only when it changed
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS browser_extensions ( -- one row per Chrome paired to a user (builtin-browser/extension-pairing.ts): the PenguinHarness Browser extension's long-lived credential, stored only hashed; NOT rebuildable — a lost row means pairing that Chrome again
   extension_id TEXT PRIMARY KEY,              -- random id shown in the Web App's list
   user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -227,7 +244,8 @@ CREATE TABLE IF NOT EXISTS machines (          -- one row per machine this serve
   installed_at TEXT,
   session_pid  INTEGER,                        -- the session this server holds to it (the child its kind launched); a record of intent, never a handle
   remote_port  INTEGER,                        -- its server's port over there, as of the last connect
-  platform     TEXT                            -- linux | darwin | win32, as the install found it: the shell dialect the status probe speaks to it in
+  platform     TEXT,                           -- linux | darwin | win32, as the install found it: the shell dialect the status probe speaks to it in
+  adopted_at   TEXT                            -- when this server first recorded this machine (reset when the address answers with another machine's id): Sessions it held before then read as CLI tasks through this server. NULL = recorded before the column existed; never filled in later, and the rule does not apply
 );
 CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses; no row = none yet. Follows the Project out, like project_members
   project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,

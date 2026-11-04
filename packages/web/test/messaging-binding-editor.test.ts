@@ -48,6 +48,7 @@ const DARK: MessagingChannelFacts = {
   enabled: false,
   status: { state: "disconnected" },
   lastChatKnown: false,
+  accountId: null,
 };
 
 /**
@@ -72,6 +73,9 @@ function stateOf(
   const noop = async () => {};
   return {
     sessionId: "session-under-test",
+    location: null,
+    access: { live: true, reason: null, asOf: null },
+    holdersNote: null,
     form: emptyMessagingForm(channel),
     patchForm: () => {},
     selectChannel: () => {},
@@ -159,6 +163,7 @@ describe("MessagingBindingBody", () => {
       enabled: false,
       status: { state: "disconnected" },
       lastChatKnown: false,
+      accountId: "cli_a1b2",
     };
     const dark = render(stateOf("feishu", { feishu: saved }));
     expect(dark).toContain("abcd…7890");

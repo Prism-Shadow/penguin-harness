@@ -34,6 +34,7 @@ import { installErrorListeners } from "./lib/error-report";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
 import { prefetchMe } from "./state/auth";
 import { watchStaleBuild } from "./lib/stale-build";
+import { installSelectionCopy } from "./lib/selection-copy";
 // The global shortcut dispatcher installs itself at module evaluation (a React effect would
 // leave a post-paint window where a chord is dead); the import is what evaluates it.
 import { setShortcutBlocker } from "./lib/shortcuts/dispatcher";
@@ -46,6 +47,10 @@ import "./styles.css";
 // layer stack, which is what the blocker reads. Installed here, before the mount, since the
 // package cannot reach the app's dispatcher.
 setShortcutBlocker(hasEscLayers);
+
+// Copying selected text writes plain text alone, from every surface at once — never the
+// browser's HTML with the theme's colours inlined (lib/selection-copy.ts).
+installSelectionCopy(document);
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root mount point not found");

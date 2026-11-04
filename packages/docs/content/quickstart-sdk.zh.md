@@ -31,7 +31,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 
 把 `sk-...` 换成你的 API Key。CLI 会把模型写入数据目录，SDK 马上就能使用。
 
-凭据也可以完全不落盘。模型条目没有内联 `api_key`、且请求发往厂商自己的端点时，key 取自 LLM 网关库 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 读取的该厂商环境变量，如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。工作目录下的 `.env` 文件会自动加载。
+凭据也可以完全不落盘。模型自己和所在分组都没有 `api_key`、且条目与分组都不带 `base_url`（或只带厂商的缺省端点）时，key 取自 LLM 网关库 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 读取的该厂商环境变量，如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。工作目录下的 `.env` 文件会自动加载。SDK 本身不带模型目录：只有 SDK 使用的数据根，需要用 `addModel` 添加模型，并让分组的 base URL 留空，见[配置](/configuration#供应商凭证变量)。
 
 ## 运行第一个程序
 
@@ -57,12 +57,12 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ### 程序是怎样工作的
 
 - `createAgent` 按 id 载入 Agent 的配置：提示词、工具和运行参数。`default_agent` 是初始化数据目录时自带的 Agent。
-- `session.run()` 返回一个异步迭代器，逐条产出 OmniMessage。循环里的判断只挑出模型的完整文本消息；工具调用、思考块等其他内容也在同一个流里。
+- `session.run()` 返回一个异步迭代器，逐条产出 AMSP 记录。循环里的判断只挑出模型的完整文本消息；工具调用、思考块等其他内容也在同一个流里。
 - `approve` 是审批回调，返回 `"allow"` 即全部放行。四种审批模式与工具的对应关系见[工具与审批](/tools)。
 
 ## 下一步
 
 - [接口契约](/interfaces)：`createAgent`、`Session`、LLM 与 Environment 背后的接口契约。
-- [OmniMessage 协议](/omni-message)：`session.run()` 产出的消息结构。
+- [AMSP 记录](/amsp-records)：`session.run()` 产出的消息结构。
 - [Agent 运行循环](/agent-loop)：一个 Task 内部经历了什么。
 - [Session 与 Trace](/sessions-and-traces)：会话与执行记录如何存储。

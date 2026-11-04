@@ -17,6 +17,7 @@ import {
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { useInstantSetting } from "../../lib/instant-setting";
+import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { ModelCatalogSelect } from "../chat/model-select";
@@ -42,6 +43,8 @@ export function ApiConcurrencySettings({
   onBusy,
 }: ApiSettingsProps) {
   const form = useFormDraft({ limit: String(settings.maxConcurrentRuns) });
+  /** The machine the Agent lives on, where its API settings are; null for this server. */
+  const machineId = useAgentLocation();
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   useSaving(busy, form.scope);
@@ -54,7 +57,12 @@ export function ApiConcurrencySettings({
     onBusy(true);
     setSaveError(null);
     try {
-      const response = await api.putAgentApi(projectId, agentId, { maxConcurrentRuns: limit });
+      const response = await api.putAgentApi(
+        projectId,
+        agentId,
+        { maxConcurrentRuns: limit },
+        machineId,
+      );
       onSaved(response);
       form.adopt({ limit: String(response.api.maxConcurrentRuns) });
     } catch (e) {
@@ -123,6 +131,8 @@ export function ApiSessionSettings({
 }: ApiSettingsProps) {
   const [defaultThinking, setDefaultThinking] = useState<string | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** The machine the Agent lives on (null: this server): its models, defaults and Workspaces. */
+  const machineId = useAgentLocation();
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -130,9 +140,9 @@ export function ApiSessionSettings({
     setDefaultThinking(null);
     setLoadError(null);
     void Promise.all([
-      api.getModels(projectId),
-      api.getAgentConfig(projectId, agentId),
-      api.getChatDefaults(projectId),
+      api.getModels(projectId, machineId),
+      api.getAgentConfig(projectId, agentId, machineId),
+      api.getChatDefaults(projectId, machineId),
     ]).then(
       (res) => {
         if (!cancelled) {
@@ -149,12 +159,12 @@ export function ApiSessionSettings({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
 
   const write = useInstantSetting<AgentApiUpdateRequest>({}, async (patch) => {
     onBusy(true);
     try {
-      onSaved(await api.putAgentApi(projectId, agentId, patch));
+      onSaved(await api.putAgentApi(projectId, agentId, patch, machineId));
     } finally {
       onBusy(false);
     }
@@ -218,6 +228,8 @@ export function ApiSessionSettings({
             agentId={agentId}
             workspace={value.workspace ?? ""}
             onChange={(workspace) => void write.set({ workspace: workspace || null })}
+            // A machine's Agent runs its API sessions there: the Workspace is browsed on it alone.
+            {...(machineId !== null ? { machineId, chooseMachine: false } : {})}
             variant="form"
             disabled={locked}
           />

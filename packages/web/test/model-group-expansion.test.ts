@@ -11,7 +11,7 @@
  * stay inert.
  */
 import { describe, expect, it } from "vitest";
-import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
+import { MODEL_PROVIDERS } from "@prismshadow/penguin-server/model-catalog";
 import {
   defaultExpandedProviders,
   expandedGroupsKey,

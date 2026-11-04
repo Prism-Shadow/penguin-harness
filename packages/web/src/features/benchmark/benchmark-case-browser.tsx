@@ -17,12 +17,13 @@ import type {
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
-import { Badge, FileBrowser } from "@prismshadow/penguin-ui";
+import { FileBrowser, Pill } from "@prismshadow/penguin-ui";
 import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
+import { useReaderFind } from "../../lib/reader-find";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import {
@@ -327,6 +328,8 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
     return `${label} / ${path}`;
   };
 
+  const readerFind = useReaderFind();
+
   const rowTrailing = (row: CaseTreeRow): ReactNode => {
     // The rubric is what the case is scored against, and the tested agent never sees it: the
     // badge says so where the folder is, rather than in a note under the tree.
@@ -334,7 +337,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       if (row.material !== "rubric") return null;
       return (
         <span className="shrink-0">
-          <Badge size="sm">{S.benchmark.agentHidden}</Badge>
+          <Pill>{S.benchmark.agentHidden}</Pill>
         </span>
       );
     }
@@ -369,6 +372,8 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       unsupportedLabel={S.files.previewUnsupported}
       downloadLabel={S.files.download}
       resolveRef={resolveRef}
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
       treeWidth={locale === "en" ? 380 : 270}
       treeMaxHeight={53}
       previewHeight={52}

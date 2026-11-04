@@ -58,7 +58,9 @@ import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { isApiSocketRef } from "../socket/ref.js";
+import type { AttachedStream } from "../socket/ref.js";
 import { serveApiSocket } from "../socket/serve.js";
+import { carryStreamAnswer } from "../socket/stream-answer.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
@@ -83,11 +85,12 @@ import { loadPluginHost, RESIDENT_PLUGINS } from "../plugin/loader.js";
 import {
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
+  usePushedBenchmarkDirectory,
   userText,
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
 import { currentGeneration, pointCurrent } from "../plugin/activation.js";
-import { pushedLibraryDir } from "./asset-archives.js";
+import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
@@ -119,11 +122,13 @@ export interface PlatformApi extends Park {
   http(request: Request): Promise<Response | null>;
   /**
    * In-process accessors for the one thing the seam cannot carry: a live socket. The
-   * runtime's ws transport authenticates an upgrade, then asks for the session and hands
-   * the socket back for the platform's protocol to drive.
+   * runtime's ws transport authenticates an upgrade, then hands the socket over with the
+   * reference it authenticated — a pty's session, or the API socket's user — for the
+   * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
+   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
    */
   terminals(): TerminalManager;
-  attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
   /**
    * The module tree this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
@@ -283,7 +288,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   apiSockets: ["close"],
   // A parked pty, as its adopters use it — EVERY member reached after adoption, not a
   // representative sample: the manager (id, seq, ownerUserId, alive, info, onExit, kill,
-  // dispose), the routes (capture, write, rename, exit) and the stream binding
+  // dispose), the routes (capture, write, rename, exit, setSession) and the stream binding
   // (onOutput, resize, releaseSize, restoreStream). A short list would let a predecessor
   // satisfy the descriptor and still TypeError on the first keystroke after a swap,
   // which is exactly what this check exists to prevent.
@@ -295,6 +300,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "exit",
     "info",
     "rename",
+    "setSession",
     "capture",
     "write",
     "resize",
@@ -442,6 +448,7 @@ async function createInner(
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
+  if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));
   // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
   // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
@@ -738,15 +745,15 @@ async function createInner(
     }),
     http,
     terminals: () => terminals,
-    attachStream: (ws, session, url, log) => {
-      // The runtime handed the socket over exactly as for a local pty, owner checked. Three
-      // things it can be: the API socket (its reserved id — served as the owner the runtime
-      // just held it to), a reference to a machine's pty (the relay takes it), or a local pty.
-      // The API socket is the shell's (platformImpl below): it outlives this App, so its
-      // calls must resolve the App of the moment, which only the shell knows.
-      if (isApiSocketRef(session)) return ws.close(1013, "served by the platform shell");
-      if (remote?.attach(ws, session, url, log) === true) return;
-      bindTerminalStream(ws, session, url, log);
+    attachStream: (ws, ref, url, log) => {
+      // The runtime handed the socket over with the reference it authenticated. Three things
+      // it can be: the API socket (served as the user its cookie named at the handshake), a
+      // reference to a machine's pty (the relay takes it), or a local pty. The API socket is
+      // the shell's (platformImpl below): it outlives this App, so its calls must resolve the
+      // App of the moment, which only the shell knows.
+      if (isApiSocketRef(ref)) return ws.close(1013, "served by the platform shell");
+      if (remote?.attach(ws, ref, url, log) === true) return;
+      bindTerminalStream(ws, ref, url, log);
     },
     business: () => business,
     // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
@@ -926,50 +933,39 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       info: () => inner.api.info(),
       http: (request) => inner.api.http(request),
       terminals: () => inner.api.terminals(),
-      attachStream: (ws, session, url, log) => {
-        if (!isApiSocketRef(session)) return inner.api.attachStream(ws, session, url, log);
-        // The API socket: served here, as the owner the runtime held it to, with every call
-        // entering the inner App of the moment — a re-assembly under an open socket is
+      attachStream: (ws, ref, url, log) => {
+        if (!isApiSocketRef(ref)) return inner.api.attachStream(ws, ref, url, log);
+        // The API socket: served here, as the user the handshake authenticated, with every
+        // call entering the inner App of the moment — a re-assembly under an open socket is
         // invisible to it. A bare kernel has no routes to enter.
         if (inner.api.business() === null) return ws.close(1013, "no business surface");
-        const userId = session.ownerUserId;
+        const userId = ref.ownerUserId;
         apiSockets.add(ws);
         ws.once("close", () => apiSockets.delete(ws));
+        // One entry per call into the App of the moment; a stream call's answer rides its
+        // Request in (socket/stream-answer.ts), so its route answers it directly.
+        const entered = (request: Request): Promise<Response> => {
+          const http = inner.api
+            .business()
+            ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
+              "HttpModule",
+              "http",
+            );
+          if (http === undefined) {
+            return Promise.resolve(
+              Response.json(
+                { error: { code: "unavailable", message: "The App is being replaced." } },
+                { status: 503 },
+              ),
+            );
+          }
+          return http.fetchAs(userId, request);
+        };
         serveApiSocket(ws, {
-          // One entry per call into the App of the moment: a call that arrives while the
-          // tree behind `inner` is disposed — the window between one generation's dispose
-          // and the next generation's first answer, which this socket lives through by
-          // design — is answered from the capture instead. That capture is the last tree
-          // this shell saw alive; its modules are gone, but their singletons (db, channels,
-          // config) are the runtime's, so it still answers until the successor closes the
-          // socket. A bare kernel has no routes to enter, and then the designed 503 stands.
-          fetch: (request) => {
-            let http: ApiSocketHttp | undefined;
-            try {
-              http = inner.api.business()?.api<ApiSocketHttp>("HttpModule", "http");
-            } catch {
-              http = capturedHttp;
-            }
-            if (http === undefined) {
-              return Promise.resolve(
-                Response.json(
-                  { error: { code: "unavailable", message: "The App is being replaced." } },
-                  { status: 503 },
-                ),
-              );
-            }
-            return http.fetchAs(userId, request);
-          },
+          fetch: entered,
+          fetchStream: (request, answer) => entered(carryStreamAnswer(request, answer)),
           origin: `${url.protocol}//${url.host}`,
           log,
-          // Into the error table of the App of the moment, like the calls themselves.
-          fault: (code, err) =>
-            errorsOf(inner.api.business())?.record({
-              source: "socket",
-              err,
-              code,
-              kind: "unexpected",
-            }),
         });
       },
       business: () => inner.api.business(),

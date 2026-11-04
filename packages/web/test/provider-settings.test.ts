@@ -27,7 +27,13 @@
  *   line under the fields, no count of the models' own values.
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
- * - A blank group key promises an environment variable only where it may be sent there.
+ * - A blank group base URL says it uses the default and names no endpoint. Where the group
+ *   needs one, the field shows the base URL the group stores, asks for one while empty, and a
+ *   blank one is refused (see "a blank group base URL").
+ * - A blank group key promises an environment variable only for a group with no base URL — the
+ *   vendor's own endpoint included — and only one the server proved is set. A stored key says it
+ *   is kept. With neither, a group whose client calls its endpoint without a key (vLLM, an open
+ *   MMSP server, never Penguin Go's relay) says a blank sends none; any other asks for a key.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
@@ -45,7 +51,7 @@ import {
   catalogGroupConnection,
   presetProviderTable,
   providerInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 import {
   applyProviderUpdate,
@@ -374,6 +380,7 @@ describe("what the group settings dialog shows", () => {
     id: string,
     group: ProviderConnectionDto | undefined,
     rows: ReturnType<typeof row>[] = [],
+    detectedEnvKeys: ReadonlySet<string> = new Set<string>(),
   ) =>
     renderToStaticMarkup(
       createElement(ProviderSettingsDialog, {
@@ -381,7 +388,7 @@ describe("what the group settings dialog shows", () => {
         provider: providerInfo(id) ?? userProviderInfo(id),
         group,
         rows,
-        detectedEnvKeys: new Set<string>(),
+        detectedEnvKeys,
         onClose: () => {},
         onSaved: () => {},
       }),
@@ -418,6 +425,52 @@ describe("what the group settings dialog shows", () => {
     }
   });
 
+  it("says a blank base URL uses the default without naming it, where the group may leave it blank", () => {
+    const deepseek = dialog("deepseek", undefined);
+    expect(deepseek).toContain(`placeholder="${S.models.baseUrlDefault}"`);
+    expect(deepseek).not.toContain("api.deepseek.com");
+  });
+
+  it("names a variable the server reports set, says a stored key is kept, and otherwise asks for a key", () => {
+    const keyPlaceholder = (html: string) =>
+      html.match(/<input[^>]*aria-label="API key"[^>]*>/)?.[0]?.match(/placeholder="([^"]*)"/)?.[1];
+    const set = new Set(["DEEPSEEK_API_KEY"]);
+    expect(keyPlaceholder(dialog("deepseek", undefined, [], set))).toBe(
+      S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
+    );
+    expect(keyPlaceholder(dialog("deepseek", undefined))).toBe(S.models.apiKeyEnterHint);
+    expect(keyPlaceholder(dialog("deepseek", { apiKeyMasked: "sk-d…1111" }, [], set))).toBe(
+      S.models.apiKeyKeepHint,
+    );
+    // A user-defined group's client reads no variable of its own.
+    expect(keyPlaceholder(dialog("my-group", undefined))).toBe(S.models.apiKeyEnterHint);
+    // vLLM's client calls the base URL it is handed without a key. With none, it reads
+    // VLLM_API_KEY, and calls its default endpoint without one while that is unset.
+    expect(keyPlaceholder(dialog("vllm", presetGroup("vllm")))).toBe(S.models.apiKeyKeylessHint);
+    const noUrl = { clientType: "openai-chat-vllm-adapter" };
+    expect(keyPlaceholder(dialog("vllm", noUrl))).toBe(S.models.apiKeyKeylessHint);
+    expect(keyPlaceholder(dialog("vllm", noUrl, [], new Set(["VLLM_API_KEY"])))).toBe(
+      S.models.apiKeyEnvHint("VLLM_API_KEY"),
+    );
+    // Penguin Go speaks MMSP, but its relay needs the signed-in key.
+    expect(keyPlaceholder(dialog("penguin-go", presetGroup("penguin-go")))).toBe(
+      S.models.apiKeyEnterHint,
+    );
+  });
+
+  it("shows the stored base URL where the group needs one, and asks for one instead of offering to leave it blank", () => {
+    // A user-defined group with a model that stores no base URL of its own.
+    const stored = dialog("my-group", { baseUrl: "http://a.example/v1" }, [row()]);
+    expect(stored).toContain('value="http://a.example/v1"');
+    const unset = dialog("my-group", undefined, [row()]);
+    for (const html of [stored, unset]) {
+      const baseUrlInput = html.match(/<input[^>]*aria-label="[^"]*base URL"[^>]*>/)?.[0];
+      expect(baseUrlInput).toBeDefined();
+      expect(baseUrlInput).toContain("required");
+      expect(baseUrlInput).toContain(`placeholder="${S.models.baseUrlEnterHint}"`);
+    }
+  });
+
   it("offers Penguin Go no protocol menu and no Detect, and names its fixed protocol", () => {
     const go = dialog("penguin-go", presetGroup("penguin-go"));
     expect(go).not.toContain('aria-haspopup="menu"');
@@ -442,19 +495,26 @@ describe("a blank group key and the environment", () => {
   const detected = new Set(["DEEPSEEK_API_KEY"]);
   const blank = { baseUrl: "", clientType: null };
 
-  it("promises the vendor's variable on its own endpoint, where the server proved it is set", () => {
+  it("promises the vendor's variable for a vendor group with no base URL or the client's default endpoint, where the server proved it is set", () => {
     expect(groupEnvKey("deepseek", blank, detected)).toBe("DEEPSEEK_API_KEY");
+    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
     expect(
       groupEnvKey("deepseek", { ...blank, baseUrl: "https://api.deepseek.com/" }, detected),
     ).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("promises nothing for a proxy, an unset variable or a gateway", () => {
-    expect(
-      groupEnvKey("deepseek", { ...blank, baseUrl: "https://proxy.example/v1" }, detected),
-    ).toBeUndefined();
-    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
-    expect(groupEnvKey("openrouter", blank, new Set(["OPENAI_API_KEY"]))).toBeUndefined();
+  it("promises nothing once the group names another base URL", () => {
+    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.example/v1"]) {
+      expect(groupEnvKey("deepseek", { ...blank, baseUrl }, detected), baseUrl).toBeUndefined();
+    }
+  });
+
+  it("with no base URL, a group's protocol names its variable, whichever group it is; a gateway with neither names none", () => {
+    const openai = new Set(["OPENAI_API_KEY"]);
+    expect(groupEnvKey("openrouter", blank, openai)).toBeUndefined();
+    expect(groupEnvKey("openrouter", { ...blank, clientType: "openai-chat" }, openai)).toBe(
+      "OPENAI_API_KEY",
+    );
   });
 });
 

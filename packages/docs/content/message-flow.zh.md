@@ -3,7 +3,7 @@ title: 消息流转与时序
 description: 消息如何在一轮的五个参与者之间传递，哪些顺序有保证、哪些没有，以及流序为何不同于上下文序。
 ---
 
-[OmniMessage 协议](/omni-message)定义了消息是什么，本页讲消息怎么传、以什么顺序可见：一轮内的传递路径、背后的汇流机制和一轮内的可见时序。随后说明哪些顺序有保证、哪些没有，以及「流上的顺序」与「模型上下文的顺序」为何是两回事。源码：`packages/core/src/engine/context-engine.ts`。
+[AMSP 记录](/amsp-records)定义了消息是什么，本页讲消息怎么传、以什么顺序可见：一轮内的传递路径、背后的汇流机制和一轮内的可见时序。随后说明哪些顺序有保证、哪些没有，以及「流上的顺序」与「模型上下文的顺序」为何是两回事。源码：`packages/core/src/engine/context-engine.ts`。
 
 ## 一轮的传递路径
 
@@ -92,7 +92,7 @@ Human ──run(newMessages)──► engine
 | 分片纪律 | 每段严格 `start → delta* → stop`，完整消息紧随其后；全部 delta 拼接 ≡ 完整消息 |
 | 审批位次 | `approval_decision` 在其 `tool_call` 之后、该工具的任何输出之前 |
 | 配对完整 | 每个已提交的 `tool_call` 恰好对应一条完整的 `tool_call_output`（被拒绝的是合成输出） |
-| LLM 流收尾 | 请求正常完成时，`token_usage` 是 LLM 流的最后一条，`request_end` 紧随其后；未完成的请求不产出 `token_usage` |
+| LLM 流收尾 | 请求正常完成或停在输出上限时，`token_usage` 是 LLM 流的最后一条，`request_end` 紧随其后；其他失败或被中断的请求不产出 `token_usage` |
 | 提交判据 | `request_end.status === "completed"` ⇔ 该轮已被网关提交（回放据此取舍） |
 | 流序 = Trace 序 | 边流边写；Trace 只滤掉分片与 `origin` 消息 |
 | 传输有序 | SSE 按通道投递，事件 id 单调递增；断线重连时从 `Last-Event-ID` 补发，或收到 `resync_required`，见 [Server API](/server-api) |
@@ -123,12 +123,13 @@ Human ──run(newMessages)──► engine
 
 | 情形 | 流上可见的顺序 |
 | --- | --- |
-| 用户中断 | （已产出的消息）→ `abort` 事件，这是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件）；补发内容只进模型上下文，不上流、不进 Trace |
+| 用户中断 | （已产出的消息）→ `abort` 事件，这是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件与该 Task 的 `task_end`）；补发内容只进模型上下文，不上流、不进 Trace |
 | 自动重连 | 携带 `retry_in_ms` 的 `request_end(retryable)` → 新的 `request_begin`（最多连续 5 次无进展的重试，指数退避、上限 30 秒）；`[turn_retried]` 块仅模型可见 |
-| LLM 失败导致运行结束 | `request_end(fatal)`，或重试耗尽后不带 `retry_in_ms` 的 `request_end(retryable)`，是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件）；不会再有 `abort` 事件，因为 `abort` 只标记用户中断 |
+| LLM 失败导致运行结束 | `request_end(fatal)`，或重试耗尽后不带 `retry_in_ms` 的 `request_end(retryable)`，是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件与该 Task 的 `task_end`）；不会再有 `abort` 事件，因为 `abort` 只标记用户中断与轮次上限 |
 | 上下文压缩 | `compaction_begin` → 压缩请求在旧上下文中执行（压缩请求的原始消息只写 Trace，例外是每次尝试的 `token_usage`，以及正在生成的思考与摘要，它们以普通的 `partial_thinking`/`partial_text` 或 `thinking`/`text` 在区间内转发）→ `compaction_end(status)` |
-| 达到 max_turns | 长度提示（`[reached max turns (N); stopping]`）→ 运行结束；未提交的输入按补发保留 |
-| Prompt 本身 | 写入 Trace，但不回流（调用方已经有了） |
+| 达到 max_turns | `error_code` 为 `max_turns` 的 `abort` 事件（`error_message` 为 `reached max turns (N)`）→ 运行结束；未提交的输入按补发保留 |
+| Task 边界 | `task_begin` 是一个 Task 的第一条消息，先于其输入；`task_end` 是最后一条，位于 stop 钩子的 `hook` 事件之后。goal 的每一轮是一个自带一对记录的 Task，注入的输入跟在它的 `task_begin` 之后。抛出异常的 Task 没有 `task_end` |
+| Prompt 本身 | 写入 Trace，但不回流（调用方已经有了）。服务器在本次运行的第一个 `task_begin` 之后把它回显到 SSE 通道上，与 Trace 中的顺序相同 |
 | `session_meta` | 主 Session 的输出流只在会话内切换模型时产出它，作为切换的最后一条：新上下文的 meta，记录 Session 此后所用的模型。其余时候它在 Trace 与历史接口中。子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
 
 ## 跨 Session：origin 链

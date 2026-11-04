@@ -16,6 +16,7 @@ import {
   projectDir,
   provisionProjectAgents,
   provisionProjectBenchmarks,
+  type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -44,6 +45,7 @@ import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
 import type { TraceIndex } from "../mechanisms/traces.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../mechanisms/account-data.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -81,6 +83,9 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly traceIndex!: TraceIndex;
   /** The Project's Agents' API settings and keys (web.db): a destroyed Project exposes nothing. */
   @Use() private readonly agentApi!: AgentApi;
+  /** Users' unsent drafts of the Project and of its Sessions: nowhere left to send them. */
+  @Use() private readonly drafts!: UserDraftsStore;
+  @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -291,6 +296,8 @@ export class ProjectService implements ProjectLifecycle {
     }
     this.projects.delete(projectId); // project_members, machine_project and model_promotions cascade-deleted
     this.agents.deleteByProject(projectId);
+    // Reads the Session index to find the Sessions' drafts, so before its rows go.
+    this.drafts.deleteByProject(projectId);
     this.sessions.deleteByProject(projectId);
     this.usage.deleteByProject(projectId);
     this.errors.deleteByProject(projectId);
@@ -373,9 +380,21 @@ export class ProjectService implements ProjectLifecycle {
         createdAt: new Date(base + i).toISOString(),
       });
     });
-    await provisionProjectBenchmarks(this.root, projectId);
+    await provisionProjectBenchmarks(this.root, projectId, this.benchmarkSeeds.benchmarks);
   }
 }
+
+/**
+ * The built-in Benchmarks a new Project is written with, beside the example. Absent is the
+ * shipped catalog. A test stands in none: they are most of the files a Project is created with
+ * (several hundred), and only the scenarios about them read them.
+ */
+@Interface()
+export abstract class BuiltinBenchmarkSeeds {
+  abstract benchmarks?: readonly BuiltinBenchmark[];
+}
+@Component()
+export class ShippedBuiltinBenchmarkSeeds implements BuiltinBenchmarkSeeds {}
 
 /** What destroying a Project needs of the session runtime — declared at the consumer. */
 @Interface()

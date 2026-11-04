@@ -52,6 +52,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../chat/skill-use";
 import { McpServerMarks } from "../plugins/plugin-mcp";
 import { permissionOf, transportOf } from "./mcp-servers-form";
@@ -125,6 +126,8 @@ export function McpServersSection({
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The machine the Agent lives on (null: this server): its servers, probes and library. */
+  const machineId = useAgentLocation();
 
   const [servers, setServers] = useState<MCPServerConfig[]>(initial);
   /** What keeps each server from connecting, by name, as the server reads it. */
@@ -143,11 +146,11 @@ export function McpServersSection({
   /** Reads the servers' state again: what each waits for moved with the list (or the vault). */
   const reloadStatus = useCallback(() => {
     if (!projectId || !agentId) return;
-    api.getAgentMcpServers(projectId, agentId).then(
+    api.getAgentMcpServers(projectId, agentId, machineId).then(
       (res) => setStatus(new Map(res.servers.map((server) => [server.name, server]))),
       () => setStatus(new Map()),
     );
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
   useEffect(reloadStatus, [reloadStatus]);
 
   // The library, once, for the titles of the plugins that installed servers here.
@@ -155,7 +158,7 @@ export function McpServersSection({
   useEffect(() => {
     if (!hasPluginEntries) return;
     let cancelled = false;
-    api.getPluginLibrary().then(
+    api.getPluginLibrary(machineId).then(
       (res) => {
         if (cancelled) return;
         const titles = new Map<string, string>();
@@ -172,7 +175,7 @@ export function McpServersSection({
     return () => {
       cancelled = true;
     };
-  }, [hasPluginEntries, locale]);
+  }, [hasPluginEntries, locale, machineId]);
   const pluginTitle = (name: string) => pluginTitles.get(name) ?? name;
 
   /** Persist the full list (immediate, vault-style); returns null on success or an error message. */
@@ -180,9 +183,12 @@ export function McpServersSection({
     if (!projectId || !agentId) return S.common.unknownError;
     setBusy(true);
     try {
-      const res = await api.putAgentConfig(projectId, agentId, {
-        config: { mcpServers: next },
-      });
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        { config: { mcpServers: next } },
+        machineId,
+      );
       setServers(res.config.mcpServers);
       reloadStatus();
       toastSuccess(S.agent.savedTakesEffect);
@@ -207,7 +213,7 @@ export function McpServersSection({
         setRowResults((prev) => new Map(prev).set(entry.name, "pending"));
         let result: McpServerTestResponse;
         try {
-          result = await api.testAgentMcpServer(projectId, agentId, entry);
+          result = await api.testAgentMcpServer(projectId, agentId, entry, machineId);
         } catch (e) {
           result = { ok: false, error: apiErrorText(e) };
         }

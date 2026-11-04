@@ -15,6 +15,7 @@ import { machineForSession } from "../../lib/session-machines";
 import { currentDockScope, openPanel } from "../dock/dock-state";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest, type RemoteBackend } from "./browser-state";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const opening = new Map<Promise<unknown>, string>();
 
@@ -122,7 +123,7 @@ export async function adoptBrowserSession(fromSessionId: string, sessionId: stri
       event: { type: "builtin_browser_session", fromSessionId, sessionId },
     });
   } catch (err) {
-    toastError(apiErrorText(err));
+    toastApiError(err);
   }
 }
 

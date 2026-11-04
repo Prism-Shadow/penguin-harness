@@ -104,13 +104,13 @@ describe("ChannelBubble", () => {
     expect(tokens(true, true)).toEqual(expect.arrayContaining(["rounded-br-sm", "rounded-bl-2xl"]));
   });
 
-  it("tints the reader's own bubble with the link ink's wash over the canvas, not a tone", () => {
+  it("sets the reader's own bubble on the accent's tint, like their prompt in a chat, never a tone", () => {
     const html = bubble({ own: true });
     expect(html).toContain('data-side="own"');
-    expect(classTokens(html)).toContain(
-      "bg-[color-mix(in_srgb,var(--ui-fg-link)_12%,var(--ui-canvas))]",
-    );
-    expect(classTokens(html).some((t) => t.startsWith("bg-tone-"))).toBe(false);
+    const tokens = classTokens(html);
+    expect(tokens).toContain("bg-accent-tint");
+    expect(tokens).not.toContain("bg-fill-neutral");
+    expect(tokens.some((t) => t.startsWith("bg-tone-"))).toBe(false);
   });
 });
 
@@ -133,7 +133,7 @@ describe("the channel bubble stylesheet", () => {
       /\.channel-bubble :not\(pre\) > code \{\s*background-color: var\(--ui-line-emphasis\);/,
     );
     expect(rules).toMatch(
-      /\.channel-bubble :is\(th, td\) \{\s*border-color: var\(--ui-line-emphasis\);/,
+      /\.channel-bubble \.md-body \{\s*--md-table-rule: var\(--ui-line-emphasis\);\s*--md-table-rule-head: var\(--ui-line-emphasis\);/,
     );
   });
 });

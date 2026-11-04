@@ -11,14 +11,13 @@ import { classTokens, renderStatic } from "../src/testing";
 const TABS: DockTabItem[] = [
   { key: "workspace", label: "Files", glyph: "F", closeLabel: "Close tab" },
   {
-    key: "terminal:t1",
-    label: "1: zsh",
-    title: "zsh — /repo",
+    key: "trace",
+    label: "Trace",
+    title: "Trace — this conversation",
     glyph: "T",
     badge: true,
-    closeLabel: "Kill shell",
+    closeLabel: "Close panel",
     closeShortcut: "Ctrl+W",
-    terminalId: "t1",
   },
 ];
 
@@ -48,10 +47,9 @@ describe("DockTabs", () => {
   it("names each × after its tab, with the shortcut in the tooltip only", () => {
     const html = render();
     expect(html).toContain('aria-label="Close tab: Files"');
-    expect(html).toContain('aria-label="Kill shell: 1: zsh"');
-    expect(html).toContain('data-tooltip="Kill shell (Ctrl+W)"');
-    expect(html).toContain('data-tooltip="zsh — /repo"');
-    expect(html).toContain('data-terminal-id="t1"');
+    expect(html).toContain('aria-label="Close panel: Trace"');
+    expect(html).toContain('data-tooltip="Close panel (Ctrl+W)"');
+    expect(html).toContain('data-tooltip="Trace — this conversation"');
   });
 
   it("grows the pills and the × targets under a finger", () => {

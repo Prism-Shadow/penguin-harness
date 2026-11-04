@@ -86,3 +86,94 @@ export function ChevronDownIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.copy} />
+    </Icon>
+  );
+}
+
+export function LinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.chainLink} />
+    </Icon>
+  );
+}
+
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.externalLink} />
+    </Icon>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.search} />
+    </Icon>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.arrowRightCentered} />
+    </Icon>
+  );
+}
+
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.arrowUp} />
+    </Icon>
+  );
+}
+
+export function AirplaneIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.airplane} />
+    </Icon>
+  );
+}
+
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.pause} />
+    </Icon>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.play} />
+    </Icon>
+  );
+}
+
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.terminalPrompt} />
+    </Icon>
+  );
+}
+
+export type SiteGlyphName = keyof typeof ICONS;
+
+/** Any drawing of the shared registry, in the same stroke as the icons above. */
+export function SiteGlyph({ name, ...props }: IconProps & { name: SiteGlyphName }) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS[name]} />
+    </Icon>
+  );
+}

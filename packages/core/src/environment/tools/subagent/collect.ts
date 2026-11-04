@@ -9,8 +9,8 @@
  * does a final drain right before ending (to catch the tail buffer at the moment the run
  * finishes). Deciding the end state and finalizing are the caller's responsibility.
  */
-import { partialToolCallOutput } from "../../../omnimessage/index.js";
-import type { OmniMessage } from "../../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../../../interfaces/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 
@@ -30,10 +30,10 @@ export async function* collectWindow(
      */
     includeText?: boolean;
   },
-): AsyncGenerator<OmniMessage> {
+): AsyncGenerator<AmspRecord> {
   const { yieldMs, toolCallId, signal, approve } = opts;
   const includeText = opts.includeText ?? true;
-  const delta = (output: string): OmniMessage =>
+  const delta = (output: string): AmspRecord =>
     partialToolCallOutput({ eventType: "delta", output, toolCallId });
   const detach = approve ? session.attachApprovalSink(approve) : null;
   // abort only ends this window (whether to kill the child session is up to the caller);

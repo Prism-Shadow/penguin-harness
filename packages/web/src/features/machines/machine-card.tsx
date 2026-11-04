@@ -32,9 +32,10 @@ import {
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  RetryStatus,
   UpdatePill,
 } from "@prismshadow/penguin-ui";
-import type { ToneName } from "@prismshadow/penguin-ui";
+import type { RetryStatusProps, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { formatRelativeShort } from "../../lib/format";
@@ -50,7 +51,7 @@ import {
   useWaitsBecause,
   wantsUse,
 } from "./machines-view";
-import type { MachineReading } from "./machines-view";
+import type { MachineReading, RetryReading } from "./machines-view";
 
 /**
  * The reason a machine's state gives beside its word, when it has one: the far side's own words,
@@ -69,6 +70,48 @@ export function reasonText(reading: MachineReading): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * The shared retry row for a machine's retry reading: its sentence and countdown in the reader's
+ * words, and the presses on offer — "Retry now" and "Stop retrying" while the streak runs, "Retry"
+ * after it stopped. `reason` replaces the reading's own (the dialog says the last failure in full
+ * under the row, so its row says none).
+ */
+export function retryStatus(
+  view: RetryReading,
+  {
+    onRetry,
+    onStop,
+    held,
+    size = "xs",
+    reason = view.reason,
+  }: {
+    /** Retries now; a promise that rejects says the server refused, so the press can be made again. */
+    onRetry: () => unknown;
+    /** Stops retrying; a promise that rejects lets the press be made again. */
+    onStop: () => unknown;
+    /** Something else is in flight or moving on the machine: the presses are not taken. */
+    held: boolean;
+    size?: "xs" | "sm";
+    reason?: string | null;
+  },
+): RetryStatusProps {
+  const r = S.machines.retry;
+  const { offers } = view;
+  return {
+    phase: view.phase,
+    label: view.label,
+    ...(view.countdown === null ? {} : { countdown: view.countdown }),
+    reason,
+    nextAt: view.nextAtMs,
+    retry:
+      offers.retryNow || offers.retry
+        ? { label: offers.retryNow ? r.retryNow : r.retry, onClick: onRetry, disabled: held }
+        : null,
+    secondary: offers.stop ? { label: r.stop, onClick: onStop, disabled: held } : null,
+    size,
+  };
 }
 
 /** What a machine's state mark shows: its words, its tone, and its shape. */

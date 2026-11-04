@@ -437,7 +437,13 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   afterAll(async () => {
     link?.dispose();
     cdp?.close();
+    // Chromium writes into its profile while it shuts down: remove the profile once it has exited.
+    const exited =
+      browserProcess === undefined || browserProcess.exitCode !== null
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => browserProcess!.once("exit", () => resolve()));
     browserProcess?.kill();
+    await exited;
     await new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve());
     if (profileDir !== "") fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 5 });
   });

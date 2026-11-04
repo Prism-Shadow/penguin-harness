@@ -6,12 +6,10 @@
  * The pacing is a pure function of an explicit clock, so these tests drive the clock
  * themselves, frame by frame, the way use-stream-reveal.ts does from requestAnimationFrame:
  * typewriter by character, fade by word, the 1.5 s backlog cap, finishing at the rate after the
- * stream ends, and `instant` (Primer, no tokens, reduced motion) showing the text whole. The
- * suite runs no frame loop, so the hook's use of one is pinned against its source at the bottom;
- * the body's markup is assistant-text.test.ts.
+ * stream ends, and `instant` (Primer, no tokens, reduced motion) showing the text whole; and
+ * under `fade`, the runs each new stretch makes while the theme fades it in. The hook's frame
+ * loop and the runs on screen are the Web App's stream-arrival.test.ts, in a live DOM.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STREAM_STYLE,
@@ -21,7 +19,9 @@ import {
 } from "../src/components/chat/assistant-text/stream-style";
 import type { StreamReveal } from "../src/tokens";
 import {
+  MAX_ARRIVALS,
   REVEAL_MAX_LAG_MS,
+  noteArrival,
   receiveText,
   revealCut,
   revealFrameMs,
@@ -30,7 +30,6 @@ import {
   visibleLength,
 } from "../src/components/chat/assistant-text/stream-reveal";
 import type { RevealState } from "../src/components/chat/assistant-text/stream-reveal";
-import { SRC_DIR } from "./helpers/paths";
 
 const FRAME = 16;
 
@@ -96,7 +95,7 @@ describe("readStreamStyle", () => {
         reader({ "--ui-stream-reveal": " typewriter", "--ui-stream-rate": " 90" }),
         null,
       ),
-    ).toEqual({ reveal: "typewriter", rate: 90, reducedMotion: false });
+    ).toEqual({ reveal: "typewriter", rate: 90, fadeMs: 0, reducedMotion: false });
     expect(
       readStreamStyle(reader({ "--ui-stream-reveal": "fade", "--ui-stream-rate": "220" }), null),
     ).toMatchObject({ reveal: "fade", rate: 220 });
@@ -108,6 +107,17 @@ describe("readStreamStyle", () => {
       readStreamStyle(reader({ "--ui-stream-reveal": "wiggle", "--ui-stream-rate": "x" }), null),
     ).toEqual(DEFAULT_STREAM_STYLE);
     expect(readStreamStyle(reader({ "--ui-stream-rate": "-5" }), null).rate).toBe(0);
+  });
+
+  it("reads how long a fade's runs take from the reveal duration", () => {
+    const fadeMs = (value: string) => readStreamStyle(reader({ "--ui-dur-reveal": value }), null);
+    expect(fadeMs(" 360ms").fadeMs).toBe(360);
+    expect(fadeMs("0.36s").fadeMs).toBe(360);
+    // No duration, or none worth fading over: the runs are not kept apart.
+    expect(fadeMs("0ms").fadeMs).toBe(0);
+    expect(fadeMs("soft").fadeMs).toBe(0);
+    // A typo of a duration is held to a fade a reader would still wait through.
+    expect(fadeMs("36s").fadeMs).toBe(2000);
   });
 
   it("carries the root's reduced-motion switch", () => {
@@ -125,7 +135,7 @@ describe("readStreamStyle", () => {
 });
 
 describe("effectiveReveal", () => {
-  const typewriter = { reveal: "typewriter", rate: 90, reducedMotion: false } as const;
+  const typewriter = { reveal: "typewriter", rate: 90, fadeMs: 0, reducedMotion: false } as const;
 
   it("paces in the theme's mode when it has a rate", () => {
     expect(effectiveReveal(typewriter, false)).toBe("typewriter");
@@ -174,7 +184,7 @@ describe("the paced reveal", () => {
   });
 
   it("returns the whole text under reduced motion, whatever the theme asks for", () => {
-    const frost = { reveal: "fade", rate: 220, reducedMotion: false } as const;
+    const frost = { reveal: "fade", rate: 220, fadeMs: 360, reducedMotion: false } as const;
     const s = opened("Hello world", frost.rate);
     // The operating system's preference, then the root's switch.
     expect(visibleLength(s, effectiveReveal(frost, true), true, 0)).toBe(11);
@@ -250,10 +260,53 @@ describe("the paced reveal", () => {
     expect(startReveal("", 0, { streaming: true, rate: 100 }).cursor).toBe(0);
   });
 
+  it("reveals a new reply whose first delta was large from its start, within the lag cap", () => {
+    // 250 characters at 100 a second: under two backlogs, so nothing of it shows at once.
+    let s = startReveal("abcd ".repeat(50), 0, { streaming: true, rate: 100 });
+    expect(visibleLength(s, "fade", true, 0)).toBe(0);
+    s = stepReveal(s, REVEAL_MAX_LAG_MS, 100);
+    expect(visibleLength(s, "fade", true, REVEAL_MAX_LAG_MS)).toBe(250);
+  });
+
   it("hands React fewer prefixes as the reply grows", () => {
     expect(revealFrameMs(0)).toBe(33);
     expect(revealFrameMs(6000)).toBe(60);
     expect(revealFrameMs(50_000)).toBe(120);
+  });
+});
+
+describe("the runs a fade reveal leaves to fade in", () => {
+  it("makes each new stretch a run of its own until it has faded, then lets it rejoin the text", () => {
+    let runs = noteArrival([], 0, 100, 360);
+    runs = noteArrival(runs, 12, 140, 360);
+    runs = noteArrival(runs, 30, 300, 360);
+    expect(runs).toEqual([
+      { start: 0, at: 100 },
+      { start: 12, at: 140 },
+      { start: 30, at: 300 },
+    ]);
+    // 360 ms after the first, it has faded: the text it brought is plain again.
+    expect(noteArrival(runs, 41, 460, 360)).toEqual([
+      { start: 12, at: 140 },
+      { start: 30, at: 300 },
+      { start: 41, at: 460 },
+    ]);
+  });
+
+  it("drops runs over text that was taken back", () => {
+    const runs = noteArrival(noteArrival([], 0, 0, 360), 20, 40, 360);
+    expect(noteArrival(runs, 10, 80, 360)).toEqual([
+      { start: 0, at: 0 },
+      { start: 10, at: 80 },
+    ]);
+  });
+
+  it("keeps a bounded number of runs however fast the prefixes come", () => {
+    let runs = noteArrival([], 0, 0, 360);
+    for (let i = 1; i <= 100; i++) runs = noteArrival(runs, i * 5, i, 360);
+    expect(runs).toHaveLength(MAX_ARRIVALS);
+    // The newest are the ones kept, the latest last.
+    expect(runs[runs.length - 1]).toEqual({ start: 500, at: 100 });
   });
 });
 
@@ -300,22 +353,5 @@ describe("revealCut (half-typed Markdown)", () => {
 
   it("leaves plain text where the cursor is", () => {
     expect(cut("plain words here", "plain wo")).toBe("plain wo");
-  });
-});
-
-/**
- * Source of the hook. The suite runs no frame loop, so the loop it drives is pinned against the
- * text that writes it.
- */
-const hook = readFileSync(
-  join(SRC_DIR, "components/chat/assistant-text/use-stream-reveal.ts"),
-  "utf8",
-);
-
-describe("the reveal hook (source contract)", () => {
-  it("drives the pacing from animation frames and cancels them on cleanup", () => {
-    expect(hook).toContain("requestAnimationFrame(tick)");
-    expect(hook).toContain("cancelAnimationFrame(frame)");
-    expect(hook).toMatch(/if \(!paced\) return text;/);
   });
 });

@@ -11,7 +11,7 @@
  * Stateless: the dialog owns the fold and starts it closed on every opening, and a test reads
  * both states from static markup.
  */
-import { Badge, Chevron, ICON_GAP, ICON_SIZE, RuledSection } from "@prismshadow/penguin-ui";
+import { Chevron, ICON_GAP, ICON_SIZE, Pill, RuledSection } from "@prismshadow/penguin-ui";
 import { formatYearMonthDay } from "../../lib/format";
 import { noteLines, releaseNotesNewestFirst } from "../../lib/release-notes";
 import type { ReleaseNote } from "../../lib/release-notes";
@@ -85,11 +85,7 @@ function NoteItem({
       <div className="flex items-baseline justify-between gap-3">
         <h4 className={`flex items-center ${ICON_GAP.row} text-sm font-medium`}>
           {`v${note.version}`}
-          {current && (
-            <Badge tone="neutral" variant="soft" size="sm">
-              {S.appInfo.current}
-            </Badge>
-          )}
+          {current && <Pill>{S.appInfo.current}</Pill>}
         </h4>
         <span className="shrink-0 text-xs text-fg-subtle">
           {formatYearMonthDay(note.date, locale)}

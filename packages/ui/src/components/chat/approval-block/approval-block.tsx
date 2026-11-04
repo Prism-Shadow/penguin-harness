@@ -11,6 +11,9 @@
  *
  * The buttons are words at every breakpoint: an action a person presses reads as "Allow" and
  * "Deny", never as a glyph. Both stay disabled while the decision is being submitted.
+ *
+ * The amber band names its tone as a notice does and declares itself a tone surface, so on a
+ * custom background its tint thins over the image the way a notice's does (wallpaper.css).
  */
 import { useState } from "react";
 import { Button } from "../../actions/button/button";
@@ -80,7 +83,11 @@ export function ApprovalBlock({
   labels,
 }: ApprovalBlockProps) {
   return (
-    <div className="border-t border-line-muted bg-tone-attention-bg px-3 py-2">
+    <div
+      data-wallpaper-surface="tone"
+      data-tone="warning"
+      className="border-t border-line-muted bg-tone-attention-bg px-3 py-2"
+    >
       <div className="mb-2 flex items-start gap-2 sm:items-center">
         <span
           data-tooltip={nameTooltip}

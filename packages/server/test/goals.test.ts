@@ -6,8 +6,10 @@
  *   goal_finished events.
  * - The recorded objective leaves the attached images out, so the display copy stays path-free.
  * - A background completion notice inside a round is not a round boundary.
- * - A second goal while one runs is a 409; a Session with no goal start hook is a 409
- *   goal_plugin_not_installed.
+ * - A second goal while one runs is a 409.
+ * - An Agent without the goal hook package is a 409 goal_plugin_not_installed before its
+ *   Session is loaded; with the package on disk but no goal start hook in the Session, the
+ *   same 409 comes after the load.
  * - A throw after the terminal event publishes no contradicting outcome; a stream that ends
  *   without the terminal event closes the goal as aborted.
  *
@@ -37,7 +39,7 @@ import {
   tokenUsage,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -47,7 +49,7 @@ import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { fakeSession } from "./fixtures/session.js";
-import { makeTempRoot, waitFor } from "./helpers.js";
+import { makeTempRoot, removeTempRoot, waitFor } from "./helpers.js";
 import {
   MOCK_MODEL_ID,
   clockContext,
@@ -76,7 +78,7 @@ function usage(total: number): TokenCounts {
 }
 
 /** A goal round's injected input, as the host records it: plain protocol text, stamped `sender: "harness"`. */
-function roundInput(round: number): OmniMessage {
+function roundInput(round: number): AmspRecord {
   return userText(`goal round ${round} protocol lines`, "harness");
 }
 
@@ -87,7 +89,7 @@ function goalHook(
   round: number,
   tokensUsed: number,
   budget = -1,
-): OmniMessage {
+): AmspRecord {
   return hookEvent({
     hook: "stop",
     name: "goal",
@@ -128,20 +130,20 @@ describe("SessionManager.startGoal", () => {
    * harness-stamped injections and the goal hook's answers are (the hook loop is core's and
    * the decisions are the goal plugin's; both are tested where they live).
    */
-  function goalFakeSession(stream: (input: OmniMessage[]) => OmniMessage[]): RuntimeSession & {
+  function goalFakeSession(stream: (input: AmspRecord[]) => AmspRecord[]): RuntimeSession & {
     runOpts: RunOpts[];
-    runs: OmniMessage[][];
+    runs: AmspRecord[][];
     starts: Array<{ name: string; prompt: string; extras: unknown }>;
   } {
     const runOpts: RunOpts[] = [];
-    const runs: OmniMessage[][] = [];
+    const runs: AmspRecord[][] = [];
     const starts: Array<{ name: string; prompt: string; extras: unknown }> = [];
     const session = fakeSession(ROW.sessionId, {
       async runUserPromptHook(name, prompt, extras) {
         starts.push({ name, prompt, extras });
         return { context: "goal round 1 protocol lines" };
       },
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runs.push(input);
         runOpts.push({});
         yield* stream(input);
@@ -150,14 +152,24 @@ describe("SessionManager.startGoal", () => {
     return Object.assign(session, { runOpts, runs, starts });
   }
 
-  function makeManager(session: RuntimeSession): SessionManager {
+  /** With `root`, the manager reads the Agent's hook packages off that data root before a load. */
+  function makeManager(
+    session: RuntimeSession,
+    opts: { root?: string; loads?: { count: number } } = {},
+  ): SessionManager {
     return new SessionManager({
       sessions,
       channels,
       sources: new SessionSources(),
-      loader: { load: async () => session },
+      loader: {
+        load: async () => {
+          if (opts.loads) opts.loads.count += 1;
+          return session;
+        },
+      },
       recorder: { record: async () => {} },
       log: () => {},
+      ...(opts.root !== undefined ? { root: opts.root } : {}),
     });
   }
 
@@ -214,13 +226,13 @@ describe("SessionManager.startGoal", () => {
     });
 
     // The inputs were published on the message stream (no `event:` name) for live viewers —
-    // round 1 by startGoal itself (core never yields a run's initial input, and a page
+    // round 1 echoed by the manager (core never yields a run's initial input, and a page
     // already subscribed would otherwise miss it until a reload), round 2 off the stream:
     // the user's own message verbatim — the [use_skills] block included — and both rounds'
     // harness-stamped protocol messages.
     const published = events
       .filter((e) => e.event === undefined)
-      .map((e) => JSON.parse(e.data) as OmniMessage)
+      .map((e) => JSON.parse(e.data) as AmspRecord)
       .filter((m) => m.type === "model_msg" && (m.payload as { role?: string }).role === "user");
     expect(published).toHaveLength(3);
     expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
@@ -309,10 +321,11 @@ describe("SessionManager.startGoal", () => {
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
   });
 
-  it("409s goal_plugin_not_installed when the Session has no goal user_prompt hook", async () => {
+  it("refuses a goal before loading the Session when its Agent has no goal hook package", async () => {
+    const root = await makeTempRoot();
     const session = goalFakeSession(() => []);
-    session.runUserPromptHook = async () => null;
-    const manager = makeManager(session);
+    const loads = { count: 0 };
+    const manager = makeManager(session, { root, loads });
     await expect(
       manager.startGoal(ROW.sessionId, {
         messages: [userText("obj")],
@@ -320,7 +333,33 @@ describe("SessionManager.startGoal", () => {
         budget: -1,
       }),
     ).rejects.toMatchObject({ status: 409, code: "goal_plugin_not_installed" });
+    // Nothing was built for a request that was always going to be refused.
+    expect(loads.count).toBe(0);
+    expect(session.starts).toEqual([]);
     expect(manager.statusOf(ROW.sessionId)).toBe("idle");
+    await removeTempRoot(root);
+  });
+
+  it("409s goal_plugin_not_installed when the package is there but its Session has no goal user_prompt hook", async () => {
+    const root = await makeTempRoot();
+    const goalDir = path.join(hooksDir(root, ROW.projectId, ROW.agentId), "goal");
+    await fs.mkdir(goalDir, { recursive: true });
+    await fs.writeFile(path.join(goalDir, "hooks.json"), "{}\n");
+    const session = goalFakeSession(() => []);
+    session.runUserPromptHook = async () => null;
+    const loads = { count: 0 };
+    const manager = makeManager(session, { root, loads });
+    await expect(
+      manager.startGoal(ROW.sessionId, {
+        messages: [userText("obj")],
+        objective: "obj",
+        budget: -1,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "goal_plugin_not_installed" });
+    // The package on disk let the request through to the Session, whose hook said no.
+    expect(loads.count).toBe(1);
+    expect(manager.statusOf(ROW.sessionId)).toBe("idle");
+    await removeTempRoot(root);
   });
 
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {
@@ -473,7 +512,7 @@ for (const { installed, legacy } of [
       /** The user texts published on the session's message stream, in order. */
       const published = () =>
         userTexts(
-          events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as OmniMessage),
+          events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as AmspRecord),
         );
       const goalFile = () =>
         path.join(sessionScratchpadDir(root, PROJECT, AGENT, sessionId), "GOAL.json");

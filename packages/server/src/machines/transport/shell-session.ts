@@ -72,7 +72,16 @@ export interface ShellRunOptions {
   onLine?: (line: string) => void;
   /** A command that has not finished in this long is treated as a hung session. */
   timeoutMs?: number;
+  /**
+   * The work the command belongs to was cut: one still waiting its turn answers at once and is
+   * never sent, and one already running ends the session it runs on, as a timeout does — the
+   * shell is mid-command and cannot be handed to the next one.
+   */
+  signal?: AbortSignal;
 }
+
+/** What a command answers when the work it belongs to was cut; nobody reads it but that work. */
+export const STOPPED: ShellResult = { code: 255, output: "stopped before it finished" };
 
 /** The held session: the child the host holds for the machine. What else it carries is the kind's (`carry`). */
 export interface ShellSession {
@@ -264,10 +273,18 @@ class MachineShell {
 
   /** Runs one command, opening the session if needed. Never throws; a dead session is a failure. */
   run(command: string, opts: ShellRunOptions = {}): Promise<ShellResult> {
+    const signal = opts.signal;
+    if (signal?.aborted === true) return Promise.resolve(STOPPED);
     const next = this.#queue.then(() => this.#runExclusive(command, opts));
     // The queue must survive a rejection, or one failure would stall every later command.
     this.#queue = next.catch(() => undefined);
-    return next;
+    if (signal === undefined) return next;
+    // Cut while it waits its turn: answered now, and #runExclusive sends nothing when it comes.
+    return new Promise<ShellResult>((resolve, reject) => {
+      const stop = () => resolve(STOPPED);
+      signal.addEventListener("abort", stop, { once: true });
+      void next.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
+    });
   }
 
   /** The session while it is up, or null. */
@@ -430,6 +447,8 @@ class MachineShell {
   }
 
   async #runExclusive(command: string, opts: ShellRunOptions): Promise<ShellResult> {
+    const signal = opts.signal;
+    if (signal?.aborted === true) return STOPPED;
     if (this.#idle !== null) clearTimeout(this.#idle);
     let child: ChildProcessWithoutNullStreams;
     try {
@@ -437,7 +456,13 @@ class MachineShell {
     } catch (err) {
       return { code: 255, output: err instanceof Error ? err.message : String(err) };
     }
+    let stop: (() => void) | undefined;
     return new Promise<ShellResult>((resolve) => {
+      // Cut while the session opened: the command is never sent.
+      if (signal?.aborted === true) {
+        resolve(STOPPED);
+        return;
+      }
       const timer = setTimeout(() => {
         // A session that stopped answering is not one to keep: drop it so the next command
         // opens a fresh connection rather than queueing behind a corpse.
@@ -450,6 +475,16 @@ class MachineShell {
         this.#reset();
         resolve({ code: 255, output: "the machine did not answer in time" });
       }, opts.timeoutMs ?? COMMAND_TIMEOUT_MS);
+      // Cut while it runs: the same as the timeout, detached first so the drop cannot answer it.
+      stop = () => {
+        // Already answered (its mark came back, or the session dropped): nothing is left to end.
+        if (this.#pending?.resolve !== resolve) return;
+        clearTimeout(timer);
+        this.#pending = null;
+        this.#reset();
+        resolve(STOPPED);
+      };
+      signal?.addEventListener("abort", stop, { once: true });
       this.#pending = { resolve, timer, onLine: opts.onLine };
       const mark = `printf '\\n${this.#mark} %s\\n' "$?"`;
       if (opts.input === undefined) {
@@ -462,6 +497,7 @@ class MachineShell {
         `( ${DECODE} | ( ${command} ) ) <<'${end}' 2>&1 ; ${mark}\n${body}\n${end}\n`,
       );
     }).finally(() => {
+      if (stop !== undefined) signal?.removeEventListener("abort", stop);
       // A command completed over a live child: whatever the last drop cost, the next starts
       // from the shortest wait again.
       if (this.#child !== null) this.#backoffMs = RECONNECT_MIN_MS;
@@ -593,7 +629,9 @@ export async function openShell(
   const shell = shellFor(machineAddress, machine);
   const up = shell.session();
   if (up !== null) return { ok: true, session: up };
-  const result = await shell.run(":", { timeoutMs: OPEN_TIMEOUT_MS });
+  const result = await shell.run(":", {
+    timeoutMs: OPEN_TIMEOUT_MS,
+  });
   const session = shell.session();
   if (result.code !== 0 || session === null) {
     return { ok: false, detail: result.output.trim() || "the session did not come up" };
@@ -603,7 +641,8 @@ export async function openShell(
 
 /**
  * Brings the session up AND keeps it: no idle timer, reopened on its own when it drops, until
- * closeShell. Idempotent, and promotes a session a passing command already opened.
+ * closeShell. Idempotent, and promotes a session a passing command already opened. Work that was
+ * cut holds nothing: a held session would come back on its own after the cut.
  */
 export function holdShell(
   machineAddress: string,

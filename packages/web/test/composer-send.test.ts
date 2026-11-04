@@ -11,13 +11,15 @@ import { describe, expect, it } from "vitest";
 import { isStopAction, midRunAction } from "../src/features/chat/composer-send";
 import type { MidRunComposerState } from "../src/features/chat/composer-send";
 
-/** An active session with both channels wired, steer mode, and a one-line text draft. */
+/** An active session with every channel wired, steer mode, and a one-line text draft. */
 const BASE: MidRunComposerState = {
   sending: false,
   goalOn: false,
   canSteerChannel: true,
   canQueueChannel: true,
+  canInterruptChannel: true,
   followUpMode: false,
+  interruptMode: false,
   stagedRoute: "post",
   hasHandoffTarget: false,
   hasPendingModel: false,
@@ -75,6 +77,24 @@ describe("midRunAction — the queue", () => {
   });
 });
 
+describe("midRunAction — interrupt mode", () => {
+  it("takes the whole draft, whatever it is made of, instead of steering it", () => {
+    expect(act({ interruptMode: true })).toBe("interrupt");
+    expect(act({ interruptMode: true, ...EMPTY, hasContent: true })).toBe("interrupt");
+  });
+
+  it("leaves a staged switch to the queue: that chip opens another conversation, not this run's", () => {
+    expect(act({ interruptMode: true, hasHandoffTarget: true, stagedRoute: "handoff" })).toBe(
+      "queue",
+    );
+    expect(act({ interruptMode: true, hasPendingModel: true, stagedRoute: "model" })).toBe("queue");
+  });
+
+  it("falls back to the ordinary choice on a host that wired no interrupt", () => {
+    expect(act({ interruptMode: true, canInterruptChannel: false })).toBe("queue");
+  });
+});
+
 describe("midRunAction — Stop is the fallthrough, not a case", () => {
   it("an empty composer is Stop", () => {
     expect(act(EMPTY)).toBe("stop");
@@ -86,6 +106,7 @@ describe("midRunAction — Stop is the fallthrough, not a case", () => {
   it("a goal objective leaves Stop — it is an objective, not a message for this turn", () => {
     expect(act({ goalOn: true })).toBe("stop");
     expect(act({ goalOn: true, followUpMode: true })).toBe("stop");
+    expect(act({ goalOn: true, interruptMode: true })).toBe("stop");
     expect(act({ goalOn: true, hasImages: true })).toBe("stop");
   });
 
@@ -114,6 +135,7 @@ describe("isStopAction — which session states offer Stop at all", () => {
     // so every mid-run face still resolves to Stop.
     expect(isStopAction("compacting", "steer")).toBe(true);
     expect(isStopAction("compacting", "queue")).toBe(true);
+    expect(isStopAction("compacting", "interrupt")).toBe(true);
     expect(isStopAction("compacting", "disabled")).toBe(true);
   });
 
@@ -121,6 +143,7 @@ describe("isStopAction — which session states offer Stop at all", () => {
     expect(isStopAction("running", "stop")).toBe(true);
     expect(isStopAction("running", "steer")).toBe(false);
     expect(isStopAction("running", "queue")).toBe(false);
+    expect(isStopAction("running", "interrupt")).toBe(false);
     // A send in flight must not turn into an abort on the next click.
     expect(isStopAction("running", "disabled")).toBe(false);
   });

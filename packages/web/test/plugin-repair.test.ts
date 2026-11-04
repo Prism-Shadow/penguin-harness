@@ -98,7 +98,7 @@ describe("the row of a plugin the build cannot fully run", () => {
       usage: null,
       categoryTitle: "Other",
       showCategory: true,
-      agents: [],
+      targets: [],
       installed: new Map(),
       canQuickStart: false,
       isAdmin: true,

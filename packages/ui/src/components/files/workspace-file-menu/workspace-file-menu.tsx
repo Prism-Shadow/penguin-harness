@@ -99,7 +99,8 @@ export function WorkspaceFileMenuRows({
   downloadHref: (path: string) => string;
   downloadName: (path: string) => string;
   onCopyPath: (target: FileMenuTarget) => void;
-  onAddToChat: (target: FileMenuTarget) => void;
+  /** Adds the entry to the conversation's composer; offered when given (a browser with no conversation beside it offers nothing). */
+  onAddToChat?: (target: FileMenuTarget) => void;
   onUploadInto: (dir: string) => void;
   /** Creates an empty text file inside a folder; offered on folders when given. */
   onNewFile?: (dir: string) => void;
@@ -124,11 +125,13 @@ export function WorkspaceFileMenuRows({
   return (
     <Menu density="sm">
       <MenuItem glyph={ICONS.copy} label={labels.copyPath} onSelect={() => onCopyPath(target)} />
-      <MenuItem
-        glyph={ICONS.messagePlus}
-        label={labels.addToChat}
-        onSelect={() => onAddToChat(target)}
-      />
+      {onAddToChat !== undefined && (
+        <MenuItem
+          glyph={ICONS.messagePlus}
+          label={labels.addToChat}
+          onSelect={() => onAddToChat(target)}
+        />
+      )}
       {onAddSelection !== undefined && (
         <MenuItem
           glyph={ICONS.messagePlus}

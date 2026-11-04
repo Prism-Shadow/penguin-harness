@@ -22,8 +22,14 @@
  * it — smoothly, never by a jump. When the stream ends, the rest comes in at the same rate
  * under the same deadlines. At the live edge, while the stream is open and its last arrival is
  * younger than the deadline, a partial word or a syntax-only line waits for the next delta.
+ *
+ * Under `fade`, each time the visible prefix grows the new stretch is also an arrival
+ * ({@link noteArrival}): it stays a run of its own for the theme's reveal duration, while the
+ * theme fades it in (stream-arrivals.ts). Pacing is untouched by it — what is on screen is on
+ * screen at once, and only its ink rises.
  */
 import type { StreamReveal } from "../../../tokens";
+import type { RevealArrival } from "../../content/prose/stream-arrivals";
 
 /** The most the reveal may trail the stream: text that arrived this long ago is on screen. */
 export const REVEAL_MAX_LAG_MS = 1500;
@@ -55,9 +61,11 @@ export function settledReveal(text: string, now: number): RevealState {
 /**
  * A reply's reveal when it first renders. A settled reply, or one with nothing to pace with,
  * shows whole. A streaming one normally starts empty (the fragment opens before its first
- * delta); if it mounts with text already in it — a reload or a switch back into a running
- * Session — only the last {@link REVEAL_MAX_LAG_MS} of it at the rate is revealed again, so
- * the text the reader has already seen does not type itself out a second time.
+ * delta), but a large first delta can land in the same commit as the fragment, so a reply that
+ * mounts with no more than two backlogs of text (twice what the rate shows in
+ * {@link REVEAL_MAX_LAG_MS}) is a new one and is revealed from its start. One that mounts with
+ * more — a reload or a switch back into a running Session — reveals only the last backlog again,
+ * so the text the reader has already seen does not type itself out a second time.
  */
 export function startReveal(
   text: string,
@@ -65,7 +73,8 @@ export function startReveal(
   pace: { streaming: boolean; rate: number },
 ): RevealState {
   if (!pace.streaming || pace.rate <= 0) return settledReveal(text, now);
-  const cursor = Math.max(0, text.length - (pace.rate * REVEAL_MAX_LAG_MS) / 1000);
+  const backlog = (pace.rate * REVEAL_MAX_LAG_MS) / 1000;
+  const cursor = text.length <= 2 * backlog ? 0 : text.length - backlog;
   return {
     text,
     cursor,
@@ -213,4 +222,27 @@ export function visibleLength(
  */
 export function revealFrameMs(length: number): number {
   return Math.min(120, Math.max(33, length / 100));
+}
+
+/**
+ * The most runs kept fading at once. A run lives one reveal duration and the reveal hands React
+ * a prefix at most every {@link revealFrameMs}, so about a dozen are ever live; the cap only
+ * bounds a pathological clock. The oldest run past it rejoins the text at full ink.
+ */
+export const MAX_ARRIVALS = 16;
+
+/**
+ * The live runs after the visible prefix grew from `from` characters at `now`: the new stretch
+ * starts a run, runs at least `fadeMs` old have finished fading and rejoin the text, and so do
+ * any that start at or past `from` (text that was replaced or taken back).
+ */
+export function noteArrival(
+  arrivals: readonly RevealArrival[],
+  from: number,
+  now: number,
+  fadeMs: number,
+): readonly RevealArrival[] {
+  const live = arrivals.filter((arrival) => now - arrival.at < fadeMs && arrival.start < from);
+  live.push({ start: from, at: now });
+  return live.length > MAX_ARRIVALS ? live.slice(live.length - MAX_ARRIVALS) : live;
 }

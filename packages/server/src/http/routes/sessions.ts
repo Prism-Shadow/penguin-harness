@@ -19,16 +19,13 @@ import {
   stripLeadingMarkerBlocks,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   SessionsOverviewResponse,
   FilesStatResponse,
   GoalResponse,
   GoalStateView,
-  MessagesLiveTail,
-  MessagesPageInfo,
-  MessagesResponse,
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
@@ -46,9 +43,11 @@ import type {
   SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
-import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest } from "../../services/trace-service.js";
-import { withImagesByReference } from "../../services/trace-images.js";
+import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
+import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
+import { readableSession } from "../session-access.js";
+import { amspSessionStream } from "../../amsp/session-stream.js";
+import { pendingApprovals } from "../../amsp/approvals.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -60,11 +59,11 @@ import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
+  listingViewOfRequest,
   optionalEnum,
   optionalSessionListPagingQuery,
   optionalString,
   paginationQuery,
-  parseNonNegativeInt,
   pathParam,
   positiveIntParam,
   readJson,
@@ -116,6 +115,8 @@ export interface SessionsRouteDeps {
   auth: Auth;
   /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
   drivers?: SessionDrivers;
+  /** Users' unsent drafts, which go with the Session they were written for. */
+  drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
 import {
   assertAttachmentBudget,
@@ -131,7 +132,7 @@ import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
 
-import { agentsRoutes } from "./agents.js";
+import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
@@ -165,9 +166,11 @@ import type { FileReveal, PullRequests, WorkspaceFiles } from "../../mechanisms/
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
@@ -219,70 +222,6 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "read-only",
   "always-ask",
 ];
-
-/** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
-const MESSAGES_PAGE_LIMIT_MAX = 1000;
-const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
-
-/** Parse one windowed-read unit-count param (positive integer, capped). */
-function pageLimit(raw: string, name: string): number {
-  if (!/^\d{1,4}$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
-  const v = Number.parseInt(raw, 10);
-  if (v < 1 || v > MESSAGES_PAGE_LIMIT_MAX) {
-    throw badRequest(`${name} must be an integer between 1 and ${MESSAGES_PAGE_LIMIT_MAX}.`);
-  }
-  return v;
-}
-
-/**
- * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
- * read, byte-identical to the pre-pagination response (other consumers depend on it).
- * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
- * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
- * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
- */
-/**
- * Appends the running Task's already-published input messages that the Trace read has not
- * caught up to yet. Duplication is decided by exact envelope-JSON identity — the engine
- * writes the very same envelopes, and the client's overlap dedup uses the same rule — and
- * only the history tail can contain them (inputs are the newest records when this races).
- */
-function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
-  if (pending.length === 0) return messages;
-  const envelopeKey = (message: OmniMessage): string => {
-    const { tracePosition: _tracePosition, ...envelope } = message as OmniMessage & {
-      tracePosition?: unknown;
-    };
-    return JSON.stringify(envelope);
-  };
-  const tail = new Set(messages.slice(-50).map(envelopeKey));
-  const missing = pending.filter((message) => !tail.has(envelopeKey(message)));
-  return missing.length > 0 ? [...messages, ...missing] : messages;
-}
-
-function messagesPageQuery(c: Context): MessagesPageRequest | null {
-  const rawTail = c.req.query("tailLimit");
-  const rawBefore = c.req.query("before");
-  const rawLimit = c.req.query("limit");
-  if (rawTail === undefined && rawBefore === undefined) {
-    if (rawLimit !== undefined) throw badRequest("limit requires before.");
-    return null;
-  }
-  if (rawTail !== undefined) {
-    if (rawBefore !== undefined) throw badRequest("tailLimit and before are mutually exclusive.");
-    if (rawLimit !== undefined) throw badRequest("limit only applies to before requests.");
-    return { kind: "tail", limit: pageLimit(rawTail, "tailLimit") };
-  }
-  const cursor = decodeCursor(rawBefore!);
-  if (cursor === null) {
-    throw badRequest("before must be a cursor of the form <shardIndex>:<ordinal>.");
-  }
-  return {
-    kind: "before",
-    cursor,
-    limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
-  };
-}
 
 /**
  * Where compaction will fire for one Session, in tokens of occupancy: the Agent's configured
@@ -385,7 +324,7 @@ function resolveScratchpadFile(dir: string, fileName: string): string | null {
  * until the request is known to be good, and goal mode can reject files before any bytes land.
  */
 interface ParsedTaskInput {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   attachments: TaskAttachment[];
   /** The `text` parts in order, as submitted — the recall store's text (pre-attachment-lines). */
   texts: string[];
@@ -399,7 +338,7 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
   if (!Array.isArray(input) || input.length === 0) {
     throw badRequest("input must be an array with at least one item.");
   }
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   const attachments: TaskAttachment[] = [];
   const texts: string[] = [];
   const images: string[] = [];
@@ -423,7 +362,7 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
       return;
     }
     if (part.type === "file") {
-      // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
+      // Not a record of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
       attachments.push(parseAttachmentPart(part, i));
       // Per-request file count, re-checked on every part so a hostile `input` is cut off at the
@@ -526,7 +465,13 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 export function sessionDeletionDeps(
   deps: Pick<
     SessionsRouteDeps,
-    "config" | "manager" | "traceService" | "sessionsRepo" | "messaging" | "sessionSources"
+    | "config"
+    | "manager"
+    | "traceService"
+    | "sessionsRepo"
+    | "messaging"
+    | "sessionSources"
+    | "drafts"
   >,
 ): SessionDeletionDeps {
   return {
@@ -536,6 +481,7 @@ export function sessionDeletionDeps(
     sessions: deps.sessionsRepo,
     unbindMessaging: (sessionId) => deps.messaging.unbindSession(sessionId),
     sources: deps.sessionSources,
+    drafts: deps.drafts,
   };
 }
 
@@ -654,6 +600,7 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Every entry is checked BEFORE the first query runs: one bad entry fails the whole
     // request rather than being discovered halfway through a batch.
     const wanted = raw.map(batchPage);
+    const view = listingViewOfRequest(c);
     // Sequential on purpose: these are the same in-memory index reads one-per-Agent already
     // performed, and running them concurrently would only re-introduce the interleaving this
     // endpoint exists to remove.
@@ -661,7 +608,10 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     for (const { agentId, ...options } of wanted) {
       try {
         await deps.agentConfigService.requireExists(projectId, agentId);
-        const out = await deps.sessionService.listSessions(projectId, agentId, options);
+        const out = await deps.sessionService.listSessions(projectId, agentId, {
+          ...options,
+          view,
+        });
         results.push({ agentId, ok: true, ...out });
       } catch (err) {
         // An Agent this server does not host answers 404 — an ANSWER (see the sidebar's own
@@ -748,6 +698,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
         ...(rawExcludeOrg !== undefined ? { excludeOrg: true } : {}),
         ...(rawSessionIdPrefix !== undefined ? { sessionIdPrefix: rawSessionIdPrefix } : {}),
+        view: listingViewOfRequest(c),
       });
     return c.json({
       sessions,
@@ -835,33 +786,22 @@ export function sessionOverviewRoutes(
 export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  /** Look up ownership and check access (404 if the index has no such Session, or access is denied — never leaking existence). */
+  /** Look up ownership and check access (http/session-access.ts: 404, or 403 to a refused admin). */
   const resolveSession = (c: Context<AppEnv>): SessionRow => {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessionsRepo.findById(sessionId) : null;
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    try {
-      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
-    } catch {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    return row;
+    return readableSession(row, c.var.user, deps.access);
   };
 
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    const info = await deps.sessionService.toInfo(row, hasTrace);
+    const info = await deps.sessionService.toInfo(
+      row,
+      hasTrace,
+      undefined,
+      listingViewOfRequest(c),
+    );
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
@@ -925,7 +865,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         : undefined;
     // Archiving is a choice about which list a Session is in; a subagent Session (its parent's
     // Agent panel opens it) and a company Session (company mode's views list it) are in none.
-    if (archived !== undefined && (await deps.sessionService.listingOf(row)) === null) {
+    if (
+      archived !== undefined &&
+      (await deps.sessionService.listingOf(row, listingViewOfRequest(c))) === null
+    ) {
       throw new HttpError(
         409,
         "session_not_listed",
@@ -990,7 +933,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Falls back to the snapshot if the Session was deleted meanwhile.
     const fresh = deps.sessionsRepo.findById(row.sessionId) ?? updated;
     return c.json({
-      session: await deps.sessionService.toInfo(fresh, hasTrace),
+      session: await deps.sessionService.toInfo(
+        fresh,
+        hasTrace,
+        undefined,
+        listingViewOfRequest(c),
+      ),
     } satisfies SessionResponse);
   });
 
@@ -1132,154 +1080,29 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   });
 
   // One image of one Trace record, the URL a windowed history page puts in place of an
-  // inline data URL (services/trace-images.ts). The record never changes, so the answer is
-  // immutable; only inert raster types are ever served (the page references nothing else).
-  app.get("/:sessionId/trace-image", async (c) => {
+  // inline data URL; the Agent API serves the same handler (services/session-history.ts).
+  app.get("/:sessionId/trace-image", async (c) => sessionTraceImage(c, deps, resolveSession(c)));
+
+  // History, windowed or whole, with the live tail while the Session runs; the Agent API serves
+  // the same handler, its image references pointing at its own trace-image route.
+  app.get("/:sessionId/messages", async (c) =>
+    sessionMessages(c, deps, resolveSession(c), SESSION_ROUTES_BASE),
+  );
+
+  // AMSP's Session stream for a signed-in reader (a Workbench page, the SDK in a browser): the
+  // records and the beat, none of the server events `/stream` adds (amsp/session-stream.ts).
+  app.get("/:sessionId/amsp", (c) => {
     const row = resolveSession(c);
-    const intQuery = (name: string, min: number): number | undefined => {
-      const raw = c.req.query(name);
-      if (raw === undefined) return undefined;
-      const v = parseNonNegativeInt(raw);
-      if (v === null || v < min) {
-        throw badRequest(`${name} must be an integer of at least ${min}.`);
-      }
-      return v;
-    };
-    const fileIndex = intQuery("file", 1);
-    const ordinal = intQuery("ordinal", 0);
-    if (fileIndex === undefined || ordinal === undefined) {
-      throw badRequest("file and ordinal are required.");
-    }
-    const image = await deps.traceService.readTraceImage(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-      fileIndex,
-      ordinal,
-      intQuery("i", 0),
+    return amspSessionStream(
+      c,
+      deps.channels.get(row.sessionId),
+      streamRevocation(c, c.var.user, deps),
     );
-    return c.body(new Uint8Array(image.bytes), 200, {
-      "content-type": image.mime,
-      "x-content-type-options": "nosniff",
-      "cache-control": "private, max-age=31536000, immutable",
-    });
   });
 
-  app.get("/:sessionId/messages", async (c) => {
-    const row = resolveSession(c);
-    const page = messagesPageQuery(c);
-    // Live tail (running/compacting sessions only): capture the channel cursor and the
-    // open-fragment snapshot together, synchronously — no await between the two, and both
-    // BEFORE the trace read starts. That ordering is what makes the client contract safe
-    // (see MessagesLiveTail in api/types.ts): every published event with id <= cursor is
-    // already reflected in `fragments`, and partial_* messages never reach the Trace, so
-    // the client may drop its buffered partials at/or before the cursor and seed from
-    // `fragments` without loss or duplication. Complete messages are never dropped by the
-    // cursor — the client's overlap dedup against `messages` decides for them — so a
-    // complete message whose trace append is still in flight when the read starts is not
-    // lost either.
-    //
-    // Windowed reads keep the same contract on TAIL pages only: a tail page ends at the
-    // transcript's live edge, so the attachment's semantics are identical. A `before`
-    // page is immutable history — attaching in-flight fragments to it would seed them at
-    // the wrong position — so it never carries `live`.
-    let live: MessagesLiveTail | undefined;
-    let pendingInputs: OmniMessage[] = [];
-    if (page?.kind !== "before") {
-      if (deps.manager.statusOf(row.sessionId) !== "idle") {
-        live = {
-          cursor: deps.channels.get(row.sessionId).lastEventId,
-          fragments: deps.manager.liveFragments(row.sessionId),
-        };
-      }
-      // The Task's inputs (published at launch) and its streamed bootstrap records
-      // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
-      // only after the first run's connect, so a client rebuilding during that window
-      // would otherwise see neither its own message nor the connecting status — a
-      // silent blank while a slow MCP server times out. Appended below when the trace
-      // read hasn't caught up; `before` pages are immutable history and never carry
-      // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
-      // wrote nothing to the Trace, and its held input is the only copy a reload can
-      // show until the next run persists it (the holds survive idle for exactly that
-      // case — see the manager's request_begin clear).
-      pendingInputs = [
-        ...deps.manager.pendingInputs(row.sessionId),
-        ...deps.manager.pendingBootstrap(row.sessionId),
-      ];
-    }
-    if (page !== null) {
-      const result = await deps.traceService.readMessagesPage(
-        row.projectId,
-        row.agentId,
-        row.sessionId,
-        page,
-      );
-      const info: MessagesPageInfo = {
-        ...(result.before !== undefined ? { before: result.before } : {}),
-        earlierTurns: result.prior.turns,
-        prior: {
-          subagentTokens: result.prior.subagentTokens,
-          elapsedMs: result.prior.elapsedMs,
-          apiMs: result.prior.apiMs,
-          toolMs: result.prior.toolMs,
-          sessionTokens: result.prior.sessionTokens,
-          contextTokens: result.prior.contextTokens,
-        },
-        ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
-        ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
-      };
-      // Images by reference, after the held inputs were merged: the dedup compares raw
-      // envelopes, and a held input carries its image inline exactly as its Trace copy does.
-      const messages = appendPendingInputs(result.messages, pendingInputs).map((m) =>
-        withImagesByReference(row.sessionId, m),
-      );
-      return c.json({
-        messages,
-        ...(live !== undefined ? { live } : {}),
-        page: info,
-      } satisfies MessagesResponse);
-    }
-    const messages = await deps.traceService.readMessages(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-    );
-    return c.json({
-      messages: appendPendingInputs(messages, pendingInputs),
-      ...(live !== undefined ? { live } : {}),
-    } satisfies MessagesResponse);
-  });
-
-  // Streamed history (NDJSON frames; see MessagesHistoryFrame): the same windowed read
-  // (`tailLimit` / `before`, live tail included on tail/full reads) sorted into frames —
-  // the page envelope, the whole transcript's skeleton, then the window's meat — written
-  // line by line so the first frames flush before the last is built.
-  app.get("/:sessionId/messages/frames", async (c) => {
-    const row = resolveSession(c);
-    const page = messagesPageQuery(c);
-    // The live tail rides the `page` frame on tail/full reads, exactly as the JSON read
-    // attaches it (a `before` page is immutable history and never carries it).
-    let live: MessagesLiveTail | undefined;
-    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
-      live = {
-        cursor: deps.channels.get(row.sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(row.sessionId),
-      };
-    }
-    const frames = await deps.traceService.readMessagesFrames(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-      page ?? { kind: "tail", limit: MESSAGES_PAGE_LIMIT_MAX },
-    );
-    if (live !== undefined && frames[0]?.type === "page") frames[0].live = live;
-    const lines = frames.map((f) => JSON.stringify(f));
-    return c.body(`${lines.join("\n")}\n`, 200, {
-      "content-type": "application/x-ndjson; charset=utf-8",
-      "x-content-type-options": "nosniff",
-      "cache-control": "no-store",
-    });
-  });
+  // The calls waiting on a decision, `?wait=` holding the answer until there is one: the Agent
+  // API's approvals resource for a signed-in reader (amsp/approvals.ts).
+  app.get("/:sessionId/approvals", (c) => pendingApprovals(c, deps, resolveSession(c).sessionId));
 
   app.get("/:sessionId/stream", (c) => {
     const row = resolveSession(c);
@@ -1324,6 +1147,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
+    // the queue or open a goal, which never queues.
+    const interrupt = body.interrupt === true;
+    if (interrupt && (goal || body.queueIfBusy === true)) {
+      throw badRequest("interrupt cannot be combined with queueIfBusy or goal.");
+    }
     // A person starting a run is who it acts for; the API token is an agent (or a tool) on
     // somebody's behalf, and leaves the Session's driver as it was.
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
@@ -1366,7 +1195,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // running, without queueIfBusy — never writes bytes it would then have to take back. The
     // authoritative check still runs under the Session lock inside startTask; this one is
     // lock-free and may pass on a race, which the cleanup below covers.
-    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy });
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
@@ -1384,6 +1213,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
+        interrupt,
         // Original content, kept while the input waits in the follow-up queue so a recall
         // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
@@ -1462,7 +1292,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,
       pathParam(c, "childSessionId"),
-      // The HTTP boundary is where a host's payload becomes OmniMessage — no sender, because
+      // The HTTP boundary is where a host's payload becomes a record — no sender, because
       // a human typed this (the model's own dispatch through input_subagent stamps
       // "parent_agent" on its side).
       [userText(text)],
@@ -1504,6 +1334,24 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const { recall } = deps.manager.recallFollowUp(row.sessionId, pathParam(c, "followUpId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Send one waiting message now: the queued follow-up `followUpId` names, or the undelivered
+  // steering message `steerId` names, goes to the head of the queue and the run is aborted,
+  // so it starts as soon as the run settles. Exactly one of the two ids (400 otherwise); 409
+  // follow_up_started / not_pending when that message is no longer waiting.
+  app.post("/:sessionId/interrupt", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const { followUpId, steerId } = body;
+    if (typeof followUpId === "string" && steerId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { followUpId });
+    } else if (typeof steerId === "string" && followUpId === undefined) {
+      deps.manager.interruptQueued(row.sessionId, { steerId });
+    } else {
+      throw badRequest("Name exactly one waiting message: followUpId or steerId (a string).");
+    }
+    return c.body(null, 202);
   });
 
   // The Session's most recent goal run, read from the goal plugin's file in its scratchpad
@@ -1713,7 +1561,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const hasTrace = await deps.sessionService.hasTrace(fresh);
     return c.json({
-      session: await deps.sessionService.toInfo(fresh, hasTrace),
+      session: await deps.sessionService.toInfo(
+        fresh,
+        hasTrace,
+        undefined,
+        listingViewOfRequest(c),
+      ),
     } satisfies SessionResponse);
   });
 
@@ -1914,6 +1767,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 140,
       },
       {
+        id: "session-api.agent-deletions",
+        prefix: "/api/projects/:projectId/agent-deletions",
+        auth: "user",
+        order: 141,
+      },
+      {
         id: "session-api.agent-config",
         prefix: "/api/projects/:projectId/agents/:agentId/config",
         auth: "user",
@@ -2004,6 +1863,8 @@ export class SessionApiRoutes {
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly pullRequests!: PullRequests;
+  @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly drafts!: UserDraftsStore;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -2012,6 +1873,7 @@ export class SessionApiRoutes {
   @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
   @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
   @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.agent-deletions") agentDeletionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
@@ -2053,6 +1915,7 @@ export class SessionApiRoutes {
       liveStreams: this.liveStreams,
       auth: this.auth,
       drivers: this.drivers,
+      drafts: this.drafts,
     };
     const modelOAuthDeps = {
       config: this.config,
@@ -2107,7 +1970,10 @@ export class SessionApiRoutes {
       sessionService,
       sessionsRepo,
       traceIndex: this.traceIndex,
+      workbenches: this.workbenches,
+      drafts: this.drafts,
     });
+    this.agentDeletionsRoutes = agentDeletionsRoutes({ access, agentService: this.agents });
     this.agentConfigRoutes = agentConfigRoutes({
       agentConfigService,
       manager,
@@ -2128,15 +1994,17 @@ export class SessionApiRoutes {
     this.sessionsRoutes = sessionsRoutes(sessionsDeps);
     const deletion = sessionDeletionDeps(sessionsDeps);
     const projectEvents = this.projectEvents;
+    const machines = this.machines;
     this.archivedSessionsRoutes = archivedSessionsRoutes({
       service: new ArchivedSessionsService({
         listProjects: (userId) => access.listProjects(userId),
         canAccess: (userId, projectId) => access.canAccess(userId, projectId),
         sessions: sessionsRepo,
         sessionService: {
-          archivedRows: (projectId, agentId) => sessionService.archivedRows(projectId, agentId),
-          toInfo: (row, hasTrace) => sessionService.toInfo(row, hasTrace),
-          listingOf: (row) => sessionService.listingOf(row),
+          archivedRows: (projectId, agentId, view) =>
+            sessionService.archivedRows(projectId, agentId, view),
+          toInfo: (row, hasTrace, view) => sessionService.toInfo(row, hasTrace, undefined, view),
+          listingOf: (row, view) => sessionService.listingOf(row, view),
         },
         traceStore: this.traceStore,
         deleteSession: (row) =>
@@ -2150,6 +2018,12 @@ export class SessionApiRoutes {
         statusOf: (sessionId) => manager.statusOf(sessionId),
         notifyProjectUsers: (projectId, event) =>
           projectEvents.notifyProjectUsers(projectId, event),
+        machines: async (projectId) =>
+          (await machines.projectApis(projectId)).map(({ machineId, alias, api }) => ({
+            machineId,
+            alias,
+            request: api === null ? null : (method, path, body) => api.request(method, path, body),
+          })),
       }),
     });
   }

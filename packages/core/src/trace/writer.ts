@@ -19,8 +19,8 @@
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { isCompleteModelMessage, isEventMessage, isSessionMeta } from "../omnimessage/index.js";
-import type { OmniMessage } from "../omnimessage/index.js";
+import { isCompleteModelMessage, isEventMessage, isSessionMeta } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { formatLocalDate } from "../internal/dates.js";
 
 export interface WriterOptions {
@@ -46,7 +46,7 @@ function formatIndex(index: number): string {
 }
 
 /**
- * Determines whether an OmniMessage should be written to Trace (skips streaming partial_* and nested child-session messages).
+ * Determines whether an AmspRecord should be written to Trace (skips streaming partial_* and nested child-session messages).
  *
  * Child-session messages are never written to this Trace: the child Session has its own complete
  * Trace, and recording it again would distort this Trace's statistics. The spawn location is
@@ -55,7 +55,7 @@ function formatIndex(index: number): string {
  * re-attach the child session to its corresponding run_subagent tool card.
  * Docs: /docs/sessions-and-traces § "Trace design".
  */
-function isRecordable(msg: OmniMessage): boolean {
+function isRecordable(msg: AmspRecord): boolean {
   if (msg.origin && msg.origin.length > 0) return false;
   return isCompleteModelMessage(msg) || isEventMessage(msg) || isSessionMeta(msg);
 }
@@ -154,7 +154,7 @@ export class Writer {
    * the new file. The returned promise resolves only after this record has been appended
    * (callers may rely on write-then-send ordering), and rejects if this append failed.
    */
-  async write(msg: OmniMessage): Promise<void> {
+  async write(msg: AmspRecord): Promise<void> {
     if (!isRecordable(msg)) return;
     return this.enqueue(async () => {
       const path = this.currentPath();
@@ -227,7 +227,7 @@ export class Writer {
   }
 
   /** Writes multiple messages in sequence. */
-  async writeAll(msgs: OmniMessage[]): Promise<void> {
+  async writeAll(msgs: AmspRecord[]): Promise<void> {
     for (const msg of msgs) {
       await this.write(msg);
     }
@@ -250,10 +250,10 @@ export class Writer {
 }
 
 /** Parses a Trace file line by line (ignoring blank lines), for testing and later reads. */
-export async function readTrace(path: string): Promise<OmniMessage[]> {
+export async function readTrace(path: string): Promise<AmspRecord[]> {
   const content = await readFile(path, "utf8");
   return content
     .split("\n")
     .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as OmniMessage);
+    .map((line) => JSON.parse(line) as AmspRecord);
 }

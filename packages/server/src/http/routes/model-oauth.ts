@@ -221,7 +221,9 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
-  // such flow and what keeps the authorize/exchange endpoints out of client control.
+  // such flow and what keeps the authorize/exchange endpoints out of client control. The
+  // answer carries the mode the flow actually opened in, since a redirect this origin cannot
+  // receive opens as manual.
   app.post("/start", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);

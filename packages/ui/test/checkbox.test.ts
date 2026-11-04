@@ -1,10 +1,11 @@
 /**
  * Checkbox (src/components/forms/checkbox/checkbox.tsx): a native checkbox drawn in tokens, whose
- * label toggles it and whose hint describes it, with a drawn dash for the indeterminate state.
+ * label toggles it and whose hint describes it, with a drawn dash for the indeterminate state;
+ * and CheckboxBox, the same box as a drawing for a control that toggles like a checkbox.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { Checkbox } from "../src/components/forms/checkbox/checkbox";
+import { Checkbox, CheckboxBox } from "../src/components/forms/checkbox/checkbox";
 import { classTokens, renderStatic } from "../src/testing";
 
 const noop = () => {};
@@ -58,5 +59,29 @@ describe("Checkbox", () => {
     const html = box({ label: "Enabled", disabled: true });
     expect(html).toContain('disabled=""');
     expect(classTokens(html)).toEqual(expect.arrayContaining(["opacity-60", "cursor-not-allowed"]));
+  });
+});
+
+describe("the box", () => {
+  it("stays a square in every theme: its corner never passes a quarter of its side", () => {
+    // A theme whose small radius is half the box (Frost's) would otherwise draw a disc, which
+    // reads as a radio.
+    for (const html of [box(), renderStatic(createElement(CheckboxBox, { on: false }))]) {
+      expect(classTokens(html)).toContain("rounded-[min(var(--ui-radius-sm),25%)]");
+      expect(classTokens(html)).not.toContain("rounded-sm");
+    }
+  });
+
+  it("draws the box for a control that is not a checkbox, hidden, ticked only when on", () => {
+    const off = renderStatic(createElement(CheckboxBox, { on: false }));
+    expect(off).toMatch(/^<span aria-hidden="true" class="[^"]*"><\/span>$/);
+    expect(classTokens(off)).toEqual(
+      expect.arrayContaining(["border-line-emphasis", "bg-surface"]),
+    );
+    // No hover of its own: the control around it takes the hover.
+    expect(classTokens(off).some((token) => token.startsWith("hover:"))).toBe(false);
+    const on = renderStatic(createElement(CheckboxBox, { on: true }));
+    expect(classTokens(on)).toEqual(expect.arrayContaining(["border-accent", "bg-accent"]));
+    expect(on).toContain('d="M2.6 6.2l2.2 2.2 4.6-4.8"');
   });
 });

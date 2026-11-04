@@ -31,7 +31,7 @@ import { S } from "../src/lib/strings";
 import { button, click, hasButton, mount, unmountAll } from "./helpers/dom";
 
 const GB = 1024 ** 3;
-type Spy = ReturnType<typeof vi.fn>;
+type Spy = ReturnType<typeof vi.fn<(...args: unknown[]) => void>>;
 
 /** One harness-wide row, as the status poll would send it. */
 function row(sessionId: string, over: Partial<HarnessStatusSession> = {}): HarnessStatusSession {
@@ -68,7 +68,11 @@ afterEach(unmountAll);
 
 /** Three spies, one per callback the bar reports through. */
 function spies(): { onListOpen: Spy; onOpenSession: Spy; onRemove: Spy } {
-  return { onListOpen: vi.fn(), onOpenSession: vi.fn(), onRemove: vi.fn() };
+  return {
+    onListOpen: vi.fn<(...args: unknown[]) => void>(),
+    onOpenSession: vi.fn<(...args: unknown[]) => void>(),
+    onRemove: vi.fn<(...args: unknown[]) => void>(),
+  };
 }
 
 /** The view with these suites' defaults; every field a test cares to change is an override. */

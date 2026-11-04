@@ -42,6 +42,8 @@ describe("UiStrings", () => {
       "notifications",
       "pagePosition",
       "previous",
+      "reader",
+      "report",
       "resizeHeight",
       "resizeWidth",
       "showPassword",

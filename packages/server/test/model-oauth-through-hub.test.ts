@@ -165,6 +165,7 @@ describe("the whole flow through a hub, on two servers", () => {
       agent,
       port,
       cookie: cliCookie(machine),
+      adoptedAt: null,
       session: 1,
     });
 

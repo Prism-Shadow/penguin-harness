@@ -2,8 +2,9 @@
  * The a2ui plugin as shipped: in the library with its support files; every example in SKILL.md
  * and references/components.md passes the checker it teaches (the documentation is the first
  * test case of the grammar); the numbers the skill quotes are the exported weights; the two data
- * scripts build blocks the catalog accepts; and the committed checker bundle was built from the
- * current a2ui sources.
+ * scripts build blocks the catalog accepts — sysinfo.mjs a resources board from a real snapshot
+ * and from a fixed one, with and without disks, history and network; and the committed checker
+ * bundle was built from the current a2ui sources.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -68,11 +69,9 @@ describe("the a2ui plugin", () => {
   it("quotes the exported weights and the gate", async () => {
     const skill = await read("SKILL.md");
     expect(skill).toContain(`L2 loses ${A2UI_SCORING.l2PerWarning} per block warning`);
-    expect(skill).toContain(`prose loses ${A2UI_SCORING.prosePerWarning} per prose warning`);
     expect(skill).toContain(`a total of ${A2UI_SCORING.passTotal} or more`);
     const reference = await read("references/components.md");
     expect(reference).toContain(`L2 = 100 − ${A2UI_SCORING.l2PerWarning} ×`);
-    expect(reference).toContain(`prose = 100 − ${A2UI_SCORING.prosePerWarning} ×`);
     expect(reference).toContain(`total ≥ ${A2UI_SCORING.passTotal}`);
   });
 });
@@ -106,9 +105,32 @@ interface WeatherScript {
 }
 
 interface SysinfoScript {
-  collectSysinfo(opts: { samples: number; interval: number }): Promise<object>;
-  buildMetricsBlock(info: object, opts: { lang: "zh" | "en" }): Block;
+  collectSysinfo(opts: { samples: number; interval: number; disks?: string[] }): Promise<object>;
+  buildResourcesBlock(info: object): Block;
 }
+
+const MIB = 1024 ** 2;
+const GIB = 1024 ** 3;
+
+/** A snapshot as collectSysinfo returns it: sizes in bytes, rates in bytes per second. */
+const SNAPSHOT = {
+  host: "build-01",
+  cpus: 8,
+  cpuHistory: [22, 31, 45, 40, 37],
+  memTotal: 16 * GIB,
+  memUsed: 13.9 * GIB,
+  memHistory: [70, 75.5, 86.9],
+  swapTotal: 2 * GIB,
+  swapUsed: 0.5 * GIB,
+  disks: [
+    { path: "/", total: 512 * GIB, used: 320 * GIB },
+    { path: "/data", total: 4096 * GIB, used: 3174.4 * GIB },
+  ],
+  network: { rx: [120 * 1024, 98 * 1024], tx: [40 * 1024, 35 * 1024] },
+  load: [1.234, 0.98, 0.8],
+  uptimeSec: 1_071_360,
+  asOf: "2026-10-04T06:05:00Z",
+};
 
 /** A minimal Open-Meteo answer: Beijing at 14:15 local time, hours from 13:00, three days. */
 const FIXTURE_GEO = { name: "Beijing", admin1: "Beijing", country: "China", latitude: 39.9 };
@@ -256,12 +278,54 @@ describe("the skill's data scripts", () => {
     expect(block.daily).toHaveLength(2);
   });
 
-  it("sysinfo.mjs takes a snapshot of this machine and builds a metrics block without errors", async () => {
+  it("sysinfo.mjs takes a snapshot of this machine and builds a resources block the catalog accepts", async () => {
     const sysinfo = await importScript<SysinfoScript>("sysinfo.mjs");
     const info = await sysinfo.collectSysinfo({ samples: 2, interval: 50 });
-    const block = sysinfo.buildMetricsBlock(info, { lang: "en" });
+    const block = sysinfo.buildResourcesBlock(info);
+    expect(block.type).toBe("resources");
     const { issues } = parseA2ui(JSON.stringify(block));
     expect(issues.filter((issue) => issue.level === "error")).toEqual([]);
+  });
+
+  it("sysinfo.mjs turns a snapshot into a board: CPU with history and cores, sizes in GB or TB, rates in KB/s, the load", async () => {
+    const sysinfo = await importScript<SysinfoScript>("sysinfo.mjs");
+    const block = sysinfo.buildResourcesBlock(SNAPSHOT);
+    expect(parseA2ui(JSON.stringify(block)).issues).toEqual([]);
+    expect(block).toEqual({
+      type: "resources",
+      host: "build-01",
+      cpu: { percent: 37, history: [22, 31, 45, 40, 37], cores: 8 },
+      memory: { used: 13.9, total: 16, unit: "GB", history: [70, 75.5, 86.9] },
+      swap: { used: 0.5, total: 2, unit: "GB" },
+      disks: [
+        { path: "/", used: 320, total: 512, unit: "GB" },
+        { path: "/data", used: 3.1, total: 4, unit: "TB" },
+      ],
+      network: { unit: "KB/s", rx: [120, 98], tx: [40, 35] },
+      load: { one: 1.23, five: 0.98, fifteen: 0.8, cores: 8 },
+      uptimeSec: 1_071_360,
+      asOf: "2026-10-04T06:05:00Z",
+    });
+  });
+
+  it("sysinfo.mjs leaves out what a snapshot lacks, and fails when nothing is left", async () => {
+    const sysinfo = await importScript<SysinfoScript>("sysinfo.mjs");
+    const sparse = sysinfo.buildResourcesBlock({
+      cpuHistory: [12],
+      memTotal: 512 * MIB,
+      memUsed: 256 * MIB,
+      network: { rx: [2 * MIB, 3 * MIB], tx: [0, 0.5 * MIB] },
+      uptimeSec: 60,
+    });
+    expect(parseA2ui(JSON.stringify(sparse)).issues).toEqual([]);
+    expect(sparse).toEqual({
+      type: "resources",
+      cpu: { percent: 12 },
+      memory: { used: 256, total: 512, unit: "MB" },
+      network: { unit: "MB/s", rx: [2, 3], tx: [0, 0.5] },
+      uptimeSec: 60,
+    });
+    expect(() => sysinfo.buildResourcesBlock({ host: "build-01" })).toThrow(/Not one reading/);
   });
 });
 

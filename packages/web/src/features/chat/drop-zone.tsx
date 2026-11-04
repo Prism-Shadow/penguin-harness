@@ -39,11 +39,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { DropOverlay } from "@prismshadow/penguin-ui";
+import { DropOverlay, ICONS } from "@prismshadow/penguin-ui";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal, DropRegionAction } from "../../lib/file-drop";
 import { S } from "../../lib/strings";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */
 const ChatDropRegionContext = createContext<HTMLElement | null>(null);
@@ -138,7 +137,7 @@ export function FileDropZone({ onFiles }: { onFiles: (files: File[]) => void }) 
   return createPortal(
     <DropOverlay
       variant="veil"
-      glyph={PAPERCLIP_ICON}
+      glyph={ICONS.paperclip}
       title={S.chat.dropFilesTitle}
       description={S.chat.dropFilesDesc}
     />,

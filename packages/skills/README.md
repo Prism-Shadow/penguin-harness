@@ -43,12 +43,9 @@ its output reads back to the same values through `parseFrontmatter`.
 
 Its only runtime dependency is `yaml` (upstream's own).
 
-## Publishing
+## Not published
 
-Inside this workspace the package resolves to its TypeScript source, so its consumers (each
-plugin's `test/skills.test.ts`, and core) need no build. Core lists it as a devDependency and
-bundles it into its own `dist` (tsup `noExternal`), so the published core does not depend on
-this package. The published package is the `dist/` build:
-`publishConfig.exports` points there, and `prepack` builds it and copies the repository's
-`LICENSE` in (`postpack` removes the copy). Publish with `pnpm publish` from this directory; the
-Vercel MIT notice ships as `src/vendor/vercel-skills/LICENSE`.
+The package is private and is never published to npm. Its consumers are the plugins'
+`test/skills.test.ts` and core, which take it as a `workspace:*` devDependency; it resolves to
+its TypeScript source, so they need no build. Core lists it as a devDependency and bundles it
+into its own `dist` (tsup `noExternal`), so the published core does not depend on this package.

@@ -5,7 +5,8 @@
  *   boots without querying a balance, and a later request uses the production Go origin.
  * - Given an explicit Go origin, a balance request uses it even if the model group points
  *   elsewhere; only the group key is sent and only the balance reading comes back.
- * - Given no group key, only PENGUIN_GO_API_KEY may be borrowed; model and vendor keys never are.
+ * - Given no group key, nothing is borrowed: not PENGUIN_GO_API_KEY, which Penguin Go no longer
+ *   reads, and never a model's own key or a vendor key.
  * - Given the same group and key, reads reuse the answer until a forced refresh or key change.
  *   A different Go origin never reuses another endpoint's reading.
  * - Given an invalid key, malformed answer or unavailable vendor, a typed failure comes back.
@@ -14,7 +15,7 @@
  *   regardless of the platform's display currency; missing or malformed units fail.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MODEL_CATALOG } from "@prismshadow/penguin-core";
+import { MODEL_CATALOG } from "../src/model-catalog/index.js";
 import { ModelBalances, readBalance } from "../src/services/model-balance.js";
 import type { ModelBalanceDeps } from "../src/services/model-balance.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -75,7 +76,6 @@ describe.each([
     await t.cleanup();
   });
   beforeEach(async () => {
-    vi.stubEnv("PENGUIN_GO_API_KEY", "");
     projectId = `go_owner-balance_${++sequence}`;
     expect((await owner.post("/api/projects", { projectId, name: "Go balance" })).status).toBe(201);
     expect(
@@ -116,14 +116,14 @@ describe.each([
     ]);
   });
 
-  it("borrows only the Go environment key, with a stored group key taking precedence", async () => {
+  it("borrows no environment key, the retired Go variable included: only the stored group key is sent", async () => {
     vi.stubEnv("PENGUIN_GO_API_KEY", "ep_go_env_secret");
     vi.stubEnv("OPENAI_API_KEY", "vendor-secret");
-    expect(await (await read()).json()).toMatchObject({ ok: true, amount: "110.00" });
-    expect(fake.calls[0]!.headers.get("authorization")).toBe("Bearer ep_go_env_secret");
+    expect(await (await read()).json()).toMatchObject({ ok: false, error: "no_key" });
+    expect(fake.calls).toEqual([]);
     await setKey(KEY);
-    await read();
-    expect(fake.calls[1]!.headers.get("authorization")).toBe(`Bearer ${KEY}`);
+    expect(await (await read()).json()).toMatchObject({ ok: true, amount: "110.00" });
+    expect(fake.calls.map((c) => c.headers.get("authorization"))).toEqual([`Bearer ${KEY}`]);
   });
 
   it("does not query with a model's own key or another provider's environment key", async () => {

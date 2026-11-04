@@ -1,0 +1,10 @@
+{
+  "name": "@types/react-dom",
+  "version": "0.0.0-fixture",
+  "type": "module",
+  "exports": {
+    "./client": {
+      "types": "./client.d.ts"
+    }
+  }
+}

@@ -2,10 +2,11 @@
 /** The real page's reads, confirmation and writes across Project visits; only external
  * contexts, API calls and presentation shells are replaced. No pure identity helper is
  * substituted for the page's request lifecycle. */
+
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
-import { mount, click, run, unmountAll } from "./helpers/dom";
+import { mount, click, run, unmountAll, watchText } from "./helpers/dom";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings } from "../src/lib/strings";
 
@@ -60,6 +61,7 @@ vi.mock("../src/features/plugins/plugin-card", () => ({
         "data-state": props.row.module?.state,
         "data-delete": props.onDeletePlugin === null ? "closed" : "open",
       },
+      h("span", { "data-status": true }, props.status),
       h(
         "button",
         {

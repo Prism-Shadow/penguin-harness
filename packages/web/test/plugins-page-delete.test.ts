@@ -41,7 +41,7 @@ for (const shared of [true, false]) {
       usage: { usedBy: [], behind: [] },
       categoryTitle: "Other",
       showCategory: true,
-      agents: [],
+      targets: [],
       installed: new Map(),
       canQuickStart: false,
       isAdmin: true,

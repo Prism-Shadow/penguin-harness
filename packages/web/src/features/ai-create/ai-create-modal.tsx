@@ -31,6 +31,8 @@ export interface AiCreateModalProps extends Omit<
   workspace?: string;
   /** Skills to preselect in the new conversation's composer. */
   skills?: string[];
+  /** The machine `agents` live on: the conversation opens there (see AiChatRequest). */
+  machineId?: string | null;
 }
 
 export function AiCreateModal(props: AiCreateModalProps) {
@@ -47,6 +49,7 @@ function AiCreateDialog({
   agentId: initialAgentId,
   workspace,
   skills,
+  machineId,
   tail,
   agents,
   ...panel
@@ -66,6 +69,7 @@ function AiCreateDialog({
       text: composeAiPrompt(value, tail),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(skills !== undefined ? { skills } : {}),
+      ...(machineId !== undefined && machineId !== null ? { machineId } : {}),
     });
     onClose();
   };

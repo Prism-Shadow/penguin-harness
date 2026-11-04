@@ -25,7 +25,7 @@ import {
   parseHandoffMessage,
   scratchpadDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { MAX_ATTACHMENT_COUNT } from "../src/services/task-attachments.js";
@@ -36,9 +36,9 @@ import type { TestApp } from "./helpers.js";
 const PROJECT_ID = "attacher-default_project";
 
 /** Fake Session that records each run's input and finishes immediately (no LLM, no approvals). */
-function recordingFakeSession(sessionId: string, runs: OmniMessage[][]): RuntimeSession {
+function recordingFakeSession(sessionId: string, runs: AmspRecord[][]): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input);
       yield assistantText("done");
     },
@@ -61,7 +61,7 @@ function dataUrl(content: string, mime = "application/octet-stream"): string {
 }
 
 /** All text of a recorded Prompt, joined the way the model would read it. */
-function promptText(input: OmniMessage[]): string {
+function promptText(input: AmspRecord[]): string {
   return input
     .map((m) => (m.payload as { text?: string }).text ?? "")
     .filter(Boolean)
@@ -72,7 +72,7 @@ describe("task input file attachments", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let SID: string;
-  let runs: OmniMessage[][];
+  let runs: AmspRecord[][];
   let dir: string;
   let row: SessionRow;
 

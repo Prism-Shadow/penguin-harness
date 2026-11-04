@@ -37,7 +37,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   ChoiceCheck,
   CloseButton,
   GlyphIcon,
@@ -285,9 +285,9 @@ function ModelPickerBody({
               {label}
             </span>
             {pickerRowTags(m, defaultModel, now).map((tag) => (
-              <Badge key={tag.key} tone={tag.tone} size="sm" tooltip={tag.title}>
+              <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
                 {tag.label}
-              </Badge>
+              </Pill>
             ))}
           </span>
           {!hasConfiguredKey(m) && (

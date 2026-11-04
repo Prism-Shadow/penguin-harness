@@ -19,8 +19,8 @@
  * Docs: /docs/tools § "Command sessions".
  */
 import path from "node:path";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { DETACHED_TOOL_NOTE_PREFIX } from "../../interfaces/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
@@ -71,14 +71,14 @@ export function createExecCommandTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal, detachSignal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
         yield delta(`[${definition.name} unavailable: no command session manager configured]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const text = stringArgument(args, EXEC_COMMAND_TEXT_ARGUMENTS);
@@ -91,7 +91,7 @@ export function createExecCommandTool(
             { aliases: EXEC_COMMAND_ALIASES },
           ),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const cmd = text.value;
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.
@@ -108,7 +108,7 @@ export function createExecCommandTool(
       );
 
       // Caller already aborted: finish immediately with aborted.
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       let session;
       try {
@@ -116,7 +116,7 @@ export function createExecCommandTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`[spawn error: ${message}]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // run_in_background: no collect window at all — register immediately, arm the completion
@@ -127,7 +127,7 @@ export function createExecCommandTool(
         const id = manager.register(session);
         armCommandDoneReport(session, id, services);
         return {
-          stopReason: "completed",
+          status: "completed",
           note:
             `[command running in background with process_id ${id}; its completion will arrive ` +
             `as a user message — no need to poll. Use input_command to interact (kill: true stops it)]`,
@@ -147,7 +147,7 @@ export function createExecCommandTool(
           yield delta(chunk);
         }
 
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         if (session.running) {
           // Still running: register as a background process, returning process_id so
           // input_command can continue accessing it. Whatever was collected up to this point
@@ -160,7 +160,7 @@ export function createExecCommandTool(
             // launch does — otherwise the command would finish with nobody told.
             armCommandDoneReport(session, id, services);
             return {
-              stopReason: "completed",
+              status: "completed",
               note:
                 `${DETACHED_TOOL_NOTE_PREFIX} with process_id ${id}; leave it running unattended: ` +
                 `do not poll it or send it input — its completion will arrive on its own as a ` +
@@ -169,14 +169,14 @@ export function createExecCommandTool(
             };
           }
           return {
-            stopReason: "completed",
+            status: "completed",
             note: `[process running with process_id ${id}; use input_command to send input or poll for output]`,
           };
         }
         // Already exited: report exit status; process group cleanup (reaping any leftover
         // background children) is handled uniformly in finally.
         if (session.error) {
-          return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
+          return { status: "fatal", note: `[spawn error: ${session.error.message}]` };
         }
         return resultForExit(session.exit);
       } finally {
@@ -201,7 +201,9 @@ export function createExecCommandTool(
  * SIGTERM" they read like a crash, and the model's reasonable response to a crashed dev
  * server is to start it again, undoing the stop somebody just asked for. Outcomes nobody
  * asked for stay `failed`: a spawn error, a non-zero exit, a hard kill or a fault signal (an
- * OOM kill, a segfault).
+ * OOM kill, a segfault). The report is a notice about a detached job, not a tool result, so its
+ * wording is its own: the same non-zero exit in the foreground ends a completed tool call with
+ * the exit status as its last note (resultForExit).
  */
 export function armCommandDoneReport(
   session: ManagedSession,

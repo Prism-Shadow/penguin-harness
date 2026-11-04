@@ -24,7 +24,6 @@ import {
   Input,
   SettingsSection,
   Switch,
-  toastError,
   toastSuccess,
   useFormDraft,
   useSaving,
@@ -35,6 +34,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The form as typed. Kept as a string: a number input that clears to NaN cannot be typed into. */
 interface CompressionDraft {
@@ -87,7 +87,7 @@ export function UploadsSection() {
       })
       .catch((e: unknown) => {
         // Controls stay disabled; leaving and returning to the section retries the fetch.
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) toastApiError(e);
       });
     return () => {
       cancelled = true;
@@ -121,7 +121,7 @@ export function UploadsSection() {
       if (e instanceof ApiError && e.code === "invalid_image_compression") {
         setCompressionRangeError(apiErrorText(e));
       } else {
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     } finally {
       setBusy(false);

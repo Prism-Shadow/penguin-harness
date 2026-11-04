@@ -140,7 +140,7 @@ On a narrow window, the sidebar hides behind a menu button in a top bar and open
 
 ### Language and theme
 
-The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved per browser.
+The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved with your account, so every browser you sign in from uses them; a choice made on the login page is saved to the account that signs in next.
 
 ## Projects and members
 

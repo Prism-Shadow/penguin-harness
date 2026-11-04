@@ -48,7 +48,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { FindField } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { revealCollapsedIn } from "../../lib/find-expand";
 import {
@@ -161,12 +161,6 @@ function keyHint(label: string, code: string, shift = false): string {
   const key = formatChord({ code, mod: false, ctrl: false, alt: false, shift }, currentPlatform());
   return `${label} (${key})`;
 }
-
-/** The bar's square controls: flat, the glyph deepening on hover. */
-const ICON_BUTTON =
-  "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:text-fg-subtle disabled:opacity-60";
-/** Their ink at rest; an option that is on takes the accent instead. */
-const ICON_INK = "text-fg-muted hover:text-fg";
 
 /** Pressing a control keeps the caret in the query field, so Enter goes on stepping. */
 const keepFocus = (e: { preventDefault: () => void }): void => e.preventDefault();
@@ -453,15 +447,6 @@ export function FindBar() {
     goneTriedRef.current = false;
   };
 
-  const onInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    // Enter while an IME is composing commits the composition; it is not a step.
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" || e.key === "F3") {
-      e.preventDefault();
-      step(e.shiftKey ? -1 : 1);
-    }
-  };
-
   const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
     e.preventDefault();
@@ -492,65 +477,32 @@ export function FindBar() {
       onKeyDown={onPanelKeyDown}
       className="fixed right-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-40 flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
     >
-      <div className="flex shrink-0 items-center gap-1 px-2 py-1.5">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          placeholder={S.find.placeholder}
-          aria-label={S.find.placeholder}
-          autoComplete="off"
-          spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent px-1 text-sm text-fg outline-none placeholder:text-fg-subtle"
-        />
-        {/* Announced, not just drawn: a screen reader gets the same "3/12" a sighted reader does. */}
-        <span aria-live="polite" className="shrink-0 px-1 text-xs tabular-nums text-fg-muted">
-          {counter}
-        </span>
-        <button
-          type="button"
-          onMouseDown={keepFocus}
-          onClick={() => step(-1)}
-          disabled={hits.length === 0}
-          aria-label={S.find.prev}
-          data-tooltip={keyHint(S.find.prev, "Enter", true)}
-          className={`${ICON_BUTTON} ${ICON_INK}`}
-        >
-          <GlyphIcon d={ICONS.chevronUp} size={ICON_SIZE.iconButton} />
-        </button>
-        <button
-          type="button"
-          onMouseDown={keepFocus}
-          onClick={() => step(1)}
-          disabled={hits.length === 0}
-          aria-label={S.find.next}
-          data-tooltip={keyHint(S.find.next, "Enter")}
-          className={`${ICON_BUTTON} ${ICON_INK}`}
-        >
-          <GlyphIcon d={ICONS.chevronDown} size={ICON_SIZE.iconButton} />
-        </button>
-        <button
-          type="button"
-          onMouseDown={keepFocus}
-          onClick={() => setCaseSensitive((v) => !v)}
-          aria-pressed={caseSensitive}
-          aria-label={S.find.caseSensitive}
-          data-tooltip={S.find.caseSensitive}
-          className={`${ICON_BUTTON} text-xs font-semibold ${caseSensitive ? "text-accent" : ICON_INK}`}
-        >
-          <span aria-hidden>Aa</span>
-        </button>
-        <button
-          type="button"
-          onClick={close}
-          aria-label={S.find.close}
-          data-tooltip={keyHint(S.find.close, "Escape")}
-          className={`${ICON_BUTTON} ${ICON_INK}`}
-        >
-          <CloseIcon size={14} />
-        </button>
-      </div>
+      {/* The control row is the shared one the Markdown reader's find opens too; Enter and F3
+          step (Shift backward) as a browser's find bar does. */}
+      <FindField
+        className="shrink-0 px-2 py-1.5"
+        query={query}
+        onQueryChange={onQueryChange}
+        counter={counter}
+        canStep={hits.length > 0}
+        onStep={step}
+        onClose={close}
+        inputRef={inputRef}
+        labels={{
+          placeholder: S.find.placeholder,
+          previous: S.find.prev,
+          next: S.find.next,
+          close: S.find.close,
+          caseSensitive: S.find.caseSensitive,
+        }}
+        hints={{
+          previous: keyHint(S.find.prev, "Enter", true),
+          next: keyHint(S.find.next, "Enter"),
+          close: keyHint(S.find.close, "Escape"),
+        }}
+        caseSensitive={caseSensitive}
+        onCaseSensitiveChange={setCaseSensitive}
+      />
 
       {allRegions && shown.length > 0 && (
         <div

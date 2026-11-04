@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   ServerSettingsResponse,
   TelemetryResponse,
@@ -34,7 +34,7 @@ function resumedSession(sessionId: string): RuntimeSession {
     compactability: () => "ok" as const,
     steer: () => false,
     skipReconnectWait: () => false,
-    async *run(): AsyncGenerator<OmniMessage> {
+    async *run(): AsyncGenerator<AmspRecord> {
       yield assistantText(ANSWER);
     },
     async *compact() {},

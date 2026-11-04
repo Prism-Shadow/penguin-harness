@@ -46,7 +46,7 @@
  * alone. `--ui-dur-fast` / `base` / `slow` stay the state-change durations a component may name.
  * A reply that is still streaming is paced by the two streaming tokens (`--ui-stream-reveal`,
  * `--ui-stream-rate`) and dressed by the `ui-stream` hook: Primer shows it as it lands, Frost
- * lets it surface word by word through a soft veil, Console types it out behind a block cursor.
+ * fades it in word by word under a soft veil, Console types it out behind a block cursor.
  */
 
 /**
@@ -135,17 +135,24 @@ export const ACCENT_PRESETS = {
 /** Every preset id any theme lists. */
 export type AccentPreset = (typeof ACCENT_PRESETS)[ThemeId][number]["id"];
 
+/*
+ * The values below are computed when the module loads. Each computation is marked pure so a
+ * bundle that never reads it drops it: a public site imports this module through the boot
+ * script's storage keys and would otherwise carry every preset and token name.
+ */
+
 /** The preset ids each theme lists, in the theme's own order — what a picker offers. */
-export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> = {
-  github: ACCENT_PRESETS.github.map((preset) => preset.id),
-  modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
-  geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
-};
+export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> =
+  /* @__PURE__ */ (() => ({
+    github: ACCENT_PRESETS.github.map((preset) => preset.id),
+    modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
+    geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
+  }))();
 
 /** Every id once, across the themes — what a stored value is validated against. */
-export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
+export const ACCENT_PRESET_IDS: readonly AccentPreset[] = /* @__PURE__ */ (() => [
   ...new Set(THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id])),
-];
+])();
 
 /**
  * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
@@ -204,7 +211,9 @@ export const TOKEN_GROUPS = [
     id: "color-text",
     title: "Colour — text",
     // `fg` is the body ink; `fg-emphasis` the strong ink of headings and emphasis (the same
-    // value in light, near-white in dark where the body ink is calmer).
+    // value in light, near-white in dark where the body ink is calmer). `link-decoration` is a
+    // link-style control's line at rest: `none` where the link ink already stands apart from
+    // the body's, `underline` where the link is the body's own ink and the line is what marks it.
     names: [
       "--ui-fg",
       "--ui-fg-emphasis",
@@ -212,6 +221,7 @@ export const TOKEN_GROUPS = [
       "--ui-fg-subtle",
       "--ui-fg-link",
       "--ui-fg-link-hover",
+      "--ui-link-decoration",
     ],
   },
   {
@@ -228,6 +238,9 @@ export const TOKEN_GROUPS = [
       "--ui-accent-active",
       "--ui-accent-fg",
       "--ui-accent-muted",
+      // The accent's wash laid on the canvas: the opaque twin of `accent-muted`, at the same
+      // strength, which a surface holding the person's own words sits on (the user bubble).
+      "--ui-accent-tint",
       "--ui-accent-line",
     ],
   },
@@ -556,10 +569,11 @@ export const TOKEN_GROUPS = [
     title: "Streaming — how a reply is revealed",
     // What AssistantText's reveal hook reads, once per theme, to pace an assistant reply that
     // is still arriving: the reveal (`instant` shows the text as it lands, `fade` reveals it word
-    // by word, `typewriter` character by character — the exact keywords) and its rate, a plain
-    // number of characters per second (0 where the reveal is `instant` and no rate applies).
-    // The look of the arriving text is the `ui-stream` hook's (hooks.ts); these two say only
-    // how fast it arrives. Neither varies by mode.
+    // by word, each run of words fading in over the theme's `--ui-dur-reveal`, `typewriter`
+    // character by character — the exact keywords) and its rate, a plain number of characters
+    // per second (0 where the reveal is `instant` and no rate applies). The look of the arriving
+    // text is the `ui-stream` hook's (hooks.ts); these two say only how fast it arrives. Neither
+    // varies by mode.
     names: ["--ui-stream-reveal", "--ui-stream-rate"],
   },
   {
@@ -609,14 +623,15 @@ export type TokenGroupId = TokenGroup["id"];
 export type TokenName = TokenGroup["names"][number];
 
 /** Every contract name, flattened in group order. The contract test diffs the theme files against this. */
-export const TOKEN_NAMES: readonly TokenName[] = TOKEN_GROUPS.flatMap(
+export const TOKEN_NAMES: readonly TokenName[] = /* @__PURE__ */ TOKEN_GROUPS.flatMap(
   (group): readonly TokenName[] => group.names,
 );
 
 /**
  * The keywords `--ui-stream-reveal` takes, exactly: `instant` (a streaming reply shows as it
- * lands), `fade` (it is revealed word by word) and `typewriter` (character by character), the
- * last two at `--ui-stream-rate` characters per second. A value outside the list reads as
+ * lands), `fade` (it is revealed word by word, each run fading in over `--ui-dur-reveal`) and
+ * `typewriter` (character by character), the last two at `--ui-stream-rate` characters per
+ * second. A value outside the list reads as
  * `instant`, so a reader never paces text a theme did not ask to pace.
  */
 export const STREAM_REVEALS = ["instant", "fade", "typewriter"] as const;

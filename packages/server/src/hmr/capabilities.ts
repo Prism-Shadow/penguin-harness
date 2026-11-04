@@ -391,7 +391,10 @@ export abstract class Db {
 }
 
 /** One SSE channel (the class in runtime/channel.ts satisfies this). */
-export type ChannelApi = Pick<Channel, "publish" | "sendTo" | "subscribe" | "replayAfter">;
+export type ChannelApi = Pick<
+  Channel,
+  "publish" | "sendTo" | "subscribe" | "replayAfter" | "lastEventId"
+>;
 
 @Interface()
 export abstract class Channels {

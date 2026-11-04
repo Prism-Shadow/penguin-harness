@@ -19,14 +19,14 @@ export const ADMIN_ME: MeResponse = {
   previewIsolated: true,
   desktopMode: false,
   sessionVia: "password",
-  uploadLimits: {
-    attachmentMaxMb: 100,
-    attachmentTotalMb: 120,
+  uploadPolicy: {
     attachmentMaxCount: 10,
-    imageMaxMb: 5,
-    attachmentLimitMinMb: 1,
-    attachmentLimitMaxMb: 1024,
+    imageCompression: true,
+    imageCompressionOverMb: 5,
+    imageCompressionMinMb: 1,
+    imageCompressionMaxMb: 64,
   },
+  telemetry: false,
   companyMode: true,
 };
 
@@ -34,11 +34,13 @@ export const STORED_SETTINGS: ServerSettings = {
   proxyForApp: true,
   proxyForAgent: false,
   proxyUrl: "http://proxy.local:8080",
-  attachmentMaxMb: 100,
-  attachmentTotalMb: 120,
+  imageCompression: true,
+  imageCompressionOverMb: 5,
   companyMode: true,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,
+  githubTokenSet: false,
+  telemetry: false,
 };
 
 export interface AdminSettingsServer {

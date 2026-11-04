@@ -9,24 +9,26 @@
  * HTTP answers, and a pushed route needs nothing here.
  *
  * Identity is settled before this runs: the runtime authenticated the handshake cookie and
- * held the reserved id's owner to it, so the `fetch` handed in is already bound to that user
+ * handed over a reference naming that user, so the `fetch` handed in is already bound to them
  * (Http.fetchAs) — no credential travels with a frame, and there is nothing in a frame to
  * forge.
  *
- * A `text/event-stream` Response is read to its end and re-framed per event (the SSE
- * heartbeat comments are dropped — the socket pings on its own); a cancel frame, the socket
- * closing, or the client lagging past HIGH_WATER aborts the Request, which is how the
- * endpoint's own subscription is released. Everything else is a one-shot frame. Sign-in and
- * the upgrade channel answer 421 — a cookie cannot be set on a socket answer, and a push must
- * not ride the transport it replaces — as does anything the platform declines: the client
- * makes those calls over HTTP instead.
+ * A call that asks for an event stream is answered directly: its route sends the stream to
+ * the call's own answer (stream-answer.ts) — a start frame, one frame per event, an end —
+ * with no HTTP Response in between. A route that answers a Response instead — an auth
+ * refusal, a machine's non-streaming answer — leaves the answer untouched, and that Response
+ * is framed like any call's. A cancel frame, the socket closing, or the client lagging past
+ * HIGH_WATER aborts the Request, which is how the endpoint's own subscription is released.
+ * Sign-in and the upgrade channel answer 421 — a cookie cannot be set on a socket answer,
+ * and a push must not ride the transport it replaces — as does anything the platform
+ * declines: the client makes those calls over HTTP instead.
  */
 import type { WebSocket } from "ws";
-import { sessionKindPath } from "../api/types.js";
+import { API_SOCKET_PATH, sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
-import { CALL_HEADERS, parseClientFrame } from "./frames.js";
+import { CALL_HEADERS, CREDIT_FLOW, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
-import { SseParser } from "./sse-text.js";
+import { StreamAnswer } from "./stream-answer.js";
 
 /** Same cadence as the SSE heartbeat: a peer that answers no ping within two beats is gone. */
 export const HEARTBEAT_MS = 20_000;
@@ -55,9 +57,10 @@ const DECLINE: [string, string] = (() => {
 const isDeclined = (res: Response): boolean =>
   DECLINE[0] !== "" && res.headers.get(DECLINE[0]) === DECLINE[1];
 
-/** Prefixes a call may address. The terminal streams (the socket's own path among them) are upgrades, not calls. */
+/** Prefixes a call may address. Upgrade routes — a terminal stream, and this socket's own address — are not calls. */
 function callable(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
+  if (pathname === API_SOCKET_PATH) return false;
   if (/^\/api\/terminals\/[^/]+\/stream$/.test(pathname)) return false;
   return pathname.startsWith("/api/") || pathname.startsWith("/server/");
 }
@@ -65,15 +68,11 @@ function callable(path: string): boolean {
 export interface ApiSocketDeps {
   /** The platform's routes, entered as the socket's user (Http.fetchAs). */
   fetch: (request: Request) => Promise<Response>;
-  /** The origin in-process requests are addressed to (the canonical App host, as HTTP requests carry it). */
+  /** The same routes, for a call that asks for an event stream: its answer rides the Request in (stream-answer.ts). */
+  fetchStream: (request: Request, answer: StreamAnswer) => Promise<Response>;
+  /** The origin in-process requests are addressed to: the public origin the client opened the socket on (http/public-origin.ts), port included. */
   origin: string;
   log: (line: string) => void;
-  /**
-   * Files what went wrong on the socket into the error table, beside the log line: a call
-   * that threw inside the platform (`socket_call_failed`) and the socket's own error
-   * (`socket_error`). Absent, the log line is all there is.
-   */
-  fault?: (code: "socket_call_failed" | "socket_error", err: unknown) => void;
 }
 
 function nowHeaders(): Record<string, string> {
@@ -95,13 +94,21 @@ function responseHeaders(res: Response): Record<string, string> {
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
 export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
-  /** In-flight calls by id; a streaming call stays here until its end. */
+  /** In-flight calls by id; a streaming call stays here until its answer is over. */
   const inflight = new Map<number, AbortController>();
+  /** The stream answers among them, for the acks a credit-flow call is paced by. */
+  const answers = new Map<number, StreamAnswer>();
   let alive = true;
 
   const send = (frame: ServerFrame): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
+
+  const reject = (id: number, status: number, code: string, message: string): void => {
+    send({ id, status, headers: nowHeaders(), body: errorBody(code, message) });
+  };
+  const httpRequired = (id: number): void =>
+    reject(id, 421, "not_on_socket", "This endpoint is served over HTTP only.");
 
   // Liveness, both ways, on the SSE cadence. A protocol ping: a peer that answers none for
   // two beats is terminated, which releases every subscription it held — the half-dead
@@ -120,6 +127,15 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   ws.on("pong", () => {
     alive = true;
   });
+  // A peer that pings us hears this socket: the hub pings a machine only while it still hears
+  // that machine's link. On a slow link our own ping waits behind everything queued ahead of it
+  // (a page's worth of history is most of a beat at 10 KB/s), so its pong can come back later
+  // than a beat while the peer is receiving all along — dropping it then would cut a live link.
+  // A dead link carries no pings, so the check above still ends it; a browser cannot send
+  // protocol pings, so nothing changes for one.
+  ws.on("ping", () => {
+    alive = true;
+  });
 
   ws.on("message", (data, isBinary) => {
     alive = true; // traffic is proof of life too
@@ -131,40 +147,35 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       inflight.get(frame.id)?.abort();
       return;
     }
+    if ("ack" in frame) {
+      answers.get(frame.id)?.ack(frame.ack);
+      return;
+    }
     if (inflight.has(frame.id)) return ws.close(1002, `call id ${frame.id} is in flight`);
     const controller = new AbortController();
     inflight.set(frame.id, controller);
-    void dispatch(frame, controller).finally(() => inflight.delete(frame.id));
+    void dispatch(frame, controller).finally(() => {
+      inflight.delete(frame.id);
+      answers.delete(frame.id);
+    });
   });
 
   ws.on("close", () => {
     clearInterval(heartbeat);
     for (const controller of inflight.values()) controller.abort();
     inflight.clear();
+    answers.clear();
   });
-  ws.on("error", (err) => {
-    deps.log(`[socket] ${err.message}`);
-    deps.fault?.("socket_error", err);
-  });
+  ws.on("error", (err) => deps.log(`[socket] ${err.message}`));
 
   async function dispatch(frame: CallFrame, controller: AbortController): Promise<void> {
     const { id, call } = frame;
     if (!callable(call.path)) {
-      send({
-        id,
-        status: 404,
-        headers: nowHeaders(),
-        body: errorBody("not_found", "Endpoint does not exist."),
-      });
+      reject(id, 404, "not_found", "Endpoint does not exist.");
       return;
     }
     if (httpOnly(call.path)) {
-      send({
-        id,
-        status: 421,
-        headers: nowHeaders(),
-        body: errorBody("not_on_socket", "This endpoint is served over HTTP only."),
-      });
+      httpRequired(id);
       return;
     }
     const headers: Record<string, string> = {};
@@ -175,50 +186,59 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       body = JSON.stringify(call.body);
       headers["content-type"] ??= "application/json";
     }
-
+    const request = new Request(new URL(call.path, deps.origin), {
+      method: call.method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+      signal: controller.signal,
+    });
+    // The client marks a stream call with the one header of its own it may set (CALL_HEADERS
+    // lets it through): that call is handed the answer bound to its id, for its route to
+    // answer the stream directly (stream-answer.ts). Every other call is made as any call
+    // is, and whatever Response comes back is framed below.
+    const answer = (headers["accept"] ?? "").includes("text/event-stream")
+      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES, {
+          credit: headers["x-flow"] === CREDIT_FLOW,
+        })
+      : null;
+    if (answer !== null) answers.set(id, answer);
     let res: Response;
     try {
-      res = await deps.fetch(
-        new Request(new URL(call.path, deps.origin), {
-          method: call.method,
-          headers,
-          ...(body !== undefined ? { body } : {}),
-          signal: controller.signal,
-        }),
-      );
+      res = await (answer === null ? deps.fetch(request) : deps.fetchStream(request, answer));
     } catch (err) {
       if (controller.signal.aborted) return;
       deps.log(`[socket] ${call.method} ${call.path}: ${err instanceof Error ? err.message : err}`);
-      deps.fault?.("socket_call_failed", err);
-      send({
-        id,
-        status: 500,
-        headers: nowHeaders(),
-        body: errorBody("internal", "Internal server error."),
-      });
+      reject(id, 500, "internal", "Internal server error.");
+      return;
+    }
+    if (answer?.started) {
+      // The route answered the stream itself: the Response it returned carries nothing, and
+      // the id stays in flight until the answer is over — a cancel frame still reaches it.
+      await res.body?.cancel().catch(() => undefined);
+      await answer.done;
       return;
     }
     if (controller.signal.aborted) {
       await res.body?.cancel().catch(() => undefined);
       return;
     }
+    await answerOnce(id, res, controller.signal);
+  }
+
+  /** Frames a Response a route answered without streaming, as any call's answer. */
+  async function answerOnce(id: number, res: Response, signal: AbortSignal): Promise<void> {
     if (isDeclined(res)) {
       // Not the platform's to answer: not this transport's to carry either.
-      send({
-        id,
-        status: 421,
-        headers: nowHeaders(),
-        body: errorBody("not_on_socket", "This endpoint is served over HTTP only."),
-      });
+      httpRequired(id);
       return;
     }
-
-    const type = res.headers.get("content-type") ?? "";
-    if (type.startsWith("text/event-stream")) return stream(id, res, controller);
-
     // One-shot: JSON parsed, text as text, an empty body as null. A body of another kind
     // (a download) does not ride this transport — the client falls back to HTTP on 415.
+    const type = res.headers.get("content-type") ?? "";
     const text = await res.text().catch(() => "");
+    // Released while the body was read (a cancel, the socket closing): the caller has given
+    // the call up, and an answer now would be a wrong one — a 200 with whatever was read.
+    if (signal.aborted) return;
     let parsed: unknown = null;
     if (text !== "") {
       if (type.includes("json")) {
@@ -230,54 +250,15 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       } else if (type.startsWith("text/")) {
         parsed = text;
       } else {
-        send({
+        reject(
           id,
-          status: 415,
-          headers: nowHeaders(),
-          body: errorBody(
-            "unsupported_transport",
-            "This response does not ride the socket; use HTTP.",
-          ),
-        });
+          415,
+          "unsupported_transport",
+          "This response does not ride the socket; use HTTP.",
+        );
         return;
       }
     }
     send({ id, status: res.status, headers: responseHeaders(res), body: parsed });
-  }
-
-  async function stream(id: number, res: Response, controller: AbortController): Promise<void> {
-    send({ id, status: res.status, stream: true, headers: responseHeaders(res) });
-    const reader = res.body?.getReader();
-    if (!reader) return send({ id, end: true, reason: "closed" });
-    const stop = () => reader.cancel().catch(() => undefined);
-    controller.signal.addEventListener("abort", stop, { once: true });
-    const parser = new SseParser();
-    const decoder = new TextDecoder();
-    let reason: string | undefined = "closed";
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (ws.bufferedAmount > HIGH_WATER_BYTES) {
-          // Fast-forward, never buffer without bound: the client re-issues the call with
-          // its last event id and the endpoint's own buffer fills the gap (or says resync).
-          reason = "lagging";
-          await stop();
-          break;
-        }
-        for (const event of parser.feed(decoder.decode(value, { stream: true }))) {
-          send({ id, event: event.event, eventId: event.id, data: event.data });
-        }
-      }
-      const last = parser.flush();
-      if (last !== null && reason === "closed") {
-        send({ id, event: last.event, eventId: last.id, data: last.data });
-      }
-    } catch {
-      // The reader was cancelled (our abort) or the endpoint failed; either way the stream is over.
-    } finally {
-      controller.signal.removeEventListener("abort", stop);
-    }
-    if (!controller.signal.aborted) send({ id, end: true, reason });
   }
 }

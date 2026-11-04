@@ -14,12 +14,8 @@
  * loss itself.
  */
 import { expect } from "vitest";
-import { toolCallOutput } from "../../../src/omnimessage/index.js";
-import type {
-  OmniMessage,
-  SessionMetaPayload,
-  ToolDefinition,
-} from "../../../src/omnimessage/index.js";
+import { toolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord, SessionMetaPayload, ToolDefinition } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -216,7 +212,11 @@ export const fakeEnvironmentWith = (tools: ToolDefinition[]): EnvironmentInterfa
     return tools;
   },
   async *executeTool({ toolCall: call }) {
-    yield toolCallOutput({ output: "tool ran", toolCallId: call.payload.tool_call_id });
+    yield toolCallOutput({
+      output: "tool ran",
+      toolCallId: call.payload.tool_call_id,
+      status: "completed",
+    });
   },
   toolPermission() {
     return "rw";
@@ -226,8 +226,8 @@ export const fakeEnvironmentWith = (tools: ToolDefinition[]): EnvironmentInterfa
 export const fakeEnvironment = fakeEnvironmentWith(TOOLS);
 
 /** Drains a run to its end and keeps the messages it streamed. */
-export async function collect<T>(gen: AsyncGenerator<OmniMessage, T>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+export async function collect<T>(gen: AsyncGenerator<AmspRecord, T>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return all;

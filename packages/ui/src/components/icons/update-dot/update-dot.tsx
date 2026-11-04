@@ -78,8 +78,8 @@ export function UpdateDot({
  * The labelled form of the badge, for a stop on a trail where a bare dot undersells the state:
  * the card of an outdated agent, which is also where the sidebar's dot leads, and the card of a
  * machine on another build. A real button — it opens the place the update is taken from — shaped
- * like the `Badge` capsules sharing its row (same radius, padding and type), so the row reads as
- * one family.
+ * exactly like the label pills sharing its row (`Pill`: the same radius, small padding and type),
+ * so the row reads as one family.
  *
  * A tinted capsule, not the dot's flat fill: this one has an interior, so its label owes 4.5:1
  * against its own background, which every tone's tint and ink are held to in every theme. The
@@ -92,7 +92,7 @@ export function UpdatePill({ onClick, children }: { onClick: () => void; childre
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-attention-bg p-[var(--ui-badge-pad-md)] text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] text-tone-attention-fg ring-[length:var(--ui-badge-soft-ring)] ring-inset ring-tone-attention-line transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-attention-bg),var(--ui-tone-attention-fg)_12%)]"
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-attention-bg px-1.5 py-px text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] text-tone-attention-fg ring-[length:var(--ui-badge-soft-ring)] ring-inset ring-tone-attention-line transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-attention-bg),var(--ui-tone-attention-fg)_12%)]"
     >
       {children}
     </button>

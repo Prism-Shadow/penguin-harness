@@ -11,7 +11,7 @@
  * connect, restart, disconnect, remove from the Project).
  *
  * One card per machine, this server first, then the machines in use by name. A card says the
- * state once, as a mark beside the name with its word on hover (machine-card.tsx). While machines
+ * state once, as a labelled pill beside the name with the reason on hover (machine-card.tsx). While machines
  * in use carry another build, the notice under the title counts them and updates them all at
  * once, after a confirmation.
  *
@@ -36,6 +36,7 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  MachineList,
   NoticeStrip,
   PageFrame,
   PageHeader,
@@ -45,6 +46,7 @@ import {
   TodoNotice,
   toastError,
 } from "@prismshadow/penguin-ui";
+import { toastApiError } from "../../lib/toast-api-error";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -244,16 +246,34 @@ export function MachinesPage() {
     };
   }, [hasInUse]);
 
-  const post = async (run: (projectId: string) => Promise<MachinesResponse>) => {
-    if (projectId === null) return;
+  /** Sends a verb and takes the list it answers with; true when the server took it. */
+  const post = async (run: (projectId: string) => Promise<MachinesResponse>): Promise<boolean> => {
+    if (projectId === null) return false;
     setPosting(true);
     try {
       accept(await run(projectId));
       setError(null);
+      return true;
     } catch (err) {
       setError(apiErrorText(err));
+      return false;
     } finally {
       setPosting(false);
+    }
+  };
+  /**
+   * Retry while the server brings a machine back. A refusal is said in the page's notice and
+   * rejects, so the retry status lets the press be made again.
+   */
+  const retryReconnect = async (machine: MachineInfo): Promise<void> => {
+    if (!(await post((project) => api.reconnectMachine(project, machine.id)))) {
+      throw new Error("The server did not take the retry.");
+    }
+  };
+  /** Stop retrying, the same way: a failed request is said, and the press can be made again. */
+  const stopReconnecting = async (machine: MachineInfo): Promise<void> => {
+    if (!(await post((project) => api.stopReconnectingMachine(project, machine.id)))) {
+      throw new Error("The server did not take the stop.");
     }
   };
 
@@ -338,7 +358,7 @@ export function MachinesPage() {
         definition: await api.getMachineDefinition(projectId, machine.kind, machine.alias),
       });
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
 
@@ -607,28 +627,18 @@ export function MachinesPage() {
       {state === null ? (
         // A refusal (the page is an admin's) or a failed read says so above, with nothing below
         // pretending to load.
-        error === null && (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }, (_, i) => (
-              <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
-                <div className="min-w-[14rem] flex-1">
-                  <Skeleton className="h-[18px] w-40" />
-                  <Skeleton className="mt-1.5 h-4 w-2/3" />
-                  <Skeleton className="mt-1.5 h-4 w-48" />
-                </div>
-                <Skeleton className="h-8 w-40" />
-              </SkeletonCard>
-            ))}
-          </div>
-        )
+        error === null && <MachineList loading />
       ) : (
-        <div className="space-y-3">
+        <MachineList
+          empty={
+            inUse.length === 0 ? (
+              <EmptyState title={S.machines.noneInUse} description={S.machines.sshHint} />
+            ) : null
+          }
+        >
           {local !== null && card(local)}
           {inUse.map(card)}
-          {inUse.length === 0 && (
-            <EmptyState title={S.machines.noneInUse} description={S.machines.sshHint} />
-          )}
-        </div>
+        </MachineList>
       )}
     </PageFrame>
   );

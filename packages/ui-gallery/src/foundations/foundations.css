@@ -163,6 +163,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The user bubble on the accent's tint, at the bubble's own corner. */
+.gf-accent-bubble {
+  justify-self: end;
+  max-width: 100%;
+  padding: var(--ui-row-py) var(--ui-row-px);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-accent-tint);
+  color: var(--ui-fg);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .gf-links {
   display: flex;
   flex-wrap: wrap;

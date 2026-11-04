@@ -11,9 +11,9 @@ import { rsiToolkits } from "./rsi-methods";
 /** The last list read in this page load: the library is the same for every Project. */
 const toolkitLists = new Map<string, PluginItem[]>();
 
-/** The plugins of the library's `rsi` category (GET /api/plugins); null until the first list. */
+/** The plugins of this server's library's `rsi` category (GET /api/plugins); null until the first list. */
 export function useRsiToolkits(): FreshRead<PluginItem[]> {
   return useFreshRead(toolkitLists, "library", async () =>
-    rsiToolkits(await api.getPluginLibrary()),
+    rsiToolkits(await api.getPluginLibrary(null)),
   );
 }

@@ -22,13 +22,15 @@ import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";
+import type { Traces } from "../mechanisms/traces.js";
 import type { SessionManager, Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
 import { amspRoutes } from "./routes.js";
 import { agentApiTryRoutes } from "./try-route.js";
 
 /**
- * The public `/api/amsp/v1` group: the gate, CORS, the run stream and the Session routes; and
+ * The public `/api/amsp/v1` group: the gate, CORS, the run stream, the Session stream and the
+ * Session routes (history, approvals, tasks); and
  * the API tab's Try it, the same run for the owner's sign-in.
  */
 @Component({
@@ -56,6 +58,7 @@ export class AmspRoutes {
   @Use() private readonly errors!: Errors;
   @Use() private readonly clock!: Clock;
   @Use() private readonly access!: Access;
+  @Use() private readonly traces!: Traces;
   @Bind("AmspRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("AmspRoutes.try") tryRoutes!: Hono<AppEnv>;
 
@@ -71,6 +74,7 @@ export class AmspRoutes {
       agentConfig: this.agentConfig,
       log: this.log,
       errors: this.errors,
+      traceService: this.traces,
       now: () => clock.now(),
     };
     this.routes = amspRoutes(deps);

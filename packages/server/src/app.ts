@@ -58,7 +58,8 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { originRule } from "./http/public-origin.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -488,8 +489,8 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // http/validate.ts readJson rather than bounded here.
   // CORS also covers refusals before the Agent API group runs.
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
-  app.use("/api/*", sameOriginWrites);
-  app.use("/api/*", jsonOnlyWrites);
+  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group

@@ -113,6 +113,7 @@ import {
   getUpdaterStatus,
   handleUpdaterCommand,
   initUpdater,
+  noteMainWindowShown,
   onUpdaterStatus,
   updatesAvailableInThisForm,
 } from "./updater.js";
@@ -281,6 +282,8 @@ function createWindow(url: string): void {
   builtinBrowser.host(win);
   followPageTitleBar(win);
   win.once("ready-to-show", () => win?.show());
+  // The automatic update schedule reaches the network: it starts once a window is on screen.
+  win.once("show", noteMainWindowShown);
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout, an
   // update's restart — is announced before the window is asked to close, which is what

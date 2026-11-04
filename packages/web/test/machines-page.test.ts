@@ -132,6 +132,7 @@ const comingBack = remote("mini", {
   reconnect: {
     since: new Date(Date.now() - 6 * 60_000).toISOString(),
     attempts: 3,
+    maxAttempts: 8,
     nextAt: new Date(Date.now() + 80_000).toISOString(),
     lastError: "mini refused. (ssh: connect to host mini port 22: Connection refused)",
     sshReason: "refused",

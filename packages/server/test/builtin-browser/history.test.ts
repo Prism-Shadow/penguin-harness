@@ -12,11 +12,19 @@ import { tab } from "./fake-shell.js";
 
 let dir: string;
 let file: string;
+/** Every store a test opened: one left with a write pending would recreate `dir` after it went. */
+const opened: HistoryStore[] = [];
+const open = (options?: ConstructorParameters<typeof HistoryStore>[1]): HistoryStore => {
+  const store = new HistoryStore(file, options);
+  opened.push(store);
+  return store;
+};
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-bb-history-"));
   file = path.join(dir, "builtin-browser", "history.json");
 });
 afterEach(async () => {
+  await Promise.all(opened.splice(0).map((store) => store.dispose()));
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -35,7 +43,7 @@ const entry = (
 describe("HistoryStore visits", () => {
   it("counts a visit per URL change and takes the title that arrives after it", () => {
     let now = 100;
-    const store = new HistoryStore(file, { now: () => now });
+    const store = open({ now: () => now });
     const loading = tab(1, { url: "https://a.test/", title: "https://a.test/", loading: true });
     store.observe(undefined, loading);
     const titled = { ...loading, title: "Shop A", loading: false };
@@ -70,7 +78,7 @@ describe("HistoryStore visits", () => {
 describe("HistoryStore import merge", () => {
   it("adds the imported visits to a known page and keeps the later visit time", () => {
     let now = 5_000;
-    const store = new HistoryStore(file, { now: () => now });
+    const store = open({ now: () => now });
     store.visit("https://a.test/", "A");
     const taken = store.merge([
       entry("https://a.test/", { visitCount: 4, lastVisitAt: 9_000, title: "Imported A" }),
@@ -87,7 +95,7 @@ describe("HistoryStore import merge", () => {
   });
 
   it("keeps the most recently visited 5000", async () => {
-    const store = new HistoryStore(file, { writeDelayMs: 0 });
+    const store = open({ writeDelayMs: 0 });
     const imported = Array.from({ length: HISTORY_CAP + 10 }, (_, i) =>
       entry(`https://site.test/${i}`, { lastVisitAt: i }),
     );
@@ -104,7 +112,7 @@ describe("HistoryStore import merge", () => {
 
 describe("HistoryStore search", () => {
   it("matches URL or title case-insensitively, most visited first, then most recent", () => {
-    const store = new HistoryStore(file);
+    const store = open();
     store.merge([
       entry("https://www.amazon.com/", { title: "Amazon.com", visitCount: 3, lastVisitAt: 10 }),
       entry("https://www.amazon.com/your-orders", {
@@ -127,54 +135,56 @@ describe("HistoryStore search", () => {
 
 describe("HistoryStore file", () => {
   it("writes atomically after the delay, reads it back, and clears", async () => {
-    const store = new HistoryStore(file, { now: () => 42, writeDelayMs: 10 });
+    const store = open({ now: () => 42, writeDelayMs: 10 });
     store.visit("https://a.test/", "A");
     await new Promise((resolve) => setTimeout(resolve, 60));
     await store.flush();
-    const reread = new HistoryStore(file);
+    const reread = open();
     expect(reread.search("", 5)).toEqual([
       { url: "https://a.test/", title: "A", visitCount: 1, lastVisitAt: 42, source: "builtin" },
     ]);
     reread.clear();
     await reread.dispose();
-    expect(new HistoryStore(file).search("", 5)).toEqual([]);
+    expect(open().search("", 5)).toEqual([]);
     // No temp file is left beside it.
     expect(await fs.readdir(path.dirname(file))).toEqual(["history.json"]);
   });
 
   it("keeps both stores' visits when two share the file across a hot swap", async () => {
-    const previous = new HistoryStore(file, { now: () => 100 });
+    const previous = open({ now: () => 100 });
     previous.visit("https://a.test/", "A");
     // The next App's store reads the file before the previous one has written its visit.
-    const next = new HistoryStore(file, { now: () => 200 });
+    const next = open({ now: () => 200 });
     next.visit("https://b.test/", "B");
     await previous.dispose();
     await next.flush();
-    const urls = new HistoryStore(file).search("", 5).map((e) => e.url);
+    const urls = open()
+      .search("", 5)
+      .map((e) => e.url);
     expect(urls.sort()).toEqual(["https://a.test/", "https://b.test/"]);
   });
 
   it("counts a visit both stores saw once, and a clear stays clear", async () => {
-    const one = new HistoryStore(file, { now: () => 100 });
-    const two = new HistoryStore(file, { now: () => 100 });
+    const one = open({ now: () => 100 });
+    const two = open({ now: () => 100 });
     one.visit("https://a.test/", "A");
     two.visit("https://a.test/", "A");
     await one.flush();
     await two.flush();
-    expect(new HistoryStore(file).search("", 5)).toEqual([
+    expect(open().search("", 5)).toEqual([
       { url: "https://a.test/", title: "A", visitCount: 1, lastVisitAt: 100, source: "builtin" },
     ]);
-    const three = new HistoryStore(file, { now: () => 300 });
+    const three = open({ now: () => 300 });
     three.clear();
     await three.flush();
-    expect(new HistoryStore(file).search("", 5)).toEqual([]);
+    expect(open().search("", 5)).toEqual([]);
   });
 
   it("starts empty over a file it cannot read", async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "{ not json");
     const lines: string[] = [];
-    const store = new HistoryStore(file, { log: (line) => lines.push(line) });
+    const store = open({ log: (line) => lines.push(line) });
     expect(store.search("", 5)).toEqual([]);
     expect(lines).toHaveLength(1);
   });

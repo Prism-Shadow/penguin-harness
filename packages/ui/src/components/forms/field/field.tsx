@@ -1,8 +1,8 @@
 /**
- * Shared field scaffolding: the label / hint / error text and the wrapping `<label>`, plus the
- * class string for a control's look. Every form control (Input, Textarea, Select, OptionMenu,
- * PasswordInput) and every form that shows a field error builds on these, instead of the
- * near-identical copies that used to live in each control and call site.
+ * Shared field scaffolding: the label / hint / error text, a group's legend and the wrapping
+ * `<label>`, plus the class string for a control's look. Every form control (Input, Textarea,
+ * Select, OptionMenu, PasswordInput) and every form that shows a field error builds on these,
+ * instead of the near-identical copies that used to live in each control and call site.
  */
 import type { ReactNode } from "react";
 import { InfoPopover } from "../../overlays/info-popover/info-popover";
@@ -79,6 +79,22 @@ export function FieldLabel({
     </label>
   ) : (
     <span className={className}>{content}</span>
+  );
+}
+
+/**
+ * A group's title: the `<legend>` of a fieldset whose controls answer one question together (a
+ * radio group, a row of choice chips, a segmented control), in the field label's look and with
+ * the required mark. The fieldset is what names the group for assistive technology, so the
+ * controls inside need no label of their own; outside a `<fieldset>` a legend means nothing, so a
+ * group without one is named with `aria-labelledby` instead.
+ */
+export function FieldLegend({ children, required }: { children: ReactNode; required?: boolean }) {
+  return (
+    <legend className="mb-1 text-xs font-semibold text-fg-muted">
+      {children}
+      {required && <RequiredMark />}
+    </legend>
   );
 }
 

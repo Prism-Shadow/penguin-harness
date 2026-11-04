@@ -4,10 +4,18 @@ import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
-import { authMiddleware, bearerToken, jsonOnlyWrites, sameOriginWrites } from "../auth/middleware.js";
+import {
+  authMiddleware,
+  bearerToken,
+  jsonOnlyWrites,
+  sameOriginWrites,
+} from "../auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
+import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
+import { jsonCompression } from "./json-compression.js";
+import { jsonValidators } from "./json-validators.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -94,36 +102,21 @@ export class HttpModule {
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    //
-    // Only the socket's surface writes a request line. An HTTP request reaches the cookie-gated
-    // one through the runtime's seam, and the runtime's app has already logged it — once, with
-    // the status the client actually got, which for a path declined here is the static tail's
-    // answer. Logging it here as well printed every HTTP request twice, a declined static file
-    // as a 404 followed by its 200. A socket call never passes the runtime's app, so this is
-    // its only line.
-    const cookieGated = this.assemble(
-      routes,
-      authMiddleware(this.auth, this.config.trustProxy),
-      false,
-    );
+    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
       if (app === undefined) {
-        app = this.assemble(
-          routes,
-          async (c, next) => {
-            const user = this.users.findById(userId);
-            if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
-            c.set("user", user);
-            // The handshake does not say how the cookie behind it was minted, so the most
-            // demanding kind is assumed; the routes whose answer turns on the kind never reach
-            // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
-            c.set("sessionVia", "password");
-            await next();
-          },
-          true,
-        );
+        app = this.assemble(routes, async (c, next) => {
+          const user = this.users.findById(userId);
+          if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
+          c.set("user", user);
+          // The handshake does not say how the cookie behind it was minted, so the most
+          // demanding kind is assumed; the routes whose answer turns on the kind never reach
+          // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
+          c.set("sessionVia", "password");
+          await next();
+        });
         asUser.set(userId, app);
       }
       return app;
@@ -139,8 +132,6 @@ export class HttpModule {
   private assemble(
     routes: { prefix: string; auth: "user" | "token" | "none"; order: number; app: Hono<AppEnv> }[],
     gate: MiddlewareHandler<AppEnv>,
-    /** Whether this surface writes the request line: only when nothing in front of it does. */
-    logRequests: boolean,
   ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;
@@ -155,32 +146,42 @@ export class HttpModule {
       return handleError(err, c);
     });
     app.notFound(() => declined());
-    if (logRequests) {
-      app.use("*", async (c, next) => {
-        const start = performance.now();
-        await next();
-        this.log.line(
-          `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
-        );
-      });
+    app.use("*", async (c, next) => {
+      const start = performance.now();
+      await next();
+      this.log.line(
+        `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
+      );
+    });
+    // Every JSON answer under the API — this server's own and those it relays from a machine —
+    // carries a validator and answers a caller who holds it with a 304 (json-validators.ts), and
+    // is compressed for a caller that asks (json-compression.ts). Inside the request line, so it
+    // logs the 304; compression outside the validator, so it encodes what the validator kept.
+    for (const scope of ["/api/*", "/server/*"]) {
+      app.use(scope, jsonCompression());
+      app.use(scope, jsonValidators());
     }
+    // The same header the host layer puts ahead of its copies of these two checks (src/app.ts):
+    // their refusals answer before the Agent API's group runs, and a browser caller must read the
+    // code, not a CORS failure.
+    app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
     // No request body size cap: a size refusal here could only ever fire on a request the
     // transport was going to fail anyway (the body becomes one string for JSON.parse, and V8
     // caps a string near 512MB). http/validate.ts readJson names that ceiling when it is hit.
-    // CORS also covers refusals before the Agent API group runs.
-    app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
-    app.use("/api/*", sameOriginWrites);
+    const origins = originRule(this.config);
+    app.use("/api/*", sameOriginWrites(origins));
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
-    app.use("/server/*", sameOriginWrites);
+    app.use("/server/*", sameOriginWrites(origins));
+    app.use("/api/*", jsonOnlyWrites(origins));
     // Telemetry records both HTTP and socket-entered requests without duplicating request logs.
     if (this.telemetry !== undefined) app.use("*", telemetryRequests(this.telemetry));
-    app.use("/api/*", jsonOnlyWrites);
 
-    // Protected routes: the gate this surface was assembled with (the cookie one, or "this
-    // user" on the socket). Mounted per group, and run once per request: prefixes nest
-    // (/api/projects, /api/projects/:projectId/members), so a request can pass several mounts,
-    // and the first is the one that authenticates.
+    // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
+    const authenticate = gate;
+    const authenticateToken = authMiddleware(this.auth, this.config.trustProxy, {
+      apiTokenOnly: true,
+    });
     // The session-credential scope runs right behind the gate that authenticated, once per
     // request like the gate itself: no row of its table is outside /api, so a session
     // credential on a protected group elsewhere (the machine proxy at /server/) stops there.
@@ -191,11 +192,8 @@ export class HttpModule {
             await scope(c, next);
           })
         : next();
-    const authenticateToken = authMiddleware(this.auth, this.config.trustProxy, {
-      apiTokenOnly: true,
-    });
-    // A Remote cookie carries token authority too, but only an actual Bearer may exchange
-    // credentials. An earlier user gate must not let that cookie skip this transport check.
+    // Only an actual Bearer may exchange credentials: a cookie an earlier user gate already
+    // authenticated (a Remote one included) must not skip this transport check.
     const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
       c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
         ? next()

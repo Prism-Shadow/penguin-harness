@@ -23,7 +23,7 @@
  * the compaction threshold firing `COMPACTION_HEADROOM` below the window keeps caps from
  * staying small for long, which bounds the exposure.
  */
-import type { OmniMessage } from "../omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 
 /**
  * Assumed context window when a model entry has no usable `context_window` configured.
@@ -155,7 +155,7 @@ export function approximateTokens(text: string): number {
  * estimate ≈ 262k "tokens" (~163x over) and floor the next request's output cap even on a
  * 128k window (PR #235 review).
  */
-export function approximateMessagesTokens(messages: OmniMessage[]): number {
+export function approximateMessagesTokens(messages: AmspRecord[]): number {
   let total = 0;
   for (const msg of messages) {
     const p = msg.payload as { type?: string; images?: unknown };
