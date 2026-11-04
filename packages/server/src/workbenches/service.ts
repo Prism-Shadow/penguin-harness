@@ -310,9 +310,9 @@ export class WorkbenchService implements Workbenches {
   }
 
   /**
-   * Asked on every access, not once: a workbench can still be written to the old place after
-   * the Agent's were moved (./migrate-state.ts). With nothing there it costs a few stats, and
-   * concurrent callers share a run.
+   * Asked on every access, not once: until the old place is a link, a workbench can still be
+   * written there and is moved in once it settles (./migrate-state.ts). Absent or linked, it
+   * costs a few stats, and concurrent callers share a run.
    */
   private migrate(projectId: string, agentId: string): Promise<void> {
     return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
