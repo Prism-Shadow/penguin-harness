@@ -29,7 +29,7 @@ import { useTrayLocale } from "../state/use-tray-locale";
 import { ChangePasswordDialog } from "../components/account/change-password-dialog";
 import { AppInfoDialog } from "../components/account/app-info-dialog";
 
-import { setDockScope } from "../features/dock";
+import { setDockScope } from "@prismshadow/penguin-web/internal";
 import { FindBar } from "../components/find/find-bar";
 
 /**

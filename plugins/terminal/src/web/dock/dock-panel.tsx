@@ -74,11 +74,11 @@ import {
   type DockTabItem,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
-import { chordKeys } from "../../components/ui/chord-kbd";
-import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
+import { S } from "@prismshadow/penguin-web/internal";
+import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
+import { chordKeys } from "@prismshadow/penguin-web/internal";
+import { useDisplayedBinding, useShortcutLabel } from "@prismshadow/penguin-web/internal";
+import { useCoarsePointer } from "@prismshadow/penguin-web/internal";
 import {
   useTerminalChrome,
   displayTitle,
@@ -90,13 +90,13 @@ import {
   terminalViewState,
   subscribeTerminalCloseRequests,
   type TerminalInfo,
-} from "@penguinharness/plugin-terminal/web";
+} from "../terminal/index.js";
 
 import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { DockPanelTitle } from "../../lib/dock-panel-empty";
+import { DockPanelTitle } from "@prismshadow/penguin-web/internal";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
 import { panelGlyph, panelLabel } from "./panel-meta";

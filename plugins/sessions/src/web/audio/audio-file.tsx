@@ -16,7 +16,7 @@
  */
 import { useRef, useState, type SyntheticEvent } from "react";
 
-import type { FileRendererProps } from "../../lib/file-renderers";
+import type { FileRendererProps } from "@prismshadow/penguin-web/internal";
 import { loadedEnd } from "./audio-clock";
 import { AudioCard, AudioFailed, type AudioPlayback } from "./audio-card";
 

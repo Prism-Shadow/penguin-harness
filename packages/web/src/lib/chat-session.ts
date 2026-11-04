@@ -1,7 +1,7 @@
 /**
  * The conversation a dock panel is docked beside, as the panel bodies read it. The chat page
  * provides it (features/chat/session/chat-session-context.tsx); the bodies are contributed by other
- * modules (features/dock/iface.ts), some of which chat imports in turn, so the context is a library
+ * modules (plugins/terminal/src/web/dock/iface.ts), some of which chat imports in turn, so the context is a library
  * rather than an export of chat's. It carries what those bodies use and nothing more.
  */
 import { createContext, useContext } from "react";

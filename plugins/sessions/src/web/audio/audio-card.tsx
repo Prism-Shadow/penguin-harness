@@ -11,8 +11,8 @@
  */
 import type { ReactNode } from "react";
 import { GlyphIcon, ICONS, ICON_SIZE, Spinner } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { formatClock } from "./audio-clock";
 import { AudioSeek } from "./audio-seek";
 

@@ -4,8 +4,8 @@
  * without fetch); this module owns every server round-trip a terminal tab needs.
  */
 import { toastError } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { S } from "@prismshadow/penguin-web/internal";
+import { onCommand } from "@prismshadow/penguin-web/internal";
 import {
   HttpStatusError,
   fetchJson,
@@ -14,8 +14,8 @@ import {
   liveTerminals,
   noteTerminalCreated,
   refreshTerminals,
-} from "@penguinharness/plugin-terminal/web";
-import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
+} from "../terminal/index.js";
+import { machineForTerminal, rememberTerminalMachine } from "@prismshadow/penguin-web/internal";
 import {
   addTerminalTab,
   currentDockScope,
