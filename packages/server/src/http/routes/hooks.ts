@@ -138,10 +138,11 @@ function normalizeHookManifest(
  * Decodes and validates an uploaded hook package zip. Accepted layouts: hooks.json at the zip
  * root (the name comes from the manifest), or exactly one top-level directory containing
  * hooks.json (the directory name is the package name, consistent with listInstalledHooks
- * where the directory name always wins). Directory entries are ignored (paths recreate
- * them); every file path is zip-slip-checked and the count/size limits enforced before
- * anything is returned. The manifest comes back normalized (see normalizeHookManifest) in
- * place of the uploaded bytes.
+ * where the directory name always wins). Directory entries are never inflated (paths recreate
+ * them), though they count towards the entry limit and the byte caps like files; every file
+ * path is zip-slip-checked and the count/size limits enforced before anything is returned.
+ * The manifest comes back normalized (see normalizeHookManifest) in place of the uploaded
+ * bytes.
  *
  * The path and size checks run in unzipSync's `filter`, i.e. off the central directory's
  * DECLARED sizes and before a byte is inflated. A cap read off the inflated result bounds
@@ -158,11 +159,13 @@ function parseHookArchive(archive: Buffer): ArchiveHook {
   try {
     entries = unzipSync(new Uint8Array(archive), {
       filter: (file) => {
-        if (file.name.endsWith("/")) return false;
-        assertSafeEntryPath(file.name);
+        const directory = file.name.endsWith("/");
+        if (!directory) assertSafeEntryPath(file.name);
         count += 1;
         if (count > MAX_ARCHIVE_FILES) {
-          throw badRequest(`The zip archive exceeds the ${MAX_ARCHIVE_FILES}-file limit.`);
+          throw badRequest(
+            `The zip archive exceeds the ${MAX_ARCHIVE_FILES}-entry limit (directories count as entries).`,
+          );
         }
         if (file.originalSize > MAX_FILE_BYTES) {
           throw badRequest(`Zip entry exceeds the 5MB uncompressed limit: ${file.name}`);
@@ -171,7 +174,7 @@ function parseHookArchive(archive: Buffer): ArchiveHook {
         if (total > MAX_TOTAL_BYTES) {
           throw badRequest("The zip archive exceeds the 20MB uncompressed limit.");
         }
-        return true;
+        return !directory;
       },
     });
   } catch (err) {

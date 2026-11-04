@@ -20,7 +20,8 @@
  * - A malicious or malformed zip is refused before anything is installed: a path leaving the
  *   package, node_modules, a .npmrc (npm would read it while packing), no package.json at the
  *   top, a name that is not a package name, a package that is not a plugin or that the library
- *   would not read, and an archive past the caps, read before it inflates.
+ *   would not read, and an archive past the caps (a directory entry held to them like a file),
+ *   read before it inflates.
  * - Nothing replaces a module the build ships: a zip under its name is refused before it
  *   installs, a link that turns out to be one is taken back; so is a link to a package that is no
  *   plugin, and both refusals say its install scripts have already run.
@@ -453,6 +454,13 @@ describe("plugin import and export", () => {
     await refused(many, 413, "plugin_too_large", /archive limits/);
     await refused(
       { ...notesPackage(), "big.bin": new Uint8Array(5 * 1024 * 1024 + 1) },
+      413,
+      "plugin_too_large",
+      /archive limits/,
+    );
+    // A name ending in "/" does not stop fflate from inflating what the entry holds.
+    await refused(
+      { ...notesPackage(), "skills/notes/pad/": new Uint8Array(5 * 1024 * 1024 + 1) },
       413,
       "plugin_too_large",
       /archive limits/,

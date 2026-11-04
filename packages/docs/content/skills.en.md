@@ -127,7 +127,7 @@ To upload a zip file:
 2. Under **Upload a skill zip**, select **Choose zip file**. The zip must hold `SKILL.md` at its root, or exactly one top-level directory that contains `SKILL.md`.
 3. If a Skill with the same name is already installed, confirm with **Overwrite**. Overwriting replaces all of its files.
 
-A zip file can be up to 14 MB, with at most 200 files, 5 MB per file and 20 MB in total after unpacking.
+A zip file can be up to 14 MB, with at most 200 entries (folders count as well as files), 5 MB per file and 20 MB in total after unpacking.
 
 ## Hook packages
 

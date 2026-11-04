@@ -39,7 +39,7 @@ export function assertSafeEntryPath(name: string): void {
 
 /** What a caller may change about `unzipBounded`'s caps. */
 export interface UnzipLimits {
-  /** Files the archive may hold; MAX_ARCHIVE_FILES when absent. */
+  /** Entries the archive may hold, directories included; MAX_ARCHIVE_FILES when absent. */
   maxFiles?: number;
   /** The error a broken cap throws, given its message; a 400 when absent. */
   tooLarge?: (message: string) => HttpError;
@@ -56,7 +56,12 @@ export interface UnzipLimits {
  *
  * Bounding against the declared sizes is sound in the other direction too: the buffer is exactly
  * the declared size and fflate never grows it, so an entry can only ever yield fewer bytes than
- * it claimed. Directory entries carry no content and are left to the caller to filter.
+ * it claimed.
+ *
+ * A directory entry is held to the caps like a file (it counts towards the entry limit, and its
+ * declared size towards the byte caps), because fflate inflates every entry the filter accepts
+ * whatever its name says. It carries no content, so the filter then turns it away: it is never
+ * inflated and never in the result.
  *
  * Throws the caps as 400s unless `limits.tooLarge` says otherwise, matching the archive route this
  * was factored out of; a corrupt archive still throws whatever fflate throws, for the caller to
@@ -68,14 +73,15 @@ export function unzipBounded(
 ): Record<string, Uint8Array> {
   const maxFiles = limits.maxFiles ?? MAX_ARCHIVE_FILES;
   const tooLarge = limits.tooLarge ?? badRequest;
-  let files = 0;
+  let entries = 0;
   let declared = 0;
   return unzipSync(archive, {
     filter: ({ name, originalSize }) => {
-      if (name.endsWith("/")) return true;
-      files += 1;
-      if (files > maxFiles) {
-        throw tooLarge(`The zip archive exceeds the ${maxFiles}-file limit.`);
+      entries += 1;
+      if (entries > maxFiles) {
+        throw tooLarge(
+          `The zip archive exceeds the ${maxFiles}-entry limit (directories count as entries).`,
+        );
       }
       if (originalSize > MAX_FILE_BYTES) {
         throw tooLarge(`Zip entry exceeds the 5MB uncompressed limit: ${name}`);
@@ -84,7 +90,7 @@ export function unzipBounded(
       if (declared > MAX_TOTAL_BYTES) {
         throw tooLarge("The zip archive exceeds the 20MB uncompressed limit.");
       }
-      return true;
+      return !name.endsWith("/");
     },
   });
 }
