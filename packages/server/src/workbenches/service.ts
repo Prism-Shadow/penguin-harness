@@ -309,12 +309,17 @@ export class WorkbenchService implements Workbenches {
     }
   }
 
+  /** Agents whose State is being replaced (whileReleased), and when that ends. */
+  private readonly held = new Map<string, Promise<void>>();
+
   /**
-   * Asked on every access, not once: a workbench can still be written to the old place after
-   * the Agent's were moved (./migrate-state.ts). With nothing there it costs a few stats, and
-   * concurrent callers share a run.
+   * Every way into an Agent's workbenches comes through here, so it waits out an import first.
+   * Asked on every access, not once: until the old place is a link, a workbench can still be
+   * written there and is moved in once it settles (./migrate-state.ts). Absent or linked, it
+   * costs a few stats, and concurrent callers share a run.
    */
-  private migrate(projectId: string, agentId: string): Promise<void> {
+  private async migrate(projectId: string, agentId: string): Promise<void> {
+    await this.held.get(`${projectId}/${agentId}`);
     return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
   }
 
@@ -512,6 +517,20 @@ export class WorkbenchService implements Workbenches {
       if (!k.startsWith(prefix)) continue;
       l.tree?.dispose();
       this.loaded.delete(k);
+    }
+  }
+
+  async whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T> {
+    const agentKey = `${projectId}/${agentId}`;
+    for (let held = this.held.get(agentKey); held; held = this.held.get(agentKey)) await held;
+    let end!: () => void;
+    this.held.set(agentKey, new Promise<void>((resolve) => (end = resolve)));
+    try {
+      await this.releaseAgent(projectId, agentId);
+      return await work();
+    } finally {
+      this.held.delete(agentKey);
+      end();
     }
   }
 
@@ -730,6 +749,11 @@ export class WorkbenchService implements Workbenches {
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
       try {
+        if (folder.refused.length > 0) {
+          this.log.line(
+            `[workbenches] ${k}@${folder.revision}: not in its versions, git refuses the name: ${folder.refused.join(", ")}`,
+          );
+        }
         // Exactly the bytes that loaded: an edit since then is the next load's version.
         const files = await readLoadedSource(folder);
         if (files === null) {
@@ -888,7 +912,7 @@ export class WorkbenchService implements Workbenches {
 
   private watch(projectId: string, agentId: string): void {
     const k = `${projectId}/${agentId}`;
-    if (this.watchers.has(k) || this.disposed) return;
+    if (this.watchers.has(k) || this.disposed || this.held.has(k)) return;
     const declared = workbenchesDir(this.paths.root, projectId, agentId);
     if (!fs.existsSync(declared)) {
       this.awaitFirstWorkbench(projectId, agentId, declared);

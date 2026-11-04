@@ -14,12 +14,23 @@
  * - Given a listed revision, its files come back exactly; a revision not listed is null.
  * - Given more versions than listed, the newest are; given a version older than the walk, the
  *   current one is still listed and can be restored.
- * - Given a file under a name git reserves, it is left out with a log line and the history
- *   still reads.
+ * - A name git refuses is judged as isomorphic-git judges it when it reads a tree.
+ * - Given a folder holding such a name (a `.git` spelling, a backslash, `.` behind characters
+ *   HFS+ ignores), it is not source and not in the revision; a commit passed one leaves it out
+ *   with a log line; the history, later commits and the removal all still work.
+ * - Given a tree already holding such a name (written by another tool), the history, commits
+ *   and the removal still work, the entry left out with a log line.
+ * - Given object files a crash left empty, the next commit of those objects writes them again,
+ *   and every workbench's history still reads.
+ * - Given a staging folder an interrupted creation left an hour ago, the next creation removes
+ *   it; a younger one stays.
  * - Given an unreadable HEAD, a detached one, or an empty or invalid branch ref, a commit and a
  *   history read are errors, never a fresh history.
  * - Restoring a version: a file where a directory was, or the reverse, comes out exactly; a
- *   version that holds something other than source is refused before anything is written.
+ *   version that holds something other than source (`state.json` in any case, anything under
+ *   it) is refused before anything is written; a move that fails puts every file back, and
+ *   should that fail too, the error names where the previous files are kept; staging an hour
+ *   old is cleared.
  * - The files handed to a commit are the ones that loaded: an edit since the folder was read
  *   gives none.
  */
@@ -28,11 +39,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import git from "isomorphic-git";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStateRepo,
   agentStateRepoDir,
   blobOid,
+  isGitName,
   treeId,
   type SourceFile,
 } from "../src/workbenches/repo.js";
@@ -85,8 +97,46 @@ beforeEach(async () => {
   logged = [];
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(dir, { recursive: true, force: true });
 });
+
+/** Every loose object file of a repository, as its id. */
+async function objectIds(at: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const prefix of await fs.readdir(path.join(at, "objects"))) {
+    if (!/^[0-9a-f]{2}$/.test(prefix)) continue;
+    for (const rest of await fs.readdir(path.join(at, "objects", prefix))) out.push(prefix + rest);
+  }
+  return out;
+}
+
+const ZWNJ = String.fromCodePoint(0x200c);
+/** Names isomorphic-git's own tree check covers, refused and allowed alike. */
+const NAMES = [
+  ".git",
+  ".GIT",
+  ".git.",
+  ".git ",
+  ".git::$INDEX_ALLOCATION",
+  `.g${ZWNJ}it`,
+  "git~1",
+  "GIT~9",
+  ".git~2",
+  ".",
+  "..",
+  `${ZWNJ}.`,
+  `${ZWNJ}..`,
+  "ui\\index.html",
+  "git~0",
+  "git~10",
+  ".gitignore",
+  ".github",
+  "git",
+  "...",
+  "a.",
+  "index.ts",
+];
 
 describe("recording versions", () => {
   it("the first commit creates the repository beside agent_state/, and lists the folder's tree id", async () => {
@@ -143,17 +193,145 @@ describe("recording versions", () => {
     expect((await open().history("workbenches/b")).map((v) => v.commit)).toEqual([b.commit]);
   });
 
-  it("a file under a name git reserves is left out with a log line, and the history still reads", async () => {
-    const repo = open();
-    const files = [...DEMO, ...source({ "git~1": "x", "ui/.GIT/config": "y" })];
-    expect((await repo.commitPath(REL, files, "workbench demo @1")).changed).toBe(true);
+  it.each(NAMES)("%j is refused exactly when isomorphic-git refuses it in a tree", async (name) => {
+    const nodeRepo = { fs: nodeFs, gitdir: path.join(dir, "scratch.git") };
+    await git.init({ ...nodeRepo, bare: true });
+    const blob = await git.writeBlob({ ...nodeRepo, blob: Buffer.from("x") });
+    const tree = await git.writeTree({
+      ...nodeRepo,
+      tree: [{ mode: "100644", path: name, oid: blob, type: "blob" }],
+    });
 
-    expect(logged.some((line) => line.includes("git~1") && line.includes("ui/.GIT/config"))).toBe(
+    const read = git.readTree({ ...nodeRepo, oid: tree }).then(
+      () => false,
+      () => true,
+    );
+
+    expect(await read).toBe(isGitName(name));
+  });
+
+  // Windows reads a backslash as a separator and drops a trailing dot: neither name can exist there.
+  it.skipIf(process.platform === "win32")(
+    "a folder's file under a name git refuses is not source; a commit passed one leaves it out, and everything still works",
+    async () => {
+      const folderDir = path.join(dir, "agent_state", REL);
+      const refused = ["git~1", "ui\\index.html", `${ZWNJ}.`];
+      for (const name of [...refused, "package.json", "index.ts"]) {
+        await fs.mkdir(folderDir, { recursive: true });
+        await fs.writeFile(path.join(folderDir, name), "x");
+      }
+      const folder = (await readFolder(folderDir, "demo"))!;
+      expect(folder.files).toEqual(["index.ts", "package.json"]);
+      expect(folder.refused).toEqual([...refused].sort());
+
+      const repo = open();
+      const passed = [...(await readLoadedSource(folder))!, ...source({ [refused[1]!]: "x" })];
+      expect((await repo.commitPath(REL, passed, "workbench demo @1")).changed).toBe(true);
+      expect(logged.some((line) => line.includes(refused[1]!))).toBe(true);
+      expect((await repo.history(REL)).map((v) => v.revision)).toEqual([folder.revision]);
+      expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
+      await repo.removePath(REL, "workbench demo: removed");
+      expect(await repo.history(REL)).toEqual([]);
+    },
+  );
+
+  it("a tree already holding a name git refuses still lists, commits and removes, the entry left out", async () => {
+    const repo = open();
+    await repo.commitPath(REL, DEMO, "workbench demo @1");
+    // Another tool commits a file under a name git refuses.
+    const nodeRepo = { fs: nodeFs, gitdir };
+    const blob = await git.writeBlob({ ...nodeRepo, blob: Buffer.from("x") });
+    const head = await git.resolveRef({ ...nodeRepo, ref: "HEAD" });
+    const { commit } = await git.readCommit({ ...nodeRepo, oid: head });
+    const root = await git.readTree({ ...nodeRepo, oid: commit.tree });
+    const workbenches = await git.readTree({
+      ...nodeRepo,
+      oid: commit.tree,
+      filepath: "workbenches",
+    });
+    const demo = await git.readTree({ ...nodeRepo, oid: commit.tree, filepath: REL });
+    const badDemo = await git.writeTree({
+      ...nodeRepo,
+      tree: [...demo.tree, { mode: "100644", path: "ui\\index.html", oid: blob, type: "blob" }],
+    });
+    const badWorkbenches = await git.writeTree({
+      ...nodeRepo,
+      tree: workbenches.tree.map((e) => (e.path === "demo" ? { ...e, oid: badDemo } : e)),
+    });
+    const badRoot = await git.writeTree({
+      ...nodeRepo,
+      tree: root.tree.map((e) => (e.path === "workbenches" ? { ...e, oid: badWorkbenches } : e)),
+    });
+    const stamp = { name: "x", email: "x@x", timestamp: 1_800_000_000, timezoneOffset: 0 };
+    const planted = await git.writeCommit({
+      ...nodeRepo,
+      commit: {
+        message: "by hand\n",
+        tree: badRoot,
+        parent: [head],
+        author: stamp,
+        committer: stamp,
+      },
+    });
+    await git.writeRef({ ...nodeRepo, ref: "refs/heads/main", value: planted, force: true });
+
+    // The hand-made commit is a version of its own, read without the entry git refuses.
+    const versions = await repo.history(REL);
+    expect(versions).toHaveLength(2);
+    expect(texts(await repo.filesAt(REL, versions[0]!.revision))).toEqual(texts(DEMO));
+    expect(logged.some((line) => line.includes("ui\\\\index.html"))).toBe(true);
+    expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
+    await repo.removePath(REL, "workbench demo: removed");
+    expect(await repo.history(REL)).toEqual([]);
+  });
+
+  it("object files a crash left empty are written again by the next commit of them", async () => {
+    const v1 = source({ "package.json": "{}", "index.ts": "one" });
+    const v2 = source({ "package.json": "{}", "index.ts": "two" });
+    const other = source({ "package.json": "{}" });
+    // A scratch repository with the same history tells which objects version 2 writes.
+    const scratch = path.join(dir, "scratch.git");
+    const twin = new AgentStateRepo({ gitdir: scratch, now: () => now, log: () => {} });
+    for (const repo of [open(), twin]) {
+      await repo.commitPath(REL, v1, "workbench demo @1");
+      await repo.commitPath("workbenches/other", other, "workbench other @1");
+    }
+    const before = new Set(await objectIds(scratch));
+    await twin.commitPath(REL, v2, "workbench demo @2");
+    const written = (await objectIds(scratch)).filter((oid) => !before.has(oid));
+    expect(written.length).toBeGreaterThan(0);
+    // The crash: those objects' files exist but are empty, and the branch never moved.
+    for (const oid of written) {
+      const file = path.join(gitdir, "objects", oid.slice(0, 2), oid.slice(2));
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, "");
+    }
+
+    const repo = open();
+    expect((await repo.commitPath(REL, v2, "workbench demo @2")).changed).toBe(true);
+
+    expect((await repo.history(REL)).map((v) => v.revision)).toEqual([
+      revisionOf(v2),
+      revisionOf(v1),
+    ]);
+    expect(await repo.history("workbenches/other")).toHaveLength(1);
+    expect((await repo.commitPath("workbenches/other", v1, "workbench other @2")).changed).toBe(
       true,
     );
-    expect(await repo.history(REL)).toHaveLength(1);
-    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
-    expect(revisionOf(files)).toBe(revisionOf(DEMO));
+  });
+
+  it("a staging folder an interrupted creation left an hour ago is removed by the next creation; a younger one stays", async () => {
+    const stale = `${gitdir}.penguin-tmpold`;
+    const young = `${gitdir}.penguin-tmpnew`;
+    for (const leftover of [stale, young]) await fs.mkdir(leftover);
+    const twoHoursAgo = new Date(T1.getTime() - 2 * 60 * 60 * 1000);
+    await fs.utimes(stale, twoHoursAgo, twoHoursAgo);
+    await fs.utimes(young, T1, T1);
+
+    await open().commitPath(REL, DEMO, "workbench demo @1");
+
+    await expect(fs.stat(stale)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await fs.stat(young)).isDirectory()).toBe(true);
   });
 });
 
@@ -246,17 +424,94 @@ describe("restoring a version into the folder", () => {
     expect((await fs.readdir(folderDir())).filter((n) => n.startsWith(".restore"))).toEqual([]);
   });
 
-  it.each(["state.json", ".harness/ifaces.json", "node_modules/dep/index.js", "../outside.ts"])(
-    "a version that holds %s is refused before anything is written",
-    async (rel) => {
-      const folder = await folderWith({ "index.ts": "mine" });
+  it.each([
+    "state.json",
+    "STATE.JSON",
+    "state.json/x.ts",
+    ".harness/ifaces.json",
+    "node_modules/dep/index.js",
+    "../outside.ts",
+  ])("a version that holds %s is refused before anything is written", async (rel) => {
+    const folder = await folderWith({ "index.ts": "mine" });
 
-      await expect(
-        restoreSource(folder, source({ "index.ts": "theirs", [rel]: "x" })),
-      ).rejects.toThrow("not workbench source");
-      expect(await fs.readFile(path.join(folderDir(), "index.ts"), "utf8")).toBe("mine");
-    },
-  );
+    await expect(
+      restoreSource(folder, source({ "index.ts": "theirs", [rel]: "x" })),
+    ).rejects.toThrow("not workbench source");
+    expect(await fs.readFile(path.join(folderDir(), "index.ts"), "utf8")).toBe("mine");
+  });
+
+  it("a folder's directory named state.json is not source either", async () => {
+    await fs.mkdir(path.join(folderDir(), "state.json"), { recursive: true });
+    await fs.writeFile(path.join(folderDir(), "state.json", "x.ts"), "x");
+    await fs.writeFile(path.join(folderDir(), "package.json"), "{}");
+
+    expect((await readFolder(folderDir(), "demo"))!.files).toEqual(["package.json"]);
+  });
+
+  /** Fails `fs.rename` with EACCES for the calls `when` picks. */
+  function failRename(when: (from: string, to: string) => boolean) {
+    const real = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation((from, to) =>
+      when(String(from), String(to))
+        ? Promise.reject(Object.assign(new Error("EACCES: injected"), { code: "EACCES" }))
+        : real(from, to),
+    );
+  }
+  const current = { "a.ts": "current", "extra.ts": "current", "ui/b.js": "current" };
+  const contents = async () =>
+    Object.fromEntries(
+      await Promise.all(
+        ["a.ts", "extra.ts", "ui/b.js", "state.json"].map(
+          async (rel) => [rel, await fs.readFile(path.join(folderDir(), rel), "utf8")] as const,
+        ),
+      ),
+    );
+
+  it("a move that fails half way puts every file back", async () => {
+    const folder = await folderWith(current);
+    const before = await contents();
+    // Another program holds `ui/b.js` open (Windows): it cannot be moved aside.
+    failRename((from) => from.endsWith(path.join("ui", "b.js")));
+
+    await expect(
+      restoreSource(folder, source({ "package.json": "{}", "a.ts": "old", "ui/b.js": "old" })),
+    ).rejects.toThrow("EACCES");
+
+    expect(await contents()).toEqual(before);
+    expect((await fs.readdir(folderDir())).filter((n) => n.startsWith(".restore"))).toEqual([]);
+  });
+
+  it("when putting back fails too, the error names where the previous files are kept", async () => {
+    const folder = await folderWith(current);
+    failRename(
+      (from, to) =>
+        from.endsWith(path.join("ui", "b.js")) ||
+        (from.includes(".restore") && to.endsWith("a.ts")),
+    );
+
+    const failed = await restoreSource(
+      folder,
+      source({ "package.json": "{}", "a.ts": "old", "ui/b.js": "old" }),
+    ).catch((err: Error) => err);
+
+    expect(failed).toBeInstanceOf(AggregateError);
+    const kept = /kept in (.+)\.$/.exec((failed as Error).message)![1]!;
+    const names = await fs.readdir(kept);
+    const bodies = await Promise.all(names.map((n) => fs.readFile(path.join(kept, n), "utf8")));
+    expect(bodies).toContain("current");
+  });
+
+  it("staging a restore left an hour ago is cleared by the next restore", async () => {
+    const folder = await folderWith({ "index.ts": "mine" });
+    const stale = path.join(folderDir(), ".restore.penguin-tmpold");
+    await fs.mkdir(stale);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(stale, twoHoursAgo, twoHoursAgo);
+
+    await restoreSource(folder, source({ "package.json": "{}", "index.ts": "theirs" }));
+
+    expect((await fs.readdir(folderDir())).filter((n) => n.startsWith(".restore"))).toEqual([]);
+  });
 
   it("the files a commit is handed are the ones that loaded: an edit since gives none", async () => {
     const folder = await folderWith({ "index.ts": "loaded" });

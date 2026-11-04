@@ -110,20 +110,22 @@ export function migrateWorkbenches(agentDir: string): Promise<void> {
   const inFlight = running.get(key);
   if (inFlight) return inFlight;
   const run = (async () => {
-    await convertWorkflows(agentDir);
-    await migrateWorkbenchesIntoState(agentDir);
+    // What the conversion has just published, the server wrote: no Agent is writing it.
+    const converted = await convertWorkflows(agentDir);
+    await migrateWorkbenchesIntoState(agentDir, { settled: converted });
   })().finally(() => running.delete(key));
   running.set(key, run);
   return run;
 }
 
-export async function convertWorkflows(agentDir: string): Promise<void> {
+/** True when this call published the converted folders. */
+export async function convertWorkflows(agentDir: string): Promise<boolean> {
   const journal = path.join(agentDir, ".workbench-migration");
-  if (await exists(path.join(journal, "complete"))) return;
+  if (await exists(path.join(journal, "complete"))) return false;
   const ready = path.join(journal, "ready");
   if (!(await exists(ready))) {
     if (!(await Promise.all(pairs.map(([old]) => exists(path.join(agentDir, old))))).some(Boolean))
-      return;
+      return false;
     // Never merge an independently created Workbench into a converted Workflow with the same id.
     for (const [, current] of pairs) {
       if (await exists(path.join(agentDir, current)))
@@ -160,4 +162,5 @@ export async function convertWorkflows(agentDir: string): Promise<void> {
     }
   }
   await fs.writeFile(path.join(journal, "complete"), "1\n");
+  return true;
 }
