@@ -65,11 +65,11 @@ describe("widgetsOf", () => {
     ];
     const kept = widgetsOf({ widgets: entries });
     expect(kept).toHaveLength(1);
-    expect(kept[0].id).toBe("pet.widget");
+    expect(kept[0]?.id).toBe("pet.widget");
   });
 
   it("reads a missing size as small and keeps wide as written", () => {
-    const wide = { ...iframeWidget, id: "w", key: "w", size: "wide" };
+    const wide = { ...iframeWidget, id: "w", key: "w", size: "wide" as const };
     expect(widgetsOf({ widgets: [iframeWidget, wide] }).map((w) => w.size)).toEqual([
       "small",
       "wide",
