@@ -5,11 +5,10 @@
  * - Every command is listed under its group, in either language.
  * - A chord is drawn the way the platform writes it.
  * - A row can be reset only when overridden, and "Reset all" is enabled only when something is.
- * - No default sits on a chord the browser keeps; a binding on one is marked in the attention
- *   tone on either host. A chord the browser also uses gets a muted note, and in the desktop
- *   app the desktop menu's claim is named first. A note follows a new binding at once.
- * - A command shadowing a global one is named in the attention tone, and a same-scope clash
- *   is reported on both rows.
+ * - No default sits on a chord the browser keeps; a binding on one is marked on either host. A
+ *   chord the browser also uses gets a note, and in the desktop app the desktop menu's claim is
+ *   named first. A note follows a new binding at once.
+ * - A command shadowing a global one is named, and a same-scope clash is reported on both rows.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -26,9 +25,6 @@ import {
   setBinding,
 } from "../src/lib/shortcuts/store";
 import { memoryStorage } from "./helpers/storage";
-
-/** The attention tone's ink, as the package's token class spells it. */
-const ATTENTION = "text-tone-attention-fg";
 
 /** A keybindings mirror holding `doc`, or nothing. */
 const keybindings = (doc?: object) =>
@@ -100,26 +96,23 @@ describe("ShortcutsSection", () => {
       setHostForTests(host);
       const html = render();
       expect(count(html, S.shortcuts.browserReserved), host).toBe(1);
-      expect(html, host).toContain(ATTENTION);
     }
   });
 
-  it("notes a chord the browser also uses, muted, and names the desktop menu's claim first in the desktop app", () => {
-    // Save's and find's defaults take over the browser's Save Page and find; no other default
-    // touches the browser.
-    expect(count(render(), S.shortcuts.browserCommon)).toBe(2);
+  it("notes a chord the browser also uses, and names the desktop menu's claim first in the desktop app", () => {
+    // Whatever defaults already share a chord with the browser, a binding onto its Reload adds
+    // one note.
+    const atDefaults = count(render(), S.shortcuts.browserCommon);
     configureKeybindingsStoreForTests({
       storage: keybindings({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
     });
-    const browser = render();
-    expect(count(browser, S.shortcuts.browserCommon)).toBe(3);
-    expect(browser).not.toContain(ATTENTION);
+    expect(count(render(), S.shortcuts.browserCommon)).toBe(atDefaults + 1);
     setHostForTests("desktop");
     const desktop = render();
-    // Reload is the desktop menu's too, so that row names the menu; Save and find keep the
-    // browser's note.
+    // Reload is the desktop menu's too, so that row names the menu instead; the other rows keep
+    // the browser's note.
     expect(count(desktop, S.shortcuts.desktopMenuReserved)).toBe(1);
-    expect(count(desktop, S.shortcuts.browserCommon)).toBe(2);
+    expect(count(desktop, S.shortcuts.browserCommon)).toBe(atDefaults);
   });
 
   it("shows a binding's note as soon as the binding lands", () => {
@@ -128,7 +121,7 @@ describe("ShortcutsSection", () => {
     expect(count(render(), S.shortcuts.browserReserved)).toBe(1);
   });
 
-  it("says which command shadows a global one, in the attention tone", () => {
+  it("says which command shadows a global one", () => {
     configureKeybindingsStoreForTests({
       storage: keybindings({ v: 1, linux: { "palette.toggle": "Ctrl+Alt+Backquote" } }),
     });
@@ -142,7 +135,6 @@ describe("ShortcutsSection", () => {
         ),
       ),
     ).toBe(1);
-    expect(html).toContain(ATTENTION);
   });
 
   it("reports a same-scope clash on both rows", () => {

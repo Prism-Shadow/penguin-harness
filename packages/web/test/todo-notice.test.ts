@@ -4,9 +4,10 @@
  *
  * Guard, over every `<TodoNotice>` call site in the source roots (discovered, not listed):
  * - The notice is defined in one place.
- * - A bulk action is never offered without a label, nor a label without an action.
  * - The bulk button never writes on click: its handler opens the batch's own confirmation by
  *   setting the state that ConfirmModal is rendered behind.
+ * (A bulk action offered without a label, or a label without an action, does not compile:
+ * `TodoNotice` takes the two together or neither.)
  *
  * Behaviour:
  * - The count comes off the raised to-do, so the block never claims more than the dot was
@@ -61,19 +62,9 @@ function noticeSites(): { file: string; attrs: Map<string, string>; source: stri
 }
 
 describe("the notice block is the one shape on every page that has one", () => {
-  const sites = noticeSites();
-
   it("is looked for in every source root, and defined in one place", () => {
     expectEveryRootScanned(SCAN);
     expectSingleHome(SCAN, TODO_NOTICE);
-  });
-
-  it("never offers a bulk action without labelling it, or a label without an action", () => {
-    for (const { file, attrs } of sites) {
-      expect(attrs.has("actionLabel"), `${file} action label and handler must agree`).toBe(
-        attrs.has("onAction"),
-      );
-    }
   });
 });
 

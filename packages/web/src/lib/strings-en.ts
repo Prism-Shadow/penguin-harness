@@ -5,7 +5,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State).
  */
-import type { AccentPreset } from "@prismshadow/penguin-ui";
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ProtocolClientType } from "../features/models/protocol-types";
@@ -990,7 +990,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
-    } satisfies Record<"neutral" | AccentPreset, string> as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {

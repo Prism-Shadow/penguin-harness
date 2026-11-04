@@ -1,6 +1,7 @@
 /**
  * Carrying the app's appearance into a workbench's page: what is read from the app's own
- * document, and what is stamped on the frame's.
+ * document, and what is stamped on the frame's. What is read includes the names published
+ * pages read from before the token contract (the body font stack, the gray scale).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -22,8 +23,11 @@ const appRoot = (classes: string[], fontSize: string, attrs: Record<string, stri
 
 describe("workbench theme", () => {
   it("reads the resolved appearance rather than recomputing it", () => {
+    // A token of the contract, and two names published pages read from before it: the body
+    // font stack and a gray of Tailwind's scale.
     const values: Record<string, string> = {
       "--ui-accent": " #e32a01 ",
+      "--font-app-sans": "Inter, sans-serif",
       "--color-gray-950": "#000",
       "--ui-fg": "",
     };
@@ -36,7 +40,11 @@ describe("workbench theme", () => {
     expect(theme.dark).toBe(true);
     expect(theme.fontSize).toBe("16px");
     // Trimmed, and a property the app does not define is not stamped as an empty value.
-    expect(theme.vars).toEqual({ "--ui-accent": "#e32a01", "--color-gray-950": "#000" });
+    expect(theme.vars).toEqual({
+      "--ui-accent": "#e32a01",
+      "--font-app-sans": "Inter, sans-serif",
+      "--color-gray-950": "#000",
+    });
     expect(theme.attrs).toEqual({
       "data-theme": "geek",
       "data-accent": "orange",

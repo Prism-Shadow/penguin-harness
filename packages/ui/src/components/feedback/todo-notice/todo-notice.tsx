@@ -29,6 +29,22 @@
 import { UPDATE_DOT_INLINE } from "../../icons/update-dot/update-dot";
 import { Notice } from "../notice/notice";
 
+/**
+ * The bulk action, offered whole or not at all: its wording and its handler come together, so a
+ * label with nothing behind it, or a handler no button names, does not compile.
+ */
+type TodoNoticeAction =
+  | {
+      /** The bulk action's wording, on the pages that have one. */
+      actionLabel: string;
+      /**
+       * Opens the page's confirmation for updating everything the notice counts. Not the write
+       * itself: a bulk overwrite is consented to before it runs, never after.
+       */
+      onAction: () => void;
+    }
+  | { actionLabel?: undefined; onAction?: undefined };
+
 export function TodoNotice({
   text,
   actionLabel,
@@ -39,19 +55,12 @@ export function TodoNotice({
 }: {
   /** What is waiting — the trail's own sentence, unchanged from the dot's tooltip. */
   text: string;
-  /** The bulk action's wording, on the pages that have one. */
-  actionLabel?: string;
-  /**
-   * Opens the page's confirmation for updating everything the notice counts. Not the write
-   * itself: a bulk overwrite is consented to before it runs, never after.
-   */
-  onAction?: () => void;
   /** Disables both controls while the confirmed batch is in flight. */
   busy?: boolean;
   /** The clearing action's wording; "mark as read" where nothing is being updated. */
   dismissLabel: string;
   onDismiss: () => void;
-}) {
+} & TodoNoticeAction) {
   const offersAction = actionLabel !== undefined && onAction !== undefined;
   return (
     <Notice

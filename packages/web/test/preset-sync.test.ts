@@ -8,10 +8,12 @@
  *   out with mode "add", and the table the server answers with is adopted.
  * - Given the Restore defaults confirmation, when its confirm button is pressed, one POST goes
  *   out with mode "restore", the table is adopted, and the dialog closes once the request settles.
+ * - Given the Restore defaults confirmation open, its body draws and nothing is sent yet.
  * - Given the server refuses, nothing is adopted, and the busy flag and the badge re-probe still
  *   run.
  */
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ModelsResponse, PresetSyncResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -121,6 +123,22 @@ describe("the catalog actions send the server's sync in their own mode", () => {
     ]);
     expect(page.adopted).toEqual([ANSWER]);
     expect(syncing).toEqual([true, false]);
+  });
+
+  it("the Restore defaults confirmation draws its warning and sends nothing until confirmed", () => {
+    const fetch = stubFetch(() => json(ANSWER));
+    const confirm = RestoreDefaultsConfirm({
+      host: host(),
+      busy: false,
+      setSyncing: () => {},
+      onClose: () => {},
+    }) as ReactElement<{ children: ReactNode }>;
+    // The body is what the dialog shows above its buttons (the modal itself portals, which the
+    // node renderer cannot draw).
+    const body = renderToStaticMarkup(confirm.props.children as ReactElement);
+
+    expect(body.replace(/<[^>]+>/g, "").trim()).not.toBe("");
+    expect(syncRequests(fetch)).toEqual([]);
   });
 
   it("a refused sync adopts nothing, and still lowers the busy flag and re-probes the badge", async () => {

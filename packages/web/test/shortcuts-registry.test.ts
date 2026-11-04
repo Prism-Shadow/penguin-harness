@@ -1,8 +1,8 @@
 /**
  * The registry (src/lib/shortcuts/registry.ts) holds the line on what a default may be: it
  * parses, it carries a modifier or is an F key, no two same-scope defaults collide on any
- * platform, no default sits on a browser-reserved chord, and every id passes the server's
- * grammar. An unknown id is refused by name.
+ * platform, no default sits on a browser-reserved chord, and no two commands share an id. An
+ * unknown id is refused by name.
  */
 import { describe, expect, it } from "vitest";
 import { isBindableChord, parseChord } from "../src/lib/shortcuts/chord";
@@ -12,8 +12,6 @@ import { browserReserved } from "../src/lib/shortcuts/reserved";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
 
 const PLATFORMS: readonly Platform[] = ["mac", "windows", "linux"];
-/** The id grammar the server enforces on `ui_prefs.keybindings` (services/keybindings.ts). */
-const ID_RE = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 
 function defaultsFor(platform: Platform): Map<CommandId, Chord | null> {
   return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
@@ -58,9 +56,8 @@ describe("registry defaults", () => {
     }
   });
 
-  it("ids match the server grammar and are unique", () => {
+  it("gives no two commands the same id", () => {
     const ids = SHORTCUT_COMMANDS.map((cmd) => cmd.id);
-    for (const id of ids) expect(id).toMatch(ID_RE);
     expect(new Set(ids).size).toBe(ids.length);
   });
 

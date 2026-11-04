@@ -11,7 +11,7 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
-import type { AccentPreset } from "@prismshadow/penguin-ui";
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ProtocolClientType } from "../features/models/protocol-types";
@@ -1122,7 +1122,7 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
-    } satisfies Record<"neutral" | AccentPreset, string> as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {

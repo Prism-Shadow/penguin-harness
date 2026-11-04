@@ -4,10 +4,10 @@
  * non-admin the form. The admin APIs answer a non-admin with 403 either way; this filter is
  * convenience, not the boundary.
  *
- * - A web admin gets the server's pages and user management beside their own; a non-admin gets
- *   exactly the admin's personal pages (their browser and their archived chats among them) and
- *   nothing server-global; the desktop shell's window drops the account page and user
- *   management; a password session against a desktop-mode server keeps the account page.
+ * - A web admin gets every page, each once; a non-admin gets exactly the admin's personal pages
+ *   (their browser and their archived chats among them) and nothing server-global; the desktop
+ *   shell's window drops the account page and user management; a password session against a
+ *   desktop-mode server keeps the account page.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
  * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
@@ -19,6 +19,28 @@ import {
   settingsGroups,
   visibleSettingsSections,
 } from "../src/lib/settings-sections";
+import type { SettingsSectionKey } from "../src/lib/settings-sections";
+
+/**
+ * Every Settings page there is. Keyed by the union, so a new page does not compile until it is
+ * named here, and none can vanish from the web admin's rail unnoticed.
+ */
+const EVERY_PAGE: Record<SettingsSectionKey, true> = {
+  profile: true,
+  general: true,
+  appearance: true,
+  shortcuts: true,
+  archived: true,
+  account: true,
+  browser: true,
+  proxy: true,
+  uploads: true,
+  company: true,
+  chromeExtension: true,
+  agentApi: true,
+  plugins: true,
+  users: true,
+};
 
 /** Admin signed into a plain `penguin server` through the login form. */
 const admin = visibleSettingsSections({
@@ -49,11 +71,8 @@ const desktopBrowser = visibleSettingsSections({
 const keys = (sections: readonly { key: string }[]): string[] => sections.map((s) => s.key);
 
 describe("visibleSettingsSections", () => {
-  it("gives a web admin the server's pages and user management beside their own", () => {
-    expect(keys(admin)).toEqual(
-      expect.arrayContaining(["profile", "account", "browser", "proxy", "plugins", "users"]),
-    );
-    expect(new Set(admin.map((s) => s.group))).toEqual(new Set(["personal", "server"]));
+  it("gives a web admin every page, each once", () => {
+    expect(keys(admin).sort()).toEqual(Object.keys(EVERY_PAGE).sort());
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
