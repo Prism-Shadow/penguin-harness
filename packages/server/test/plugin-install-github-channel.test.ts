@@ -8,22 +8,31 @@
  * - A mismatch, an unreadable integrity, or a channel listed without an integrity refuses the
  *   install with the reason; nothing unverified installs.
  * - npm stays the first source: a name npm installs never consults the index, and a channel
- *   install is only the fallthrough for a name npm has no answer for.
+ *   install is only the fallthrough for a name npm answered E404/ETARGET on (the version
+ *   asked for goes with the lookup); any other npm failure stays a failure.
+ * - The verified tarball's own package.json has to be the index entry's package and version
+ *   before it installs under its digest-named archive; a different archive refuses with
+ *   nothing written and npm never run.
  */
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginIndexEntry } from "../src/api/types.js";
 import {
   installPluginChannel,
+  npmFailureKind,
   PluginInstallError,
   pluginsPrefix,
   verifyIntegrity,
 } from "../src/plugin/install.js";
 import { indexChannelLookup, indexChannelOf, type IndexChannel } from "../src/plugin/registry.js";
 import { installNamedOrChanneled } from "../src/http/routes/plugins-installed.js";
+
+const execFileAsync = promisify(execFile);
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -36,6 +45,26 @@ const tempRoot = async () => {
   roots.push(root);
   return root;
 };
+
+/**
+ * A real gzipped tarball carrying `package/package.json` with the given name and version —
+ * packed by the system tar, the same reader the install uses to check the manifest against
+ * the index entry before anything installs.
+ */
+async function packTarball(name: string, version: string): Promise<Uint8Array> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pkg-"));
+  try {
+    await fs.mkdir(path.join(dir, "package"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "package", "package.json"),
+      JSON.stringify({ name, version }),
+    );
+    await execFileAsync("tar", ["-czf", path.join(dir, "asset.tgz"), "-C", dir, "package"]);
+    return new Uint8Array(await fs.readFile(path.join(dir, "asset.tgz")));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
 
 const digest = (bytes: Uint8Array) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
@@ -50,8 +79,8 @@ const channel: IndexChannel = {
 };
 
 describe("verifyIntegrity", () => {
-  it("accepts the bytes the entry pins", () => {
-    expect(() => verifyIntegrity(asset, integrity)).not.toThrow();
+  it("accepts the bytes the entry pins, answering the digest that names the archive", () => {
+    expect(verifyIntegrity(asset, integrity)).toBe(integrity.slice("sha512-".length));
   });
 
   it("refuses a mismatch, saying the asset is not installed", () => {
@@ -65,44 +94,90 @@ describe("verifyIntegrity", () => {
   });
 });
 
+describe("npmFailureKind", () => {
+  it("calls a missing package or an unmatched version unavailable", () => {
+    expect(
+      npmFailureKind(
+        "npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/x",
+      ),
+    ).toBe("unavailable");
+    expect(
+      npmFailureKind("npm error code ETARGET\nnpm error Not Found - no match for ^3.0.0"),
+    ).toBe("unavailable");
+  });
+
+  it("calls every other npm failure other", () => {
+    expect(npmFailureKind("npm error code EACCES\nnpm error permission denied")).toBe("other");
+    expect(
+      npmFailureKind(
+        "npm error code ELIFECYCLE\nnpm error Exit status 1\nnpm error A complete log",
+      ),
+    ).toBe("other");
+    expect(npmFailureKind(undefined)).toBe("other");
+  });
+});
+
 describe("installPluginChannel", () => {
-  it("fetches the asset, writes the verified bytes to the prefix's archives, and installs that tarball", async () => {
+  /** What npm would record for a file: install — the record that keeps the tarball past a prune. */
+  const fakeNpmInstall =
+    (name: string, version: string) => async (prefix: string, spec: string) => {
+      const dir = path.join(prefix, "node_modules", ...name.split("/"));
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "package.json"), JSON.stringify({ name, version }));
+      const manifestPath = path.join(prefix, "package.json");
+      const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8").catch(() => "{}")) as {
+        dependencies?: Record<string, string>;
+      };
+      manifest.dependencies = {
+        ...(manifest.dependencies ?? {}),
+        [name]: `file:${spec.replace(/^\.\//, "")}`,
+      };
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    };
+
+  it("fetches the asset, checks its manifest against the entry, and installs the verified tarball under its digest-named archive", async () => {
     const root = await tempRoot();
-    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(asset), { status: 200 }));
+    const bytes = await packTarball(channel.name, channel.version);
+    const pinned: IndexChannel = { ...channel, integrity: digest(bytes) };
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(bytes), { status: 200 }));
     const installedSpecs: string[] = [];
-    const installed = await installPluginChannel(root, channel, {
+    const installed = await installPluginChannel(root, pinned, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       install: async (prefix, spec) => {
         installedSpecs.push(spec);
         // What npm would put on disk for the verified tarball. The prefix is created by
         // the install itself, and the fake receives it: node_modules sits inside it.
-        const dir = path.join(prefix, "node_modules", ...channel.name.split("/"));
-        await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(
-          path.join(dir, "package.json"),
-          JSON.stringify({ name: channel.name, version: channel.version }),
-        );
-        // What npm records in the prefix's manifest for a file: install — the record that
-        // keeps the tarball in archives past a prune.
-        const manifestPath = path.join(prefix, "package.json");
-        const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8").catch(() => "{}")) as {
-          dependencies?: Record<string, string>;
-        };
-        manifest.dependencies = {
-          ...(manifest.dependencies ?? {}),
-          [channel.name]: `file:${spec.replace(/^\.\//, "")}`,
-        };
-        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+        await fakeNpmInstall(pinned.name, pinned.version)(prefix, spec);
       },
     });
-    expect(fetchImpl).toHaveBeenCalledWith(channel.url, { redirect: "follow" });
-    expect(installed).toEqual({ name: channel.name, version: channel.version });
-    expect(installedSpecs).toEqual(["./archives/@penguinharness-language-typst-0.0.2.tgz"]);
-    const kept = await fs.readFile(
-      path.join(pluginsPrefix(root), "archives", "@penguinharness-language-typst-0.0.2.tgz"),
-      "utf8",
-    );
-    expect(kept).toBe("a release tarball's bytes");
+    expect(fetchImpl).toHaveBeenCalledWith(pinned.url, { redirect: "follow" });
+    expect(installed).toEqual({ name: pinned.name, version: pinned.version });
+    const file = `@penguinharness-language-typst-0.0.2-${digest(bytes).slice("sha512-".length, "sha512-".length + 16)}.tgz`;
+    expect(installedSpecs).toEqual([`./archives/${file}`]);
+    // The archive the prefix keeps is the verified bytes, and nothing else is left behind
+    // (the staging file the check read the manifest from is gone).
+    const kept = await fs.readFile(path.join(pluginsPrefix(root), "archives", file));
+    expect(new Uint8Array(kept)).toEqual(bytes);
+    await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([file]);
+  });
+
+  it("refuses a tarball whose package.json is not the entry's package and version — npm never runs, nothing is written", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball("other-package", "9.9.9");
+    const install = vi.fn(async () => undefined);
+    await expect(
+      installPluginChannel(
+        root,
+        { ...channel, integrity: digest(bytes) },
+        {
+          fetchImpl: (async () =>
+            new Response(new Uint8Array(bytes), { status: 200 })) as unknown as typeof fetch,
+          install,
+        },
+      ),
+    ).rejects.toThrow(/package\.json says "other-package"@"9\.9\.9"/);
+    expect(install).not.toHaveBeenCalled();
+    await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([]);
   });
 
   it("refuses a mismatched asset before anything is written or installed", async () => {
@@ -223,6 +298,13 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     version: "0.0.2",
   };
 
+  /** npm's failure as installNamedOrChanneled sees it: a message, and the bucket npm's stderr sorted it into. */
+  const npmSays = (message: string, reason: "unavailable" | "other") => {
+    const err = new PluginInstallError(message);
+    err.reason = reason;
+    throw err;
+  };
+
   it("a name npm installs never consults the index", async () => {
     const channelOf = vi.fn();
     const installChannel = vi.fn();
@@ -236,27 +318,41 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     expect(installChannel).not.toHaveBeenCalled();
   });
 
-  it("a name npm has no answer for falls through to the index channel", async () => {
+  it("a name npm has no answer for (E404) falls through to the index channel, with the requested version", async () => {
+    const channelOf = vi.fn(async () => ({ channel, fault: null }));
     const installChannel = vi.fn(async () => ({ name: channel.name, version: channel.version }));
     const installed = await installNamedOrChanneled("/root", spec, {
-      install: async () => {
-        throw new PluginInstallError(
+      install: async () =>
+        npmSays(
           "404 Not Found - GET https://registry.npmjs.org/@penguinharness%2flanguage-typst",
-        );
-      },
-      channelOf: async () => ({ channel, fault: null }),
+          "unavailable",
+        ),
+      channelOf,
       installChannel,
     });
     expect(installed).toEqual({ name: channel.name, version: channel.version });
+    expect(channelOf).toHaveBeenCalledWith(spec.name, spec.version);
     expect(installChannel).toHaveBeenCalledWith("/root", channel);
+  });
+
+  it("an npm failure that is not 'unavailable' does not fall through — a channel is not the answer to it", async () => {
+    const channelOf = vi.fn();
+    const installChannel = vi.fn();
+    await expect(
+      installNamedOrChanneled("/root", spec, {
+        install: async () => npmSays("npm error lifecycle script failed", "other"),
+        channelOf,
+        installChannel,
+      }),
+    ).rejects.toThrow(/lifecycle script failed/);
+    expect(channelOf).not.toHaveBeenCalled();
+    expect(installChannel).not.toHaveBeenCalled();
   });
 
   it("an index with no channel for the name refuses, naming both answers", async () => {
     await expect(
       installNamedOrChanneled("/root", spec, {
-        install: async () => {
-          throw new PluginInstallError("npm said: not found");
-        },
+        install: async () => npmSays("npm said: not found", "unavailable"),
         channelOf: async () => ({ channel: null, fault: null }),
         installChannel: vi.fn(),
       }),
@@ -269,9 +365,7 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     const installChannel = vi.fn();
     await expect(
       installNamedOrChanneled("/root", spec, {
-        install: async () => {
-          throw new PluginInstallError("npm said: not found");
-        },
+        install: async () => npmSays("npm said: not found", "unavailable"),
         channelOf: async () => ({
           channel: null,
           fault:
@@ -286,9 +380,7 @@ describe("npm first, the channel only on its failure (the route's install)", () 
   it("a failing channel keeps npm's word and adds the channel's", async () => {
     await expect(
       installNamedOrChanneled("/root", spec, {
-        install: async () => {
-          throw new PluginInstallError("npm said: not found");
-        },
+        install: async () => npmSays("npm said: not found", "unavailable"),
         channelOf: async () => ({ channel, fault: null }),
         installChannel: async () => {
           throw new PluginInstallError("the release asset answered 404: " + channel.url);
