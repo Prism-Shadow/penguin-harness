@@ -6,7 +6,7 @@
  * two sides are separate compilations, so a signature has to be something that can be
  * serialized and compared — this module is that form, and {@link satisfies} is the
  * comparison. The TS `interface` a module author writes is the source; a build step
- * projects it into this shape (see scripts/gen-ifaces.mjs), so the two cannot drift.
+ * projects it into this shape (see bin/gen-ifaces.mjs), so the two cannot drift.
  *
  * Data types are arktype definitions, compared with TS assignability rules (./data.ts);
  * the non-data shapes (functions, promises,
