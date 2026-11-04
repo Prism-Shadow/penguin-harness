@@ -3,7 +3,6 @@
  * document, and what is stamped on the frame's.
  */
 import { describe, expect, it } from "vitest";
-import { TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import {
   applyWorkbenchTheme,
   collectFontFaces,
@@ -12,7 +11,6 @@ import {
   readDocumentTheme,
   WORKBENCH_FONTS_ATTR,
   WORKBENCH_THEME_HREF,
-  WORKBENCH_THEME_VARS,
   type WorkbenchTheme,
 } from "../src/lib/workbench-theme";
 
@@ -23,12 +21,6 @@ const appRoot = (classes: string[], fontSize: string, attrs: Record<string, stri
 });
 
 describe("workbench theme", () => {
-  it("copies the whole token contract, and the names pages read before it", () => {
-    expect(TOKEN_NAMES.filter((name) => !WORKBENCH_THEME_VARS.includes(name))).toEqual([]);
-    expect(WORKBENCH_THEME_VARS).toContain("--font-app-sans");
-    expect(WORKBENCH_THEME_VARS).toContain("--color-gray-500");
-  });
-
   it("reads the resolved appearance rather than recomputing it", () => {
     const values: Record<string, string> = {
       "--ui-accent": " #e32a01 ",

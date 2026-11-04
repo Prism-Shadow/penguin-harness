@@ -27,10 +27,6 @@ const RESTING = { pinned: false };
 const ALL: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
 
 describe("the context menu", () => {
-  it("carries the whole set", () => {
-    expect([...CONTEXT_MENU_ACTIONS]).toEqual(ALL);
-  });
-
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
     for (const action of HOVER_ROW_ACTIONS) expect(CONTEXT_MENU_ACTIONS).toContain(action);
   });

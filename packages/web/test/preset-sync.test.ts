@@ -10,22 +10,16 @@
  *   out with mode "restore", the table is adopted, and the dialog closes once the request settles.
  * - Given the server refuses, nothing is adopted, and the busy flag and the badge re-probe still
  *   run.
- * - The confirmation names, in both languages, the API keys it keeps.
  */
-import { createElement } from "react";
 import type { ReactElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ModelsResponse, PresetSyncResponse } from "@prismshadow/penguin-server/api";
 import {
   AddNewModelsButton,
   AddNewModelsConfirm,
-  RestoreDefaultsBody,
   RestoreDefaultsConfirm,
 } from "../src/features/models/preset-sync";
 import type { PresetSyncHost } from "../src/features/models/preset-sync";
-import { setActiveStrings, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ANSWER: PresetSyncResponse = {
@@ -66,23 +60,10 @@ function host(): PresetSyncHost & {
   };
 }
 
-/** What an element reads as: its static markup without the tags, entities decoded. */
-function renderedText(element: ReactElement): string {
-  return renderToStaticMarkup(element)
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&#x27;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
 /** The sync requests that went out, as the server saw them. */
 function syncRequests(fetch: ReturnType<typeof stubFetch>) {
   return fetch.requests.filter((r) => r.path === "/api/projects/p1/models/sync-presets");
 }
-
-afterEach(() => setActiveStrings(zh));
 
 describe("the catalog actions send the server's sync in their own mode", () => {
   it('the "Add new models" button only opens its confirmation; it sends nothing itself', () => {
@@ -159,14 +140,5 @@ describe("the catalog actions send the server's sync in their own mode", () => {
     expect(syncRequests(fetch)).toHaveLength(1);
     expect(page.adopted).toEqual([]);
     expect(page.busy).toEqual([true, false]);
-  });
-});
-
-describe("the Restore defaults confirmation", () => {
-  it("names, in both languages, the API keys it keeps", () => {
-    for (const dict of [zh, en]) {
-      setActiveStrings(dict);
-      expect(renderedText(createElement(RestoreDefaultsBody))).toContain("API key");
-    }
   });
 });

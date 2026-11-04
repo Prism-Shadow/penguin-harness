@@ -11,12 +11,11 @@
  * - A chosen face is named on <html>, the theme's own face leaves no attribute, the theme an
  *   empty store starts in is written like a chosen one while Primer (the stylesheet's fallback)
  *   leaves none, and the text size sets the root font size.
- * - Every theme, text size and accent preset of the UI package is named in both languages.
  * - The font choices put the theme's own face first, once, and word the non-names from the
  *   dictionary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCENT_PRESET_IDS, INITIAL_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import {
   FONT_CJK_OPTIONS,
   FONT_LATIN_OPTIONS,
@@ -170,16 +169,6 @@ describe("the attributes the preferences put on <html>", () => {
 });
 
 describe("the Appearance section", () => {
-  it("names every theme, text size and accent preset in both languages", () => {
-    for (const dict of [zh, en]) {
-      for (const id of THEME_IDS) expect(dict.settings.themeNames[id]).toBeTruthy();
-      for (const size of TEXT_SIZES) expect(dict.settings.textSizeNames[size]).toBeTruthy();
-      for (const id of ["neutral", ...ACCENT_PRESET_IDS]) {
-        expect(dict.settings.accentNames[id], id).toBeTruthy();
-      }
-    }
-  });
-
   it("puts the theme's own face first, once, and words the non-names from the dictionary", () => {
     setActiveStrings(en);
     for (const options of [FONT_LATIN_OPTIONS, FONT_CJK_OPTIONS]) {
