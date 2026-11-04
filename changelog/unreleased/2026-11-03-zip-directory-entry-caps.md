@@ -3,6 +3,7 @@
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `server`, `docs`
+- **PR:** [#1450](https://github.com/Prism-Shadow/penguin-harness/pull/1450)
 
 [中文版](2026-11-03-zip-directory-entry-caps.zh.md)
 
