@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `core`, `tooling`
+- **PR:** [#1475](https://github.com/Prism-Shadow/penguin-harness/pull/1475)
 
 [English](2026-11-04-gen-ifaces-bin.md)
 
