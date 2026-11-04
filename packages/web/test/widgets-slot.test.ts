@@ -17,7 +17,7 @@ const iframeWidget = {
   key: "pet",
   title: "Pet",
   titleZh: "宠物",
-  size: "small",
+  size: "small" as const,
   renderer: { iframe: { src: "/api/plugins/@acme/pet/ui/widget.html", namespace: "pet" } },
 };
 
