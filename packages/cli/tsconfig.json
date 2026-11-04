@@ -26,6 +26,12 @@
       ],
       "@prismshadow/penguin-server/db/repos/organizations": [
         "../../packages/server/src/db/repos/organizations.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
       ]
     }
   },
