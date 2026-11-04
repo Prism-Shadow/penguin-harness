@@ -41,7 +41,7 @@ interface FakeState {
 
 function fakeHost(state: FakeState, language: "en" | "zh" = "en"): PluginCliCommandHost {
   return {
-    messages: { language },
+    language,
     state: {
       read: () => structuredClone(state.doc),
       merge: (update) => {
@@ -167,7 +167,7 @@ describe("the code half", () => {
     const program = new Command();
     program.name("penguin").exitOverride();
     registerPetCommands(program as never, {
-      messages: { language: "en" },
+      language: "en",
       state: {
         read: () => {
           throw new Error("store gone");

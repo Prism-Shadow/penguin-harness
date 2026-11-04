@@ -44,17 +44,17 @@ function statusLine(doc: PetDoc, language: "en" | "zh"): string {
  * node with the summary already set as its description; this adds options, arguments and
  * actions, and never builds a path of its own.
  */
-export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCommandHost): void {
+export function registerPetCommands(program: CliCommandProgram, host: PluginCliCommandHost): void {
   // The contract hands the node over opaque; the commander side of this package fills it in.
   const root = program as unknown as Command;
-  const zh = ctx.messages.language === "zh";
+  const zh = host.language === "zh";
 
   root
     .command("feed")
     .description(zh ? "喂宠物（默认 +20 饱食度）" : "Feed the pet (fullness +20 by default)")
     .option("--amount <n>", zh ? "增加的饱食度" : "how much fullness to add", "20")
     .action(async (opts: { amount: string }) => {
-      const doc = ctx.state.read() as PetDoc;
+      const doc = host.state.read() as PetDoc;
       const amount = Number(opts.amount);
       if (!Number.isFinite(amount)) {
         process.stderr.write(zh ? "数量必须是数字\n" : "the amount must be a number\n");
@@ -64,7 +64,7 @@ export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCo
       const stored = doc.pet?.fullness ?? 0;
       // The server clamps the merged fullness into 0–100; print what it kept.
       const next = (await Promise.resolve(
-        ctx.state.merge({ pet: { fullness: Math.min(100, Math.max(0, stored + amount)) } }),
+        host.state.merge({ pet: { fullness: Math.min(100, Math.max(0, stored + amount)) } }),
       )) as PetDoc;
       process.stdout.write(
         zh
@@ -78,7 +78,7 @@ export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCo
     .description(zh ? "给宠物起名" : "Name the pet")
     .argument("<name>", zh ? "宠物的名字" : "the pet's name")
     .action(async (name: string) => {
-      await Promise.resolve(ctx.state.merge({ pet: { name } }));
+      await Promise.resolve(host.state.merge({ pet: { name } }));
       process.stdout.write(zh ? `它现在叫 ${name}\n` : `It is now named ${name}\n`);
     });
 
@@ -87,7 +87,7 @@ export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCo
     .description(zh ? "让宠物说一句话（气泡）" : "Make the pet say one line (its bubble)")
     .argument("<text>", zh ? "要说的话" : "the line to say")
     .action(async (text: string) => {
-      await Promise.resolve(ctx.state.merge({ mood: { bubble: text, doing: "idle" } }));
+      await Promise.resolve(host.state.merge({ mood: { bubble: text, doing: "idle" } }));
       process.stdout.write(zh ? `它说：${text}\n` : `It says: ${text}\n`);
     });
 
@@ -95,7 +95,7 @@ export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCo
     .command("status")
     .description(zh ? "看宠物现在怎么样" : "How the pet is doing")
     .action(() => {
-      const doc = ctx.state.read() as PetDoc;
-      process.stdout.write(`${statusLine(doc, ctx.messages.language)}\n`);
+      const doc = host.state.read() as PetDoc;
+      process.stdout.write(`${statusLine(doc, host.language)}\n`);
     });
 }

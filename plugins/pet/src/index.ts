@@ -60,7 +60,7 @@ export class Pet {
   @Bind("pet.cmd")
   pet: CliCommandCode<PluginCliCommandHost> = {
     register(command, ctx) {
-      registerPetCommands(command, ctx);
+      registerPetCommands(command, ctx.messages);
     },
   };
 }

@@ -75,7 +75,7 @@ export interface PluginCommandState {
 
 /** The host bundle a SERVER-run plugin command receives: the locale plus its state channel. */
 export interface PluginCliCommandHost {
-  messages: { language: "en" | "zh" };
+  language: "en" | "zh";
   state: PluginCommandState;
 }
 
@@ -190,14 +190,23 @@ async function runPluginCommandOnce(
     try {
       for (const c of commands) {
         const node = commandAt(program, c.key).description(c.summary[request.language]);
-        // The server host holds no shared command vocabulary yet, so its bundle is the
-        // locale the caller resolved — the one thing every host's bundle guarantees. The
-        // state channel is the command's own package's, when the host hands one: a code
-        // half typed against the bare contract never reads it.
+        // The host bundle is the locale the caller resolved — the one thing every host's
+        // bundle guarantees — plus the state channel, the command's own package's: a code
+        // half typed against the bare contract never reads it. When the host hands no
+        // channel, reaching for one fails loudly instead of silently reading nothing.
+        const state: PluginCommandState =
+          stateOf?.(c.package) ??
+          ({
+            read: () => {
+              throw new Error("this run handed no state channel");
+            },
+            merge: () => {
+              throw new Error("this run handed no state channel");
+            },
+          } satisfies PluginCommandState);
         c.code.register(node as unknown as CliCommandProgram, {
-          messages: { language: request.language },
-          state: stateOf?.(c.package),
-        } as never);
+          messages: { language: request.language, state },
+        });
       }
       // Only print help when no args given, so unknown words are reported as they are.
       if (request.args.length === 0) {
