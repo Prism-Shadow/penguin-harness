@@ -1,8 +1,8 @@
 /**
  * Prose and Md: Markdown in its reading box, the three densities, the link default and the
  * resolver that overrides it, fenced code routed into CodeBlock, and the stylesheets the box reads.
- * How the pipeline typesets math is prose-math.test.ts; where a bare URL ends is
- * remark-autolink-boundary.test.ts.
+ * How the pipeline typesets math is prose-math.test.ts; where a bare URL ends and when bold
+ * closes beside it is prose-bare-url.test.ts.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

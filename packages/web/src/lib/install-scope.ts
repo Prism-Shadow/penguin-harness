@@ -86,7 +86,7 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *   - `penguin.ooo` (the shared UI package's site comments, among others) is the product's
  *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [

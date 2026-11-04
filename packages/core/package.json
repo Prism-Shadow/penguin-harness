@@ -37,6 +37,10 @@
       "types": "./dist/a2ui/index.d.ts",
       "import": "./dist/a2ui/index.js"
     },
+    "./markdown": {
+      "types": "./dist/markdown/index.d.ts",
+      "import": "./dist/markdown/index.js"
+    },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
       "import": "./dist/kernel/index.js",
@@ -81,6 +85,15 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "arktype": "^2.2.3",
+    "mdast-util-gfm-footnote": "^2.1.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
+    "micromark-extension-cjk-friendly": "^2.0.2",
+    "micromark-extension-gfm-footnote": "^2.1.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "micromark-extension-gfm-table": "^2.1.1",
+    "micromark-extension-gfm-task-list-item": "^2.1.0",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"
   },
@@ -91,8 +104,10 @@
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "4.1.12",
     "dotenv": "^17.0.0",
+    "remark-parse": "^11.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
+    "unified": "^11.0.5",
     "vitest": "^4.1.12",
     "zod": "^4.2.0"
   },
