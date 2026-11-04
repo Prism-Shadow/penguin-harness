@@ -2069,8 +2069,8 @@ export const en: Strings = {
     deleteGroup: "Delete group",
     deleteGroupTitle: "Delete group",
     deleteGroupConfirm: (label: string, n: number): string =>
-      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
-    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
+      `Delete the group “${label}”? ${n === 1 ? "Its 1 model and its" : `Its ${n} models and their`} API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n === 1 ? "1 model" : `${n} models`})`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncNewPresets: "Add new models",
@@ -2142,7 +2142,7 @@ export const en: Strings = {
     speedTestStop: "Stop speed test",
     speedTestTitle: "Speed test",
     speedTestConfirm: (n: number): string =>
-      `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
+      `This sends one real request to ${n === 1 ? "the model in this group" : `each of the ${n} models in this group, one at a time,`} to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
@@ -2505,7 +2505,8 @@ export const en: Strings = {
     importTitle: "Import memories",
     importWhy:
       "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importFile: (name: string, count: number): string =>
+      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
@@ -2518,9 +2519,9 @@ export const en: Strings = {
     importEmptyFile: "This file carries no memories.",
     importConfirmTitle: "Confirm the import",
     importWillOverwrite: (names: string[]): string =>
-      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be overwritten: ${names.join(", ")}`,
     importWillRemove: (names: string[]): string =>
-      `${names.length} memories will be deleted: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be deleted: ${names.join(", ")}`,
     importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
     importIrreversible: "This cannot be undone.",
     importDone: (added: number, overwritten: number, removed: number): string =>
