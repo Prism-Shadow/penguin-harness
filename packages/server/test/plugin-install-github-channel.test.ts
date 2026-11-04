@@ -91,7 +91,7 @@ describe("installPluginChannel", () => {
         const manifest = JSON.parse(
           await fs.readFile(manifestPath, "utf8").catch(() => "{}"),
         ) as { dependencies?: Record<string, string> };
-        manifest.dependencies = { ...(manifest.dependencies ?? {}), [channel.name]: spec };
+        manifest.dependencies = { ...(manifest.dependencies ?? {}), [channel.name]: `file:${spec.replace(/^\.\//, "")}` };
         await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
       },
     });
