@@ -11,7 +11,7 @@ import {
   backendToOffer,
   dismissBackendPrompt,
   installInOrder,
-} from "@prismshadow/penguin-web/internal";
+} from "../lib/sandbox-backend-prompt.js";
 import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
 import { MachinePicker } from "@penguinharness/plugin-machines/web";
 import {
