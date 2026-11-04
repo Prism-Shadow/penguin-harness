@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-db": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",

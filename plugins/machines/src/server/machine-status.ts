@@ -15,7 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { openDatabaseReadOnly } from "@prismshadow/penguin-server/internal";
+import { openDatabaseReadOnly } from "@prismshadow/penguin-db";
 import { MachinesRepo } from "@prismshadow/penguin-server/internal";
 import { liveServerLock } from "@prismshadow/penguin-server/internal";
 
