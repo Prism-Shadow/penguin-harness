@@ -24,7 +24,7 @@
  * localStorage); malformed values degrade to the defaults.
  */
 import { compareActivityDesc, pinnedFirst } from "./session-grouping";
-import type { GroupMode } from "../components/ui/group-list";
+import type { GroupMode } from "@prismshadow/penguin-web/internal";
 
 export type SessionSortMode = "recent" | "manual";
 
