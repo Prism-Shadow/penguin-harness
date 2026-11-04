@@ -3,24 +3,23 @@
  * directory, as they apply to directory entries: those carry no content, yet fflate inflates
  * whatever bytes an accepted entry holds, whatever its name.
  *
- * - A directory entry within the caps is never inflated: the files come back, the directory
- *   entry does not, however many bytes it holds.
- * - Directory entries count towards the entry limit: an archive of one file and directories past
- *   it is refused.
+ * - A directory entry is never inflated nor returned, and no cap counts it: one holding more than
+ *   the per-file cap is not refused, and only the files come back.
+ * - An archive with more directory entries than the file limit, plus a few files, reads: the
+ *   files come back and nothing else.
  *
- * A directory entry past the per-entry cap is the Skills archive route's scenario
- * (skills.test.ts), where the refusal reaches the user.
+ * That nothing is inflated is measured where a user sends the zip: the Skills and plugin archive
+ * routes (skills.test.ts, plugin-archive.test.ts).
  */
 import { strFromU8, strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { HttpError } from "../src/http/errors.js";
 import { MAX_ARCHIVE_FILES, unzipBounded } from "../src/services/skill-import-limits.js";
 
 describe("unzipBounded and directory entries", () => {
-  it("a directory entry within the caps is never inflated, however many bytes it holds", () => {
+  it("a directory entry is never inflated nor returned, not even one past the per-file cap", () => {
     const zip = zipSync({
       "s/SKILL.md": strToU8("skill"),
-      "s/pad/": new Uint8Array(1024 * 1024),
+      "s/pad/": new Uint8Array(6 * 1024 * 1024),
     });
 
     const entries = unzipBounded(zip);
@@ -29,21 +28,15 @@ describe("unzipBounded and directory entries", () => {
     expect(strFromU8(entries["s/SKILL.md"]!)).toBe("skill");
   });
 
-  it("directory entries count towards the entry limit", () => {
-    const files: Record<string, Uint8Array> = { "s/SKILL.md": strToU8("skill") };
-    for (let i = 0; i < MAX_ARCHIVE_FILES; i++) files[`s/d${i}/`] = new Uint8Array(0);
+  it("more directory entries than the file limit, plus a few files, read as just the files", () => {
+    const files: Record<string, Uint8Array> = {
+      "s/SKILL.md": strToU8("skill"),
+      "s/ref/notes.md": strToU8("notes"),
+    };
+    for (let i = 0; i <= MAX_ARCHIVE_FILES; i++) files[`s/d${i}/`] = new Uint8Array(0);
 
-    let refusal: unknown;
-    try {
-      unzipBounded(zipSync(files));
-    } catch (error) {
-      refusal = error;
-    }
+    const entries = unzipBounded(zipSync(files));
 
-    expect(refusal).toBeInstanceOf(HttpError);
-    expect(refusal).toMatchObject({
-      status: 400,
-      message: expect.stringContaining(`${MAX_ARCHIVE_FILES}-entry limit`),
-    });
+    expect(Object.keys(entries).sort()).toEqual(["s/SKILL.md", "s/ref/notes.md"]);
   });
 });

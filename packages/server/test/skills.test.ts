@@ -16,8 +16,8 @@
  *   to overwrite, and exports byte-identically.
  * - Too many archive entries are refused without installing any files.
  * - Oversized declared entries or totals are refused before inflation, without installing files.
- * - A directory entry is held to the same caps: a 262 KB zip whose directory entry inflates to
- *   256 MB is refused before it inflates, without installing files.
+ * - A directory entry is never inflated: a 262 KB zip whose directory entry holds 256 MB of
+ *   zeros installs its files without that memory ever being taken.
  * - The Agent list's pluginUpdates names a Skill once the library moves past it (the legacy
  *   version spelling reading as the same version), never one the library does not carry, and
  *   never a directory with no readable SKILL.md.
@@ -27,9 +27,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import zlib from "node:zlib";
-import { strToU8, unzipSync, Zip, ZipPassThrough, zipSync } from "fflate";
-import type { ZipInputFile } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   hooksDir,
@@ -50,6 +48,7 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
 
 describe("skills api", () => {
   let t: TestApp;
@@ -457,41 +456,6 @@ describe("skills api", () => {
     return Buffer.from(zip).toString("base64");
   };
 
-  /**
-   * A zip of `files` plus the directory entry `dir` holding `mib` MiB of zeros, deflated and
-   * declared at their real size as any zipper writes them. The zeros are not deflated here:
-   * zlib's output for one MiB of them, flushed so that it stands alone, is repeated `mib` times,
-   * which keeps the fixture cheap however much it inflates to.
-   */
-  const zeroDirectoryB64 = (
-    files: Record<string, Uint8Array>,
-    dir: string,
-    mib: number,
-  ): string => {
-    const parts: Uint8Array[] = [];
-    const zip = new Zip((err, data) => {
-      if (err) throw err;
-      parts.push(data);
-    });
-    for (const [name, data] of Object.entries(files)) {
-      const file = new ZipPassThrough(name);
-      zip.add(file);
-      file.push(data, true);
-    }
-    const zeros = new Uint8Array(1024 * 1024);
-    const run = new Uint8Array(
-      zlib.deflateRawSync(zeros, { finishFlush: zlib.constants.Z_FULL_FLUSH }),
-    );
-    let crc = 0;
-    for (let i = 0; i < mib; i++) crc = zlib.crc32(zeros, crc);
-    const entry: ZipInputFile = { filename: dir, compression: 8, size: mib * zeros.length, crc };
-    zip.add(entry);
-    for (let i = 0; i < mib; i++) entry.ondata!(null, run, false);
-    entry.ondata!(null, new Uint8Array(zlib.deflateRawSync(new Uint8Array(0))), true);
-    zip.end();
-    return Buffer.concat(parts).toString("base64");
-  };
-
   it("archive: nested top-dir layout — all files written (subdirs preserved), directory name wins over frontmatter", async () => {
     await createPlainAgent("zip_agent");
     const url = `${base("zip_agent")}/archive`;
@@ -612,7 +576,7 @@ describe("skills api", () => {
     const refused = await owner.post(url, { dataBase64: zipB64(many) });
     expect(refused.status).toBe(400);
     expect(await refused.json()).toMatchObject({
-      error: { message: expect.stringContaining("200-entry limit") },
+      error: { message: expect.stringContaining("200-file limit") },
     });
     const list = (await (await owner.get(base("zip_limit_agent"))).json()) as AgentSkillsResponse;
     expect(list.skills).toEqual([]);
@@ -660,30 +624,25 @@ describe("skills api", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("archive: a directory entry that inflates past the caps is refused before it inflates", async () => {
+  it("archive: a directory entry is never inflated: 256 MB of zeros in it cost no memory", async () => {
     await createPlainAgent("zip_dir_bomb_agent");
     const url = `${base("zip_dir_bomb_agent")}/archive`;
-    const dataBase64 = zeroDirectoryB64(
+    const zip = zeroDirectoryZip(
       { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) },
       "zip-skill/pad/",
       256,
     );
-    expect(Buffer.from(dataBase64, "base64").byteLength).toBeLessThan(300 * 1024);
-    const refused = await owner.post(url, { dataBase64 });
-    expect(refused.status).toBe(400);
-    // Naming the directory entry pins the refusal to the central-directory check, which runs
-    // before that entry inflates: nothing measured afterwards could see it without the 256 MB
-    // already on the heap.
-    expect(await refused.json()).toMatchObject({
-      error: { message: expect.stringContaining("5MB uncompressed limit: zip-skill/pad/") },
+    expect(zip.byteLength).toBeLessThan(300 * 1024);
+    const dataBase64 = Buffer.from(zip).toString("base64");
+    let status = 0;
+    const growth = await peakRssGrowth(async () => {
+      status = (await owner.post(url, { dataBase64 })).status;
     });
-    const list = (await (
-      await owner.get(base("zip_dir_bomb_agent"))
-    ).json()) as AgentSkillsResponse;
-    expect(list.skills).toEqual([]);
-    await expect(
-      fs.stat(path.join(skillsDir(t.root, projectId, "zip_dir_bomb_agent"), "zip-skill")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(status).toBe(201);
+    // Inflating the entry takes all 256 MB at once, however soon they are dropped again.
+    expect(growth).toBeLessThan(128 * 1024 * 1024);
+    const dir = path.join(skillsDir(t.root, projectId, "zip_dir_bomb_agent"), "zip-skill");
+    expect(await fs.readdir(dir)).toEqual(["SKILL.md"]);
   });
 
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {

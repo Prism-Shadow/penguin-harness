@@ -7,6 +7,8 @@
  * - A package of server modules from a zip is listed for this machine alone: another machine
  *   handed its name would fetch whatever the registry has under it; its row reads its own
  *   package.json.
+ * - A directory entry in a zip is never inflated: one holding 256 MB of zeros costs no memory,
+ *   and the package installs.
  * - A zip of Skills whose package.json has only a name and a version installs, and lists with
  *   no description, category, icon or quick start — nothing invented; an unversioned skill
  *   reads as unversioned.
@@ -20,8 +22,7 @@
  * - A malicious or malformed zip is refused before anything is installed: a path leaving the
  *   package, node_modules, a .npmrc (npm would read it while packing), no package.json at the
  *   top, a name that is not a package name, a package that is not a plugin or that the library
- *   would not read, and an archive past the caps (a directory entry held to them like a file),
- *   read before it inflates.
+ *   would not read, and an archive past the caps, read before it inflates.
  * - Nothing replaces a module the build ships: a zip under its name is refused before it
  *   installs, a link that turns out to be one is taken back; so is a link to a package that is no
  *   plugin, and both refusals say its install scripts have already run.
@@ -57,6 +58,7 @@ import {
 import { writeClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
 
 type Files = Record<string, string | Uint8Array>;
 
@@ -233,6 +235,26 @@ describe("plugin import and export", () => {
     const notes = (await library(admin)).find((p) => p.name === "notes");
     expect(notes).toMatchObject({ package: "@acme/notes", source: "installed", version: "1.0.0" });
     expect(notes?.skills.map((s) => s.name)).toEqual(["notes"]);
+  });
+
+  it("never inflates a directory entry: 256 MB of zeros in one cost no memory, and the package installs", async () => {
+    const admin = await boot();
+    const files = Object.fromEntries(
+      Object.entries(notesPackage()).map(([name, value]) => [name, bytes(value)]),
+    );
+    const dataBase64 = Buffer.from(zeroDirectoryZip(files, "skills/notes/pad/", 256)).toString(
+      "base64",
+    );
+    let status = 0;
+    const growth = await peakRssGrowth(async () => {
+      status = (
+        await admin.post("/api/projects/default_project/plugins/installed/archive", { dataBase64 })
+      ).status;
+    });
+    expect(status).toBe(201);
+    // Inflating the entry takes all 256 MB at once, however soon they are dropped again.
+    expect(growth).toBeLessThan(128 * 1024 * 1024);
+    expect((await library(admin)).find((p) => p.name === "notes")?.skills).toHaveLength(1);
   });
 
   it("lists a package of server modules from a zip for this machine alone", async () => {
@@ -454,13 +476,6 @@ describe("plugin import and export", () => {
     await refused(many, 413, "plugin_too_large", /archive limits/);
     await refused(
       { ...notesPackage(), "big.bin": new Uint8Array(5 * 1024 * 1024 + 1) },
-      413,
-      "plugin_too_large",
-      /archive limits/,
-    );
-    // A name ending in "/" does not stop fflate from inflating what the entry holds.
-    await refused(
-      { ...notesPackage(), "skills/notes/pad/": new Uint8Array(5 * 1024 * 1024 + 1) },
       413,
       "plugin_too_large",
       /archive limits/,

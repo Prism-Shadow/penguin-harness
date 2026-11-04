@@ -38,7 +38,7 @@ export function pluginTooLarge(): HttpError {
   return new HttpError(
     413,
     "plugin_too_large",
-    `The plugin package exceeds the archive limits (${MAX_PLUGIN_ARCHIVE_FILES} entries, 5MB per file, 50MB in all, a 14MB zip).`,
+    `The plugin package exceeds the archive limits (${MAX_PLUGIN_ARCHIVE_FILES} files, 5MB per file, 50MB in all, a 14MB zip).`,
   );
 }
 
@@ -62,24 +62,25 @@ export interface PluginArchive {
 
 /**
  * `unzipSync` bounded by the plugin caps, read from each entry's declared size before it inflates.
- * A directory entry counts like a file, since fflate inflates whatever bytes one holds, and is then
- * turned away: it carries no content, so it is never inflated and never in the result.
+ * A directory entry is turned away before them: it carries no content, yet fflate inflates whatever
+ * bytes an accepted entry holds, so it is never inflated, never returned and counts towards nothing.
  */
 function unzipBounded(archive: Uint8Array): Record<string, Uint8Array> {
-  let entries = 0;
+  let files = 0;
   let declared = 0;
   return unzipSync(archive, {
     filter: ({ name, originalSize }) => {
-      entries += 1;
+      if (name.endsWith("/")) return false;
+      files += 1;
       declared += originalSize;
       if (
-        entries > MAX_PLUGIN_ARCHIVE_FILES ||
+        files > MAX_PLUGIN_ARCHIVE_FILES ||
         originalSize > MAX_PLUGIN_FILE_BYTES ||
         declared > MAX_PLUGIN_TOTAL_BYTES
       ) {
         throw pluginTooLarge();
       }
-      return !name.endsWith("/");
+      return true;
     },
   });
 }

@@ -9,8 +9,7 @@
  *   uninstalls; a manifest the loader or a Session could not run is refused, writing nothing; a
  *   user_prompt command's trigger is kept.
  * - Zip-slip paths, malformed bodies, an entry over the per-file cap (however small the
- *   archive, and a directory entry alike) and an entry lying about its size are refused,
- *   writing nothing.
+ *   archive) and an entry lying about its size are refused, writing nothing.
  * - Installing over an installed package is a 409 hook_exists; overwrite replaces the whole
  *   directory.
  * - An export round-trips byte-identically and re-imports on another Agent; a package not
@@ -355,22 +354,6 @@ describe("hooks api", () => {
       "5MB uncompressed limit: h/pad.bin",
     );
     await expect(fs.readdir(hooksDir(t.root, projectId, "zip_bomb_agent"))).resolves.toEqual([]);
-  });
-
-  it("archive: a directory entry over the per-file cap is refused like a file", async () => {
-    await createPlainAgent("zip_dir_bomb_agent");
-    const url = `${base("zip_dir_bomb_agent")}/archive`;
-    // A name ending in "/" does not stop fflate from inflating what the entry holds, so the caps
-    // cannot skip it.
-    const zip = zipSync({ ...packageFiles("h"), "h/pad/": new Uint8Array(8 * 1024 * 1024) });
-    const res = await member.post(url, { dataBase64: Buffer.from(zip).toString("base64") });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
-      "5MB uncompressed limit: h/pad/",
-    );
-    await expect(fs.readdir(hooksDir(t.root, projectId, "zip_dir_bomb_agent"))).resolves.toEqual(
-      [],
-    );
   });
 
   it("archive: an entry that lies about its uncompressed size is refused, not installed", async () => {

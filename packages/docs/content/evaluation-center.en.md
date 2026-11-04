@@ -121,7 +121,7 @@ A package carries no scores: an imported Benchmark starts without evaluations, s
 - its `status` is not `published`, or a case lacks `statement/README.md` or `rubric/README.md`;
 - its top-level folder is named differently from the manifest's `id`, or, with the manifest at the zip's root, the manifest names no `id`;
 - its manifest goes past what the create form allows: a title over 200 characters, a description over 2,000, or more than 1,000 runs;
-- it is larger than 14 MB, holds more than 1,000 entries (folders count as well as files), or unpacks to more than 5 MB in one file or 20 MB in all.
+- it is larger than 14 MB, or unpacks to more than 1,000 files, 5 MB in one file or 20 MB in all.
 
 > [!NOTE]
 > Import Benchmarks only from sources you trust. A package is text that the evaluator and the agent under test read; nothing in it runs on its own.
