@@ -15,7 +15,7 @@ import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/a
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
-import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../lib/workbench-tabs";
+import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "@prismshadow/penguin-web/internal";
 
 const PROJECT_KEY = "penguin.lastProjectId";
 const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;

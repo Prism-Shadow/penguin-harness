@@ -26,7 +26,7 @@ import { probeSession } from "../api/session-probe";
 import { openUserEvents } from "../api/sse";
 import { publishMachinesChanged, useMachines } from "./machines";
 import type { UserEventHandler } from "./user-events";
-import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
+import { WORKBENCH_UPDATED_EVENT } from "@prismshadow/penguin-web/internal";
 import { publishUserEvent } from "../lib/omni/user-events";
 import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
 import {

@@ -7,7 +7,7 @@ import {
   workbenchNoticesOf,
   workbenchTabsOf,
   workbenchUiUrl,
-} from "../src/lib/workbench-tabs";
+} from "@prismshadow/penguin-web/internal";
 
 const UI = "/api/projects/p/agents/a/workbenches/demo/ui";
 const tab = (key: string, file: string) => ({

@@ -8,7 +8,7 @@ import {
   readAppTheme,
   WORKBENCH_THEME_HREF,
   type WorkbenchTheme,
-} from "../src/lib/workbench-theme";
+} from "@prismshadow/penguin-web/internal";
 
 const appRoot = (classes: string[], fontSize: string) => ({
   classList: { contains: (t: string) => classes.includes(t) },
