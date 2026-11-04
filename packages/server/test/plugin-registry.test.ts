@@ -100,11 +100,26 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, descriptionZh: 1 },
       { ...VALID_ENTRY, title: 1 },
       { ...VALID_ENTRY, titleZh: [] },
+      { ...VALID_ENTRY, integrity: "md5-abc" },
+      { ...VALID_ENTRY, integrity: 7 },
+      { ...VALID_ENTRY, channels: "github" },
+      { ...VALID_ENTRY, channels: [{ kind: "github" }] },
+      { ...VALID_ENTRY, channels: [{ url: "https://x" }] },
+      { ...VALID_ENTRY, channels: [null] },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
         /malformed entry at index 1/,
       );
     }
+  });
+
+  it("passes an entry's integrity and channels through instead of dropping them", () => {
+    const entry: PluginIndexEntry = {
+      ...VALID_ENTRY,
+      integrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      channels: [{ kind: "github", url: "https://github.com/o/r/releases/download/v1/x.tgz" }],
+    };
+    expect(parsePluginIndex([entry], "test")).toEqual([entry]);
   });
 });
 

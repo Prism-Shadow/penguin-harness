@@ -88,6 +88,23 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
+  // The release pin and its channels ride the row like any other field: an index that
+  // carries them is malformed when they are not well-formed, and the install face
+  // decides what a well-formed row's channel is worth (registry.ts, indexChannelOf).
+  if (
+    e.integrity !== undefined &&
+    (typeof e.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(e.integrity))
+  ) {
+    return null;
+  }
+  if (e.channels !== undefined) {
+    if (!Array.isArray(e.channels)) return null;
+    for (const channel of e.channels) {
+      if (typeof channel !== "object" || channel === null) return null;
+      const c = channel as Record<string, unknown>;
+      if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
+    }
+  }
   return value as IndexDocumentEntry;
 }
 
@@ -159,6 +176,77 @@ export type PluginDisplay = Pick<
   PluginIndexEntry,
   "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh"
 > & { icon?: IconImage };
+
+/** An index entry's github channel, as the install face installs it: pinned bytes at a URL. */
+export interface IndexChannel {
+  name: string;
+  version: string;
+  integrity: string;
+  url: string;
+}
+
+/**
+ * What an entry's github channel is worth for an install: the channel when the entry pins
+ * its asset and the channel is one the install face fetches; a `fault` sentence when a
+ * channel is listed but the row does not pin it (there is nothing to verify against —
+ * the refusal says so rather than installing unverified bytes); channel null without a
+ * fault when the entry simply has no github channel (the caller's npm error stands).
+ */
+export function indexChannelOf(entry: IndexDocumentEntry): {
+  channel: IndexChannel | null;
+  fault: string | null;
+} {
+  const listed = entry.channels?.find((c) => c.kind === "github");
+  if (listed === undefined) return { channel: null, fault: null };
+  if (entry.integrity === undefined) {
+    return {
+      channel: null,
+      fault: `${entry.name}'s index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.`,
+    };
+  }
+  if (!listed.url.startsWith("https://")) {
+    return {
+      channel: null,
+      fault: `${entry.name}'s github channel is not an https link; it is not installable.`,
+    };
+  }
+  return {
+    channel: {
+      name: entry.name,
+      version: entry.version,
+      integrity: entry.integrity,
+      url: listed.url,
+    },
+    fault: null,
+  };
+}
+
+/**
+ * Answers one package name's github channel from the published index, fetched at most once
+ * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
+ * already failed on the name — installs are rare, so no standing fetch. A source that is
+ * down answers "no channel": the npm failure is the news then, not the index's silence.
+ */
+export function indexChannelLookup(
+  indexUrl: string | null,
+  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+): (name: string) => Promise<{ channel: IndexChannel | null; fault: string | null }> {
+  let cache: { at: number; byName: Map<string, ReturnType<typeof indexChannelOf>> } | null = null;
+  return async (name) => {
+    if (indexUrl === null) return { channel: null, fault: null };
+    const at = now();
+    if (cache === null || at - cache.at > ttlMs) {
+      let entries: IndexDocumentEntry[];
+      try {
+        entries = await httpPluginRegistry(indexUrl, { fetchImpl }).index();
+      } catch {
+        return { channel: null, fault: null };
+      }
+      cache = { at, byName: new Map(entries.map((e) => [e.name, indexChannelOf(e)])) };
+    }
+    return cache.byName.get(name) ?? { channel: null, fault: null };
+  };
+}
 
 /**
  * What a package on this machine says about itself for its card: the Chinese and short
