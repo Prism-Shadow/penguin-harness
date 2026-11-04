@@ -3102,6 +3102,8 @@ export const zh = {
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
+    /** A channel install's download: the percent while the total is known, a pulse before that. */
+    downloading: (percent: number | null) => (percent === null ? "下载中…" : `下载中 ${percent}%`),
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */

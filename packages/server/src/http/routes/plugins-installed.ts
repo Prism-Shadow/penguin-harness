@@ -61,6 +61,7 @@ import type {
   UnsatisfiedPlugin,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { eventStream } from "../event-stream.js";
 import { readJson, requireString, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -97,6 +98,9 @@ import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
 import { MachinesRepo } from "../../db/repos/machines.js";
 
+/** How a channel install reports its download as it runs: bytes received, the total when known. */
+export type InstallProgress = (received: number, total: number | null) => void;
+
 /**
  * Installs by name or link, npm first. A name npm cannot serve — because it answered that
  * the package, or the requested version of it, is not on the registry (reason
@@ -107,7 +111,8 @@ import { MachinesRepo } from "../../db/repos/machines.js";
  * (installPluginChannel). A channel listed without an integrity is a refusal with the
  * reason, not an install of unverified bytes; an entry with no channel leaves npm's failure
  * as the answer, naming that the index had nothing to fall through to either. Everything
- * surfaces as a PluginInstallError, which the route renders as npm's failure.
+ * surfaces as a PluginInstallError, which the route renders as npm's failure. `onProgress`
+ * rides along to the channel install only — npm's own downloads are npm's to report.
  */
 export async function installNamedOrChanneled(
   root: string,
@@ -118,7 +123,12 @@ export async function installNamedOrChanneled(
       name: string,
       version?: string,
     ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
-    installChannel: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
+    installChannel: (
+      root: string,
+      channel: IndexChannel,
+      opts?: { onProgress?: InstallProgress },
+    ) => Promise<InstalledPackage>;
+    onProgress?: InstallProgress;
   },
 ): Promise<InstalledPackage> {
   try {
@@ -145,7 +155,7 @@ export async function installNamedOrChanneled(
       );
     }
     try {
-      return await io.installChannel(root, resolved.channel);
+      return await io.installChannel(root, resolved.channel, { onProgress: io.onProgress });
     } catch (channelErr) {
       if (channelErr instanceof PluginInstallError) {
         throw new PluginInstallError(`${npmSaid}. Its index channel: ${channelErr.message}`);
@@ -189,8 +199,15 @@ export interface InstalledPluginsDeps {
     name: string,
     version?: string,
   ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
-  /** How a verified channel's bytes install; a test stands in (installPluginChannel). */
-  installChannel?: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
+  /**
+   * How a verified channel's bytes install, with the download's progress on its way in;
+   * a test stands in (installPluginChannel).
+   */
+  installChannel?: (
+    root: string,
+    channel: IndexChannel,
+    opts?: { onProgress?: InstallProgress },
+  ) => Promise<InstalledPackage>;
   /**
    * Hands this Project's list to the machines it uses, strict parity. Not awaited: the
    * person editing is not the one who should wait for a set of ssh tunnels — the same rule
@@ -334,12 +351,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /** The route's install of a specifier: npm first, the published index's channel on its failure. */
-  const installSpecifier = (source: PluginSource): Promise<InstalledPackage> =>
+  const installSpecifier = (
+    source: PluginSource,
+    onProgress?: InstallProgress,
+  ): Promise<InstalledPackage> =>
     viaNpm(() =>
       installNamedOrChanneled(deps.root, source, {
         install: (root, spec) => deps.packages.install(root, spec),
         channelOf: deps.channelOf,
-        installChannel: deps.installChannel ?? installPluginChannel,
+        installChannel: (root, channel, opts) =>
+          (deps.installChannel ?? installPluginChannel)(root, channel, opts),
+        onProgress,
       }),
     );
 
@@ -487,12 +509,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       : {}),
   });
 
-  app.post("/", async (c) => {
-    requireAdmin(c);
-    const projectId = scope(c);
-    const body = await readJson(c);
-    const source = sourceOf(body.specifier);
-    const machineId = machineOf(body.machineId);
+  /**
+   * The install itself, answer and all — the verb both transports of POST run. Everything
+   * that can refuse (the session, the body, npm, the vetting) refuses here, so a stream
+   * answer carries exactly the errors the JSON one would have.
+   */
+  const performInstall = async (
+    projectId: string,
+    source: PluginSource,
+    machineId: string | null,
+    onProgress?: InstallProgress,
+  ): Promise<InstalledPluginsResponse> => {
     const runsHere = machineId === null || machineId === deps.machineId;
     if (source.kind === "link") {
       // A link names no package another machine could fetch by name: it installs here, and is
@@ -504,12 +531,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           "A link installs on this server only; install it on that machine from its own Plugins page.",
         );
       }
-      const installed = await installSpecifier(source);
+      const installed = await installSpecifier(source, onProgress);
       if ((await vetInstalled(installed)).modules) {
         await list(projectId, installed.name, {}, deps.machineId);
         deps.syncFleet(projectId);
       }
-      return c.json(await answer(projectId, installed));
+      return answer(projectId, installed);
     }
     // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
@@ -518,7 +545,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // only is downloaded THERE, by that machine, when the list reaches it.
     const shipped = await shippedNames();
     const installed =
-      runsHere && !shipped.includes(source.name) ? await installSpecifier(source) : null;
+      runsHere && !shipped.includes(source.name)
+        ? await installSpecifier(source, onProgress)
+        : null;
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
     // loads it.
     const kinds = installed !== null ? await vetInstalled(installed) : null;
@@ -533,7 +562,44 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed));
+    return answer(projectId, installed);
+  };
+
+  app.post("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const source = sourceOf(body.specifier);
+    const machineId = machineOf(body.machineId);
+    if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
+      return c.json(await performInstall(projectId, source, machineId));
+    }
+    // The same install, read as it arrives: the channel's download in `download` events (the
+    // percent steps installPluginChannel reports), `npm` once the bytes are in, the finished
+    // list as `result`. A failure that the JSON answer would have carried as a status rides
+    // as an `error` event with that status, so the page raises the same error either way.
+    return eventStream(c, async (sink) => {
+      try {
+        await sink.send("download", null, JSON.stringify({ received: 0, total: null }));
+        const next = await performInstall(
+          projectId,
+          source,
+          machineId,
+          (received, total) =>
+            void sink.send("download", null, JSON.stringify({ received, total })),
+        );
+        await sink.send("npm", null, "{}");
+        await sink.send("result", null, JSON.stringify(next));
+      } catch (err) {
+        const [status, code, message] =
+          err instanceof HttpError
+            ? [err.status, err.code, err.message]
+            : [500, "internal_error", err instanceof Error ? err.message : String(err)];
+        await sink
+          .send("error", null, JSON.stringify({ status, code, message }))
+          .catch(() => undefined);
+      }
+    });
   });
 
   app.post("/archive", async (c) => {

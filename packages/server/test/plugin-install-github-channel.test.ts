@@ -152,7 +152,16 @@ describe("installPluginChannel", () => {
     });
     expect(fetchImpl).toHaveBeenCalledWith(pinned.url, { redirect: "follow" });
     expect(installed).toEqual({ name: pinned.name, version: pinned.version });
-    const file = `@penguinharness-language-typst-0.0.2-${digest(bytes).slice("sha512-".length, "sha512-".length + 16)}.tgz`;
+    // The tag is the digest's first sixteen file-safe characters: base64 carries `/` and
+    // `+`, and neither belongs in a file name (a `/` would make the rename a subdirectory).
+    const tag = (
+      digest(bytes)
+        .slice("sha512-".length)
+        .match(/[A-Za-z0-9._~-]/g) ?? []
+    )
+      .slice(0, 16)
+      .join("");
+    const file = `@penguinharness-language-typst-0.0.2-${tag}.tgz`;
     expect(installedSpecs).toEqual([`./archives/${file}`]);
     // The archive the prefix keeps is the verified bytes, and nothing else is left behind
     // (the staging file the check read the manifest from is gone).
@@ -207,6 +216,85 @@ describe("installPluginChannel", () => {
       }),
     ).rejects.toThrow(/answered 404/);
   });
+
+  it("reports the download as it is read, the total from the content-length", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball(channel.name, channel.version);
+    const onProgress = vi.fn();
+    await installPluginChannel(
+      root,
+      { ...channel, integrity: digest(bytes) },
+      {
+        fetchImpl: (async () =>
+          new Response(new Uint8Array(bytes), {
+            status: 200,
+            headers: { "content-length": String(bytes.length) },
+          })) as unknown as typeof fetch,
+        install: async () => undefined,
+        onProgress,
+      },
+    );
+    // Every call names the total, and the last one is the whole asset against it.
+    expect(onProgress).toHaveBeenCalledWith(bytes.length, bytes.length);
+    expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
+  });
+
+  it("steps the report in percents of a known size, not once per chunk", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball(channel.name, channel.version);
+    // The asset read in quarters: four reads, but a report only where a percent step is crossed.
+    const quarter = Math.floor(bytes.length / 4);
+    const pieces = [
+      bytes.subarray(0, quarter),
+      bytes.subarray(quarter, quarter * 2),
+      bytes.subarray(quarter * 2, quarter * 3),
+      bytes.subarray(quarter * 3),
+    ];
+    const onProgress = vi.fn();
+    await installPluginChannel(
+      root,
+      { ...channel, integrity: digest(bytes) },
+      {
+        fetchImpl: (async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const piece of pieces) controller.enqueue(piece);
+                controller.close();
+              },
+            }),
+            { status: 200, headers: { "content-length": String(bytes.length) } },
+          )) as unknown as typeof fetch,
+        install: async () => undefined,
+        onProgress,
+      },
+    );
+    const received = onProgress.mock.calls.map((call) => call[0]);
+    expect(received).toEqual([quarter, quarter * 2, quarter * 3, bytes.length, bytes.length]);
+    expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
+  });
+
+  it("reports a lengthless answer by mebibytes, the last call naming the whole asset", async () => {
+    const root = await tempRoot();
+    const bytes = await packTarball(channel.name, channel.version);
+    const onProgress = vi.fn();
+    await installPluginChannel(
+      root,
+      { ...channel, integrity: digest(bytes) },
+      {
+        fetchImpl: (async () =>
+          new Response(new Uint8Array(bytes), { status: 200 })) as unknown as typeof fetch,
+        install: async () => undefined,
+        onProgress,
+      },
+    );
+    // Well under a mebibyte, so no MiB step fires on the way: the read crosses none, and the
+    // close of the read names the whole — the total the caller can show once it knows it.
+    expect(onProgress.mock.calls).toEqual([
+      [bytes.length, null],
+      [bytes.length, bytes.length],
+    ]);
+  });
 });
 
 describe("indexChannelOf", () => {
@@ -242,6 +330,19 @@ describe("indexChannelOf", () => {
       fault: null,
     });
     expect(indexChannelOf(entry({}))).toEqual({ channel: null, fault: null });
+  });
+
+  it("takes plain http from the loopback only — a self-hosted index serving its own assets — and refuses it elsewhere", () => {
+    const loopback = indexChannelOf(
+      entry({ integrity, channels: [{ kind: "github", url: "http://127.0.0.1:9/asset.tgz" }] }),
+    );
+    expect(loopback.fault).toBeNull();
+    expect(loopback.channel?.url).toBe("http://127.0.0.1:9/asset.tgz");
+    expect(
+      indexChannelOf(
+        entry({ integrity, channels: [{ kind: "github", url: "http://example.com/asset.tgz" }] }),
+      ).fault,
+    ).toMatch(/not an https link/);
   });
 });
 
@@ -332,7 +433,22 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     });
     expect(installed).toEqual({ name: channel.name, version: channel.version });
     expect(channelOf).toHaveBeenCalledWith(spec.name, spec.version);
-    expect(installChannel).toHaveBeenCalledWith("/root", channel);
+    // No progress was asked for, and none is passed on: the channel install still gets the
+    // opts, so it knows nothing was riding along.
+    expect(installChannel).toHaveBeenCalledWith("/root", channel, { onProgress: undefined });
+  });
+
+  it("a download's progress rides to the channel install, never to npm", async () => {
+    const channelOf = vi.fn(async () => ({ channel, fault: null }));
+    const installChannel = vi.fn(async () => ({ name: channel.name, version: channel.version }));
+    const onProgress = vi.fn();
+    await installNamedOrChanneled("/root", spec, {
+      install: async () => npmSays("npm said: not found", "unavailable"),
+      channelOf,
+      installChannel,
+      onProgress,
+    });
+    expect(installChannel).toHaveBeenCalledWith("/root", channel, { onProgress });
   });
 
   it("an npm failure that is not 'unavailable' does not fall through — a channel is not the answer to it", async () => {

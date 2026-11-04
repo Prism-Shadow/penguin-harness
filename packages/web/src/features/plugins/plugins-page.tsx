@@ -240,6 +240,15 @@ export function PluginsPage() {
   const indexPending = registry.error === null ? (registry.value?.pending?.length ?? 0) : 0;
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
+  /**
+   * The channel download under that install: which specifier it is for and how far the bytes
+   * have come. npm's own installs answer no progress, so they leave this null.
+   */
+  const [installProgress, setInstallProgress] = useState<{
+    specifier: string;
+    received: number;
+    total: number | null;
+  } | null>(null);
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -387,7 +396,16 @@ export function PluginsPage() {
     setPendingSpecifier(specifier);
     try {
       const next = install
-        ? await api.installPlugin(target.projectId, specifier, target.machineId)
+        ? await api.installPluginStream(
+            target.projectId,
+            specifier,
+            target.machineId,
+            // A download the user has navigated away from does not write this visit's state;
+            // the request itself runs on.
+            (received, total) => {
+              if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
+            },
+          )
         : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
       // A write that answers in a later visit is not taken: that visit read the list itself.
       if (!isCurrentVisit()) return;
@@ -415,6 +433,7 @@ export function PluginsPage() {
     } finally {
       if (isCurrentVisit()) {
         setPendingSpecifier(null);
+        setInstallProgress(null);
         setPendingApply(null);
       }
     }
@@ -816,6 +835,11 @@ export function PluginsPage() {
       isOwner={isOwner}
       projectId={projectId}
       busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
+      progress={
+        row.module !== undefined && installProgress?.specifier === row.module.specifier
+          ? installProgress
+          : null
+      }
       blocked={
         row.module !== undefined &&
         (viewMachine === undefined ||
