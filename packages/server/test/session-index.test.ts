@@ -816,6 +816,42 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?excludeOrg=yes`)).status).toBe(400);
   });
 
+  it("sessionIdPrefix serves only the rows whose id starts it, before paging, and refuses what no session id could start with", async () => {
+    await configureModels();
+    const created = ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session
+      .sessionId;
+    // A second row that shares only the `session-` head, seeded straight into the index and
+    // older than the created one, so paging an unfiltered stream would not even reach it.
+    const other = "session-2020-01-01-00-00-00-0prefix2";
+    t.deps.sessionsRepo.insert({
+      sessionId: other,
+      projectId,
+      agentId,
+      provider: "custom",
+      modelId: "m-x",
+      workspace: "/tmp/w-prefix",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      lastActiveAt: "2020-01-01T00:00:00.000Z",
+    });
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      return { status: res.status, body: (await res.json()) as SessionsResponse };
+    };
+    const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
+
+    // The created session's own head — the head every completion query starts from — answers
+    // both rows; a longer prefix narrows to one, and paging applies within the filter.
+    expect(ids((await list("?sessionIdPrefix=session-")).body)).toEqual([created, other]);
+    expect(ids((await list(`?sessionIdPrefix=${created.slice(0, 24)}`)).body)).toEqual([created]);
+    expect(ids((await list("?sessionIdPrefix=session-&limit=1&offset=1")).body)).toEqual([other]);
+    // A prefix no session id can start with, or one past the length cap, is a 400 that read
+    // nothing — never an empty page dressed up as an answer.
+    expect((await list("?sessionIdPrefix=history")).status).toBe(400);
+    expect((await list(`?sessionIdPrefix=session-${"x".repeat(65)}`)).status).toBe(400);
+  });
+
   it("PATCH approval mode persists and reads back", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;

@@ -1,14 +1,14 @@
 /**
- * The control on a Shortcuts settings row: a button showing the current chord (or "not set"),
- * which on activation records the next key combination pressed. While recording it owns the
- * keyboard through a window capture listener that stops propagation — the portal-panel trick —
- * so Escape cancels the recording without also closing the settings dialog. The state machine
- * is lib/shortcuts/recorder.ts; this component only draws it and wires the DOM.
+ * The control on a Shortcuts settings row that ADDS a binding: a button which on activation
+ * records the next key combination pressed. While recording it owns the keyboard through a
+ * window capture listener that stops propagation — the portal-panel trick — so Escape cancels
+ * the recording without also closing the settings dialog. The state machine is
+ * lib/shortcuts/recorder.ts; this component only draws it and wires the DOM. The row draws the
+ * command's existing bindings as chips beside this button.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
-import { ChordKbd } from "../../components/ui/chord-kbd";
 import { isModifierCode } from "../../lib/shortcuts/chord";
 import { formatChord } from "../../lib/shortcuts/format";
 import { currentPlatform } from "../../lib/shortcuts/platform";
@@ -22,11 +22,9 @@ import {
 import type { Chord } from "../../lib/shortcuts/types";
 
 export function ShortcutRecorder({
-  chord,
   onCommit,
 }: {
-  chord: Chord | null;
-  /** A new chord, or null to unbind. */
+  /** A new chord joins the command's bindings; null (Backspace) clears every binding. */
   onCommit: (chord: Chord | null) => void;
 }) {
   const [state, setState] = useState<RecorderState>(RECORDER_IDLE);
@@ -75,10 +73,8 @@ export function ShortcutRecorder({
       ) : (
         S.shortcuts.record
       );
-  } else if (chord !== null) {
-    content = <ChordKbd chord={chord} />;
   } else {
-    content = <span className="text-fg-subtle">{S.shortcuts.unbound}</span>;
+    content = <span className="text-fg-subtle">{S.shortcuts.addBinding}</span>;
   }
 
   return (

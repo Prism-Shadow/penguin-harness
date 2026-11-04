@@ -12,6 +12,7 @@ import type { TestApp } from "./helpers.js";
 import {
   KEYBINDINGS_BYTES_MAX,
   KEYBINDINGS_CHORD_MAX,
+  KEYBINDINGS_CHORDS_PER_ID_MAX,
   KEYBINDINGS_ID_MAX,
   KEYBINDINGS_SECTION_MAX,
   validateKeybindings,
@@ -69,16 +70,57 @@ describe("validateKeybindings", () => {
   });
 
   it("rejects a chord outside the grammar, a non-string, or one over the length cap", () => {
-    rejects({ v: 1, mac: { "terminal.close": "Cmd-W" } }, /must be null or a chord string/);
+    rejects(
+      { v: 1, mac: { "terminal.close": "Cmd-W" } },
+      /must be null, a chord string or an array of chord strings/,
+    );
     rejects(
       { v: 1, mac: { "terminal.close": "Shift+Mod+KeyW" } },
-      /must be null or a chord string/,
+      /must be null, a chord string or an array of chord strings/,
     );
-    rejects({ v: 1, mac: { "terminal.close": 7 } }, /must be null or a chord string/);
-    rejects({ v: 1, mac: { "terminal.close": "" } }, /must be null or a chord string/);
+    rejects(
+      { v: 1, mac: { "terminal.close": 7 } },
+      /must be null, a chord string or an array of chord strings/,
+    );
+    rejects(
+      { v: 1, mac: { "terminal.close": "" } },
+      /must be null, a chord string or an array of chord strings/,
+    );
     rejects(
       { v: 1, mac: { "terminal.close": `Mod+${"K".repeat(KEYBINDINGS_CHORD_MAX)}` } },
-      /must be null or a chord string/,
+      /must be null, a chord string or an array of chord strings/,
+    );
+  });
+
+  it("accepts an array of chords per command and caps the list", () => {
+    const doc = {
+      v: 1,
+      mac: { "palette.toggle": ["Mod+Alt+KeyP", "Mod+KeyP"], "editor.save": [] },
+    };
+    expect(validateKeybindings(doc)).toEqual(doc);
+    rejects(
+      {
+        v: 1,
+        mac: {
+          "palette.toggle": Array.from(
+            { length: KEYBINDINGS_CHORDS_PER_ID_MAX + 1 },
+            (_, i) => `F${i + 1}`,
+          ),
+        },
+      },
+      /at most \d+ chords/,
+    );
+    rejects(
+      { v: 1, mac: { "palette.toggle": ["Mod+KeyP", "Cmd-W"] } },
+      /must be null, a chord string or an array of chord strings/,
+    );
+    rejects(
+      { v: 1, mac: { "palette.toggle": ["Mod+KeyP", 7] } },
+      /must be null, a chord string or an array of chord strings/,
+    );
+    rejects(
+      { v: 1, mac: { "palette.toggle": { chord: "Mod+KeyP" } } },
+      /must be null, a chord string or an array of chord strings/,
     );
   });
 

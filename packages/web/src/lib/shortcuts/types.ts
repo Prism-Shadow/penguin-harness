@@ -75,16 +75,22 @@ export interface ShortcutCommand {
   };
 }
 
-/** id → chord (null = unbound), fully resolved for the current platform. */
-export type Keymap = ReadonlyMap<CommandId, Chord | null>;
+/**
+ * id → that command's bindings, fully resolved for the current platform and in binding order
+ * (the registry default first, the user's additions after it, oldest first). An empty list is an
+ * unbound command; one chord in the list is the single-binding case the registry alone describes.
+ */
+export type Keymap = ReadonlyMap<CommandId, readonly Chord[]>;
 
 /**
  * The persisted form, shared by the server's `ui_prefs.keybindings` and the browser mirror, is
- * declared once, with the other prefs types the server validates. Only overrides are stored; a
- * row equal to its default is absent. Unknown ids are carried through on write and never
- * applied, so a build that predates a command keeps its binding.
+ * declared once, with the other prefs types the server validates. A row holds the command's
+ * whole binding list as an array of chords (the single-binding form of an older build — one
+ * chord string — reads as a one-element list; null = explicitly unbound). Only overrides are
+ * stored; a row equal to the default is absent. Unknown ids are carried through on write and
+ * never applied, so a build that predates a command keeps its binding.
  */
-export type { StoredKeybindings } from "@prismshadow/penguin-server/api";
+export type { StoredKeybindings, StoredKeybindingsValue } from "@prismshadow/penguin-server/api";
 
 /** The fields of a `KeyboardEvent` the matcher reads; React's synthetic event and a test literal both fit. */
 export interface KeyLike {

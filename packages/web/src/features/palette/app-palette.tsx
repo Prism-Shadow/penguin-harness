@@ -6,6 +6,7 @@
  * rather than navigating — closing it leaves the user exactly where they were.
  */
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { CommandPalette } from "@prismshadow/penguin-ui";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
@@ -19,8 +20,19 @@ const NO_EXTRA: readonly PaletteAction[] = [];
 /**
  * `extra` is what the mount point adds ahead of the standing actions — the full-page
  * workbench route registers its way out here, which is why it exists at all on that route.
+ * `suggest` is the same mount point's dynamic completions — the layout passes the session
+ * completion, whose `pending` rides along to draw the wait; a mount point outside the app's
+ * providers passes nothing and the palette keeps its standing actions alone.
  */
-export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteAction[] }) {
+export function AppPalette({
+  extra = NO_EXTRA,
+  suggest,
+  pending,
+}: {
+  extra?: readonly PaletteAction[];
+  suggest?: (query: string) => readonly PaletteAction[];
+  pending?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -54,6 +66,8 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         open={open}
         onClose={() => setOpen(false)}
         actions={actions}
+        suggest={suggest}
+        pending={pending}
         title={S.commandPalette.title}
         placeholder={S.commandPalette.placeholder}
         emptyText={S.commandPalette.noResults}

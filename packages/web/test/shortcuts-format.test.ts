@@ -83,9 +83,9 @@ describe("key text", () => {
 
 describe("formatBinding", () => {
   it("formats the bound chord and is null when unbound", () => {
-    const keymap = new Map<CommandId, Chord | null>([
-      ["terminal.close", chord("Mod+KeyW")],
-      ["editor.save", null],
+    const keymap = new Map<CommandId, readonly Chord[]>([
+      ["terminal.close", [chord("Mod+KeyW")]],
+      ["editor.save", []],
     ]);
     expect(formatBinding("terminal.close", keymap, "mac")).toBe("⌘W");
     expect(formatBinding("editor.save", keymap, "mac")).toBeNull();

@@ -112,13 +112,14 @@ export function formatChord(
   return parts.join("+");
 }
 
-/** The command's current chord as text, or null when it is unbound. */
+/** The command's first binding as text (the default before the user's additions), or null when it is unbound. */
 export function formatBinding(
   id: CommandId,
   keymap: Keymap,
   platform: Platform,
   layout?: ReadonlyMap<string, string>,
 ): string | null {
-  const chord = keymap.get(id) ?? null;
+  const list = keymap.get(id) ?? [];
+  const chord = list[0] ?? null;
   return chord === null ? null : formatChord(chord, platform, layout);
 }

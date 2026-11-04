@@ -1,14 +1,17 @@
 /**
  * The resolved keymap and where the user's overrides live.
  *
- * Resolution = the registry's defaults for the current platform, overlaid by the stored
- * platform section's known ids (`null` = explicitly unbound). The stored document is the
- * account's `ui_prefs.keybindings`, mirrored to `localStorage["penguin.keybindings"]`: the
+ * A command holds a LIST of bindings: the registry's default plus whatever the user added, in
+ * binding order (the default first, additions oldest-first). Resolution = the registry's
+ * defaults for the current platform, overlaid by the stored platform section's known ids: a row
+ * replaces the whole list (null or an empty list = explicitly unbound; a lone chord string — the
+ * one-binding form an older build writes — reads as a one-element list). The stored document is
+ * the account's `ui_prefs.keybindings`, mirrored to `localStorage["penguin.keybindings"]`: the
  * dispatcher installs at module evaluation, before auth and before any prefs request answers,
  * so the first keystroke needs a synchronous read, and the mirror's `storage` event is what
- * lets every other same-origin tab follow a change live. Only overrides are stored — a row set
- * back to its default is deleted from the section, so a later default change reaches users who
- * never touched that row — and ids the registry does not know are carried through untouched.
+ * lets every other same-origin tab follow a change live. Only overrides are stored — a list set
+ * back to just the default is deleted from the section, so a later default change reaches users
+ * who never touched that row — and ids the registry does not know are carried through untouched.
  *
  * Storage is injectable (the install-scope.ts convention: vitest runs in Node with no
  * localStorage), and every read degrades to the defaults on anything unexpected.
@@ -24,6 +27,7 @@ import type {
   Platform,
   ShortcutCommand,
   StoredKeybindings,
+  StoredKeybindingsValue,
 } from "./types";
 
 /** The browser mirror of the account's overrides (a `browser`-scoped key in install-scope's KEY_RULES). */
@@ -57,10 +61,27 @@ function storage(): KeybindingsStorage | null {
   }
 }
 
+/** One row's stored form, or undefined when the row cannot be one (kept out, like an unknown shape). */
+function sanitizeRowValue(value: unknown): StoredKeybindingsValue | undefined {
+  if (value === null) return null;
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const chords: string[] = [];
+    for (const entry of value) {
+      // Chord grammar is NOT checked here — an unparseable chord is skipped at apply time and
+      // kept in the document, like an unknown id.
+      if (typeof entry === "string") chords.push(entry);
+    }
+    return chords;
+  }
+  return undefined;
+}
+
 /**
- * The document shape, enforced: `v` must be 1 and only the three platform sections are kept,
- * each holding string-or-null values. Chord grammar is NOT checked here — an unparseable chord
- * is skipped at apply time and kept in the document, like an unknown id.
+ * The document shape, enforced: `v` must be 1 and only the three platform sections are kept, each
+ * holding rows of chord strings, arrays of chord strings or null. Chord grammar is NOT checked
+ * here — an unparseable chord is skipped at apply time and kept in the document, like an unknown
+ * id.
  */
 export function sanitizeStored(value: unknown): StoredKeybindings {
   if (typeof value !== "object" || value === null || (value as { v?: unknown }).v !== 1) {
@@ -70,9 +91,10 @@ export function sanitizeStored(value: unknown): StoredKeybindings {
   for (const section of SECTIONS) {
     const raw = (value as Record<string, unknown>)[section];
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
-    const entries: Record<string, string | null> = {};
-    for (const [id, chord] of Object.entries(raw as Record<string, unknown>)) {
-      if (chord === null || typeof chord === "string") entries[id] = chord;
+    const entries: Record<string, StoredKeybindingsValue> = {};
+    for (const [id, row] of Object.entries(raw as Record<string, unknown>)) {
+      const clean = sanitizeRowValue(row);
+      if (clean !== undefined) entries[id] = clean;
     }
     out[section] = entries;
   }
@@ -160,22 +182,33 @@ function effectiveDefault(cmd: ShortcutCommand, platform: Platform): Chord | nul
   return chord !== null && layout !== null ? relocateChord(chord, layout) : chord;
 }
 
+/** One stored row as the parsed binding list: a lone string reads as one chord, null as none. */
+function rowBindings(
+  row: StoredKeybindingsValue,
+  fallback: Chord | null,
+  platform: Platform,
+): readonly Chord[] {
+  if (row === null) return [];
+  const texts = typeof row === "string" ? [row] : row;
+  const chords: Chord[] = [];
+  for (const text of texts) {
+    const parsed = parseChord(text);
+    if (parsed !== null) chords.push(normalizeChord(parsed, platform));
+  }
+  // A row whose every chord fails the grammar reads as no override at all.
+  return chords.length > 0 ? chords : fallback === null ? [] : [fallback];
+}
+
 function resolve(platform: Platform): Keymap {
   const section = readStored()[platform] ?? {};
-  const out = new Map<CommandId, Chord | null>();
+  const out = new Map<CommandId, readonly Chord[]>();
   for (const cmd of SHORTCUT_COMMANDS) {
     const fallback = effectiveDefault(cmd, platform);
-    if (!Object.hasOwn(section, cmd.id)) {
-      out.set(cmd.id, fallback);
-      continue;
-    }
-    const stored = section[cmd.id];
-    if (stored === null || stored === undefined) {
-      out.set(cmd.id, null);
-      continue;
-    }
-    const parsed = parseChord(stored);
-    out.set(cmd.id, parsed === null ? fallback : normalizeChord(parsed, platform));
+    const initial: readonly Chord[] = fallback === null ? [] : [fallback];
+    // A row value is never undefined, so this one check covers an absent row and a row
+    // sanitizeStored dropped alike — and is what narrows under noUncheckedIndexedAccess.
+    const row = section[cmd.id];
+    out.set(cmd.id, row === undefined ? initial : rowBindings(row, fallback, platform));
   }
   return out;
 }
@@ -188,8 +221,9 @@ export function keymap(): Keymap {
   return cache.keymap;
 }
 
-export function bindingOf(id: CommandId): Chord | null {
-  return keymap().get(id) ?? null;
+/** The command's bindings, in binding order; empty while the command is unbound. */
+export function bindingsOf(id: CommandId): readonly Chord[] {
+  return keymap().get(id) ?? [];
 }
 
 /** True while the stored platform section carries an entry for the id (including an explicit unbind). */
@@ -198,20 +232,61 @@ export function isOverridden(id: CommandId): boolean {
   return section !== undefined && Object.hasOwn(section, id);
 }
 
-/** Binds (or, with null, unbinds) a command; a chord equal to the default removes the override instead. */
-export function setBinding(id: CommandId, chord: Chord | null): void {
+/**
+ * Writes the command's whole binding list as its row. A list equal to just the default leaves no
+ * row (a later default change must still reach the user); an empty list stores the explicit
+ * unbind (null), so nothing fires until a binding is added again or the row is reset; anything
+ * else is the list serialized.
+ */
+function writeBindings(id: CommandId, list: readonly Chord[]): void {
   const platform = currentPlatform();
   const doc = readStored();
   const section = { ...(doc[platform] ?? {}) };
-  const normalized = chord === null ? null : normalizeChord(chord, platform);
-  if (chordEquals(normalized, effectiveDefault(commandById(id), platform))) {
-    delete section[id];
-  } else {
-    section[id] = normalized === null ? null : serializeChord(normalized);
-  }
+  const fallback = effectiveDefault(commandById(id), platform);
+  const backToDefault = fallback !== null && list.length === 1 && chordEquals(list[0]!, fallback);
+  if (list.length === 0) section[id] = null;
+  else if (backToDefault) delete section[id];
+  else section[id] = list.map(serializeChord);
   writeStored({ ...doc, [platform]: section });
 }
 
+/**
+ * Adds a binding to a command: the chord joins the list (the default keeps working), and an
+ * already-bound chord is a no-op. This is the recorder's commit — adding never replaces.
+ */
+export function addBinding(id: CommandId, chord: Chord): void {
+  const platform = currentPlatform();
+  const normalized = normalizeChord(chord, platform);
+  const list = bindingsOf(id);
+  if (list.some((bound) => chordEquals(bound, normalized))) return;
+  writeBindings(id, [...list, normalized]);
+}
+
+/**
+ * Removes one binding from a command (the default chord can be removed like any other). A list
+ * that falls back to just the default leaves no row; an empty list stores the explicit unbind.
+ */
+export function removeBinding(id: CommandId, chord: Chord): void {
+  const platform = currentPlatform();
+  const normalized = normalizeChord(chord, platform);
+  const list = bindingsOf(id);
+  const index = list.findIndex((bound) => chordEquals(bound, normalized));
+  if (index < 0) return;
+  writeBindings(
+    id,
+    list.filter((_, i) => i !== index),
+  );
+}
+
+/**
+ * Unbinds a command outright (the recorder's Backspace): the row is null, so nothing fires until
+ * a binding is added again or the row is reset.
+ */
+export function unbindCommand(id: CommandId): void {
+  writeBindings(id, []);
+}
+
+/** Drops the command's row entirely, so the registry default applies again. */
 export function resetBinding(id: CommandId): void {
   const platform = currentPlatform();
   const doc = readStored();

@@ -7,10 +7,18 @@ import { usCharacter } from "./format";
 import { SHORTCUT_COMMANDS } from "./registry";
 import type { Chord, CommandId, KeyLike, Keymap, Platform, ShortcutScope } from "./types";
 
+/** Whether the command's binding list holds the chord. */
+function boundTo(keymap: Keymap, id: CommandId, chord: Chord): boolean {
+  const list = keymap.get(id);
+  if (list === undefined) return false;
+  return list.some((bound) => chordEquals(bound, chord));
+}
+
 /**
- * The command the event runs among the commands whose scope is in `scopes`: a focus scope
- * (terminal, editor) beats global, and among equals the registry order decides. Deterministic,
- * which is what lets a conflicting user binding be a warning rather than an error.
+ * The command the event runs among the commands whose scope is in `scopes` — a command with
+ * several bindings fires on any of them. A focus scope (terminal, editor) beats global, and
+ * among equals the registry order decides. Deterministic, which is what lets a conflicting user
+ * binding be a warning rather than an error.
  */
 export function matchShortcut(
   e: KeyLike,
@@ -23,7 +31,7 @@ export function matchShortcut(
   let global: CommandId | null = null;
   for (const cmd of SHORTCUT_COMMANDS) {
     if (!scopes.includes(cmd.scope)) continue;
-    if (!chordEquals(keymap.get(cmd.id) ?? null, chord)) continue;
+    if (!boundTo(keymap, cmd.id, chord)) continue;
     if (cmd.scope !== "global") return cmd.id;
     global ??= cmd.id;
   }
@@ -32,9 +40,9 @@ export function matchShortcut(
 
 /** One command's own test, for a surface that owns the action (the editors' save). */
 export function isShortcut(e: KeyLike, keymap: Keymap, id: CommandId, platform: Platform): boolean {
-  const bound = keymap.get(id) ?? null;
-  if (bound === null) return false;
-  return chordEquals(chordOf(e, platform), bound);
+  const chord = chordOf(e, platform);
+  if (chord === null) return false;
+  return boundTo(keymap, id, chord);
 }
 
 /**
