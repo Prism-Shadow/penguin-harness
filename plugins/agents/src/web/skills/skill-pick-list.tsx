@@ -19,8 +19,8 @@
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import { ICON_SIZE, MenuItem, SearchInput } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import { filterSkills, localizedShortText } from "@prismshadow/penguin-web/internal";
 
 ||||||| parent of 1c6504848e (sessions: fill internal gaps, rewire host web imports, fix star conflicts)

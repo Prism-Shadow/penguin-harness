@@ -1,49 +1,10 @@
-/**
- * The id field every create dialog that names an object with a semantic id wears — a Project's,
- * an Agent's, a Benchmark's, an organization's and a channel's. The id is still required and
- * still validated by the caller (each kind has its own rule and its own error copy), but it no
- * longer has to be invented: the field carries a "generate" button that asks the server to
- * propose one from the display name (or, when nothing else names the thing yet, from the
- * mission or the description), which is why the name is the field above it.
- *
- * The proposal REPLACES whatever is in the box: the button is pressed to get an id, not to
- * get a suggestion beside the one already typed. It is unavailable while there is no text to
- * derive from and while a request is in flight, and it always comes back with an id — a name
- * nothing could translate gets a placeholder, and the note under the field says so and asks
- * for a real name, rather than a toast that would be gone by the time the user looks down.
- * Nothing is proposed on its own: typing a name never rewrites the id.
- *
- * The button says what it does in words — a model is asked for the id, which is not something
- * a sparkles glyph on its own tells anyone — so it sits BESIDE the box rather than inside it,
- * where a label would crowd the value it is meant to leave room for. What it must stay outside
- * of is the field's `<label>`: a `<button>` is a labelable element, so a wrapping label would
- * name the button instead of the input (the trap field.tsx documents). Hence the label row and
- * the hint are drawn here and the `Input` renders bare.
- *
- * A non-admin's Project id is `<username>-<suffix>` and only the suffix is typed: the fixed part
- * is drawn as `lockedPrefix` in front of the box, and a proposal (which the server returns whole)
- * fills in the part after it.
- */
-import { useId, useState, type ReactNode } from "react";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { idSuggestNotice, proposalValue, type IdSuggestNotice } from "./id-suggest-notice";
 
-import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  FieldError,
-  FieldHint,
-  FieldLabel,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  InfoPopover,
-  Input,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { idSuggestNotice, proposalValue } from "./id-suggest-notice";
-import type { IdSuggestNotice } from "./id-suggest-notice";
-import { toastApiError } from "../../lib/toast-api-error";
+||||||| parent of 9a016a892e (web features admin/skills/semantic-id/model-picker move into their plugins):packages/web/src/features/semantic-id/semantic-id-field.tsx
 
 export function SemanticIdField({
   projectId,

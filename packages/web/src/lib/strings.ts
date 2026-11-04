@@ -1517,7 +1517,7 @@ export const zh = {
   },
 
   /**
-   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * The id field every create dialog with a semantic id wears (plugins/projects/src/web/semantic-id): a Project's,
    * an Agent's, a Benchmark's, an organization's and a channel's.
    */
   semanticId: {

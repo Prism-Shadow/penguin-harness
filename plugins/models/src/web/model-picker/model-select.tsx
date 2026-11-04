@@ -1,3 +1,17 @@
+/**
+ * The model picker bound to the Project's model catalog: the UI package's `ModelSelect` draws the
+ * trigger (provider logo + name), as the composer's toolbar pill or a dialog's form field, and
+ * either opens the model-picker dialog (model-picker-modal.tsx), which the in-session `/model`
+ * switch opens too. The chat composer, the Project settings' new-chat defaults, the schedule
+ * form, the organization dialogs and the benchmark dialog all pick a model through it. The
+ * composer's other switch picker, the `/agent` handoff, is the UI package's PickerList.
+ */
+import { useState } from "react";
+import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { ModelSelect } from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+
+||||||| parent of 9a016a892e (web features admin/skills/semantic-id/model-picker move into their plugins):packages/web/src/features/model-picker/model-select.tsx
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 
 import { modelLabel } from "./model-picker-logic";
