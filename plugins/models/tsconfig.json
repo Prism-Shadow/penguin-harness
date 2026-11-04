@@ -1,19 +1,24 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "lib": [
-      "ES2023"
-    ],
-    "paths": {
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
+
         "@penguinharness/plugin-company/server": [
           "../company/src/server/index.ts"
         ],
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],
-
 ||||||| parent of d4fd0b9463 (plugins: map the sessions face to the workspace source in each plugin tsconfig)
+||||||| parent of 215e6cd4ac (tsconfig: map plugins/sandbox faces into browser/usage/agents/models/messaging/schedules/ui-gallery so their gen:ifaces resolves sandbox's PluginConfig)
+        "@penguinharness/plugin-company/server": [
+          "../company/src/server/index.ts"
+        ],
+        "@penguinharness/plugin-sessions/server": [
+          "../sessions/src/server/index.ts"
+        ],
       "@penguinharness/plugin-models/server": [
         "./src/server/index.ts"
       ],
@@ -37,6 +42,12 @@
       ],
       "@prismshadow/penguin-server/ifaces.json": [
         "../../packages/server/src/ifaces.json"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../sandbox/src/server/index.ts"
       ]
     },
     "resolveJsonModule": true
