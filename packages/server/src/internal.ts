@@ -72,7 +72,6 @@ export type {
   TraceIndexStore,
   TraceSessionRow,
   Traces,
-  UsageContext,
   UsageQueries,
   UsageRecording,
   UsageStore,

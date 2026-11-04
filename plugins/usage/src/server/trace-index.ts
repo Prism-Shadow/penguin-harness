@@ -47,7 +47,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "@prismshadow/penguin-server/internal";
-import { TraceIndexRepo } from "@prismshadow/penguin-server/internal";
+import { TraceIndexRepo } from "./repos/trace-index.js";
 import { cacheable, statMtime } from "@prismshadow/penguin-server/internal";
 import { readTraceHead } from "@prismshadow/penguin-server/internal";
 import { fallbackTitle } from "@prismshadow/penguin-server/internal";
