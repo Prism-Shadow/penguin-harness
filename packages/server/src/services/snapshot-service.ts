@@ -3,15 +3,17 @@
  *
  * A snapshot = `snapshots/v<version>.tar.gz`, packaging `agent_state/` (archive
  * entries are rooted at `agent_state/`), **excluding `.vault.toml`** (secrets never
- * go into a snapshot), `agent_state/.git` (the repository holding the workbench versions
- * is this machine's record, not part of a State) and each workbench's emitted code and
- * installed packages (`.build/`, `node_modules/`); if a snapshot for the same version
- * already exists, it isn't repacked. Import goes by the `version` inside the package and keeps the current
- * vault and repository; a snapshot of the current version is automatically taken before import;
- * importing a package version equal to or lower than the current version requires
- * explicit confirmation (otherwise 409). A package's `agent_state/` must be a real
- * directory whose links all resolve inside it; the current vault must be readable (a
- * missing one is simply absent).
+ * go into a snapshot) and each workbench's emitted code and installed packages
+ * (`.build/`, `node_modules/`); if a snapshot for the same version already exists, it
+ * isn't repacked. Import goes by the `version` inside the package and keeps the current
+ * vault; before it, the current State is always packed afresh into a file of its own,
+ * `snapshots/import-backup-v<version>-<time>-<random>.tar.gz` (a same-version snapshot can
+ * predate the State's latest changes), named outside the `v<N>.tar.gz` pattern that export
+ * and the optimizer Skills read versions from. Importing a package version equal to or
+ * lower than the current version requires explicit confirmation (otherwise 409). A
+ * package's `agent_state/` must be a real directory whose links all resolve inside it, and
+ * no entry with a `.git` path segment is extracted (a planted repository's config runs code
+ * when git is run there); the current vault must be readable (a missing one is simply absent).
  * Docs: /docs/self-improvement § "Snapshots and versions".
  */
 import { randomBytes } from "node:crypto";
@@ -31,41 +33,44 @@ import {
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Log, Paths } from "../hmr/capabilities.js";
+import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { Snapshots } from "../mechanisms/agents.js";
+import { isGitName } from "../workbenches/repo.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
-/** The Agent State repository's directory inside `agent_state/`. */
-const REPO_DIR = ".git";
 
 /**
- * What a snapshot leaves out and an import never takes from a package: any vault, the Agent
- * State repository, and a workbench's emitted code and installed packages.
+ * An archive path's segments as extraction places them: separators unified, a drive prefix
+ * (`C:`, which tar strips only after filtering) and `.` segments dropped.
  */
-function isLeftOut(entryPath: string): boolean {
-  const segments = entryPath
+function segmentsOf(entryPath: string): string[] {
+  return entryPath
     .replaceAll("\\", "/")
+    .replace(/^[A-Za-z]:/, "")
     .split("/")
     .filter((s) => s !== "" && s !== ".");
+}
+
+/**
+ * What a snapshot leaves out and an import never takes from a package: any vault, and each
+ * workbench's emitted code and installed packages.
+ */
+function isLeftOut(entryPath: string): boolean {
+  const segments = segmentsOf(entryPath);
   if (segments.at(-1) === VAULT_BASENAME) return true;
   const [top, child, ...rest] = segments;
-  if (top !== "agent_state") return false;
-  if (child === REPO_DIR) return true;
-  // Anywhere inside `workbenches/<id>/`.
+  // Anywhere inside `agent_state/workbenches/<id>/`.
   return (
-    child === "workbenches" && rest.slice(1).some((s) => s === ".build" || s === "node_modules")
+    top === "agent_state" &&
+    child === "workbenches" &&
+    rest.slice(1).some((s) => s === ".build" || s === "node_modules")
   );
 }
 
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.lstat(file);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
-  }
+/** An entry inside a git directory, under any spelling git itself treats as `.git`. */
+function isGitEntry(entryPath: string): boolean {
+  return segmentsOf(entryPath).some(isGitName);
 }
 
 /** `target` is `base` itself or lies below it (both already resolved by `realpath`). */
@@ -118,6 +123,7 @@ async function assertLinksStayInside(stateDir: string): Promise<void> {
 export class SnapshotService implements Snapshots {
   @Use() private readonly paths!: Paths;
   @Use() private readonly log!: Log;
+  @Use() private readonly clock!: Clock;
   private get root(): string {
     return this.paths.root;
   }
@@ -142,15 +148,38 @@ export class SnapshotService implements Snapshots {
     agentId: string,
   ): Promise<{ version: number; file: string }> {
     const version = await this.currentVersion(projectId, agentId);
-    const dir = snapshotsDir(this.root, projectId, agentId);
-    const file = path.join(dir, `v${version}.tar.gz`);
+    const file = path.join(snapshotsDir(this.root, projectId, agentId), `v${version}.tar.gz`);
     try {
       await fs.access(file);
       return { version, file };
     } catch {
       // No snapshot for this version yet: pack it.
     }
-    await fs.mkdir(dir, { recursive: true });
+    await this.pack(projectId, agentId, file);
+    return { version, file };
+  }
+
+  /**
+   * The backup an import takes: the current State packed into a new file every time, never
+   * one already there.
+   */
+  private async backupBeforeImport(projectId: string, agentId: string): Promise<void> {
+    const version = await this.currentVersion(projectId, agentId);
+    const time = this.clock
+      .now()
+      .toISOString()
+      .replace(/[-:]|\.\d+/g, "");
+    const name = `import-backup-v${version}-${time}-${randomBytes(3).toString("hex")}.tar.gz`;
+    await this.pack(
+      projectId,
+      agentId,
+      path.join(snapshotsDir(this.root, projectId, agentId), name),
+    );
+  }
+
+  /** Packs `agent_state/` into `file`, which appears only once it is complete. */
+  private async pack(projectId: string, agentId: string, file: string): Promise<void> {
+    await fs.mkdir(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp-${randomBytes(4).toString("hex")}`;
     try {
       await tar.create(
@@ -169,7 +198,6 @@ export class SnapshotService implements Snapshots {
       await fs.rm(tmp, { force: true }).catch(() => {});
       throw err;
     }
-    return { version, file };
   }
 
   /** Export: automatically packs a snapshot first if none exists, returns the info needed for download. */
@@ -184,10 +212,10 @@ export class SnapshotService implements Snapshots {
   /**
    * Import: validates the package structure and `version`, compares versions
    * (higher than current imports directly, same version or older requires
-   * `confirm`), automatically snapshots the current version before import, then
-   * replaces `agent_state/` while keeping the current vault and repository.
+   * `confirm`), packs a fresh backup of the current State, then replaces
+   * `agent_state/` while keeping the current vault.
    *
-   * `preSnapshot: false` skips the automatic pre-import snapshot — for seeding a
+   * `preSnapshot: false` skips the pre-import backup — for seeding a
    * freshly created Agent, whose template state is not worth preserving (its
    * caller passes `confirm: true` for the same reason: both guards protect
    * existing State, and a fresh Agent has none).
@@ -213,7 +241,7 @@ export class SnapshotService implements Snapshots {
         await tar.extract({
           file: archiveFile,
           cwd: extractDir,
-          filter: (p) => !isLeftOut(p),
+          filter: (p) => !isLeftOut(p) && !isGitEntry(p),
         });
       } catch {
         throw badRequest("Import failed: not a valid tar.gz snapshot package.");
@@ -255,8 +283,9 @@ export class SnapshotService implements Snapshots {
         );
       }
 
-      // Automatically snapshots the current version before import (reused if one already exists for that version), so a mistaken import can be rolled back.
-      if (opts.preSnapshot !== false) await this.ensureSnapshot(projectId, agentId);
+      // A mistaken import can be rolled back from this backup: always a new one, since a
+      // same-version snapshot may be older than what is about to be replaced.
+      if (opts.preSnapshot !== false) await this.backupBeforeImport(projectId, agentId);
 
       // Replace agent_state: merge the current vault into the directory to be swapped in
       // (extraction filtered any vault inside the package), so the replacement is a pure
@@ -273,39 +302,19 @@ export class SnapshotService implements Snapshots {
       if (vault !== null) {
         await fs.writeFile(path.join(incomingState, VAULT_BASENAME), vault, { mode: 0o600 });
       }
-      // The repository stays the same way (extraction dropped the package's own): it moves
-      // into the directory swapped in, and goes back with the previous State if the swap does
-      // not land.
-      const repo = path.join(stateDir, REPO_DIR);
-      const carried = path.join(incomingState, REPO_DIR);
-      const hasRepo = await exists(repo);
-      if (hasRepo) await fs.rename(repo, carried);
       const trash = path.join(staging, "replaced-agent_state");
+      await fs.rename(stateDir, trash);
       try {
-        await fs.rename(stateDir, trash);
-        try {
-          await fs.rename(incomingState, stateDir);
-        } catch (err) {
-          try {
-            await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
-          } catch (rollbackErr) {
-            keepStaging = true;
-            throw new AggregateError(
-              [err, rollbackErr],
-              `Import failed and the previous Agent State could not be restored; it is kept at ${trash} — move it back to ${stateDir}.`,
-            );
-          }
-          throw err;
-        }
+        await fs.rename(incomingState, stateDir);
       } catch (err) {
-        if (hasRepo) {
-          const home = path.join(keepStaging ? trash : stateDir, REPO_DIR);
-          await fs.rename(carried, home).catch((moveErr: unknown) => {
-            keepStaging = true;
-            this.log.line(
-              `[snapshots] the Agent State repository could not be moved back; it is kept at ${carried} — move it to ${home}: ${String(moveErr)}`,
-            );
-          });
+        try {
+          await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
+        } catch (rollbackErr) {
+          keepStaging = true;
+          throw new AggregateError(
+            [err, rollbackErr],
+            `Import failed and the previous Agent State could not be restored; it is kept at ${trash} — move it back to ${stateDir}.`,
+          );
         }
         throw err;
       }

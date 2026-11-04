@@ -7,12 +7,14 @@
  *   version; a `.vault.toml` inside a package is ignored; an invalid package is a 400.
  * - Snapshots are written to snapshots/v<N>.tar.gz; initializing and seeding one are mutually
  *   exclusive.
- * - A snapshot leaves out the State's git repository and each workbench's `.build/` and
- *   `node_modules/`; the source, `state.json` and `.gitignore` travel.
- * - An import keeps the Agent's own repository (a version recorded before it is still listed),
- *   takes none from the package, and releases the Agent's workbenches while the previous State
- *   is still in place.
- * - An import on an Agent whose workbenches were never migrated migrates them first.
+ * - A snapshot leaves out each workbench's `.build/` and `node_modules/`; its source and
+ *   `state.json` travel.
+ * - An import leaves the Agent's history as it was, extracts nothing under a `.git` of any
+ *   spelling (a drive prefix or another case included), and releases the Agent's workbenches
+ *   while the previous State is still in place.
+ * - The backup an import takes is always new: it holds the State as the import found it, and
+ *   an earlier snapshot of the same version is left as it was.
+ * - An export or an import of an Agent whose workbenches were never migrated migrates them first.
  * - Creating an Agent from a package takes its state, name and version (explicit name and
  *   description win); an invalid package fails the creation and leaves no Agent behind.
  */
@@ -20,9 +22,39 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as tar from "tar";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { gzipSync } from "node:zlib";
 import { agentDir, agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import type { Workbenches } from "../src/mechanisms/workbenches.js";
-import { AgentStateRepo } from "../src/workbenches/repo.js";
+import { AgentStateRepo, agentStateRepoDir, isGitName } from "../src/workbenches/repo.js";
+
+/** A gzipped tar holding exactly these entries under exactly these names, as a crafted package would. */
+function rawPackage(entries: Record<string, string>): Buffer {
+  const blocks: Buffer[] = [];
+  for (const [name, text] of Object.entries(entries)) {
+    const body = Buffer.from(text);
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 100);
+    header.write("0000644\0", 100);
+    header.write("0000000\0", 108);
+    header.write("0000000\0", 116);
+    header.write(`${body.length.toString(8).padStart(11, "0")}\0`, 124);
+    header.write("00000000000\0", 136);
+    header.write("        ", 148);
+    header.write("0", 156);
+    header.write("ustar\0", 257);
+    header.write("00", 263);
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+    blocks.push(header, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+  }
+  return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
+}
+
+/** Every path under `dir`, relative and `/`-separated. */
+async function pathsUnder(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { recursive: true });
+  return entries.map((entry) => entry.replaceAll("\\", "/"));
+}
 import type {
   AgentCreateResponse,
   AgentImportResponse,
@@ -54,10 +86,10 @@ describe("agent export/import", () => {
     vi.restoreAllMocks();
   });
 
-  /** The default Agent's State repository, holding one version of `demo` as a load records it. */
+  /** The default Agent's repository, holding one version of `demo` as a load records it. */
   async function recordedDemo(state: string) {
-    const repo = () =>
-      new AgentStateRepo({ stateDir: state, now: () => new Date(), log: () => {} });
+    const gitdir = agentStateRepoDir(path.dirname(state));
+    const repo = () => new AgentStateRepo({ gitdir, now: () => new Date(), log: () => {} });
     const files = { "package.json": '{"name":"demo"}', "index.ts": "export default {};" };
     await fs.mkdir(path.join(state, "workbenches", "demo"), { recursive: true });
     for (const [rel, text] of Object.entries(files)) {
@@ -263,7 +295,7 @@ describe("agent export/import", () => {
     );
   });
 
-  it("a snapshot leaves out the repository and each workbench's .build/ and node_modules/", async () => {
+  it("a snapshot leaves out each workbench's .build/ and node_modules/", async () => {
     const state = agentStateDir(t.root, projectId, "default_agent");
     await recordedDemo(state);
     const demo = path.join(state, "workbenches", "demo");
@@ -276,17 +308,16 @@ describe("agent export/import", () => {
       Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer()),
     );
 
-    expect(entries.filter((e) => /(^|\/)(\.git|\.build|node_modules)(\/|$)/.test(e))).toEqual([]);
+    expect(entries.filter((e) => /(^|\/)(\.build|node_modules)(\/|$)/.test(e))).toEqual([]);
     expect(entries).toEqual(
       expect.arrayContaining([
-        "agent_state/.gitignore",
         "agent_state/workbenches/demo/index.ts",
         "agent_state/workbenches/demo/state.json",
       ]),
     );
   });
 
-  it("an import keeps the Agent's repository, takes none from the package, and releases its workbenches first", async () => {
+  it("an import keeps the history, extracts no .git of any spelling, and releases the workbenches first", async () => {
     const state = agentStateDir(t.root, projectId, "default_agent");
     const history = await recordedDemo(state);
     const marker = path.join(state, "marker.txt");
@@ -300,26 +331,63 @@ describe("agent export/import", () => {
       return release(p, a);
     });
 
-    // A newer package that carries a repository of its own.
-    const src = path.join(t.root, `with-repo-${projectId}`);
-    await fs.mkdir(path.join(src, "agent_state", ".git"), { recursive: true });
-    await fs.writeFile(
-      path.join(src, "agent_state", "system_config.yaml"),
-      'system_prompt: "hi"\nversion: 9\n',
-    );
-    await fs.writeFile(path.join(src, "agent_state", ".git", "HEAD"), "ref: refs/heads/theirs\n");
-    await tar.create({ gzip: true, cwd: src, file: `${src}.tar.gz` }, ["agent_state"]);
     const res = await owner.post(`${base}/import`, {
-      dataBase64: (await fs.readFile(`${src}.tar.gz`)).toString("base64"),
+      dataBase64: rawPackage({
+        "agent_state/system_config.yaml": 'system_prompt: "hi"\nversion: 9\n',
+        "agent_state/skills/kept/SKILL.md": "# kept\n",
+        "agent_state/.git/config": "[core]\n\tfsmonitor = touch planted\n",
+        "C:agent_state/.git/hooks/post-checkout": "touch planted\n",
+        "agent_state/.GIT/HEAD": "ref: refs/heads/theirs\n",
+        "agent_state/skills/kept/GIT~1/config": "[core]\n",
+      }).toString("base64"),
+    });
+
+    expect(res.status, await res.text()).toBe(200);
+    expect(seen).toEqual(["previous State"]);
+    expect(await fs.readFile(path.join(state, "skills", "kept", "SKILL.md"), "utf8")).toBe(
+      "# kept\n",
+    );
+    expect((await pathsUnder(state)).filter((rel) => rel.split("/").some(isGitName))).toEqual([]);
+    expect(await history.listed()).toEqual([history.commit]);
+  });
+
+  it("the backup an import takes is new, holds the State the import replaced, and leaves the earlier snapshot alone", async () => {
+    const exported = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    // Changed after that snapshot was packed: only a fresh backup still has it.
+    const state = agentStateDir(t.root, projectId, "default_agent");
+    await fs.mkdir(path.join(state, "workbenches", "demo"), { recursive: true });
+    await fs.writeFile(path.join(state, "workbenches", "demo", "state.json"), '{"tickets":2}');
+
+    const res = await owner.post(`${base}/import`, {
+      dataBase64: exported.toString("base64"),
+      confirm: true,
     });
 
     expect(res.status).toBe(200);
-    expect(seen).toEqual(["previous State"]);
-    await expect(fs.access(marker)).rejects.toThrow();
-    expect(await history.listed()).toEqual([history.commit]);
-    expect(await fs.readFile(path.join(state, ".git", "HEAD"), "utf8")).toContain(
-      "refs/heads/main",
-    );
+    const dir = snapshotsDir(t.root, projectId, "default_agent");
+    expect(await fs.readFile(path.join(dir, "v1.tar.gz"))).toEqual(exported);
+    const backups = (await fs.readdir(dir)).filter((name) => name !== "v1.tar.gz");
+    expect(backups).toHaveLength(1);
+    expect(backups[0]).toMatch(/^import-backup-v1-\d{8}T\d{6}Z-[0-9a-f]+\.tar\.gz$/);
+    const restored = path.join(t.root, `restored-${projectId}`);
+    await fs.mkdir(restored);
+    await tar.extract({ file: path.join(dir, backups[0]!), cwd: restored });
+    expect(
+      await fs.readFile(
+        path.join(restored, "agent_state", "workbenches", "demo", "state.json"),
+        "utf8",
+      ),
+    ).toBe('{"tickets":2}');
+  });
+
+  it("an export of an Agent whose workbenches were never migrated migrates them first", async () => {
+    const dir = agentDir(t.root, projectId, "default_agent");
+    await fs.mkdir(path.join(dir, "workflows", "desk"), { recursive: true });
+    await fs.writeFile(path.join(dir, "workflows", "desk", "package.json"), '{"name":"Desk"}');
+
+    expect((await owner.get(`${base}/export`)).status).toBe(200);
+
+    await expect(fs.stat(path.join(dir, "workflows"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("an import on an Agent whose workbenches were never migrated migrates them first", async () => {

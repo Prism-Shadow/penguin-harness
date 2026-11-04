@@ -1,19 +1,21 @@
 /**
- * AgentStateRepo: the git repository over an Agent's `agent_state/`. A workbench's versions are
- * the commits that touched its folder, `workbenches/<id>`.
+ * AgentStateRepo: the bare git repository `<agentDir>/agent_state.git/`, which records the files
+ * of the Agent's `agent_state/` from beside it. A workbench's versions are the commits that
+ * touched its folder, `workbenches/<id>`. Nothing inside `agent_state/` belongs to it, so packing,
+ * importing or moving the Agent State never touches history.
  *
- * Only plumbing is used: blobs, trees, commits and the branch ref are written directly, never
- * through the index or the working tree. A commit is therefore a function of HEAD's tree and the
- * files handed in — nothing on disk is staged, no ignore file is consulted, and an index left in
- * any state by a person cannot turn into a mass deletion. The index is brought up to date
- * afterwards, best effort, only so that `git status` run by a person reads clean.
+ * Only plumbing is used: blobs, trees, commits and the branch ref are written directly; there is
+ * no index and no working tree. A commit is therefore a function of HEAD's tree and the files
+ * handed in. The ignore rules a person's git reads (`info/exclude`) are written once and never
+ * consulted here.
  *
  * Every file is mode 100644 and a tree id is git's own, so the revision a folder gets in memory
- * (`treeId`) is what `git rev-parse HEAD:workbenches/<id>` prints once it is committed, and a
- * listed version's revision is the folder's tree at that commit.
+ * (`treeId`) is what `git --git-dir=… rev-parse HEAD:workbenches/<id>` prints once it is
+ * committed, and a listed version's revision is the folder's tree at that commit. A name git
+ * reserves for its own directory (`isGitName`) is never part of a tree: git refuses to read one.
  *
- * Writes run one at a time per instance (the server keeps one per Agent). Reads take no lock:
- * objects never change once written, and the library serialises a ref's reads and writes.
+ * Writes to one repository run one at a time in this process, whichever instance makes them.
+ * Reads take no lock: objects never change once written, and the branch ref is replaced whole.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -43,7 +45,8 @@ export interface RecordedVersion {
 const AUTHOR = { name: "PenguinHarness", email: "penguin@localhost" };
 const SHORT = 12;
 const BRANCH = "main";
-const IGNORE = `# Written by PenguinHarness: data and the server's own files stay out of history.
+const EXCLUDE = `# Written by PenguinHarness for git run by a person with --work-tree=agent_state:
+# data and the server's own files are not part of any version.
 .vault.toml
 .build/
 .harness/
@@ -52,6 +55,24 @@ node_modules/
 *.penguin-tmp*
 workbenches/*/state.json
 `;
+
+/** The Agent State repository of the Agent whose directory this is. */
+export function agentStateRepoDir(agentDir: string): string {
+  return path.join(agentDir, "agent_state.git");
+}
+
+/**
+ * A path segment git treats as its own `.git` and refuses to read from a tree: any case, with
+ * trailing dots or spaces (NTFS), as an NTFS short name (`git~1`), before a `:` stream, or with
+ * the characters HFS+ ignores.
+ */
+export function isGitName(name: string): boolean {
+  const visible = name.replace(/[‌-‏‪-‮⁪-⁯﻿]/g, "");
+  const normalized = (visible.split(":")[0] ?? "").toLowerCase().replace(/[. ]+$/, "");
+  return normalized === ".git" || /^\.?git~[1-9]$/.test(normalized);
+}
+
+const hasGitName = (rel: string): boolean => rel.split("/").some(isGitName);
 
 function objectId(type: "blob" | "tree", body: Uint8Array): string {
   return createHash("sha1").update(`${type} ${body.byteLength}\0`).update(body).digest("hex");
@@ -82,9 +103,9 @@ function level<T extends { rel: string }>(
   return { here, dirs };
 }
 
-/** git's id of the tree holding these files (full hex). */
+/** git's id of the tree holding these files (full hex); names git reserves are left out. */
 function hashTree(files: ReadonlyArray<{ rel: string; oid: string }>): string {
-  const { here, dirs } = level(files);
+  const { here, dirs } = level(files.filter((f) => !hasGitName(f.rel)));
   const entries = [
     ...here.map((f) => ({ name: f.rel, mode: "100644", oid: f.oid, key: f.rel })),
     ...[...dirs].map(([name, inner]) => ({
@@ -110,25 +131,34 @@ export function treeId(files: ReadonlyArray<{ rel: string; oid: string }>): stri
 const isNotFound = (err: unknown): boolean =>
   (err as { code?: unknown } | null)?.code === "NotFoundError";
 
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+/** The write in progress per repository, across instances: the next one starts once it settles. */
+const writing = new Map<string, Promise<unknown>>();
 
 export class AgentStateRepo {
-  private readonly dir: string;
+  private readonly gitdir: string;
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
-  /** The write in progress; the next one starts once it has settled. */
-  private writing: Promise<unknown> = Promise.resolve();
+  private readonly limit: number;
+  private readonly walk: number;
 
-  constructor(opts: { stateDir: string; now: () => Date; log: (line: string) => void }) {
-    this.dir = opts.stateDir;
+  /** `caps` lowers HISTORY_LIMIT and HISTORY_WALK (tests). */
+  constructor(opts: {
+    gitdir: string;
+    now: () => Date;
+    log: (line: string) => void;
+    caps?: { versions?: number; commits?: number };
+  }) {
+    this.gitdir = path.resolve(opts.gitdir);
     this.now = opts.now;
     this.log = opts.log;
+    this.limit = opts.caps?.versions ?? HISTORY_LIMIT;
+    this.walk = opts.caps?.commits ?? HISTORY_WALK;
   }
 
   /**
    * Writes `files` as the subtree at `rel` on top of HEAD and commits it, dated `at` (default:
-   * now); nothing when HEAD has exactly that tree there. Creates the repository and its
-   * `.gitignore` on first use.
+   * now; git keeps whole seconds); nothing when HEAD has exactly that tree there. Creates the
+   * repository on first use. A file under a name git reserves is left out, with a log line.
    */
   commitPath(
     rel: string,
@@ -136,15 +166,19 @@ export class AgentStateRepo {
     subject: string,
     opts: { at?: Date } = {},
   ): Promise<{ commit: string; changed: boolean }> {
-    const blobs = files.map((f) => ({ rel: f.rel, oid: blobOid(f.body) }));
+    const kept = files.filter((f) => !hasGitName(f.rel));
+    if (kept.length < files.length) {
+      const names = files.filter((f) => hasGitName(f.rel)).map((f) => f.rel);
+      this.log(`${rel}: left out of history, git reserves the name: ${names.join(", ")}`);
+    }
+    const blobs = kept.map((f) => ({ rel: f.rel, oid: blobOid(f.body) }));
     return this.serial(async () => {
       const head = (await this.head()) ?? (await this.create());
       if (head.commit !== null && (await this.subtree(head.commit, rel)) === hashTree(blobs)) {
         return { commit: head.commit.slice(0, SHORT), changed: false };
       }
-      const tree = await this.writeFiles(files);
+      const tree = await this.writeFiles(kept);
       const commit = await this.commit(head, rel, tree, subject, opts.at ?? this.now());
-      await this.syncIndex(rel, blobs);
       return { commit: commit.slice(0, SHORT), changed: true };
     });
   }
@@ -156,11 +190,13 @@ export class AgentStateRepo {
       if (head === null || head.commit === null) return;
       if ((await this.subtree(head.commit, rel)) === null) return;
       await this.commit(head, rel, null, subject, this.now());
-      await this.syncIndex(rel, []);
     });
   }
 
-  /** The versions of `rel`, newest first (at most HISTORY_LIMIT within HISTORY_WALK commits). */
+  /**
+   * The versions of `rel`, newest first: at most HISTORY_LIMIT, found within HISTORY_WALK
+   * commits. The version HEAD has is always listed, even when it is older than the walk.
+   */
   async history(rel: string): Promise<RecordedVersion[]> {
     return (await this.versions(rel)).map((v) => ({
       revision: v.tree.slice(0, SHORT),
@@ -178,45 +214,61 @@ export class AgentStateRepo {
   // ---- internals ------------------------------------------------------------------
 
   private serial<T>(write: () => Promise<T>): Promise<T> {
-    const run = this.writing.then(write);
-    this.writing = run.catch(() => undefined);
+    const run = (writing.get(this.gitdir) ?? Promise.resolve()).then(write);
+    const settled = run.catch(() => undefined);
+    writing.set(this.gitdir, settled);
+    void settled.then(() => {
+      if (writing.get(this.gitdir) === settled) writing.delete(this.gitdir);
+    });
     return run;
   }
 
   private get repo() {
-    return { fs, dir: this.dir };
+    return { fs, gitdir: this.gitdir };
   }
 
   /**
    * The branch HEAD names and its commit (null before the first one); null when there is no
-   * repository. A detached or unreadable HEAD is an error: no version is recorded or listed
-   * against it.
+   * repository. A detached or unreadable HEAD, or a branch ref that is not a commit id, is an
+   * error: no version is recorded or listed against it.
    */
   private async head(): Promise<{ ref: string; commit: string | null } | null> {
     try {
-      await fs.promises.lstat(path.join(this.dir, ".git"));
+      await fs.promises.lstat(this.gitdir);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw err;
     }
     const ref = await git.currentBranch({ ...this.repo, fullname: true });
-    if (!ref) throw new Error("agent_state/.git has a detached HEAD");
+    if (!ref) throw new Error(`${this.gitdir} has a detached HEAD`);
+    let loose: string;
     try {
-      return { ref, commit: await git.resolveRef({ ...this.repo, ref }) };
+      loose = (await fs.promises.readFile(path.join(this.gitdir, ref), "utf8")).trim();
     } catch (err) {
-      if (isNotFound(err)) return { ref, commit: null };
-      throw err;
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      // No file of its own: packed by a person's git, or a branch with no commit yet.
+      try {
+        return { ref, commit: await git.resolveRef({ ...this.repo, ref }) };
+      } catch (packed) {
+        if (isNotFound(packed)) return { ref, commit: null };
+        throw packed;
+      }
     }
+    if (!/^[0-9a-f]{40}$/.test(loose))
+      throw new Error(`${ref} in ${this.gitdir} is not a commit id`);
+    return { ref, commit: loose };
   }
 
-  /** A new repository on `main`, and the ignore file a person's git reads (kept if one is there). */
+  /**
+   * A new bare repository on `main`, with the ignore rules a person's git reads. It is made
+   * beside its place and renamed in, so a crash never leaves a repository without a HEAD.
+   */
   private async create(): Promise<{ ref: string; commit: null }> {
-    await git.init({ ...this.repo, defaultBranch: BRANCH });
-    try {
-      await fs.promises.writeFile(path.join(this.dir, ".gitignore"), IGNORE, { flag: "wx" });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    }
+    const made = await fs.promises.mkdtemp(`${this.gitdir}.penguin-tmp`);
+    await git.init({ fs, gitdir: made, bare: true, defaultBranch: BRANCH });
+    await fs.promises.mkdir(path.join(made, "info"), { recursive: true });
+    await fs.promises.writeFile(path.join(made, "info", "exclude"), EXCLUDE);
+    await fs.promises.rename(made, this.gitdir);
     return { ref: `refs/heads/${BRANCH}`, commit: null };
   }
 
@@ -274,7 +326,12 @@ export class AgentStateRepo {
         committer: stamp,
       },
     });
-    await git.writeRef({ ...this.repo, ref: head.ref, value: commit, force: true });
+    // Replaced whole (a crash leaves the old ref or the new one, never an empty file); `.lock`
+    // is the name git itself stages a ref under and never reads as a branch.
+    const file = path.join(this.gitdir, head.ref);
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(`${file}.lock`, `${commit}\n`);
+    await fs.promises.rename(`${file}.lock`, file);
     return commit;
   }
 
@@ -303,7 +360,8 @@ export class AgentStateRepo {
   /**
    * The commits from HEAD down the first parents where the tree at `rel` differs from the
    * parent's, newest first. The walk stops where `rel` is absent, so a folder deleted and made
-   * again lists only its new life.
+   * again lists only its new life. When the walk ends before it finds where HEAD's version
+   * began, that version is listed with the oldest commit it reached, which already had it.
    */
   private async versions(
     rel: string,
@@ -311,19 +369,22 @@ export class AgentStateRepo {
     const out: Array<{ tree: string; commit: string; savedAt: string }> = [];
     let oid = (await this.head())?.commit ?? null;
     let tree = oid === null ? null : await this.subtree(oid, rel);
+    const current = tree;
+    let oldest: { commit: string; savedAt: string } | null = null;
     let walked = 0;
-    while (oid !== null && tree !== null && out.length < HISTORY_LIMIT && walked < HISTORY_WALK) {
+    while (oid !== null && tree !== null && out.length < this.limit && walked < this.walk) {
       walked += 1;
       const { commit } = await git.readCommit({ ...this.repo, oid });
+      const savedAt = new Date(commit.committer.timestamp * 1000).toISOString();
+      oldest = { commit: oid, savedAt };
       const parent = commit.parent[0] ?? null;
       const before = parent === null ? null : await this.subtree(parent, rel);
-      if (before !== tree) {
-        const savedAt = new Date(commit.committer.timestamp * 1000).toISOString();
-        out.push({ tree, commit: oid, savedAt });
-      }
+      if (before !== tree) out.push({ tree, commit: oid, savedAt });
       oid = parent;
       tree = before;
     }
+    if (out.length === 0 && current !== null && oldest !== null)
+      out.push({ tree: current, ...oldest });
     return out;
   }
 
@@ -338,26 +399,5 @@ export class AgentStateRepo {
       }
     }
     return out;
-  }
-
-  /** Points the index at what was just committed under `rel`, so `git status` reads clean there. */
-  private async syncIndex(
-    rel: string,
-    files: ReadonlyArray<{ rel: string; oid: string }>,
-  ): Promise<void> {
-    const prefix = `${rel}/`;
-    const wanted = new Map(files.map((f) => [`${prefix}${f.rel}`, f.oid]));
-    try {
-      for (const filepath of await git.listFiles(this.repo)) {
-        if (filepath.startsWith(prefix) && !wanted.has(filepath)) {
-          await git.updateIndex({ ...this.repo, filepath, remove: true, force: true });
-        }
-      }
-      for (const [filepath, oid] of wanted) {
-        await git.updateIndex({ ...this.repo, filepath, oid, add: true });
-      }
-    } catch (err) {
-      this.log(`git index not updated: ${messageOf(err)}`);
-    }
   }
 }
