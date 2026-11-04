@@ -36,15 +36,16 @@ const STAGE_TABS: readonly StageTab[] = [
 ];
 
 /**
- * 3+2 training task cards inside `1 Shared Docker` (x=8..242, y=92..248):
- * Natural reading order: Top row T1, T2, T3 (left to right); Bottom row T4, T5 (left to right).
+ * 3+2 training task cards inside `1 Shared Docker` (x=8..244, y=92..248):
+ * Placed on the LEFT side (x=18..126) so tasks feed into `Target Agent` on the RIGHT (x=148..234, w=86),
+ * which then exports directly out the right wall of `1 Shared Docker` into `Evolved Agent (+ SKILL.md)`.
  */
 const TRAIN_CARDS = [
-  { label: "T1", x: 124, y: 142, w: 32, h: 32 },
-  { label: "T2", x: 161, y: 142, w: 32, h: 32 },
-  { label: "T3", x: 198, y: 142, w: 32, h: 32 },
-  { label: "T4", x: 142, y: 182, w: 32, h: 32 },
-  { label: "T5", x: 180, y: 182, w: 32, h: 32 },
+  { label: "T1", x: 22, y: 142, w: 30, h: 32 },
+  { label: "T2", x: 56, y: 142, w: 30, h: 32 },
+  { label: "T3", x: 90, y: 142, w: 30, h: 32 },
+  { label: "T4", x: 39, y: 182, w: 30, h: 32 },
+  { label: "T5", x: 73, y: 182, w: 30, h: 32 },
 ] as const;
 
 /** Vertical center Y coordinates for the 5 stacked horizontal Isolated Dockers (centered on CY=170). */
@@ -317,20 +318,39 @@ export function GdpevoOrchestrationWidget() {
             {tick < 12 ? `Round ${trainRound}/2` : "2/2 Done"}
           </text>
 
-          {/* Clean Bidirectional Loop between Base Agent (x=94) and 3+2 Task Pool (x=118..234):
-              Top Arrow (y=166): Base Agent -> Task Pool (T1 -> T2 -> T3 -> T4 -> T5 light up in order)
-              Bottom Arrow (y=192): Task Pool -> Base Agent (returns feedback to upgrade Skill) */}
+          {/* Clean Bidirectional Loop between 3+2 Task Pool on LEFT (x=16..126) and Target Agent on RIGHT (x=148..234):
+              Top Arrow (y=166): Task Pool -> Target Agent
+              Bottom Arrow (y=192): Target Agent -> Task Pool */}
           <rect
-            x="118"
+            x="16"
             y="134"
-            width="116"
+            width="110"
             height="88"
             rx="8"
             strokeWidth="1"
             className="fill-gray-50/80 stroke-gray-200 dark:fill-gray-800/40 dark:stroke-gray-700"
           />
           <path
-            d="M94,166 L116,166"
+            d="M126,166 L146,166"
+            fill="none"
+            strokeWidth={isSkillUpdating ? "2" : "1.5"}
+            className={
+              isSkillUpdating
+                ? "stroke-emerald-600 dark:stroke-emerald-400"
+                : activeTaskIdx >= 0
+                  ? "stroke-brand-500 dark:stroke-brand-400"
+                  : "stroke-gray-400 dark:stroke-gray-500"
+            }
+            markerEnd={
+              isSkillUpdating
+                ? "url(#pg-arrow-emerald)"
+                : activeTaskIdx >= 0
+                  ? "url(#pg-arrow-brand)"
+                  : "url(#pg-arrow-gray)"
+            }
+          />
+          <path
+            d="M148,192 L128,192"
             fill="none"
             strokeWidth="1.5"
             className={
@@ -340,70 +360,8 @@ export function GdpevoOrchestrationWidget() {
             }
             markerEnd={activeTaskIdx >= 0 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
           />
-          <path
-            d="M118,192 L96,192"
-            fill="none"
-            strokeWidth={isSkillUpdating ? "2" : "1.5"}
-            className={
-              isSkillUpdating
-                ? "stroke-emerald-600 dark:stroke-emerald-400"
-                : "stroke-gray-400 dark:stroke-gray-500"
-            }
-            markerEnd={isSkillUpdating ? "url(#pg-arrow-emerald)" : "url(#pg-arrow-gray)"}
-          />
 
-          {/* Base Agent Node inside 1 Shared Docker (x=20..94, y=142..214, h=72) */}
-          <rect
-            x="20"
-            y="142"
-            width="74"
-            height="72"
-            rx="8"
-            strokeWidth="1.5"
-            className={
-              isSkillUpdating
-                ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-            }
-          />
-          <text
-            x="57"
-            y="168"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            {copy.targetAgent}
-          </text>
-          <rect
-            x="25"
-            y="180"
-            width="64"
-            height="22"
-            rx="4"
-            className={
-              tick < 5
-                ? "fill-gray-100 dark:fill-gray-800"
-                : tick < 11
-                  ? "fill-brand-100 dark:fill-brand-900"
-                  : "fill-emerald-100 dark:fill-emerald-900"
-            }
-          />
-          <text
-            x="57"
-            y="195"
-            textAnchor="middle"
-            className={
-              tick < 5
-                ? "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
-                : tick < 11
-                  ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-                  : "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
-            }
-          >
-            {skillBadge}
-          </text>
-
-          {/* 3+2 Training Task Cards (T1..T5 in natural left-to-right reading order) */}
+          {/* 3+2 Training Task Cards on LEFT (T1..T5 in natural left-to-right reading order) */}
           {TRAIN_CARDS.map((card, i) => {
             const isCurrentTask = i === activeTaskIdx;
             const doneRound2 = tick > 6 + i;
@@ -439,6 +397,57 @@ export function GdpevoOrchestrationWidget() {
               </g>
             );
           })}
+
+          {/* Target Agent Node on RIGHT inside 1 Shared Docker (x=148..234, w=86, y=142..214, h=72) */}
+          <rect
+            x="148"
+            y="142"
+            width="86"
+            height="72"
+            rx="8"
+            strokeWidth="1.5"
+            className={
+              isSkillUpdating
+                ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
+          />
+          <text
+            x="191"
+            y="168"
+            textAnchor="middle"
+            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+          >
+            {copy.targetAgent}
+          </text>
+          <rect
+            x="157"
+            y="180"
+            width="68"
+            height="22"
+            rx="4"
+            className={
+              tick < 5
+                ? "fill-gray-100 dark:fill-gray-800"
+                : tick < 11
+                  ? "fill-brand-100 dark:fill-brand-900"
+                  : "fill-emerald-100 dark:fill-emerald-900"
+            }
+          />
+          <text
+            x="191"
+            y="195"
+            textAnchor="middle"
+            className={
+              tick < 5
+                ? "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+                : tick < 11
+                  ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                  : "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
+            }
+          >
+            {skillBadge}
+          </text>
         </g>
 
         {/* ==================== COL 2: EVOLVED AGENT (+ SKILL.MD) (x=262..356, CY=170) ==================== */}
