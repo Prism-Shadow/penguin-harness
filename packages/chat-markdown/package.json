@@ -1,0 +1,54 @@
+{
+  "name": "@prismshadow/chat-markdown",
+  "version": "0.2.18",
+  "type": "module",
+  "description": "The Markdown dialect PenguinHarness reads an Agent's reply in: GFM, with a bare URL made of ASCII URL characters only and CJK-friendly emphasis, as one remark plugin for Node 24 and browsers.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/chat-markdown"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "mdast-util-gfm-footnote": "^2.1.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
+    "micromark-extension-cjk-friendly": "^2.0.2",
+    "micromark-extension-gfm-footnote": "^2.1.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "micromark-extension-gfm-table": "^2.1.1",
+    "micromark-extension-gfm-task-list-item": "^2.1.0"
+  },
+  "devDependencies": {
+    "remark-parse": "^11.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "unified": "^11.0.5",
+    "vitest": "^4.1.12"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

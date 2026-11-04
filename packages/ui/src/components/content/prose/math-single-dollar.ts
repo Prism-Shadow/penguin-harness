@@ -94,8 +94,13 @@ interface CompileContext {
   exit(token: Token): void;
   sliceSerialize(token: Token): string;
 }
-/** The `this.data()` bag unified plugins share to register parser extensions. */
+/**
+ * The `this.data()` bag unified plugins share to register parser extensions. `settings` is
+ * unified's own field: naming it lets unified's `Data` match this shape in a program that does
+ * not load remark-parse's types, which is where the two lists are declared.
+ */
 interface ProcessorData {
+  settings?: unknown;
   micromarkExtensions?: unknown[];
   fromMarkdownExtensions?: unknown[];
 }

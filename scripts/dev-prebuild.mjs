@@ -227,10 +227,13 @@ try {
       // and the server build inlines hmr, so each has to be rebuilt before its consumer.
       // Through each package's `build` script, not tsup directly: that is the script
       // syncInjectedDepsAfterScripts names, so the CLI's injected copy of the server is
-      // refreshed with the output.
+      // refreshed with the output. The chat Markdown dialect goes too: the server's source and
+      // the Web App's both import its dist.
       const res = spawnSync(
         "pnpm",
         [
+          "--filter",
+          "@prismshadow/chat-markdown",
           ...["core", "hmr", "server", "cli"].flatMap((pkg) => [
             "--filter",
             `@prismshadow/penguin-${pkg}`,
