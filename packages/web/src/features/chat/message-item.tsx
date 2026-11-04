@@ -32,7 +32,8 @@ import { formatMessageTime } from "../../lib/format";
 import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
-import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "../proposals/proposal-links";import { MessageFilesCard } from "./message-files-card";
+import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "../proposals/proposal-links";
+import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { fatalFailure, ladderFailure, llmErrorNotice, requestNotice } from "./request-notice";
 import { SessionThinking } from "./thinking-block";
@@ -398,7 +399,9 @@ export function MessageItem({
           streaming={item.streaming}
           extraPlugins={PROPOSAL_REMARK_PLUGINS}
           components={PROPOSAL_COMPONENTS}
-        >          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
+        >
+          {" "}
+          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
           {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
             <MessageFilesCard
               text={item.text}

@@ -299,7 +299,15 @@ export function MachineCard({
   onPorts = null,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
-  const mark: MachineMark = machine.unavailable === undefined ? machineMark(reading) : { label: `${S.machines.kindUnavailable} · ${kindTitle}: ${machine.unavailable}`, tone: "attention", moving: false, glyph: ICONS.alertCircle };
+  const mark: MachineMark =
+    machine.unavailable === undefined
+      ? machineMark(reading)
+      : {
+          label: `${S.machines.kindUnavailable} · ${kindTitle}: ${machine.unavailable}`,
+          tone: "attention",
+          moving: false,
+          glyph: ICONS.alertCircle,
+        };
   const moving = !machine.local && jobMoving(job);
   // Another build than this server's: the pill says so and opens the dialog, where the update is.
   // Not while a job is already on its way.
@@ -399,19 +407,21 @@ export function MachineCard({
               <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             </Button>
           )}
-          {onConfigure !== null && <Button
-            size="icon"
-            title={S.machines.definition.configure}
-            aria-label={S.machines.definition.configure}
-            disabled={busy}
-            onClick={onConfigure}
-          >
-            <GlyphIcon
-              d={ICONS.gear}
-              size={ICON_SIZE.iconButton}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>}
+          {onConfigure !== null && (
+            <Button
+              size="icon"
+              title={S.machines.definition.configure}
+              aria-label={S.machines.definition.configure}
+              disabled={busy}
+              onClick={onConfigure}
+            >
+              <GlyphIcon
+                d={ICONS.gear}
+                size={ICON_SIZE.iconButton}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
           {onPorts !== null && (
             <Button size="sm" variant="secondary" title={S.ports.verbTitle} onClick={onPorts}>
               <GlyphIcon d={ICONS.arrowsOpposed} size={ICON_SIZE.inlineGlyph} />

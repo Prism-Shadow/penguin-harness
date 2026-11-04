@@ -220,7 +220,13 @@ describe("credential resolution", () => {
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const conn = (baseUrl: string) => ({ baseUrl, root, autoStarted: false, loopback: true });
+  const conn = (baseUrl: string) => ({
+    baseUrl,
+    root,
+    autoStarted: false,
+    loopback: true,
+    fromRoot: false,
+  });
   const storeLogin = (server: string) =>
     fs.writeFileSync(
       path.join(root, "cli-session.json"),

@@ -625,7 +625,16 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
     workspaceLatestActive?: Record<string, string>;
   }> {
-    const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg, sessionIdPrefix, view } = opts;
+    const {
+      paging,
+      order = "created",
+      category,
+      workspaceGroup,
+      withCounts,
+      excludeOrg,
+      sessionIdPrefix,
+      view,
+    } = opts;
     const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
 
     if (sessionIdPrefix !== undefined) {

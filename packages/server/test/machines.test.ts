@@ -5,9 +5,8 @@
  * commands all of that turns into on the machine. No network, no machine. How ssh carries
  * them — its argv, its config — is plugins/machine-ssh's, and tested there.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";

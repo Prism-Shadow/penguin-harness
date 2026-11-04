@@ -48,7 +48,11 @@ describe("harness status bar (POST /api/harness-status)", () => {
 
   beforeAll(async () => {
     t = await createTestApp({
-      machines: fakeMachinesNode(() => fleet),
+      machines: fakeMachinesNode(
+        () => [],
+        () => null,
+        () => fleet,
+      ),
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     member = apiClient(t.app, (await provisionUser(t.app, "alice")).cookie);

@@ -123,8 +123,6 @@ import type {
   SessionsResponse,
   SessionTracesResponse,
   MachineDefinitionResponse,
-  SshHostResponse,
-  SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -1433,7 +1431,14 @@ router
   // shape the web consumer parses line by line.
   .get("/api/sessions/:sessionId/messages/frames", (ctx) => {
     const transcript = transcriptOf(ctx);
-    const prior = { subagentTokens: 0, elapsedMs: 0, apiMs: 0, toolMs: 0, sessionTokens: 0, contextTokens: 0 };
+    const prior = {
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    };
     const skeleton = transcript.history.filter(
       (m) =>
         m.type === "model_msg" &&
@@ -1446,10 +1451,10 @@ router
       { type: "skeleton", cursor: "0:0", messages: skeleton },
       { type: "meat", cursor: "0:0", messages: meat },
     ];
-    return raw(
-      frames.map((f) => JSON.stringify(f)).join("\n") + "\n",
-      { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
-    );
+    return raw(frames.map((f) => JSON.stringify(f)).join("\n") + "\n", {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store",
+    });
   })
   .post("/api/sessions/:sessionId/tasks", ({ store, params, body }): unknown => {
     const sessionId = params.sessionId!;
@@ -2291,7 +2296,7 @@ router
   // The contents behind a name's row: the ones the demo's index lists, none of them in a store.
   .get("/api/plugins/registry/contents", ({ store, query }): PluginContentsResponse => {
     const name = query.get("name") ?? "";
-    const rows = store.f.pluginIndex.plugins.filter((p) => p.name === name);
+    const rows = store.f.pluginIndex.filter((p: PluginIndexEntry) => p.name === name);
     return {
       name,
       contents: rows.map((p) => ({ version: p.version, stored: false, linked: false })),
@@ -2628,6 +2633,7 @@ router
     ({ params }): MachineDefinitionResponse => ({
       name: params.name!,
       values: { hostName: `${params.name}.example.internal` },
+      editable: true,
       forgettable: true,
     }),
   )
@@ -2637,31 +2643,6 @@ router
   .delete("/api/projects/:projectId/machines/kinds/:kind/definitions/:name", ({ store }) =>
     machinesResponse(store),
   )
-  .post("/api/projects/:projectId/machines/ssh-hosts", ({ store, body }): unknown => {
-    const { alias, hostName } = record(body);
-    const name = str(alias, "new-host");
-    if (store.f.machines.machines.some((m) => m.alias === name))
-      fail(409, "ssh_host_exists", "That alias exists.");
-    store.f.machines.machines.push({
-      id: `ssh:${name}`,
-      alias: name,
-      installed: null,
-      machineId: null,
-      local: false,
-      connection: null,
-      socket: null,
-      api: null,
-      status: null,
-      root: `~/.penguin/data`,
-    });
-    void hostName;
-    return json(machinesResponse(store), 201);
-  })
-  .get("/api/projects/:projectId/machines/ssh-hosts", ({ store }): SshHostsResponse => ({
-    hosts: store.f.machines.machines
-      .filter((m) => !m.local)
-      .map((m) => ({ alias: m.alias, hostName: `${m.alias}.example.internal`, user: "ubuntu" })),
-  }))
   .post("/api/projects/:projectId/machines/add", ({ store, body }): MachinesUseResponse => {
     const ids = record(body).machines;
     for (const machine of store.f.machines.machines) {
@@ -2669,14 +2650,6 @@ router
     }
     return { ...machinesResponse(store), refused: [] };
   })
-  .get("/api/projects/:projectId/machines/ssh-hosts/:alias", ({ params }): SshHostResponse => ({
-    alias: params.alias!,
-    hostName: `${params.alias}.example.internal`,
-    user: "ubuntu",
-    port: 22,
-    editable: true,
-  }))
-  .put("/api/projects/:projectId/machines/ssh-hosts/:alias", ({ store }) => machinesResponse(store))
   .post("/api/projects/:projectId/machines/stop-using", ({ store }) => machinesResponse(store))
   .post("/api/projects/:projectId/machines/:machineId/install", () =>
     readOnly("install on a machine"),

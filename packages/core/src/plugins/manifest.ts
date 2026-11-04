@@ -603,18 +603,26 @@ export function readPluginIcon(
   try {
     stat = fs.lstatSync(abs);
   } catch {
-    return { warnings: declared !== undefined ? [`${key} does not exist; ignored`] : [], kind: "svg" };
+    return {
+      warnings: declared !== undefined ? [`${key} does not exist; ignored`] : [],
+      kind: "svg",
+    };
   }
   if (!stat.isFile()) return { warnings: [`${key} is not a plain file; ignored`], kind: "svg" };
   if (stat.size > MAX_PLUGIN_ICON_BYTES) {
-    return { warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`], kind: "svg" };
+    return {
+      warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`],
+      kind: "svg",
+    };
   }
   if (!/\.(svg|png)$/i.test(rel)) {
     return { warnings: [`${key} must name an .svg or .png file; ignored`], kind: "svg" };
   }
   if (/\.png$/i.test(rel)) {
     const bytes = fs.readFileSync(abs);
-    if (!bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    if (
+      !bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    ) {
       return { warnings: [`${key} is not a PNG file; ignored`], kind: "png" };
     }
     return {

@@ -91,7 +91,13 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [penguinManifest(), penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
+  plugins: [
+    penguinManifest(),
+    penguinUi({ workbenchRuntime: true }),
+    react(),
+    tailwindcss(),
+    katexWoff2Only(),
+  ],
   // Where each browser probe (`web.*`) is recorded, for the performance panel's links: the page
   // carries its own table, at the commit this bundle was built from (scripts/probe-sites.mjs).
   // And each probe's one-sentence summary in both languages, from the probe reference itself.

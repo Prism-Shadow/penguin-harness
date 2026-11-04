@@ -228,7 +228,6 @@ class MachineEventAggregate {
     return () => this.#readers.delete(reader);
   }
 
-
   close(): void {
     for (const reader of [...this.#readers]) reader.end();
     this.#readers.clear();

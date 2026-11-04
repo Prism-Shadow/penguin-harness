@@ -89,7 +89,5 @@ export function holdersNote(
 
 /** The bot a binding signs in as: the channel's public account id, never a secret. */
 export function accountIdOf(binding: MessagingBindingInfo): string {
-  return binding.channel === "feishu" || binding.channel === "qq"
-    ? binding.appId
-    : binding.botId;
+  return binding.channel === "feishu" || binding.channel === "qq" ? binding.appId : binding.botId;
 }

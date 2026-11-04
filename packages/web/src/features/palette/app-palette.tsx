@@ -15,9 +15,13 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import type { HostCommand, HostCommandOffer } from "@prismshadow/penguin-server/api";
-import { CommandPalette, toastError, toastInfo } from "@prismshadow/penguin-ui";
-import type { PaletteAction } from "@prismshadow/penguin-ui";
-import type { CommandPaletteProps } from "@prismshadow/penguin-ui";
+import {
+  CommandPalette,
+  toastError,
+  toastInfo,
+  type CommandPaletteProps,
+  type PaletteAction,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { offersNewWindow } from "../../lib/desktop-window";

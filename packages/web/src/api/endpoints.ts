@@ -345,7 +345,6 @@ export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 export const putPrefs = (prefs: UiPrefs) =>
   apiFetch<PrefsResponse>("/api/me/prefs", { method: "PUT", body: prefs });
 
-
 // Harness status bar (admin only) ---------------------------------------------------------
 
 /**

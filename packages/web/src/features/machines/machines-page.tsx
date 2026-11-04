@@ -27,7 +27,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type { MachineInfo, MachineKindInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineKindInfo,
+  MachinesResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
@@ -397,7 +401,11 @@ export function MachinesPage() {
       onOpen={() => setOpenId(machine.id)}
       onUse={() => act(machine, "use")}
       kindTitle={kindTitle(machine)}
-      onConfigure={machine.unavailable === undefined && kindOf(machine)?.form != null ? () => act(machine, "configure") : null}
+      onConfigure={
+        machine.unavailable === undefined && kindOf(machine)?.form != null
+          ? () => act(machine, "configure")
+          : null
+      }
       onSyncConfig={() => void post((project) => api.syncMachineConfig(project, machine.id))}
       onPorts={
         machine.local || machine.machineId === null
@@ -478,8 +486,10 @@ export function MachinesPage() {
                               </span>
                             ))}
                       </span>
-                      {severalKinds && <span className="shrink-0 text-xs text-fg-muted">{kindTitle(machine)}</span>}
-                        {/* Installed by this server for another Project: adding it costs no
+                      {severalKinds && (
+                        <span className="shrink-0 text-xs text-fg-muted">{kindTitle(machine)}</span>
+                      )}
+                      {/* Installed by this server for another Project: adding it costs no
                           transfer, and the version says whether it is current. */}
                       {machine.elsewhere !== undefined && (
                         <span className={`shrink-0 text-xs ${toneInk.success}`}>
@@ -512,15 +522,17 @@ export function MachinesPage() {
               ) : (
                 <span />
               )}
-              {definable && <Verb
-                label={S.machines.definition.newVerb}
-                title={S.machines.definition.newTitle}
-                d={ICONS.plus}
-                onClick={() => {
-                  setPickerOpen(false);
-                  setDefinitionForm({ kind: "add" });
-                }}
-              />}
+              {definable && (
+                <Verb
+                  label={S.machines.definition.newVerb}
+                  title={S.machines.definition.newTitle}
+                  d={ICONS.plus}
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setDefinitionForm({ kind: "add" });
+                  }}
+                />
+              )}
             </div>
             {/* The confirm appears once something is picked; an empty footer says nothing. */}
             {adding.size > 0 && (

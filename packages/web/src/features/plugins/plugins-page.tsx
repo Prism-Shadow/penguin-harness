@@ -824,7 +824,11 @@ export function PluginsPage() {
     if (next === null || row === undefined || !row.active) return;
     const contributions = await refreshContributions();
     openQuickStart(
-      moduleQuickStart(target.specifier, modulesOf(target.specifier, next), contributions?.quickStarts ?? []),
+      moduleQuickStart(
+        target.specifier,
+        modulesOf(target.specifier, next),
+        contributions?.quickStarts ?? [],
+      ),
     );
   };
 

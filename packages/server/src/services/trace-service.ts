@@ -102,8 +102,6 @@ import { spanIn } from "../telemetry/measure.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
-
-
 /**
  * session_id an imported Trace file may declare: same alphabet as resource ids plus a length
  * cap. The value becomes part of the target **filename**, so this is a path-traversal defense,

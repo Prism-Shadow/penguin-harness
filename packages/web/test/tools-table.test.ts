@@ -87,7 +87,9 @@ describe("the built-in tools table", () => {
     expect(server.writes()).toEqual([]);
     expect(button(`exec_command ${en.agent.toolPermission}`).textContent).toContain("Read-only");
     await click(await save());
-    expect((await tableSentSoon(server, 0)).find((t) => t.name === "exec_command")?.permission).toBe("r");
+    expect(
+      (await tableSentSoon(server, 0)).find((t) => t.name === "exec_command")?.permission,
+    ).toBe("r");
   });
 
   it("confirms each deletion, preserves another draft and never restores removed tools on Save", async () => {

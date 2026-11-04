@@ -443,7 +443,9 @@ describe("the builtin catalogue and the packages it lists", () => {
       expect(entry.os, entry.name).toEqual(packages.get(entry.name)!.manifest.penguinOs);
     }
     expect(index.find((e) => e.name === "@penguinharness/sandbox-bwrap")!.os).toEqual(["linux"]);
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual(["darwin"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual([
+      "darwin",
+    ]);
     expect(index.find((e) => e.name === "@penguinharness/sandbox-wsl")!.os).toEqual(["win32"]);
     expect(index.find((e) => e.name === "@penguinharness/sandbox-dsh")!.os).toBeUndefined();
   });

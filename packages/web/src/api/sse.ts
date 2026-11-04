@@ -22,14 +22,12 @@
  */
 import type { AmspRecord } from "@prismshadow/amsp";
 import type {
-  HostedBrowserFrame,
-  HostedBrowserViewport,
-} from "@prismshadow/penguin-server/api";
-import type {
   HistoryPage,
   HistoryProgress,
   HistoryRecords,
   HistoryStreamError,
+  HostedBrowserFrame,
+  HostedBrowserViewport,
   MachineEvent,
   ServerEvent,
 } from "@prismshadow/penguin-server/api";

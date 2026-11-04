@@ -267,6 +267,14 @@ export class ModelOAuthService implements ModelOAuth {
     mode: ModelOAuthMode;
     /** Where the provider should send the browser back to; unused by a manual flow. */
     callbackOrigin: string;
+    /**
+     * Whether the caller vouches for the forwarded headers the callback origin came from — a
+     * reverse proxy the deployment trusts, or a hub forwarding the browser's call. A trusted
+     * origin keeps the mode it asked for however plain it looks: the hub's own http origin is
+     * exactly where its browser lives. Untrusted, the origin is this server's own sight of the
+     * request, and {@link openedMode} decides.
+     */
+    forwardTrusted?: boolean;
   }): ModelOAuthStartResult {
     const oauth = providerInfo(input.provider)?.oauth;
     if (oauth === undefined) {
@@ -278,7 +286,8 @@ export class ModelOAuthService implements ModelOAuth {
     const flowId = randomBytes(32).toString("base64url");
     const verifier = createVerifier();
     const createdAt = this.now();
-    const mode = openedMode(input.mode, input.callbackOrigin);
+    const mode =
+      input.forwardTrusted === true ? input.mode : openedMode(input.mode, input.callbackOrigin);
     // The callback keeps its own query string: the provider appends `code=` to whatever
     // path and parameters it was given, so the flow id rides back with the code.
     const callbackUrl =

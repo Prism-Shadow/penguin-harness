@@ -67,8 +67,12 @@ async function open(
     const model = document.querySelector('button[aria-label="' + en.chat.chooseModel + '"]');
     const level = document.querySelector('button[aria-label="' + en.chat.thinkingLevel + '"]');
     if (isOwner) {
-      return model !== null && (model as HTMLButtonElement).disabled === false &&
-        level !== null && (level as HTMLButtonElement).disabled === false;
+      return (
+        model !== null &&
+        (model as HTMLButtonElement).disabled === false &&
+        level !== null &&
+        (level as HTMLButtonElement).disabled === false
+      );
     }
     // A member's tab is disabled by design; it is live once the pickers stopped loading
     // (a loading picker is disabled too, but shows the "…" of a tier still being resolved).
@@ -88,8 +92,9 @@ const option = (value: string) =>
 
 /** The trigger named `name` reads open. */
 const expanded = (name: string) =>
-  (document.querySelector('button[aria-label="' + name + '"]') as HTMLButtonElement | null)
-    ?.getAttribute("aria-expanded") === "true";
+  (
+    document.querySelector('button[aria-label="' + name + '"]') as HTMLButtonElement | null
+  )?.getAttribute("aria-expanded") === "true";
 
 /**
  * Opens the picker whose trigger is named `name`: a click racing the previous panel's
@@ -141,8 +146,11 @@ describe("API Session settings", () => {
     expect((await buttonSoon(en.chat.chooseModel)).textContent).toContain("API test model");
     await waitFor(
       () =>
-        (document.querySelector('button[aria-label="' + en.chat.thinkingLevel + '"]') as HTMLButtonElement | null)
-          ?.disabled === false,
+        (
+          document.querySelector(
+            'button[aria-label="' + en.chat.thinkingLevel + '"]',
+          ) as HTMLButtonElement | null
+        )?.disabled === false,
     );
     expect((await thinking()).textContent).toContain("high");
     expect((await buttonSoon(en.chat.workspace)).textContent).toContain("work");

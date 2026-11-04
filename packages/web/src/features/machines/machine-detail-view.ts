@@ -90,7 +90,9 @@ export function machineChip(
 
 /** The definition's own fields, without assuming any particular machine kind. */
 export function hostLine(host: MachineDefinitionResponse): string {
-  return Object.entries(host.values).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join(" · ");
+  return Object.entries(host.values)
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .join(" · ");
 }
 
 export type FactKey =

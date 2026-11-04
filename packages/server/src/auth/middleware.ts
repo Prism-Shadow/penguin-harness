@@ -69,7 +69,6 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
 // for the callers that reach it here.
 export { isOwnOrigin } from "../http/public-origin.js";
 
-
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
  * service that issues the sessions, never written here: the ROW carries the authoritative

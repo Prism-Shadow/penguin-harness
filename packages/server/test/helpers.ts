@@ -123,6 +123,11 @@ export async function removeTempRoot(root: string): Promise<void> {
   tempRoots.delete(root);
 }
 
+/** The roots helpers handed out that nothing has removed yet (what a sweep will take). */
+export function pendingHelpersTempRoots(): string[] {
+  return [...tempRoots];
+}
+
 /** Removes every root still handed out; one that cannot be removed is left for the report. */
 export async function removeTempRoots(): Promise<void> {
   await Promise.all([...tempRoots].map((root) => removeTempRoot(root).catch(() => {})));

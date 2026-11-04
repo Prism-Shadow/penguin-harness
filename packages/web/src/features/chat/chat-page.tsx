@@ -124,7 +124,11 @@ import {
 import { useRouteLookup } from "./use-route-lookup";
 import { RouteOfflineNotice } from "./route-offline-notice";
 import { RouteRefusedNotice } from "./route-refused-notice";
-import { machineForSession, rememberLinkedMachine, sessionKnownHere } from "../../lib/session-machines";
+import {
+  machineForSession,
+  rememberLinkedMachine,
+  sessionKnownHere,
+} from "../../lib/session-machines";
 import { useWorkspacePullRequest } from "./use-workspace-pr";
 import { HistoryLoadFailed } from "./history-load-failed";
 import { HistoryLoading } from "./history-loading";

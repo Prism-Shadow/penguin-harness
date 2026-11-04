@@ -258,7 +258,9 @@ test("full screen is a dock at its largest below the toolbar — by a drag past 
 
   // A drag past the max: the right dock covers its own row — the conversation column — while the
   // toolbar with the title and the statistics stays, and nothing under the cover reflowed.
-  const rightHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
+  const rightHandle = page.locator(
+    '[data-testid="dock-resizer"][aria-orientation="vertical"]:visible',
+  );
   let rhb = await rightHandle.boundingBox();
   let rrow = await rowBox();
   await page.mouse.move(rhb.x + rhb.width / 2, rhb.y + rhb.height / 2);
@@ -314,7 +316,9 @@ test("full screen is a dock at its largest below the toolbar — by a drag past 
   // A full-screen bottom dock grows up to the toolbar, over the row and the right dock with it;
   // the right dock coming back on stage, from under the cover, ends it. The bottom dock snaps in
   // by a drag past its maximum, too.
-  const bottomHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="horizontal"]:visible');
+  const bottomHandle = page.locator(
+    '[data-testid="dock-resizer"][aria-orientation="horizontal"]:visible',
+  );
   const bhb = await bottomHandle.boundingBox();
   const brow = await rowBox();
   await page.mouse.move(bhb.x + bhb.width / 2, bhb.y + bhb.height / 2);

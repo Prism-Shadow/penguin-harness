@@ -26,8 +26,7 @@ import {
   useParams,
   useRouteError,
 } from "react-router";
-import { PageFrame } from "@prismshadow/penguin-ui";
-import { CrashNotice, setReportRoute } from "@prismshadow/penguin-ui";
+import { CrashNotice, PageFrame, setReportRoute } from "@prismshadow/penguin-ui";
 import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
 import { routePattern } from "./lib/route-pattern";
 import { NavigationGuard } from "./lib/unsaved/navigation-guard";

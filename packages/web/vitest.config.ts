@@ -18,7 +18,7 @@ const comparable = (path: string): string =>
   slashed(path).replace(/^[A-Za-z]:/, (drive) => drive.toLowerCase());
 const here = dirname(fileURLToPath(import.meta.url));
 /** The app's socket module, the stand-in a node suite runs in its place, and the app itself. */
-const appSource = `${comparable(resolve(here, 'src'))}/`;
+const appSource = `${comparable(resolve(here, "src"))}/`;
 const socketModule = comparable(resolve(here, "src/api/socket.ts"));
 const socketStandIn = slashed(resolve(here, "test/socket-stand-in.ts"));
 

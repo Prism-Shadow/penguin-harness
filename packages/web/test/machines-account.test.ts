@@ -47,7 +47,13 @@ function machineList(alias: string): MachinesResponse {
     status: null,
     root: "~/.penguin/data",
   };
-  return { machines: [machine], kinds: [{ kind: "ssh", title: "SSH", form: null }], imageVersion: "0.2.16", job: null, jobs: [] };
+  return {
+    machines: [machine],
+    kinds: [{ kind: "ssh", title: "SSH", form: null }],
+    imageVersion: "0.2.16",
+    job: null,
+    jobs: [],
+  };
 }
 
 /**

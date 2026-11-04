@@ -53,7 +53,6 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
-
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
   CompactAvailability,
@@ -1441,7 +1440,12 @@ export class SessionManager {
         signal: ac.signal,
       });
       // The objective doubles as the title material (same role as a task's input text).
-      entry.running = this.drive(entry, gen, { userExcerpt: objective, echo: input }, input[0]?.timestamp);
+      entry.running = this.drive(
+        entry,
+        gen,
+        { userExcerpt: objective, echo: input },
+        input[0]?.timestamp,
+      );
       return { sessionId: entry.sessionId };
     });
   }

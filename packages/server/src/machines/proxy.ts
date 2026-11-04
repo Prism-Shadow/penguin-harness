@@ -390,9 +390,8 @@ export function machinesProxy(
    * The shared socket cache and event hub, so this generation's routes read the facts the relay
    * writes; whether this server trusts its own reverse proxy's forwarded headers
    * (PENGUIN_TRUST_PROXY), which decides what it tells the machine about the browser; and where
-   * relay failures are filed.
-   * writes; the hub's own history answers (history-routes.ts), asked first; and the answers this
-   * generation keeps of its machines (answer-cache.ts).
+   * relay failures are filed; the hub's own history answers (history-routes.ts), asked first; and
+   * the answers this generation keeps of its machines (answer-cache.ts).
    */
   shared: {
     sockets?: MachineSockets;
@@ -471,10 +470,16 @@ export function machinesProxy(
       const relayed = await relay.stream(path.machineId, target, {
         path: `${path.remotePath}${url.search}`,
         lastEventId: request.headers.get("last-event-id"),
+        // The socket transport's own answer, when the socket carried the call
+        // (socket/stream-answer.ts): the machine's frames answer it directly.
+        answer: answerOf(request),
       });
       if (relayed.status < 500) outcome(path.machineId, { ok: true });
       return relayed;
     }
+    // A Session's history read is the hub's copy's to keep (history-paths.ts), never this
+    // cache's: the same rule forwardToMachine applies for the /server/<id>/... path.
+    const keeps = isHistoryRead(path.remotePath) ? undefined : reader;
     return proxyThroughSession(
       request,
       path,
@@ -482,7 +487,7 @@ export function machinesProxy(
       answerTimeoutMs,
       shared.trustProxy === true,
       outcome,
-      reader,
+      keeps,
     );
   };
 }
@@ -524,13 +529,5 @@ export async function forwardToMachine(
   }
   // A Session's history read is the hub's copy's to keep (history-paths.ts), never this cache's.
   const keeps = isHistoryRead(path.remotePath) ? undefined : reader;
-  return proxyThroughSession(
-    request,
-    path,
-    target,
-    answerTimeoutMs,
-    trustProxy,
-    report,
-    keeps,
-  );
+  return proxyThroughSession(request, path, target, answerTimeoutMs, trustProxy, report, keeps);
 }

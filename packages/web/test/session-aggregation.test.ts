@@ -274,7 +274,13 @@ describe("events arriving from a machine", () => {
   // The merged list reloads for a person's Session only (`source: "user"`): what a program
   // opens is archived until kept, and a child is in no list — nothing to fetch for either.
   const created = (projectId: string): ServerEvent =>
-    ({ type: "session_created", projectId, agentId: "a1", sessionId: "s1", source: "user" }) as ServerEvent;
+    ({
+      type: "session_created",
+      projectId,
+      agentId: "a1",
+      sessionId: "s1",
+      source: "user",
+    }) as ServerEvent;
 
   const countingStore = () => {
     const store = createSessionsStore();

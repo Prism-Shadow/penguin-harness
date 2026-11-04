@@ -38,8 +38,7 @@ import {
   sessionOf,
   setTimingsSink,
 } from "../src/machines/transport/index.js";
-import type { MachineSample } from "../src/machines/transport/index.js";
-import type { RemoteTarget } from "../src/machines/transport/index.js";
+import type { MachineSample, RemoteTarget } from "../src/machines/transport/index.js";
 import type { Machine } from "../src/mechanisms/machines.js";
 
 // The stub `machine-shell` below is a shell script, which execFile cannot run on Windows;

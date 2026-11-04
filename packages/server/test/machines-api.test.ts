@@ -1261,7 +1261,7 @@ describe("machines API", () => {
       installed("9.9.9");
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, connected: true });
       expect(starts).toEqual([layout.defaultPort]);
       expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(layout.defaultPort);
     });
@@ -1572,7 +1572,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toMatchObject({ ok: true, connected: true });
         expect(restarts).toEqual(["stop", "start"]);
         expect(job.log.join("\n")).toContain(
           "Its server runs 9.9.9, not the build installed there; restarting it onto that build…",
@@ -1602,7 +1602,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toMatchObject({ ok: true, connected: true });
         expect(upgraded).toEqual(["ssh:nas"]);
         expect(job.log.join("\n")).toContain(
           "It runs 9.9.9+hmr.0123456789ab; bringing it to 9.9.9+hmr.cafe01234567 first…",
@@ -1677,7 +1677,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toMatchObject({ ok: true, connected: true });
         expect(touched).toEqual([]);
         expect(remote.state.puts).toHaveLength(1);
       } finally {
@@ -1710,7 +1710,7 @@ describe("machines API", () => {
 
         const job = await connect();
 
-        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(job.result).toMatchObject({ ok: true, connected: true });
         expect(done).toEqual(["install(force: true)", "stop", "start"]);
         expect(job.log.join("\n")).toContain(
           "It answers 9.9.9+hmr.0123456789ab, not 9.9.9+hmr.cafe01234567; installing 9.9.9+hmr.cafe01234567 there…",
@@ -3378,7 +3378,7 @@ describe("machines API", () => {
       const used = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
       expect(used.refused).toEqual([]);
       await waitFor(settled);
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toMatchObject({ ok: true, connected: true });
     });
 
     it("the first install builds the image, installs it, and records its version — the server's own store untouched", async () => {
@@ -3482,7 +3482,7 @@ describe("machines API", () => {
       broken = false;
       await useBody(["ssh:nas"]);
       await waitFor(settled);
-      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(jobsOf()[0]?.result).toMatchObject({ ok: true, connected: true });
       expect(installs).toBe(1);
       expect((await listed()).checkoutImage).toEqual({ state: "built" });
     });

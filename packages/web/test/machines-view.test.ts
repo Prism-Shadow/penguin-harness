@@ -366,7 +366,14 @@ describe("Use", () => {
   it("says a machine coming back is reconnecting, and for how long once it has been a minute", () => {
     const back = (since: string): MachineInfo => ({
       ...connected,
-      reconnect: { since, attempts: 1, maxAttempts: 8, nextAt: null, lastError: null, diagnosis: null },
+      reconnect: {
+        since,
+        attempts: 1,
+        maxAttempts: 8,
+        nextAt: null,
+        lastError: null,
+        diagnosis: null,
+      },
     });
     expect(canUse(back("2026-08-24T12:09:30.000Z"), null)).toBe(false);
     expect(waits(back("2026-08-24T12:09:30.000Z"))).toBe(S.machines.card.why.reconnecting);

@@ -235,6 +235,11 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
     // leaves this machine knowing only its own loopback, which the browser cannot reach: a
     // redirect there would strand the person on a page that never loads. The flow is opened
     // in manual mode instead, and the answer says so, so the dialog asks for the code.
+    // The flow's mode: a hub that forwards without naming the browser's host (one older than
+    // these headers) leaves this machine knowing only its own loopback, which the browser
+    // cannot reach — such a flow opens in manual mode, and the answer says so, so the dialog
+    // asks for the code. Otherwise the service decides (openedMode), from an origin the
+    // forward trust of this request vouches for.
     const mode: ModelOAuthMode =
       asked === "callback" &&
       !deps.config.trustProxy &&
@@ -242,18 +247,16 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       forwarded.host === undefined
         ? "manual"
         : asked;
+    const trusted = forwardTrusted(c, deps.config.trustProxy);
     const started = deps.modelOAuth.start({
       projectId,
       userId: c.var.user.userId,
       provider,
       mode,
-      callbackOrigin: requestOrigin(
-        c.req.url,
-        forwarded,
-        forwardTrusted(c, deps.config.trustProxy),
-      ),
+      callbackOrigin: requestOrigin(c.req.url, forwarded, trusted),
+      forwardTrusted: trusted,
     });
-    return c.json({ ...started, mode } satisfies ModelOAuthStartResponse);
+    return c.json(started satisfies ModelOAuthStartResponse);
   });
 
   // Manual counterpart of the callback: the user pastes the one-time code the authorization

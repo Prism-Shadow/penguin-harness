@@ -254,6 +254,8 @@ export abstract class ModelOAuth {
     provider: string;
     mode: ModelOAuthMode;
     callbackOrigin: string;
+    /** The caller's vouch for the forwarded headers behind `callbackOrigin` (see ModelOAuthService.start). */
+    forwardTrusted?: boolean;
   }): ModelOAuthStartResult;
   abstract deposit(input: { flowId: string; projectId: string; code: string }): void;
   abstract poll(input: { flowId: string; userId: string; projectId: string }): Promise<{

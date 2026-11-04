@@ -239,7 +239,13 @@ describe("the report", () => {
     );
     const seen: [string, { ok: boolean; detail?: string }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null, session: 1 }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
       undefined,
       {},
@@ -268,7 +274,13 @@ describe("the report", () => {
       upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
     );
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null, session: 1 }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       undefined,
       undefined,
       {},

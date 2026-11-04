@@ -159,7 +159,10 @@ describe("agent packages", () => {
     await fs.writeFile(path.join(dir, "agent_state", "skills", "demo", "SKILL.md"), "# demo\n");
     await fs.mkdir(path.join(dir, "workbenches", "todo", "ui"), { recursive: true });
     await fs.writeFile(path.join(dir, "workbenches", "todo", "package.json"), "{}\n");
-    await fs.writeFile(path.join(dir, "workbenches", "todo", "ui", "index.html"), "<h1>todo</h1>\n");
+    await fs.writeFile(
+      path.join(dir, "workbenches", "todo", "ui", "index.html"),
+      "<h1>todo</h1>\n",
+    );
     // … and state, which must not travel.
     await fs.writeFile(
       path.join(dir, "workbenches", "todo", "state.json"),

@@ -146,11 +146,9 @@ async function ensureDistroNode(settings: () => WslSettings): Promise<boolean> {
     ["-d", state.distro, "-u", "root", "--cd", "/", "--exec", "/bin/sh", "-s"],
     {
       timeoutMs: 20 * 60_000,
-      input: provisionScript(
-        state.base === "alpine" ? "alpine" : "ubuntu",
-        settings().mirror,
-        ["nodejs"],
-      ),
+      input: provisionScript(state.base === "alpine" ? "alpine" : "ubuntu", settings().mirror, [
+        "nodejs",
+      ]),
     },
   );
   return provisioned.code === 0 && provisioned.stdout.includes("PENGUIN-PROVISIONED");
@@ -188,9 +186,9 @@ export function createWslProvider(
         if (!nodeReady) {
           ensureNode();
           throw new Error(
-            "penguin-wsl cannot confine the harness's own helper yet: the sandbox distro has no "
-              + "nodejs for it to run on. It is being installed — run the command again, or "
-              + "initialize the distro again from the Sandbox card.",
+            "penguin-wsl cannot confine the harness's own helper yet: the sandbox distro has no " +
+              "nodejs for it to run on. It is being installed — run the command again, or " +
+              "initialize the distro again from the Sandbox card.",
           );
         }
         // The helper and the hook scripts name this host's own executable, which does not exist

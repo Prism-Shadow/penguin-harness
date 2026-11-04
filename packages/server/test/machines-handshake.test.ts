@@ -21,7 +21,7 @@ import { HotResources } from "@prismshadow/penguin-hmr";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
-import type { MachinesEffects, SettleTimeouts } from "../src/machines/service.js";
+import type { MachineKindEntry, MachinesEffects, SettleTimeouts } from "../src/machines/service.js";
 import { runningBuild } from "../src/machines/install-server.js";
 import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
@@ -30,6 +30,7 @@ import type { StreamSettle } from "../src/machines/machine-sockets.js";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
 import { HANDSHAKE_PATH, judgeHandshake, readHandshakeAnswer } from "../src/machines/handshake.js";
 import type { HandshakeAnswer } from "../src/machines/handshake.js";
+import type { Machine, MachineKind } from "../src/mechanisms/machines.js";
 import { bootIdentity, handshakeRoutes } from "../src/http/routes/handshake.js";
 import { versionReport } from "../src/version-report.js";
 import { makeTempRoot, waitFor } from "./helpers.js";
@@ -195,6 +196,35 @@ describe("a stream that found no socket", () => {
   });
 });
 
+/** A machine of a test kind: nothing in it is reached — the effects are the reaching-out. */
+const inertMachine: Machine = {
+  launch: async () => {
+    throw new Error("the test kind launches nothing");
+  },
+  up: async () => {},
+  ready: async () => ({ ok: true }),
+  dial: async () => {
+    throw new Error("the test kind dials nothing");
+  },
+  oneShot: async () => ({ code: 1, stdout: "", stderr: "", timedOut: false }),
+  copyTo: async () => ({ code: 1, stdout: "", stderr: "", timedOut: false }),
+  diagnose: () => null,
+  forwards: () => null,
+};
+
+/** The ssh kind as a contribution delivers it, so the sweep can reach `ssh:nas` at all. */
+const testSshKind = (): MachineKindEntry => ({
+  kind: "ssh",
+  title: "SSH",
+  impl: {
+    discover: () => [],
+    form: () => null,
+    define: async () => ({ ok: false, field: null, message: "not here" }),
+    read: () => null,
+    connect: () => inertMachine,
+  } as MachineKind,
+});
+
 describe("the one action a handshake decides", () => {
   let service: MachinesService | null = null;
   let store: DatabaseSync | null = null;
@@ -287,7 +317,7 @@ describe("the one action a handshake decides", () => {
       }),
       undefined,
       undefined,
-      [],
+      [testSshKind()],
       timeouts,
     );
     // What an install of this hub's build left there, which is where the sweep starts.

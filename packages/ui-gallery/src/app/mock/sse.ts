@@ -201,6 +201,7 @@ export function openTraceBodyStream(
       open = false;
     },
   };
+}
 
 /**
  * Watches a hosted browser tab (GET /api/builtin-browser/tabs/:id/view). The demo store runs no
@@ -217,5 +218,4 @@ export function openBrowserView(
   void server;
   void handlers;
   return { close: () => undefined };
-}
 }

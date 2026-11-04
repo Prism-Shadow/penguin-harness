@@ -1195,7 +1195,9 @@ export class MachinesService {
    * asking itself over its own tunnel would count it twice. For surfaces that span every
    * Project's machines at once (the status bar's poll).
    */
-  async connectedApis(): Promise<Array<{ machineId: string; alias: string; api: MachineApi | null }>> {
+  async connectedApis(): Promise<
+    Array<{ machineId: string; alias: string; api: MachineApi | null }>
+  > {
     const out: Array<{ machineId: string; alias: string; api: MachineApi | null }> = [];
     for (const machine of this.#allMachines()) {
       if (machine.local || machine.installed === null || machine.machineId === null) continue;
@@ -3852,9 +3854,7 @@ export class MachinesService {
         try {
           // Every Project using the machine, not only the one edited: a trailing run serves
           // whichever edits it coalesced, and the machine's last-sync record speaks for all of them.
-          await this.#syncCoalesced(address, target, port, () =>
-            this.#projectsUsing(address),
-          );
+          await this.#syncCoalesced(address, target, port, () => this.#projectsUsing(address));
         } catch {
           // Best effort: the connect log is where a sync's own words go; this one has none.
         }

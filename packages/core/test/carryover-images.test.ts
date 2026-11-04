@@ -28,14 +28,14 @@ import {
   inlineData,
   thinkingMessage,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp";
 
 /** A real 1x1 PNG data URL: the smallest input that is genuinely an image. */
 const PNG_DATA_URL =
@@ -49,14 +49,12 @@ const PNG_BASE64 = PNG_DATA_URL.slice("data:image/png;base64,".length);
  * carries its tool outputs over structurally instead).
  */
 class AbortOnceLLM implements LLMInterface {
-  readonly requests: OmniMessage[][] = [];
+  readonly requests: AmspRecord[][] = [];
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.requests.push(params.newMessages);
     if (this.requests.length === 1) {
-      yield thinkingMessage("half thought", "aborted");
+      yield thinkingMessage("half thought", { aborted: true });
       return { status: "aborted" };
     }
     yield assistantText("fine");
@@ -66,33 +64,33 @@ class AbortOnceLLM implements LLMInterface {
 
 const allowAll: ApproveFn = async () => "allow";
 
-const typeOf = (m: OmniMessage): string | undefined => (m.payload as { type?: string }).type;
+const typeOf = (m: AmspRecord): string | undefined => (m.payload as { type?: string }).type;
 
 /** The `[turn_aborted]` blocks the input carries (the flatten carry-over). */
-const abortedBlocks = (msgs: OmniMessage[]): string[] =>
+const abortedBlocks = (msgs: AmspRecord[]): string[] =>
   msgs
     .map((m) => m.payload as { type?: string; text?: string })
     .filter((p) => p.type === "text" && (p.text ?? "").startsWith("[turn_aborted]"))
     .map((p) => p.text ?? "");
 
 /** The image URLs the input carries as image messages, in order. */
-const imageUrls = (msgs: OmniMessage[]): string[] =>
+const imageUrls = (msgs: AmspRecord[]): string[] =>
   msgs
     .filter((m) => typeOf(m) === "image_url")
     .map((m) => (m.payload as { image_url: string }).image_url);
 
-const firstAbortedIndex = (msgs: OmniMessage[]): number =>
+const firstAbortedIndex = (msgs: AmspRecord[]): number =>
   msgs.findIndex((m) => abortedBlocks([m]).length > 0);
 
-const firstImageIndex = (msgs: OmniMessage[]): number =>
+const firstImageIndex = (msgs: AmspRecord[]): number =>
   msgs.findIndex((m) => typeOf(m) === "image_url" || typeOf(m) === "inline_data");
 
 async function collectRun(
   engine: ContextEngine,
-  prompt: OmniMessage[],
+  prompt: AmspRecord[],
   approve: ApproveFn,
-): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for await (const msg of engine.run(prompt, { approve })) all.push(msg);
   return all;
 }

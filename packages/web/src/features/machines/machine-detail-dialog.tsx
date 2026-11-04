@@ -381,7 +381,6 @@ function CheckList({ lines, alias }: { lines: readonly CheckLine[]; alias: strin
   );
 }
 
-
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
  * words — and, when the sync left anything behind, one attention notice saying what and why.
@@ -423,7 +422,6 @@ function ConfigSync({ view }: { view: ConfigSyncView }) {
     </>
   );
 }
-
 
 function Verb({
   verb,
@@ -662,7 +660,7 @@ export function MachineDetailBody({
         )}
       </RuledSection>
 
-        {configSync !== null && <ConfigSync view={configSync} />}
+      {configSync !== null && <ConfigSync view={configSync} />}
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
@@ -711,7 +709,6 @@ export function MachineDetailBody({
           )}
         </RuledSection>
       )}
-
 
       {view !== null && job !== null && (
         <RuledSection level={3} title={d.progress}>

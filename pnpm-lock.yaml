@@ -225,6 +225,9 @@ importers:
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
+      '@penguinharness/agent-company-proposals':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company-proposals
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -2153,6 +2156,9 @@ packages:
 
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit':
     resolution: {directory: plugins/ace-rsi-toolkit, type: directory}
+
+  '@penguinharness/agent-company-proposals@file:plugins/agent-company-proposals':
+    resolution: {directory: plugins/agent-company-proposals, type: directory}
 
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
@@ -6887,6 +6893,8 @@ snapshots:
 
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit': {}
 
+  '@penguinharness/agent-company-proposals@file:plugins/agent-company-proposals': {}
+
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
@@ -7080,6 +7088,7 @@ snapshots:
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-company-proposals': file:plugins/agent-company-proposals
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
@@ -7121,6 +7130,7 @@ snapshots:
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-company-proposals': file:plugins/agent-company-proposals
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
@@ -7162,6 +7172,7 @@ snapshots:
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-company-proposals': file:plugins/agent-company-proposals
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
