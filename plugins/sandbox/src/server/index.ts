@@ -34,7 +34,9 @@
  * Where none implements a requested dimension, service.ts fails closed naming what each
  * covers rather than quietly confining less than was asked.
  */
-export { SandboxService, Sandbox, SandboxSlots, SandboxModule } from "./service.js";
+export { SandboxService, Sandbox, SandboxModule } from "./service.js";
+export type { SandboxSlots } from "./service.js";
 export { SANDBOX_DIMENSIONS, providerDimensions, requestedDimensions } from "./dimensions.js";
-export { SandboxSettings } from "./settings-store.js";
+export { SANDBOX_GROUP, SandboxSettings } from "./settings-store.js";
 export { SandboxSettingsStatus } from "./settings-status.js";
+export { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "./settings-policy.js";

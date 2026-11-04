@@ -2,20 +2,40 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "paths": {
-        "@penguinharness/plugin-company/server": [
-          "../company/src/server/index.ts"
-        ],
-        "@penguinharness/plugin-sessions/server": [
-          "../sessions/src/server/index.ts"
-        ],
-      "@penguinharness/plugin-machines/server": ["./src/server/index.ts"],
-      "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
-      "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
-      "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
-      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server": [
+        "./src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "../../packages/web/src/internal.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../sandbox/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ]
     }
   },
-  "include": ["src/server"]
+  "include": [
+    "src/server"
+  ]
 }

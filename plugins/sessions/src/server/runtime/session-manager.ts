@@ -95,8 +95,7 @@ import type { SessionService as SessionServiceImpl } from "@prismshadow/penguin-
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
 import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
 import type { Sandbox } from "@penguinharness/plugin-sandbox/server";
-import { SANDBOX_GROUP } from "@prismshadow/penguin-server/internal";
-import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "@prismshadow/penguin-server/internal";
+import { SANDBOX_GROUP, sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "@penguinharness/plugin-sandbox/server";
 import { PluginConfig } from "@prismshadow/penguin-server/internal";
 import { SessionService } from "@prismshadow/penguin-server/internal";
 import { ModelScopeAuth } from "@penguinharness/plugin-models/server";
