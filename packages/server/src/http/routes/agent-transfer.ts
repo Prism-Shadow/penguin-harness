@@ -23,6 +23,7 @@ import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
+import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -77,9 +78,12 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     // what the server holds open there lets go, and stays let go until the swap is over
     // (Windows cannot rename a watched directory).
     await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
-    const { version } = await deps.workbenches.whileReleased(projectId, agentId, () =>
-      deps.snapshots.importArchive(projectId, agentId, archive, { confirm }),
-    );
+    const { version } = await deps.workbenches.whileReleased(projectId, agentId, async () => {
+      const imported = await deps.snapshots.importArchive(projectId, agentId, archive, { confirm });
+      // A State without workbenches would leave the old place's link leading nowhere.
+      await ensureWorkbenchLinkTarget(agentDir(deps.root, projectId, agentId));
+      return imported;
+    });
     const res: AgentImportResponse = { version };
     return c.json(res);
   });

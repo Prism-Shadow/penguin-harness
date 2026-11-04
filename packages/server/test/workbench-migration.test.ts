@@ -1,6 +1,6 @@
 /**
- * Given legacy Workflows with state/history, migration publishes only renamed copies,
- * preserves originals and state, and keeps every recorded version as the revision it names.
+ * Given legacy Workflows with state/history, conversion publishes only renamed copies,
+ * preserves originals and state, and keeps every recorded version as a converted copy.
  * Given an interrupted publication, retry resumes; a completed migration keeps later edits.
  * Given a conflicting destination or corrupt history, refusal leaves the originals intact.
  */
@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { migrateWorkbenches } from "../src/workbenches/migrate.js";
+import { convertWorkflows } from "../src/workbenches/migrate.js";
 import { readFolder } from "../src/workbenches/store.js";
 
 let dir: string;
@@ -67,7 +67,7 @@ describe("one-time Workbench migration", () => {
   it("converts code and history while preserving data and recoverable originals", async () => {
     const old = await legacy();
     const original = await fs.readFile(path.join(old, "index.ts"), "utf8");
-    await migrateWorkbenches(dir);
+    await convertWorkflows(dir);
     const current = path.join(dir, "workbenches/desk");
     expect(await fs.readFile(path.join(current, "index.ts"), "utf8")).toContain("WorkbenchPackage");
     expect(await fs.readFile(path.join(current, "ui/index.html"), "utf8")).toContain("--wb-fg");
@@ -85,23 +85,26 @@ describe("one-time Workbench migration", () => {
     const history = path.join(dir, "workbenches-history/desk");
     const [version] = JSON.parse(await fs.readFile(path.join(history, "versions.json"), "utf8"));
     expect(version.revision).toBe((await readFolder(current, "desk"))!.revision);
-    // The converted copy is the version it names, so it can be replayed as that revision.
-    expect((await readFolder(path.join(history, version.revision), "desk"))!.revision).toBe(
-      version.revision,
+    // The recorded copy is the converted code under its new revision: what the move into
+    // Agent State imports as a version.
+    const copy = (await readFolder(path.join(history, version.revision), "desk"))!;
+    expect(copy.revision).toBe(version.revision);
+    expect(await fs.readFile(path.join(copy.dir, "index.ts"), "utf8")).toContain(
+      "WorkbenchPackage",
     );
   });
   it("resumes publication after interruption and never repeats a completed conversion", async () => {
     await legacy();
-    await migrateWorkbenches(dir);
+    await convertWorkflows(dir);
     const journal = path.join(dir, ".workbench-migration");
     await fs.unlink(path.join(journal, "complete"));
     await fs.rename(
       path.join(dir, "workbenches-history"),
       path.join(journal, "staged/workbenches-history"),
     );
-    await migrateWorkbenches(dir);
+    await convertWorkflows(dir);
     await fs.writeFile(path.join(dir, "workbenches/desk/index.ts"), "user's later edit");
-    await migrateWorkbenches(dir);
+    await convertWorkflows(dir);
     expect(await fs.readFile(path.join(dir, "workbenches/desk/index.ts"), "utf8")).toBe(
       "user's later edit",
     );
@@ -111,7 +114,7 @@ describe("one-time Workbench migration", () => {
     const old = await legacy();
     await fs.mkdir(path.join(dir, "workbenches"));
     await fs.writeFile(path.join(dir, "workbenches/mine"), "keep");
-    await expect(migrateWorkbenches(dir)).rejects.toThrow("already exists");
+    await expect(convertWorkflows(dir)).rejects.toThrow("already exists");
     expect(await fs.readFile(path.join(dir, "workbenches/mine"), "utf8")).toBe("keep");
     expect(await fs.readFile(path.join(old, "index.ts"), "utf8")).toContain("WorkflowPackage");
   });
@@ -121,7 +124,7 @@ describe("one-time Workbench migration", () => {
       path.join(dir, "workflows-history/desk/versions.json"),
       JSON.stringify([{ revision: "../../outside" }]),
     );
-    await expect(migrateWorkbenches(dir)).rejects.toThrow("Invalid workbench history");
+    await expect(convertWorkflows(dir)).rejects.toThrow("Invalid workbench history");
     expect(await fs.stat(old)).toBeTruthy();
     await expect(fs.stat(path.join(dir, "workbenches"))).rejects.toMatchObject({ code: "ENOENT" });
   });

@@ -286,7 +286,6 @@ export class WorkbenchService implements Workbenches {
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
-  private readonly migrations = new Map<string, Promise<void>>();
   /** The Agent State repository; its writes stay in order across instances (./repo.ts). */
   private repo(projectId: string, agentId: string): AgentStateRepo {
     return new AgentStateRepo({
@@ -313,20 +312,15 @@ export class WorkbenchService implements Workbenches {
   /** Agents whose State is being replaced (whileReleased), and when that ends. */
   private readonly held = new Map<string, Promise<void>>();
 
-  /** Every way into an Agent's workbenches comes through here, so it waits out an import first. */
+  /**
+   * Every way into an Agent's workbenches comes through here, so it waits out an import first.
+   * Asked on every access, not once: until the old place is a link, a workbench can still be
+   * written there and is moved in once it settles (./migrate-state.ts). Absent or linked, it
+   * costs a few stats, and concurrent callers share a run.
+   */
   private async migrate(projectId: string, agentId: string): Promise<void> {
-    const key = `${projectId}/${agentId}`;
-    await this.held.get(key);
-    const existing = this.migrations.get(key);
-    if (existing) return existing;
-    const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
-      (error) => {
-        this.migrations.delete(key);
-        throw error;
-      },
-    );
-    this.migrations.set(key, pending);
-    return pending;
+    await this.held.get(`${projectId}/${agentId}`);
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
   }
 
   setup(ctx: ClassCtx) {
@@ -524,7 +518,6 @@ export class WorkbenchService implements Workbenches {
       l.tree?.dispose();
       this.loaded.delete(k);
     }
-    this.migrations.delete(agentKey);
   }
 
   async whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T> {
