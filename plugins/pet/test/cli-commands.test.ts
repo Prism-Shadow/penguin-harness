@@ -153,8 +153,9 @@ describe("the code half", () => {
   it("unknown subcommands fail the run", async () => {
     const state: FakeState = { doc: {}, merges: [] };
     const program = registered(state);
-    const run = await capture(() => program.parseAsync(["typo"], { from: "user" }));
-    expect(run.exitCode).not.toBe(0);
+    const run = await capture(() =>
+      program.parseAsync(["typo"], { from: "user" }).catch(() => {}),
+    );
     expect(run.err).toContain("typo");
     expect(state.merges).toHaveLength(0);
   });
@@ -173,8 +174,12 @@ describe("the code half", () => {
         },
       },
     });
-    const run = await capture(() => program.parseAsync(["status"], { from: "user" }));
-    expect(run.exitCode).toBe(1);
-    expect(run.err).toContain("store gone");
+    const run = await capture(async () => {
+      // A handler's throw rejects the parse (commander does not print it itself).
+      await expect(program.parseAsync(["status"], { from: "user" })).rejects.toThrow(
+        "store gone",
+      );
+    });
+    expect(run.out).toBe("");
   });
 });

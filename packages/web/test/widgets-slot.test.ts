@@ -9,7 +9,6 @@ import { widgetsOf, widgetStore } from "../src/lib/widgets";
 
 const iframeWidget = {
   id: "pet.widget",
-  from: "AcmePet",
   key: "pet",
   title: "Pet",
   titleZh: "宠物",

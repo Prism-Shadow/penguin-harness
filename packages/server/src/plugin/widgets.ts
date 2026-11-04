@@ -19,14 +19,14 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { Hmr } from "../../hmr/capabilities.js";
-import { pluginHostFrom } from "../../plugin/host.js";
-import { PACKAGE_NAME } from "../../plugin/loader.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import { HttpError } from "../errors.js";
-import { readJson } from "../validate.js";
-import { mergeState } from "../../plugin/pet-state.js";
+import type { AppEnv } from "../auth/middleware.js";
+import type { Hmr } from "../hmr/capabilities.js";
+import { pluginHostFrom } from "./host.js";
+import { PACKAGE_NAME } from "./loader.js";
+import type { Settings } from "../mechanisms/settings.js";
+import { HttpError } from "../http/errors.js";
+import { readJson } from "../http/validate.js";
+import { mergeState } from "./pet-state.js";
 
 const stateKey = (pkg: string) => `plugin-state:${pkg}`;
 

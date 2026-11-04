@@ -53,8 +53,8 @@ export function mergePetState(
       delete out[facet];
       continue;
     }
-    if (facet === "pet" && isObject(value) && isObject(out[facet])) {
-      const pet = { ...(out[facet] as Record<string, unknown>) };
+    if (facet === "pet" && isObject(value)) {
+      const pet = { ...(isObject(out[facet]) ? (out[facet] as Record<string, unknown>) : {}) };
       if ("fullness" in value) {
         const fullness = fullnessOf(value.fullness);
         if (fullness === undefined) delete pet.fullness;
