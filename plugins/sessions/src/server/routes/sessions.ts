@@ -45,7 +45,7 @@ import type {
   SessionSandbox,
 } from "@prismshadow/penguin-server/api";
 import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
-import { decodeCursor } from "@prismshadow/penguin-server/internal";
+import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import { withImagesByReference } from "@penguinharness/plugin-usage/server";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";

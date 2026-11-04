@@ -30,7 +30,7 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-server/api";
-import type { ErrorFilter } from "@prismshadow/penguin-server/internal";
+import type { ErrorFilter } from "./repos/errors.js";
 import {
   catalogEntryFor,
   offPeakAt,
@@ -43,7 +43,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "@prismshadow/penguin-server/internal";
+} from "./repos/usage.js";
 import {
   enumerateBuckets,
   enumerateTsBuckets,
