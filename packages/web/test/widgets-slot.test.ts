@@ -12,6 +12,7 @@ vi.mock("../src/api/endpoints", () => ({ getContributions: vi.fn() }));
 const getContributions = vi.mocked(api.getContributions);
 
 const iframeWidget = {
+  from: "pkg:@acme/pet",
   id: "pet.widget",
   key: "pet",
   title: "Pet",
@@ -22,7 +23,8 @@ const iframeWidget = {
 
 describe("widgetsOf", () => {
   it("keeps a well-formed iframe widget", () => {
-    expect(widgetsOf({ widgets: [iframeWidget] })).toEqual([iframeWidget]);
+    const { from: _attribution, ...drawn } = iframeWidget;
+    expect(widgetsOf({ widgets: [iframeWidget] })).toEqual([drawn]);
   });
 
   it("reads empty for a shapeless answer", () => {
