@@ -185,7 +185,8 @@
       grid-template-rows: 0fr;
     }
   }
-  @media (min-width: 768px) {
+  /* The link row needs the room of all nine links; below it the menu button carries them. */
+  @media (min-width: 1024px) {
     .site-ui-desktop-links {
       display: flex;
     }
