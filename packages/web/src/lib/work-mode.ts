@@ -7,7 +7,7 @@
  * is mirrored. Storage is injectable (nav-state.ts convention: vitest runs in Node
  * with no localStorage), and every read degrades to the default on anything unexpected.
  */
-import { type WorkMode, parseOrgKey } from "./company-nav";
+import { type WorkMode, parseOrgKey } from "@prismshadow/penguin-web/internal";
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
 export interface WorkModeStorage {

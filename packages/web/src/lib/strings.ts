@@ -6456,7 +6456,7 @@ Benchmark：
       systemMessage: "系统消息",
       sentAt: (time: string): string => `发送于 ${time}`,
       /**
-       * The system lines, one sentence per kind the server records (features/company/channel-notices.ts).
+       * The system lines, one sentence per kind the server records (plugins/company/src/web/company/channel-notices.ts).
        * Principals arrive already resolved to display names; a period is `yyyy-mm` and the money
        * figures are the server's own, in USD.
        */

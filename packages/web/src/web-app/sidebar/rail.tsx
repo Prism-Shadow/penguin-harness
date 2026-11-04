@@ -24,9 +24,9 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { useCompany } from "../../lib/company-context";
+import { useCompany } from "@prismshadow/penguin-web/internal";
 
-import { parseOrgKey } from "../../lib/company-nav";
+import { parseOrgKey } from "@prismshadow/penguin-web/internal";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/web";

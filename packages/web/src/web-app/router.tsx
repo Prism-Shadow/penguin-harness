@@ -15,7 +15,7 @@ import { WebAppPagesProvider, useWebAppPages, useWebAppPagesPending } from "./co
  * "bare" page only needs the user signed in. The pages still declared in src/module.json
  * render beside them through the builtin registry; the ones the server contributes with
  * `nav: "org"` are company-mode pages relative to the organization layout, mounted by
- * OrgRoutes (features/company/org-routes.tsx), so they are not flat routes here.
+ * OrgRoutes (plugins/company/src/web/company/org-routes.tsx), so they are not flat routes here.
  *
  * The app normally routes on the browser's address bar. A host that mounts it inside another
  * document (the component gallery frames it against a mocked API) passes `initialPath`
@@ -148,7 +148,7 @@ function RouteCrash() {
 /**
  * The routes: the pages the modules contributed (WebApp's bindings). Company contributions
  * are read and mounted under the organization layout by OrgRoutes
- * (features/company/org-routes.tsx).
+ * (plugins/company/src/web/company/org-routes.tsx).
  */
 function appRoutes(pages: readonly WebAppPage[]) {
   return createRoutesFromElements(
@@ -170,7 +170,7 @@ function appRoutes(pages: readonly WebAppPage[]) {
       <Route element={<RequireAuth />}>
         {/* Admin-only pages are refused server-side (403); the sidebar hides their row, so a
             member only ever reaches one by typing the URL. Company mode is one page, /org/*,
-            whose nested routes are its own (features/company/org-routes.tsx). `/` and every
+            whose nested routes are its own (plugins/company/src/web/company/org-routes.tsx). `/` and every
             path nothing else matches lead home, which depends on the mode: company mode
             contributes that page too (path `*`). Settings and user management live in the
             settings dialog now (see SettingsDialog); their old routes fall through to it. */}
