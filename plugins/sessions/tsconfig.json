@@ -3,8 +3,11 @@
   "compilerOptions": {
     "noEmit": true,
     "lib": [
-      "ES2023"
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
     ],
+    "jsx": "react-jsx",
     "paths": {
       "@penguinharness/plugin-sessions/server": [
         "./src/server/index.ts"

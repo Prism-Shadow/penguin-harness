@@ -43,3 +43,5 @@ export { subscribeLauncherHidden } from "./dock-launcher-state";
 export { writeLauncherHidden } from "./dock-launcher-state";
 
 export { setDockScope } from "./dock-state";
+
+export { pruneTerminalTabs, dockActiveKey } from "./dock-state";
