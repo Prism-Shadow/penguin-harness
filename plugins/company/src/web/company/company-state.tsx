@@ -65,7 +65,7 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
 import { channelBadgeCounts } from "./channel-list";
-import { homePath, orgKey, parseOrgKey, type WorkMode } from "@prismshadow/penguin-web/internal";
+import { homePath, orgKey, parseOrgKey, type WorkMode } from "./company-nav.js";
 
 import { withDeskMessagingChannel } from "./org-sessions";
 import {
@@ -816,5 +816,5 @@ import {
   type TicketDialogTarget,
 } from "@prismshadow/penguin-web/internal";
 
-export { useCompany } from "@prismshadow/penguin-web/internal";
+export { useCompany } from "./company-context.js";
 export type { CompanyVersions, TicketDialogTarget } from "@prismshadow/penguin-web/internal";

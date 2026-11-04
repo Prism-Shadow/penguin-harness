@@ -41,7 +41,7 @@ import {
 import { S } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { orgKey, orgPagePath, resolveOrgLanding } from "@prismshadow/penguin-web/internal";
+import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav.js";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";
 import { TicketDialogHost } from "./ticket-dialog";

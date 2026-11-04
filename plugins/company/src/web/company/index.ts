@@ -5,4 +5,4 @@
 export { useCompany } from "./company-state";
 export { switchDeskModel } from "./desk-model";
 
-export { parseOrgKey } from "@prismshadow/penguin-web/internal";
+export { parseOrgKey } from "./company-nav.js";
