@@ -77,8 +77,9 @@ describe("installPluginChannel", () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       install: async (prefix, spec) => {
         installedSpecs.push(spec);
-        // What npm would put on disk for the verified tarball.
-        const dir = path.join(pluginsPrefix(prefix), "node_modules", ...channel.name.split("/"));
+        // What npm would put on disk for the verified tarball. The prefix is created by
+        // the install itself, and the fake receives it: node_modules sits inside it.
+        const dir = path.join(prefix, "node_modules", ...channel.name.split("/"));
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(
           path.join(dir, "package.json"),
