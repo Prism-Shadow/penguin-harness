@@ -14,7 +14,7 @@ import {
   terminalMachinesPublished,
   terminalSources,
   terminalUrl,
-} from "../src/lib/terminal-machines";
+} from "@prismshadow/penguin-web/internal";
 
 afterEach(() => forgetTerminalMachines());
 

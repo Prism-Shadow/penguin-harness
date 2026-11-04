@@ -12,7 +12,7 @@
  * displays them, and a stale entry surviving a reload would address a pty on a machine that
  * may no longer hold — or no longer have — it.
  */
-import { apiUrl } from "./server-context";
+import { apiUrl } from "@prismshadow/penguin-web/internal";
 
 /** terminalId → the machine it lives on. Absent = this server. */
 const owners = new Map<string, string>();

@@ -17,7 +17,7 @@ import {
   movedSet,
   newEntryName,
   stemEnd,
-} from "../src/lib/workspace-tree";
+} from "@prismshadow/penguin-web/internal";
 
 const entry = (name: string, kind: "dir" | "file") => ({
   name,

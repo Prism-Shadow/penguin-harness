@@ -6,3 +6,4 @@ export { TerminalModule } from "./terminal/module.js";
 export * from "./terminal/index.js";
 export * from "./dock/index.js";
 export { DockModule } from "./dock/module.js";
+export * from "./lib/terminal-machines.js";

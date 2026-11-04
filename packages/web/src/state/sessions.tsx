@@ -40,7 +40,7 @@ import {
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../lib/machine-cache";
-import { setTerminalMachines } from "../lib/terminal-machines";
+import { setTerminalMachines } from "@prismshadow/penguin-web/internal";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
   SIDEBAR_PAGE_SIZE,
@@ -1556,7 +1556,7 @@ export function SessionsProvider({
   const offlineMachineIdsKey = machineFacts.offline.join(",");
   const machineLabelsJson = JSON.stringify(machineFacts.labels);
   // The terminal list asks the same machines, from a module-scope timer with no React context to
-  // read them from (lib/terminal-machines.ts). Told "none" out loud when there is no account: it
+  // read them from (plugins/terminal/src/web/lib/terminal-machines.ts). Told "none" out loud when there is no account: it
   // waits for this word before it may drop a tab whose terminal is gone, and a user who can never
   // read the machine list would otherwise keep every dead tab in their dock forever
   // (features/terminal/terminal-list.ts).
