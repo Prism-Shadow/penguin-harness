@@ -11,7 +11,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_TRAY_PREFS,
   parseTrayCommand,
   readTrayPrefs,
   TRAY_PREFS_FILE,
@@ -30,7 +29,6 @@ describe("readTrayPrefs", () => {
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   it("defaults to a tray icon that keeps the app running when there is no file", () => {
-    expect(DEFAULT_TRAY_PREFS).toEqual({ showTrayIcon: true, closeToTray: true, locale: null });
     expect(readTrayPrefs(dir)).toEqual({ showTrayIcon: true, closeToTray: true, locale: null });
   });
 

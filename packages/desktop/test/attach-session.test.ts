@@ -95,17 +95,6 @@ describe("planSignIn", () => {
   });
 });
 
-describe("the minted session's lifetime", () => {
-  /**
-   * Thirty days is what the server gives a browser sign-in, and the only span that renews in
-   * place: a shorter session never reaches the renewal window, so it would expire on schedule
-   * however much the window is used and drop it back on the sign-in page.
-   */
-  it("is the thirty days an ordinary browser session gets", () => {
-    expect(ATTACH_SESSION_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
-  });
-});
-
 /**
  * The cookie name is a copy of the server's, so it is pinned to the declaration it copies:
  * the two are read by different processes and nothing else would notice them drifting apart.

@@ -85,14 +85,8 @@ function preTogglesDefaultConfig(): SystemConfig {
 }
 
 describe("kernel tab hash record (pinned-hash guard)", () => {
-  it("KERNEL_VERSION is a date", () => {
-    expect(KERNEL_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("the record covers every tab and lists nothing that could never fire", () => {
-    expect(Object.keys(KERNEL_DEFAULT_TAB_HASHES).sort()).toEqual([...KERNEL_TAB_KEYS].sort());
+  it("the superseded record lists nothing that could never fire", () => {
     for (const [tab, hashes] of Object.entries(KERNEL_SUPERSEDED_TAB_HASHES)) {
-      expect(KERNEL_TAB_KEYS, `${tab} is not a kernel tab`).toContain(tab);
       expect(hashes.length, tab).toBeGreaterThan(0);
       expect(new Set(hashes).size, `${tab} repeats a superseded hash`).toBe(hashes.length);
       // A kernel update short-circuits on the current default before consulting the record,

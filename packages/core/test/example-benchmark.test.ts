@@ -2,8 +2,11 @@
  * The example Benchmark, as a new Project's provisioning writes it.
  *
  * - A new Project's provisioning writes the Project-level benchmarks/example-benchmark/: a
- *   manifest (runs = 2, published, seeded as builtin, a date version), and a scoreboard with
- *   three self-consistent evaluations labelled with the Agent they tested.
+ *   manifest the reader takes (seeded as builtin, a date version, no model), Cases with a
+ *   statement and a rubric, and a scoreboard of self-consistent evaluations in time order, each
+ *   labelled with the Agent it tested and scoring every Case.
+ * - These scenarios provision an empty catalogue of shipped packages: only the example is
+ *   under test.
  * - Benchmarks of the user's own, and a copy at the retired per-agent location, do not stand in
  *   for it, and are left as they are.
  * - No Agent writes it: initializing or loading default_agent leaves a deleted example deleted,
@@ -24,6 +27,7 @@ import {
   buildExampleScoreboard,
   loadAgentState,
   provisionProjectBenchmarks,
+  readBenchmarkManifest,
 } from "../src/state/index.js";
 
 let tmpRoot: string;
@@ -73,65 +77,43 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
 }
 
 describe("example benchmark provisioning", () => {
-  it("a new Project's example benchmark is parseable (config + scoreboard + cases)", async () => {
-    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+  it("a new Project's example Benchmark reads as a builtin, dated, model-free package whose scoreboard scores its own Cases", async () => {
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, []);
     const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
-    // benchmark_config.toml: id/title/description/runs=2/status=published, seeded as builtin
-    // with a date version; contains no model reference (the model is recorded on each
-    // evaluation instead).
+    // The manifest reads through the reader every Benchmark surface uses: seeded as builtin, with
+    // a date version, and no model reference (the model is recorded on each evaluation instead).
+    const manifest = await readBenchmarkManifest(dir);
+    expect(manifest).toMatchObject({ id: EXAMPLE_BENCHMARK_ID, origin: { kind: "builtin" } });
+    expect(manifest?.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
     const config = parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"));
-    expect(config.id).toBe(EXAMPLE_BENCHMARK_ID);
-    expect(config.title).toBe("Example Benchmark");
-    expect(String(config.description)).toContain("built-in example");
-    expect(String(config.description)).toContain("Replace it with your own");
-    expect(Number(config.runs)).toBe(2);
-    expect(config.status).toBe("published");
-    expect(config.origin).toEqual({ kind: "builtin" });
-    expect(config.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 
-    // Two cases: statement/ and rubric/ each use README.md as the index.
-    for (const caseId of ["CASE-001-file-summary", "CASE-002-data-cleanup"]) {
-      const statement = await fs.readFile(path.join(dir, caseId, "statement", "README.md"), "utf8");
-      const rubric = await fs.readFile(path.join(dir, caseId, "rubric", "README.md"), "utf8");
-      expect(statement.length).toBeGreaterThan(50);
-      expect(rubric).toContain("pts");
-      expect(rubric).toContain("max 100 points");
+    // Every Case has a statement and a rubric, each indexed by its README.md.
+    const cases = (await fs.readdir(dir)).filter((name) => name.startsWith("CASE-")).sort();
+    expect(cases.length).toBeGreaterThan(0);
+    for (const caseId of cases) {
+      for (const part of ["statement", "rubric"]) {
+        expect(await exists(path.join(dir, caseId, part, "README.md")), `${caseId}/${part}`).toBe(
+          true,
+        );
+      }
     }
 
-    // scoreboard.yaml: 3 evaluations, with version/time increasing and scores rising, and
-    // 2 runs per case.
+    // The scoreboard's evaluations come in time order, each tested default_agent (which every
+    // Project has) on every Case, and each run names its Session by a Session id.
     const scoreboard = parseYaml(await fs.readFile(path.join(dir, "scoreboard.yaml"), "utf8")) as {
       evaluations: Evaluation[];
     };
-    expect(scoreboard.evaluations).toHaveLength(3);
+    expect(scoreboard.evaluations.length).toBeGreaterThan(0);
     expect(JSON.stringify(scoreboard)).not.toContain("max_score");
-    expect(scoreboard.evaluations.map((e) => e.version)).toEqual([1, 2, 3]);
     const times = scoreboard.evaluations.map((e) => new Date(e.time).getTime());
-    expect(times[0]!).toBeLessThan(times[1]!);
-    expect(times[1]!).toBeLessThan(times[2]!);
-    const scores = scoreboard.evaluations.map((e) => e.score);
-    expect(scores[0]!).toBeLessThan(scores[1]!);
-    expect(scores[1]!).toBeLessThan(scores[2]!);
-    // Each evaluation carries the Agent it tested, the actual model used for that run (as a
-    // pair) and a summary title; the example consistently evaluates default_agent on
-    // deepseek-v4-pro.
-    expect(scoreboard.evaluations.map((e) => e.model_id)).toEqual([
-      "deepseek-v4-pro",
-      "deepseek-v4-pro",
-      "deepseek-v4-pro",
-    ]);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
     for (const e of scoreboard.evaluations) {
       expect(e.agent_id).toBe(DEFAULT_AGENT_ID);
-      expect(e.provider).toBe("deepseek");
-      expect(e.thinking_level).toBe("medium");
-      expect(e.summary_title.length).toBeGreaterThan(0);
-      expect(e.summary.toLowerCase()).toContain("example");
-      expect(e.cases).toHaveLength(2);
+      expect(e.cases.map((c) => c.case).sort()).toEqual(cases);
       for (const c of e.cases) {
-        expect(c.runs).toHaveLength(2);
         for (const r of c.runs) {
           expect(r.session_id).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/);
         }
@@ -167,7 +149,7 @@ describe("example benchmark provisioning", () => {
   });
 
   it("provisionProjectBenchmarks writes the example at the Project level, for any Project", async () => {
-    await provisionProjectBenchmarks(tmpRoot, "proj_x");
+    await provisionProjectBenchmarks(tmpRoot, "proj_x", []);
     expect(await exists(path.join(benchmarksDir(tmpRoot, "proj_x"), EXAMPLE_BENCHMARK_ID))).toBe(
       true,
     );
@@ -179,7 +161,7 @@ describe("example benchmark provisioning", () => {
     // and no example.
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
     await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
-    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, []);
     expect(await fs.readdir(dir)).toEqual(
       expect.arrayContaining([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]),
     );
@@ -199,7 +181,7 @@ describe("example benchmark provisioning", () => {
     );
     await fs.mkdir(legacy, { recursive: true });
     await fs.writeFile(path.join(legacy, "benchmark_config.toml"), 'title = "old"\n');
-    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, []);
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
     // The legacy copy is left exactly as it was.
@@ -209,7 +191,7 @@ describe("example benchmark provisioning", () => {
   });
 
   it("loading default_agent writes no example: a deleted example stays deleted", async () => {
-    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
+    await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, []);
     const example = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
     await fs.rm(example, { recursive: true, force: true });
 

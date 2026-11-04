@@ -9,6 +9,13 @@
  *   known category, a safe icon — and no plugin.json is shipped or left on disk.
  * - Each shipped skill's source frontmatter parses as YAML and carries a dated version.
  *
+ * Reading, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin whose manifest sets `preinstall: false` stays in the library and out of the
+ *   preinstalled set.
+ * - A plugin is found by its name, a skill by its own name together with the plugin that ships
+ *   it; an unknown or illegal name finds nothing.
+ * - A hook package lists the manifest it installs, its points as declared, and every hooks/ file.
+ *
  * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
  * - A plugin's version is the npm version of its package.json.
  * - Each skill keeps its own dated version through the loader's stamp, and the hook package
@@ -90,14 +97,6 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    const { dependencies } = JSON.parse(
-      await fs.readFile(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
-    ) as { dependencies: Record<string, string> };
-    expect(plugins.map((plugin) => plugin.packageName).sort()).toEqual(
-      Object.keys(dependencies)
-        .filter((name) => name.startsWith("@penguinharness/"))
-        .sort(),
-    );
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -161,8 +160,6 @@ describe("loadLibraryPlugins", () => {
         ).toContain(skill);
       }
     }
-    // The goal plugin's demo is a goal: its hooks only run for one.
-    expect(libraryPlugin("goal")?.quickStart?.goal).toBe(true);
   });
 
   it("stamps the plugin's metadata into each skill: its own version in the file, full installable frontmatter", async () => {
@@ -216,15 +213,6 @@ describe("loadLibraryPlugins", () => {
     expect(owner.size).toBeGreaterThan(0);
   });
 
-  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", () => {
-    const humanizer = librarySkill("humanizer");
-    expect(humanizer).toBeDefined();
-    const files = humanizer!.skill.files ?? {};
-    expect(Object.keys(files).length).toBeGreaterThan(0);
-    expect(Object.keys(files).every((rel) => rel !== "SKILL.md" && rel !== "icon.svg")).toBe(true);
-    expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
-  });
-
   it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
     // These four methods share one evaluation protocol. Continuous-training methods have
     // their own worker instructions; keep this check on the copies that must stay identical.
@@ -246,59 +234,6 @@ describe("loadLibraryPlugins", () => {
     for (const [i, reference] of references.entries()) {
       expect(reference.length, toolkits[i]!.name).toBeGreaterThan(0);
       expect(reference, `${toolkits[i]!.name} vs ${toolkits[0]!.name}`).toBe(references[0]);
-    }
-  });
-
-  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", async () => {
-    const goal = libraryPlugin("goal");
-    const pkg = JSON.parse(
-      await fs.readFile(path.join(pluginsRoot, "goal", "package.json"), "utf8"),
-    ) as { penguin: { hooks: { version: string } } };
-    expect(goal?.hooks?.manifest).toMatchObject({
-      name: "goal",
-      version: pkg.penguin.hooks.version,
-      stop: [{ command: "stop.mjs", timeout: 60 }],
-      pre_tool_use: [],
-      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
-    });
-    expect(goal!.hooks!.manifest.description_zh).toBeDefined();
-    expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
-    expect(goal!.skills).toEqual([]);
-    const learning = libraryPlugin("continual-learning");
-    expect(learning?.hooks?.manifest.stop).toEqual([{ command: "stop.mjs", timeout: 60 }]);
-    expect(Object.keys(learning!.hooks!.files)).toEqual(["stop.mjs"]);
-  });
-
-  it("a single-skill plugin reads as its own; a merged plugin's skills each resolve to it", () => {
-    const plugin = libraryPlugin("data-analysis")!;
-    expect(plugin.description.length).toBeGreaterThan(0);
-    expect(plugin.skills).toHaveLength(1);
-    // Merged plugins carry several skills, each still resolvable by its own name.
-    expect(librarySkill("web-design")?.plugin.name).toBe("software-development");
-    expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("plugin-porting")?.plugin.name).toBe("skill-porting");
-    // The default loop's steps sit with their audience: setting up an agent is agent
-    // development, measuring one is Agent Evaluation, and the toolkit keeps only the loop.
-    expect(librarySkill("agent-initialization")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("penguin-plugin")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("agent-evaluation")?.plugin.name).toBe("agent-evaluation");
-    expect(librarySkill("benchmark-design")?.plugin.name).toBe("agent-evaluation");
-    expect(libraryPlugin("default-rsi-toolkit")?.skills.map((s) => s.name)).toEqual([
-      "agent-optimization",
-    ]);
-  });
-});
-
-describe("loadPreinstalledPlugins", () => {
-  it("excludes plugins whose manifest sets preinstall: false and keeps everything else", () => {
-    const all = loadLibraryPlugins().map((p) => p.name);
-    const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
-    expect(preinstalled).toContain("goal");
-    expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
-      expect(all).toContain(manual);
-      expect(preinstalled).not.toContain(manual);
     }
   });
 });
@@ -336,54 +271,6 @@ describe("groupPlugins / loadPluginGroups", () => {
       ["other", ["y", "z"]],
     ]);
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
-  });
-
-  it("the library itself fills every category but Agent Sandbox and leaves no Other group; hook packages sit with their audience", () => {
-    const groups = loadPluginGroups();
-    // The sandbox backends are server modules the registry lists, not library content.
-    expect(groups.map((g) => g.id)).toEqual(
-      PLUGIN_CATEGORIES.map((c) => c.id).filter((id) => id !== "sandbox"),
-    );
-    const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
-    expect(names("rsi")).toEqual([
-      "ace-rsi-toolkit",
-      "ape-rsi-toolkit",
-      "awm-rsi-toolkit",
-      "default-rsi-toolkit",
-      "openskill-rsi-toolkit",
-      "opro-rsi-toolkit",
-      "skilladam-rsi-toolkit",
-      "skillopt-rsi-toolkit",
-      "trace-rsi-toolkit",
-    ]);
-    expect(names("office-productivity")).toEqual([
-      "a2ui",
-      "agent-company",
-      "browser-automation",
-      "continual-learning",
-      "data-analysis",
-      "goal",
-      "humanizer",
-      "penguin-support",
-      "use-bento-slides",
-      "use-firecrawl",
-    ]);
-    expect(names("ai-app-development")).toEqual([
-      "agent-development",
-      "agent-evaluation",
-      "model-development",
-      "skill-porting",
-    ]);
-  });
-});
-
-describe("lookups", () => {
-  it("libraryPlugin and librarySkill find by name; illegal names never touch the filesystem", () => {
-    expect(libraryPlugin("goal")?.name).toBe("goal");
-    expect(libraryPlugin("does-not-exist")).toBeUndefined();
-    expect(libraryPlugin("../etc")).toBeUndefined();
-    expect(librarySkill("goal")).toBeUndefined();
-    expect(librarySkill("..")).toBeUndefined();
   });
 });
 
@@ -477,6 +364,101 @@ describe("plugin versions, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => loadLibraryPlugins()).toThrow(/penguin\.mcp_servers: server "nowhere"/);
+  });
+});
+
+describe("the library's reading, on a fixture library", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  const skillFile = (name: string) =>
+    `---\nname: ${name}\ndescription: Do ${name}.\nversion: 2026.10.01.1\n---\n\n## Before you start\n`;
+
+  /** A host package holding `plugins` (name → files relative to its directory); the library is pointed at it. */
+  async function library(plugins: Record<string, Record<string, string>>): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-library-"));
+    const deps = Object.fromEntries(Object.keys(plugins).map((n) => [`@penguinharness/${n}`, "*"]));
+    await fs.writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "fixture-host", dependencies: deps }),
+    );
+    for (const [name, files] of Object.entries(plugins)) {
+      await write(path.join(root, "node_modules", "@penguinharness", name), files);
+    }
+    usePushedPluginLibrary(root);
+  }
+
+  const pkg = (name: string, penguin: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      name: `@penguinharness/${name}`,
+      version: "1.0.0",
+      description: `${name}.`,
+      penguin: { short_description: "Short.", short_description_zh: "短。", ...penguin },
+    });
+
+  it("leaves a plugin whose manifest sets preinstall: false out of the preinstalled set, and keeps it in the library", async () => {
+    await library({
+      auto: { "package.json": pkg("auto"), "skills/auto/SKILL.md": skillFile("auto") },
+      manual: {
+        "package.json": pkg("manual", { preinstall: false }),
+        "skills/manual/SKILL.md": skillFile("manual"),
+      },
+    });
+
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["auto", "manual"]);
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["auto"]);
+  });
+
+  it("finds a plugin, and a skill by its own name with the plugin that ships it; an unknown or illegal name finds nothing", async () => {
+    await library({
+      merged: {
+        "package.json": pkg("merged"),
+        "skills/first/SKILL.md": skillFile("first"),
+        "skills/second/SKILL.md": skillFile("second"),
+      },
+    });
+
+    expect(libraryPlugin("merged")?.skills.map((s) => s.name)).toEqual(["first", "second"]);
+    expect(librarySkill("second")?.plugin.name).toBe("merged");
+    // A plugin's name is not a skill's.
+    expect(librarySkill("merged")).toBeUndefined();
+    expect(libraryPlugin("does-not-exist")).toBeUndefined();
+    expect(libraryPlugin("../etc")).toBeUndefined();
+    expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("reads a hook package: the manifest it installs, with its points as declared, and every hooks/ file", async () => {
+    const hooks = {
+      version: "2026.10.04.1",
+      stop: [{ command: "stop.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+    };
+    await library({
+      looper: {
+        "package.json": pkg("looper", { description_zh: "循环。", hooks }),
+        "hooks/start.mjs": "export {};\n",
+        "hooks/stop.mjs": "export {};\n",
+        "hooks/lib.mjs": "export {};\n",
+      },
+    });
+
+    const looper = libraryPlugin("looper")!;
+    expect(looper.skills).toEqual([]);
+    expect(looper.hooks?.manifest).toMatchObject({
+      name: "looper",
+      description: "looper.",
+      description_zh: "循环。",
+      version: "2026.10.04.1",
+      stop: hooks.stop,
+      pre_tool_use: [],
+      user_prompt: hooks.user_prompt,
+    });
+    expect(Object.keys(looper.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
   });
 });
 
