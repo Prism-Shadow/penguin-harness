@@ -210,7 +210,7 @@ export interface WorkbenchUiRuntimeFile {
 export interface WorkbenchVersion {
   /** The folder's revision at that commit (`WorkbenchInfo.revision` when it was loaded). */
   revision: string;
-  /** The commit (12 hex), as `git log` in `agent_state/` shows it. */
+  /** The commit (12 hex) in `<agentDir>/agent_state.git`. */
   commit: string;
   savedAt: string;
 }
@@ -263,9 +263,8 @@ export abstract class Workbenches {
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
   /**
    * Lets go of everything held for one Agent before its folder is deleted or its State is
-   * replaced: the folder watcher, pending reloads, loads in flight, the loaded instances and
-   * the repository handle. A later listing takes them up again, so an Agent whose deletion is
-   * then refused loses nothing.
+   * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A
+   * later listing takes them up again, so an Agent whose deletion is then refused loses nothing.
    */
   abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
 }
