@@ -16,44 +16,15 @@
  * what makes an Agent's own edits to its workbench reversible.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-
-/** A request the workbench's handler receives (the HTTP shape, minus the transport). */
-export interface WorkbenchRequest {
-  method: string;
-  /** Path below the workbench's `api/` mount, always starting with `/`. */
-  path: string;
-  query: Record<string, string>;
-  /** Request headers, names lower-cased. The app's own credentials (`cookie`, `authorization`) are withheld. */
-  headers: Record<string, string>;
-  /** The parsed body of a JSON request; `null` otherwise (GET/HEAD, no body, another content type). */
-  body: unknown;
-  /** The body as sent, when there is one and it is not JSON: a form, an upload, plain text. */
-  bytes?: Uint8Array;
-}
-
-export interface WorkbenchResponse {
-  /** HTTP status; 200 when absent. */
-  status?: number;
-  /**
-   * Response headers. Naming a `content-type` is what makes the response something other than
-   * JSON; `location` with a 3xx status redirects. `set-cookie` is dropped — a workbench does not
-   * write the app's cookies.
-   */
-  headers?: Record<string, string>;
-  /** JSON by default (`null` when absent); with a `content-type` header, a string sent as written. */
-  body?: unknown;
-  /** A binary body (an image, a font, a download); wins over `body`. */
-  bytes?: Uint8Array;
-  /**
-   * A body sent as it is produced — server-sent events, a model's answer token by token, a
-   * large download — each chunk written to the client when the iterator yields it; wins over
-   * `bytes` and `body`. A client that goes away ends the iteration: `return()` is called, so
-   * a `finally` in the generator is where an upstream request is aborted — but a generator
-   * suspended inside an `await` receives it only once that await settles, so a relay whose
-   * upstream can hang should carry its own deadline rather than rely on the disconnect.
-   */
-  stream?: AsyncIterable<Uint8Array | string>;
-}
+import type {
+  WorkbenchInfo,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchTab,
+  WorkbenchTabRenderer,
+  WorkbenchVersion,
+} from "@prismshadow/penguin-server/api";
+export type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchTabRenderer, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 
 /**
  * One item of what `WorkbenchHost.run` sends: the SDK builds these with `userText("…")`, but a
@@ -108,53 +79,6 @@ export abstract class WorkbenchHost {
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
   abstract log(message: string): void;
-}
-
-/** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
-export type WorkbenchTabRenderer = { iframe: { src: string } } | { builtin: string };
-
-/**
- * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a
- * manifest `renderer.iframe.src` is a path inside the workbench folder, under `ui/`; in a
- * `WorkbenchInfo` it is the URL that file is served from.
- */
-export interface WorkbenchTab {
-  id: string;
-  /** Unique within the workbench; the tab's stable name (it appears in the full-page URL). */
-  key: string;
-  title: string;
-  titleZh?: string;
-  renderer: WorkbenchTabRenderer;
-}
-
-export interface WorkbenchInfo {
-  id: string;
-  name: string;
-  version: string | null;
-  /** Content revision of the whole folder (what history records). */
-  revision: string;
-  /** Content revision of `ui/`: the cache key of the workbench's pages. Null when it has no `ui/`. */
-  uiRev: string | null;
-  /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
-  tabs: WorkbenchTab[];
-  loadedAt: string;
-  /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
-  error: string | null;
-  /**
-   * What loaded but is probably not what its author meant, each with the edit that settles it
-   * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
-   */
-  hints: string[];
-}
-
-export interface WorkbenchVersion {
-  revision: string;
-  savedAt: string;
-  name: string;
-  version: string | null;
-  uiRev: string | null;
-  /** The files of that version (relative paths), for display. */
-  files: string[];
 }
 
 @Interface()
