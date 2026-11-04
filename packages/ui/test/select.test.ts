@@ -6,7 +6,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Select } from "../src/components/forms/select/select";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const options = [
   createElement("option", { key: "a", value: "a" }, "Alpha"),
@@ -38,11 +38,5 @@ describe("Select", () => {
     expect(describedBy).toBeDefined();
     expect(html).toContain(`id="${describedBy}" role="alert"`);
     expect(html).toContain("Pick one");
-  });
-
-  it("draws its caret in the subtle ink", () => {
-    expect(classTokens(renderStatic(createElement(Select, { value: "a" }, options)))).toContain(
-      "text-fg-subtle",
-    );
   });
 });

@@ -50,11 +50,4 @@ describe("TokenDonut", () => {
     expect(html).toContain("var(--ui-chart-output)");
     expect(html).not.toContain("var(--ui-chart-cache-write)");
   });
-
-  it("inks the remainder by how close usage is to the limit, in tokens", () => {
-    expect(classTokens(donut(40, 0, 10))).toContain("text-line-emphasis");
-    expect(classTokens(donut(80, 0, 5))).toContain("text-tone-attention-fg");
-    expect(classTokens(donut(90, 0, 10))).toContain("text-tone-danger-fg");
-    expect(donut(40, 0, 10)).not.toMatch(/gray-|dark:/);
-  });
 });

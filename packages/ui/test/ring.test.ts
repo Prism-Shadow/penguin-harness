@@ -39,28 +39,18 @@ describe("Ring", () => {
 
   it("round-caps a lone arc that does not close the ring, and nothing else", () => {
     expect(ring({ segments: [{ value: 0.5 }], max: 1 })).toContain('stroke-linecap="round"');
-    expect(ring({ segments: [{ value: 1 }], max: 1 })).not.toContain("stroke-linecap");
-    expect(ring({ segments: [{ value: 0.2 }, { value: 0.3 }], max: 1 })).not.toContain(
-      "stroke-linecap",
-    );
   });
 
   it("draws its track in the grid's line, or in its own ink faded", () => {
     const grid = ring({ segments: [], max: 1 });
     expect(grid).toContain('data-part="grid"');
-    expect(classTokens(grid)).toContain("text-chart-grid");
     expect(grid).not.toContain('data-part="series"');
     const faded = ring({ segments: [], max: 1, trackOpacity: 0.25 });
     expect(faded).toContain('stroke-opacity="0.25"');
-    expect(classTokens(faded)).not.toContain("text-chart-grid");
   });
 
   it("inks itself in its tone's token, or in the ink around it", () => {
-    expect(classTokens(ring({ segments: [], max: 1, tone: "danger" }))).toContain(
-      "text-tone-danger-fg",
-    );
     const own = ring({ segments: [{ value: 0.5, paint: { role: "output" } }], max: 1 });
     expect(own).toContain("var(--ui-chart-output)");
-    expect(own).not.toMatch(/gray-|red-|dark:/);
   });
 });

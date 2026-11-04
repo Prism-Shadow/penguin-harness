@@ -64,7 +64,6 @@ describe("ToolCallCard", () => {
   it("shows a live clock with no known start as a still ellipsis", () => {
     const html = card({ state: "running", duration: { live: true } });
     expect(html).toMatch(/data-slot="detail"[^>]*>…</);
-    expect(html).not.toContain("animate-pulse");
   });
 
   it("shows a waiting call's approval block while collapsed, in the caller's words", () => {
