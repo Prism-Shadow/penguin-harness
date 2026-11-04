@@ -16,7 +16,6 @@ export * from "./hmr/capabilities.js";
 export * from "./http/errors.js";
 export * from "./http/routes/events.js";
 export * from "./http/validate.js";
-export * from "./mechanisms/organization.js";
 export type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 export type { WorkbenchRequest, WorkbenchResponse, WorkbenchInput, WorkbenchResult, WorkbenchMain, WorkbenchHost, WorkbenchTabRenderer, WorkbenchTab, WorkbenchInfo, WorkbenchVersion } from "@penguinharness/plugin-workbenches/server";
 export * from "./runtime/channel.js";

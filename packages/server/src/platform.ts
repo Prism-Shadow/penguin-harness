@@ -196,7 +196,7 @@ import {
   UsageStore,
 } from "@penguinharness/plugin-usage/server";
 import { FileReveal, WorkspaceFiles } from "@penguinharness/plugin-projects/server";
-import { OrgCache } from "./mechanisms/organization.js";
+import { OrgCache } from "@penguinharness/plugin-company/server";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
