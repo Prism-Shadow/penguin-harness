@@ -1,11 +1,13 @@
 /**
- * Interactive kinetic diagram for Section 4 of the GDPEVO blog post:
- * visualizes how the PenguinHarness Controller orchestrates the end-to-end experiment across
- * Harbor Docker containers — contrasting the 1 Shared Container in the Training Phase (with the
- * 3+2 training task pool) against the 1-to-5 fork into 5 vertically stacked Isolated Containers
- * (x3 runs = 15 fresh containers) and 5-to-1 join into the Offline Verifier in the Testing Phase.
+ * Progressive, open-canvas orchestration diagram for Section 4 of the GDPEVO blog post.
  *
- * Self-contained under `src/blog-widgets/` so blog-specific interactive visuals stay modular.
+ * Starts with the top-level General Agent on a clean canvas and progressively builds the
+ * experiment topology step by step:
+ *   Stage 1: General Agent spawns the 1 Shared Container for continuous training (3+2 Train pool)
+ *   Stage 2: Training finishes and exports the frozen Evolved Agent (+ SKILL.md)
+ *   Stage 3: 1-to-5 fan-out spawns 5 isolated test containers (x3 runs = 15 fresh containers)
+ *   Stage 4: 5-to-1 convergence into Offline Verifier, reporting scores back to General Agent
+ *   Stage 5: General Agent aggregates all runs and generates the Final Result report
  */
 import { useEffect, useState } from "react";
 import { SitePlaybackButton } from "@prismshadow/penguin-ui/site";
@@ -13,764 +15,701 @@ import { S, zh } from "../lib/strings";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useVisibleActivity } from "../lib/visible-activity";
 
-interface OrchestrationPhase {
+interface BuildStage {
   readonly id: string;
-  readonly tagZh: string;
-  readonly tagEn: string;
-  readonly titleZh: string;
-  readonly titleEn: string;
-  readonly detailZh: string;
-  readonly detailEn: string;
-  readonly activeTrainTasks: number;
-  readonly skillState: "evolving" | "frozen";
-  readonly completedRuns: 0 | 1 | 3;
-  readonly activeRun: 0 | 1 | 2 | 3;
-  readonly verified: boolean;
+  readonly stepZh: string;
+  readonly stepEn: string;
+  readonly captionZh: string;
+  readonly captionEn: string;
 }
 
-const PHASES: readonly OrchestrationPhase[] = [
+const STAGES: readonly BuildStage[] = [
   {
-    id: "p1",
-    tagZh: "1. 单容器训练",
-    tagEn: "1. Shared Train",
-    titleZh: "单容器连续试错与技能演进（1 Shared Container）",
-    titleEn: "Continuous rollout & skill evolution inside 1 Shared Container",
-    detailZh: "Base Agent 在同一个持久化容器内依次完成 Train 1–5（3+2 题池），多轮迭代改写 SKILL.md。",
-    detailEn: "Base Agent runs Train 1-5 (3+2 pool) inside one persistent container, iteratively refining SKILL.md.",
-    activeTrainTasks: 5,
-    skillState: "evolving",
-    completedRuns: 0,
-    activeRun: 0,
-    verified: false,
+    id: "s1",
+    stepZh: "1. 构建训练",
+    stepEn: "1. Train",
+    captionZh: "General Agent 拉起单个共享训练容器，Target Agent 在 5 道训练题（3+2）上连续演进 SKILL.md",
+    captionEn: "General Agent spawns 1 shared container; Target Agent evolves SKILL.md across Train 1-5 (3+2)",
   },
   {
-    id: "p2",
-    tagZh: "2. 冻结导出",
-    tagEn: "2. Freeze Skill",
-    titleZh: "导出并冻结演化技能（Evolved Agent + SKILL.md）",
-    titleEn: "Export and freeze evolved SKILL.md artifact",
-    detailZh: "训练结束后关闭写入权限，将最终版 SKILL.md 从共享训练容器导出，作为测试阶段的只读输入。",
-    detailEn: "Locks write permissions after training and exports the final SKILL.md as a read-only artifact.",
-    activeTrainTasks: 5,
-    skillState: "frozen",
-    completedRuns: 0,
-    activeRun: 0,
-    verified: false,
+    id: "s2",
+    stepZh: "2. 冻结技能",
+    stepEn: "2. Freeze",
+    captionZh: "训练完成并锁定 SKILL.md 写入权限，导出挂载只读技能的 Evolved Agent",
+    captionEn: "Training completes; SKILL.md is locked read-only to form the frozen Evolved Agent",
   },
   {
-    id: "p3",
-    tagZh: "3. 隔离盲测 R1",
-    tagEn: "3. Eval Run 1",
-    titleZh: "一分五并发注入独立测试容器（Run 1 / 3）",
-    titleEn: "1-to-5 fan-out into isolated test containers (Run 1 / 3)",
-    detailZh: "针对 Test 1–5 分别拉起全新的 Harbor Docker 容器，挂载只读 SKILL.md 独立作答。",
-    detailEn: "Spawns 5 fresh Harbor Docker containers for Test 1-5 with the frozen SKILL.md mounted read-only.",
-    activeTrainTasks: 5,
-    skillState: "frozen",
-    completedRuns: 1,
-    activeRun: 1,
-    verified: false,
+    id: "s3",
+    stepZh: "3. 隔离测试",
+    stepEn: "3. Test (×3)",
+    captionZh: "General Agent 调度一分五并发盲测，为 Test 1–5 各自独立拉起 3 轮全新容器（共 15 个容器）",
+    captionEn: "General Agent dispatches 1-to-5 isolated evaluation across Test 1-5 (3 runs each = 15 containers)",
   },
   {
-    id: "p4",
-    tagZh: "4. 容器重置 R2–R3",
-    tagEn: "4. Runs 2-3",
-    titleZh: "销毁重建完成 3 轮独立重复盲测（5 × 3 = 15 容器）",
-    titleEn: "Container teardown & fresh spawn across Runs 2-3 (15 containers)",
-    detailZh: "每道题的每一轮均在全新容器内从零执行，彻底阻断跨题与跨轮状态残留。",
-    detailEn: "Every task-run pair executes in a fresh container from scratch, preventing cross-run memory leakage.",
-    activeTrainTasks: 5,
-    skillState: "frozen",
-    completedRuns: 3,
-    activeRun: 3,
-    verified: false,
+    id: "s4",
+    stepZh: "4. 判分汇总",
+    stepEn: "4. Verify",
+    captionZh: "五合一汇入 Offline Verifier 完成离线判分，并将全部测试得分回传给顶层 General Agent",
+    captionEn: "5-to-1 convergence into Offline Verifier, reporting all test scores back to General Agent",
   },
   {
-    id: "p5",
-    tagZh: "5. 五合一判分",
-    tagEn: "5. Verifier",
-    titleZh: "五合一汇入 Offline Verifier 离线判分汇总",
-    titleEn: "5-to-1 convergence into Offline Verifier",
-    detailZh: "容器内零评分反馈泄漏；测试产物统一由外部 Offline Verifier 校验，汇总 3 轮均值与标准差。",
-    detailEn: "Zero in-container score leakage; outputs converge into the external Offline Verifier for μ ± s scoring.",
-    activeTrainTasks: 5,
-    skillState: "frozen",
-    completedRuns: 3,
-    activeRun: 3,
-    verified: true,
+    id: "s5",
+    stepZh: "5. 生成结果",
+    stepEn: "5. Result",
+    captionZh: "General Agent 汇总跨轮次均值与标准差，产出最终实验报告（68.95 ± 0.74）",
+    captionEn: "General Agent aggregates multi-run mean and standard deviation into the Final Result (68.95 ± 0.74)",
   },
 ];
 
-const PHASE_MS = 3600;
-
-/** 3+2 coordinates for the 5 training task cards inside `1 Shared Container`. */
-const TRAIN_CARDS = [
-  { label: "Train 1", x: 124, y: 88, w: 28, h: 32 },
-  { label: "Train 2", x: 155, y: 88, w: 28, h: 32 },
-  { label: "Train 3", x: 186, y: 88, w: 28, h: 32 },
-  { label: "Train 4", x: 139, y: 128, w: 28, h: 32 },
-  { label: "Train 5", x: 171, y: 128, w: 28, h: 32 },
+/** 3+2 coordinates for the 5 training task pills inside `1 Shared Container` (x=12..240, y=104..294). */
+const TRAIN_PILLS = [
+  { label: "Train 1", x: 30, y: 208, w: 58, h: 28 },
+  { label: "Train 2", x: 97, y: 208, w: 58, h: 28 },
+  { label: "Train 3", x: 164, y: 208, w: 58, h: 28 },
+  { label: "Train 4", x: 63, y: 246, w: 58, h: 28 },
+  { label: "Train 5", x: 131, y: 246, w: 58, h: 28 },
 ] as const;
 
 /** Vertical center Y coordinates for the 5 stacked horizontal Isolated Containers. */
-const TEST_LANES_Y = [62, 102, 142, 182, 222] as const;
+const TEST_ROWS_Y = [120, 160, 200, 240, 280] as const;
 
 export function GdpevoOrchestrationWidget() {
   const isZh = S === zh;
   const reduced = usePrefersReducedMotion();
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
 
-  const [phaseIdx, setPhaseIdx] = useState<number>(2);
+  // SSR / reduced-motion starts at the completed Stage 5 view; live view starts growing from Stage 1.
+  const [stageIdx, setStageIdx] = useState<number>(4);
   const [paused, setPaused] = useState<boolean>(false);
+  const [hasStarted, setHasStarted] = useState<boolean>(false);
 
-  const phase = PHASES[phaseIdx] ?? PHASES[0]!;
   const running = active && !reduced && !paused;
 
   useEffect(() => {
-    if (!running) return;
-    const timer = window.setTimeout(() => {
-      setPhaseIdx((prev) => (prev + 1) % PHASES.length);
-    }, PHASE_MS);
-    return () => window.clearTimeout(timer);
-  }, [running, phaseIdx]);
+    if (active && !reduced && !hasStarted) {
+      setHasStarted(true);
+      setStageIdx(0);
+    }
+  }, [active, reduced, hasStarted]);
 
-  const selectPhase = (next: number) => {
-    setPhaseIdx(next);
+  useEffect(() => {
+    if (!running) return;
+    const delay = stageIdx === 4 ? 4000 : 2200;
+    const timer = window.setTimeout(() => {
+      setStageIdx((prev) => (prev + 1) % STAGES.length);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [running, stageIdx]);
+
+  const selectStage = (idx: number) => {
+    setStageIdx(idx);
     setPaused(true);
   };
 
-  const inTrain = phaseIdx === 0;
-  const inFreeze = phaseIdx === 1;
-  const inEval = phaseIdx >= 2;
-  const inVerify = phaseIdx === 4;
+  const stage = STAGES[stageIdx] ?? STAGES[4]!;
+  const showStage2 = stageIdx >= 1;
+  const showStage3 = stageIdx >= 2;
+  const showStage4 = stageIdx >= 3;
+  const showStage5 = stageIdx >= 4;
 
-  const text = isZh
+  const copy = isZh
     ? {
-        play: "播放实验编排动画",
-        pause: "暂停实验编排动画",
-        controllerBadge: "PenguinHarness Controller 自动编排",
-        trainHeader: "Training Phase",
-        trainSub: "1 Shared Container",
-        testHeader: "Testing Phase",
-        testSub: "Isolated Containers",
-        baseAgent: "Base Agent",
-        noSkill: "(No Skill)",
+        play: "播放动态构建过程",
+        pause: "暂停动态构建过程",
+        mainAgent: "General Agent",
+        mainSub: "主控编排 Agent",
+        sharedContainer: "1 Shared Container",
+        targetAgent: "Target Agent",
+        skillDoc: "SKILL.md",
         evolvedAgent: "Evolved Agent",
-        plusSkill: "(+ SKILL.md)",
+        frozenBadge: "+ SKILL.md",
+        isolatedLabel: "Isolated Containers",
         verifier: "Offline",
         verifierSub: "Verifier",
-        card1Title: "训练阶段容器拓扑",
-        card1Val: "1 个共享容器",
-        card1Note: "Train 1–5 顺序执行，状态与 SKILL.md 在同容器内连续累积",
-        card2Title: "技能冻结交接",
-        card2Val: "只读 SKILL.md",
-        card2Note: "训练结束即锁定写入权限，杜绝测试期隐式自改",
-        card3Title: "测试阶段容器拓扑",
-        card3Val: "5 题 × 3 轮 = 15 容器",
-        card3Note: "每题每轮拉起全新独立容器，零评分泄漏",
+        resultTitle: "Final Result",
+        resultSub: "68.95 ± 0.74 (+12.63)",
       }
     : {
-        play: "Play orchestration flow",
-        pause: "Pause orchestration flow",
-        controllerBadge: "PenguinHarness Controller Orchestration",
-        trainHeader: "Training Phase",
-        trainSub: "1 Shared Container",
-        testHeader: "Testing Phase",
-        testSub: "Isolated Containers",
-        baseAgent: "Base Agent",
-        noSkill: "(No Skill)",
+        play: "Play progressive build",
+        pause: "Pause progressive build",
+        mainAgent: "General Agent",
+        mainSub: "Experiment Controller",
+        sharedContainer: "1 Shared Container",
+        targetAgent: "Target Agent",
+        skillDoc: "SKILL.md",
         evolvedAgent: "Evolved Agent",
-        plusSkill: "(+ SKILL.md)",
+        frozenBadge: "+ SKILL.md",
+        isolatedLabel: "Isolated Containers",
         verifier: "Offline",
         verifierSub: "Verifier",
-        card1Title: "Training Topology",
-        card1Val: "1 Shared Container",
-        card1Note: "Train 1-5 run sequentially; state and SKILL.md accumulate in-place",
-        card2Title: "Artifact Handoff",
-        card2Val: "Frozen SKILL.md",
-        card2Note: "Locked read-only after training; zero test-time self-modification",
-        card3Title: "Testing Topology",
-        card3Val: "5 Tasks × 3 Runs = 15 Fresh",
-        card3Note: "Fresh isolated container per task-run pair; zero score leakage",
+        resultTitle: "Final Result",
+        resultSub: "68.95 ± 0.74 (+12.63)",
       };
 
   return (
-    <div
-      ref={ref}
-      className="my-2 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
-    >
-      {/* Top Bar: Controller Status + 5 Phase Stepper Pills + Playback Button */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-3.5 py-2.5 dark:border-gray-800 dark:bg-gray-950">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-brand-50 px-2.5 py-1 font-mono text-xs font-medium text-brand-700 ring-1 ring-brand-200 ring-inset dark:bg-brand-950 dark:text-brand-300 dark:ring-brand-800">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-            {text.controllerBadge}
-          </span>
+    <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
+      {/* Minimal Frameless Control Strip */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Progressive stages">
+          {STAGES.map((s, idx) => {
+            const isCurrent = idx === stageIdx;
+            const isBuilt = idx <= stageIdx;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={isCurrent}
+                onClick={() => selectStage(idx)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors ${
+                  isCurrent
+                    ? "bg-brand-600 text-white dark:bg-brand-500 dark:text-gray-950"
+                    : isBuilt
+                      ? "bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/70 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                      : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                }`}
+              >
+                {isZh ? s.stepZh : s.stepEn}
+              </button>
+            );
+          })}
         </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Experiment phases">
-            {PHASES.map((p, idx) => {
-              const selected = idx === phaseIdx;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  onClick={() => selectPhase(idx)}
-                  className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                    selected
-                      ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
-                      : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  }`}
-                >
-                  {isZh ? p.tagZh : p.tagEn}
-                </button>
-              );
-            })}
-          </div>
-          <SitePlaybackButton
-            paused={paused}
-            onPausedChange={setPaused}
-            labels={{ play: text.play, pause: text.pause }}
-          />
-        </div>
+        <SitePlaybackButton
+          paused={paused}
+          onPausedChange={setPaused}
+          labels={{ play: copy.play, pause: copy.pause }}
+        />
       </div>
 
-      {/* Phase Headline Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 px-4 py-2 text-xs dark:border-gray-800/80">
-        <span className="font-semibold text-gray-900 dark:text-gray-100">
-          {isZh ? phase.titleZh : phase.titleEn}
-        </span>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
-          {isZh ? phase.detailZh : phase.detailEn}
-        </span>
-      </div>
+      {/* Live Stage Caption */}
+      <p className="mb-3 text-xs text-gray-600 dark:text-gray-400">
+        {isZh ? stage.captionZh : stage.captionEn}
+      </p>
 
-      {/* Main Two-Stage Kinetic Topology SVG */}
-      <div className="px-2.5 pt-3 pb-1.5 sm:px-4">
-        <svg
-          viewBox="0 0 680 256"
-          className="block w-full select-none"
-          role="img"
-          aria-label={isZh ? phase.titleZh : phase.titleEn}
-        >
-          <defs>
-            <marker
-              id="orch-arrow-gray"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,1 L9,5 L0,9 Z" className="fill-gray-400 dark:fill-gray-500" />
-            </marker>
-            <marker
-              id="orch-arrow-brand"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,1 L9,5 L0,9 Z" className="fill-brand-600 dark:fill-brand-400" />
-            </marker>
-            <marker
-              id="orch-arrow-emerald"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,1 L9,5 L0,9 Z" className="fill-emerald-600 dark:fill-emerald-400" />
-            </marker>
-          </defs>
-
-          {/* ==================== LEFT PANEL: TRAINING PHASE ==================== */}
-          <rect
-            x="6"
-            y="8"
-            width="314"
-            height="240"
-            rx="12"
-            strokeWidth="1.25"
-            className={
-              inTrain || inFreeze
-                ? "fill-brand-50/40 stroke-brand-300 dark:fill-brand-950/20 dark:stroke-brand-800"
-                : "fill-white/60 stroke-gray-200 dark:fill-gray-950/40 dark:stroke-gray-800"
-            }
-          />
-          <text
-            x="163"
-            y="27"
-            textAnchor="middle"
-            className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
+      {/* Open-Canvas Progressive SVG (No Outer Box, No Nested Wrapper Frames) */}
+      <svg
+        viewBox="0 0 720 312"
+        className="block w-full select-none overflow-visible"
+        role="img"
+        aria-label={isZh ? stage.captionZh : stage.captionEn}
+      >
+        <defs>
+          <marker
+            id="pg-arrow-brand"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
           >
-            {text.trainHeader}
-          </text>
+            <path d="M0,1 L9,5 L0,9 Z" className="fill-brand-500 dark:fill-brand-400" />
+          </marker>
+          <marker
+            id="pg-arrow-gray"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0,1 L9,5 L0,9 Z" className="fill-gray-400 dark:fill-gray-500" />
+          </marker>
+          <marker
+            id="pg-arrow-emerald"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0,1 L9,5 L0,9 Z" className="fill-emerald-600 dark:fill-emerald-400" />
+          </marker>
+        </defs>
 
-          {/* 1 Shared Container Box (x=14..226, y=38..236) with clear inner padding */}
+        {/* ==================== TOP ORCHESTRATOR: GENERAL AGENT ==================== */}
+        <g>
           <rect
-            x="14"
-            y="38"
-            width="212"
-            height="198"
+            x="264"
+            y="8"
+            width="172"
+            height="48"
             rx="10"
             strokeWidth="1.5"
-            strokeDasharray="5 3"
-            className={
-              inTrain
-                ? "fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
-                : "fill-white/90 stroke-gray-300 dark:fill-gray-900/80 dark:stroke-gray-700"
-            }
+            className="fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
           />
           <text
-            x="120"
-            y="55"
-            textAnchor="middle"
-            className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-          >
-            {text.trainSub}
-          </text>
-
-          {/* Base Agent (No Skill) inside Shared Container (x=22..98, y=94..156) */}
-          <rect
-            x="22"
-            y="94"
-            width="76"
-            height="62"
-            rx="7"
-            strokeWidth="1.25"
-            className="fill-gray-50 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-600"
-          />
-          <text
-            x="60"
-            y="120"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            {text.baseAgent}
-          </text>
-          <text
-            x="60"
-            y="138"
-            textAnchor="middle"
-            className="fill-gray-500 font-mono text-xs dark:fill-gray-400"
-          >
-            {text.noSkill}
-          </text>
-
-          {/* Loop Ring between Base Agent and 3+2 Train Pool */}
-          <path
-            d="M98,116 C108,108 108,108 118,114"
-            fill="none"
-            strokeWidth="1.25"
-            className="stroke-brand-500 dark:stroke-brand-400"
-          />
-          <path
-            d="M118,136 C108,142 108,142 98,134"
-            fill="none"
-            strokeWidth="1.25"
-            className="stroke-brand-500 dark:stroke-brand-400"
-          />
-          <circle
-            cx="108"
-            cy="125"
-            r="6.5"
-            strokeWidth="1.25"
-            className={
-              inTrain
-                ? "fill-brand-50 stroke-brand-600 dark:fill-brand-950 dark:stroke-brand-400"
-                : "fill-gray-50 stroke-gray-400 dark:fill-gray-800 dark:stroke-gray-500"
-            }
-          />
-          <path
-            d="M105,125 A3,3 0 1,1 111,125"
-            fill="none"
-            strokeWidth="1.25"
-            className="stroke-brand-600 dark:stroke-brand-300"
-          />
-
-          {/* 3+2 Train Task Pool Inner Frame (x=118..219, y=72..176) — well inside x=226 container edge */}
-          <rect
-            x="118"
-            y="72"
-            width="101"
-            height="104"
-            rx="7"
-            strokeWidth="1"
-            className="fill-gray-50/90 stroke-gray-200 dark:fill-gray-800/50 dark:stroke-gray-700"
-          />
-          {TRAIN_CARDS.map((card, i) => {
-            const lit = i < phase.activeTrainTasks;
-            return (
-              <g key={card.label}>
-                <rect
-                  x={card.x}
-                  y={card.y}
-                  width={card.w}
-                  height={card.h}
-                  rx="4"
-                  strokeWidth="1.2"
-                  className={
-                    lit && inTrain
-                      ? "fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
-                      : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-600"
-                  }
-                />
-                <text
-                  x={card.x + card.w / 2}
-                  y={card.y + 19}
-                  textAnchor="middle"
-                  className="fill-gray-800 font-mono text-xs font-semibold tabular-nums dark:fill-gray-200"
-                >
-                  {`T${i + 1}`}
-                </text>
-              </g>
-            );
-          })}
-          <text
-            x="168"
-            y="196"
-            textAnchor="middle"
-            className="fill-gray-500 font-mono text-xs dark:fill-gray-400"
-          >
-            Train 1-5 (3+2)
-          </text>
-
-          {/* Arrow from 1 Shared Container (x=226) -> Evolved Agent (x=236) */}
-          <path
-            d="M226,142 L236,142"
-            fill="none"
-            strokeWidth="1.75"
-            className="stroke-brand-600 dark:stroke-brand-400"
-          />
-
-          {/* Evolved Agent (+ SKILL.md) Card outside Shared Container (x=236..312, y=94..190) */}
-          <rect
-            x="236"
-            y="94"
-            width="76"
-            height="96"
-            rx="8"
-            strokeWidth="1.5"
-            className={
-              phase.skillState === "frozen"
-                ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
-                : "fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
-            }
-          />
-          <text
-            x="274"
-            y="120"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            Evolved
-          </text>
-          <text
-            x="274"
-            y="136"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            Agent
-          </text>
-          <text
-            x="274"
-            y="154"
-            textAnchor="middle"
-            className="fill-emerald-700 font-mono text-xs font-medium dark:fill-emerald-300"
-          >
-            SKILL.md
-          </text>
-          <rect
-            x="248"
-            y="164"
-            width="52"
-            height="16"
-            rx="3"
-            className={
-              phase.skillState === "frozen"
-                ? "fill-emerald-600 dark:fill-emerald-500"
-                : "fill-brand-600 dark:fill-brand-500"
-            }
-          />
-          <text
-            x="274"
-            y="175"
-            textAnchor="middle"
-            className="fill-white font-mono text-xs font-semibold"
-          >
-            {phase.skillState === "frozen" ? "FROZEN" : "ACTIVE"}
-          </text>
-
-          {/* ==================== RIGHT PANEL: TESTING PHASE ==================== */}
-          <rect
-            x="328"
-            y="8"
-            width="346"
-            height="240"
-            rx="12"
-            strokeWidth="1.25"
-            className={
-              inEval
-                ? "fill-brand-50/30 stroke-brand-300 dark:fill-brand-950/20 dark:stroke-brand-800"
-                : "fill-white/60 stroke-gray-200 dark:fill-gray-950/40 dark:stroke-gray-800"
-            }
-          />
-          <text
-            x="501"
-            y="27"
+            x="350"
+            y="29"
             textAnchor="middle"
             className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
           >
-            {text.testHeader}
+            {copy.mainAgent}
           </text>
           <text
-            x="456"
-            y="42"
+            x="350"
+            y="45"
             textAnchor="middle"
-            className="fill-gray-500 font-mono text-xs dark:fill-gray-400"
+            className="fill-brand-700 font-mono text-xs dark:fill-brand-300"
           >
-            {text.testSub}
+            {copy.mainSub}
           </text>
+        </g>
 
-          {/* 1-to-5 Clean Orthogonal Fork Tree (from x=312, y=142 to x=358, y=62..222) */}
+        {/* ==================== STAGE 1: SHARED TRAINING CONTAINER ==================== */}
+        <g>
+          {/* Dispatch line from General Agent (x=296, y=56) -> 1 Shared Container (x=126, y=98) */}
           <path
-            d="M312,142 L338,142 M338,62 L338,222"
+            d="M296,56 L296,76 L126,76 L126,98"
             fill="none"
             strokeWidth="1.5"
-            className={
-              inEval
-                ? "stroke-brand-500 dark:stroke-brand-400"
-                : "stroke-gray-400 dark:stroke-gray-600"
-            }
+            className="stroke-brand-500 dark:stroke-brand-400"
+            markerEnd="url(#pg-arrow-brand)"
           />
-          {TEST_LANES_Y.map((ly, idx) => (
-            <path
-              key={`fork-${idx}`}
-              d={`M338,${ly} L356,${ly}`}
-              fill="none"
-              strokeWidth="1.5"
-              className={
-                inEval
-                  ? "stroke-brand-500 dark:stroke-brand-400"
-                  : "stroke-gray-400 dark:stroke-gray-600"
-              }
-              markerEnd={inEval ? "url(#orch-arrow-brand)" : "url(#orch-arrow-gray)"}
-            />
-          ))}
-
-          {/* 5 Vertically Stacked Horizontal Isolated Containers (x=358..556, height=28) */}
-          {TEST_LANES_Y.map((ly, idx) => {
-            const boxY = ly - 14;
-            return (
-              <g key={`container-${idx}`}>
-                <rect
-                  x="358"
-                  y={boxY}
-                  width="198"
-                  height="28"
-                  rx="6"
-                  strokeWidth="1.25"
-                  className={
-                    inEval
-                      ? "fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-600"
-                      : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-                  }
-                />
-                {/* Container Agent Label */}
-                <text
-                  x="368"
-                  y={ly + 4}
-                  className="fill-gray-800 text-xs font-medium dark:fill-gray-200"
-                >
-                  Evolved Agent
-                </text>
-                {/* Divider */}
-                <line
-                  x1="452"
-                  y1={boxY + 5}
-                  x2="452"
-                  y2={boxY + 23}
-                  strokeWidth="1"
-                  className="stroke-gray-200 dark:stroke-gray-700"
-                />
-                {/* Test Task ID */}
-                <text
-                  x="478"
-                  y={ly + 4}
-                  textAnchor="middle"
-                  className="fill-brand-700 font-mono text-xs font-semibold tabular-nums dark:fill-brand-300"
-                >
-                  {`Test ${idx + 1}`}
-                </text>
-                {/* 3 Run Indicator Cells (R1, R2, R3) inside the right end of each row */}
-                {[1, 2, 3].map((rNum) => {
-                  const done = phase.completedRuns >= rNum;
-                  const rx = 506 + (rNum - 1) * 15;
-                  return (
-                    <rect
-                      key={rNum}
-                      x={rx}
-                      y={ly - 7}
-                      width="12"
-                      height="14"
-                      rx="2.5"
-                      className={
-                        done
-                          ? "fill-emerald-500 dark:fill-emerald-400"
-                          : "fill-gray-100 dark:fill-gray-800"
-                      }
-                    />
-                  );
-                })}
-              </g>
-            );
-          })}
-
-          {/* 5-to-1 Clean Orthogonal Join Tree (from x=556, y=62..222 to x=590, y=142) */}
-          {TEST_LANES_Y.map((ly, idx) => (
-            <path
-              key={`join-${idx}`}
-              d={`M556,${ly} L572,${ly}`}
-              fill="none"
-              strokeWidth="1.5"
-              className={
-                inVerify
-                  ? "stroke-emerald-600 dark:stroke-emerald-400"
-                  : "stroke-gray-400 dark:stroke-gray-600"
-              }
-            />
-          ))}
-          <path
-            d="M572,62 L572,222 M572,142 L588,142"
-            fill="none"
-            strokeWidth="1.5"
-            className={
-              inVerify
-                ? "stroke-emerald-600 dark:stroke-emerald-400"
-                : "stroke-gray-400 dark:stroke-gray-600"
-            }
-            markerEnd={inVerify ? "url(#orch-arrow-emerald)" : "url(#orch-arrow-gray)"}
-          />
-
-          {/* Offline Verifier Node (x=590..666, y=98..186) */}
-          <rect
-            x="590"
-            y="98"
-            width="76"
-            height="88"
-            rx="8"
-            strokeWidth="1.5"
-            className={
-              inVerify
-                ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-            }
-          />
-          <text
-            x="628"
-            y="124"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            {text.verifier}
-          </text>
-          <text
-            x="628"
-            y="140"
-            textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-          >
-            {text.verifierSub}
-          </text>
-          <text
-            x="628"
-            y="164"
-            textAnchor="middle"
-            className={
-              inVerify
-                ? "fill-emerald-700 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-300"
-                : "fill-gray-400 font-mono text-xs tabular-nums dark:fill-gray-500"
-            }
-          >
-            {inVerify ? "68.95±0.74" : "μ ± s"}
-          </text>
-
-          {/* Animated Pulses */}
-          {running && inTrain && (
+          {running && stageIdx === 0 && (
             <circle r="3" className="fill-brand-500 dark:fill-brand-400">
               <animateMotion
-                dur="1.8s"
+                dur="1.4s"
                 repeatCount="indefinite"
-                path="M98,116 L118,114 L118,136 L98,134 Z"
+                path="M296,56 L296,76 L126,76 L126,98"
               />
             </circle>
           )}
-          {running && inFreeze && (
-            <circle r="3.2" className="fill-emerald-500 dark:fill-emerald-400">
-              <animateMotion dur="1.2s" repeatCount="indefinite" path="M218,142 L236,142" />
+
+          {/* 1 Shared Container Boundary (x=12..240, y=104..294) */}
+          <rect
+            x="12"
+            y="104"
+            width="228"
+            height="190"
+            rx="12"
+            strokeWidth="1.5"
+            strokeDasharray="6 4"
+            className={
+              stageIdx === 0
+                ? "fill-brand-50/30 stroke-brand-500 dark:fill-brand-950/20 dark:stroke-brand-400"
+                : "fill-gray-50/60 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
+            }
+          />
+          <text
+            x="126"
+            y="124"
+            textAnchor="middle"
+            className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+          >
+            {copy.sharedContainer}
+          </text>
+
+          {/* Target Agent Node inside Shared Container (x=26..114, y=138..184) */}
+          <rect
+            x="26"
+            y="138"
+            width="88"
+            height="46"
+            rx="8"
+            strokeWidth="1.25"
+            className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+          />
+          <text
+            x="70"
+            y="159"
+            textAnchor="middle"
+            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+          >
+            {copy.targetAgent}
+          </text>
+          <text
+            x="70"
+            y="175"
+            textAnchor="middle"
+            className="fill-gray-500 font-mono text-xs dark:fill-gray-400"
+          >
+            Learner
+          </text>
+
+          {/* Clean Bidirectional Evolution Link (x=116..148) — 36px gap, zero overlap */}
+          <path
+            d="M116,155 L148,155"
+            fill="none"
+            strokeWidth="1.5"
+            className="stroke-brand-500 dark:stroke-brand-400"
+            markerEnd="url(#pg-arrow-brand)"
+          />
+          <path
+            d="M148,168 L116,168"
+            fill="none"
+            strokeWidth="1.5"
+            className="stroke-gray-400 dark:stroke-gray-500"
+            markerEnd="url(#pg-arrow-gray)"
+          />
+          {running && stageIdx === 0 && (
+            <circle r="2.5" className="fill-brand-500 dark:fill-brand-400">
+              <animateMotion dur="1.1s" repeatCount="indefinite" path="M116,155 L148,155" />
             </circle>
           )}
-          {running && inEval && !inVerify && (
-            <>
-              {TEST_LANES_Y.map((ly, idx) => (
-                <circle
-                  key={`pulse-fork-${idx}`}
-                  r="2.75"
-                  className="fill-brand-500 dark:fill-brand-400"
-                >
+
+          {/* Evolving SKILL.md Node inside Shared Container (x=150..226, y=138..184) */}
+          <rect
+            x="150"
+            y="138"
+            width="76"
+            height="46"
+            rx="8"
+            strokeWidth="1.25"
+            className="fill-brand-50 stroke-brand-400 dark:fill-brand-950 dark:stroke-brand-500"
+          />
+          <text
+            x="188"
+            y="159"
+            textAnchor="middle"
+            className="fill-brand-800 font-mono text-xs font-semibold dark:fill-brand-200"
+          >
+            {copy.skillDoc}
+          </text>
+          <text
+            x="188"
+            y="175"
+            textAnchor="middle"
+            className="fill-brand-700 font-mono text-xs tabular-nums dark:fill-brand-300"
+          >
+            v0 → v2
+          </text>
+
+          {/* 3+2 Training Task Pills directly on container floor (no extra wrapper box) */}
+          {TRAIN_PILLS.map((pill, i) => (
+            <g key={pill.label}>
+              <rect
+                x={pill.x}
+                y={pill.y}
+                width={pill.w}
+                height={pill.h}
+                rx="6"
+                strokeWidth="1.25"
+                className={
+                  stageIdx === 0
+                    ? "fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-500"
+                    : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+                }
+              />
+              <text
+                x={pill.x + pill.w / 2}
+                y={pill.y + 18}
+                textAnchor="middle"
+                className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
+              >
+                {`Train ${i + 1}`}
+              </text>
+            </g>
+          ))}
+        </g>
+
+        {/* ==================== STAGE 2: FROZEN EVOLVED AGENT ==================== */}
+        {showStage2 && (
+          <g className="anim-block">
+            {/* Export arrow from 1 Shared Container (x=240, y=200) -> Evolved Agent (x=268, y=200) */}
+            <path
+              d="M240,200 L266,200"
+              fill="none"
+              strokeWidth="1.75"
+              className="stroke-brand-500 dark:stroke-brand-400"
+              markerEnd="url(#pg-arrow-brand)"
+            />
+            {running && stageIdx === 1 && (
+              <circle r="3" className="fill-brand-500 dark:fill-brand-400">
+                <animateMotion dur="1s" repeatCount="indefinite" path="M240,200 L266,200" />
+              </circle>
+            )}
+
+            {/* Evolved Agent (+ Frozen SKILL.md) Node (x=268..384, y=160..240) */}
+            <rect
+              x="268"
+              y="160"
+              width="116"
+              height="80"
+              rx="10"
+              strokeWidth="1.5"
+              className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
+            />
+            <text
+              x="326"
+              y="188"
+              textAnchor="middle"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+            >
+              {copy.evolvedAgent}
+            </text>
+            <text
+              x="326"
+              y="207"
+              textAnchor="middle"
+              className="fill-brand-700 font-mono text-xs font-medium dark:fill-brand-300"
+            >
+              {copy.frozenBadge}
+            </text>
+            <rect
+              x="294"
+              y="216"
+              width="64"
+              height="16"
+              rx="4"
+              className="fill-brand-600 dark:fill-brand-500"
+            />
+            <text
+              x="326"
+              y="227"
+              textAnchor="middle"
+              className="fill-white font-mono text-xs font-semibold"
+            >
+              FROZEN
+            </text>
+          </g>
+        )}
+
+        {/* ==================== STAGE 3: 1-TO-5 ISOLATED TEST CONTAINERS ==================== */}
+        {showStage3 && (
+          <g className="anim-block">
+            {/* Dispatch line from General Agent (x=350, y=56) -> Test Cluster header (x=504, y=86) */}
+            <path
+              d="M350,56 L350,78 L504,78 L504,88"
+              fill="none"
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+              className="stroke-brand-400 dark:stroke-brand-500"
+              markerEnd="url(#pg-arrow-brand)"
+            />
+
+            <text
+              x="504"
+              y="100"
+              textAnchor="middle"
+              className="fill-gray-600 font-mono text-xs font-medium dark:fill-gray-400"
+            >
+              {copy.isolatedLabel}
+            </text>
+
+            {/* 1-to-5 Orthogonal Fork Tree (x=384..424, y=120..280) */}
+            <path
+              d="M384,200 L404,200 M404,120 L404,280"
+              fill="none"
+              strokeWidth="1.5"
+              className="stroke-brand-500 dark:stroke-brand-400"
+            />
+            {TEST_ROWS_Y.map((ry, idx) => (
+              <path
+                key={`fork-${idx}`}
+                d={`M404,${ry} L422,${ry}`}
+                fill="none"
+                strokeWidth="1.5"
+                className="stroke-brand-500 dark:stroke-brand-400"
+                markerEnd="url(#pg-arrow-brand)"
+              />
+            ))}
+
+            {running && stageIdx === 2 && (
+              <>
+                {TEST_ROWS_Y.map((ry, idx) => (
+                  <circle
+                    key={`p-fork-${idx}`}
+                    r="2.75"
+                    className="fill-brand-500 dark:fill-brand-400"
+                  >
+                    <animateMotion
+                      dur="1.5s"
+                      begin={`${idx * 0.12}s`}
+                      repeatCount="indefinite"
+                      path={`M384,200 L404,200 L404,${ry} L422,${ry}`}
+                    />
+                  </circle>
+                ))}
+              </>
+            )}
+
+            {/* 5 Vertically Stacked Horizontal Isolated Containers (x=424..584, h=28) */}
+            {TEST_ROWS_Y.map((ry, idx) => {
+              const topY = ry - 14;
+              return (
+                <g key={`test-row-${idx}`}>
+                  <rect
+                    x="424"
+                    y={topY}
+                    width="160"
+                    height="28"
+                    rx="6"
+                    strokeWidth="1.25"
+                    className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+                  />
+                  <text
+                    x="436"
+                    y={ry + 4}
+                    className="fill-gray-800 font-mono text-xs font-semibold tabular-nums dark:fill-gray-200"
+                  >
+                    {`Test ${idx + 1}`}
+                  </text>
+                  <line
+                    x1="488"
+                    y1={topY + 5}
+                    x2="488"
+                    y2={topY + 23}
+                    strokeWidth="1"
+                    className="stroke-gray-200 dark:stroke-gray-700"
+                  />
+                  <text
+                    x="500"
+                    y={ry + 4}
+                    className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
+                  >
+                    ×3
+                  </text>
+                  {/* 3 Fresh Container Run Pills */}
+                  {[0, 1, 2].map((r) => (
+                    <rect
+                      key={r}
+                      x={526 + r * 16}
+                      y={ry - 6}
+                      width="12"
+                      height="12"
+                      rx="2.5"
+                      className="fill-brand-500 dark:fill-brand-400"
+                    />
+                  ))}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
+        {/* ==================== STAGE 4: OFFLINE VERIFIER -> GENERAL AGENT ==================== */}
+        {showStage4 && (
+          <g className="anim-block">
+            {/* 5-to-1 Collector Tree (x=584..622, y=120..280 -> y=200) */}
+            {TEST_ROWS_Y.map((ry, idx) => (
+              <path
+                key={`join-${idx}`}
+                d={`M584,${ry} L602,${ry}`}
+                fill="none"
+                strokeWidth="1.5"
+                className="stroke-emerald-600 dark:stroke-emerald-400"
+              />
+            ))}
+            <path
+              d="M602,120 L602,280 M602,200 L620,200"
+              fill="none"
+              strokeWidth="1.5"
+              className="stroke-emerald-600 dark:stroke-emerald-400"
+              markerEnd="url(#pg-arrow-emerald)"
+            />
+
+            {/* Offline Verifier Node (x=622..712, y=168..232) */}
+            <rect
+              x="622"
+              y="168"
+              width="90"
+              height="64"
+              rx="8"
+              strokeWidth="1.5"
+              className="fill-white stroke-emerald-600 dark:fill-gray-900 dark:stroke-emerald-400"
+            />
+            <text
+              x="667"
+              y="195"
+              textAnchor="middle"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+            >
+              {copy.verifier}
+            </text>
+            <text
+              x="667"
+              y="213"
+              textAnchor="middle"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+            >
+              {copy.verifierSub}
+            </text>
+
+            {/* Zero-crossing Return Path: Offline Verifier (667,168) -> up to y=66 -> left to (412,66) -> General Agent (412,56) */}
+            <path
+              d="M667,168 L667,66 L412,66 L412,58"
+              fill="none"
+              strokeWidth="1.5"
+              className="stroke-emerald-600 dark:stroke-emerald-400"
+              markerEnd="url(#pg-arrow-emerald)"
+            />
+
+            {running && stageIdx === 3 && (
+              <>
+                {TEST_ROWS_Y.map((ry, idx) => (
+                  <circle
+                    key={`p-join-${idx}`}
+                    r="2.75"
+                    className="fill-emerald-500 dark:fill-emerald-400"
+                  >
+                    <animateMotion
+                      dur="1.4s"
+                      begin={`${idx * 0.1}s`}
+                      repeatCount="indefinite"
+                      path={`M584,${ry} L602,${ry} L602,200 L620,200`}
+                    />
+                  </circle>
+                ))}
+                <circle r="3" className="fill-emerald-500 dark:fill-emerald-400">
                   <animateMotion
                     dur="1.6s"
-                    begin={`${idx * 0.12}s`}
                     repeatCount="indefinite"
-                    path={`M312,142 L338,142 L338,${ly} L356,${ly}`}
+                    path="M667,168 L667,66 L412,66 L412,58"
                   />
                 </circle>
-              ))}
-            </>
-          )}
-          {running && inVerify && (
-            <>
-              {TEST_LANES_Y.map((ly, idx) => (
-                <circle
-                  key={`pulse-join-${idx}`}
-                  r="2.75"
-                  className="fill-emerald-500 dark:fill-emerald-400"
-                >
-                  <animateMotion
-                    dur="1.5s"
-                    begin={`${idx * 0.1}s`}
-                    repeatCount="indefinite"
-                    path={`M556,${ly} L572,${ly} L572,142 L588,142`}
-                  />
-                </circle>
-              ))}
-            </>
-          )}
-        </svg>
-      </div>
+              </>
+            )}
+          </g>
+        )}
 
-      {/* Compact 1-Line Telemetry Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200/80 bg-white px-4 py-2 text-xs dark:border-gray-800/80 dark:bg-gray-950">
-        <span className="font-mono text-xs text-gray-600 dark:text-gray-400">
-          {text.card1Title}: <strong className="font-semibold text-brand-700 dark:text-brand-300">{text.card1Val}</strong>
-        </span>
-        <span className="font-mono text-xs text-gray-600 dark:text-gray-400">
-          {text.card2Title}: <strong className="font-semibold text-emerald-700 dark:text-emerald-300">{text.card2Val}</strong>
-        </span>
-        <span className="font-mono text-xs text-gray-600 tabular-nums dark:text-gray-400">
-          {text.card3Title}: <strong className="font-semibold text-gray-900 dark:text-gray-100">{text.card3Val}</strong>
-        </span>
-      </div>
+        {/* ==================== STAGE 5: GENERAL AGENT -> FINAL RESULT ==================== */}
+        {showStage5 && (
+          <g className="anim-block">
+            <path
+              d="M436,32 L546,32"
+              fill="none"
+              strokeWidth="1.75"
+              className="stroke-emerald-600 dark:stroke-emerald-400"
+              markerEnd="url(#pg-arrow-emerald)"
+            />
+            {running && stageIdx === 4 && (
+              <circle r="3" className="fill-emerald-500 dark:fill-emerald-400">
+                <animateMotion dur="1.2s" repeatCount="indefinite" path="M436,32 L546,32" />
+              </circle>
+            )}
+
+            {/* Final Result Node at Top Right (x=548..712, y=8..56) */}
+            <rect
+              x="548"
+              y="8"
+              width="164"
+              height="48"
+              rx="10"
+              strokeWidth="1.5"
+              className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
+            />
+            <text
+              x="630"
+              y="28"
+              textAnchor="middle"
+              className="fill-emerald-900 text-xs font-semibold dark:fill-emerald-100"
+            >
+              {copy.resultTitle}
+            </text>
+            <text
+              x="630"
+              y="45"
+              textAnchor="middle"
+              className="fill-emerald-700 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-300"
+            >
+              {copy.resultSub}
+            </text>
+          </g>
+        )}
+      </svg>
     </div>
   );
 }
