@@ -18,14 +18,19 @@
  * tarball is kept in `<prefix>/archives/`, because npm records the install as a `file:`
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
+ * A fourth arrives through the plugin index: a version published on a github release channel
+ * is fetched, verified against the sha512 the entry pins, and its verified bytes install as
+ * the same `file:` record (installPluginChannel) — npm stays the first source; the channel is
+ * where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
+import type { IndexChannel } from "./registry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -314,6 +319,80 @@ function npmReason(stderr: string | undefined, err: Error): string {
 /** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
 function npmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+/**
+ * Checks the bytes a channel served against the hash the index entry pins: npm's
+ * `integrity` shape, `sha512-<base64>`. A mismatch, or an integrity that is not even
+ * readable, refuses the install — the verified bytes are the only ones that install.
+ */
+export function verifyIntegrity(bytes: Uint8Array, integrity: string): void {
+  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
+  if (pinned === null) {
+    throw new PluginInstallError(
+      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(integrity)}`,
+    );
+  }
+  const actual = Buffer.from(createHash("sha512").update(bytes).digest("base64"));
+  const expected = Buffer.from(pinned[1]!);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new PluginInstallError(
+      "the release asset does not match the sha512 the index entry pins; it is not installed",
+    );
+  }
+}
+
+/**
+ * Installs a version through an index entry's github channel: the release asset is
+ * fetched, verified against the entry's sha512, and only the verified bytes are written —
+ * into the prefix's archives, where `npm install` takes them as a `file:` dependency, the
+ * same record an uploaded zip installs under. The entry's name and version are what the
+ * index published; what the tarball actually carries is what npm reads, and the caller's
+ * post-install vetting (a shipped module's name, a non-plugin) applies as to any install.
+ * `fetchImpl` and `install` are injectable so a test stands in for the network and npm.
+ */
+export async function installPluginChannel(
+  root: string,
+  channel: IndexChannel,
+  {
+    fetchImpl = fetch,
+    install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
+  }: {
+    fetchImpl?: typeof fetch;
+    install?: (prefix: string, spec: string) => Promise<void>;
+  } = {},
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetchImpl(channel.url, { redirect: "follow" });
+  } catch (err) {
+    throw new PluginInstallError(
+      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!res.ok) {
+    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  verifyIntegrity(bytes, channel.integrity);
+  // A file name under the prefix's archives, derived from the index's own fields: a package
+  // name's safe characters with the scope slash joined, and a version's.
+  const base = `${channel.name.split("/").filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part)).join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
+  if (base === "-" || base.length < 3) {
+    throw new PluginInstallError(
+      `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
+    );
+  }
+  const file = `${base}.tgz`;
+  await fs.mkdir(path.join(prefix, ARCHIVES_DIR), { recursive: true });
+  await fs.writeFile(path.join(prefix, ARCHIVES_DIR, file), bytes);
+  try {
+    await run(prefix, `./${ARCHIVES_DIR}/${file}`);
+  } finally {
+    await pruneArchives(prefix);
+  }
+  return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
 }
 
 /**
