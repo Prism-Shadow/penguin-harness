@@ -217,7 +217,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const plugins = resolveLibraryPlugins(names);
     const root = deps.config.root;
     // Before the install: one that wrote a workbench into Agent State ahead of the move would
-    // leave the Agent's existing one stranded behind a conflict.
+    // take its id, and the Agent's existing folder, data included, would stay in the old place.
     await migrateWorkbenches(agentDir(root, projectId, agentId));
     await refusingTakenNames(async () => {
       await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);

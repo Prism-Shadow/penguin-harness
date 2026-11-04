@@ -286,7 +286,6 @@ export class WorkbenchService implements Workbenches {
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
-  private readonly migrations = new Map<string, Promise<void>>();
   /** The Agent State repository; its writes stay in order across instances (./repo.ts). */
   private repo(projectId: string, agentId: string): AgentStateRepo {
     return new AgentStateRepo({
@@ -310,18 +309,13 @@ export class WorkbenchService implements Workbenches {
     }
   }
 
+  /**
+   * Asked on every access, not once: a workbench can still be written to the old place after
+   * the Agent's were moved (./migrate-state.ts). With nothing there it costs a few stats, and
+   * concurrent callers share a run.
+   */
   private migrate(projectId: string, agentId: string): Promise<void> {
-    const key = `${projectId}/${agentId}`;
-    const existing = this.migrations.get(key);
-    if (existing) return existing;
-    const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
-      (error) => {
-        this.migrations.delete(key);
-        throw error;
-      },
-    );
-    this.migrations.set(key, pending);
-    return pending;
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
   }
 
   setup(ctx: ClassCtx) {
@@ -519,7 +513,6 @@ export class WorkbenchService implements Workbenches {
       l.tree?.dispose();
       this.loaded.delete(k);
     }
-    this.migrations.delete(agentKey);
   }
 
   // ---- internals ------------------------------------------------------------------

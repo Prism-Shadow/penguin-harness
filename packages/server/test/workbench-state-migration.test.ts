@@ -1,25 +1,25 @@
 /**
- * An Agent's workbenches move into its Agent State once, with the versions recorded before.
+ * An Agent's workbenches move from the place they had before Agent State into it, with the
+ * versions recorded there, on every access until 1.0.
  *
- * - Given an Agent in the old layout, one migration puts its workbenches under
- *   `agent_state/workbenches/` with `state.json` byte-identical, and keeps the old copies in the
- *   journal's backup.
+ * - Given an Agent in the old layout, its workbenches arrive under `agent_state/workbenches/` with
+ *   `state.json` byte-identical, and the old copies are kept in the journal's backup.
  * - Given its recorded versions, the history lists them newest first with the times they were
  *   saved; an edit the live folder carries is the newest version, and a live folder equal to the
  *   newest recorded version is listed once.
  * - Given an Agent already on the new layout, nothing is written, journal included.
- * - Given both the old and the new folder, the migration refuses, naming the fix, and moves nothing.
- * - Given a run stopped before its end mark, the next one finishes it and records no version twice;
- *   once finished, it never runs again, so a later edit is not recorded by it.
- * - Given a run stopped before the workbench moved, a folder made at the new place meanwhile is
- *   still refused; once moved aside, the run finishes.
+ * - Given an id already taken in Agent State, that folder stays in the old place, reported once,
+ *   while the free ones move in with their versions.
+ * - Given a run stopped after committing and before moving, the next one finishes it and records
+ *   no version twice; an edit made in Agent State afterwards is not the migration's to record.
+ * - Given a folder written to the old place after everything moved (an installed Skill from before
+ *   Agent State), the next run adopts it with its versions.
  * - Given a recorded workbench whose folder is gone, no version of it is imported.
- * - Given a Workflow-era Agent, one migration takes `workflows/` to `agent_state/workbenches/`.
+ * - Given a Workflow-era Agent, one run takes `workflows/` to `agent_state/workbenches/`.
  * - Given two callers at once, both see one finished migration and each version once.
  * - Given a `versions.json` entry that is not a readable version, the readable ones are imported
  *   and the rest is reported.
- * - Given a repository that cannot be written, the workbench still moves and the copies stay in
- *   the backup.
+ * - Given a repository that cannot be written, the workbench still moves and the copies are kept.
  *
  * Through the server:
  * - The Agents list migrates an Agent before counting its workbenches.
@@ -27,8 +27,10 @@
  * - A plugin install (the route) or update (company mode) on an un-migrated Agent migrates first:
  *   the install updates the moved folder, keeping its data, instead of creating a new one.
  * - The history route lists the imported versions, and rolling back to the oldest restores its files.
+ * - A workbench written to the old place after the Agent's were listed is listed on the next access.
+ * - An id taken in Agent State leaves the old folder where it is, and the list still answers.
  * - A snapshot import on an un-migrated Agent moves its workbenches in first: they are in the
- *   snapshot taken before the import, and the package's own arrive without a conflict.
+ *   backup taken before the import, and the package's own arrive in their place.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
@@ -37,10 +39,10 @@ import os from "node:os";
 import path from "node:path";
 import { agentDir, agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import * as tar from "tar";
-import type { AgentsResponse, WorkbenchVersion } from "../src/api/types.js";
+import type { AgentsResponse, WorkbenchInfo, WorkbenchVersion } from "../src/api/types.js";
 import { migrateWorkbenches } from "../src/workbenches/migrate.js";
 import { migrateWorkbenchesIntoState } from "../src/workbenches/migrate-state.js";
-import { AgentStateRepo } from "../src/workbenches/repo.js";
+import { AgentStateRepo, agentStateRepoDir } from "../src/workbenches/repo.js";
 import { readFolder } from "../src/workbenches/store.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 
@@ -55,14 +57,18 @@ const STATE = '{ "count": 7,\n  "note": "kept" }\n';
 const JOURNAL = ".workbench-migration";
 
 /**
- * Writes `demo` as the layout before Agent State left it: each version of RECORDED copied into
- * `workbenches-history/demo/<revision>/` and listed in its `versions.json` (newest first), and the
- * live folder at the newest version — or, with `edit`, past it — beside its state and the
- * server's dot-directories. Returns the history copies, oldest first.
+ * Writes workbench `id` (default `demo`) as the layout before Agent State left it: each version of
+ * RECORDED copied into `workbenches-history/<id>/<revision>/` and listed in its `versions.json`
+ * (newest first), and the live folder at the newest version — or, with `edit`, past it — beside
+ * its state and the server's dot-directories. Returns the history copies, oldest first.
  */
-async function oldLayout(agent: string, opts: { edit?: boolean } = {}): Promise<string[]> {
-  const live = path.join(agent, "workbenches", "demo");
-  const history = path.join(agent, "workbenches-history", "demo");
+async function oldLayout(
+  agent: string,
+  opts: { edit?: boolean; id?: string } = {},
+): Promise<string[]> {
+  const id = opts.id ?? "demo";
+  const live = path.join(agent, "workbenches", id);
+  const history = path.join(agent, "workbenches-history", id);
   const entries: unknown[] = [];
   const copies: string[] = [];
   for (const [i, version] of RECORDED.entries()) {
@@ -98,20 +104,21 @@ async function oldLayout(agent: string, opts: { edit?: boolean } = {}): Promise<
   return copies;
 }
 
-const moved = (agent: string, ...rel: string[]) =>
-  path.join(agent, "agent_state", "workbenches", "demo", ...rel);
+const inState = (agent: string, id: string, ...rel: string[]) =>
+  path.join(agent, "agent_state", "workbenches", id, ...rel);
+const moved = (agent: string, ...rel: string[]) => inState(agent, "demo", ...rel);
 const backedUp = (copy: string) =>
   copy.replace(
     `${path.sep}workbenches-history${path.sep}`,
     `${path.sep}${JOURNAL}${path.sep}backup${path.sep}workbenches-history${path.sep}`,
   );
 const revisionOf = async (dir: string) => (await readFolder(dir, "demo"))!.revision;
-const history = (agent: string) =>
+const history = (agent: string, id = "demo") =>
   new AgentStateRepo({
-    stateDir: path.join(agent, "agent_state"),
+    gitdir: agentStateRepoDir(agent),
     now: () => new Date(),
     log: () => {},
-  }).history("workbenches/demo");
+  }).history(`workbenches/${id}`);
 const missing = (file: string) => expect(fs.stat(file)).rejects.toMatchObject({ code: "ENOENT" });
 
 describe("moving workbenches into Agent State", () => {
@@ -165,65 +172,71 @@ describe("moving workbenches into Agent State", () => {
     expect(await fs.readdir(path.join(agent, "agent_state"))).toEqual(["workbenches"]);
   });
 
-  it("refuses when the old and the new folder both exist, naming the fix and moving nothing", async () => {
-    await oldLayout(agent);
-    const mine = path.join(agent, "agent_state", "workbenches", "mine");
-    await fs.mkdir(mine, { recursive: true });
-    await fs.writeFile(path.join(mine, "package.json"), "keep");
-    await expect(migrateWorkbenches(agent)).rejects.toThrow(
-      /agent_state\/workbenches already exists .*Move it aside before retrying/,
-    );
-    expect(await fs.readFile(path.join(mine, "package.json"), "utf8")).toBe("keep");
+  it("moves the free ids and leaves a taken one in the old place, reported once", async () => {
+    const taken = await oldLayout(agent);
+    const free = await oldLayout(agent, { id: "other" });
+    await fs.mkdir(moved(agent), { recursive: true });
+    await fs.writeFile(moved(agent, "package.json"), "mine");
+    const lines: string[] = [];
+    for (let run = 0; run < 2; run++) {
+      await migrateWorkbenchesIntoState(agent, { log: (line) => lines.push(line) });
+    }
+    expect(await fs.readFile(moved(agent, "package.json"), "utf8")).toBe("mine");
     expect(await fs.readFile(path.join(agent, "workbenches", "demo", "index.ts"), "utf8")).toBe(
       EDIT,
     );
-    expect(await fs.stat(path.join(agent, "workbenches-history", "demo"))).toBeTruthy();
-    await missing(path.join(agent, JOURNAL));
+    expect(await history(agent)).toEqual([]);
+    expect(await fs.stat(taken[0]!)).toBeTruthy();
+    expect(lines.filter((line) => line.includes("left in place"))).toHaveLength(1);
+    expect(await fs.readFile(inState(agent, "other", "state.json"), "utf8")).toBe(STATE);
+    await missing(path.join(agent, "workbenches", "other"));
+    expect(await history(agent, "other")).toHaveLength(3);
+    expect(await fs.stat(backedUp(free[0]!))).toBeTruthy();
   });
 
-  it("finishes a run stopped before its end mark, recording no version twice", async () => {
-    await oldLayout(agent);
+  it("finishes a run stopped after committing and before moving, recording no version twice", async () => {
+    const copies = await oldLayout(agent);
     await migrateWorkbenches(agent);
     const recorded = await history(agent);
-    // Stopped after its last commit: the folder is already in its new place, which the next run
-    // must not mistake for a workbench made independently.
-    await fs.rm(path.join(agent, JOURNAL, "state-complete"));
+    // Back where a run stopped before its renames left them, with the versions committed.
+    await fs.rename(
+      path.join(agent, "agent_state", "workbenches"),
+      path.join(agent, "workbenches"),
+    );
+    await fs.mkdir(path.join(agent, "workbenches-history"));
+    await fs.rename(path.dirname(backedUp(copies[0]!)), path.dirname(copies[0]!));
     await migrateWorkbenches(agent);
     expect(await history(agent)).toEqual(recorded);
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
-    // Finished: an edit since is the next load's to record, not a migration's.
+    // An edit made in Agent State since is the next load's to record, not a migration's.
     await fs.writeFile(moved(agent, "index.ts"), "export default 4;\n");
     await migrateWorkbenches(agent);
     expect(await history(agent)).toEqual(recorded);
   });
 
-  it("refuses, after a run stopped before the move, a folder made at the new place meanwhile", async () => {
+  it("adopts a folder written to the old place after everything moved, with its versions", async () => {
     await oldLayout(agent);
-    // Something in the journal's way stops the first run once it has started.
-    await fs.mkdir(path.join(agent, JOURNAL));
-    await fs.writeFile(path.join(agent, JOURNAL, "backup"), "");
-    await expect(migrateWorkbenches(agent)).rejects.toThrow();
-    await fs.rm(path.join(agent, JOURNAL, "backup"));
-    const mine = path.join(agent, "agent_state", "workbenches", "mine");
-    await fs.mkdir(mine, { recursive: true });
-    await fs.writeFile(path.join(mine, "package.json"), "keep");
-    await expect(migrateWorkbenches(agent)).rejects.toThrow("Move it aside before retrying");
-    expect(await fs.readFile(path.join(mine, "package.json"), "utf8")).toBe("keep");
-    expect(await fs.readFile(path.join(agent, "workbenches", "demo", "index.ts"), "utf8")).toBe(
-      EDIT,
-    );
-    await fs.rm(path.join(agent, "agent_state", "workbenches"), { recursive: true });
     await migrateWorkbenches(agent);
-    expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
-    expect(await history(agent)).toHaveLength(3);
+    const recorded = await history(agent);
+    // What an Agent writes by following an installed Skill copy from before Agent State.
+    await oldLayout(agent, { id: "late" });
+    await migrateWorkbenches(agent);
+    expect(await fs.readFile(inState(agent, "late", "state.json"), "utf8")).toBe(STATE);
+    const late = await history(agent, "late");
+    expect(late.slice(1).map((v) => Date.parse(v.savedAt))).toEqual([
+      Date.parse(RECORDED[1]!.savedAt),
+      Date.parse(RECORDED[0]!.savedAt),
+    ]);
+    await missing(path.join(agent, "workbenches"));
+    expect(await history(agent)).toEqual(recorded);
   });
 
   it("imports no version of a recorded workbench whose folder is gone", async () => {
     const copies = await oldLayout(agent);
     await fs.rm(path.join(agent, "workbenches", "demo"), { recursive: true });
     await migrateWorkbenches(agent);
-    await missing(path.join(agent, "agent_state", ".git"));
-    expect(await fs.stat(backedUp(copies[0]!))).toBeTruthy();
+    await missing(agentStateRepoDir(agent));
+    expect(await fs.stat(copies[0]!)).toBeTruthy();
   });
 
   it("takes a Workflow-era Agent from workflows/ to agent_state/workbenches/ in one run", async () => {
@@ -286,15 +299,13 @@ describe("moving workbenches into Agent State", () => {
 
   it("still moves the workbench when its versions cannot be recorded, keeping the copies", async () => {
     const copies = await oldLayout(agent);
-    await fs.mkdir(path.join(agent, "agent_state", ".git"), { recursive: true });
-    await fs.writeFile(path.join(agent, "agent_state", ".git", "HEAD"), "not a ref\n");
+    await fs.mkdir(agentStateRepoDir(agent), { recursive: true });
+    await fs.writeFile(path.join(agentStateRepoDir(agent), "HEAD"), "not a ref\n");
     const lines: string[] = [];
     await migrateWorkbenchesIntoState(agent, { log: (line) => lines.push(line) });
     expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
     expect(await fs.stat(backedUp(copies[0]!))).toBeTruthy();
-    expect(lines.join("\n")).toContain("demo");
-    // Finished, not retried: a later import would land after the versions loads record.
-    expect(await fs.stat(path.join(agent, JOURNAL, "state-complete"))).toBeTruthy();
+    expect(lines.join("\n")).toContain("demo: old versions not imported");
   });
 });
 
@@ -327,6 +338,12 @@ describe(
         dir: agentDir(t.root, PROJECT, agentId),
         route: `/api/projects/${PROJECT}/agents/${agentId}`,
       };
+    }
+
+    async function listOf(route: string): Promise<WorkbenchInfo[]> {
+      const res = await owner.get(`${route}/workbenches`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      return ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches;
     }
 
     /** The support plugin's workbench as an install left it in the old layout, with its data. */
@@ -410,6 +427,26 @@ describe(
       expect(await fs.readFile(moved(dir, "state.json"), "utf8")).toBe(STATE);
     });
 
+    it("lists a workbench written to the old place after the Agent's were listed", async () => {
+      const { dir, route } = await newAgent();
+      expect(await listOf(route)).toEqual([]);
+      await oldLayout(dir, { id: "late" });
+      expect((await listOf(route)).map((w) => w.id)).toEqual(["late"]);
+      const res = await owner.get(`${route}/workbenches/late/history`);
+      expect(((await res.json()) as { versions: WorkbenchVersion[] }).versions).toHaveLength(3);
+    });
+
+    it("keeps listing when an id taken in Agent State leaves the old folder in place", async () => {
+      const { dir, route } = await newAgent();
+      await fs.mkdir(moved(dir), { recursive: true });
+      await fs.writeFile(moved(dir, "package.json"), JSON.stringify({ name: "Mine" }));
+      await oldLayout(dir);
+      expect((await listOf(route)).map((w) => [w.id, w.name])).toEqual([["demo", "Mine"]]);
+      expect(await fs.readFile(path.join(dir, "workbenches", "demo", "state.json"), "utf8")).toBe(
+        STATE,
+      );
+    });
+
     it("moves an un-migrated Agent's workbenches in before a snapshot import replaces its state", async () => {
       const { agentId, dir, route } = await newAgent();
       await oldLayout(dir);
@@ -423,10 +460,12 @@ describe(
         confirm: true,
       });
       expect(imported.status, await imported.text()).toBe(200);
-      // What the Agent had is in the snapshot taken before its state was replaced.
+      // What the Agent had is in the backup taken before its state was replaced.
+      const snapshots = snapshotsDir(t.root, PROJECT, agentId);
+      const [backup] = (await fs.readdir(snapshots)).filter((f) => f.startsWith("import-backup-"));
       const entries: string[] = [];
       await tar.list({
-        file: path.join(snapshotsDir(t.root, PROJECT, agentId), "v1.tar.gz"),
+        file: path.join(snapshots, backup!),
         onReadEntry: (entry) => void entries.push(entry.path),
       });
       expect(entries).toContain("agent_state/workbenches/demo/state.json");

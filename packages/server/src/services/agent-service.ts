@@ -225,7 +225,7 @@ export class AgentService implements AgentLifecycle {
       );
     return Promise.all(
       sorted.map(async (row) => {
-        // A migration that refuses (both layouts present) is reported where the Agent's
+        // A migration that fails (an unreadable folder) is reported where the Agent's
         // workbenches are opened; one Agent's must not fail the list of all of them.
         await this.migrateWorkbenches(projectId, row.agentId).catch(() => undefined);
         const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
@@ -256,8 +256,8 @@ export class AgentService implements AgentLifecycle {
 
   /**
    * Workbenches in the layout before Agent State move first (../workbenches/migrate.ts), so what
-   * is counted, listed or installed here is what the Agent has, and an install cannot create the
-   * new folder ahead of the move: the old one would be left behind a conflict.
+   * is counted, listed or installed here is what the Agent has, and an install cannot take an id
+   * ahead of the move: the old folder would then be left where it is.
    */
   private migrateWorkbenches(projectId: string, agentId: string): Promise<void> {
     return migrateWorkbenches(agentDir(this.root, projectId, agentId));

@@ -1,41 +1,43 @@
 /**
- * One-time move of an Agent's workbenches into its Agent State, with their recorded versions.
+ * Moves an Agent's workbenches from where they were kept before Agent State into it, with the
+ * versions recorded there.
  *
- *   <agentDir>/workbenches/<id>/                → <agentDir>/agent_state/workbenches/<id>/, one rename:
- *                                                 `state.json` and the server's dot entries travel as they are
- *   <agentDir>/workbenches-history/<id>/<rev>/  → one commit per version its `versions.json` lists, oldest
- *                                                 first, dated with that version's `savedAt`; then the live
- *                                                 folder, when it differs from the newest
- *   <agentDir>/workbenches-history/             → <agentDir>/.workbench-migration/backup/workbenches-history/,
+ *   <agentDir>/workbenches/<id>/                → <agentDir>/agent_state/workbenches/<id>/ when that id is
+ *                                                 free there: `state.json` and the server's dot entries
+ *                                                 travel as they are
+ *   <agentDir>/workbenches-history/<id>/<rev>/  → the id's versions as commits (./repo.ts), oldest first
+ *                                                 and dated with each one's `savedAt`; then the folder
+ *                                                 itself, when it differs from the newest
+ *   <agentDir>/workbenches-history/<id>/        → <agentDir>/.workbench-migration/backup/workbenches-history/<id>/,
  *                                                 kept for recovery: nothing deletes it
  *
- * Journal, in the Workflow conversion's directory (./migrate.ts): `state-started` once the
- * preconditions held, `state-complete` at the end. Between the two every step is redone or
- * skipped by what is on disk, so a run that was interrupted is finished by the next one, and a
- * version an interrupted run already committed is not committed again. An Agent with neither old
- * directory is left alone, journal included. The old folder and the new one both present stops
- * before anything moves: an independently made workbench is never merged into a migrated one.
+ * It runs on every access, not once: a workbench written to the old place later, by an Agent
+ * following an installed copy of the `penguin-plugin` Skill from before Agent State, moves in on
+ * the next access in the same way. Without the old folder that is one failed directory read. An
+ * id already taken in Agent State stays where it is, reported once per process, and everything
+ * else carries on. While Agent State has no workbenches folder yet, the old one moves whole.
  *
- * Importing the old versions is best effort, the move is not: a version that cannot be read, or a
- * repository that cannot be written, is logged and skipped, its copy staying in the backup, while
- * the workbench itself always arrives in its new place.
+ * A folder moves only after its versions are committed, so a run cut short is finished by the
+ * next one, which commits no version twice. Importing the versions is best effort, the move is
+ * not: a version that cannot be read, or a repository that cannot be written, is logged and
+ * skipped, and its copy is kept with the others.
  *
  * Compatibility owner: the Workbench maintainers. Keep until the next major version (1.0); this
  * step is not removed with the Workflow conversion at 0.3.
  */
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AgentStateRepo } from "./repo.js";
-import { listFolders, readFolder, readSource, type WorkbenchFolder } from "./store.js";
+import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
+import { isWorkbenchId, readFolder, readLoadedSource, type WorkbenchFolder } from "./store.js";
 
-const JOURNAL = ".workbench-migration";
-const STARTED = "state-started";
-const COMPLETE = "state-complete";
 /** A recorded revision names a directory of the history; nothing else may be joined onto it. */
 const REVISION = /^[a-f0-9]{12}$/;
+/** Old folders this process has already reported as left in place. */
+const reported = new Set<string>();
 
 export interface StateMigrationOptions {
-  /** Where versions that could not be imported are reported. */
+  /** Where what could not be moved or imported is reported. */
   log?: (line: string) => void;
 }
 
@@ -56,64 +58,88 @@ const exists = async (file: string) =>
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** Where an Agent's workbenches live: `<agentDir>/agent_state/workbenches`. */
-const stateWorkbenchesDir = (agentDir: string) => path.join(agentDir, "agent_state", "workbenches");
-
 export async function migrateWorkbenchesIntoState(
   agentDir: string,
   opts: StateMigrationOptions = {},
 ): Promise<void> {
-  const journal = path.join(agentDir, JOURNAL);
-  if (await exists(path.join(journal, COMPLETE))) return;
-  const live = path.join(agentDir, "workbenches");
-  const history = path.join(agentDir, "workbenches-history");
-  const target = stateWorkbenchesDir(agentDir);
-  const backup = path.join(journal, "backup", "workbenches-history");
-  const started = path.join(journal, STARTED);
-  const conflict = () =>
-    new Error(
-      `Cannot migrate: agent_state/workbenches already exists in ${agentDir}. Move it aside before retrying; the workbenches/ files are unchanged.`,
-    );
-  if (!(await exists(started))) {
-    if (!(await exists(live)) && !(await exists(history))) return;
-    if (await exists(target)) throw conflict();
-    await fs.mkdir(journal, { recursive: true });
-    await fs.writeFile(started, "1\n");
-  }
-  if (await exists(history)) {
-    await fs.mkdir(path.dirname(backup), { recursive: true });
-    await fs.rename(history, backup);
-  }
-  if (await exists(live)) {
-    // Made at the new place since this run started: still not merged into.
-    if (await exists(target)) throw conflict();
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.rename(live, target);
+  const old = path.join(agentDir, "workbenches");
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(old, { withFileTypes: true });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return;
+    throw err;
   }
   const log = opts.log ?? ((line: string) => console.log(line));
-  const folders = await listFolders(target);
-  if (folders.length > 0) {
-    const repo = new AgentStateRepo({
-      stateDir: path.dirname(target),
-      now: () => new Date(),
-      log,
-    });
-    for (const folder of folders) {
-      try {
-        await importVersions(repo, folder, path.join(backup, folder.id), log);
-      } catch (err) {
+  const target = path.join(agentDir, "agent_state", "workbenches");
+  const whole = !(await exists(target));
+  const ids: string[] = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
+    if (!whole && (await exists(path.join(target, entry.name)))) {
+      const left = path.join(old, entry.name);
+      if (!reported.has(left)) {
+        reported.add(left);
         log(
-          `[workbenches] ${folder.id}: old versions not imported: ${messageOf(err)}; the copies stay in ${backup}`,
+          `[workbenches] ${left} left in place: agent_state/workbenches/${entry.name} already exists`,
         );
       }
+      continue;
+    }
+    ids.push(entry.name);
+  }
+  if (!whole && ids.length === 0) return;
+
+  const history = path.join(agentDir, "workbenches-history");
+  const backup = path.join(agentDir, ".workbench-migration", "backup", "workbenches-history");
+  const repo = new AgentStateRepo({
+    gitdir: agentStateRepoDir(agentDir),
+    now: () => new Date(),
+    log: (line) => log(`[workbenches] ${line}`),
+  });
+  for (const id of ids) {
+    const folder = await readFolder(path.join(old, id), id);
+    // A folder that is not a workbench (no package.json) moves without versions.
+    if (folder === null) continue;
+    try {
+      await importVersions(repo, folder, path.join(history, id), log);
+    } catch (err) {
+      log(`[workbenches] ${id}: old versions not imported: ${messageOf(err)}`);
     }
   }
-  await fs.writeFile(path.join(journal, COMPLETE), "1\n");
+
+  const moved: string[] = [];
+  if (whole) {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.rename(old, target);
+    moved.push(...ids);
+  } else {
+    for (const id of ids) {
+      try {
+        await fs.rename(path.join(old, id), path.join(target, id));
+        moved.push(id);
+      } catch (err) {
+        log(`[workbenches] ${path.join(old, id)} not moved: ${messageOf(err)}`);
+      }
+    }
+    // Gone once nothing is left in it, so the next access stops at the first read.
+    await fs.rmdir(old).catch(() => undefined);
+  }
+  for (const id of moved) {
+    const copies = path.join(history, id);
+    if (!(await exists(copies))) continue;
+    await fs.mkdir(backup, { recursive: true });
+    await fs.rename(copies, path.join(backup, id)).catch((err) => {
+      log(`[workbenches] ${copies} kept in place: ${messageOf(err)}`);
+    });
+  }
+  await fs.rmdir(history).catch(() => undefined);
 }
 
 /**
- * Commits the workbench's old versions oldest first, then its live folder. A workbench without
- * a live folder has no versions imported: a deleted workbench lists no history.
+ * Commits the workbench's old versions oldest first, then the folder itself. A workbench whose
+ * folder is gone has no versions imported: a deleted workbench lists no history.
  */
 async function importVersions(
   repo: AgentStateRepo,
@@ -122,27 +148,36 @@ async function importVersions(
   log: (line: string) => void,
 ): Promise<void> {
   const rel = `workbenches/${folder.id}`;
-  const versions = await oldVersions(historyDir, folder.id, log);
-  // An interrupted run committed a prefix of the same list; it is skipped, not recorded twice.
-  const recorded = (await repo.history(rel)).reverse();
-  let done = 0;
-  while (
-    done < recorded.length &&
-    done < versions.length &&
-    recorded[done]!.revision === versions[done]!.folder.revision
-  )
-    done += 1;
-  for (const version of versions.slice(done)) {
-    await repo.commitPath(rel, await readSource(version.folder), subject(version.folder), {
-      at: version.at,
-    });
+  // A run cut short committed some of the same versions; they are not recorded twice.
+  const recorded = new Set((await repo.history(rel)).map((v) => v.revision));
+  for (const version of await oldVersions(historyDir, folder.id, log)) {
+    if (recorded.has(version.folder.revision)) continue;
+    await commit(repo, rel, version.folder, log, version.at);
   }
   // Unchanged content records nothing, so the newest version is not listed twice.
-  await repo.commitPath(rel, await readSource(folder), subject(folder));
+  await commit(repo, rel, folder, log);
 }
 
-/** The commit subject a load of this folder records. */
-const subject = (folder: WorkbenchFolder) => `workbench ${folder.id} @${folder.revision}`;
+/** Commits the folder as the version a load of it records, dated `at` (default: now). */
+async function commit(
+  repo: AgentStateRepo,
+  rel: string,
+  folder: WorkbenchFolder,
+  log: (line: string) => void,
+  at?: Date,
+): Promise<void> {
+  const files = await readLoadedSource(folder);
+  if (files === null) {
+    log(`[workbenches] ${folder.dir} changed while it was read; not imported`);
+    return;
+  }
+  await repo.commitPath(
+    rel,
+    files,
+    `workbench ${folder.id} @${folder.revision}`,
+    at === undefined ? {} : { at },
+  );
+}
 
 /**
  * The versions `versions.json` lists (newest first on disk), oldest first. An entry that is not
