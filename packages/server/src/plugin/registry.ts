@@ -420,38 +420,51 @@ export function httpPluginRegistry(
       `plugin index from ${indexUrl} could not be fetched (${attempts} attempts): ${why}`,
     );
   };
+  // One read of the index, fetch through parse. Reads are queued one after another (see
+  // `index` below): two overlapping reads would both fetch against the same revalidation
+  // state, and whichever finished last would write its document over the other's — an older
+  // completion could rewind the etag a newer read had just advanced, and the next read would
+  // revalidate against a header the server had already retired.
+  const readOnce = async (): Promise<PluginIndexEntry[]> => {
+    const res = await request();
+    // Unchanged since the last read: the document in hand stands, nothing re-parsed.
+    if (res.status === 304 && revalidate !== null) {
+      const fresh = res.headers.get("etag");
+      if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+      return revalidate.entries;
+    }
+    if (!res.ok) {
+      throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
+    }
+    const text = await res.text();
+    const hash = createHash("sha256").update(text).digest("hex");
+    // The etag moved but the document did not — a Pages quirk this hash is here to catch.
+    // The new etag is kept so the next revalidation speaks the header the server last sent.
+    if (revalidate !== null && hash === revalidate.hash) {
+      revalidate = { ...revalidate, etag: res.headers.get("etag") };
+      return revalidate.entries;
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new Error(
+        `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const entries = parsePluginIndex(data, indexUrl, { icons: "drop" });
+    revalidate = { etag: res.headers.get("etag"), hash, entries };
+    return entries;
+  };
+  // The queue itself: every read follows the one before it, and a read that fails does not
+  // poison the chain — the failure is the caller's news, not the next read's state.
+  let chain: Promise<unknown> = Promise.resolve();
   return {
     source: indexUrl,
-    index: async () => {
-      const res = await request();
-      // Unchanged since the last read: the document in hand stands, nothing re-parsed.
-      if (res.status === 304 && revalidate !== null) {
-        const fresh = res.headers.get("etag");
-        if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
-        return revalidate.entries;
-      }
-      if (!res.ok) {
-        throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
-      }
-      const text = await res.text();
-      const hash = createHash("sha256").update(text).digest("hex");
-      // The etag moved but the document did not — a Pages quirk this hash is here to catch.
-      // The new etag is kept so the next revalidation speaks the header the server last sent.
-      if (revalidate !== null && hash === revalidate.hash) {
-        revalidate = { ...revalidate, etag: res.headers.get("etag") };
-        return revalidate.entries;
-      }
-      let data: unknown;
-      try {
-        data = JSON.parse(text);
-      } catch (err) {
-        throw new Error(
-          `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      const entries = parsePluginIndex(data, indexUrl, { icons: "drop" });
-      revalidate = { etag: res.headers.get("etag"), hash, entries };
-      return entries;
+    index: () => {
+      const next = chain.then(readOnce, readOnce);
+      chain = next.catch(() => undefined);
+      return next;
     },
     // The shared index format carries no readme location, so a remote source has none to
     // offer yet. Null rather than a guessed URL: inventing one would have the Web App

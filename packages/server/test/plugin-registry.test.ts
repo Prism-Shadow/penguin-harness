@@ -205,11 +205,15 @@ describe("httpPluginRegistry", () => {
     let etag = 0;
     const calls = fakeFetch(() => jsonResponse([VALID_ENTRY], 200, { etag: `"v${++etag}"` }));
     const registry = httpPluginRegistry(url, calls.fetch);
-    expect(await registry.index()).toEqual([VALID_ENTRY]);
-    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    const first = await registry.index();
+    const second = await registry.index();
     expect(calls.calls).toHaveLength(2);
     // The new etag is what the next revalidation speaks.
     expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"v1"');
+    // The document did not change, so the entries parsed once are the entries served twice.
+    expect(second).toBe(first);
+    expect(await registry.index()).toBe(first);
+    expect(calls.calls[2]!.headers.get("if-none-match")).toBe('"v2"');
   });
 
   it("caches by body hash when the server sends no etag at all", async () => {
@@ -220,6 +224,60 @@ describe("httpPluginRegistry", () => {
     expect(calls.calls).toHaveLength(2);
     // No etag was ever sent, so no revalidation header either.
     expect(calls.calls[1]!.headers.get("if-none-match")).toBeNull();
+  });
+
+  it("a 304 with nothing in hand is an error, not an answer", async () => {
+    // A 304 revalidates a document this registry is holding; without one it is a server
+    // talking nonsense, and the read fails rather than inventing entries.
+    const calls = fakeFetch(() => new Response(null, { status: 304, headers: { etag: '"a"' } }));
+    await expect(httpPluginRegistry(url, calls.fetch).index()).rejects.toThrow(/HTTP 304/);
+    expect(calls.calls).toHaveLength(1);
+  });
+
+  it("reads that overlap queue, so a stale completion cannot rewind the state a newer read wrote", async () => {
+    // Two reads start together and the index churns between their answers: the first read's
+    // bytes arrive only after the second read has taken the newer document. Answered as they
+    // finished, the older read would write v1 over v2 and the next revalidation would speak
+    // a dead etag; queued, the second read follows the first and the state stays coherent.
+    const v1 = [VALID_ENTRY];
+    const v2 = [{ ...VALID_ENTRY, description: "the second edition" }];
+    const release: Array<() => void> = [];
+    const gated = (body: unknown, etag: string) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            release.push(() => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            });
+          },
+        }),
+        { status: 200, headers: { etag } },
+      );
+    const calls = fakeFetch((_call, index) =>
+      index === 0
+        ? gated(v1, '"E1"')
+        : index === 1
+          ? jsonResponse(v2, 200, { etag: '"E2"' })
+          : new Response(null, { status: 304, headers: { etag: '"E2"' } }),
+    );
+    const registry = httpPluginRegistry(url, calls.fetch);
+    const first = registry.index();
+    const second = registry.index();
+    // The first read's fetch only happens after the registry's own setup awaits; a tick lets
+    // it reach the gated body before the gate opens.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release[0]!();
+    expect(await first).toEqual(v1);
+    const secondValue = await second;
+    expect(secondValue).toEqual(v2);
+    // The second read ran after the first had settled, revalidating against its etag.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"E1"');
+    // The third read revalidates against the document the second read left: the churned
+    // index is served from a 304, the very entries the second read parsed.
+    const third = await registry.index();
+    expect(calls.calls[2]!.headers.get("if-none-match")).toBe('"E2"');
+    expect(third).toBe(secondValue);
   });
 });
 
