@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `plugins`
+- **PR:** [#1471](https://github.com/Prism-Shadow/penguin-harness/pull/1471)
 
 [中文版](2026-11-04-plugins-declare-contributions.zh.md)
 
