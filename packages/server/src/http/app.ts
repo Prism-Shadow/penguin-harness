@@ -13,7 +13,7 @@ import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "@penguinharness/plugin-projects/server";
-import type { Errors } from "../mechanisms/observability.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Settings } from "../mechanisms/settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */

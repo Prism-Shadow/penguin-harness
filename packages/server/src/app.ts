@@ -49,12 +49,12 @@ import {
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
 import { SchedulesRepo, SessionsRepo } from "@penguinharness/plugin-sessions/server";
+import { ErrorsRepo, TraceIndexRepo, UsageRepo } from "@penguinharness/plugin-usage/server";
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
 import { UsersRepo } from "./db/repos/users.js";
@@ -134,8 +134,6 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { UsageRepo } from "./db/repos/usage.js";
 import { adminUsersRoutes } from "@penguinharness/plugin-settings/server";
 import { adminSettingsRoutes } from "@penguinharness/plugin-settings/server";
 import type { ServerEvent } from "./api/types.js";
@@ -170,7 +168,7 @@ import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "@penguinharness/plugin-machines/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
 import type { Auth } from "./mechanisms/identity.js";
 

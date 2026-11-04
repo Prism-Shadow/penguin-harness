@@ -53,7 +53,7 @@ import {
 import type { ListingView } from "@penguinharness/plugin-sessions/server";
 import { TraceIndexService, traceFilePath } from "@penguinharness/plugin-usage/server";
 import { matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { TraceIndex, TraceIndexStore } from "@penguinharness/plugin-usage/server";
 import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
 import type { ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";

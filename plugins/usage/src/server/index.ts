@@ -2,6 +2,12 @@
  * The usage group's server half: the usage, trace and benchmark services and
  * their routes, exported for the server's composition root and the mechanisms.
  */
+export * from "./mechanism-observability.js";
+export * from "./mechanism-traces.js";
+export * from "./repos/usage.js";
+export * from "./repos/errors.js";
+export * from "./repos/trace-index.js";
+export * from "./message-window.js";
 export { UsageService } from "./usage-service.js";
 export { HarnessHistoryIface } from "./harness-history.js";
 export { TraceIndexService, traceFilePath } from "./trace-index.js";

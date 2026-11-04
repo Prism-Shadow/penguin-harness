@@ -10,6 +10,7 @@
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],
+      "@penguinharness/plugin-usage/server": ["./src/server/index.ts"],
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
       "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
