@@ -5,9 +5,7 @@
  * (each linked to its repository). Toolkit labels are names, the same in every language; a
  * benchmark is shown by its kind, which lives in the dictionaries, index-aligned with BENCHMARKS.
  *
- * test/rsi-stats.test.ts pins RSI_TOOLKITS to the library's `rsi` plugins and BENCHMARKS to
- * the shipped Benchmark packages' upstream links, so neither list can ship behind its
- * source.
+ * The lists are kept by hand: a new toolkit or built-in Benchmark adds its entry here.
  */
 import type { ModelProvider } from "../components/icons";
 

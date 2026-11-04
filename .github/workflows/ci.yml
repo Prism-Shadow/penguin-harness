@@ -133,7 +133,7 @@ jobs:
         run: pnpm --filter @prismshadow/penguin-server test test/plugin-library.test.ts
 
   # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
-  # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
+  # `version`, or the `version` of the hooks contribution in src/index.ts: installed copies
   # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
   plugin-versions:
