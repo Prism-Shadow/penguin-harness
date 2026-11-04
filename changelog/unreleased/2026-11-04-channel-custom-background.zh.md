@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1453](https://github.com/Prism-Shadow/penguin-harness/pull/1453)
 - **Issue:** [#1441](https://github.com/Prism-Shadow/penguin-harness/issues/1441)
 
 [English](2026-11-04-channel-custom-background.md)
