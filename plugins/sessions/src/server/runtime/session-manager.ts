@@ -110,7 +110,7 @@ import type { Errors, UsageRecording } from "@prismshadow/penguin-server/interna
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-server/internal";
 import type { Settings } from "@prismshadow/penguin-server/internal";
 import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
-import type { OrgCache } from "@prismshadow/penguin-server/internal";
+import type { OrgCache } from "@penguinharness/plugin-company/server";
 import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
