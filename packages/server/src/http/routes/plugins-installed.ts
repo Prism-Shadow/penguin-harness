@@ -98,29 +98,44 @@ import type { Machines } from "../../machines/service.js";
 import { MachinesRepo } from "../../db/repos/machines.js";
 
 /**
- * Installs by name or link, npm first. A name npm has no answer for can still come from the
- * published index: its entry may pin a github release channel, whose asset is fetched,
- * sha512-verified, and installed — the verified bytes only (installPluginChannel). A channel
- * listed without an integrity is a refusal with the reason, not an install of unverified
- * bytes; an entry with no channel leaves npm's failure as the answer, naming that the index
- * had nothing to fall through to either. Everything surfaces as a PluginInstallError, which
- * the route renders as npm's failure.
+ * Installs by name or link, npm first. A name npm cannot serve — because it answered that
+ * the package, or the requested version of it, is not on the registry (reason
+ * "unavailable"); any other npm failure stays a failure, since a channel is not the answer
+ * to a registry that refused or a script that died — can still come from the published
+ * index: the entry whose version the request names may pin a github release channel, whose
+ * asset is fetched, sha512-verified, and installed — the verified bytes only
+ * (installPluginChannel). A channel listed without an integrity is a refusal with the
+ * reason, not an install of unverified bytes; an entry with no channel leaves npm's failure
+ * as the answer, naming that the index had nothing to fall through to either. Everything
+ * surfaces as a PluginInstallError, which the route renders as npm's failure.
  */
 export async function installNamedOrChanneled(
   root: string,
   source: PluginSource,
   io: {
     install: (root: string, spec: string) => Promise<InstalledPackage>;
-    channelOf?: (name: string) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
+    channelOf?: (
+      name: string,
+      version?: string,
+    ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
     installChannel: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
   },
 ): Promise<InstalledPackage> {
   try {
     return await io.install(root, source.spec);
   } catch (err) {
-    if (!(err instanceof PluginInstallError) || source.kind !== "name") throw err;
+    if (
+      !(err instanceof PluginInstallError) ||
+      source.kind !== "name" ||
+      err.reason !== "unavailable"
+    ) {
+      throw err;
+    }
     const npmSaid = err.message;
-    const resolved = (await io.channelOf?.(source.name)) ?? { channel: null, fault: null };
+    const resolved = (await io.channelOf?.(source.name, source.version)) ?? {
+      channel: null,
+      fault: null,
+    };
     if (resolved.fault !== null) {
       throw new PluginInstallError(`${npmSaid}. ${resolved.fault}`);
     }
@@ -165,11 +180,15 @@ export interface InstalledPluginsDeps {
   /** How packages reach and leave this server's prefix: npm, unless a test stands in. */
   packages: PluginPackages;
   /**
-   * What the published index lists as one name's github release channel, consulted only
-   * after npm has failed on the name (indexChannelLookup); absent = no published index is
-   * configured, so npm's failure is the whole answer.
+   * What the published index lists as a name's github release channel for a requested
+   * version, consulted only after npm has answered that the name (or its requested version)
+   * is not on the registry (indexChannelLookup); absent = no published index is configured,
+   * so npm's failure is the whole answer.
    */
-  channelOf?: (name: string) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
+  channelOf?: (
+    name: string,
+    version?: string,
+  ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
   /** How a verified channel's bytes install; a test stands in (installPluginChannel). */
   installChannel?: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
   /**

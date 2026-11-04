@@ -49,6 +49,7 @@ import {
   httpPluginRegistry,
   mergeIndexes,
   parsePluginIndex,
+  selectIndexChannel,
 } from "../src/plugin/registry.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { resolveServerConfig } from "../src/config.js";
@@ -635,6 +636,53 @@ describe("mergeIndexes", () => {
     // A dead remote shortens the listing; it does not empty it.
     expect(entries.map((e) => e.name)).toEqual([VALID_ENTRY.name]);
     expect(failures).toEqual([{ source: "remote", error: "index answered HTTP 503" }]);
+  });
+});
+
+describe("selectIndexChannel", () => {
+  const entry = (version: string): PluginIndexEntry => ({
+    ...VALID_ENTRY,
+    version,
+    // Well-formed enough for indexChannelOf: the pin's shape is what is under test here, not its bytes.
+    integrity:
+      "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    channels: [
+      { kind: "github", url: `https://github.com/o/r/releases/download/v${version}/x.tgz` },
+    ],
+  });
+  // Deliberately out of order: the index is a publisher's array, and the newest row is not
+  // necessarily the last one.
+  const versions = ["2.0.0", "0.1.0", "1.2.9", "1.4.2", "1.2.0"].map(entry);
+
+  it("no version, or npm's latest, takes the highest the index carries, whatever order it lists", () => {
+    expect(selectIndexChannel(versions, undefined).channel?.version).toBe("2.0.0");
+    expect(selectIndexChannel(versions, "latest").channel?.version).toBe("2.0.0");
+    expect(selectIndexChannel([...versions].reverse(), "latest").channel?.version).toBe("2.0.0");
+  });
+
+  it("an exact version (a leading v tolerated) takes the entry that names it", () => {
+    expect(selectIndexChannel(versions, "1.2.0").channel?.version).toBe("1.2.0");
+    expect(selectIndexChannel(versions, "v1.2.0").channel?.version).toBe("1.2.0");
+  });
+
+  it("a caret takes the newest in the same major at or above the request; a tilde, the same minor", () => {
+    expect(selectIndexChannel(versions, "^1.2.3").channel?.version).toBe("1.4.2");
+    expect(selectIndexChannel(versions, "~1.2.3").channel?.version).toBe("1.2.9");
+    expect(selectIndexChannel(versions, "~1.2.3").channel?.version).not.toBe("1.2.0");
+  });
+
+  it("a version no entry satisfies refuses, listing what the index carries", () => {
+    const resolved = selectIndexChannel(versions, "^1.5.0");
+    expect(resolved.channel).toBeNull();
+    expect(resolved.fault).toMatch(/no version of it matches \^1\.5\.0/);
+    expect(resolved.fault).toMatch(/2\.0\.0, 0\.1\.0, 1\.2\.9, 1\.4\.2, 1\.2\.0/);
+  });
+
+  it("any other tag or range refuses rather than guessing what it means", () => {
+    const next = selectIndexChannel(versions, "next");
+    expect(next.channel).toBeNull();
+    expect(next.fault).toMatch(/by version only/);
+    expect(selectIndexChannel(versions, "1.x").channel).toBeNull();
   });
 });
 

@@ -24,8 +24,13 @@ import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { readPackageCard, userAgent } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
+import {
+  compareVersions,
+  normalizeVersion,
+  readPackageCard,
+  userAgent,
+} from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -223,7 +228,66 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
 }
 
 /**
- * Answers one package name's github channel from the published index, fetched at most once
+ * Picks which of a name's index entries an install takes its github channel from. The index
+ * lists one row per version, so a name may carry several; the requested version — the very
+ * string npm failed on, a bare range in npm's own shape — decides among them:
+ *
+ *   - no version at all, or npm's `latest`: the newest version the index carries;
+ *   - an exact version (a leading `v` tolerated): the entry that names it;
+ *   - `^x.y.z`: the newest entry in the same major at or above the requested version;
+ *   - `~x.y.z`: the newest entry in the same major.minor at or above it;
+ *
+ * Anything else npm accepts — a dist-tag other than `latest`, a compound range — is refused
+ * with the versions the index does carry, rather than guessed at: refusing sends the user a
+ * sentence they can act on, guessing installs a version nobody asked for. The chosen entry's
+ * channel is then worth exactly what indexChannelOf says it is (a row without its integrity
+ * pin faults there, and that fault is the answer).
+ */
+export function selectIndexChannel(
+  entries: readonly PluginIndexEntry[],
+  version: string | undefined,
+): { channel: IndexChannel | null; fault: string | null } {
+  if (entries.length === 0) return { channel: null, fault: null };
+  const newest = (pool: readonly PluginIndexEntry[]) =>
+    pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
+  const tag =
+    version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
+  if (tag === null || tag === "latest") {
+    return indexChannelOf(newest(entries));
+  }
+  const noMatch = (): { channel: null; fault: string } => ({
+    channel: null,
+    fault: `${entries[0]!.name} is published on a github release channel, but no version of it matches ${version}; the index carries ${entries.map((e) => e.version).join(", ")}.`,
+  });
+  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/.exec(tag);
+  if (range !== null && range[1] !== undefined) {
+    const [op, major, minor] = [range[1], range[2], range[3]];
+    // The comparison runs against the numeric part alone: compareVersions reads a caret as
+    // no version at all, and the caret's work — the major constraint — is the filter above.
+    const floor = tag.slice(op.length);
+    const matching = entries.filter((e) => {
+      const [entryMajor, entryMinor] = normalizeVersion(e.version).split(".");
+      return (
+        entryMajor === major &&
+        (op === "~" ? entryMinor === minor : true) &&
+        compareVersions(e.version, floor) >= 0
+      );
+    });
+    if (matching.length === 0) return noMatch();
+    return indexChannelOf(newest(matching));
+  }
+  const exact = entries.find((e) => normalizeVersion(e.version) === tag);
+  if (exact !== undefined) return indexChannelOf(exact);
+  if (range !== null) return noMatch();
+  return {
+    channel: null,
+    fault: `${entries[0]!.name} can be installed from its github release channel by version only, not by the tag or range ${version}; name a version, or none for the newest.`,
+  };
+}
+
+/**
+ * Answers one package name's github channel from the published index — the entry whose
+ * version the requested one (when the caller has one) selects — fetched at most once
  * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
  * already failed on the name — installs are rare, so no standing fetch. A source that is
  * down answers "no channel": the npm failure is the news then, not the index's silence.
@@ -231,9 +295,15 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
 export function indexChannelLookup(
   indexUrl: string | null,
   { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
-): (name: string) => Promise<{ channel: IndexChannel | null; fault: string | null }> {
-  let cache: { at: number; byName: Map<string, ReturnType<typeof indexChannelOf>> } | null = null;
-  return async (name) => {
+): (
+  name: string,
+  version?: string,
+) => Promise<{ channel: IndexChannel | null; fault: string | null }> {
+  // Every version the index carries for a name, not one row per name: the request's version
+  // is what picks among them (selectIndexChannel), and collapsing to one row per name would
+  // make the index's last-listed version the only one a channel could serve.
+  let cache: { at: number; byName: Map<string, PluginIndexEntry[]> } | null = null;
+  return async (name, version) => {
     if (indexUrl === null) return { channel: null, fault: null };
     const at = now();
     if (cache === null || at - cache.at > ttlMs) {
@@ -243,9 +313,16 @@ export function indexChannelLookup(
       } catch {
         return { channel: null, fault: null };
       }
-      cache = { at, byName: new Map(entries.map((e) => [e.name, indexChannelOf(e)])) };
+      const byName = new Map<string, PluginIndexEntry[]>();
+      for (const entry of entries) {
+        const rows = byName.get(entry.name);
+        if (rows === undefined) byName.set(entry.name, [entry]);
+        else rows.push(entry);
+      }
+      cache = { at, byName };
     }
-    return cache.byName.get(name) ?? { channel: null, fault: null };
+    const rows = cache.byName.get(name);
+    return rows === undefined ? { channel: null, fault: null } : selectIndexChannel(rows, version);
   };
 }
 
