@@ -36,6 +36,9 @@
       ],
       "@prismshadow/penguin-server/db/repos/organizations": [
         "../../packages/server/src/db/repos/organizations.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
       ]
     }
   },

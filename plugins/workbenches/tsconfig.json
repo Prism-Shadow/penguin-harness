@@ -1,49 +1,29 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "lib": [
-      "ES2023"
-    ],
-    "paths": {
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
+
         "@penguinharness/plugin-company/server": [
           "../company/src/server/index.ts"
         ],
-
 ||||||| parent of 48fb6ba824 (plugins: map the company face to the workspace source where agents imports it)
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],
-      "@penguinharness/plugin-workbenches/server": [
-        "./src/server/index.ts"
-      ],
-      "@penguinharness/plugin-workbenches/web": [
-        "./src/web/index.ts"
-      ],
-      "@prismshadow/penguin-server/api": [
-        "../../packages/server/src/api/types.ts"
-      ],
-      "@prismshadow/penguin-server/internal": [
-        "../../packages/server/src/internal.ts"
-      ],
-      "@prismshadow/penguin-server/ifaces.json": [
-        "../../packages/server/src/ifaces.json"
-      ],
-      "@prismshadow/penguin-web/internal": [
-        "../../packages/web/src/internal.ts"
-      ],
-      "@penguinharness/plugin-schedules/server": [
-        "../schedules/src/server/index.ts"
-      ]
+||||||| parent of 411a6ecb70 (tsconfig: map plugin-plugins/server into company/terminal/projects/workbenches; company face + organizations repo into sandbox so gen-ifaces resolves @Use field types to source)
+        "@penguinharness/plugin-company/server": [
+          "../company/src/server/index.ts"
+        ],
+        "@penguinharness/plugin-sessions/server": [
+          "../sessions/src/server/index.ts"
+        ],
+  "include": [
+    "src/server"
+  ]
 
-      "@penguinharness/plugin-workbenches/server": ["./src/server/index.ts"],
-      "@penguinharness/plugin-workbenches/web": ["./src/web/index.ts"],
-      "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
-      "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
-      "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
-      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
-||||||| parent of d4fd0b9463 (plugins: map the sessions face to the workspace source in each plugin tsconfig)
-    }
-  },
   "include": ["src/server"]
+||||||| parent of 411a6ecb70 (tsconfig: map plugin-plugins/server into company/terminal/projects/workbenches; company face + organizations repo into sandbox so gen-ifaces resolves @Use field types to source)
+}
 }
