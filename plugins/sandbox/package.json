@@ -13,5 +13,8 @@
   },
   "dependencies": {
     "@penguinharness/plugin-plugins": "workspace:*"
+  },
+  "penguin": {
+    "parked": true
   }
 }
