@@ -1891,6 +1891,12 @@ export const en: Strings = {
       "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
     exportSnapshot: "Export snapshot",
     importSnapshot: "Import snapshot",
+    copyAgent: "Copy agent",
+    copyTitle: (name: string): string => `Copy ${name}`,
+    copyIntro:
+      "The new agent starts from this agent's current Agent State: the same config, prompt, Skills, hooks, memory and version. Scheduled tasks come along too and run for the copy as they do here. The vault, Sessions, Traces and API keys are not copied, and this agent stays as it is.",
+    copyNameOf: (name: string): string => `${name} copy`,
+    copyConfirm: "Copy",
     importing: "Importing…",
     importDone: (v: number): string => `Import finished, Agent State version v${v}`,
     importConflictTitle: "Version conflict",

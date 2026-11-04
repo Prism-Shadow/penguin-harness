@@ -315,6 +315,21 @@ describe("penguin agent / project", () => {
     expect(out()).toContain(t.agent.created("helper", "default_project"));
   });
 
+  it("agent create --from asks the server to copy that agent, and says so", async () => {
+    const code = await cli([
+      "agent",
+      "create",
+      "--agent-id",
+      "baseline_b",
+      "--from",
+      "default_agent",
+    ]);
+    expect(code).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/agents"));
+    expect(create?.body).toEqual({ agentId: "baseline_b", copyFrom: "default_agent" });
+    expect(out()).toContain(t.agent.copied("baseline_b", "default_agent", "default_project"));
+  });
+
   it("project ls lists the reachable projects", async () => {
     await cli(["project", "ls"]);
     expect(out()).toContain("default_project");

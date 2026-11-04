@@ -260,11 +260,13 @@ penguin agent create --agent-id <id> [options]
 | `--agent-id <id>` | Agent id，同时也是它的目录名。必填。 | — |
 | `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
 | `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
+| `--from <agent-id>` | 复制本 Project 的这个 Agent：新 Agent 从它当前的 Agent State 开始（配置、Skill、钩子、记忆、定时任务），不含它的密钥保险柜、会话和 API 密钥。不给 `--name` / `--description` 时沿用原 Agent 的。不能与 `--plugins` 同用。 | — |
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id baseline_b --name "Baseline B" --from baseline
 ```
 
 ### penguin agent api

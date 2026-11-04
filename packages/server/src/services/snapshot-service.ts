@@ -143,6 +143,29 @@ export class SnapshotService implements Snapshots {
     return { version, file };
   }
 
+  /**
+   * The Agent's current `agent_state/` as a package in the snapshot format (entries rooted at
+   * `agent_state/`, the vault left out), built in memory and written nowhere: what a copy of the
+   * Agent starts from. Unlike ensureSnapshot it never hands back a stored package, which can
+   * predate edits made under the same version, and it adds nothing to the Agent's snapshots/.
+   * 404 `agent_not_found` when the Agent does not exist.
+   */
+  async packState(projectId: string, agentId: string): Promise<Buffer> {
+    await this.currentVersion(projectId, agentId);
+    const chunks: Buffer[] = [];
+    const pack = tar.create(
+      {
+        gzip: true,
+        cwd: agentDir(this.root, projectId, agentId),
+        portable: true,
+        filter: (p) => !isVaultEntry(p),
+      },
+      ["agent_state"],
+    );
+    for await (const chunk of pack) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks);
+  }
+
   /** Export: automatically packs a snapshot first if none exists, returns the info needed for download. */
   async exportArchive(
     projectId: string,

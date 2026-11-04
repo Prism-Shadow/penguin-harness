@@ -260,11 +260,13 @@ Options of `agent create`:
 | `--agent-id <id>` | The agent id, which is also its directory name. Required. | — |
 | `--name <name>` / `--description <text>` | Display name and description. | — |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
+| `--from <agent-id>` | Copy this agent of the Project: the new agent starts from its current Agent State (configuration, Skills, hooks, memory, schedules), without its vault, Sessions or API keys. Without `--name` / `--description`, the copy keeps the source's. Not with `--plugins`. | — |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id baseline_b --name "Baseline B" --from baseline
 ```
 
 ### penguin agent api

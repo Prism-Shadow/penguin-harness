@@ -192,7 +192,10 @@ export interface Messages {
     createDescription: string;
     /** --plugins: comma-separated library plugin names to seed the new agent with. */
     createPlugins: string;
+    /** --from: an agent of the project whose current Agent State the new agent copies. */
+    createFrom: string;
     created(agentId: string, projectId: string): string;
+    copied(agentId: string, from: string, projectId: string): string;
     colId(): string;
     colName(): string;
     colSessions(): string;
@@ -1357,11 +1360,15 @@ const en: Messages = {
     lsDesc: "List the project's agents",
     createDesc: "Create an agent",
     createId: "Agent id (directory name; letters, digits, underscores)",
-    createName: "Display name (defaults to the id)",
+    createName: "Display name (defaults to the id; with --from, to the copied agent's name)",
     createDescription: "Description",
     createPlugins:
       "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
+    createFrom:
+      "Copy this agent of the project: its current Agent State (config, Skills, hooks, memory, schedules), without its vault, Sessions or API keys; not with --plugins",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
+    copied: (agentId, from, projectId) =>
+      `Agent ${agentId} copied from ${from} in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
     colSessions: () => "SESSIONS",
@@ -2494,10 +2501,14 @@ const zh: Messages = {
     lsDesc: "列出 Project 的 Agent",
     createDesc: "创建 Agent",
     createId: "Agent id（即目录名；字母、数字、下划线）",
-    createName: "显示名（缺省同 id）",
+    createName: "显示名（缺省同 id；用 --from 时缺省为被复制 Agent 的名称）",
     createDescription: "描述",
     createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
+    createFrom:
+      "复制本 Project 的这个 Agent：它当前的 Agent State（配置、Skill、钩子、记忆、定时任务），不含 Vault、会话和 API 密钥；不能与 --plugins 同用",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
+    copied: (agentId, from, projectId) =>
+      `已在 Project ${projectId} 从 ${from} 复制出 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",
     colSessions: () => "会话数",

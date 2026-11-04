@@ -83,6 +83,19 @@ A snapshot package is an exported Agent State. You can create an agent from one,
 > [!NOTE]
 > A snapshot package carries its own Skills and hooks. While a package is selected, **Plugins** and **Import Skills from a project directory** are hidden.
 
+### Copy an agent
+
+Copying an agent creates a new one beside it, on the same server or machine, that starts from its current Agent State, with no package to export and upload. Running the same baseline under several self-evolution methods is one use.
+
+1. On the agent's settings page, in the **Agent State** section, select **Copy agent**.
+2. **Name** starts as the agent's name followed by "copy"; change it if you like. Enter an **Agent id** for the copy, or generate one from the name.
+3. Select **Copy**. The copy's settings page opens.
+
+The copy has the agent's current configuration, prompt, Skills, hooks, memory, description and Agent State version. It gets none of the agent's vault, Sessions, Traces or API keys, and the agent you copied is not changed. Any member of the Project can copy an agent. From the command line, `penguin agent create --agent-id <id> --from <agent-id>` does the same (see [penguin agent](/cli#penguin-agent)).
+
+> [!NOTE]
+> Scheduled tasks are copied too, and run for the copy as they do for the original. To keep them from running twice, delete them on the copy's **Schedules** tab.
+
 ## Delete an agent
 
 Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: the **Company employees** section lists those, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).

@@ -1,6 +1,7 @@
 /**
  * Agent routes:
- * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only), and
+ * GET|POST /api/projects/:p/agents (POST may copy another Agent, `copyFrom`), DELETE /:agentId
+ * (owner only), and
  * GET /api/projects/:p/agent-deletions/:deletionId (owner only), how far a delete's background
  * removal has got.
  * The list is the union of DB entries and directory scan results, including active
@@ -12,6 +13,7 @@
  * service; the route consumes both.
  */
 import { Hono } from "hono";
+import { isValidId } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentDeleteResponse,
@@ -150,6 +152,14 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Optional snapshot seed: the new Agent starts from an exported package instead of the
     // default template (the service rejects combining it with seeding).
     const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
+    // Optional copy: the new Agent starts from another Agent's current State in this Project —
+    // the export and the snapshot seed in one step, with no package written. Any member who may
+    // create an Agent may copy one, as any member may export one. An id no Agent could have is
+    // answered like a source that does not exist.
+    const copyFrom = optionalString(body, "copyFrom", { minLen: 1, maxLen: 64, label: "copyFrom" });
+    if (copyFrom !== undefined && !isValidId(copyFrom)) {
+      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
+    }
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,
@@ -158,6 +168,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       plugins,
       directory,
       archive,
+      copyFrom,
     );
     const agent: AgentSummary = {
       ...item,

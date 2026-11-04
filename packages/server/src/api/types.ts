@@ -1442,6 +1442,16 @@ export interface AgentCreateRequest {
    * Explicit `name` / `description` override the package's values; absent ones keep them.
    */
   dataBase64?: string;
+  /**
+   * The id of an Agent of this Project to copy: the new Agent starts from that Agent's current
+   * State, packed as a snapshot would be (its vault left out) and seeded like `dataBase64`, so
+   * it carries the source's name, description, version, skills, hooks, memory and schedules
+   * unless `name` / `description` override them. Nothing is written to the source, and its
+   * Sessions, Traces and API keys stay with it. Mutually exclusive with `dataBase64`
+   * (400 `copy_with_snapshot`) and with seeding (400 `copy_with_plugins`); 404
+   * `agent_not_found` when no such Agent exists.
+   */
+  copyFrom?: string;
 }
 
 export interface AgentCreateResponse {
