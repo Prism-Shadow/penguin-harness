@@ -1166,7 +1166,7 @@ export const zh = {
     current: "当前",
     restore: "恢复",
     restoreTitle: "恢复版本",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
@@ -1182,11 +1182,25 @@ export const zh = {
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
-    removeConfirm: "删除这个工作台及其全部已记录版本？",
+    removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    fileCount: (n: number) => `${n} 个文件`,
+    importAction: "导入 zip",
+    importTitle: "导入工作台",
+    importUploadDesc:
+      "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "工作台已导入",
+    importOverwriteTitle: "覆盖已有工作台",
+    importOverwriteBody: (name: string): string =>
+      `工作台「${name}」已存在，覆盖将替换其源码；数据（state.json）保留。加载成功过的版本仍可从历史恢复，从未加载成功的本地改动会丢失。确认继续？`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
+    importOverwriteAction: "覆盖导入",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "打包导出",
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -6546,6 +6560,7 @@ Benchmark：
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
+      workbench_too_large: "该工作台的源码过大，超出了导出限制。",
       benchmark_busy:
         "这个 Benchmark 正在评估：它的 .jobs/ 里还有没跑完的运行，现在覆盖，进行中的评估会接着写进新导入的副本。请等评估结束后再覆盖。",
       file_not_found: "该文件已不存在。",

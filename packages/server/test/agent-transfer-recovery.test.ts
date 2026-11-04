@@ -8,13 +8,11 @@
  *   through the link, and its export creates a second Agent that keeps the link.
  * - Given a current vault that cannot be read, the import fails before the State is touched;
  *   once the vault is readable again the retry imports and the vault survives.
- * - Given the new State cannot be moved in, the previous State, vault and repository are put back
- *   and the retry imports, the repository's versions still listed.
+ * - Given the new State cannot be moved in, the previous State and vault are put back and the
+ *   retry imports.
  * - Given the new State cannot be moved in and the previous one cannot be moved back, both stay
- *   in the import's staging directory, the previous State with its repository, and the server
- *   log names it; moving it back by hand lets the retry import with the vault intact.
- * - Given the swap fails and the repository cannot be moved back, it stays in staging and the
- *   log names where; moving it back by hand lists its versions again.
+ *   in the import's staging directory and the server log names it; moving it back by hand lets
+ *   the retry import with the vault intact.
  * - Given a committed import whose staging directory cannot be removed, the import still reports
  *   its version, the log names the leftover, and an unconfirmed re-import is a 409.
  * - Given snapshot packing fails, no .tmp- file is left beside the snapshots and the next export
@@ -28,7 +26,6 @@ import * as tar from "tar";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { agentDir, agentStateDir, agentVaultPath, snapshotsDir } from "@prismshadow/penguin-core";
 import type { AgentImportResponse } from "../src/api/types.js";
-import { AgentStateRepo } from "../src/workbenches/repo.js";
 import { apiClient, canCreateSymlink, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -51,20 +48,6 @@ function failRename(code: string, when: (from: string, to: string) => boolean) {
 function once(pick: (from: string, to: string) => boolean) {
   let fired = false;
   return (from: string, to: string) => !fired && pick(from, to) && (fired = true);
-}
-
-/** Records one workbench version in the State's repository, as a load does. */
-async function recordVersion(state: string) {
-  const repo = () => new AgentStateRepo({ stateDir: state, now: () => new Date(), log: () => {} });
-  const { commit } = await repo().commitPath(
-    "workbenches/demo",
-    [{ rel: "package.json", body: Buffer.from('{"name":"demo"}') }],
-    "workbench demo @1",
-  );
-  return {
-    commit,
-    listed: async () => (await repo().history("workbenches/demo")).map((v) => v.commit),
-  };
 }
 
 /** Writes a valid v2 State with a lesson into `<src>/agent_state`. */
@@ -232,9 +215,8 @@ describe("Agent State import recovery", () => {
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
   });
 
-  it("when the new State cannot be moved in, the previous State, vault and repository are put back and the retry imports", async () => {
+  it("when the new State cannot be moved in, the previous State and vault are put back and the retry imports", async () => {
     const agent = await agentWithVault();
-    const history = await recordVersion(agent.state);
     failRename(
       "EACCES",
       once((from) => from.includes(".import-") && path.basename(from) === "agent_state"),
@@ -246,16 +228,13 @@ describe("Agent State import recovery", () => {
       agent.config,
     );
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
-    expect(await history.listed()).toEqual([history.commit]);
     expect(await stagingOf(agent.id)).toEqual([]);
 
     expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(200);
-    expect(await history.listed()).toEqual([history.commit]);
   });
 
   it("when the new State cannot be moved in and the old one cannot be moved back, both stay in staging and the log names it", async () => {
     const agent = await agentWithVault();
-    const history = await recordVersion(agent.state);
     failRename("EACCES", (_from, to) => to.endsWith(path.join(agent.id, "agent_state")));
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -267,46 +246,13 @@ describe("Agent State import recovery", () => {
     const trash = path.join(kept, "replaced-agent_state");
     expect(await fs.readFile(path.join(trash, "system_config.yaml"), "utf8")).toBe(agent.config);
     expect(await fs.readFile(path.join(trash, ".vault.toml"))).toEqual(agent.vaultBytes);
-    expect(await fs.readFile(path.join(trash, ".git", "HEAD"), "utf8")).toContain(
-      "refs/heads/main",
-    );
 
     // The operator follows the log: move the previous State back and drop the staging folder.
     vi.restoreAllMocks();
     await fs.rename(trash, agent.state);
     await fs.rm(kept, { recursive: true });
-    expect(await history.listed()).toEqual([history.commit]);
     expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(200);
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
-  });
-
-  it("when the swap fails and the repository cannot be moved back, it stays in staging and the log names it", async () => {
-    const agent = await agentWithVault();
-    const history = await recordVersion(agent.state);
-    const staged = (from: string, name: string) =>
-      from.includes(".import-") && path.basename(from) === name;
-    failRename("EACCES", (from) => staged(from, "agent_state") || staged(from, ".git"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(500);
-    expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toBe(
-      agent.config,
-    );
-    const staging = await stagingOf(agent.id);
-    expect(staging).toHaveLength(1);
-    const repo = path.join(
-      agentDir(t.root, projectId, agent.id),
-      staging[0]!,
-      "extracted",
-      "agent_state",
-      ".git",
-    );
-    expect(logged.find((line) => line.includes("could not be moved back"))).toContain(repo);
-
-    // The operator follows the log.
-    vi.restoreAllMocks();
-    await fs.rename(repo, path.join(agent.state, ".git"));
-    expect(await history.listed()).toEqual([history.commit]);
   });
 
   it("a committed import whose staging cannot be removed still reports its version", async () => {

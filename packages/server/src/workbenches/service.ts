@@ -35,7 +35,7 @@ import type {
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { agentDir, agentStateDir, userText } from "@prismshadow/penguin-core";
+import { agentDir, userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -67,14 +67,14 @@ import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
-import { AgentStateRepo } from "./repo.js";
+import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
   isSafeRelPath,
   isTempName,
   isWorkbenchId,
   listFolders,
   readFolder,
-  readSource,
+  readLoadedSource,
   readState,
   restoreSource,
   STATE_FILE,
@@ -286,22 +286,13 @@ export class WorkbenchService implements Workbenches {
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
-  private readonly migrations = new Map<string, Promise<void>>();
-  /** Each Agent's State repository, which keeps its writes in order. */
-  private readonly repos = new Map<string, AgentStateRepo>();
-
+  /** The Agent State repository; its writes stay in order across instances (./repo.ts). */
   private repo(projectId: string, agentId: string): AgentStateRepo {
-    const agentKey = `${projectId}/${agentId}`;
-    let repo = this.repos.get(agentKey);
-    if (!repo) {
-      repo = new AgentStateRepo({
-        stateDir: agentStateDir(this.paths.root, projectId, agentId),
-        now: () => this.clock.now(),
-        log: (line) => this.log.line(`[workbenches] ${agentKey}: ${line}`),
-      });
-      this.repos.set(agentKey, repo);
-    }
-    return repo;
+    return new AgentStateRepo({
+      gitdir: agentStateRepoDir(agentDir(this.paths.root, projectId, agentId)),
+      now: () => this.clock.now(),
+      log: (line) => this.log.line(`[workbenches] ${projectId}/${agentId}: ${line}`),
+    });
   }
 
   /** A read of the repository that fails is logged and answered as an error the caller can retry. */
@@ -318,18 +309,13 @@ export class WorkbenchService implements Workbenches {
     }
   }
 
+  /**
+   * Asked on every access, not once: a workbench can still be written to the old place after
+   * the Agent's were moved (./migrate-state.ts). With nothing there it costs a few stats, and
+   * concurrent callers share a run.
+   */
   private migrate(projectId: string, agentId: string): Promise<void> {
-    const key = `${projectId}/${agentId}`;
-    const existing = this.migrations.get(key);
-    if (existing) return existing;
-    const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
-      (error) => {
-        this.migrations.delete(key);
-        throw error;
-      },
-    );
-    this.migrations.set(key, pending);
-    return pending;
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
   }
 
   setup(ctx: ClassCtx) {
@@ -527,8 +513,6 @@ export class WorkbenchService implements Workbenches {
       l.tree?.dispose();
       this.loaded.delete(k);
     }
-    this.migrations.delete(agentKey);
-    this.repos.delete(agentKey);
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -746,11 +730,19 @@ export class WorkbenchService implements Workbenches {
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
       try {
-        await this.repo(projectId, agentId).commitPath(
-          repoPath(folder.id),
-          await readSource(folder),
-          `workbench ${folder.id} @${folder.revision}`,
-        );
+        // Exactly the bytes that loaded: an edit since then is the next load's version.
+        const files = await readLoadedSource(folder);
+        if (files === null) {
+          this.log.line(
+            `[workbenches] ${k}@${folder.revision}: version not recorded: the files changed after they were read`,
+          );
+        } else {
+          await this.repo(projectId, agentId).commitPath(
+            repoPath(folder.id),
+            files,
+            `workbench ${folder.id} @${folder.revision}`,
+          );
+        }
       } catch (err) {
         this.log.line(
           `[workbenches] ${k}@${folder.revision}: version not recorded: ${messageOf(err)}`,

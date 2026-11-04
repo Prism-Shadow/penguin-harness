@@ -6,6 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { migrateWorkbenchesIntoState } from "./migrate-state.js";
 import { readFolder } from "./store.js";
 
 /** An entry of a Workflow-era `versions.json`. */
@@ -96,7 +97,27 @@ async function convertHistory(base: string): Promise<void> {
   }
 }
 
-export async function migrateWorkbenches(agentDir: string): Promise<void> {
+/** The run in flight per Agent directory: every caller for one Agent awaits the same run. */
+const running = new Map<string, Promise<void>>();
+
+/**
+ * Every one-time step an Agent's workbenches need, in order: the Workflow conversion, then the
+ * move into Agent State (./migrate-state.ts). Any caller may await it before touching the
+ * workbenches, concurrently with others.
+ */
+export function migrateWorkbenches(agentDir: string): Promise<void> {
+  const key = path.resolve(agentDir);
+  const inFlight = running.get(key);
+  if (inFlight) return inFlight;
+  const run = (async () => {
+    await convertWorkflows(agentDir);
+    await migrateWorkbenchesIntoState(agentDir);
+  })().finally(() => running.delete(key));
+  running.set(key, run);
+  return run;
+}
+
+export async function convertWorkflows(agentDir: string): Promise<void> {
   const journal = path.join(agentDir, ".workbench-migration");
   if (await exists(path.join(journal, "complete"))) return;
   const ready = path.join(journal, "ready");
@@ -110,7 +131,8 @@ export async function migrateWorkbenches(agentDir: string): Promise<void> {
           `Cannot migrate: ${current} already exists in ${agentDir}. Move it aside before retrying; the Workflow files are unchanged.`,
         );
     }
-    await fs.rm(journal, { recursive: true, force: true });
+    // Only this conversion's own leftovers: the journal also keeps later steps' backups.
+    await fs.rm(path.join(journal, "staged"), { recursive: true, force: true });
     await fs.mkdir(path.join(journal, "staged"), { recursive: true });
     for (const [old, current] of pairs) {
       const source = path.join(agentDir, old);

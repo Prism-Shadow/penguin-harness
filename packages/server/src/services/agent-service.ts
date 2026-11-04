@@ -43,6 +43,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
+import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
@@ -224,6 +225,9 @@ export class AgentService implements AgentLifecycle {
       );
     return Promise.all(
       sorted.map(async (row) => {
+        // A migration that fails (an unreadable folder) is reported where the Agent's
+        // workbenches are opened; one Agent's must not fail the list of all of them.
+        await this.migrateWorkbenches(projectId, row.agentId).catch(() => undefined);
         const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
           await Promise.all([
             this.agentConfig.readCardMeta(projectId, row.agentId),
@@ -248,6 +252,15 @@ export class AgentService implements AgentLifecycle {
         };
       }),
     );
+  }
+
+  /**
+   * Workbenches in the layout before Agent State move first (../workbenches/migrate.ts), so what
+   * is counted, listed or installed here is what the Agent has, and an install cannot take an id
+   * ahead of the move: the old folder would then be left where it is.
+   */
+  private migrateWorkbenches(projectId: string, agentId: string): Promise<void> {
+    return migrateWorkbenches(agentDir(this.root, projectId, agentId));
   }
 
   /** Count installed folders without compiling or walking their UI/runtime assets. */
@@ -409,6 +422,7 @@ export class AgentService implements AgentLifecycle {
   ): Promise<{ installed: string | null; library: string | null }> {
     const plugin = libraryPlugin(pluginName);
     if (!plugin) return { installed: null, library: null };
+    await this.migrateWorkbenches(projectId, agentId);
     const base = skillsDir(this.root, projectId, agentId);
     const parts: { installed: string; library: string }[] = [];
     for (const skill of plugin.skills) {
@@ -455,7 +469,9 @@ export class AgentService implements AgentLifecycle {
    * Session is built, unlike skills, which are read from disk on demand.
    */
   async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
-    for (const plugin of resolveLibraryPlugins([pluginName])) {
+    const plugins = resolveLibraryPlugins([pluginName]);
+    await this.migrateWorkbenches(projectId, agentId);
+    for (const plugin of plugins) {
       await installPlugin(this.root, projectId, agentId, plugin);
     }
   }

@@ -52,6 +52,8 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    // Workbenches still in an older layout move into agent_state/ first, so the package has them.
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
     const { file, fileName } = await deps.snapshots.exportArchive(projectId, agentId);
     const bytes = await fs.readFile(file);
     return new Response(new Uint8Array(bytes), {
@@ -70,10 +72,9 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const body = await readJson(c);
     const archive = readArchiveBase64(body);
     const confirm = body.confirm === true;
-    // The workbenches live inside agent_state/. Ones still in an older layout move in first, or
-    // the package's own would sit where they are going and stop their migration later; then
-    // what the server holds open there lets go before the directory is swapped (Windows cannot
-    // rename a watched directory).
+    // The workbenches live inside agent_state/. Ones still in an older layout move in first, so
+    // the backup taken before the swap holds them and the package's cannot take their ids; then
+    // what the server holds open there lets go (Windows cannot rename a watched directory).
     await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
     await deps.workbenches.releaseAgent(projectId, agentId);
     const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, {

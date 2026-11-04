@@ -6,8 +6,10 @@
  * Agent of that id — {@link OTHER_PROJECT_ID}), with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
- * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
- * read back what was written with {@link AgentServer.writes}.
+ * Project's models. Its workbenches are the ones a suite gives it: they reload, restore, export
+ * as a zip download and are removed, and a zip upload installs the one the suite names. A test
+ * can refuse the next write with {@link AgentServer.refuseNext}, or read back what was written
+ * with {@link AgentServer.writes}.
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
@@ -231,6 +233,14 @@ export function agentServer(
     chatDefaults?: ChatDefaultsDto;
     workbenches?: WorkbenchInfo[];
     workbenchVersions?: WorkbenchVersion[];
+    /**
+     * What a zip upload to the workbench archive route installs (the fake reads no zip): a taken
+     * id answers 409 `workbench_exists` unless the upload says `overwrite`. Absent, an upload is
+     * refused with 400.
+     */
+    importedWorkbench?: WorkbenchInfo;
+    /** What a workbench's zip download answers instead of the archive. */
+    archiveRefusal?: { status: number; code: string };
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -549,6 +559,25 @@ export function agentServer(
       return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
+    if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
+      const incoming = options.importedWorkbench;
+      if (incoming === undefined) return apiError(400, "bad_request", "Not a workbench archive");
+      const { overwrite } = request.body as { overwrite?: boolean };
+      if (overwrite !== true && workbenches.some((item) => item.id === incoming.id)) {
+        return json(
+          {
+            error: {
+              code: "workbench_exists",
+              message: `Workbench already exists: ${incoming.id}`,
+              details: { workbenchId: incoming.id },
+            },
+          },
+          409,
+        );
+      }
+      workbenches = [...workbenches.filter((item) => item.id !== incoming.id), incoming];
+      return json({ workbench: incoming }, 201);
+    }
     if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
       const [id, action] = path.slice(`${AGENT_PATH}/workbenches/`.length).split("/");
       const workbench = workbenches.find((item) => item.id === id);
@@ -556,6 +585,16 @@ export function agentServer(
       if (method === "DELETE") {
         workbenches = workbenches.filter((item) => item.id !== id);
         return new Response(null, { status: 204 });
+      }
+      if (action === "archive") {
+        const refusal = options.archiveRefusal;
+        if (refusal !== undefined) return apiError(refusal.status, refusal.code);
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+          headers: {
+            "content-type": "application/zip",
+            "content-disposition": `attachment; filename*=UTF-8''${id}-v${workbench.version}.zip`,
+          },
+        });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
       if (action === "rollback")

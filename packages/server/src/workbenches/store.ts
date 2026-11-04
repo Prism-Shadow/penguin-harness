@@ -17,7 +17,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { blobOid, treeId, type SourceFile } from "./repo.js";
+import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
@@ -44,9 +44,12 @@ export function isSafeRelPath(rel: string): boolean {
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
 }
 
-/** A name the folder's source can hold: not the server's (dot entries, staged writes), not installed packages. */
+/**
+ * A name the folder's source can hold: not the server's (dot entries, staged writes), not
+ * installed packages, and not a name git reserves (no version could hold it).
+ */
 function isSourceName(name: string): boolean {
-  return name !== "node_modules" && !name.startsWith(".") && !isTempName(name);
+  return name !== "node_modules" && !name.startsWith(".") && !isTempName(name) && !isGitName(name);
 }
 
 /** A path inside the folder that is part of its source, and so what a restore may write. */
@@ -124,9 +127,13 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   };
 }
 
-/** The folder's source files as they are now (a file gone since the folder was read is left out). */
-export function readSource(folder: WorkbenchFolder): Promise<SourceFile[]> {
-  return readFiles(folder.dir, folder.files);
+/**
+ * The folder's source as it was read: the files on disk now, or null when they no longer have
+ * the folder's revision (edited since).
+ */
+export async function readLoadedSource(folder: WorkbenchFolder): Promise<SourceFile[] | null> {
+  const files = await readFiles(folder.dir, folder.files);
+  return revisionOf(files) === folder.revision ? files : null;
 }
 
 export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
@@ -176,11 +183,30 @@ export async function writeState(dir: string, state: unknown): Promise<void> {
   }
 }
 
+/** Removes what stands where `rel` goes: a file in place of one of its directories, a directory in place of it. */
+async function clearWay(dir: string, rel: string): Promise<void> {
+  const segments = rel.split("/");
+  for (let i = 1; i < segments.length; i++) {
+    const ancestor = path.join(dir, ...segments.slice(0, i));
+    const stat = await fs.lstat(ancestor).catch(() => null);
+    if (stat === null) return;
+    if (!stat.isDirectory()) {
+      await fs.rm(ancestor, { force: true });
+      return;
+    }
+  }
+  const target = path.join(dir, rel);
+  if ((await fs.lstat(target).catch(() => null))?.isDirectory()) {
+    await fs.rm(target, { recursive: true, force: true });
+  }
+}
+
 /**
  * Makes the folder's source exactly `files`: the source files it has and they lack are removed,
- * the rest written. `state.json` and the dot entries are not source and stay as they are; a file
- * outside the source (a version recorded by hand can hold anything) is refused before anything
- * is written.
+ * the rest put in place, whatever stood where they go (a file where a directory now is, or the
+ * reverse). `state.json` and the dot entries are not source and stay as they are. Everything is
+ * validated and written aside first, so a version holding something other than source (one
+ * recorded by hand can hold anything) or a failed write leaves the folder as it was.
  */
 export async function restoreSource(
   folder: WorkbenchFolder,
@@ -188,13 +214,22 @@ export async function restoreSource(
 ): Promise<void> {
   const foreign = files.find((f) => !isSourcePath(f.rel));
   if (foreign) throw new Error(`that version holds ${foreign.rel}, which is not workbench source`);
-  const keep = new Set(files.map((f) => f.rel));
-  for (const rel of folder.files) {
-    if (!keep.has(rel)) await fs.rm(path.join(folder.dir, rel), { force: true });
-  }
-  for (const file of files) {
-    const target = path.join(folder.dir, file.rel);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, file.body);
+  const staged = await fs.mkdtemp(path.join(folder.dir, `.restore${TMP_SUFFIX}`));
+  try {
+    for (const [i, file] of files.entries()) {
+      await fs.writeFile(path.join(staged, String(i)), file.body);
+    }
+    const keep = new Set(files.map((f) => f.rel));
+    for (const rel of folder.files) {
+      if (!keep.has(rel)) await fs.rm(path.join(folder.dir, rel), { force: true });
+    }
+    for (const [i, file] of files.entries()) {
+      await clearWay(folder.dir, file.rel);
+      const target = path.join(folder.dir, file.rel);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.rename(path.join(staged, String(i)), target);
+    }
+  } finally {
+    await fs.rm(staged, { recursive: true, force: true });
   }
 }

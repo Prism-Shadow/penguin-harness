@@ -22,7 +22,7 @@
  * - A file that disappears mid-read is a change, not a failed request.
  * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
  * - An edited folder is re-imported and committed once per loaded revision to the Agent State
- *   repository (made with its .gitignore at the first load); a rollback restores a version's
+ *   repository, made beside agent_state/ at the first load; a rollback restores a version's
  *   files exactly, keeps the state, and is itself the newest version.
  * - A repository the server cannot read never stops a load: the version is not recorded and
  *   the history answers an error the page can retry.
@@ -478,9 +478,7 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     }
   });
 
-  // The Workflow conversion still lands in `<agentDir>/workbenches/`; this passes again once
-  // that folder is moved into Agent State on first access.
-  it.skip("loads an existing Workflow through the new route without losing state", async () => {
+  it("loads an existing Workflow through the new route without losing state", async () => {
     const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "legacy" });
     expect(made.status).toBe(201);
     const legacy = path.join(agentDir(t.root, PROJECT, "legacy"), "workflows/demo");
@@ -588,11 +586,11 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
 
   it("commits each loaded revision once and rolls back to any of them exactly", async () => {
     const [v1] = await list();
-    // The first load made the Agent State a repository, with the ignore file a person's git reads.
-    const state = agentStateDir(t.root, PROJECT, agentId);
-    expect(await fs.readFile(path.join(state, ".gitignore"), "utf8")).toContain(
-      "workbenches/*/state.json",
-    );
+    // The first load made the repository beside the Agent State, and put nothing inside it.
+    const agent = agentDir(t.root, PROJECT, agentId);
+    expect((await fs.stat(path.join(agent, "agent_state.git", "HEAD"))).isFile()).toBe(true);
+    const inside = await fs.readdir(path.join(agent, "agent_state"));
+    expect(inside.filter((name) => name.startsWith(".git"))).toEqual([]);
     expect((await versions()).map((v) => v.revision)).toEqual([v1!.revision]);
 
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));
@@ -641,7 +639,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   });
 
   it("a repository it cannot read never stops a load: the version is not recorded, history is an error", async () => {
-    const repo = path.join(agentStateDir(t.root, PROJECT, agentId), ".git");
+    const repo = path.join(agentDir(t.root, PROJECT, agentId), "agent_state.git");
     await fs.mkdir(repo, { recursive: true });
     await fs.writeFile(path.join(repo, "HEAD"), "garbage\n");
 

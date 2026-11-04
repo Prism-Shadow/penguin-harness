@@ -442,10 +442,11 @@ export function WorkbenchFrame({
           <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.noHistory}</p>
         ) : (
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {versions.map((v) => {
-              const current = v.revision === tab.revision;
+            {versions.map((v, i) => {
+              // A restore records an old revision again: only its newest entry is the current one.
+              const current = i === versions.findIndex((w) => w.revision === tab.revision);
               return (
-                <li key={v.revision} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                <li key={v.commit} className="flex items-center gap-3 px-3 py-1.5 text-xs">
                   <span className="font-mono">{v.revision}</span>
                   <span className="text-gray-500">{formatDateTime(v.savedAt)}</span>
                   <span className="flex-1" />
