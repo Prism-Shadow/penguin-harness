@@ -3,7 +3,7 @@
  *
  *   @import "tailwindcss";
  *   @import "@prismshadow/penguin-ui/theme.css";
- *   @import "@prismshadow/penguin-ui/themes/github.css";   (then modern.css, geek.css)
+ *   @import "@prismshadow/penguin-ui/themes/github.css";   (then modern.css, geek.css, cartoon.css)
  *   @import "@prismshadow/penguin-ui/fonts.css";
  *
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge

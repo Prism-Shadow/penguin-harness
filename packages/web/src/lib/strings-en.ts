@@ -910,7 +910,7 @@ export const en: Strings = {
     },
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console", cartoon: "Doodle" },
     colorMode: "Mode",
     colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
@@ -987,6 +987,11 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      marker: "Marker",
+      ballpoint: "Ballpoint",
+      grass: "Grass",
+      crayon: "Crayon",
+      grape: "Grape",
     } as Record<string, string>,
   },
 

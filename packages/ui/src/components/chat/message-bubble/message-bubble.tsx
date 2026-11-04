@@ -81,7 +81,7 @@ export function MessageBubble({
   switch (variant) {
     case "user":
       return (
-        <div className={`${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
+        <div className={`ui-edge ${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
           <p className="wrap-anywhere font-sans whitespace-pre-wrap text-base leading-relaxed text-fg">
             {children}
           </p>
@@ -90,7 +90,7 @@ export function MessageBubble({
     case "steering":
       return (
         <div
-          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
+          className={`ui-edge flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
         >
           <div className="flex items-start gap-1.5">
             <GlyphIcon d={ICONS.user} className="mt-1 shrink-0 text-fg-subtle" />

@@ -186,6 +186,14 @@ const TINT_SHORTFALLS: readonly TintShortfall[] = [
     until: UNTIL_TINT_FLOORS,
   },
   {
+    theme: "cartoon",
+    mode: "dark",
+    pair: "--ui-fg",
+    holds: 10,
+    reason: `${NEAR_WHITE} (10.58:1; the five pens' tints clear 11:1)`,
+    until: UNTIL_TINT_FLOORS,
+  },
+  {
     theme: "geek",
     mode: "dark",
     pair: "--ui-canvas",

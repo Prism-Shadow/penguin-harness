@@ -28,8 +28,18 @@ describe("formatBreadcrumb", () => {
         size: "m",
       }),
     ).toBe("白领 › 对话 · 深色");
-    expect(zh.rail.themeNames).toEqual({ github: "朴素", modern: "白领", geek: "极客" });
-    expect(en.rail.themeNames).toEqual({ github: "Primer", modern: "Frost", geek: "Console" });
+    expect(zh.rail.themeNames).toEqual({
+      github: "朴素",
+      modern: "白领",
+      geek: "极客",
+      cartoon: "卡通",
+    });
+    expect(en.rail.themeNames).toEqual({
+      github: "Primer",
+      modern: "Frost",
+      geek: "Console",
+      cartoon: "Doodle",
+    });
   });
 
   it("names a section of a page, the section joining the path", () => {

@@ -2,8 +2,8 @@
  * Gallery chrome copy (bilingual): this file holds the Chinese dictionary `zh` and the
  * `GalleryStrings` shape; the English dictionary lives in strings-en.ts. These strings are the
  * gallery's own and never reach the product. Theme display names are per language (白领 / 极客 /
- * 朴素 here, Frost / Console / Primer in English) and so are breadcrumbs; theme ids, token names,
- * accent preset ids and font names stay English in both.
+ * 朴素 / 卡通 here, Frost / Console / Primer / Doodle in English) and so are breadcrumbs; theme
+ * ids, token names, accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
  * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
@@ -220,7 +220,7 @@ export const zh = {
   home: {
     eyebrow: "界面画廊",
     title: "Penguin UI",
-    lead: "真实的 Web App，在三套主题、两种明暗、五档字号、可选字体组合与两种语言下运行——数据来自浏览器内的演示接口，可以随意点击。",
+    lead: "真实的 Web App，在四套主题、两种明暗、五档字号、可选字体组合与两种语言下运行——数据来自浏览器内的演示接口，可以随意点击。",
     app: "应用",
     appLead:
       "这就是应用本身：侧栏、各个中心、对话与设置都能点开。主题与字号等控件作用于框内的应用；发送消息会得到一段脚本回复。",
@@ -237,7 +237,10 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
+    themeNames: { github: "朴素", modern: "白领", geek: "极客", cartoon: "卡通" } as Record<
+      ThemeId,
+      string
+    >,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
@@ -403,6 +406,7 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
+      "ui-edge": "人按下、输入或写下的框的边：有底色或描边的按钮、输入框与选择框、本人的消息气泡",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":

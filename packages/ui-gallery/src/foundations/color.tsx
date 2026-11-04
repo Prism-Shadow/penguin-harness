@@ -9,6 +9,7 @@
 import { ACCENT_PRESETS, TONES } from "@prismshadow/penguin-ui";
 import type { ThemeId, ThemeModeName, ToneName } from "@prismshadow/penguin-ui";
 import type { CSSProperties } from "react";
+import cartoonCss from "../../../ui/src/themes/cartoon.css?raw";
 import geekCss from "../../../ui/src/themes/geek.css?raw";
 import githubCss from "../../../ui/src/themes/github.css?raw";
 import modernCss from "../../../ui/src/themes/modern.css?raw";
@@ -24,6 +25,7 @@ const THEME_CSS: Readonly<Record<ThemeId, string>> = {
   github: githubCss,
   modern: modernCss,
   geek: geekCss,
+  cartoon: cartoonCss,
 };
 
 /**

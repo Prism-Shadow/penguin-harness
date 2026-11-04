@@ -2,12 +2,12 @@
  * The token contract: every CSS custom property a theme must define, grouped the way the
  * gallery's Foundations pages present them.
  *
- * One name set for every theme. Each of `themes/github.css`, `themes/modern.css` and
- * `themes/geek.css` gives **every** name below a value in **both** modes (light and dark): its
- * base rule declares all of them with the light values, and its dark rule declares only the names
- * whose value dark changes — a group that does not vary by mode (shape, families, type scale,
- * density, motion, streaming, the icons' stroke) lives once, in the base rule. The contract test
- * parses the three files and diffs each mode (the base rule plus that mode's own) against
+ * One name set for every theme. Each of `themes/github.css`, `themes/modern.css`,
+ * `themes/geek.css` and `themes/cartoon.css` gives **every** name below a value in **both** modes
+ * (light and dark): its base rule declares all of them with the light values, and its dark rule
+ * declares only the names whose value dark changes — a group that does not vary by mode (shape,
+ * families, type scale, density, motion, streaming, the icons' stroke) lives once, in the base
+ * rule. The contract test parses the theme files and diffs each mode (the base rule plus that mode's own) against
  * {@link TOKEN_NAMES}. Components
  * read these names only — through the semantic Tailwind utilities `theme.css` bridges
  * (`bg-surface`, `text-fg-muted`, `border-line`, …) or through `var(--ui-*)` directly — and never
@@ -51,9 +51,10 @@
 
 /**
  * Stable, lowercase theme ids, in the order every list offers them — Settings, the gallery:
- * Frost, Console, Primer (user decision, 2026-10-02). Display names are UI copy, not ids.
+ * Frost, Console, Primer (user decision, 2026-10-02), then Doodle, added 2026-11-04. Display
+ * names are UI copy, not ids.
  */
-export const THEME_IDS = ["modern", "geek", "github"] as const;
+export const THEME_IDS = ["modern", "geek", "github", "cartoon"] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
 /**
@@ -130,6 +131,15 @@ export const ACCENT_PRESETS = {
     { id: "gold", swatch: "#8a6d00" },
     { id: "cobalt", swatch: "#003ee9" },
   ],
+  // Doodle's five pens (2026-11-04): the marker, the ballpoint, grass, a red crayon and grape.
+  // A highlighter yellow is not among them: as a mark it is under 3:1 on paper.
+  cartoon: [
+    { id: "marker", swatch: "#bb4f27" },
+    { id: "ballpoint", swatch: "#2c4f9e" },
+    { id: "grass", swatch: "#2f6b45" },
+    { id: "crayon", swatch: "#b3261e" },
+    { id: "grape", swatch: "#6a46b8" },
+  ],
 } as const satisfies Readonly<Record<ThemeId, readonly AccentPresetSpec[]>>;
 
 /** Every preset id any theme lists. */
@@ -147,6 +157,7 @@ export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPrese
     github: ACCENT_PRESETS.github.map((preset) => preset.id),
     modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
     geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
+    cartoon: ACCENT_PRESETS.cartoon.map((preset) => preset.id),
   }))();
 
 /** Every id once, across the themes — what a stored value is validated against. */
@@ -157,7 +168,7 @@ export const ACCENT_PRESET_IDS: readonly AccentPreset[] = /* @__PURE__ */ (() =>
 /**
  * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
  * mode, spelled as the theme file spells it, so a picker can paint the "theme's own" swatch
- * without a stylesheet probe (a test holds each value equal to the CSS). All three are
+ * without a stylesheet probe (a test holds each value equal to the CSS). All four are
  * monochrome (user decision, 2026-10-02): the theme's ink in light, a near-white in dark, so that
  * swatch shows black or white rather than a hue. Primer's are Tailwind's stock gray-900 /
  * gray-100, as v0.2.13 drew them.
@@ -166,6 +177,7 @@ export const THEME_OWN_ACCENTS: OwnAccents = {
   github: { light: "#111827", dark: "#f3f4f6" },
   modern: { light: "#232527", dark: "#f5f5f6" },
   geek: { light: "#1d1d1f", dark: "#f4f2f2" },
+  cartoon: { light: "#2b2521", dark: "#ece5d6" },
 };
 type OwnAccents = Readonly<Record<ThemeId, Readonly<Record<ThemeModeName, string>>>>;
 

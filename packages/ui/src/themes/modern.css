@@ -1092,6 +1092,9 @@
   :root[data-theme="modern"] {
     font-synthesis-weight: none;
   }
+
+  /* `.ui-edge` is a documented no-op: a button, a text field and a bubble keep their own line
+     and corner, which this file's tokens already set (the pill controls, the hairlines). */
 }
 
 /*

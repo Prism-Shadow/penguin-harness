@@ -1,6 +1,6 @@
 # @prismshadow/penguin-ui
 
-The React components, design tokens and three themes of the
+The React components, design tokens and four themes of the
 [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) Web App, published as ES modules
 with a precompiled stylesheet.
 
@@ -28,7 +28,7 @@ import "@prismshadow/penguin-ui/styles.css";
 It is already compiled, so your project needs no Tailwind. It holds:
 
 - Tailwind's base reset (preflight). It applies to the whole page, not only to the components.
-- The `--ui-*` design tokens of the three themes.
+- The `--ui-*` design tokens of the four themes.
 - Every utility class the components use, and only those. Style your own markup with your own CSS
   that reads the `--ui-*` custom properties, for example `color: var(--ui-fg-muted)`.
 - The components' own CSS, and KaTeX's styles with its woff2 fonts for math in Markdown.

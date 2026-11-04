@@ -22,7 +22,7 @@
  */
 import { test, expect } from "@playwright/test";
 
-const THEMES = ["modern", "geek", "github"];
+const THEMES = ["modern", "geek", "github", "cartoon"];
 
 async function openBoard(page, { theme = "github", mode = "light", lang = "en", width = 1280 }) {
   await page.setViewportSize({ width, height: 900 });

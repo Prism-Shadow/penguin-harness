@@ -229,7 +229,8 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     expect(all.length).toBe(new Set(all).size);
     // Console's own accent went black and white (2026-09-30) and Frost's followed (2026-10-02);
     // the hue each had is now its first preset, so their lists are one longer.
-    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6 };
+    // Doodle lists five pens (2026-11-04).
+    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6, cartoon: 5 };
     for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length, id).toBe(listed[id]);
     expect(THEME_ACCENT_PRESETS.geek[0]).toBe("orange");
     expect(THEME_ACCENT_PRESETS.modern[0]).toBe("forest");
@@ -734,11 +735,12 @@ describe("the streaming tokens (2026-09-30)", () => {
     }
   });
 
-  it("reveals Primer as today (instant), Frost by fading and Console by typing", () => {
+  it("reveals Primer and Doodle as they land (instant), Frost by fading and Console by typing", () => {
     const expected: Readonly<Record<ThemeId, string>> = {
       github: "instant",
       modern: "fade",
       geek: "typewriter",
+      cartoon: "instant",
     };
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
