@@ -25,7 +25,6 @@ export * from "@penguinharness/plugin-projects/web";
 export * from "@penguinharness/plugin-usage/web";
 export * from "./lib/api-error";
 export * from "./lib/browser-start-sites";
-export * from "./lib/settings-request";
 export * from "./lib/dock-panel-empty";
 export * from "./lib/file-path";
 export * from "./lib/reader-find";
