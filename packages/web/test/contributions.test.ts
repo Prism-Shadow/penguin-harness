@@ -86,6 +86,7 @@ const frame = (src: string) => ({ iframe: { src, namespace: "hello" } });
 function answer(pages: readonly object[]): ContributionsResponse {
   return {
     pages: pages as ContributionsResponse["pages"],
+    widgets: [],
     fileRenderers: [],
     pageRemovals: [],
     agentTabs: [],

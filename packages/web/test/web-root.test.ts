@@ -296,6 +296,7 @@ describe("the booted page table", () => {
       sessionTabs: [],
       quickStarts: [],
       sessionSurfaces: [],
+      widgets: [],
     };
     renderers.set("OrgProposalsPage", OrgProposalsPage);
     const merged = contributedPagesOf(pages, answer, renderers);
