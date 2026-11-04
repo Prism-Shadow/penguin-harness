@@ -1,13 +1,21 @@
 /**
  * Progressive, open-canvas orchestration diagram for Section 4 of the GDPEVO blog post.
  *
- * Starts with the top-level General Agent on a clean canvas and progressively builds the
- * experiment topology step by step:
- *   Stage 1: General Agent spawns the 1 Shared Container for continuous training (3+2 Train pool)
- *   Stage 2: Training finishes and exports the frozen Evolved Agent (+ SKILL.md)
- *   Stage 3: 1-to-5 fan-out spawns 5 isolated test containers (x3 runs = 15 fresh containers)
- *   Stage 4: 5-to-1 convergence into Offline Verifier, reporting scores back to General Agent
- *   Stage 5: General Agent aggregates all runs and generates the Final Result report
+ * Driven by a fine-grained tick clock (22 ticks per cycle):
+ * - Phase 1 (Ticks 0..11, "1. Train"): General Agent dispatches via Harbor into `1 Shared Docker`.
+ *   Inside `1 Shared Docker`, Base Agent actively cycles through all 5 training tasks (`T1..T5` in
+ *   a 3+2 closed circuit) over 2 full rounds:
+ *     Round 1 (Ticks 0..4): Base Agent (No Skill) steps through T1 -> T2 -> T3 -> T4 -> T5;
+ *       at Tick 5 the return bus feeds back into Base Agent to distill `Skill v1`.
+ *     Round 2 (Ticks 6..10): Base Agent (Skill v1) sweeps T1 -> T2 -> T3 -> T4 -> T5 again;
+ *       at Tick 11 the return bus feeds back into Base Agent to refine `Skill v2`.
+ * - Phase 2 (Ticks 12..13, "2. Freeze"): Exports the evolved skill out of `1 Shared Docker` to
+ *   materialize `Evolved Agent (+ SKILL.md)`.
+ * - Phase 3 (Ticks 14..17, "3. Test"): General Agent dispatches via Harbor and `Evolved Agent`
+ *   fans out 1-to-5 into 5 stacked horizontal `Isolated Dockers` (`Test 1..5`), lighting up the
+ *   3 independent evaluation runs (`R1 -> R2 -> R3`) column by column.
+ * - Phase 4 (Ticks 18..21, "4. Result"): 5-to-1 convergence into `Offline Verifier`, which reports
+ *   back to `General Agent` to emit `Final Result (68.95 ± 0.74)`.
  */
 import { useEffect, useState } from "react";
 import { SitePlaybackButton } from "@prismshadow/penguin-ui/site";
@@ -15,71 +23,50 @@ import { S, zh } from "../lib/strings";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useVisibleActivity } from "../lib/visible-activity";
 
-interface BuildStage {
+const TOTAL_TICKS = 22;
+
+interface StageTab {
   readonly id: string;
-  readonly stepZh: string;
-  readonly stepEn: string;
-  readonly captionZh: string;
-  readonly captionEn: string;
+  readonly labelZh: string;
+  readonly labelEn: string;
+  readonly startTick: number;
+  readonly endTick: number;
 }
 
-const STAGES: readonly BuildStage[] = [
-  {
-    id: "s1",
-    stepZh: "1. 构建训练",
-    stepEn: "1. Train",
-    captionZh: "General Agent 拉起单个共享训练容器，Target Agent 在 5 道训练题（3+2）上连续演进 SKILL.md",
-    captionEn: "General Agent spawns 1 shared container; Target Agent evolves SKILL.md across Train 1-5 (3+2)",
-  },
-  {
-    id: "s2",
-    stepZh: "2. 冻结技能",
-    stepEn: "2. Freeze",
-    captionZh: "训练完成并锁定 SKILL.md 写入权限，导出挂载只读技能的 Evolved Agent",
-    captionEn: "Training completes; SKILL.md is locked read-only to form the frozen Evolved Agent",
-  },
-  {
-    id: "s3",
-    stepZh: "3. 隔离测试",
-    stepEn: "3. Test (×3)",
-    captionZh: "General Agent 调度一分五并发盲测，为 Test 1–5 各自独立拉起 3 轮全新容器（共 15 个容器）",
-    captionEn: "General Agent dispatches 1-to-5 isolated evaluation across Test 1-5 (3 runs each = 15 containers)",
-  },
-  {
-    id: "s4",
-    stepZh: "4. 判分汇总",
-    stepEn: "4. Verify",
-    captionZh: "五合一汇入 Offline Verifier 完成离线判分，并将全部测试得分回传给顶层 General Agent",
-    captionEn: "5-to-1 convergence into Offline Verifier, reporting all test scores back to General Agent",
-  },
-  {
-    id: "s5",
-    stepZh: "5. 生成结果",
-    stepEn: "5. Result",
-    captionZh: "General Agent 汇总跨轮次均值与标准差，产出最终实验报告（68.95 ± 0.74）",
-    captionEn: "General Agent aggregates multi-run mean and standard deviation into the Final Result (68.95 ± 0.74)",
-  },
+const STAGE_TABS: readonly StageTab[] = [
+  { id: "train", labelZh: "1. 多轮训练循环", labelEn: "1. Multi-Round Train", startTick: 0, endTick: 11 },
+  { id: "freeze", labelZh: "2. 产出进化 Agent", labelEn: "2. Evolved Agent", startTick: 12, endTick: 13 },
+  { id: "test", labelZh: "3. 隔离容器盲测", labelEn: "3. Isolated Dockers", startTick: 14, endTick: 17 },
+  { id: "result", labelZh: "4. 判分汇总结果", labelEn: "4. Final Result", startTick: 18, endTick: 21 },
 ];
 
-/** 3+2 coordinates for the 5 training task pills inside `1 Shared Container` (x=12..240, y=104..294). */
-const TRAIN_PILLS = [
-  { label: "Train 1", x: 30, y: 208, w: 58, h: 28 },
-  { label: "Train 2", x: 97, y: 208, w: 58, h: 28 },
-  { label: "Train 3", x: 164, y: 208, w: 58, h: 28 },
-  { label: "Train 4", x: 63, y: 246, w: 58, h: 28 },
-  { label: "Train 5", x: 131, y: 246, w: 58, h: 28 },
+/** 3+2 coordinates for the 5 training task cards inside `1 Shared Docker` (x=10..252, y=102..288). */
+const TRAIN_CARDS = [
+  { label: "T1", x: 122, y: 146, w: 36, h: 34 },
+  { label: "T2", x: 164, y: 146, w: 36, h: 34 },
+  { label: "T3", x: 206, y: 146, w: 36, h: 34 },
+  { label: "T4", x: 142, y: 200, w: 36, h: 34 },
+  { label: "T5", x: 186, y: 200, w: 36, h: 34 },
 ] as const;
 
-/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Containers. */
-const TEST_ROWS_Y = [120, 160, 200, 240, 280] as const;
+/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Dockers. */
+const TEST_ROWS_Y = [122, 160, 198, 236, 274] as const;
+
+function tickDelayMs(tick: number): number {
+  if (tick === 5 || tick === 11) return 900;
+  if (tick < 12) return 450;
+  if (tick === 13) return 900;
+  if (tick >= 14 && tick <= 17) return 650;
+  if (tick === 21) return 2800;
+  return 700;
+}
 
 export function GdpevoOrchestrationWidget() {
   const isZh = S === zh;
   const reduced = usePrefersReducedMotion();
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
 
-  // SSR / reduced-motion starts at the completed Stage 5 view; live view starts growing from Stage 1.
-  const [stageIdx, setStageIdx] = useState<number>(4);
+  const [tick, setTick] = useState<number>(21);
   const [paused, setPaused] = useState<boolean>(false);
   const [hasStarted, setHasStarted] = useState<boolean>(false);
 
@@ -88,72 +75,64 @@ export function GdpevoOrchestrationWidget() {
   useEffect(() => {
     if (active && !reduced && !hasStarted) {
       setHasStarted(true);
-      setStageIdx(0);
+      setTick(0);
     }
   }, [active, reduced, hasStarted]);
 
   useEffect(() => {
     if (!running) return;
-    const delay = stageIdx === 4 ? 4000 : 2200;
     const timer = window.setTimeout(() => {
-      setStageIdx((prev) => (prev + 1) % STAGES.length);
-    }, delay);
+      setTick((prev) => (prev + 1) % TOTAL_TICKS);
+    }, tickDelayMs(tick));
     return () => window.clearTimeout(timer);
-  }, [running, stageIdx]);
+  }, [running, tick]);
+
+  const activeStageIdx = STAGE_TABS.findIndex((s) => tick >= s.startTick && tick <= s.endTick);
 
   const selectStage = (idx: number) => {
-    setStageIdx(idx);
-    setPaused(true);
+    const target = STAGE_TABS[idx];
+    if (!target) return;
+    if (idx === 0) {
+      setTick(0);
+      setPaused(false);
+    } else {
+      setTick(target.endTick);
+      setPaused(true);
+    }
   };
 
-  const stage = STAGES[stageIdx] ?? STAGES[4]!;
-  const showStage2 = stageIdx >= 1;
-  const showStage3 = stageIdx >= 2;
-  const showStage4 = stageIdx >= 3;
-  const showStage5 = stageIdx >= 4;
+  // Derive visual state from `tick` (0..21)
+  const trainRound = tick < 6 ? 1 : 2;
+  const activeTaskIdx = tick < 5 ? tick : tick >= 6 && tick < 11 ? tick - 6 : -1;
+  const isSkillUpdating = tick === 5 || tick === 11;
+  const skillBadge =
+    tick < 5 ? "No Skill" : tick < 11 ? "Skill v1" : "Skill v2";
+
+  const showStage2 = tick >= 12;
+  const showStage3 = tick >= 14;
+  const completedTestRuns = tick < 15 ? 0 : tick === 15 ? 1 : tick === 16 ? 2 : 3;
+  const showVerifier = tick >= 18;
+  const showReturnToMain = tick >= 19;
+  const showFinalResult = tick >= 20;
 
   const copy = isZh
     ? {
-        play: "播放动态构建过程",
-        pause: "暂停动态构建过程",
-        mainAgent: "General Agent",
-        mainSub: "主控编排 Agent",
-        sharedContainer: "1 Shared Container",
-        targetAgent: "Target Agent",
-        skillDoc: "SKILL.md",
-        evolvedAgent: "Evolved Agent",
-        frozenBadge: "+ SKILL.md",
-        isolatedLabel: "Isolated Containers",
-        verifier: "Offline",
-        verifierSub: "Verifier",
-        resultTitle: "Final Result",
-        resultSub: "68.95 ± 0.74 (+12.63)",
+        play: "播放实验动态演进",
+        pause: "暂停实验动态演进",
       }
     : {
-        play: "Play progressive build",
-        pause: "Pause progressive build",
-        mainAgent: "General Agent",
-        mainSub: "Experiment Controller",
-        sharedContainer: "1 Shared Container",
-        targetAgent: "Target Agent",
-        skillDoc: "SKILL.md",
-        evolvedAgent: "Evolved Agent",
-        frozenBadge: "+ SKILL.md",
-        isolatedLabel: "Isolated Containers",
-        verifier: "Offline",
-        verifierSub: "Verifier",
-        resultTitle: "Final Result",
-        resultSub: "68.95 ± 0.74 (+12.63)",
+        play: "Play experiment flow",
+        pause: "Pause experiment flow",
       };
 
   return (
     <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
       {/* Minimal Frameless Control Strip */}
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Progressive stages">
-          {STAGES.map((s, idx) => {
-            const isCurrent = idx === stageIdx;
-            const isBuilt = idx <= stageIdx;
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Experiment stages">
+          {STAGE_TABS.map((s, idx) => {
+            const isCurrent = idx === activeStageIdx;
+            const isReached = tick >= s.startTick;
             return (
               <button
                 key={s.id}
@@ -164,12 +143,12 @@ export function GdpevoOrchestrationWidget() {
                 className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors ${
                   isCurrent
                     ? "bg-brand-600 text-white dark:bg-brand-500 dark:text-gray-950"
-                    : isBuilt
+                    : isReached
                       ? "bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/70 dark:text-brand-300 dark:hover:bg-brand-900/60"
                       : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                 }`}
               >
-                {isZh ? s.stepZh : s.stepEn}
+                {isZh ? s.labelZh : s.labelEn}
               </button>
             );
           })}
@@ -181,17 +160,12 @@ export function GdpevoOrchestrationWidget() {
         />
       </div>
 
-      {/* Live Stage Caption */}
-      <p className="mb-3 text-xs text-gray-600 dark:text-gray-400">
-        {isZh ? stage.captionZh : stage.captionEn}
-      </p>
-
-      {/* Open-Canvas Progressive SVG (No Outer Box, No Nested Wrapper Frames) */}
+      {/* Open-Canvas Progressive SVG */}
       <svg
-        viewBox="0 0 720 312"
+        viewBox="0 0 720 300"
         className="block w-full select-none overflow-visible"
         role="img"
-        aria-label={isZh ? stage.captionZh : stage.captionEn}
+        aria-label="PenguinHarness GDPEVO experiment orchestration"
       >
         <defs>
           <marker
@@ -232,266 +206,308 @@ export function GdpevoOrchestrationWidget() {
         {/* ==================== TOP ORCHESTRATOR: GENERAL AGENT ==================== */}
         <g>
           <rect
-            x="264"
-            y="8"
-            width="172"
-            height="48"
-            rx="10"
+            x="268"
+            y="6"
+            width="148"
+            height="42"
+            rx="9"
             strokeWidth="1.5"
             className="fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
           />
           <text
-            x="350"
-            y="29"
+            x="342"
+            y="32"
             textAnchor="middle"
             className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
           >
-            {copy.mainAgent}
-          </text>
-          <text
-            x="350"
-            y="45"
-            textAnchor="middle"
-            className="fill-brand-700 font-mono text-xs dark:fill-brand-300"
-          >
-            {copy.mainSub}
+            General Agent
           </text>
         </g>
 
-        {/* ==================== STAGE 1: SHARED TRAINING CONTAINER ==================== */}
+        {/* ==================== PHASE 1: HARBOR -> 1 SHARED DOCKER (MULTI-ROUND TRAIN) ==================== */}
         <g>
-          {/* Dispatch line from General Agent (x=296, y=56) -> 1 Shared Container (x=126, y=98) */}
+          {/* Dispatch line from General Agent (x=302, y=48) -> Harbor -> 1 Shared Docker (x=130, y=98) */}
           <path
-            d="M296,56 L296,76 L126,76 L126,98"
+            d="M302,48 L302,76 L130,76 L130,98"
             fill="none"
             strokeWidth="1.5"
             className="stroke-brand-500 dark:stroke-brand-400"
             markerEnd="url(#pg-arrow-brand)"
           />
-          {running && stageIdx === 0 && (
-            <circle r="3" className="fill-brand-500 dark:fill-brand-400">
-              <animateMotion
-                dur="1.4s"
-                repeatCount="indefinite"
-                path="M296,56 L296,76 L126,76 L126,98"
-              />
-            </circle>
-          )}
-
-          {/* 1 Shared Container Boundary (x=12..240, y=104..294) */}
+          {/* Harbor badge on the left dispatch spine */}
           <rect
-            x="12"
-            y="104"
-            width="228"
-            height="190"
+            x="184"
+            y="66"
+            width="58"
+            height="20"
+            rx="5"
+            strokeWidth="1"
+            className="fill-brand-50 stroke-brand-300 dark:fill-brand-950 dark:stroke-brand-700"
+          />
+          <text
+            x="213"
+            y="80"
+            textAnchor="middle"
+            className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+          >
+            Harbor
+          </text>
+
+          {/* 1 Shared Docker Boundary (x=10..252, y=102..288) */}
+          <rect
+            x="10"
+            y="102"
+            width="242"
+            height="186"
             rx="12"
             strokeWidth="1.5"
             strokeDasharray="6 4"
             className={
-              stageIdx === 0
-                ? "fill-brand-50/30 stroke-brand-500 dark:fill-brand-950/20 dark:stroke-brand-400"
-                : "fill-gray-50/60 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
+              tick < 12
+                ? "fill-brand-50/25 stroke-brand-500 dark:fill-brand-950/20 dark:stroke-brand-400"
+                : "fill-gray-50/50 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
             }
           />
           <text
-            x="126"
+            x="24"
             y="124"
-            textAnchor="middle"
             className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
           >
-            {copy.sharedContainer}
+            1 Shared Docker
           </text>
-
-          {/* Target Agent Node inside Shared Container (x=26..114, y=138..184) */}
+          {/* Live Round Pill in top-right of 1 Shared Docker */}
           <rect
-            x="26"
-            y="138"
-            width="88"
-            height="46"
-            rx="8"
-            strokeWidth="1.25"
-            className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            x="172"
+            y="111"
+            width="68"
+            height="18"
+            rx="4"
+            className={
+              tick < 12
+                ? "fill-brand-100 dark:fill-brand-900/70"
+                : "fill-emerald-100 dark:fill-emerald-900/60"
+            }
           />
           <text
-            x="70"
-            y="159"
+            x="206"
+            y="124"
             textAnchor="middle"
-            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+            className={
+              tick < 12
+                ? "fill-brand-800 font-mono text-xs font-semibold tabular-nums dark:fill-brand-200"
+                : "fill-emerald-800 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-200"
+            }
           >
-            {copy.targetAgent}
-          </text>
-          <text
-            x="70"
-            y="175"
-            textAnchor="middle"
-            className="fill-gray-500 font-mono text-xs dark:fill-gray-400"
-          >
-            Learner
+            {tick < 12 ? `Round ${trainRound}/2` : "2/2 Done"}
           </text>
 
-          {/* Clean Bidirectional Evolution Link (x=116..148) — 36px gap, zero overlap */}
+          {/* Unobstructed Closed Training Circuit:
+              1) Entry: Base Agent (98, 163) -> T1 (122, 163) -> T2 (164, 163) -> T3 (206, 163)
+              2) Row Step: T3 bottom (224, 180) -> gap y=190 -> T4 left (130, 190 -> 130, 217 -> 142, 217) -> T5 (186, 217)
+              3) Feedback Return: T5 bottom (204, 234) -> bottom bus y=254 -> Base Agent bottom (60, 254 -> 60, 230) */}
           <path
-            d="M116,155 L148,155"
+            d="M98,163 L122,163 M158,163 L164,163 M200,163 L206,163 M224,180 L224,190 L130,190 L130,217 L142,217 M178,217 L186,217"
             fill="none"
             strokeWidth="1.5"
-            className="stroke-brand-500 dark:stroke-brand-400"
-            markerEnd="url(#pg-arrow-brand)"
+            className={
+              activeTaskIdx >= 0
+                ? "stroke-brand-500 dark:stroke-brand-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
           />
           <path
-            d="M148,168 L116,168"
+            d="M204,234 L204,254 L60,254 L60,230"
             fill="none"
-            strokeWidth="1.5"
-            className="stroke-gray-400 dark:stroke-gray-500"
-            markerEnd="url(#pg-arrow-gray)"
+            strokeWidth={isSkillUpdating ? "2" : "1.5"}
+            strokeDasharray={isSkillUpdating ? undefined : "4 3"}
+            className={
+              isSkillUpdating
+                ? "stroke-emerald-600 dark:stroke-emerald-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+            markerEnd={isSkillUpdating ? "url(#pg-arrow-emerald)" : "url(#pg-arrow-gray)"}
           />
-          {running && stageIdx === 0 && (
-            <circle r="2.5" className="fill-brand-500 dark:fill-brand-400">
-              <animateMotion dur="1.1s" repeatCount="indefinite" path="M116,155 L148,155" />
+          {running && isSkillUpdating && (
+            <circle r="3.25" className="fill-emerald-500 dark:fill-emerald-400">
+              <animateMotion
+                dur="0.75s"
+                repeatCount="indefinite"
+                path="M204,234 L204,254 L60,254 L60,230"
+              />
             </circle>
           )}
 
-          {/* Evolving SKILL.md Node inside Shared Container (x=150..226, y=138..184) */}
+          {/* Base Agent Node inside 1 Shared Docker (x=22..98, y=148..228) */}
           <rect
-            x="150"
-            y="138"
+            x="22"
+            y="148"
             width="76"
-            height="46"
+            height="80"
             rx="8"
-            strokeWidth="1.25"
-            className="fill-brand-50 stroke-brand-400 dark:fill-brand-950 dark:stroke-brand-500"
+            strokeWidth="1.5"
+            className={
+              isSkillUpdating
+                ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
           />
           <text
-            x="188"
-            y="159"
-            textAnchor="middle"
-            className="fill-brand-800 font-mono text-xs font-semibold dark:fill-brand-200"
-          >
-            {copy.skillDoc}
-          </text>
-          <text
-            x="188"
+            x="60"
             y="175"
             textAnchor="middle"
-            className="fill-brand-700 font-mono text-xs tabular-nums dark:fill-brand-300"
+            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
           >
-            v0 → v2
+            Base Agent
+          </text>
+          {/* Dynamic Skill Badge inside Base Agent */}
+          <rect
+            x="28"
+            y="188"
+            width="64"
+            height="24"
+            rx="4"
+            className={
+              tick < 5
+                ? "fill-gray-100 dark:fill-gray-800"
+                : tick < 11
+                  ? "fill-brand-100 dark:fill-brand-900"
+                  : "fill-emerald-100 dark:fill-emerald-900"
+            }
+          />
+          <text
+            x="60"
+            y="204"
+            textAnchor="middle"
+            className={
+              tick < 5
+                ? "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+                : tick < 11
+                  ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                  : "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
+            }
+          >
+            {skillBadge}
           </text>
 
-          {/* 3+2 Training Task Pills directly on container floor (no extra wrapper box) */}
-          {TRAIN_PILLS.map((pill, i) => (
-            <g key={pill.label}>
-              <rect
-                x={pill.x}
-                y={pill.y}
-                width={pill.w}
-                height={pill.h}
-                rx="6"
-                strokeWidth="1.25"
-                className={
-                  stageIdx === 0
-                    ? "fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-500"
-                    : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-                }
-              />
-              <text
-                x={pill.x + pill.w / 2}
-                y={pill.y + 18}
-                textAnchor="middle"
-                className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
-              >
-                {`Train ${i + 1}`}
-              </text>
-            </g>
-          ))}
+          {/* 3+2 Training Task Cards (T1..T5) */}
+          {TRAIN_CARDS.map((card, i) => {
+            const isCurrentTask = i === activeTaskIdx;
+            const doneRound2 = tick > 6 + i;
+            const doneRound1 = tick > i && tick < 6;
+            const cardStyle = isCurrentTask
+              ? "fill-brand-600 stroke-brand-700 dark:fill-brand-500 dark:stroke-brand-300"
+              : doneRound2
+                ? "fill-emerald-50 stroke-emerald-500 dark:fill-emerald-950/60 dark:stroke-emerald-400"
+                : doneRound1
+                  ? "fill-brand-50 stroke-brand-400 dark:fill-brand-950/60 dark:stroke-brand-500"
+                  : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700";
+            const textStyle = isCurrentTask
+              ? "fill-white font-mono text-xs font-semibold tabular-nums dark:fill-gray-950"
+              : doneRound2
+                ? "fill-emerald-800 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-200"
+                : doneRound1
+                  ? "fill-brand-800 font-mono text-xs font-semibold tabular-nums dark:fill-brand-200"
+                  : "fill-gray-700 font-mono text-xs font-medium tabular-nums dark:fill-gray-300";
+            return (
+              <g key={card.label}>
+                <rect
+                  x={card.x}
+                  y={card.y}
+                  width={card.w}
+                  height={card.h}
+                  rx="6"
+                  strokeWidth={isCurrentTask ? "1.75" : "1.25"}
+                  className={cardStyle}
+                />
+                <text x={card.x + card.w / 2} y={card.y + 21} textAnchor="middle" className={textStyle}>
+                  {card.label}
+                </text>
+              </g>
+            );
+          })}
         </g>
 
-        {/* ==================== STAGE 2: FROZEN EVOLVED AGENT ==================== */}
+        {/* ==================== PHASE 2: EVOLVED AGENT (+ SKILL.MD) ==================== */}
         {showStage2 && (
           <g className="anim-block">
-            {/* Export arrow from 1 Shared Container (x=240, y=200) -> Evolved Agent (x=268, y=200) */}
             <path
-              d="M240,200 L266,200"
+              d="M252,198 L276,198"
               fill="none"
               strokeWidth="1.75"
-              className="stroke-brand-500 dark:stroke-brand-400"
-              markerEnd="url(#pg-arrow-brand)"
+              className="stroke-emerald-600 dark:stroke-emerald-400"
+              markerEnd="url(#pg-arrow-emerald)"
             />
-            {running && stageIdx === 1 && (
-              <circle r="3" className="fill-brand-500 dark:fill-brand-400">
-                <animateMotion dur="1s" repeatCount="indefinite" path="M240,200 L266,200" />
-              </circle>
-            )}
-
-            {/* Evolved Agent (+ Frozen SKILL.md) Node (x=268..384, y=160..240) */}
             <rect
-              x="268"
+              x="278"
               y="160"
-              width="116"
-              height="80"
+              width="106"
+              height="76"
               rx="10"
               strokeWidth="1.5"
-              className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
+              className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
             />
             <text
-              x="326"
-              y="188"
+              x="331"
+              y="192"
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              {copy.evolvedAgent}
+              Evolved Agent
             </text>
             <text
-              x="326"
-              y="207"
+              x="331"
+              y="214"
               textAnchor="middle"
-              className="fill-brand-700 font-mono text-xs font-medium dark:fill-brand-300"
+              className="fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
             >
-              {copy.frozenBadge}
-            </text>
-            <rect
-              x="294"
-              y="216"
-              width="64"
-              height="16"
-              rx="4"
-              className="fill-brand-600 dark:fill-brand-500"
-            />
-            <text
-              x="326"
-              y="227"
-              textAnchor="middle"
-              className="fill-white font-mono text-xs font-semibold"
-            >
-              FROZEN
+              + SKILL.md
             </text>
           </g>
         )}
 
-        {/* ==================== STAGE 3: 1-TO-5 ISOLATED TEST CONTAINERS ==================== */}
+        {/* ==================== PHASE 3: HARBOR -> 5 ISOLATED DOCKERS (TEST 1..5 x 3) ==================== */}
         {showStage3 && (
           <g className="anim-block">
-            {/* Dispatch line from General Agent (x=350, y=56) -> Test Cluster header (x=504, y=86) */}
+            {/* Dispatch line from General Agent (x=342, y=48) -> Harbor -> Isolated Dockers (x=504, y=90) */}
             <path
-              d="M350,56 L350,78 L504,78 L504,88"
+              d="M342,48 L342,76 L504,76 L504,90"
               fill="none"
               strokeWidth="1.5"
               strokeDasharray="4 3"
-              className="stroke-brand-400 dark:stroke-brand-500"
+              className="stroke-brand-500 dark:stroke-brand-400"
               markerEnd="url(#pg-arrow-brand)"
             />
+            {/* Harbor badge on the right dispatch spine */}
+            <rect
+              x="398"
+              y="66"
+              width="58"
+              height="20"
+              rx="5"
+              strokeWidth="1"
+              className="fill-brand-50 stroke-brand-300 dark:fill-brand-950 dark:stroke-brand-700"
+            />
+            <text
+              x="427"
+              y="80"
+              textAnchor="middle"
+              className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+            >
+              Harbor
+            </text>
 
             <text
               x="504"
-              y="100"
+              y="102"
               textAnchor="middle"
-              className="fill-gray-600 font-mono text-xs font-medium dark:fill-gray-400"
+              className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
             >
-              {copy.isolatedLabel}
+              Isolated Dockers
             </text>
 
-            {/* 1-to-5 Orthogonal Fork Tree (x=384..424, y=120..280) */}
+            {/* 1-to-5 Orthogonal Fork Tree (x=384..424, y=122..274) */}
             <path
-              d="M384,200 L404,200 M404,120 L404,280"
+              d="M384,198 L404,198 M404,122 L404,274"
               fill="none"
               strokeWidth="1.5"
               className="stroke-brand-500 dark:stroke-brand-400"
@@ -507,26 +523,7 @@ export function GdpevoOrchestrationWidget() {
               />
             ))}
 
-            {running && stageIdx === 2 && (
-              <>
-                {TEST_ROWS_Y.map((ry, idx) => (
-                  <circle
-                    key={`p-fork-${idx}`}
-                    r="2.75"
-                    className="fill-brand-500 dark:fill-brand-400"
-                  >
-                    <animateMotion
-                      dur="1.5s"
-                      begin={`${idx * 0.12}s`}
-                      repeatCount="indefinite"
-                      path={`M384,200 L404,200 L404,${ry} L422,${ry}`}
-                    />
-                  </circle>
-                ))}
-              </>
-            )}
-
-            {/* 5 Vertically Stacked Horizontal Isolated Containers (x=424..584, h=28) */}
+            {/* 5 Vertically Stacked Horizontal Isolated Dockers (x=424..584, h=28) */}
             {TEST_ROWS_Y.map((ry, idx) => {
               const topY = ry - 14;
               return (
@@ -562,28 +559,35 @@ export function GdpevoOrchestrationWidget() {
                   >
                     ×3
                   </text>
-                  {/* 3 Fresh Container Run Pills */}
-                  {[0, 1, 2].map((r) => (
-                    <rect
-                      key={r}
-                      x={526 + r * 16}
-                      y={ry - 6}
-                      width="12"
-                      height="12"
-                      rx="2.5"
-                      className="fill-brand-500 dark:fill-brand-400"
-                    />
-                  ))}
+                  {/* 3 Independent Run Cells (light up column by column as runs 1, 2, 3 complete) */}
+                  {[1, 2, 3].map((rNum) => {
+                    const done = completedTestRuns >= rNum;
+                    return (
+                      <rect
+                        key={rNum}
+                        x={526 + (rNum - 1) * 16}
+                        y={ry - 6}
+                        width="12"
+                        height="12"
+                        rx="2.5"
+                        className={
+                          done
+                            ? "fill-brand-500 dark:fill-brand-400"
+                            : "fill-gray-100 dark:fill-gray-800"
+                        }
+                      />
+                    );
+                  })}
                 </g>
               );
             })}
           </g>
         )}
 
-        {/* ==================== STAGE 4: OFFLINE VERIFIER -> GENERAL AGENT ==================== */}
-        {showStage4 && (
+        {/* ==================== PHASE 4: OFFLINE VERIFIER -> GENERAL AGENT -> FINAL RESULT ==================== */}
+        {showVerifier && (
           <g className="anim-block">
-            {/* 5-to-1 Collector Tree (x=584..622, y=120..280 -> y=200) */}
+            {/* 5-to-1 Collector Tree (x=584..622, y=122..274 -> y=198) */}
             {TEST_ROWS_Y.map((ry, idx) => (
               <path
                 key={`join-${idx}`}
@@ -594,17 +598,17 @@ export function GdpevoOrchestrationWidget() {
               />
             ))}
             <path
-              d="M602,120 L602,280 M602,200 L620,200"
+              d="M602,122 L602,274 M602,198 L620,198"
               fill="none"
               strokeWidth="1.5"
               className="stroke-emerald-600 dark:stroke-emerald-400"
               markerEnd="url(#pg-arrow-emerald)"
             />
 
-            {/* Offline Verifier Node (x=622..712, y=168..232) */}
+            {/* Offline Verifier Node (x=622..712, y=166..230) */}
             <rect
               x="622"
-              y="168"
+              y="166"
               width="90"
               height="64"
               rx="8"
@@ -613,99 +617,70 @@ export function GdpevoOrchestrationWidget() {
             />
             <text
               x="667"
-              y="195"
+              y="194"
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              {copy.verifier}
+              Offline
             </text>
             <text
               x="667"
-              y="213"
+              y="212"
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              {copy.verifierSub}
+              Verifier
             </text>
+          </g>
+        )}
 
-            {/* Zero-crossing Return Path: Offline Verifier (667,168) -> up to y=66 -> left to (412,66) -> General Agent (412,56) */}
+        {showReturnToMain && (
+          <g className="anim-block">
+            {/* Zero-crossing Return Path: Offline Verifier (667,166) -> up to y=56 -> left to (388,56) -> General Agent (388,48) */}
             <path
-              d="M667,168 L667,66 L412,66 L412,58"
+              d="M667,166 L667,56 L388,56 L388,50"
               fill="none"
               strokeWidth="1.5"
               className="stroke-emerald-600 dark:stroke-emerald-400"
               markerEnd="url(#pg-arrow-emerald)"
             />
-
-            {running && stageIdx === 3 && (
-              <>
-                {TEST_ROWS_Y.map((ry, idx) => (
-                  <circle
-                    key={`p-join-${idx}`}
-                    r="2.75"
-                    className="fill-emerald-500 dark:fill-emerald-400"
-                  >
-                    <animateMotion
-                      dur="1.4s"
-                      begin={`${idx * 0.1}s`}
-                      repeatCount="indefinite"
-                      path={`M584,${ry} L602,${ry} L602,200 L620,200`}
-                    />
-                  </circle>
-                ))}
-                <circle r="3" className="fill-emerald-500 dark:fill-emerald-400">
-                  <animateMotion
-                    dur="1.6s"
-                    repeatCount="indefinite"
-                    path="M667,168 L667,66 L412,66 L412,58"
-                  />
-                </circle>
-              </>
-            )}
           </g>
         )}
 
-        {/* ==================== STAGE 5: GENERAL AGENT -> FINAL RESULT ==================== */}
-        {showStage5 && (
+        {showFinalResult && (
           <g className="anim-block">
             <path
-              d="M436,32 L546,32"
+              d="M416,27 L556,27"
               fill="none"
               strokeWidth="1.75"
               className="stroke-emerald-600 dark:stroke-emerald-400"
               markerEnd="url(#pg-arrow-emerald)"
             />
-            {running && stageIdx === 4 && (
-              <circle r="3" className="fill-emerald-500 dark:fill-emerald-400">
-                <animateMotion dur="1.2s" repeatCount="indefinite" path="M436,32 L546,32" />
-              </circle>
-            )}
-
-            {/* Final Result Node at Top Right (x=548..712, y=8..56) */}
+            {/* Final Result Node at Top Right (x=558..712, y=6..48) */}
             <rect
-              x="548"
-              y="8"
-              width="164"
-              height="48"
-              rx="10"
+              x="558"
+              y="6"
+              width="154"
+              height="42"
+              rx="9"
               strokeWidth="1.5"
               className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
             />
             <text
-              x="630"
-              y="28"
+              x="635"
+              y="24"
               textAnchor="middle"
               className="fill-emerald-900 text-xs font-semibold dark:fill-emerald-100"
             >
-              {copy.resultTitle}
+              Final Result
             </text>
             <text
-              x="630"
-              y="45"
+              x="635"
+              y="40"
               textAnchor="middle"
               className="fill-emerald-700 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-300"
             >
-              {copy.resultSub}
+              68.95 ± 0.74
             </text>
           </g>
         )}
