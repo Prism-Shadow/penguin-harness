@@ -1,10 +1,10 @@
 /**
- * Fence discovery for A2UI blocks (a2ui/fences.ts): CommonMark's fence rules as the checker, the
+ * Fence discovery for A2UI blocks (src/fences.ts): CommonMark's fence rules as the checker, the
  * fallback and the renderer rely on them — language from the info string's first word, tildes,
  * longer fences enclosing shorter fence lines, unclosed fences, and indentation.
  */
 import { describe, expect, it } from "vitest";
-import { findBlocks } from "../src/a2ui/index.js";
+import { findBlocks } from "../src/index.js";
 
 describe("findBlocks", () => {
   it("numbers a2ui and mermaid fences from 1 in order, with 1-based fence lines and the body as source", () => {

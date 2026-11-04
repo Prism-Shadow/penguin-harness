@@ -1,5 +1,5 @@
 /**
- * Which language a reply is in (a2ui/lang.ts): the text fallback words its blocks in it and the
+ * Which language a reply is in (src/lang.ts): the text fallback words its blocks in it and the
  * checker prints its rubric in it.
  *
  * - Given a reply whose text is mostly Chinese, it is zh; mostly English with a few Chinese
@@ -9,8 +9,8 @@
  * - Given an explicit language, it wins over the detection; `auto` detects.
  */
 import { describe, expect, it } from "vitest";
-import { detectLang } from "../src/a2ui/index.js";
-import { resolveLang } from "../src/a2ui/lang.js";
+import { detectLang } from "../src/index.js";
+import { resolveLang } from "../src/lang.js";
 
 describe("detectLang", () => {
   it("is zh when CJK dominates the text, en otherwise", () => {

@@ -1,13 +1,13 @@
 /**
- * The whole-reply check (a2ui/check.ts), its report (a2ui/report.ts) and the CLI's argument
- * handling (a2ui/cli.ts): L1 issues carry absolute lines and the block index, the L2 heuristics
+ * The whole-reply check (src/check.ts), its report (src/report.ts) and the CLI's argument
+ * handling (src/cli.ts): L1 issues carry absolute lines and the block index, the L2 heuristics
  * fire on overuse / a question that is not last / an unintroduced block / a snapshot with no
  * time, the text outside the blocks raises nothing, and the total is L2: the gate passes a reply
  * with two block warnings and stops one with three.
  */
 import { describe, expect, it } from "vitest";
-import { A2UI_RUBRIC, checkReply, formatReport } from "../src/a2ui/index.js";
-import { runCli, type CliIo } from "../src/a2ui/cli.js";
+import { A2UI_RUBRIC, checkReply, formatReport } from "../src/index.js";
+import { runCli, type CliIo } from "../src/cli.js";
 
 const callout = '```a2ui\n{"type":"callout","tone":"note","text":"Keep the console open."}\n```';
 const choice = [

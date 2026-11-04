@@ -1,5 +1,5 @@
 /**
- * The `resources` block (a2ui/resources.ts): one machine's snapshot, built from the basic charts.
+ * The `resources` block (src/resources.ts): one machine's snapshot, built from the basic charts.
  *
  * - Given a full snapshot, it round-trips with no issue; one section alone is a valid board.
  * - Given no section at all, it is an error that names the sections it could have.
@@ -23,7 +23,7 @@ import {
   resourcesTiles,
   toFallbackMarkdown,
   type A2uiResources,
-} from "../src/a2ui/index.js";
+} from "../src/index.js";
 
 const parse = (value: unknown) => parseA2ui(JSON.stringify(value));
 const errorPaths = (value: unknown) =>

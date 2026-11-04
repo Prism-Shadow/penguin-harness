@@ -1,5 +1,5 @@
 /**
- * The `chart` block (a2ui/chart.ts), read through parseA2ui and printed through
+ * The `chart` block (src/chart.ts), read through parseA2ui and printed through
  * toFallbackMarkdown — the two doors every renderer, the CLI and the checker go through.
  *
  * - Given a valid block of each of the seven kinds, it round-trips to its spec with no issue.
@@ -15,7 +15,7 @@
  * - seriesExtent skips the gaps, and has nothing to say about a series with no reading.
  */
 import { describe, expect, it } from "vitest";
-import { parseA2ui, seriesExtent, toFallbackMarkdown } from "../src/a2ui/index.js";
+import { parseA2ui, seriesExtent, toFallbackMarkdown } from "../src/index.js";
 
 const parse = (value: unknown) => parseA2ui(JSON.stringify(value));
 const errorPaths = (value: unknown) =>

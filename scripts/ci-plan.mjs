@@ -64,8 +64,10 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       reason = `Shared or unclassified input changed: ${file}`;
     }
     if (file.startsWith("plugins/")) {
-      // These tests enumerate the on-disk library, including plugins not imported by core.
+      // These tests enumerate the on-disk library, including plugins not imported by core, and
+      // the A2UI grammar's suite reads the a2ui Skill and its bundled checker.
       for (const name of ["core", "docs", "landing"]) add(`${prefix}${name}`);
+      add("@prismshadow/a2ui");
     }
     if (file === "packages/web/index.html") add(`${prefix}ui`);
   }
