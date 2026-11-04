@@ -318,7 +318,7 @@ export function httpPluginRegistry(
         return await fetchImpl(indexUrl, {
           headers: {
             "user-agent": userAgent(),
-            ...(revalidate?.etag !== null && revalidate !== undefined
+            ...(revalidate !== null && revalidate.etag !== null
               ? { "if-none-match": revalidate.etag }
               : {}),
           },
