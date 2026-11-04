@@ -60,7 +60,7 @@
         "../../plugins/sessions/src/server/index.ts"
       ],
       "@prismshadow/penguin-server/db/repos/organizations": [
-        "src/db/repos/organizations.ts"
+        "./src/db/repos/organizations.ts"
       ]
     }
   },
