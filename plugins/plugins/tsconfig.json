@@ -57,6 +57,9 @@
       ],
       "@penguinharness/plugin-sandbox/server": [
         "../../plugins/sandbox/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../db/src/index.ts"
       ]
     }
   },

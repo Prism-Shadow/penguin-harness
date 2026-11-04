@@ -1,9 +1,32 @@
-      "@penguinharness/plugin-company/server": [
-        "../company/src/server/index.ts"
+      "@penguinharness/plugin-workbenches/server": [
+        "./src/server/index.ts"
       ],
-      "@penguinharness/plugin-sessions/server": [
-        "../sessions/src/server/index.ts"
+      "@penguinharness/plugin-workbenches/web": [
+        "./src/web/index.ts"
       ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "../../packages/web/src/internal.ts"
+      ],
+      "@penguinharness/plugin-schedules/server": [
+        "../schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../db/src/index.ts"
+      ]
+    }
+  },
 
         "@penguinharness/plugin-company/server": [
           "../company/src/server/index.ts"
@@ -19,6 +42,7 @@
         "@penguinharness/plugin-sessions/server": [
           "../sessions/src/server/index.ts"
         ],
+||||||| parent of adee9658bb (tsconfig: map plugin-db/server face into the packages whose programs pull server/machines source)
   "include": [
     "src/server"
   ]
