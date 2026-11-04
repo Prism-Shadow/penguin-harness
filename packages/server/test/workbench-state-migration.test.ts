@@ -8,10 +8,13 @@
  * - Given its recorded versions, the history lists them newest first with the times they were
  *   saved; the folder's own edit, never loaded, is not among them.
  * - Given an Agent already on the new layout, nothing is written, journal included.
- * - Given a folder an Agent is still writing, nothing moves: not before it has a package.json, not
- *   while its files are fresh; once it has settled, all of it moves and the link appears.
+ * - Given a folder an Agent is still writing, nothing moves while its files are fresh, whether or
+ *   not it has a package.json yet; once it has settled, all of it moves and the link appears.
+ * - Given settled entries that are not workbenches (a `.DS_Store`, an invalid name, a folder without
+ *   a package.json), they go to the backup and the link still appears; a fresh one waits.
  * - Given an id taken in Agent State, by any case, that folder stays in a real old directory,
- *   reported once, while the free ones move in with their versions.
+ *   reported once, while the free ones move in with their versions; a stray file arriving later
+ *   is kept beside the one backed up before.
  * - Given a run stopped after committing and before moving, the next one finishes it and records
  *   no version twice.
  * - Given the link, a file written through the old place lands in Agent State, an edit of a moved
@@ -201,11 +204,10 @@ describe("moving workbenches into Agent State", () => {
     expect(await fs.readdir(path.join(agent, "agent_state"))).toEqual(["workbenches"]);
   });
 
-  it("moves a folder an Agent is writing only once it is a workbench and has settled", async () => {
+  it("moves a folder an Agent is writing only once it has settled", async () => {
     const todo = oldPlace(agent, "todo");
     await fs.mkdir(path.join(todo, "ui"), { recursive: true });
     await fs.writeFile(path.join(todo, "ui", "index.html"), "<h1>todo</h1>");
-    await age(todo);
     await migrateWorkbenches(agent);
     expect(await fs.readdir(todo)).toEqual(["ui"]);
     await fs.writeFile(path.join(todo, "package.json"), JSON.stringify({ name: "Todo" }));
@@ -220,6 +222,34 @@ describe("moving workbenches into Agent State", () => {
       "package.json",
       "ui",
     ]);
+    await expectLinked(agent);
+  });
+
+  it("keeps settled entries that are not workbenches in the backup, and still links", async () => {
+    await oldLayout(agent);
+    await fs.writeFile(oldPlace(agent, ".DS_Store"), "finder");
+    await fs.mkdir(oldPlace(agent, "not an id"));
+    await fs.writeFile(oldPlace(agent, "not an id", "notes.txt"), "kept");
+    await age(oldPlace(agent));
+    await migrateWorkbenches(agent);
+    const kept = path.join(agent, JOURNAL, "backup", "workbenches");
+    expect(await fs.readFile(path.join(kept, ".DS_Store"), "utf8")).toBe("finder");
+    expect(await fs.readFile(path.join(kept, "not an id", "notes.txt"), "utf8")).toBe("kept");
+    expect(await fs.readFile(moved(agent, "state.json"), "utf8")).toBe(STATE);
+    await expectLinked(agent);
+  });
+
+  it("keeps a folder without a package.json in the backup once settled; a fresh one waits", async () => {
+    const notes = oldPlace(agent, "notes");
+    await fs.mkdir(notes, { recursive: true });
+    await fs.writeFile(path.join(notes, "draft.md"), "draft");
+    await migrateWorkbenches(agent);
+    expect(await fs.readFile(path.join(notes, "draft.md"), "utf8")).toBe("draft");
+    expect((await fs.lstat(oldPlace(agent))).isDirectory()).toBe(true);
+    await age(oldPlace(agent));
+    await migrateWorkbenches(agent);
+    const kept = path.join(agent, JOURNAL, "backup", "workbenches", "notes", "draft.md");
+    expect(await fs.readFile(kept, "utf8")).toBe("draft");
     await expectLinked(agent);
   });
 
@@ -242,6 +272,15 @@ describe("moving workbenches into Agent State", () => {
     await missing(oldPlace(agent, "other"));
     expect(await history(agent, "other")).toHaveLength(2);
     expect(await fs.stat(backedUp(free[0]!))).toBeTruthy();
+    // The directory stays real, so stray files keep arriving; none overwrites the one before.
+    const kept = path.join(agent, JOURNAL, "backup", "workbenches");
+    for (const text of ["first", "second"]) {
+      await fs.writeFile(oldPlace(agent, ".DS_Store"), text);
+      await age(oldPlace(agent));
+      await migrateWorkbenchesIntoState(agent);
+    }
+    expect(await fs.readFile(path.join(kept, ".DS_Store"), "utf8")).toBe("first");
+    expect(await fs.readFile(path.join(kept, ".DS_Store.1"), "utf8")).toBe("second");
   });
 
   it("finishes a run stopped after committing and before moving, recording no version twice", async () => {
