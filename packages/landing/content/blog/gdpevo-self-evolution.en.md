@@ -94,25 +94,25 @@ To run the full experiment across all six scenarios, send:
 
 ## 4. Internal Execution Pipeline After Launch
 
-Once the launch prompt is sent in the Web UI, the controller Agent automatically orchestrates the entire four-stage workflow in the background:
+Once the launch prompt is sent in the Web UI, the **Controller Agent** automatically orchestrates the entire four-stage workflow in the background:
 
-<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Training Phase: continuous rollout across Train 1–5 inside 1 shared container</li><li>Artifact Handoff: freeze and export SKILL.md as a read-only skill</li><li>Testing Phase: 1-to-5 fan-out into isolated containers across 3 repetitions (15 fresh containers total), converging 5-to-1 into the Offline Verifier</li></ol><figcaption>Interactive orchestration pipeline driven by the PenguinHarness controller Agent (step through phases 1–5 to inspect shared-container training, skill freezing, and 5×3 isolated-container evaluation).</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Multi-Round Train: Controller Agent launches 1 Shared Docker via Harbor, where Target Agent evolves SKILL.md across T1–T5</li><li>Evolved Agent: freezes and exports SKILL.md as a read-only artifact mounted onto Evolved Agent</li><li>Isolated Dockers: Controller Agent dispatches 1-to-5 fan-out via Harbor into Isolated Dockers across Test 1–5 for 3 repetitions (15 fresh containers)</li><li>Scoreboard: 5-to-1 convergence into Offline Verifier to grade per-task and overall mean scores</li></ol><figcaption>Interactive four-stage orchestration pipeline driven by the Controller Agent (step through stages 1–4 to inspect multi-round shared-Docker training, Evolved Agent handoff, isolated-Docker evaluation, and Offline Verifier scoring).</figcaption></figure>
 
-### 1. Baseline Branch Freezing
+### 1. Multi-Round Training Loop (1 Shared Docker)
 
-After preparing the task checkout, the controller Agent initializes a clean base state without any domain skill attached and locks it directly as the frozen Baseline state, measuring raw model performance prior to self-evolution.
+After preparing the task checkout, the **Controller Agent** preserves a clean initial state without any domain skill as the frozen Baseline reference, and uses **Harbor** to launch one shared training container (`1 Shared Docker`) for the scenario. Docker provides full scenario-level isolation: the business backend service, task payloads, and online judge run inside the container while external network access is restricted to loopback business calls and the model API. Within one persistent session inside `1 Shared Docker`, the **Target Agent** cycles through all 5 training tasks (`T1–T5`) across multiple rounds (`No Skill → Skill v1 → Skill v2`), diagnosing errors and iteratively refining its skill document.
 
-### 2. Single-Container Continuous Training and Final State Freezing
+### 2. Producing the Evolved Agent (+ SKILL.md)
 
-In parallel, the controller Agent attaches the selected method's training instructions to the base state and uses Harbor to launch an isolated Docker container for each business scenario. Docker provides full scenario-level isolation: the business backend service, task payloads, and online judge run inside the container while external network access is restricted to loopback business calls and the model API. Within one persistent session inside that container, the target Agent attempts all 5 training tasks, diagnoses errors, iteratively refines its strategy, and exports the final `SKILL.md`. The controller Agent then mounts the exported `SKILL.md` onto the clean base state and locks it as the frozen Final state.
+Once the multi-round training loop finishes inside `1 Shared Docker`, the **Controller Agent** exports the last accepted `SKILL.md`, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen **Evolved Agent (`+ SKILL.md`)**.
 
-### 3. Test Agent Assembly and Multi-Run Held-out Evaluation
+### 3. Blind Evaluation in Isolated Dockers
 
-The controller Agent equips test Agents with the frozen Baseline and Final states and schedules 3 full evaluation repetitions across the 5 held-out test tasks per scenario via Harbor. During testing, Harbor launches a brand-new Docker container and clean session for every single question and repetition, enforcing strict per-question isolation—no filesystem state, database state, or conversation history is shared across questions or runs, and the online training judge is disabled. The offline verifier scores each submitted answer on a 100-point scale after the solver exits.
+The **Controller Agent** uses **Harbor** to fan out the frozen **Evolved Agent (`+ SKILL.md`)** (alongside the Baseline state) across the 5 held-out test tasks (`Test 1–5`) for 3 full evaluation repetitions (15 fresh `Isolated Dockers` per scenario). Every single question in every repetition starts in a brand-new Docker container and clean session—no filesystem state, database state, or conversation history is shared across questions or runs, and the online training judge is disabled.
 
-### 4. Result Collection and Metric Aggregation
+### 4. Offline Verifier and Scoreboard Aggregation
 
-After all test containers finish, the controller Agent collects the per-question scores, elapsed durations, and token usage records across all repetitions, performing two-level metric aggregation to produce the final leaderboard and experiment report.
+As test containers finish, outputs from `Test 1–5` converge 5-to-1 into the **Offline Verifier**, which grades each submission on a 100-point scale (`T1–T5`) and performs two-level metric aggregation to produce the final multi-run mean and standard deviation (such as `68.95 ± 0.74`).
 
 ## 5. Metric Aggregation and Empirical Results
 

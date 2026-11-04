@@ -60,12 +60,12 @@ const VERIFIER_SCORES = [
 ] as const;
 
 function tickDelayMs(tick: number): number {
-  if (tick === 5 || tick === 11) return 850;
-  if (tick < 12) return 440;
-  if (tick === 13) return 850;
-  if (tick >= 14 && tick <= 17) return 620;
-  if (tick === 21) return 2800;
-  return 650;
+  if (tick === 5 || tick === 11) return 1100;
+  if (tick < 12) return 560;
+  if (tick === 13) return 1100;
+  if (tick >= 14 && tick <= 17) return 800;
+  if (tick === 21) return 3600;
+  return 850;
 }
 
 export function GdpevoOrchestrationWidget() {
@@ -125,10 +125,20 @@ export function GdpevoOrchestrationWidget() {
     ? {
         play: "播放实验动态演进",
         pause: "暂停实验动态演进",
+        controllerAgent: "主控 Agent",
+        targetAgent: "目标 Agent",
+        evolvedAgent: "进化 Agent",
+        verifier: "离线评分器",
+        finalScore: "最终均分",
       }
     : {
         play: "Play experiment flow",
         pause: "Pause experiment flow",
+        controllerAgent: "Controller Agent",
+        targetAgent: "Target Agent",
+        evolvedAgent: "Evolved Agent",
+        verifier: "Offline Verifier",
+        finalScore: "Final Score",
       };
 
   return (
@@ -226,7 +236,7 @@ export function GdpevoOrchestrationWidget() {
             textAnchor="middle"
             className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
           >
-            General Agent
+            {copy.controllerAgent}
           </text>
         </g>
 
@@ -362,7 +372,7 @@ export function GdpevoOrchestrationWidget() {
             textAnchor="middle"
             className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
           >
-            Base Agent
+            {copy.targetAgent}
           </text>
           <rect
             x="25"
@@ -456,7 +466,7 @@ export function GdpevoOrchestrationWidget() {
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              Evolved Agent
+              {copy.evolvedAgent}
             </text>
             <text
               x="309"
@@ -625,7 +635,7 @@ export function GdpevoOrchestrationWidget() {
               textAnchor="middle"
               className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
-              Offline Verifier
+              {copy.verifier}
             </text>
 
             {/* 5 Per-Task Verified Score Bars inside the Scoreboard Column */}
@@ -694,7 +704,7 @@ export function GdpevoOrchestrationWidget() {
                   : "fill-gray-400 font-mono text-xs dark:fill-gray-500"
               }
             >
-              Final Score
+              {copy.finalScore}
             </text>
             <text
               x="644"
