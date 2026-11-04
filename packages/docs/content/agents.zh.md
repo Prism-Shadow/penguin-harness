@@ -145,7 +145,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 **Agent State** 区块显示 **Agent State 版本**和 **State 路径**（Agent State 在服务端所在的文件夹），点击复制按钮可以复制路径。
 
 - **导出快照**：把 Agent State 下载为 `.tar.gz` 包。包里不含密钥保险柜，密钥不会随快照流出。
-- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜。工作台的版本历史位于 Agent State 之外，导入不会改动它。导入前会先对当前版本做一次快照。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
+- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜。工作台的版本历史位于 Agent State 之外，导入不会改动它。导入前会先把当前 Agent State 打包成一个单独的备份，放在 Agent 文件夹下的 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`。每次导入都重新打包，从不覆盖已有文件；它不属于 `v<version>.tar.gz` 快照，因此同一版本的旧快照既不会被沿用，也不会被覆盖。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
 
 版本和快照的工作机制见[自我进化](/self-improvement#快照与版本)。
 

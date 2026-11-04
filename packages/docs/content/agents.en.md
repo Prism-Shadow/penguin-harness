@@ -145,7 +145,7 @@ Change **Name** or **Description**, then select **Save**.
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
 - **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. A snapshot of the current version is taken first. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 
