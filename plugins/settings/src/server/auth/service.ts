@@ -11,7 +11,7 @@ import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { UserRow } from "../repos/users.js";
-import { sessionTokenHash } from "@prismshadow/penguin-server/internal";
+import { sessionTokenHash } from "../repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
