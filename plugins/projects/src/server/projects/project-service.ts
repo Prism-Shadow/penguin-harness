@@ -32,7 +32,7 @@ import type { Users } from "@prismshadow/penguin-server/internal";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { ErrorLog, UsageStore } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex } from "@prismshadow/penguin-server/internal";
-import type { OrgCache } from "@prismshadow/penguin-server/internal";
+import type { OrgCache } from "@penguinharness/plugin-company/server";
 import type { AgentApi } from "@prismshadow/penguin-server/internal";
 
 

@@ -6,7 +6,7 @@
  * Project deletion reach for leave the group, as OrgCache.
  */
 import { Module } from "@prismshadow/penguin-core/kernel";
-import { OrgCacheRepo } from "../db/repos/organizations.js";
+import { OrgCacheRepo } from "@prismshadow/penguin-server/db/repos/organizations";
 import { OrgCache } from "./mechanisms-organization.js";
 import { OrgRoutes } from "./routes/organizations.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/service.js";
