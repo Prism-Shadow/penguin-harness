@@ -6,25 +6,63 @@
  * Given a restored package version, installed metadata reflects the restored source rather than the last install.
  * Given an interrupted installation receipt, retry completes the original plugin's install.
  * Given a workbench-only package, the library loads it and rejects runtime data in the payload.
+ *
+ * The plugin is a fixture package read through the library's own reader (readLibraryPackage).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
 import {
   installPlugin,
-  libraryPlugin,
   listInstalledWorkbenches,
   readLibraryPackage,
   isLibraryPackage,
   assertPluginWorkbenchesInstallable,
+  type LibraryPlugin,
 } from "../src/index.js";
+
+/** The fixture plugin's files: a Skill and a workbench named `desk`. */
+const FIXTURE: Record<string, string> = {
+  "package.json": JSON.stringify({
+    name: "@acme/desk-kit",
+    version: "1.0.0",
+    description: "Desk kit.",
+    penguin: { short_description: "Desk.", short_description_zh: "工作台。" },
+  }),
+  "skills/desk-help/SKILL.md":
+    "---\nname: desk-help\ndescription: Answer desk questions.\nversion: 2026.10.14.1\n---\n\nAnswer from the desk.\n",
+  "workbenches/desk/package.json": JSON.stringify({
+    name: "desk-workbench",
+    version: "1.0.0",
+    type: "module",
+    penguin: { version: "2026.10.14.1", modules: [{ name: "Workbench" }] },
+  }),
+  "workbenches/desk/index.ts": "export {};\n",
+  "workbenches/desk/ui/index.html": '<script type="module" src="./app.js"></script>\n',
+  "workbenches/desk/ui/app.js": "export {};\n",
+};
+let fixtureDir: string;
+let fixture: LibraryPlugin;
+beforeAll(async () => {
+  fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-fixture-"));
+  for (const [rel, text] of Object.entries(FIXTURE)) {
+    await fs.mkdir(path.dirname(path.join(fixtureDir, rel)), { recursive: true });
+    await fs.writeFile(path.join(fixtureDir, rel), text);
+  }
+  fixture = readLibraryPackage(fixtureDir);
+});
+afterAll(async () => {
+  await fs.rm(fixtureDir, { recursive: true, force: true });
+});
+
 let root: string;
 const project = "default_project",
   agent = "custom_support";
-const plugin = () => structuredClone(libraryPlugin("penguin-support")!);
+const plugin = () => structuredClone(fixture);
+const workbench = () => plugin().workbenches![0]!;
 const base = () => path.join(root, project, "agents", agent);
-const dir = () => path.join(base(), "agent_state/workbenches/support");
+const dir = () => path.join(base(), "agent_state/workbenches", workbench().name);
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-"));
 });
@@ -35,11 +73,14 @@ it("installs a plugin's runnable workbench and Skill on an ordinary Agent", asyn
   await installPlugin(root, project, agent, plugin());
   expect(
     (await listInstalledWorkbenches(root, project, agent)).map((w) => [w.name, w.plugin]),
-  ).toEqual([["support", "penguin-support"]]);
-  expect(await fs.readFile(path.join(dir(), "ui/index.html"), "utf8")).toContain("./app.js");
+  ).toEqual([[workbench().name, plugin().name]]);
+  for (const [rel, text] of Object.entries(workbench().files)) {
+    expect(await fs.readFile(path.join(dir(), rel), "utf8"), rel).toBe(text);
+  }
+  const [skill] = plugin().skills;
   expect(
-    await fs.readFile(path.join(base(), "agent_state/skills/penguin-support/SKILL.md"), "utf8"),
-  ).toContain("https://penguin.ooo/docs/");
+    await fs.readFile(path.join(base(), "agent_state/skills", skill!.name, "SKILL.md"), "utf8"),
+  ).toBe(skill!.content);
 });
 it("updates source and removes retired files while keeping state, history and local additions", async () => {
   const original = plugin();
@@ -47,7 +88,7 @@ it("updates source and removes retired files while keeping state, history and lo
   await installPlugin(root, project, agent, original);
   await fs.writeFile(path.join(dir(), "state.json"), '{"tickets":[{"id":"keep"}]}');
   await fs.writeFile(path.join(dir(), "notes.txt"), "mine");
-  const history = path.join(base(), "workbenches-history/support");
+  const history = path.join(base(), "workbenches-history", workbench().name);
   await fs.mkdir(history, { recursive: true });
   await fs.writeFile(path.join(history, "saved"), "old revision");
   const update = plugin();
@@ -96,8 +137,8 @@ it("retries an interrupted install owned by the same plugin", async () => {
   await fs.writeFile(
     path.join(dir(), ".plugin.json"),
     JSON.stringify({
-      name: "support",
-      plugin: "penguin-support",
+      name: workbench().name,
+      plugin: plugin().name,
       version: "",
       files: ["ui/app.js"],
     }),
@@ -109,7 +150,7 @@ it("retries an interrupted install owned by the same plugin", async () => {
 });
 it("loads workbench-only packages and leaves unsafe payloads out of the library", async () => {
   const pkg = path.join(root, "package");
-  const wb = path.join(pkg, "workbenches/support");
+  const wb = path.join(pkg, "workbenches", workbench().name);
   await fs.mkdir(wb, { recursive: true });
   await fs.writeFile(
     path.join(pkg, "package.json"),
@@ -120,7 +161,7 @@ it("loads workbench-only packages and leaves unsafe payloads out of the library"
     await fs.writeFile(path.join(wb, rel), text);
   }
   expect(isLibraryPackage(pkg)).toBe(true);
-  expect(readLibraryPackage(pkg)?.workbenches?.[0]?.name).toBe("support");
+  expect(readLibraryPackage(pkg)?.workbenches?.[0]?.name).toBe(workbench().name);
   await fs.writeFile(path.join(wb, "state.json"), "{}");
   expect(readLibraryPackage(pkg)?.workbenches ?? []).toEqual([]);
 });

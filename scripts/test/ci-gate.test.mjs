@@ -1,7 +1,6 @@
 /**
  * Given a CI plan, when the required gate evaluates its jobs:
  * - selected successful jobs and explicitly unselected skipped jobs pass;
- * - a README-only run passes with its catalog check and style, while package jobs skip;
  * - a failed/cancelled/missing planner or job, or an unexpected skip, fails;
  * - missing/malformed selections cannot turn an untested commit green.
  */
@@ -11,7 +10,6 @@ import { checkCIGate } from "../ci-gate.mjs";
 
 function run(selected = true) {
   const flags = [
-    "readme",
     "plugins",
     "packaging",
     "typecheck",
@@ -23,7 +21,6 @@ function run(selected = true) {
     "e2e",
   ];
   const jobs = [
-    "readme",
     "plugin-versions",
     "npm-packaging",
     "typecheck",
@@ -48,13 +45,6 @@ function run(selected = true) {
 it("passes successful selected work and only the skips authorized by the plan", () => {
   assert.doesNotThrow(() => checkCIGate(run()));
   assert.doesNotThrow(() => checkCIGate(run(false)));
-});
-
-it("passes a README-only run with its catalog check and no package jobs", () => {
-  const needs = run(false);
-  needs.plan.outputs.readme = "true";
-  needs.readme.result = "success";
-  assert.doesNotThrow(() => checkCIGate(needs));
 });
 
 it("fails when planning failed, was cancelled/skipped, or is absent", () => {

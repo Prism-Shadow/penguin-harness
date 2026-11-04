@@ -217,6 +217,9 @@ describe("packaged layout", () => {
 
   it("is listed in electron-builder's files, which otherwise excludes every node_modules", () => {
     const builderConfig = fs.readFileSync(path.join(pkgDir, "electron-builder.yml"), "utf8");
-    expect(builderConfig).toContain("- dist/node_modules/**/*");
+    // The listing names the staging directory's node_modules, so moving the staging fails here
+    // until the config moves with it.
+    const listing = `- ${NODE_PTY_RELDIR.slice(0, -1).join("/")}/**/*`;
+    expect(builderConfig.split("\n").map((line) => line.trim())).toContain(listing);
   });
 });

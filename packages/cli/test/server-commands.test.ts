@@ -3,6 +3,13 @@
  * server: run (foreground/background/json, goal exit codes and round lines, the `cli` source
  * of every Session it creates and the retired `--source`, `--title`), session ls, session
  * input (steer vs task), session log, agent ls/create, project ls, cost, schedule ls.
+ *
+ * Refusals that name the fix, where the case happens:
+ * - Given a server that refuses a request with no credential, when no API token is available,
+ *   then the error names PENGUIN_API_TOKEN and the token file it looked for.
+ * - Given schedule add with --session-id and a new-session flag, or schedule update with --enable
+ *   and --disable, the command is refused before any request, naming the flags that collide.
+ * - Given session log --timeout without -f, it is refused before any request, naming -f/--follow.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +20,7 @@ import {
   userText,
   type AmspRecord,
 } from "@prismshadow/penguin-core";
+import { apiTokenPath } from "../src/client.js";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
 import { SESSION_TITLE_MAX } from "../src/server-session.js";
@@ -866,5 +874,36 @@ describe("penguin schedule add/update/rm (validated writer over the API)", () =>
     stderr.length = 0;
     expect(await cli(["schedule", "rm", "doomed"])).toBe(1);
     expect(stderr.join("")).toContain("schedule_not_found");
+  });
+});
+
+describe("refusals that name the fix", () => {
+  it("a server that refuses a request with no credential names PENGUIN_API_TOKEN and the token file looked for", async () => {
+    server.refuseAnonymous = true;
+    expect(await cli(["session", "ls"])).toBe(1);
+    const said = stderr.join("");
+    expect(said).toContain("PENGUIN_API_TOKEN");
+    expect(said).toContain(apiTokenPath(process.env.PENGUIN_HOME!));
+  });
+
+  it("schedule add with --session-id and a new-session flag is refused before any request, naming both", async () => {
+    const add = ["schedule", "add", "daily", "--prompt", "p", "--start-at", "now"];
+    expect(await cli([...add, "--session-id", "s1", "--workspace", "/w"])).toBe(1);
+    expect(stderr.join("")).toContain("--session-id");
+    expect(stderr.join("")).toContain("--workspace");
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("schedule update with --enable and --disable is refused before any request, naming both", async () => {
+    expect(await cli(["schedule", "update", "daily", "--enable", "--disable"])).toBe(1);
+    expect(stderr.join("")).toContain("--enable");
+    expect(stderr.join("")).toContain("--disable");
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("session log --timeout without -f is refused before any request, naming -f/--follow", async () => {
+    expect(await cli(["session", "log", "--timeout", "5s"])).toBe(1);
+    expect(stderr.join("")).toContain("--follow");
+    expect(server.requests).toHaveLength(0);
   });
 });

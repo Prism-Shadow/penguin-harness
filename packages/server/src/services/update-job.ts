@@ -35,24 +35,12 @@
 import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import { spawn } from "node:child_process";
 import type { UpdateJobPhase, UpdateJobStatus, UpdateRunResponse } from "../api/types.js";
+import { UPDATE_REFUSAL_MARKERS } from "../api/types.js";
 
 /** Only the tail of the update output is kept (installer logs can be long). */
 const OUTPUT_CAP = 64 * 1024;
 /** The whole update (download + install) must finish within this window. */
 const UPDATE_TIMEOUT_MS = 10 * 60 * 1000;
-
-/**
- * English fragments of the CLI refusal messages (packages/cli/src/i18n.ts `update.*`),
- * one per refusal reason. `needsYes` / `cancelled` are omitted: `--yes` makes the
- * confirmation gate proceed unconditionally, so neither can occur here.
- */
-const REFUSAL_MARKERS = [
-  "runs from a source checkout", // sourceCheckout
-  "Cannot tell how this penguin was installed", // unknownInstall
-  "could not be identified", // npmUnknownManager
-  "does not run on Windows", // windowsUnsupported
-  "cannot run your package manager for you", // windowsGlobalInstall
-];
 
 /**
  * Maps the finished CLI run to an UpdateRunResponse. Exit 0 with a refusal message is
@@ -62,7 +50,7 @@ const REFUSAL_MARKERS = [
  */
 export function classifyUpdateRun(exitCode: number, output: string): UpdateRunResponse {
   if (exitCode !== 0) return { status: "failed", output, needsRestart: false };
-  if (REFUSAL_MARKERS.some((marker) => output.includes(marker))) {
+  if (UPDATE_REFUSAL_MARKERS.some((marker) => output.includes(marker))) {
     return { status: "unsupported", output, needsRestart: false };
   }
   return { status: "updated", output, needsRestart: true };

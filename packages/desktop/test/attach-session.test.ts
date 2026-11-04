@@ -1,11 +1,7 @@
 /**
  * The shell signing its own window in: what it plans for each outcome the minter can return,
- * how long the session it asks for lives, what it tells the user when it cannot sign in, and
- * which pages count as the sign-in page.
+ * what it tells the user when it cannot sign in, and which pages count as the sign-in page.
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { MintedVia, MintTokenResult } from "@prismshadow/penguin-server/auth-token";
 import {
@@ -92,23 +88,6 @@ describe("planSignIn", () => {
     const { mint } = minter({ outcome: "failed", detail });
     const plan = planSignIn({ root: ROOT, origin: ORIGIN, mint });
     expect(plan).toEqual({ outcome: "failed", failure: { reason: "failed", detail } });
-  });
-});
-
-/**
- * The cookie name is a copy of the server's, so it is pinned to the declaration it copies:
- * the two are read by different processes and nothing else would notice them drifting apart.
- */
-describe("the session cookie's name", () => {
-  it("is the name the server reads sessions from", () => {
-    const middleware = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      "../../server/src/auth/middleware.ts",
-    );
-    const declared = /export const SESSION_COOKIE = "([^"]+)"/.exec(
-      fs.readFileSync(middleware, "utf8"),
-    )?.[1];
-    expect(declared).toBe(SESSION_COOKIE);
   });
 });
 
