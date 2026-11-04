@@ -1,5 +1,5 @@
 /**
- * Company mode's navigation (features/company/company-nav.ts) and the work-mode mirrors in
+ * Company mode's navigation (plugins/company/src/web/company/company-nav.ts) and the work-mode mirrors in
  * localStorage (lib/work-mode.ts).
  *
  * - An organization key is `<projectId>/<orgId>` and parses back; anything but two non-empty
@@ -26,8 +26,8 @@ import {
   orgPagePath,
   parseOrgKey,
   resolveOrgLanding,
-} from "../src/features/company/company-nav";
-import { DEFAULT_CHANNEL_ID } from "../src/features/company/channel-list";
+} from "@prismshadow/penguin-web/internal";
+import { DEFAULT_CHANNEL_ID } from "@prismshadow/penguin-web/internal";
 import {
   LAST_ORG_KEY,
   WORK_MODE_KEY,

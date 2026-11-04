@@ -41,7 +41,7 @@ export interface WebAppPage extends Omit<PageData, "nav"> {
   id: string;
   /**
    * `org`: a company-mode page the server contributed, with no row in the main nav; its path is
-   * relative to an organization (features/company/org-routes.tsx mounts it there).
+   * relative to an organization (plugins/company/src/web/company/org-routes.tsx mounts it there).
    */
   nav: PageData["nav"] | "org";
   Component: ComponentType;
@@ -81,10 +81,10 @@ export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPa
 }
 
 /**
- * Where home leads: company mode's `home` page (path `*`, features/company/home-redirect.tsx)
+ * Where home leads: company mode's `home` page (path `*`, plugins/company/src/web/company/home-redirect.tsx)
  * answers `/`, a signed-in /login and every path nothing else matches by sending it to the
  * effective mode's home — development mode's conversations or company mode's organizations
- * (features/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
+ * (plugins/company/src/web/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
  * list). The pages that answer these paths, the `*` page included, are the ones no removal can
  * take away: without them home would lead to a path that falls to home again.
  */

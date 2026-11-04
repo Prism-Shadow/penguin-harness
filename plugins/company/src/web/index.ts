@@ -13,3 +13,6 @@ export { CompanyModule } from "./company/module.js";
 export { useCompany } from "./company/company-state.js";
 export { switchDeskModel } from "./company/desk-model.js";
 export { parseOrgKey } from "./company/index.js";
+export { DEFAULT_CHANNEL_ID } from "./company/channel-list.js";
+export * from "./company/company-nav.js";
+export * from "./company/company-context.js";

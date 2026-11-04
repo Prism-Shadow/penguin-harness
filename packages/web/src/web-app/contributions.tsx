@@ -125,7 +125,7 @@ function rendererOf(raw: unknown): RendererRef | null {
  * parent can hold it is decided over the merged table (parentedPagesOf).
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
- * mounts it under the organization layout (features/company/org-routes.tsx) and the router
+ * mounts it under the organization layout (plugins/company/src/web/company/org-routes.tsx) and the router
  * beside WebApp's own pages, from the root, so its path is kept without a leading slash and
  * clashes as the rooted one. Any other page's path is absolute.
  */
