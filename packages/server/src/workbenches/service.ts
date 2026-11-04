@@ -310,8 +310,13 @@ export class WorkbenchService implements Workbenches {
     }
   }
 
-  private migrate(projectId: string, agentId: string): Promise<void> {
+  /** Agents whose State is being replaced (whileReleased), and when that ends. */
+  private readonly held = new Map<string, Promise<void>>();
+
+  /** Every way into an Agent's workbenches comes through here, so it waits out an import first. */
+  private async migrate(projectId: string, agentId: string): Promise<void> {
     const key = `${projectId}/${agentId}`;
+    await this.held.get(key);
     const existing = this.migrations.get(key);
     if (existing) return existing;
     const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
@@ -520,6 +525,20 @@ export class WorkbenchService implements Workbenches {
       this.loaded.delete(k);
     }
     this.migrations.delete(agentKey);
+  }
+
+  async whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T> {
+    const agentKey = `${projectId}/${agentId}`;
+    for (let held = this.held.get(agentKey); held; held = this.held.get(agentKey)) await held;
+    let end!: () => void;
+    this.held.set(agentKey, new Promise<void>((resolve) => (end = resolve)));
+    try {
+      await this.releaseAgent(projectId, agentId);
+      return await work();
+    } finally {
+      this.held.delete(agentKey);
+      end();
+    }
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -737,6 +756,11 @@ export class WorkbenchService implements Workbenches {
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
       try {
+        if (folder.refused.length > 0) {
+          this.log.line(
+            `[workbenches] ${k}@${folder.revision}: not in its versions, git refuses the name: ${folder.refused.join(", ")}`,
+          );
+        }
         // Exactly the bytes that loaded: an edit since then is the next load's version.
         const files = await readLoadedSource(folder);
         if (files === null) {
@@ -895,7 +919,7 @@ export class WorkbenchService implements Workbenches {
 
   private watch(projectId: string, agentId: string): void {
     const k = `${projectId}/${agentId}`;
-    if (this.watchers.has(k) || this.disposed) return;
+    if (this.watchers.has(k) || this.disposed || this.held.has(k)) return;
     const declared = workbenchesDir(this.paths.root, projectId, agentId);
     if (!fs.existsSync(declared)) {
       this.awaitFirstWorkbench(projectId, agentId, declared);

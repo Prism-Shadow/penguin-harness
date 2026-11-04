@@ -16,7 +16,7 @@ export interface AgentTransferRouteDeps {
   agentConfigService: AgentConfig;
   access: Access;
   snapshots: Snapshots;
-  workbenches: Pick<Workbenches, "releaseAgent">;
+  workbenches: Pick<Workbenches, "whileReleased">;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
@@ -74,12 +74,12 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const confirm = body.confirm === true;
     // The workbenches live inside agent_state/. Ones still in an older layout move in first, so
     // the backup taken before the swap holds them and the package's cannot take their ids; then
-    // what the server holds open there lets go (Windows cannot rename a watched directory).
+    // what the server holds open there lets go, and stays let go until the swap is over
+    // (Windows cannot rename a watched directory).
     await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
-    await deps.workbenches.releaseAgent(projectId, agentId);
-    const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, {
-      confirm,
-    });
+    const { version } = await deps.workbenches.whileReleased(projectId, agentId, () =>
+      deps.snapshots.importArchive(projectId, agentId, archive, { confirm }),
+    );
     const res: AgentImportResponse = { version };
     return c.json(res);
   });

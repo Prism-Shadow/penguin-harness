@@ -7,13 +7,14 @@
  *   version; a `.vault.toml` inside a package is ignored; an invalid package is a 400.
  * - Snapshots are written to snapshots/v<N>.tar.gz; initializing and seeding one are mutually
  *   exclusive.
- * - A snapshot leaves out each workbench's `.build/` and `node_modules/`; its source and
- *   `state.json` travel.
+ * - A snapshot leaves out each workbench's `.build/` and `node_modules/` and the server's staging
+ *   leftovers; its source and `state.json` travel.
  * - An import leaves the Agent's history as it was, extracts nothing under a `.git` of any
  *   spelling (a drive prefix or another case included), and releases the Agent's workbenches
  *   while the previous State is still in place.
  * - The backup an import takes is always new: it holds the State as the import found it, and
  *   an earlier snapshot of the same version is left as it was.
+ * - While an import runs, a request for the Agent's workbenches waits for it to end.
  * - An export or an import of an Agent whose workbenches were never migrated migrates them first.
  * - Creating an Agent from a package takes its state, name and version (explicit name and
  *   description win); an invalid package fails the creation and leaves no Agent behind.
@@ -299,7 +300,13 @@ describe("agent export/import", () => {
     const state = agentStateDir(t.root, projectId, "default_agent");
     await recordedDemo(state);
     const demo = path.join(state, "workbenches", "demo");
-    for (const rel of ["state.json", ".build/0123abcd/index.js", "node_modules/dep/index.js"]) {
+    for (const rel of [
+      "state.json",
+      ".build/0123abcd/index.js",
+      "node_modules/dep/index.js",
+      ".restore.penguin-tmpab12cd/0",
+      "../.demo.penguin-tmp9f8e7d/index.ts",
+    ]) {
       await fs.mkdir(path.dirname(path.join(demo, rel)), { recursive: true });
       await fs.writeFile(path.join(demo, rel), "{}");
     }
@@ -308,7 +315,9 @@ describe("agent export/import", () => {
       Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer()),
     );
 
-    expect(entries.filter((e) => /(^|\/)(\.build|node_modules)(\/|$)/.test(e))).toEqual([]);
+    expect(
+      entries.filter((e) => /(^|\/)(\.build|node_modules)(\/|$)|\.penguin-tmp/.test(e)),
+    ).toEqual([]);
     expect(entries).toEqual(
       expect.arrayContaining([
         "agent_state/workbenches/demo/index.ts",
@@ -411,5 +420,36 @@ describe("agent export/import", () => {
         "utf8",
       ),
     ).toBe('{"kept":true}');
+  });
+
+  it("while an import runs, a request for the Agent's workbenches waits for it to end", async () => {
+    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    const real = t.deps.snapshots.importArchive.bind(t.deps.snapshots);
+    let swapping!: () => void;
+    const started = new Promise<void>((resolve) => (swapping = resolve));
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => (finish = resolve));
+    vi.spyOn(t.deps.snapshots, "importArchive").mockImplementation(async (...args) => {
+      swapping();
+      await held;
+      return real(...args);
+    });
+    const order: string[] = [];
+
+    const imported = (async () => {
+      const res = await owner.post(`${base}/import`, {
+        dataBase64: archive.toString("base64"),
+        confirm: true,
+      });
+      order.push(`import ${res.status}`);
+    })();
+    await started;
+    const listed = (async () => {
+      order.push(`list ${(await owner.get(`${base}/workbenches`)).status}`);
+    })();
+    finish();
+    await Promise.all([imported, listed]);
+
+    expect(order).toEqual(["import 200", "list 200"]);
   });
 });

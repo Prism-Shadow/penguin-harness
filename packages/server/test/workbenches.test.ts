@@ -26,6 +26,8 @@
  *   files exactly, keeps the state, and is itself the newest version.
  * - A repository the server cannot read never stops a load: the version is not recorded and
  *   the history answers an error the page can retry.
+ * - A file under a name git refuses never stops a load either: it is named in the log and stays
+ *   out of the versions.
  * - An unknown required interface leaves the previous instance serving and names the problem.
  * - A source type error reports the file, line and reason, without duplicate diagnostics.
  * - A JSON response body may be null.
@@ -638,6 +640,16 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect((await owner.post(`${base}/demo/rollback`, { revision: "000000000000" })).status).toBe(
       404,
     );
+  });
+
+  it("a file under a name git refuses loads, is named in the log, and stays out of the versions", async () => {
+    await fs.writeFile(path.join(dir, "git~1"), "kept on disk, not in history");
+
+    const [listed] = await list();
+
+    expect(listed!.error).toBe(null);
+    expect(logged.some((line) => line.includes("git refuses the name: git~1"))).toBe(true);
+    expect((await versions()).map((v) => v.revision)).toEqual([listed!.revision]);
   });
 
   it("a repository it cannot read never stops a load: the version is not recorded, history is an error", async () => {

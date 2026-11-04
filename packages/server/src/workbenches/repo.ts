@@ -12,7 +12,12 @@
  * Every file is mode 100644 and a tree id is git's own, so the revision a folder gets in memory
  * (`treeId`) is what `git --git-dir=… rev-parse HEAD:workbenches/<id>` prints once it is
  * committed, and a listed version's revision is the folder's tree at that commit. A name git
- * reserves for its own directory (`isGitName`) is never part of a tree: git refuses to read one.
+ * refuses in a tree (`isGitName`) is never written into one, and one found in a tree written
+ * elsewhere is skipped on reading, with a log line, rather than failing the whole history.
+ *
+ * Every file the repository gets is written whole: to a temporary name, flushed, then renamed
+ * in. An object file a crash left empty or cut short counts as absent, so the next write of the
+ * same object replaces it instead of building on it.
  *
  * Writes to one repository run one at a time in this process, whichever instance makes them.
  * Reads take no lock: objects never change once written, and the branch ref is replaced whole.
@@ -20,7 +25,9 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 import git, { type TreeEntry } from "isomorphic-git";
+import { removeLeftovers } from "./leftovers.js";
 
 /** Versions a history lists at most. */
 export const HISTORY_LIMIT = 50;
@@ -61,15 +68,26 @@ export function agentStateRepoDir(agentDir: string): string {
   return path.join(agentDir, "agent_state.git");
 }
 
+/** The characters HFS+ ignores in a name. */
+const HFS_IGNORED = /[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g;
+
 /**
- * A path segment git treats as its own `.git` and refuses to read from a tree: any case, with
- * trailing dots or spaces (NTFS), as an NTFS short name (`git~1`), before a `:` stream, or with
- * the characters HFS+ ignores.
+ * A tree entry name git refuses, by isomorphic-git's own check (git's `verify_path`): one that
+ * holds a path separator, that is `.` or `..` once the characters HFS+ ignores are dropped, or
+ * that spells `.git` — any case, trailing dots or spaces (NTFS), an NTFS short name (`git~1`),
+ * or before a `:` stream.
  */
 export function isGitName(name: string): boolean {
-  const visible = name.replace(/[‌-‏‪-‮⁪-⁯﻿]/g, "");
+  const visible = name.replace(HFS_IGNORED, "");
   const normalized = (visible.split(":")[0] ?? "").toLowerCase().replace(/[. ]+$/, "");
-  return normalized === ".git" || /^\.?git~[1-9]$/.test(normalized);
+  return (
+    name.includes("/") ||
+    name.includes("\\") ||
+    visible === "." ||
+    visible === ".." ||
+    normalized === ".git" ||
+    /^\.?git~[1-9]$/.test(normalized)
+  );
 }
 
 const hasGitName = (rel: string): boolean => rel.split("/").some(isGitName);
@@ -131,6 +149,47 @@ export function treeId(files: ReadonlyArray<{ rel: string; oid: string }>): stri
 const isNotFound = (err: unknown): boolean =>
   (err as { code?: unknown } | null)?.code === "NotFoundError";
 
+/** Writes `data` to `file` whole: a temporary name, flushed to disk, then renamed in. */
+async function writeWhole(
+  file: string,
+  data: string | Uint8Array,
+  temp = `${file}.penguin-tmp`,
+): Promise<void> {
+  const handle = await fs.promises.open(temp, "w");
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await fs.promises.rename(temp, file);
+}
+
+const LOOSE_OBJECT = /[\\/]objects[\\/][0-9a-f]{2}[\\/][0-9a-f]{38}$/;
+
+/**
+ * The filesystem isomorphic-git works through. Its writes are whole (writeWhole), and a loose
+ * object that does not inflate (a crash left it empty or cut short) is not there for it: the
+ * library writes an object only when it finds none, and would otherwise build on the damaged one.
+ */
+const gitFs = {
+  promises: {
+    ...fs.promises,
+    writeFile: (file: string, data: string | Uint8Array) => writeWhole(file, data),
+    async stat(file: string) {
+      const stats = await fs.promises.stat(file);
+      if (LOOSE_OBJECT.test(file)) {
+        try {
+          inflateSync(await fs.promises.readFile(file));
+        } catch {
+          throw Object.assign(new Error(`ENOENT: damaged object ${file}`), { code: "ENOENT" });
+        }
+      }
+      return stats;
+    },
+  },
+};
+
 /** The write in progress per repository, across instances: the next one starts once it settles. */
 const writing = new Map<string, Promise<unknown>>();
 
@@ -140,6 +199,8 @@ export class AgentStateRepo {
   private readonly log: (line: string) => void;
   private readonly limit: number;
   private readonly walk: number;
+  /** Refused tree entry names already logged by this instance. */
+  private readonly skipped = new Set<string>();
 
   /** `caps` lowers HISTORY_LIMIT and HISTORY_WALK (tests). */
   constructor(opts: {
@@ -158,7 +219,7 @@ export class AgentStateRepo {
   /**
    * Writes `files` as the subtree at `rel` on top of HEAD and commits it, dated `at` (default:
    * now; git keeps whole seconds); nothing when HEAD has exactly that tree there. Creates the
-   * repository on first use. A file under a name git reserves is left out, with a log line.
+   * repository on first use. A file under a name git refuses is left out, with a log line.
    */
   commitPath(
     rel: string,
@@ -169,7 +230,7 @@ export class AgentStateRepo {
     const kept = files.filter((f) => !hasGitName(f.rel));
     if (kept.length < files.length) {
       const names = files.filter((f) => hasGitName(f.rel)).map((f) => f.rel);
-      this.log(`${rel}: left out of history, git reserves the name: ${names.join(", ")}`);
+      this.log(`${rel}: left out of history, git refuses the name: ${names.join(", ")}`);
     }
     const blobs = kept.map((f) => ({ rel: f.rel, oid: blobOid(f.body) }));
     return this.serial(async () => {
@@ -224,7 +285,7 @@ export class AgentStateRepo {
   }
 
   private get repo() {
-    return { fs, gitdir: this.gitdir };
+    return { fs: gitFs, gitdir: this.gitdir };
   }
 
   /**
@@ -261,25 +322,72 @@ export class AgentStateRepo {
 
   /**
    * A new bare repository on `main`, with the ignore rules a person's git reads. It is made
-   * beside its place and renamed in, so a crash never leaves a repository without a HEAD.
+   * beside its place and renamed in, so a crash never leaves a repository without a HEAD; what
+   * an earlier crash left there is cleared first.
    */
   private async create(): Promise<{ ref: string; commit: null }> {
-    const made = await fs.promises.mkdtemp(`${this.gitdir}.penguin-tmp`);
-    await git.init({ fs, gitdir: made, bare: true, defaultBranch: BRANCH });
+    const staging = `${path.basename(this.gitdir)}.penguin-tmp`;
+    await removeLeftovers(path.dirname(this.gitdir), staging, this.now().getTime());
+    const made = await fs.promises.mkdtemp(path.join(path.dirname(this.gitdir), staging));
+    await git.init({ fs: gitFs, gitdir: made, bare: true, defaultBranch: BRANCH });
     await fs.promises.mkdir(path.join(made, "info"), { recursive: true });
-    await fs.promises.writeFile(path.join(made, "info", "exclude"), EXCLUDE);
+    await writeWhole(path.join(made, "info", "exclude"), EXCLUDE);
     await fs.promises.rename(made, this.gitdir);
     return { ref: `refs/heads/${BRANCH}`, commit: null };
   }
 
-  /** The id of the tree at `rel` in a commit; null when the commit has nothing there. */
+  /**
+   * The id of the tree at `rel` in a commit; null when the commit has nothing there, or is not
+   * in the repository at all (the parent of a shallow copy's oldest commit).
+   */
   private async subtree(commit: string, rel: string): Promise<string | null> {
+    let tree: string;
     try {
-      return (await git.readTree({ ...this.repo, oid: commit, filepath: rel })).oid;
+      tree = (await git.readCommit({ ...this.repo, oid: commit })).commit.tree;
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;
     }
+    for (const name of rel.split("/")) {
+      const entry = (await this.entries(tree)).find((e) => e.path === name);
+      if (entry?.type !== "tree") return null;
+      tree = entry.oid;
+    }
+    return tree;
+  }
+
+  /**
+   * A tree's entries, parsed here rather than by the library, which refuses a whole tree for one
+   * entry name git refuses: such an entry (written by another tool, or by an older server) is
+   * left out, logged once.
+   */
+  private async entries(tree: string): Promise<TreeEntry[]> {
+    const { type, object } = await git.readObject({ ...this.repo, oid: tree, format: "content" });
+    if (type !== "tree") throw new Error(`${tree} is a ${type}, not a tree`);
+    const body = Buffer.from(object as Uint8Array);
+    const out: TreeEntry[] = [];
+    for (let at = 0; at < body.length;) {
+      const space = body.indexOf(0x20, at);
+      const nul = space === -1 ? -1 : body.indexOf(0, space);
+      if (nul === -1 || nul + 21 > body.length) throw new Error(`tree ${tree} is malformed`);
+      const mode = body.subarray(at, space).toString();
+      const name = body.subarray(space + 1, nul).toString("utf8");
+      const oid = body.subarray(nul + 1, nul + 21).toString("hex");
+      at = nul + 21;
+      if (isGitName(name)) {
+        if (!this.skipped.has(name)) {
+          this.skipped.add(name);
+          this.log(
+            `tree ${tree.slice(0, SHORT)} holds a name git refuses, left out: ${JSON.stringify(name)}`,
+          );
+        }
+        continue;
+      }
+      const isTree = mode === "40000" || mode === "040000";
+      const kind = isTree ? "tree" : mode === "160000" ? "commit" : "blob";
+      out.push({ mode: isTree ? "040000" : mode, path: name, oid, type: kind });
+    }
+    return out;
   }
 
   /** Writes the files' blobs and trees; returns the top tree's id. */
@@ -326,12 +434,10 @@ export class AgentStateRepo {
         committer: stamp,
       },
     });
-    // Replaced whole (a crash leaves the old ref or the new one, never an empty file); `.lock`
-    // is the name git itself stages a ref under and never reads as a branch.
+    // `.lock` is the name git itself stages a ref under and never reads as a branch.
     const file = path.join(this.gitdir, head.ref);
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    await fs.promises.writeFile(`${file}.lock`, `${commit}\n`);
-    await fs.promises.rename(`${file}.lock`, file);
+    await writeWhole(file, `${commit}\n`, `${file}.lock`);
     return commit;
   }
 
@@ -345,7 +451,7 @@ export class AgentStateRepo {
     value: string | null,
   ): Promise<string | null> {
     const [name = "", ...rest] = segments;
-    const entries = tree === null ? [] : (await git.readTree({ ...this.repo, oid: tree })).tree;
+    const entries = tree === null ? [] : await this.entries(tree);
     const existing = entries.find((e) => e.path === name);
     const child =
       rest.length === 0
@@ -391,7 +497,7 @@ export class AgentStateRepo {
   /** Every file under a tree, paths relative to it. */
   private async readFiles(tree: string, prefix: string): Promise<SourceFile[]> {
     const out: SourceFile[] = [];
-    for (const entry of (await git.readTree({ ...this.repo, oid: tree })).tree) {
+    for (const entry of await this.entries(tree)) {
       const rel = `${prefix}${entry.path}`;
       if (entry.type === "tree") out.push(...(await this.readFiles(entry.oid, `${rel}/`)));
       else if (entry.type === "blob") {

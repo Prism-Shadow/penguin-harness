@@ -267,4 +267,10 @@ export abstract class Workbenches {
    * later listing takes them up again, so an Agent whose deletion is then refused loses nothing.
    */
   abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
+  /**
+   * Runs `work` (an Agent State import) with the Agent's workbenches released as by
+   * `releaseAgent` and kept so until it settles: a request for them meanwhile waits for the end
+   * instead of watching or loading the directory being replaced.
+   */
+  abstract whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T>;
 }
