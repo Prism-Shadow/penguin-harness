@@ -24,7 +24,7 @@ const project = "default_project",
   agent = "custom_support";
 const plugin = () => structuredClone(libraryPlugin("penguin-support")!);
 const base = () => path.join(root, project, "agents", agent);
-const dir = () => path.join(base(), "workbenches/support");
+const dir = () => path.join(base(), "agent_state/workbenches/support");
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-"));
 });

@@ -1,12 +1,12 @@
 /**
  * Where an Agent's workbenches live and how their versions are kept.
  *
- *   <agentDir>/workbenches/<id>/package.json   `penguin.modules` manifests (a plugin package)
- *   <agentDir>/workbenches/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
- *   <agentDir>/workbenches/<id>/ui/            the pages its contributed tabs name
- *   <agentDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
- *   <agentDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
- *   <agentDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
+ *   <agentStateDir>/workbenches/<id>/package.json   `penguin.modules` manifests (a plugin package)
+ *   <agentStateDir>/workbenches/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
+ *   <agentStateDir>/workbenches/<id>/ui/            the pages its contributed tabs name
+ *   <agentStateDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
+ *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
+ *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentDir>/workbenches-history/<id>/<revision>/   a full copy of the folder at each successful load
  *   <agentDir>/workbenches-history/<id>/versions.json  the list, newest first
  *
@@ -36,9 +36,7 @@ export interface WorkbenchFolder {
   pkg: { name: string; version: string | null };
 }
 
-export function workbenchesDir(root: string, projectId: string, agentId: string): string {
-  return path.join(agentDir(root, projectId, agentId), "workbenches");
-}
+export { workbenchesDir } from "@prismshadow/penguin-core";
 
 export function historyDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentDir(root, projectId, agentId), "workbenches-history");

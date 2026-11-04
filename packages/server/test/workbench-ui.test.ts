@@ -16,7 +16,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentStateDir } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
 import { webDistWithUiRuntime } from "./fixtures/workbench-runtime.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
@@ -94,7 +94,7 @@ const runtimeTags = (up: string) =>
   `"react-dom/client":"${up}sdk/ui/react-dom-client.js"}}</script>`;
 
 async function writeWorkbench(root: string, id: string, files: Record<string, string>) {
-  const dir = path.join(agentDir(root, PROJECT, AGENT), "workbenches", id);
+  const dir = path.join(agentStateDir(root, PROJECT, AGENT), "workbenches", id);
   const all = {
     "package.json": JSON.stringify({ name: id, type: "module", penguin: { modules: [MANIFEST] } }),
     "index.ts": INDEX,
