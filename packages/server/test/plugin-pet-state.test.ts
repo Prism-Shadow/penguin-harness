@@ -80,7 +80,7 @@ describe("plugin state routes (e2e)", () => {
     expect(await first.json()).toEqual({ package: "@acme/pet", state: {} });
 
     const patch = await client.patch("/api/plugins/@acme/pet/state", {
-      json: { pet: { name: "Mochi", fullness: 40 } },
+      pet: { name: "Mochi", fullness: 40 },
     });
     expect(patch.status).toBe(200);
     expect(await patch.json()).toEqual({
@@ -89,7 +89,7 @@ describe("plugin state routes (e2e)", () => {
     });
 
     const second = await client.patch("/api/plugins/@acme/pet/state", {
-      json: { mood: { doing: "walk" } },
+      mood: { doing: "walk" },
     });
     expect(await second.json()).toEqual({
       package: "@acme/pet",
@@ -115,7 +115,7 @@ describe("plugin state routes (e2e)", () => {
     const app = t;
     const { cookie } = await loginAdmin(app.app);
     const client = apiClient(app.app, cookie);
-    const resp = await client.patch("/api/plugins/@acme/pet/state", { json: [1, 2] });
+    const resp = await client.patch("/api/plugins/@acme/pet/state", [1, 2]);
     expect(resp.status).toBe(400);
   });
 
