@@ -3459,6 +3459,9 @@ export const zh = {
       count === 1
         ? "有 1 个插件来源仍在加载，加载完成后其中的插件会出现在这里。"
         : `有 ${count} 个插件来源仍在加载，加载完成后其中的插件会出现在这里。`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading:
+      "插件索引仍在下载，搜索结果暂时不含未加载来源的插件，稍等片刻再试。",
     copySpecifier: "复制包名",
   },
 

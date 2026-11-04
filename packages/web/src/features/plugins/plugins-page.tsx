@@ -910,6 +910,13 @@ export function PluginsPage() {
             {S.pluginRegistry.sourcePending(indexPending)}
           </Notice>
         )}
+        {/* While searching, sources still loading mean the results — and especially an empty
+            result — are not yet final: say so rather than let noMatch read as "does not exist". */}
+        {searching && (indexPending > 0 || (registry.reading && index === null)) && (
+          <Notice tone="attention" className="mt-4">
+            {S.pluginRegistry.searchWhileDownloading}
+          </Notice>
+        )}
         {/* Only while there is no answer to show: a failed re-read changes nothing on screen. */}
         {remoteKey !== null &&
           viewMachine !== undefined &&
@@ -982,7 +989,11 @@ export function PluginsPage() {
                 );
               })}
           {sections.length === 0 && (
-            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
+            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
+              {searching && (indexPending > 0 || (registry.reading && index === null))
+                ? S.pluginRegistry.searchWhileDownloading
+                : S.plugins.noMatch}
+            </p>
           )}
         </div>
       )}

@@ -23,6 +23,7 @@ import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { readPackageCard, userAgent } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
@@ -306,12 +307,21 @@ export function httpPluginRegistry(
   const attempts = opts.attempts ?? 3;
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const delay = opts.delay ?? backoff;
+  // What the last 200 answered, so the next read can revalidate instead of re-downloading:
+  // the etag goes back as If-None-Match, and the body's hash catches a CDN (GitHub Pages
+  // among them) whose etag churns while the document does not.
+  let revalidate: { etag: string | null; hash: string; entries: PluginIndexEntry[] } | null = null;
   const request = async (): Promise<Response> => {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         return await fetchImpl(indexUrl, {
-          headers: { "user-agent": userAgent() },
+          headers: {
+            "user-agent": userAgent(),
+            ...(revalidate?.etag !== null && revalidate !== undefined
+              ? { "if-none-match": revalidate.etag }
+              : {}),
+          },
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
@@ -330,18 +340,34 @@ export function httpPluginRegistry(
     source: indexUrl,
     index: async () => {
       const res = await request();
+      // Unchanged since the last read: the document in hand stands, nothing re-parsed.
+      if (res.status === 304 && revalidate !== null) {
+        const fresh = res.headers.get("etag");
+        if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+        return revalidate.entries;
+      }
       if (!res.ok) {
         throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
       }
+      const text = await res.text();
+      const hash = createHash("sha256").update(text).digest("hex");
+      // The etag moved but the document did not — a Pages quirk this hash is here to catch.
+      // The new etag is kept so the next revalidation speaks the header the server last sent.
+      if (revalidate !== null && hash === revalidate.hash) {
+        revalidate = { ...revalidate, etag: res.headers.get("etag") };
+        return revalidate.entries;
+      }
       let data: unknown;
       try {
-        data = await res.json();
+        data = JSON.parse(text);
       } catch (err) {
         throw new Error(
           `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return parsePluginIndex(data, indexUrl, { icons: "drop" });
+      const entries = parsePluginIndex(data, indexUrl, { icons: "drop" });
+      revalidate = { etag: res.headers.get("etag"), hash, entries };
+      return entries;
     },
     // The shared index format carries no readme location, so a remote source has none to
     // offer yet. Null rather than a guessed URL: inventing one would have the Web App

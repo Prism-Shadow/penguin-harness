@@ -185,6 +185,41 @@ describe("httpPluginRegistry", () => {
       /not an array/,
     );
   });
+
+  it("revalidates with If-None-Match, and a 304 is answered from the cache, not an error", async () => {
+    const calls = fakeFetch((call) =>
+      call.headers.get("if-none-match") !== null
+        ? new Response(null, { status: 304, headers: { etag: '"a"' } })
+        : jsonResponse([VALID_ENTRY], 200, { etag: '"a"' }),
+    );
+    const registry = httpPluginRegistry(url, calls.fetch);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls[0]!.headers.get("if-none-match")).toBeNull();
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"a"');
+    expect(calls.calls).toHaveLength(2);
+  });
+
+  it("keeps working when the etag churns but the document does not (a Pages quirk)", async () => {
+    let etag = 0;
+    const calls = fakeFetch(() => jsonResponse([VALID_ENTRY], 200, { etag: `"v${++etag}"` }));
+    const registry = httpPluginRegistry(url, calls.fetch);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls).toHaveLength(2);
+    // The new etag is what the next revalidation speaks.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"v1"');
+  });
+
+  it("caches by body hash when the server sends no etag at all", async () => {
+    const calls = fakeFetch(() => jsonResponse([VALID_ENTRY]));
+    const registry = httpPluginRegistry(url, calls.fetch);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls).toHaveLength(2);
+    // No etag was ever sent, so no revalidation header either.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBeNull();
+  });
 });
 
 /**

@@ -3265,6 +3265,9 @@ export const en: Strings = {
       count === 1
         ? "One plugin source is still loading. Its plugins will appear here when it answers."
         : `${count} plugin sources are still loading. Their plugins will appear here when they answer.`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading:
+      "The plugin index is still downloading; results do not yet include plugins from sources that have not loaded. Try again shortly.",
     copySpecifier: "Copy specifier",
   },
 
