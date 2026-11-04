@@ -233,7 +233,7 @@ Long Tasks can also feed their lessons back. With the `continual-learning` plugi
 
 ## Built-in library
 
-The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins/index.ts`; the library directory is the source of truth as plugins are added):
+The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; the library directory is the source of truth as plugins are added):
 
 | Category | Plugin | Purpose |
 | --- | --- | --- |

@@ -233,7 +233,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 ## 内置插件库
 
-内置插件按分类列出（`PLUGIN_CATEGORIES` 定义于 `packages/core/src/plugins/index.ts`；插件会陆续增加，以插件库目录为准）：
+内置插件按分类列出（`PLUGIN_CATEGORIES` 定义于 `packages/core/src/plugin/categories.ts`；插件会陆续增加，以插件库目录为准）：
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |

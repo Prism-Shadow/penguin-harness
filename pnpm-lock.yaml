@@ -216,81 +216,6 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.3.1
         version: 2.3.1
-      '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company':
-        specifier: workspace:*
-        version: link:../../plugins/agent-company
-      '@penguinharness/agent-development':
-        specifier: workspace:*
-        version: link:../../plugins/agent-development
-      '@penguinharness/agent-evaluation':
-        specifier: workspace:*
-        version: link:../../plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation':
-        specifier: workspace:*
-        version: link:../../plugins/browser-automation
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/data-analysis':
-        specifier: workspace:*
-        version: link:../../plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/default-rsi-toolkit
-      '@penguinharness/goal':
-        specifier: workspace:*
-        version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
-      '@penguinharness/model-development':
-        specifier: workspace:*
-        version: link:../../plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support':
-        specifier: workspace:*
-        version: link:../../plugins/penguin-support
-      '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development':
-        specifier: workspace:*
-        version: link:../../plugins/software-development
-      '@penguinharness/trace-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides':
-        specifier: workspace:*
-        version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
-      '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -575,6 +500,81 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui':
+        specifier: workspace:*
+        version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -6985,31 +6985,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
@@ -7026,31 +7001,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
@@ -7067,31 +7017,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       arktype: 2.2.3
@@ -7120,6 +7045,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -7150,6 +7100,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -7180,6 +7155,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)

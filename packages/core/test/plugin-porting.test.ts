@@ -13,7 +13,8 @@
  * - A folder without a SKILL.md is removed; a folder whose name is not a skill name is renamed —
  *   by its frontmatter name when nothing of the folder name is left, else `skill`, and never onto
  *   a name another skill has.
- * - What it leaves is a package the plugin library reads with no warning.
+ * - What it leaves, once its Skills are declared (the package's build writes them into its
+ *   ifaces.json), is a package the plugin library reads with no warning.
  *
  * port-mcp.mjs, on the upstream plugin:
  * - A Codex `.mcp.json`'s servers become `penguin.mcp_servers`: an angle-bracket placeholder and
@@ -29,7 +30,8 @@
  *   names outside the plugin is not read.
  * - `--oauth` and `--bearer` mark what only the upstream prose says: the server signs in with
  *   OAuth, and a token is the alternative.
- * - What it prints, pasted into a package.json, reads through the plugin library with no warning.
+ * - What it prints, declared as the package's MCP servers, reads through the plugin library with
+ *   no warning.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -37,7 +39,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseSkillFrontmatter, readLibraryPackage } from "../src/plugins/index.js";
+import { parseSkillFrontmatter, readLibraryPackage } from "../src/index.js";
+import { pluginTable } from "./helpers/plugin-packages.js";
 
 const SCRIPT = path.resolve(
   import.meta.dirname,
@@ -74,6 +77,17 @@ const normalize = (dir: string) => {
 };
 
 const read = (rel: string) => fs.readFile(path.join(pkg!, rel), "utf8");
+
+/** Declares every Skill folder the package holds, as its build would write them into ifaces.json. */
+async function declareSkills(dir: string): Promise<void> {
+  const skills = (await fs.readdir(path.join(dir, "skills"), { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  await fs.writeFile(
+    path.join(dir, "ifaces.json"),
+    JSON.stringify(pluginTable("@ported/demo", { skills })),
+  );
+}
 
 const PORT_MCP = path.resolve(
   import.meta.dirname,
@@ -187,6 +201,7 @@ describe("normalize-skills.mjs", () => {
       "skills/校对/SKILL.md": "---\nname: 校对\ndescription: Proofread.\n---\n\nBody.\n",
     });
     normalize(dir);
+    await declareSkills(dir);
     const described = Object.fromEntries(
       readLibraryPackage(dir).skills.map((s) => [s.name, s.description]),
     );
@@ -204,6 +219,7 @@ describe("normalize-skills.mjs", () => {
       "skills/two/SKILL.md": "# Two\n\nDoes the second thing.\n",
     });
     normalize(dir);
+    await declareSkills(dir);
     const plugin = readLibraryPackage(dir);
     expect(plugin.skills.map((s) => [s.name, s.description, s.version])).toEqual([
       ["one", "Folded text.", "2026.10.10.1"],
@@ -472,11 +488,11 @@ describe("port-mcp.mjs", () => {
     ]);
     await fs.writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({
-        name: "@ported/cloudflare",
-        version: "0.1.2",
-        penguin: { mcp_servers: ported.mcp_servers },
-      }),
+      JSON.stringify({ name: "@ported/cloudflare", version: "0.1.2" }),
+    );
+    await fs.writeFile(
+      path.join(dir, "ifaces.json"),
+      JSON.stringify(pluginTable("@ported/cloudflare", { mcpServers: ported.mcp_servers })),
     );
     expect(readLibraryPackage(dir).mcpServers).toEqual([{ ...ported.mcp_servers[0], oauth: true }]);
     expect(warn).not.toHaveBeenCalled();
