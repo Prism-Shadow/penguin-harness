@@ -4,4 +4,4 @@ export { SessionListModule } from "./session-list/module";
 export * from "./chat";
 export * from "./session-list";
 export * from "./ai-create";
-export * from "./audio";
+export { AudioModule } from "./audio/module";
