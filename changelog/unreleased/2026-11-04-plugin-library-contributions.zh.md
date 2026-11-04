@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `core`, `server`, `cli`, `plugins`, `ci`
+- **PR:** [#1477](https://github.com/Prism-Shadow/penguin-harness/pull/1477)
 - **Breaking:** yes — 不再读取插件 package.json 的 `penguin` 块，插件包必须先构建（带 `ifaces.json`），若干 SDK 导出改名或删除
 
 [English](2026-11-04-plugin-library-contributions.md)

@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `core`, `server`, `cli`, `plugins`, `ci`
+- **PR:** [#1477](https://github.com/Prism-Shadow/penguin-harness/pull/1477)
 - **Breaking:** yes — the `penguin` block of a plugin's package.json is no longer read, a plugin package must be built (carry `ifaces.json`), and several SDK exports were renamed or removed
 
 [中文版](2026-11-04-plugin-library-contributions.zh.md)
