@@ -62,6 +62,9 @@ function registered(state: FakeState, language: "en" | "zh" = "en") {
 
 describe("the data half", () => {
   it("contributes a widget and a command, and binds the command's code half", () => {
+    // The field decorators record a class's @Bind fields when an instance is constructed
+    // (kernel: fieldsOf); build one so the bind table exists.
+    void new Pet();
     const meta = (Pet as unknown as Record<symbol, { contributes: Record<string, unknown[]> }>)[
       META
     ];

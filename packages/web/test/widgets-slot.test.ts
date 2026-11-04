@@ -6,6 +6,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ComponentType } from "react";
 import { widgetsOf, widgetStore } from "../src/lib/widgets";
+import * as api from "../src/api/endpoints";
+
+vi.mock("../src/api/endpoints", () => ({ getContributions: vi.fn() }));
+const getContributions = vi.mocked(api.getContributions);
 
 const iframeWidget = {
   id: "pet.widget",
@@ -49,7 +53,7 @@ describe("widgetsOf", () => {
     ];
     expect(widgetsOf({ widgets: entries })).toHaveLength(2);
     const registry = new Map<string, ComponentType>([["clock", () => null]]);
-    expect(widgetsOf({ widgets: entries }, registry)).toEqual([entries[0]]);
+    expect(widgetsOf({ widgets: entries }, registry)).toEqual([{ ...entries[0], size: "small" }]);
   });
 
   it("keeps the first entry of a duplicated key", () => {
@@ -73,12 +77,9 @@ describe("widgetsOf", () => {
 
 describe("widgetStore", () => {
   it("fetches once, shares the answer, and refresh asks again", async () => {
-    vi.resetModules();
-    const endpoints = await import("../src/api/endpoints");
-    const getContributions = vi
-      .spyOn(endpoints, "getContributions")
-      .mockResolvedValueOnce({ widgets: [iframeWidget] })
-      .mockResolvedValueOnce({ widgets: [] });
+    getContributions
+      .mockResolvedValueOnce({ widgets: [iframeWidget] as never })
+      .mockResolvedValueOnce({ widgets: [] as never });
     const store = widgetStore();
     await store.refresh();
     expect(store.current()).toEqual([iframeWidget]);
@@ -92,9 +93,7 @@ describe("widgetStore", () => {
   });
 
   it("a failed fetch reads as no widgets, and does not throw to the reader", async () => {
-    vi.resetModules();
-    const endpoints = await import("../src/api/endpoints");
-    vi.spyOn(endpoints, "getContributions").mockRejectedValue(new Error("offline"));
+    getContributions.mockRejectedValueOnce(new Error("offline"));
     const store = widgetStore();
     await store.refresh();
     expect(store.current()).toEqual([]);
