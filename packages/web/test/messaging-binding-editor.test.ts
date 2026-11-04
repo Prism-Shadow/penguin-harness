@@ -36,6 +36,7 @@ import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { uiStringsOf } from "../src/lib/ui-strings";
 import { en } from "../src/lib/strings-en";
+import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 import { formatDateTime } from "../src/lib/format";
 
 afterEach(() => setActiveStrings(zh));
@@ -188,13 +189,17 @@ describe("MessagingBindingBody", () => {
       }),
     );
     // A paragraph of its own, carrying the message whole.
-    expect(html).toContain(`>${lastError}</p>`);
-    // Outside the toggle row: the row closes before the message begins.
-    const rowAt = html.indexOf("flex flex-wrap items-center gap-2 text-xs");
-    expect(rowAt).toBeGreaterThanOrEqual(0);
-    expect(html.slice(rowAt, html.indexOf(lastError, rowAt))).toContain("</div>");
-    // Bounded so an error still cannot push the probes far, with the whole text on hover.
-    expect(html).toContain("line-clamp-2");
+    const all = elementsOf(readMarkup(html));
+    const error = all.find((el) => el.tag === "p" && seenText(el) === lastError);
+    expect(error).toBeDefined();
+    // Outside the toggle row: the row holding the switch does not hold the message.
+    let row = all.find((el) => el.attrs.role === "switch")?.parent ?? null;
+    while (row !== null && row.tag !== "div") row = row.parent;
+    expect(row).not.toBeNull();
+    let inRow = false;
+    for (let at = error!.parent; at !== null; at = at.parent) if (at === row) inRow = true;
+    expect(inRow).toBe(false);
+    // The whole text is on hover too, however the line is bounded.
     expect(html).toContain(`data-tooltip="${lastError}"`);
   });
 

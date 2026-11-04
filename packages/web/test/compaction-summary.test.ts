@@ -7,14 +7,15 @@
  * - The result section stays hidden while the request only thinks, appears with the first
  *   summary text, and stays for a completed row but not for a failed one.
  * - A discard row is never titled as a compaction, running or settled, and a running row never
- *   reads as settled; an unknown mode is titled as a compaction.
+ *   reads as settled; an unknown mode is titled as a compaction — in both languages.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CompactionMode } from "@prismshadow/amsp";
 import { CompactionBanner } from "../src/features/chat/compaction-banner";
-import { S } from "../src/lib/strings";
+import { setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 import { compactionResultVisible, compactionSummaryText } from "../src/lib/amsp/compaction-summary";
 
 describe("compactionSummaryText", () => {
@@ -61,7 +62,13 @@ describe("compactionResultVisible (the result section waits for the thinking to 
   });
 });
 
-describe("a compaction row's title", () => {
+describe.each([
+  ["zh", zh],
+  ["en", en],
+] as const)("a compaction row's title (%s)", (_locale, dict) => {
+  beforeEach(() => setActiveStrings(dict));
+  afterEach(() => setActiveStrings(zh));
+
   /** The row as the transcript draws it: running, or settled as completed. */
   const row = (mode: string, running: boolean) =>
     renderToStaticMarkup(
@@ -78,18 +85,18 @@ describe("a compaction row's title", () => {
     );
 
   it("never titles a discard as a compaction, running or settled", () => {
-    expect(row("discard", true)).toContain(S.chat.compactionRunning("discard"));
-    expect(row("discard", true)).not.toContain(S.chat.compactionRunning("summarize"));
-    expect(row("discard", false)).toContain(S.chat.compactionDone("discard"));
-    expect(row("discard", false)).not.toContain(S.chat.compactionDone("summarize"));
+    expect(row("discard", true)).toContain(dict.chat.compactionRunning("discard"));
+    expect(row("discard", true)).not.toContain(dict.chat.compactionRunning("summarize"));
+    expect(row("discard", false)).toContain(dict.chat.compactionDone("discard"));
+    expect(row("discard", false)).not.toContain(dict.chat.compactionDone("summarize"));
   });
 
   it("never titles a running row as settled", () => {
-    expect(row("summarize", true)).toContain(S.chat.compactionRunning("summarize"));
-    expect(row("summarize", true)).not.toContain(S.chat.compactionDone("summarize"));
+    expect(row("summarize", true)).toContain(dict.chat.compactionRunning("summarize"));
+    expect(row("summarize", true)).not.toContain(dict.chat.compactionDone("summarize"));
   });
 
   it("titles a mode it does not know as a compaction", () => {
-    expect(row("future-mode", false)).toContain(S.chat.compactionDone("summarize"));
+    expect(row("future-mode", false)).toContain(dict.chat.compactionDone("summarize"));
   });
 });
