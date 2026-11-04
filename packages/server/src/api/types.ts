@@ -27,7 +27,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { WorkbenchInfo } from "../mechanisms/workbenches.js";
+import type { WorkbenchInfo } from "@penguinharness/plugin-workbenches/server";
 
 // ---------------------------------------------------------------------------
 // General
@@ -4810,7 +4810,7 @@ export type {
   WorkbenchVersion,
   WorkbenchRequest,
   WorkbenchResponse,
-} from "../mechanisms/workbenches.js";
+} from "@penguinharness/plugin-workbenches/server";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
