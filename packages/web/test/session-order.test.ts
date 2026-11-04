@@ -33,9 +33,9 @@ import {
   sessionOrderKey,
   storeSessionSortMode,
   type SessionOrderStorage,
-} from "../src/lib/session-order";
+} from "@prismshadow/penguin-web/internal";
 
-import { cutAtWatermark } from "../src/lib/session-grouping";
+import { cutAtWatermark } from "@prismshadow/penguin-web/internal";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;

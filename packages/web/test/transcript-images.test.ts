@@ -1,22 +1,7 @@
-/**
- * The pictures in a conversation, where the browser fetches them from (react-dom/server static
- * markup, node env, no DOM). A windowed history page carries each Trace image by reference
- * (`/api/sessions/<id>/trace-image?…`), and the browser follows an `<img src>` itself, with no
- * request for the fetch wrapper's routing rule to act on.
- *
- * - Given a Session that lives on another machine, an image the page names by reference is
- *   fetched from that machine, and only as it nears the viewport.
- * - Given a Session on this server, the reference is fetched here, as written.
- * - Given a steering message's image on a machine's Session, it is fetched from that machine.
- * - An image that arrived inline (live, or a subagent's) renders from its own bytes.
- */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { MessageStream, type StreamRenderContext } from "../src/features/chat/message-stream";
+import type { ChatItem } from "../src/lib/omni/stream-model";
+import { forgetSessionMachines, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
 
-import type { ChatItem } from "../src/lib/amsp/stream-model";
-import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
 import { LocaleProvider } from "../src/state/locale";
 import { stubLocalStorage } from "./helpers/storage";
 

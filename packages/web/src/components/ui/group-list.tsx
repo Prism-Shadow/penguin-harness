@@ -6,7 +6,7 @@
  */
 import { GlyphIcon, ICONS, ICON_SIZE, Pager } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { SessionSortMode } from "../../lib/session-order";
+import type { SessionSortMode } from "@prismshadow/penguin-web/internal";
 
 /** The grouped lists' line icon: GlyphIcon at the nav-row rung, which is what these rows are. */
 export function Icon({ d, size = ICON_SIZE.navRow }: { d: string; size?: number }) {

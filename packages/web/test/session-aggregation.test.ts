@@ -45,7 +45,7 @@ vi.mock("../src/api/endpoints", () => ({
 }));
 
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
-import { machineForSession } from "../src/lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { cachedMachineSessions, rememberMachineSessions } from "../src/lib/machine-cache";
 
 const row = (sessionId: string, createdAt: string, agentId = "a1"): SessionInfo =>

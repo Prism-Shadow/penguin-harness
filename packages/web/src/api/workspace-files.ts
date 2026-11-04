@@ -3,7 +3,7 @@
  * is reached one of two ways:
  *
  *   - through a Session (`/api/sessions/:id/files…`): the conversation's own Workspace, routed to
- *     the machine the Session lives on by the path rule (lib/session-machines.ts);
+ *     the machine the Session lives on by the path rule (plugins/sessions/src/web/lib/session-machines.ts);
  *   - by the directory itself (`/api/projects/:projectId/workspace-files…?workspace=`): the
  *     new-chat draft's chosen folder and a sidebar Workspace group, where no Session exists yet,
  *     sent to the machine that directory is on — a path names a directory only together with it.

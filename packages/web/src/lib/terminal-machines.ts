@@ -3,7 +3,7 @@
  *
  * A terminal is a pty process on one machine's kernel: it is created there, its bytes come
  * from there, and killing it means killing it there. So every call about one has to reach
- * THAT machine — the same problem Sessions have, answered the same way (lib/session-machines.ts):
+ * THAT machine — the same problem Sessions have, answered the same way (plugins/sessions/src/web/lib/session-machines.ts):
  * a rule over the PATH, so the call sites stay unchanged and the mapping is recorded in one
  * place, when a list hands a terminal back or when one is created.
  *

@@ -16,7 +16,7 @@ import {
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";

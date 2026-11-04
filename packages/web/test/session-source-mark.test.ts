@@ -13,7 +13,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { backgroundSourceMark } from "../src/lib/session-source-mark";
+import { backgroundSourceMark } from "@prismshadow/penguin-web/internal";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

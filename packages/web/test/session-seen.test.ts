@@ -27,7 +27,7 @@ import {
   serializeSessionSeen,
   sessionSeenKey,
   type SessionSeenState,
-} from "../src/lib/session-seen";
+} from "@prismshadow/penguin-web/internal";
 
 import { memoryStorage } from "./helpers/storage";
 

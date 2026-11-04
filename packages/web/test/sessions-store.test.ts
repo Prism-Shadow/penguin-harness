@@ -108,8 +108,8 @@ import {
   isSidebarRow,
   sessionCategory,
   workspaceGroupKey,
-} from "../src/lib/session-grouping";
-import { forgetSessionMachines, machineForSession } from "../src/lib/session-machines";
+} from "@prismshadow/penguin-web/internal";
+import { forgetSessionMachines, machineForSession } from "@prismshadow/penguin-web/internal";
 import { cachedMachineSessions, rememberMachineSessions } from "../src/lib/machine-cache";
 import {
   apiError,

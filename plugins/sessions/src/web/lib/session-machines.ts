@@ -15,7 +15,7 @@
  * displays them, and a stale entry surviving a reload would route a call at a machine that
  * may no longer own — or may no longer have — that Session.
  */
-import { apiUrl } from "./server-context";
+import { apiUrl } from "@prismshadow/penguin-web/internal";
 
 /** sessionId → the machine it lives on. Absent = this server. */
 const owners = new Map<string, string>();

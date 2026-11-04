@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filesApi, filesScopeKey } from "../src/api/workspace-files";
-import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+import { forgetSessionMachines, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
 
 const MACHINE = "m7Kd0Q2xVbNzR1aP";
 

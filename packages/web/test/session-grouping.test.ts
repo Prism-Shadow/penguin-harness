@@ -74,7 +74,7 @@ import {
   workspaceGroupPath,
   workspaceGroupQuery,
   workspaceLabel,
-} from "../src/lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 
 let seq = 0;
 function session(

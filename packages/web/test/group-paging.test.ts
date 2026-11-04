@@ -43,7 +43,7 @@ import {
   revealPlan,
   revealStep,
   sectionWindow,
-} from "../src/lib/session-grouping";
+} from "@prismshadow/penguin-web/internal";
 
 const seq = (n: number) => Array.from({ length: n }, (_, i) => i);
 

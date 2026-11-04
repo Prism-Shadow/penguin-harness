@@ -1,38 +1,6 @@
-/**
- * Event streams: a Session's output, the user-level server events, and the machines aggregate.
- *
- * - Records use the default event (no `event:` line); data is the message envelope as
- *   raw JSON;
- * - Server events use `event: server_event` (approval_request / task_state / resync_required /
- *   credentials_updated / hello, and `heartbeat` — the stream's own beat);
- * - The machines aggregate uses `event: machine_event`, data `{machineId, event}` — one
- *   machine's own server event, tagged with the machine it came from.
- * - A history read (`history`, `trace-body`) is a stream too, of named events only — `progress`,
- *   `page`, `records`, `part`, `done`, `filled`, `error` — with acknowledged flow and a 5 s
- *   `ping`. It is a read with an end, so its reader closes it once the read is over: the socket
- *   re-issues any stream the server ends, which here would read the window again.
- * - A stream is a call on the page's one API socket (api/socket.ts, PRFC-0011), which
- *   re-issues it with `last-event-id` after any interruption (the server replays from its
- *   ring buffer; if the event was already evicted, it pushes resync_required instead). There
- *   is no second transport for a stream: without a socket it waits for one, in silence.
- * - Liveness: a connection can die without any error (half-open TCP, a stuck proxy or NAT).
- *   Once a stream has carried its beat (`heartbeat` every 20 s), {@link STREAM_HEARTBEAT_MS}
- *   without any frame of its own ends it and re-issues it from its last event id.
- * Docs: /docs/server-api § "Streaming (SSE)".
- */
-import type { AmspRecord } from "@prismshadow/amsp";
-import type {
-  HistoryPage,
-  HistoryProgress,
-  HistoryRecords,
-  HistoryStreamError,
-  MachineEvent,
-  ServerEvent,
-} from "@prismshadow/penguin-server/api";
-import { apiUrl } from "../lib/server-context";
-import { machineForSession } from "../lib/session-machines";
-import { apiSocket } from "./socket";
-import type { StreamOptions } from "./socket";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+
+||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
 
 /**
  * The cadence a stream that carries a beat speaks at: the server writes a `heartbeat` server

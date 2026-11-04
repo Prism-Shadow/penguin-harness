@@ -1,24 +1,6 @@
-/**
- * API client: JSON request/response, unified errors -> ApiError,
- * same-origin cookie auth (credentials: same-origin; CSRF relies on SameSite=Lax + JSON
- * Content-Type, see server README).
- *
- * Two transports of the same API (PRFC-0011): a call is a frame on the page's socket — opened
- * by the call itself when it is not open yet — and the answer is the endpoint's own response,
- * framed. Only the paths the runtime answers over HTTP by contract are fetched. The two are
- * handled by one code path below — status, error body, the 401 rule — so a caller cannot tell
- * which carried its request, and an answer the socket declines to carry (a download: 415
- * `unsupported_transport`) is simply fetched.
- *
- * When the session becomes invalid (server 401, e.g. database rebuilt, cookie expired),
- * notifies AuthProvider to clear the current user, letting the route guard redirect to the
- * login page — instead of each page popping its own "unauthorized" error.
- */
-import { sessionKindPath, type ErrorDetails } from "@prismshadow/penguin-server/api";
-import { S } from "../lib/strings";
-import { apiUrl } from "../lib/server-context";
-import { machineForPath } from "../lib/session-machines";
-import { SocketTimeoutError, apiSocket, type SocketCallResult } from "./socket";
+import { machineForPath } from "@prismshadow/penguin-web/internal";
+
+||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
 
 /**
  * Unified API error: carries the HTTP status code and server error code (server error body
@@ -92,7 +74,7 @@ export interface ApiFetchOptions {
    * Which machine answers this call, when the caller knows and the path does not say.
    *
    * Omitted, a Session-scoped path routes itself to the machine that Session lives on (see
-   * lib/session-machines.ts) and everything else stays here — the window never moves. Pass
+   * plugins/sessions/src/web/lib/session-machines.ts) and everything else stays here — the window never moves. Pass
    * `null` to force this server, or an id to send one request through that machine's
    * connection; browsing another machine's directories to pick a workspace on it, or asking
    * a machine for ITS Agents, are the calls that need it.
