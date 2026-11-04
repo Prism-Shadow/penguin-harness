@@ -95,7 +95,7 @@ import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsat
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
-import type { Errors } from "../mechanisms/observability.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";

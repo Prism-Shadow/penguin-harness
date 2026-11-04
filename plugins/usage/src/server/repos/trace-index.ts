@@ -6,8 +6,8 @@
 import { normalizeSessionSource } from "@prismshadow/penguin-core";
 import type { RecordedSource } from "@penguinharness/plugin-sessions/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { TraceIndexStore } from "../../mechanisms/traces.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { TraceIndexStore } from "../mechanism-traces.js";
 
 /** One indexed Trace shard. */
 export interface TraceFileRow {

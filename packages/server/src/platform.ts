@@ -60,6 +60,14 @@ import {
   SchedulesRepo,
   SessionsRepo,
 } from "@penguinharness/plugin-sessions/server";
+import {
+  ErrorsRepo,
+  TraceIndex,
+  TraceIndexRepo,
+  TraceIndexStore,
+  Traces,
+  UsageRepo,
+} from "@penguinharness/plugin-usage/server";
 import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server";
 import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server";
 import { QQTransportProvider } from "@penguinharness/plugin-messaging/server";
@@ -90,9 +98,6 @@ import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-import { UsageRepo } from "./db/repos/usage.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "@penguinharness/plugin-sessions/server";
 import { SessionDriverRegistry } from "@penguinharness/plugin-sessions/server";
@@ -183,7 +188,6 @@ import {
   UsageRecording,
   UsageStore,
 } from "./mechanisms/observability.js";
-import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 

@@ -21,8 +21,8 @@
  * ErrorRecorder's short-window deduplication.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
+import type { Db } from "@prismshadow/penguin-server/internal";
+import type { ErrorLog } from "../mechanism-observability.js";
 
 /** Row cap: once exceeded, oldest rows are evicted in ascending id order (see file header). */
 export const MAX_ROWS = 20000;

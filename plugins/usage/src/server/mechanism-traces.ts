@@ -12,8 +12,8 @@ import type {
   TraceFileInfo,
   TraceImportResponse,
   TracePosition,
-} from "../api/types.js";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
+} from "@prismshadow/penguin-server/api";
+import type { TraceFileRow, TraceSessionRow } from "./repos/trace-index.js";
 import type {
   AbortPayload,
   ApprovalDecisionPayload,
@@ -48,7 +48,7 @@ import type {
   MessagesPageRequest,
   MessagesPageResult,
 } from "@penguinharness/plugin-usage/server";
-import type { MessageCursor } from "../services/message-window.js";
+import type { MessageCursor } from "./message-window.js";
 
 /** TraceIndexStore: the mechanism TraceIndexRepo implements. */
 @Interface()

@@ -17,7 +17,6 @@ export * from "./http/errors.js";
 export * from "./http/routes/events.js";
 export * from "./http/validate.js";
 export * from "./mechanisms/identity.js";
-export * from "./mechanisms/observability.js";
 export * from "./mechanisms/organization.js";
 export * from "./mechanisms/workbenches.js";
 export * from "./mechanisms/settings.js";
@@ -64,6 +63,20 @@ export type {
   SessionOrigins,
   SessionRow,
 } from "@penguinharness/plugin-sessions/server";
+export type {
+  ErrorLog,
+  Errors,
+  MessageCursor,
+  TraceFileRow,
+  TraceIndex,
+  TraceIndexStore,
+  TraceSessionRow,
+  Traces,
+  UsageContext,
+  UsageQueries,
+  UsageRecording,
+  UsageStore,
+} from "@penguinharness/plugin-usage/server";
 export * from "./services/task-attachments.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
@@ -88,10 +101,7 @@ export * from "../../../plugins/projects/src/server/projects/semantic-id.js";
 export * from "../../../plugins/projects/src/server/projects/semantic-id-suggest.js";
 export * from "./mechanisms/workspace.js";
 export * from "./db/repos/browser-extensions.js";
-export * from "./db/repos/errors.js";
 export * from "../../../plugins/settings/src/server/repos/server-settings.js";
-export * from "./db/repos/trace-index.js";
-export * from "./db/repos/usage.js";
 export * from "./db/database.js";
 export * from "./db/repos/machines.js";
 export * from "./db/repos/users.js";
@@ -110,7 +120,6 @@ export * from "./internal/dates.js";
 export * from "./internal/mtime-gate.js";
 export * from "./internal/trace-head.js";
 export * from "../../../plugins/machines/src/server/layout.js";
-export * from "./mechanisms/traces.js";
 export * from "./services/desktop-update-port.js";
 export * from "./services/desktop-service.js";
 export * from "./http/routes/desktop.js";
@@ -120,7 +129,6 @@ export * from "./services/vision-detect.js";
 export * from "./services/platform-auth-types.js";
 export * from "./services/skill-import-limits.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-files-service.js";
-export * from "./services/message-window.js";
 export * from "./services/session-service.js";
 export * from "@penguinharness/plugin-sessions/server";
 export type { Machines } from "../../../plugins/machines/src/server/service.js";

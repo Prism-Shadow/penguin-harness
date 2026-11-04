@@ -1,25 +1,6 @@
-/**
- * Deleting a Session: the one path DELETE /api/sessions/:id and the archive page's batch delete
- * share, so a Session goes the same way whichever surface the user deleted it from.
- *
- * A Session takes its subagent children with it. A child is listed nowhere — its parent's Agent
- * panel is the only door to it — so one left behind would be a conversation nobody can reach,
- * still holding its Trace files and its index row. The children are read from the `subagent`
- * pointer records of the parent's Trace (Traces.subagentChildren) once the parent's own runs have
- * stopped, since a run still in flight could spawn another; core spawns children one level deep,
- * and the walk recurses anyway, behind the same depth backstop the history read uses.
- *
- * Only the children a Session spawned itself are its own. A fork copies its source's history,
- * the source's pointer records with it, so its Trace names children that still belong to the
- * source — and that the source's history still shows. A pointer recorded before the Session was
- * created is one of those copies, and the child it names is left where it is.
- */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { scratchpadDir } from "@prismshadow/penguin-core";
-import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
-import type { Traces } from "../mechanisms/traces.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
+import type { Traces } from "@penguinharness/plugin-usage/server";
+
+||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
 
 /** What deleting a Session reaches. */
 export interface SessionDeletionDeps {

@@ -52,7 +52,7 @@ import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
 import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Auth } from "./mechanisms/identity.js";
 
 /**

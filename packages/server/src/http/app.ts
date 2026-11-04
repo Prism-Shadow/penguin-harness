@@ -1,8 +1,7 @@
-import type { Auth } from "../mechanisms/identity.js";
-import type { Access } from "@penguinharness/plugin-projects/server";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 
 ||||||| parent of 4828df32ae (projects: mechanism and repos move into plugin-projects)
-import type { Errors } from "../mechanisms/observability.js";
+||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
 import type { Settings } from "../mechanisms/settings.js";
 
 /**

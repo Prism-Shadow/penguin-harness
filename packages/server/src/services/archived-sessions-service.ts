@@ -43,7 +43,7 @@ import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "@penguinharness/plugin-sessions/server";
 import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
-import type { TraceIndexStore } from "../mechanisms/traces.js";
+import type { TraceIndexStore } from "@penguinharness/plugin-usage/server";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";
 import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "@prismshadow/penguin-server/internal";

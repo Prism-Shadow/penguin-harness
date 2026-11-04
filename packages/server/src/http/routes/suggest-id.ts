@@ -30,7 +30,7 @@ import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "@penguinharness/plugin-agents/server";
-import type { Errors } from "../../mechanisms/observability.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Access, ProjectConfigStore, ProjectLifecycle } from "@penguinharness/plugin-projects/server";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { OrgService } from "@penguinharness/plugin-company/server";
