@@ -85,6 +85,14 @@ describe("installPluginChannel", () => {
           path.join(dir, "package.json"),
           JSON.stringify({ name: channel.name, version: channel.version }),
         );
+        // What npm records in the prefix's manifest for a file: install — the record that
+        // keeps the tarball in archives past a prune.
+        const manifestPath = path.join(prefix, "package.json");
+        const manifest = JSON.parse(
+          await fs.readFile(manifestPath, "utf8").catch(() => "{}"),
+        ) as { dependencies?: Record<string, string> };
+        manifest.dependencies = { ...(manifest.dependencies ?? {}), [channel.name]: spec };
+        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
       },
     });
     expect(fetchImpl).toHaveBeenCalledWith(channel.url, { redirect: "follow" });
