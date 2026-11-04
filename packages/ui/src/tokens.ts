@@ -135,17 +135,24 @@ export const ACCENT_PRESETS = {
 /** Every preset id any theme lists. */
 export type AccentPreset = (typeof ACCENT_PRESETS)[ThemeId][number]["id"];
 
+/*
+ * The values below are computed when the module loads. Each computation is marked pure so a
+ * bundle that never reads it drops it: a public site imports this module through the boot
+ * script's storage keys and would otherwise carry every preset and token name.
+ */
+
 /** The preset ids each theme lists, in the theme's own order — what a picker offers. */
-export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> = {
-  github: ACCENT_PRESETS.github.map((preset) => preset.id),
-  modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
-  geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
-};
+export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> =
+  /* @__PURE__ */ (() => ({
+    github: ACCENT_PRESETS.github.map((preset) => preset.id),
+    modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
+    geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
+  }))();
 
 /** Every id once, across the themes — what a stored value is validated against. */
-export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
+export const ACCENT_PRESET_IDS: readonly AccentPreset[] = /* @__PURE__ */ (() => [
   ...new Set(THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id])),
-];
+])();
 
 /**
  * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
@@ -616,7 +623,7 @@ export type TokenGroupId = TokenGroup["id"];
 export type TokenName = TokenGroup["names"][number];
 
 /** Every contract name, flattened in group order. The contract test diffs the theme files against this. */
-export const TOKEN_NAMES: readonly TokenName[] = TOKEN_GROUPS.flatMap(
+export const TOKEN_NAMES: readonly TokenName[] = /* @__PURE__ */ TOKEN_GROUPS.flatMap(
   (group): readonly TokenName[] => group.names,
 );
 

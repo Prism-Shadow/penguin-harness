@@ -13,6 +13,7 @@ export * from "./components/site/site-playback";
 export * from "./components/site/site-scroll-top";
 export * from "./components/site/site-copy";
 export * from "./components/site/site-code";
+export * from "./components/site/site-code-card";
 export * from "./components/site/site-highlight";
 export * from "./components/site/site-toc";
 export * from "./components/site/site-sidebar";
