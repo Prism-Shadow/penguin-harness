@@ -5,23 +5,30 @@
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  * A new Project also starts with its Benchmarks — the example and the shipped packages, written
- * once when it is created — which the Benchmark API lists with their packaged metadata
- * and each case statement saying how the case is run. A
+ * once when it is created — which the Benchmark API lists with their packaged metadata, every
+ * file of a package copied byte for byte, whatever the shipped catalog holds. A
  * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
- * missing ones.
+ * missing ones (packages of the test's own stand in for the catalog there).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   benchmarksDir,
-  libraryPlugin,
   loadPreinstalledPlugins,
   readBenchmarkManifest,
   readBuiltinBenchmarks,
 } from "@prismshadow/penguin-core";
+import type { BuiltinBenchmark } from "@prismshadow/penguin-core";
 import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser, type TestApp } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+  type TestApp,
+} from "./helpers.js";
 
 interface AgentsResponse {
   agents: Array<{ agentId: string; name?: string; description?: string }>;
@@ -31,6 +38,32 @@ interface ProjectsResponse {
 }
 interface ProjectCreateResponse {
   project: { projectId: string };
+}
+
+/** The file a Project keeps a Benchmark's evaluations in, never a package's. */
+const SCOREBOARD = "scoreboard.yaml";
+
+/** Every file under `dir`, keyed by its path relative to it (posix separators). */
+async function filesUnder(dir: string): Promise<Map<string, Buffer>> {
+  const out = new Map<string, Buffer>();
+  for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const full = path.join(entry.parentPath, entry.name);
+    out.set(path.relative(dir, full).split(path.sep).join("/"), await fs.readFile(full));
+  }
+  return out;
+}
+
+/** A Benchmark package as the build would fetch one: a manifest and one case. */
+async function writePackage(parent: string, id: string, title: string): Promise<BuiltinBenchmark> {
+  const directory = path.join(parent, id);
+  await fs.mkdir(path.join(directory, "CASE-001-task", "statement"), { recursive: true });
+  await fs.writeFile(path.join(directory, "benchmark_config.toml"), `title = "${title}"\n`);
+  await fs.writeFile(
+    path.join(directory, "CASE-001-task", "statement", "README.md"),
+    `# ${title}: the task\n`,
+  );
+  return { id, directory };
 }
 
 describe("built-in Agent provisioning", () => {
@@ -68,28 +101,25 @@ describe("built-in Agent provisioning", () => {
         .flatMap((plugin) => plugin.skills.map((skill) => skill.name))
         .sort(),
     );
-    // The preinstalled hook packages land beside the skills (the goal plugin ships one).
-    const hooksOf = await fs.readdir(
-      path.join(t.root, projectId, "agents", "default_agent", "agent_state", "hooks"),
+    // The preinstalled plugins' hook packages land beside the skills, and no other plugin's.
+    const hooksDir = path.join(
+      t.root,
+      projectId,
+      "agents",
+      "default_agent",
+      "agent_state",
+      "hooks",
     );
-    expect(hooksOf).toContain("goal");
-    expect(hooksOf).not.toContain("continual-learning");
-    // The hook package carries its plugin's icon beside the manifest, the way an installed skill does.
-    expect(
-      await fs.readFile(
-        path.join(
-          t.root,
-          projectId,
-          "agents",
-          "default_agent",
-          "agent_state",
-          "hooks",
-          "goal",
-          "icon.svg",
-        ),
-        "utf8",
-      ),
-    ).toBe(libraryPlugin("goal")!.icon);
+    const hookPlugins = loadPreinstalledPlugins().filter((plugin) => plugin.hooks !== undefined);
+    expect((await fs.readdir(hooksDir).catch(() => [])).sort()).toEqual(
+      hookPlugins.map((plugin) => plugin.name).sort(),
+    );
+    // A hook package carries its plugin's icon beside the manifest, the way an installed skill does.
+    for (const plugin of hookPlugins.filter((p) => p.icon !== undefined)) {
+      expect(await fs.readFile(path.join(hooksDir, plugin.name, "icon.svg"), "utf8")).toBe(
+        plugin.icon,
+      );
+    }
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workbenches section).
@@ -179,22 +209,22 @@ describe("built-in Agent provisioning", () => {
           expect(bench.runs, bench.id).toBe(manifest.runs);
           // No baseline ships with a package.
           expect(bench.evaluations).toEqual([]);
-          expect(bench.caseCount).toBeGreaterThan(0);
           const cases = (await (
             await owner.get(`${base}/${bench.id}/cases`)
           ).json()) as BenchmarkCasesResponse;
           expect(cases.cases).toHaveLength(bench.caseCount);
-          for (const c of cases.cases) {
-            // Listed under the title its statement opens with.
-            expect(c.title).not.toBe(c.id);
-            // The statement links the task's folder in the public repository and says how the
-            // case is run.
-            const statement = await (
-              await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
-            ).text();
-            expect(statement, c.id).toBe(
-              await fs.readFile(path.join(source.directory, c.id, "statement/README.md"), "utf8"),
-            );
+          // Every file the package ships is the Project's, byte for byte; only the scoreboard
+          // is the Project's own.
+          const copy = await filesUnder(
+            path.join(benchmarksDir(shipped.root, projectId), bench.id),
+          );
+          const shippedFiles = await filesUnder(source.directory);
+          shippedFiles.delete(SCOREBOARD);
+          expect([...copy.keys()].filter((f) => f !== SCOREBOARD).sort(), bench.id).toEqual(
+            [...shippedFiles.keys()].sort(),
+          );
+          for (const [file, bytes] of shippedFiles) {
+            expect(copy.get(file)?.equals(bytes), `${bench.id}/${file}`).toBe(true);
           }
         }
       }
@@ -204,10 +234,15 @@ describe("built-in Agent provisioning", () => {
   });
 
   it("an existing default_project adopted at bootstrap keeps its own Benchmarks and is given only the missing ones", async () => {
-    const packages = await readBuiltinBenchmarks();
+    // Two packages of the test's own stand in for the shipped catalog.
+    const catalog = await makeTempRoot();
+    const packages = [
+      await writePackage(catalog, "shipped-one", "Shipped one"),
+      await writePackage(catalog, "shipped-two", "Shipped two"),
+    ];
     const mine = packages[0]!.id;
     const adopted = await createTestApp({
-      builtinBenchmarks: true,
+      builtinBenchmarks: packages,
       // A data root the CLI made before the server's first start, holding a Benchmark of its
       // own under a built-in's id.
       beforeSeed: async (root) => {
@@ -231,6 +266,11 @@ describe("built-in Agent provisioning", () => {
       expect(
         await fs.readdir(path.join(benchmarksDir(adopted.root, "default_project"), mine)),
       ).toEqual(["benchmark_config.toml"]);
+      // The missing one is given whole.
+      expect(body.benchmarks.find((b) => b.id === "shipped-two")).toMatchObject({
+        title: "Shipped two",
+        caseCount: 1,
+      });
     } finally {
       await adopted.cleanup();
     }

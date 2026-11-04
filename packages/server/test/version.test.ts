@@ -13,7 +13,8 @@
  * - PENGUIN_UPDATE_CHECK=off answers disabled and never dials out, forced or not.
  * - A success is cached for an hour and a failure for ten minutes.
  * - The update job is admin-only; before any run it is idle, and a server not launched through
- *   the CLI finishes it at once as unsupported, readable afterwards.
+ *   the CLI finishes it at once as unsupported, labelled with the release its own check found,
+ *   readable afterwards.
  * - A restart is admin-only and refused when nothing supervises the process.
  *
  * Nothing here touches the network or spawns a process: the release lookup is the fetch fake.
@@ -283,7 +284,8 @@ describe("POST /api/version/update", () => {
   beforeEach(async () => {
     savedEntry = process.env.PENGUIN_CLI_ENTRY;
     delete process.env.PENGUIN_CLI_ENTRY;
-    t = await createTestApp();
+    // The start labels the run with the server's own lookup: the fetch fake answers it.
+    t = await createTestApp({ updateCheck: updateCheck(() => releaseResponse("v99.0.0")).service });
   });
   afterEach(async () => {
     if (savedEntry === undefined) delete process.env.PENGUIN_CLI_ENTRY;
@@ -311,6 +313,8 @@ describe("POST /api/version/update", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as UpdateJobStatus;
     expect(body.state).toBe("done");
+    // The run is labelled with the newer release the server's own check found.
+    expect(body.targetVersion).toBe("99.0.0");
     expect(body.result).toEqual({
       status: "unsupported",
       reason: "not_launched_via_cli",
