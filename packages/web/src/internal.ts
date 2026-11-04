@@ -22,6 +22,7 @@ export * from "@penguinharness/plugin-models/web";
 export * from "@penguinharness/plugin-plugins/web";
 export * from "@penguinharness/plugin-settings/web";
 export * from "@penguinharness/plugin-projects/web";
+export * from "@penguinharness/plugin-workbenches/web";
 export * from "@penguinharness/plugin-usage/web";
 export * from "./lib/api-error";
 export * from "./lib/browser-start-sites";
