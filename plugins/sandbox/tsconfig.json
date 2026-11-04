@@ -7,6 +7,12 @@
       "@penguinharness/plugin-plugins/server": [
         "../plugins/src/server/index.ts"
       ],
+      "@penguinharness/plugin-projects/server": [
+        "../projects/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
       "@penguinharness/plugin-sandbox/server": [
         "./src/server/index.ts"
       ],
