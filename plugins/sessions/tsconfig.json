@@ -66,7 +66,9 @@
       "@penguinharness/plugin-browser/web": [
         "../browser/src/web/index.ts"
       ],
-      "@penguinharness/plugin-schedules/server": ["../schedules/src/server/index.ts"],
+      "@penguinharness/plugin-schedules/server": [
+        "../schedules/src/server/index.ts"
+      ],
       "@penguinharness/plugin-schedules/web": [
         "../schedules/src/web/index.ts"
       ],
@@ -75,6 +77,9 @@
       ],
       "@penguinharness/plugin-company/web": [
         "../company/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../../plugins/sandbox/src/server/index.ts"
       ]
     },
     "resolveJsonModule": true

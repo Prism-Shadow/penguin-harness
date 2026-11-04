@@ -7,8 +7,8 @@
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SandboxDimension } from "@prismshadow/penguin-core/plugin";
-import type { PluginConfigNotice } from "../api/types.js";
-import type { PluginConfigUnavailable, SettingsGroupStatus } from "../plugin/config-page.js";
+import type { PluginConfigNotice } from "@prismshadow/penguin-server/api";;
+import type { PluginConfigUnavailable, SettingsGroupStatus } from "@penguinharness/plugin-plugins/server";;
 import { Sandbox, SandboxModule } from "./service.js";
 import { SANDBOX_DIMENSIONS, requestedDimensions } from "./dimensions.js";
 import {

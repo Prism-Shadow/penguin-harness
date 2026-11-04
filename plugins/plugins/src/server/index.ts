@@ -14,6 +14,8 @@ export * from "./plugin/iface-check.js";
 export type {
   Sandbox,
   SandboxSlots,
+} from "@penguinharness/plugin-sandbox/server";
+export type {
   Sessions,
   SessionServiceIface,
   Messaging,

@@ -1,3 +1,97 @@
+/**
+ * THE platform: the one hot-swappable unit this build of the server packages.
+ *
+ * The repo carries exactly one platform — versions exist BETWEEN deployments
+ * (this packaged build vs the next bundle pushed over HTTP), not as parallel
+ * files. When a future build changes the context shape, it bumps `version`
+ * and ships the migrator alongside the new schema; the previous shape lives
+ * only in already-parked documents out in the world.
+ *
+ * PLATFORM LAYER — WHERE POLICY BELONGS. Anything a deployment might want to
+ * change (business APIs, what an agent sees, how a capability behaves) goes
+ * here rather than in the runtime, and reaches installations by one HTTP push
+ * instead of a rebuild. Worth remembering when something looks like it must
+ * live in the shell: this code runs INSIDE the server process, so in-process
+ * effects (e.g. extending process.env for the shells agents spawn) are
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
+ *
+ * This packaged platform carries the WHOLE business surface (see app.ts):
+ * every business service and route is assembled inside create() over the runtime's
+ * published capabilities, and serves through the seam in ../hmr/http-seam.ts — it
+ * sees every request before the runtime's own routes do and answers null for the
+ * ones it does not own. A pushed bundle therefore replaces the business wholesale:
+ * adding or changing an endpoint or a service needs no runtime change.
+ */
+import type { WebSocket } from "ws";
+import type {
+  Impl,
+  Json,
+  Park,
+  IfaceTable,
+  Instance,
+  ManifestTable,
+  ModuleDef,
+  ModuleTree,
+} from "@prismshadow/penguin-core/kernel";
+import {
+  closedShape,
+  defineIface,
+  schema,
+  type,
+  boot,
+  bootModules,
+  initialDoc,
+  moduleDefOf,
+  upgrade,
+} from "@prismshadow/penguin-core/kernel";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
+import { TerminalManager } from "@penguinharness/plugin-terminal/server";
+import type { TerminalSession } from "@penguinharness/plugin-terminal/server";
+import {
+  MACHINE_SESSION_IFACE,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+} from "@penguinharness/plugin-machines/server";
+import type { HeldSession } from "@penguinharness/plugin-machines/server";
+import type { RemoteTerminals } from "@penguinharness/plugin-terminal/server";
+import { identityFrom } from "@penguinharness/plugin-terminal/server";
+import { bindTerminalStream } from "@penguinharness/plugin-terminal/server";
+import { Hono } from "hono";
+import type { AppEnv } from "../auth/middleware.js";
+import { AgentStateStore } from "../runtime/agent-state.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
+import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
+import type { Identity } from "@penguinharness/plugin-terminal/server";
+import { platformDef } from "../platform.js";
+import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
+import ifaceTable from "../ifaces.json" with { type: "json" };
+import { declined, seamHttp } from "./hono-seam.js";
+import {
+  PENGUIN_FAMILY,
+  RESOURCE_IFACES_RESOURCE_ID,
+  HMR_TEST_PLUGINS_RESOURCE_ID,
+  claimHmrCapabilities,
+  Log,
+} from "./capabilities.js";
+import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js";
+import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
+import type { PluginHost } from "../plugin/host.js";
+import { loadPluginHost } from "../plugin/loader.js";
+import {
+  useInstalledPluginPrefix,
+  usePushedPluginLibrary,
+  userText,
+} from "@prismshadow/penguin-core";
+import { pluginsPrefix } from "../plugin/install.js";
+import { pushedLibraryDir } from "./asset-archives.js";
+import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
+import type { PluginSelection } from "../plugin/unsatisfied.js";
+import { takePushSlip } from "./push-plugins.js";
+import type { PushSlip } from "./push-plugins.js";
+import type { Errors } from "@penguinharness/plugin-usage/server";
+import type { UnsatisfiedPlugin } from "../api/types.js";
+
+||||||| parent of 51c7559ed6 (sandbox capability becomes plugins/sandbox (six files: service, dimensions, settings store/policy/status); host and siblings read the plugin face; server exposes the compile-time config seam)
 import { migrate } from "@prismshadow/penguin-db";
 
 ||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
