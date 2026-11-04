@@ -4,11 +4,15 @@
  * multiples (accuracy / Tokens / cost, one measure per axis) plus a five-column table of
  * suite totals (framework / model / accuracy % / Tokens M / cost $). Suite specifics
  * (case count, runs, thinking level, timeout, pricing) sit in a footnote under each table.
- * Emphasis form: PenguinHarness wears the brand hue, competitors the de-emphasis
- * gray; per-bar identity comes from logo+name labels, every cap is value-labeled,
- * and the exact table relieves the sub-3:1 gray fills.
+ * Emphasis form: PenguinHarness wears the brand hue, competitors the de-emphasis gray. Bars
+ * start at zero, every cap carries its value, and each bar is named by its logo; the table
+ * right under the charts names every row in full and relieves the sub-3:1 gray fills.
+ *
+ * The plots are laid out at the width they are shown at (a viewBox as wide as the figure), so a
+ * label is set at the page's own sizes rather than shrunk with the drawing.
  */
 import { S } from "../lib/strings";
+import { useWidth } from "../lib/use-width";
 import { Section } from "../components/section";
 import { HarnessLogo } from "../components/harness-logo";
 import {
@@ -35,13 +39,16 @@ function barPath(x: number, w: number, yTop: number, yBase: number): string {
   ].join("");
 }
 
-const VIEW_W = 320;
-const VIEW_H = 210;
-const PLOT_TOP = 28;
-const BASELINE = 168;
+/** The width a plot is laid out at before its figure has been measured. */
+const FALLBACK_W = 260;
+const VIEW_H = 196;
+const PLOT_TOP = 26;
+const BASELINE = 164;
 const BAR_W = 24;
+/** The logo naming a bar, centred under it. */
+const LOGO = 14;
 /**
- * Shortest a bar may render. At true scale the cost panels put PenguinHarness at ~1.6px
+ * Shortest a bar may render. At true scale the cost panels put PenguinHarness at ~2px
  * against a 140px plot (the spread is ~70x), which reads as an empty slot rather than a
  * winning series. The floor keeps it visible while still plainly the smallest bar, and
  * every cap carries its exact value.
@@ -61,86 +68,75 @@ function BarPanel({
   values: number[];
   format: (v: number) => string;
 }) {
-  const slot = VIEW_W / rows.length;
-  // Zoomed domain: the baseline is NOT forced to zero — it sits below the smallest
-  // value by ~60% of the data range, so differences between bars stay visible. The
-  // truncation is disclosed by the baseline value label at the axis start.
-  const dataMax = Math.max(...values);
-  const dataMin = Math.min(...values);
-  const range = dataMax - dataMin || dataMax || 1;
-  const lo = Math.max(0, dataMin - range * 0.6);
-  const hi = dataMax + range * 0.25;
+  const { ref, width } = useWidth<HTMLDivElement>(FALLBACK_W);
+  const slot = width / rows.length;
+  // Bars start at zero, so their lengths compare as the values do.
+  const hi = Math.max(...values) * 1.12 || 1;
   return (
     <figure className="px-4 py-5 sm:px-5">
       <figcaption className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-semibold tracking-tight">{title}</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">{hint}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
       </figcaption>
-      <svg
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="mt-2 w-full"
-        role="img"
-        aria-label={`${title}: ${rows.map((r, i) => `${r.framework} ${format(values[i] ?? 0)}`).join(", ")}`}
-      >
-        {rows.map((row, i) => {
-          const v = values[i] ?? 0;
-          const h = Math.max(MIN_BAR_H, ((v - lo) / (hi - lo)) * (BASELINE - PLOT_TOP));
-          const yTop = BASELINE - h;
-          const cx = slot * i + slot / 2;
-          return (
-            <g key={row.framework} className="transition-opacity hover:opacity-80">
-              <title>{`${row.framework} · ${format(v)}`}</title>
-              <path
-                d={barPath(cx - BAR_W / 2, BAR_W, yTop, BASELINE)}
-                className={
-                  row.emphasized
-                    ? "fill-brand-600 dark:fill-brand-400"
-                    : "fill-gray-400 dark:fill-gray-600"
-                }
-              />
-              {/* Value on the cap — text tokens, never the series color. */}
-              <text
-                x={cx}
-                y={yTop - 8}
-                textAnchor="middle"
-                className="fill-gray-900 text-[13px] font-semibold dark:fill-gray-100"
-              >
-                {format(v)}
-              </text>
-              {/* Identity label: brand mark + name, centered under the bar. */}
-              <foreignObject x={slot * i} y={BASELINE + 8} width={slot} height={30}>
-                <div
-                  className={`flex items-center justify-center gap-0.5 text-[10px] leading-tight whitespace-nowrap ${
-                    row.emphasized
-                      ? "font-semibold text-gray-900 dark:text-gray-100"
-                      : "text-gray-500 dark:text-gray-400"
-                  }`}
-                >
-                  <HarnessLogo kind={row.kind} className="h-3 w-3 shrink-0" />
-                  <span>{row.framework}</span>
-                </div>
-              </foreignObject>
-            </g>
-          );
-        })}
-        <line
-          x1="4"
-          x2={VIEW_W - 4}
-          y1={BASELINE}
-          y2={BASELINE}
-          className="stroke-gray-200 dark:stroke-gray-800"
-          strokeWidth="1"
-        />
-        {/* Baseline value: discloses that the axis starts above zero. */}
-        <text
-          x={5}
-          y={BASELINE - 5}
-          textAnchor="start"
-          className="fill-gray-400 text-[9px] tabular-nums dark:fill-gray-500"
+      <div ref={ref} className="mt-2">
+        <svg
+          viewBox={`0 0 ${width} ${VIEW_H}`}
+          width={width}
+          height={VIEW_H}
+          className="block w-full"
+          role="img"
+          aria-label={`${title}: ${rows.map((r, i) => `${r.framework} ${format(values[i] ?? 0)}`).join(", ")}`}
         >
-          {format(lo)}
-        </text>
-      </svg>
+          {rows.map((row, i) => {
+            const v = values[i] ?? 0;
+            const h = Math.max(MIN_BAR_H, (v / hi) * (BASELINE - PLOT_TOP));
+            const yTop = BASELINE - h;
+            const cx = slot * i + slot / 2;
+            return (
+              <g key={row.framework}>
+                <title>{`${row.framework}: ${format(v)}`}</title>
+                <path
+                  d={barPath(cx - BAR_W / 2, BAR_W, yTop, BASELINE)}
+                  className={
+                    row.emphasized
+                      ? "fill-brand-600 dark:fill-brand-400"
+                      : "fill-gray-400 dark:fill-gray-600"
+                  }
+                />
+                {/* Value on the cap — text tokens, never the series color. */}
+                <text
+                  x={cx}
+                  y={yTop - 8}
+                  textAnchor="middle"
+                  className="fill-gray-900 text-xs font-semibold tabular-nums dark:fill-gray-100"
+                >
+                  {format(v)}
+                </text>
+                {/* The bar's name is its logo; the table under the charts spells it out. */}
+                <foreignObject x={cx - LOGO / 2} y={BASELINE + 10} width={LOGO} height={LOGO}>
+                  <div
+                    className={
+                      row.emphasized
+                        ? "text-gray-900 dark:text-gray-100"
+                        : "text-gray-500 dark:text-gray-400"
+                    }
+                  >
+                    <HarnessLogo kind={row.kind} className="block h-3.5 w-3.5" />
+                  </div>
+                </foreignObject>
+              </g>
+            );
+          })}
+          <line
+            x1="0"
+            x2={width}
+            y1={BASELINE}
+            y2={BASELINE}
+            className="stroke-gray-200 dark:stroke-gray-800"
+            strokeWidth="1"
+          />
+        </svg>
+      </div>
     </figure>
   );
 }
@@ -221,7 +217,7 @@ function SuiteBlock({
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
               <div>
-                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                <dt className="text-xs text-gray-500 dark:text-gray-400">
                   {S.benchmark.colAccuracy}
                 </dt>
                 <dd className="mt-0.5 text-sm font-semibold tabular-nums">
@@ -229,7 +225,7 @@ function SuiteBlock({
                 </dd>
               </div>
               <div>
-                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                <dt className="text-xs text-gray-500 dark:text-gray-400">
                   {S.benchmark.colTokens}
                 </dt>
                 <dd className="mt-0.5 text-sm font-semibold tabular-nums">
@@ -237,9 +233,7 @@ function SuiteBlock({
                 </dd>
               </div>
               <div>
-                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
-                  {S.benchmark.colCost}
-                </dt>
+                <dt className="text-xs text-gray-500 dark:text-gray-400">{S.benchmark.colCost}</dt>
                 <dd className="mt-0.5 text-sm font-semibold tabular-nums">
                   {r.costUsd.toFixed(costDp)}
                 </dd>

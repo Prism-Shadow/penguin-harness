@@ -109,7 +109,7 @@ export function SiteToc({
   return (
     <aside className={`site-toc ${className}`}>
       <nav className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto" aria-label={label}>
-        <p className="site-eyebrow ui-eyebrow">{label}</p>
+        <p className="site-eyebrow">{label}</p>
         <ul className="site-rail-list mt-3 space-y-1 text-sm">
           {entries.map((entry) => (
             <li key={entry.id}>

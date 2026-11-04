@@ -10,12 +10,14 @@
  * wish: the score only rises because a version is kept only when it scores higher, while cost and
  * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
  * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
- * panel, the recorded demo of a decision agent's round, with what its test runs cost.
+ * panel, the recorded demo of a decision agent's round (what it shows is the video's accessible
+ * name), captioned with what its test runs cost.
  */
 import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
 import { useVisibleActivity } from "../lib/visible-activity";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
+import { useWidth } from "../lib/use-width";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
@@ -67,16 +69,11 @@ function Node({
         x={x + w / 2}
         y={y + 24}
         textAnchor="middle"
-        className={`text-[13.5px] font-semibold ${title}`}
+        className={`text-sm font-semibold ${title}`}
       >
         {label}
       </text>
-      <text
-        x={x + w / 2}
-        y={y + 42}
-        textAnchor="middle"
-        className={`font-mono text-[11px] ${subText}`}
-      >
+      <text x={x + w / 2} y={y + 42} textAnchor="middle" className={`font-mono text-xs ${subText}`}>
         {sub}
       </text>
     </g>
@@ -103,8 +100,8 @@ function EdgeLabel({
       textAnchor={anchor}
       className={
         accent
-          ? "fill-brand-700 text-[11.5px] font-medium dark:fill-brand-300"
-          : "fill-gray-500 text-[11.5px] dark:fill-gray-400"
+          ? "fill-brand-700 text-xs font-medium dark:fill-brand-300"
+          : "fill-gray-500 text-xs dark:fill-gray-400"
       }
     >
       {children}
@@ -188,9 +185,10 @@ function TrendChart({
   phase: number;
   format: (v: number) => string;
 }) {
-  const W = 210;
-  const H = 84;
-  const M = { left: 34, right: 12, top: 14, bottom: 20 };
+  // Laid out at the width it is shown at, so the ticks and the value keep the page's small size.
+  const { ref: box, width: W } = useWidth<HTMLDivElement>(210);
+  const H = 96;
+  const M = { left: 34, right: 12, top: 16, bottom: 22 };
   const yMax = Math.max(...yTicks);
   const yMin = Math.min(...yTicks);
   const last = points.length - 1;
@@ -199,7 +197,7 @@ function TrendChart({
   const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${px(i)},${py(v)}`).join(" ");
   const xTicks = [0, Math.round(last / 2), last];
   const axis = "stroke-gray-200 dark:stroke-gray-800";
-  const tickText = "fill-gray-400 text-[8.5px] tabular-nums dark:fill-gray-500";
+  const tickText = "fill-gray-500 text-xs tabular-nums dark:fill-gray-400";
 
   const { ref, active } = useVisibleActivity<HTMLElement>();
   const reduced = usePrefersReducedMotion();
@@ -226,7 +224,7 @@ function TrendChart({
       head.setAttribute("transform", `translate(${x}, ${y})`);
       value.textContent = format(v);
       value.setAttribute("x", String(Math.min(W - M.right - 10, Math.max(M.left + 12, x))));
-      value.setAttribute("y", String(Math.max(10, y - 9)));
+      value.setAttribute("y", String(Math.max(12, y - 9)));
       fade.style.opacity = String(opacity);
     };
 
@@ -245,9 +243,9 @@ function TrendChart({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // px/py are pure functions of the props below.
+    // px/py are pure functions of the props and the width below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, phase, format, active, reduced]);
+  }, [points, phase, format, active, reduced, W]);
 
   return (
     <figure ref={ref} className="min-w-0">
@@ -255,76 +253,84 @@ function TrendChart({
         <span className="text-sm font-semibold tracking-tight">{label}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
       </figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 w-full" aria-hidden="true">
-        <line
-          x1={M.left}
-          y1={M.top}
-          x2={M.left}
-          y2={H - M.bottom}
-          className={axis}
-          strokeWidth="1"
-        />
-        <line
-          x1={M.left}
-          y1={H - M.bottom}
-          x2={W - M.right}
-          y2={H - M.bottom}
-          className={axis}
-          strokeWidth="1"
-        />
-        {yTicks.map((t) => (
-          <g key={t}>
-            <line
-              x1={M.left - 3}
-              y1={py(t)}
-              x2={M.left}
-              y2={py(t)}
-              className={axis}
-              strokeWidth="1"
-            />
-            <text x={M.left - 6} y={py(t) + 3} textAnchor="end" className={tickText}>
-              {t}
-            </text>
-          </g>
-        ))}
-        {xTicks.map((i) => (
-          <g key={i}>
-            <line
-              x1={px(i)}
-              y1={H - M.bottom}
-              x2={px(i)}
-              y2={H - M.bottom + 3}
-              className={axis}
-              strokeWidth="1"
-            />
-            <text x={px(i)} y={H - M.bottom + 12} textAnchor="middle" className={tickText}>
-              {`v${i + 1}`}
-            </text>
-          </g>
-        ))}
-        <g ref={fadeRef}>
-          <path
-            ref={pathRef}
-            d={path}
-            pathLength={1}
-            fill="none"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="stroke-brand-600 dark:stroke-brand-400"
-            style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
+      <div ref={box} className="mt-1">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="block w-full"
+          aria-hidden="true"
+        >
+          <line
+            x1={M.left}
+            y1={M.top}
+            x2={M.left}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
           />
-          <g ref={headRef}>
-            <circle r={5} className="fill-gray-50 dark:fill-gray-900" />
-            <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
-          </g>
-          <text
-            ref={valueRef}
-            textAnchor="middle"
-            className="fill-brand-700 text-[10px] font-semibold tabular-nums dark:fill-brand-300"
+          <line
+            x1={M.left}
+            y1={H - M.bottom}
+            x2={W - M.right}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
           />
-        </g>
-      </svg>
+          {yTicks.map((t) => (
+            <g key={t}>
+              <line
+                x1={M.left - 3}
+                y1={py(t)}
+                x2={M.left}
+                y2={py(t)}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={M.left - 6} y={py(t) + 4} textAnchor="end" className={tickText}>
+                {t}
+              </text>
+            </g>
+          ))}
+          {xTicks.map((i) => (
+            <g key={i}>
+              <line
+                x1={px(i)}
+                y1={H - M.bottom}
+                x2={px(i)}
+                y2={H - M.bottom + 3}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={px(i)} y={H - M.bottom + 15} textAnchor="middle" className={tickText}>
+                {`v${i + 1}`}
+              </text>
+            </g>
+          ))}
+          <g ref={fadeRef}>
+            <path
+              ref={pathRef}
+              d={path}
+              pathLength={1}
+              fill="none"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="stroke-brand-600 dark:stroke-brand-400"
+              style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
+            />
+            <g ref={headRef}>
+              <circle r={5} className="fill-gray-50 dark:fill-gray-900" />
+              <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
+            </g>
+            <text
+              ref={valueRef}
+              textAnchor="middle"
+              className="fill-brand-700 text-xs font-semibold tabular-nums dark:fill-brand-300"
+            />
+          </g>
+        </svg>
+      </div>
     </figure>
   );
 }
@@ -375,7 +381,7 @@ function MobileNode({
   return (
     <div className={`min-w-0 rounded-lg border-[1.5px] px-2 py-2 text-center ${box}`}>
       <p className="text-xs font-semibold">{label}</p>
-      <p className={`mt-0.5 font-mono text-[11px] break-all ${subText}`}>{sub}</p>
+      <p className={`mt-0.5 font-mono text-xs break-all ${subText}`}>{sub}</p>
     </div>
   );
 }
@@ -383,7 +389,7 @@ function MobileNode({
 /** The same loop read top to bottom, for widths where the drawing's labels would get too small. */
 function MobileEvolutionFlow() {
   const c = S.selfImprove;
-  const edge = "text-[11px] leading-4 text-gray-500 dark:text-gray-400";
+  const edge = "text-xs text-gray-500 dark:text-gray-400";
   return (
     <div role="img" aria-label={c.diagramLabel} className="md:hidden">
       <MobileNode label={c.nodeOptimizer} sub={OPTIMIZER_SKILL} kind="accent" />
@@ -410,7 +416,7 @@ function MobileEvolutionFlow() {
       </p>
       <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
         <MobileNode label={c.nodeTarget} sub={VERSION_OLD} />
-        <p className="text-center text-[11px] leading-4 font-medium text-brand-700 dark:text-brand-300">
+        <p className="text-center text-xs font-medium text-brand-700 dark:text-brand-300">
           {c.edgeImprove}
           <span className="block text-base leading-5" aria-hidden="true">
             →
@@ -552,7 +558,7 @@ export function SelfImprove() {
   const demo = DEMO[locale];
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
-      <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900/60">
+      <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
           <MobileEvolutionFlow />
           <LoopDiagram />
@@ -574,16 +580,12 @@ export function SelfImprove() {
             })}
           </div>
         </div>
-        <p className="mt-6 text-xs leading-5 text-gray-500 dark:text-gray-400">{c.trendsNote}</p>
       </div>
       <figure className="mx-auto mt-10 max-w-5xl">
         <DemoVideo src={demo.video} poster={demo.poster} label={c.demo.caption} />
-        <figcaption className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
-          {c.demo.caption}
-        </figcaption>
-        <p className="mt-2 text-center text-[13px] font-semibold text-brand-700 dark:text-brand-300">
+        <figcaption className="mt-3 text-center text-sm text-gray-600 dark:text-gray-400">
           {c.demo.cost}
-        </p>
+        </figcaption>
       </figure>
     </Section>
   );

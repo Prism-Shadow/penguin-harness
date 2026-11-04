@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -36,6 +40,9 @@
       ]
     },
     "title": "APE RSI Toolkit",
-    "title_zh": "APE 自进化工具包"
+    "title_zh": "APE 自进化工具包",
+    "references": [
+      "https://arxiv.org/abs/2211.01910"
+    ]
   }
 }

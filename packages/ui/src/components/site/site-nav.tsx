@@ -10,7 +10,17 @@ import { SiteHeader } from "./site-header";
 import type { SiteLink, SiteLinkProps } from "./site-header";
 
 /** The pages every site's bar links to, in the order it shows them. */
-export const SITE_PAGES = ["home", "blog", "download", "amsp", "docs", "gallery"] as const;
+export const SITE_PAGES = [
+  "home",
+  "blog",
+  "download",
+  "plugins",
+  "benchmarks",
+  "leaderboards",
+  "amsp",
+  "docs",
+  "gallery",
+] as const;
 export type SitePage = (typeof SITE_PAGES)[number];
 
 /** A host's words for the bar: one per page, plus the GitHub link's and the menu button's. */
@@ -24,6 +34,9 @@ const PAGE_PATHS: Record<SitePage, string> = {
   home: "",
   blog: "blog",
   download: "download",
+  plugins: "plugins",
+  benchmarks: "benchmarks",
+  leaderboards: "leaderboards",
   amsp: "amsp",
   docs: "docs/",
   gallery: "gallery/",
@@ -38,6 +51,9 @@ export function landingPageAt(pathname: string): SitePage | null {
   if (path === "/") return "home";
   if (path === "/blog" || path.startsWith("/blog/")) return "blog";
   if (path === "/download") return "download";
+  for (const page of ["plugins", "benchmarks", "leaderboards"] as const) {
+    if (path === `/${page}` || path.startsWith(`/${page}/`)) return page;
+  }
   if (path === "/amsp") return "amsp";
   return null;
 }

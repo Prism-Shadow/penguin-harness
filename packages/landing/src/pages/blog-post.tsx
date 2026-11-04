@@ -362,7 +362,6 @@ export function BlogPostPage() {
             <time dateTime={post.date} className="tabular-nums">
               {formatPostDate(post.date, locale)}
             </time>
-            <span aria-hidden="true">·</span>
             <span>{formatAuthors(post.authors, locale)}</span>
             <CategoryBadge category={post.category} />
             <SiteCopyButton
