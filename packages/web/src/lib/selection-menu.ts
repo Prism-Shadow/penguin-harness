@@ -1,15 +1,6 @@
-/**
- * Pure rules of the conversation's own context menu (features/chat/stream-selection-menu.tsx):
- * when a secondary click in the message stream opens the app's menu instead of the browser's,
- * which rows it offers — a web link's, the selection's, or both — where it hangs when the
- * keyboard asked for it, and what an excerpt becomes once it is added to the conversation.
- * Kept free of the DOM so they can be tested in this package's node-only vitest environment.
- */
-import { isLongPressPointer, type AnchorRect } from "@prismshadow/penguin-ui";
+import type { ExcerptReference } from "@prismshadow/penguin-web/internal";
 
-import type { ExcerptReference } from "./workspace-tree";
-import { takesSelectionCopy } from "./selection-copy";
-import type { SelectionCopyRequest } from "./selection-copy";
+||||||| parent of 7436f01c47 (selection-menu and internal: workspace-tree read via projects face)
 
 /**
  * What the rules need to know about a gesture and the selection it found: the copy rule's
