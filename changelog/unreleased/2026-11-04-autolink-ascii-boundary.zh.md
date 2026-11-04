@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `core`, `ui`, `server`, `web`
+- **PR:** [#1466](https://github.com/Prism-Shadow/penguin-harness/pull/1466)
 
 [English](2026-11-04-autolink-ascii-boundary.md)
 
