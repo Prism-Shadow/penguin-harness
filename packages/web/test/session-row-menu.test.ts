@@ -2,8 +2,6 @@
  * A Session row's two action surfaces (components/ui/session-row-menu.tsx): the hover buttons
  * and the right-click menu, and how each action labels itself.
  *
- * - A row's menu carries pin, rename, messaging, archive, copy and delete, so every Session in
- *   the sidebar stays renamable, archivable and deletable.
  * - Every hover action is also in the menu, so nothing is reachable by hover alone.
  * - Every action has a label and a glyph of its own, and only delete is destructive.
  * - Pin flips its label on a pinned row and keeps its glyph.
