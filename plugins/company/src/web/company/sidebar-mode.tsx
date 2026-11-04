@@ -17,7 +17,7 @@ import type { ModeState, SidebarMode, SidebarSection } from "@prismshadow/pengui
 import { useCompany } from "./company-state";
 import { CompanyBetaBadge } from "./company-beta";
 import { COMPANY_NAV_ICONS } from "./company-nav-icons";
-import { COMPANY_NAV_KEYS, isOrgRoute, orgPagePath, parseOrgKey } from "@prismshadow/penguin-web/internal";
+import { COMPANY_NAV_KEYS, isOrgRoute, orgPagePath, parseOrgKey } from "./company-nav.js";
 import { NoOrganizationsSidebar, OrgSwitcher } from "./org-switcher";
 import { ChannelRailRows, ChannelSidebar, DefaultChannelRailRow } from "./channel-sidebar";
 import { DeskRailRows, OrgSessionGroups, TempSessionRailRows } from "./org-session-groups";

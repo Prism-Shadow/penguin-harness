@@ -95,7 +95,7 @@ import {
 } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
-import { orgKey } from "@prismshadow/penguin-web/internal";
+import { orgKey } from "./company-nav.js";
 import { deskRows } from "./org-sessions";
 import { chatPath, openTempSession } from "./temp-session";
 import { toastApiError } from "../../lib/toast-api-error";

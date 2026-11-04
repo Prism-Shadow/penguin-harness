@@ -64,7 +64,7 @@ import { useLiveSessionStatuses } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
-import { orgChannelPath, orgKey, orgPagePath, type CompanyNavKey } from "@prismshadow/penguin-web/internal";
+import { orgChannelPath, orgKey, orgPagePath, type CompanyNavKey } from "./company-nav.js";
 
 import { CHANNEL_ICON } from "./channel-sidebar";
 import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";

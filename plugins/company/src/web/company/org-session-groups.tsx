@@ -71,7 +71,7 @@ import {
 
 import { Truncated } from "@prismshadow/penguin-web/internal";
 import { MessagingBindingModal } from "@prismshadow/penguin-web/internal";
-import { orgKey } from "@prismshadow/penguin-web/internal";
+import { orgKey } from "./company-nav.js";
 import { INVALID_ICON } from "./shared";
 import {
   deskRowLabel,

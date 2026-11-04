@@ -65,7 +65,7 @@ import { createStreamFollow, stickToBottom } from "@prismshadow/penguin-web/inte
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey } from "@prismshadow/penguin-web/internal";
+import { orgKey } from "./company-nav.js";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";

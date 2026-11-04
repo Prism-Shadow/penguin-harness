@@ -63,7 +63,7 @@ import { useCompany } from "./company-state";
 import { useLiveSessionStatuses } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-import { orgKey } from "@prismshadow/penguin-web/internal";
+import { orgKey } from "./company-nav.js";
 import { liveEmployeeStates } from "./org-sessions";
 import { DESK_ICON } from "./channel-header";
 import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
