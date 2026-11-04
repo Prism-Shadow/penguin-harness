@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`, `skills`, `docs`
+- **PR:** [#1472](https://github.com/Prism-Shadow/penguin-harness/pull/1472)
 
 [English](2026-11-04-ui-layers-workbench-window.md)
 
