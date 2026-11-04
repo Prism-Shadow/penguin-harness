@@ -15,8 +15,8 @@ import {
   type Contributed,
 } from "@prismshadow/penguin-core/kernel";
 
-import { S, zh } from "../../lib/strings";
-import { glyphOf } from "../../lib/nav-icons";
+import { S, zh } from "@prismshadow/penguin-web/internal";
+import { glyphOf } from "@prismshadow/penguin-web/internal";
 import { DockScope } from "./dock-scope";
 import { browseFilesAction } from "./browse-files";
 import { registerDockPanel, type DockPanelDefinition } from "./panel-registry";

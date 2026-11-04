@@ -7,12 +7,12 @@
  */
 import { useState } from "react";
 import { Button, GlyphIcon, ICONS, Modal } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { useAiBridge } from "./ai-bridge";
 import { AiCreatePanel, type AiCreatePanelProps } from "./ai-create-panel";
 
 import { composeAiPrompt } from "./ai-create-prompt";
-import { pickDefaultAgent } from "../../lib/default-agent";
+import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
 
 export interface AiCreateModalProps extends Omit<
   AiCreatePanelProps,

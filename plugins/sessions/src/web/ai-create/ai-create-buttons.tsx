@@ -5,7 +5,7 @@
  */
 import { CreateButtons, type CreateButtonsProps } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export type AiCreateButtonsProps = Omit<CreateButtonsProps, "aiLabel" | "manualLabel"> & {
   /** The AI path's label; `S.aiCreate.withAi` by default. */

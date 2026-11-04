@@ -9,9 +9,9 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { CopyButton, HelpFold, Select, Textarea } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { agentDisplayName } from "../../state/project";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { composeAiPrompt } from "./ai-create-prompt";
 
 export interface AiExample {

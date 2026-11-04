@@ -1600,7 +1600,7 @@ export const en: Strings = {
     later: "Later",
   },
 
-  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  /** The "Create with AI" kit (plugins/sessions/src/web/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
   aiCreate: {
     withAi: "Create with AI",
     manual: "Create manually",

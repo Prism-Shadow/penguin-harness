@@ -43,10 +43,10 @@ import { SchedulesModule } from "@penguinharness/plugin-schedules/web";
 import { SessionListModule } from "@penguinharness/plugin-sessions/web";
 import { ProjectsModule } from "@penguinharness/plugin-projects/web";
 import { MessagingModule } from "@penguinharness/plugin-messaging/web";
-import { DockModule } from "./features/dock/module";
+import { DockModule } from "@penguinharness/plugin-terminal/web";
 import { WorkspaceModule } from "@penguinharness/plugin-projects/web";
 import { TracesModule } from "@penguinharness/plugin-usage/web";
-import { AudioModule } from "./features/audio/module";
+import { AudioModule } from "@penguinharness/plugin-sessions/web";
 
 @Module({
   children: [

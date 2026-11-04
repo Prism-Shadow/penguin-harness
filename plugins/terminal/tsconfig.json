@@ -13,8 +13,9 @@
       "@prismshadow/penguin-server/api": ["../../packages/server/src/api/types.ts"],
       "@prismshadow/penguin-server/internal": ["../../packages/server/src/internal.ts"],
       "@prismshadow/penguin-server/ifaces.json": ["../../packages/server/src/ifaces.json"],
-      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"]
+      "@prismshadow/penguin-web/internal": ["../../packages/web/src/internal.ts"],
+      "@penguinharness/plugin-browser/web": ["../browser/src/web/index.ts"]
     }
   },
-  "include": ["src/server"]
+  "include": ["src/server", "src/web"]
 }

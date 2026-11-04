@@ -1,30 +1,6 @@
-import { backgroundStyle, useBackground } from "../state/background";
-/**
- * The app's layout route: the UI package's `AppShell` bound to the app's state.
- * - >=md: the navigation column holds the pinned sidebar (Project / new chat / nav / Session list /
- *   user config), or the rail while it is folded, beside the page;
- * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
- *   sidebar in a drawer.
- * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
- * transform would trap the menus it opens); the package's components say how.
- */
-import { useEffect, useState } from "react";
-import { Outlet, useLocation } from "react-router";
-import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
-import * as api from "../api/endpoints";
-import { nagsAboutInitialPassword } from "../lib/account-menu";
-import { S } from "../lib/strings";
-import { onCommand } from "../lib/shortcuts/dispatcher";
-import { ErrorBoundary } from "../rescue/error-boundary";
-import { RescuePanel } from "../rescue/rescue-panel";
-import { useWebAppLayers } from "./index";
-import { webAppDeps } from "./deps";
-import { useAuth } from "../state/auth";
-import { useCompletionNotifications } from "../state/use-completion-notifications";
-import { useTrayLocale } from "../state/use-tray-locale";
-import { ChangePasswordDialog } from "../components/account/change-password-dialog";
-import { AppInfoDialog } from "../components/account/app-info-dialog";
+import { setDockScope } from "@prismshadow/penguin-web/internal";
 
+||||||| parent of 1f7deee5ed (web features ai-create/audio move into plugin-sessions and dock into plugin-terminal)
 import { FindBar } from "../components/find/find-bar";
 
 /**

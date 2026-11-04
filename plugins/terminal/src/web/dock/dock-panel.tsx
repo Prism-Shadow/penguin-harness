@@ -1,81 +1,10 @@
-/**
- * One dock surface (dock-state.ts owns the arrangement): a tab strip across the top and
- * the active tab's body below — or, while the open dock has no tabs, a centered picker
- * choosing what to open here. The chat page renders one per open dock — right and/or
- * bottom — or a single merged bottom surface below the desktop breakpoint.
- *
- * The drawing is the UI package's (`DockFrame`, `DockTabs`, `DockPicker`); this container
- * binds it to the dock store and the panel registry.
- *
- * Panel tabs' bodies are the registry's (panel-registry.ts: the page registers one definition
- * per panel, body included, and this surface never names a panel itself), each wrapped in the
- * provider that tells it about its own tab (panel-context.tsx). A tab whose id has no definition
- * registered — a plugin's panel before the plugin loads — shows a placeholder saying so and keeps
- * its × until the definition arrives. The terminal is one of these panels: its body lists the
- * conversation's shells as tabs of its own (terminal-panel.tsx), as the browser's lists its pages.
- * Every tab's body stays mounted while its tab is in the strip — switching tabs hides and
- * shows, and so does hiding the whole dock (which renders at zero size rather than
- * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text.
- *
- * The header carries the strip, a "+" menu (the panels the registry offers here), a
- * move-to-other-edge button, a fullscreen toggle, and the dock's × (hide — tabs and everything
- * their bodies hold stay; each tab's own always-visible × is what removes). A terminal has no way
- * out of its conversation's dock: no window of its own, no background form — it is a tab of the
- * terminal panel, and fullscreen is how it gets large. Tabs drag sideways to reorder;
- * dragging a tab out of the strip brings up the edge overlay (dock-drag.tsx) and dropping on
- * the other edge moves that tab there. Dragging the header itself moves the whole dock the same
- * way. The boundary with the chat content resizes the dock — the right dock through the shared
- * side-panel width, the bottom dock through its height ratio.
- *
- * FULLSCREEN is the surface grown as far as its own edge goes, the toolbar above it staying in
- * view: the right dock covers its row — the conversation beside it, with the bottom dock still
- * showing below — and the bottom dock (or the narrow merged view) climbs to the toolbar, over the
- * row and the right dock in it (the store says which surface, if any; the frame draws it, keeping
- * the dock's own box in the flow so nothing underneath reflows, and animates the flip with the
- * theme's layout motion). The strip and the "+" menu keep working; what has no
- * meaning for a surface grown past its edge is put away — the move button, the header drag,
- * dragging a tab out to the other edge. The boundary drag is how the flip happens by gesture:
- * pulled past the dock's maximum size by a small slack, the dock snaps to fullscreen and the drag
- * is over; while fullscreen the handle sits on the cover's leading edge, and a pull back inward
- * past the slack (or a double click) snaps it back to its stored size. The header's toggle (now
- * corners in) is the other way back, and the store drops fullscreen by itself when the surface
- * stops qualifying (hidden, emptied, or a dock it covers brought forward). Esc is left alone: the
- * terminal, the editor and web pages each own it.
- */
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
-import { flushSync } from "react-dom";
-import {
-  CloseIcon,
-  DockFrame,
-  DockHeaderButton,
-  DockPicker,
-  DockTabs,
-  Dropdown,
-  CrashBoundary,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  Menu,
-  MenuItem,
-  ResizeHandle,
-  usePointerDrag,
-  type DockPickerChoice,
-  type DockTabItem,
-} from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
+import { chordKeys } from "@prismshadow/penguin-web/internal";
+import { useDisplayedBinding, useShortcutLabel } from "@prismshadow/penguin-web/internal";
+import { useCoarsePointer } from "@prismshadow/penguin-web/internal";
 
-import { S } from "../../lib/strings";
-import { chordKeys } from "../../components/ui/chord-kbd";
-import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
+||||||| parent of 1f7deee5ed (web features ai-create/audio move into plugin-sessions and dock into plugin-terminal):packages/web/src/features/dock/dock-panel.tsx
 import {
   useTerminalChrome,
   displayTitle,
@@ -87,7 +16,7 @@ import {
   terminalViewState,
   subscribeTerminalCloseRequests,
   type TerminalInfo,
-} from "@penguinharness/plugin-terminal/web";
+} from "../terminal/index.js";
 
 import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
 import { confirmClose } from "./close-guard";
@@ -96,7 +25,7 @@ import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-te
 ||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
 ||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring))
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { DockPanelTitle } from "../../lib/dock-panel-empty";
+import { DockPanelTitle } from "@prismshadow/penguin-web/internal";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
 import { panelGlyph, panelLabel } from "./panel-meta";

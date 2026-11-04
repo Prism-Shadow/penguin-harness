@@ -1,38 +1,12 @@
-/**
- * The dock's terminal-side helpers: the conversation the docks belong to, its shells, creating
- * one, opening the terminal panel, and the global `terminal.*` commands. Split from
- * dock-state.ts so the store stays pure (unit-testable without fetch); this module owns every
- * server round-trip the terminal panel needs.
- *
- * The terminal is ONE dock panel per conversation (`terminal`, 「命令行终端」), and its body
- * draws the conversation's shells as a strip of tabs inside it, the way the browser panel draws
- * its pages. A shell belongs to the Session that created it (the server records `sessionId`): a
- * conversation creates its shells with its own id, and its panel lists exactly those, on its
- * machine — including ones opened on another device. A draft has no Session yet, so it has no
- * terminal at all until its first send.
- */
-import { useSyncExternalStore } from "react";
-import { toastError } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { onCommand } from "../../lib/shortcuts/dispatcher";
-import {
-  HttpStatusError,
-  fetchJson,
-  liveTerminals,
-  noteTerminalCreated,
-  noteTerminalReowned,
-  refreshTerminals,
-} from "@penguinharness/plugin-terminal/web";
-import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
+} from "../terminal/index.js";
+import { machineForTerminal, rememberTerminalMachine } from "@prismshadow/penguin-web/internal";
 
   terminalApiSupported,
   terminalsOf,
   watchTerminals,
   type TerminalInfo,
-} from "../terminal";
-import { rememberTerminalMachine } from "../../lib/terminal-machines";
 ||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
-} from "../terminal";
+||||||| parent of 1f7deee5ed (web features ai-create/audio move into plugin-sessions and dock into plugin-terminal):packages/web/src/features/dock/dock-terminal.ts
 import {
   currentDockScope,
   docksOnScreen,

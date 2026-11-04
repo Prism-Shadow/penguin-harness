@@ -1703,7 +1703,7 @@ export const zh = {
     later: "稍后再说",
   },
 
-  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  /** The "Create with AI" kit (plugins/sessions/src/web/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
   aiCreate: {
     withAi: "用 AI 创建",
     manual: "手动创建",
@@ -5029,7 +5029,7 @@ Benchmark：
   files: {
     title: "文件",
     /**
-     * A reply's audio player (features/audio): the play/pause button's name, the seek bar's name
+     * A reply's audio player (plugins/sessions/src/web/audio): the play/pause button's name, the seek bar's name
      * and value text, what the spinner announces while the file loads, and the line the player
      * becomes when the file cannot be played.
      */

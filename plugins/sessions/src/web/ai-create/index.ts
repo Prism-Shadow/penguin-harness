@@ -12,4 +12,4 @@ export { AiCreateModal } from "./ai-create-modal";
 export type { AiCreateModalProps } from "./ai-create-modal";
 export { AiCreateButtons } from "./ai-create-buttons";
 export type { AiCreateButtonsProps } from "./ai-create-buttons";
-export { pickDefaultAgent } from "../../lib/default-agent";
+export { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
