@@ -73,7 +73,7 @@ export function registerPetCommands(program: CliCommandProgram, host: PluginCliC
       );
     });
 
-  program
+  root
     .command("name")
     .description(zh ? "给宠物起名" : "Name the pet")
     .argument("<name>", zh ? "宠物的名字" : "the pet's name")
@@ -82,7 +82,7 @@ export function registerPetCommands(program: CliCommandProgram, host: PluginCliC
       process.stdout.write(zh ? `它现在叫 ${name}\n` : `It is now named ${name}\n`);
     });
 
-  program
+  root
     .command("say")
     .description(zh ? "让宠物说一句话（气泡）" : "Make the pet say one line (its bubble)")
     .argument("<text>", zh ? "要说的话" : "the line to say")
@@ -91,7 +91,7 @@ export function registerPetCommands(program: CliCommandProgram, host: PluginCliC
       process.stdout.write(zh ? `它说：${text}\n` : `It says: ${text}\n`);
     });
 
-  program
+  root
     .command("status")
     .description(zh ? "看宠物现在怎么样" : "How the pet is doing")
     .action(() => {
