@@ -300,15 +300,6 @@ importers:
         specifier: ^4.2.0
         version: 4.4.3
 
-  packages/db:
-    devDependencies:
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/desktop:
     dependencies:
       '@penguinharness/a2ui':
@@ -576,9 +567,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db':
-        specifier: workspace:*
-        version: link:../db
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1093,6 +1081,15 @@ importers:
 
   plugins/data-analysis: {}
 
+  plugins/db:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   plugins/default-rsi-toolkit: {}
 
   plugins/example-hello-page:
@@ -1131,9 +1128,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db':
-        specifier: workspace:*
-        version: link:../../packages/db
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
@@ -2978,10 +2972,6 @@ packages:
 
   '@prismshadow/penguin-core@file:packages/core':
     resolution: {directory: packages/core, type: directory}
-    engines: {node: '>=24'}
-
-  '@prismshadow/penguin-db@file:packages/db':
-    resolution: {directory: packages/db, type: directory}
     engines: {node: '>=24'}
 
   '@prismshadow/penguin-hmr@file:packages/hmr':
@@ -7979,7 +7969,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -8004,7 +7993,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
@@ -8029,7 +8017,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)
@@ -8054,7 +8041,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
@@ -8079,7 +8065,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
@@ -8104,7 +8089,6 @@ snapshots:
   '@penguinharness/plugin-machines@file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-db': file:packages/db
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
       '@prismshadow/penguin-ui': file:packages/ui(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -9949,8 +9933,6 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-db@file:packages/db': {}
-
   '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -9994,7 +9976,6 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -10044,7 +10025,6 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -10094,7 +10074,6 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-db': file:packages/db
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -10144,7 +10123,6 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-db': file:packages/db
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
