@@ -5,3 +5,4 @@ export { WorkspaceBrowser } from "./workspace/workspace-browser";
 export { WorkspaceSelect, pillClass } from "./workspace/workspace-select";
 export { WorkspaceLinksProvider } from "./workspace/workspace-links";
 export * from "./semantic-id";
+export * from "./lib/workspace-tree.js";

@@ -19,7 +19,7 @@
  */
 import type { FileBrowserPreviewKind, FileTreeRow } from "@prismshadow/penguin-ui";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
-import { joinWorkspacePath } from "./file-path";
+import { joinWorkspacePath } from "@prismshadow/penguin-web/internal";
 
 // ------------------------------------------------------------------------------- layout
 

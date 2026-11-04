@@ -63,7 +63,7 @@ import {
   writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
-} from "../src/lib/workspace-tree";
+} from "@prismshadow/penguin-web/internal";
 
 const MTIME = "2026-09-02T00:00:00.000Z";
 const dir = (name: string): WorkspaceFileEntry => ({

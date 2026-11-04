@@ -24,7 +24,7 @@ import {
 import type { ComposerControl } from "../src/features/chat/chat-input";
 import { ReferenceChip } from "../src/features/chat/reference-chip";
 import { excerptLabel } from "../src/lib/selection-menu";
-import type { ComposerReference } from "../src/lib/workspace-tree";
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

@@ -1,7 +1,31 @@
-import { publishUserEvent } from "../lib/omni/user-events";
-import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
+import {
+  forgetSessionMachines,
+  machineForSession,
+  rememberSessionMachine,
+} from "@prismshadow/penguin-web/internal";
+import {
+  cachedMachineAgents,
+  cachedMachineSessions,
+  rememberMachineAgents,
+  rememberMachineSessions,
+} from "../lib/machine-cache";
+import { setTerminalMachines } from "@prismshadow/penguin-web/internal";
+import { machineIdOf } from "../lib/workspace-machines";
+import {
+  SIDEBAR_PAGE_SIZE,
+  activityKeyOf,
+  activityWatermark,
+  isOrgSession,
+  sessionCategory,
+  splitPage,
+  workspaceGroupKey,
+  workspaceGroupMachine,
+  workspaceGroupQuery,
+  type ActivityKey,
+  type StreamPosition,
 
 ||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
+||||||| parent of df7c3f11fb (terminal-machines to plugin-terminal, workspace-tree to plugin-projects web/lib; machine-cache/machine-link/machine-models/workspace-machines stay in host (read host machines state + api))
 } from "@prismshadow/penguin-web/internal";
 
 
@@ -1733,7 +1757,7 @@ export function SessionsProvider({
   const offlineMachineIdsKey = machineFacts.offline.join(",");
   const machineLabelsJson = JSON.stringify(machineFacts.labels);
   // The terminal list asks the same machines, from a module-scope timer with no React context to
-  // read them from (lib/terminal-machines.ts). Told "none" out loud when there is no account: it
+  // read them from (plugins/terminal/src/web/lib/terminal-machines.ts). Told "none" out loud when there is no account: it
   // waits for this word before it may drop a tab whose terminal is gone, and a user who can never
   // read the machine list would otherwise keep every dead tab in their dock forever
   // (features/terminal/terminal-list.ts).
