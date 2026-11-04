@@ -10,6 +10,7 @@
  * for the duration of a run and returns them with the exit code.
  */
 import type { Command } from "commander";
+import type { CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import type { PluginCliCommandHost } from "@prismshadow/penguin-server/plugin";
 
 /** The pet's document, as the persistent and transient facets hold it (server: pet-state.ts). */
@@ -43,10 +44,12 @@ function statusLine(doc: PetDoc, language: "en" | "zh"): string {
  * node with the summary already set as its description; this adds options, arguments and
  * actions, and never builds a path of its own.
  */
-export function registerPetCommands(program: Command, ctx: PluginCliCommandHost): void {
+export function registerPetCommands(program: CliCommandProgram, ctx: PluginCliCommandHost): void {
+  // The contract hands the node over opaque; the commander side of this package fills it in.
+  const root = program as unknown as Command;
   const zh = ctx.messages.language === "zh";
 
-  program
+  root
     .command("feed")
     .description(zh ? "喂宠物（默认 +20 饱食度）" : "Feed the pet (fullness +20 by default)")
     .option("--amount <n>", zh ? "增加的饱食度" : "how much fullness to add", "20")
