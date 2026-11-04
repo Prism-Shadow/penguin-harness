@@ -8,6 +8,10 @@
     "skills"
   ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
@@ -33,6 +37,11 @@
       "skills": [
         "trace-rsi-toolkit"
       ]
-    }
+    },
+    "title": "TRACE RSI Toolkit",
+    "title_zh": "TRACE 自进化工具包",
+    "references": [
+      "https://arxiv.org/abs/2608.22793"
+    ]
   }
 }

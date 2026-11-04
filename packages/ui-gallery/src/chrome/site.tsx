@@ -54,11 +54,7 @@ export function Site({
   return (
     <div className="g-site" data-nav={nav ? true : undefined} data-toc={toc ? true : undefined}>
       <div className="g-sitebar">
-        <SiteNav
-          menuOpen={open}
-          onToggleMenu={() => setOpen((current) => !current)}
-          menuWidth={nav ? "list" : "links"}
-        />
+        <SiteNav menuOpen={open} onToggleMenu={() => setOpen((current) => !current)} />
       </div>
       {open && (
         <div className="g-drawer">

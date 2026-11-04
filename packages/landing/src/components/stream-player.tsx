@@ -137,7 +137,7 @@ export function StreamPlayer() {
                 aria-selected={i === index}
                 tabIndex={i === index ? 0 : -1}
                 onClick={() => choose(i)}
-                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
+                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1 text-sm text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
               >
                 {P.scenarios[candidate.id]}
               </button>
@@ -201,7 +201,7 @@ function Panel({
             <h3 className={PANE_LABEL}>{P.events}</h3>
             <StreamLegend />
           </div>
-          <ol aria-live="off" className="mt-1 font-mono text-[12px]">
+          <ol aria-live="off" className="mt-1 font-mono text-xs">
             {lines.map((line, i) => (
               <StreamRow key={live ? i : `${index}-${i}`} line={line} />
             ))}
@@ -222,7 +222,7 @@ function Panel({
 function StreamLegend() {
   const P = S.amsp.player;
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11px]">
+    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-xs">
       <span className={TONES.model.soft}>model_msg</span>
       <span className={TONES.event.soft}>event_msg</span>
       <span className="inline-flex items-center gap-1.5 font-sans text-gray-500 dark:text-gray-400">
@@ -276,7 +276,7 @@ function StreamRow({ line }: { line: StepLine }) {
       >
         {/* A record with no payload type (session_meta) lets its envelope run into the kind's column. */}
         <span
-          className={`hidden text-[11px] sm:block ${line.kind === "record" ? tone.soft : "text-gray-400 dark:text-gray-500"} ${
+          className={`hidden text-xs sm:block ${line.kind === "record" ? tone.soft : "text-gray-400 dark:text-gray-500"} ${
             line.name ? "" : "sm:col-span-2"
           }`}
         >
@@ -312,10 +312,10 @@ function Assembled({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
   const groups = [0, ...state.requests.map((request) => request.index)];
   return (
-    <div className="font-mono text-[12px] leading-4">
-      <p className="mb-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-        {AMSP_DEMO_AGENT}
-        {state.model !== null && <> · {state.model}</>}
+    <div className="font-mono text-xs">
+      <p className="mb-1.5 flex flex-wrap gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+        <span>{AMSP_DEMO_AGENT}</span>
+        {state.model !== null && <span>{state.model}</span>}
       </p>
       {groups.map((request) => {
         const items = state.items.filter((item) => item.request === request);
@@ -325,10 +325,10 @@ function Assembled({ state }: { state: ReplayState }) {
           <div key={request} className={header ? "mt-1.5" : ""}>
             {header && (
               <p
-                className={`mb-0.5 border-t border-gray-200 pt-1 text-[11px] dark:border-gray-800 ${TONES.event.soft}`}
+                className={`mb-0.5 flex flex-wrap gap-x-3 border-t border-gray-200 pt-1 text-xs dark:border-gray-800 ${TONES.event.soft}`}
               >
-                {P.request(header.index)}
-                {header.thinkingLevel && <> · {P.thinking(header.thinkingLevel)}</>}
+                <span>{P.request(header.index)}</span>
+                {header.thinkingLevel && <span>{P.thinking(header.thinkingLevel)}</span>}
               </p>
             )}
             <ul className="space-y-0.5">
@@ -354,10 +354,10 @@ function AssembledItem({ item }: { item: ReplayItem }) {
         : item.body;
   return (
     <li>
-      <div className={`text-[11px] ${TONES.model.soft}`}>
-        {item.kind}
-        {item.kind === "text" && ` · ${item.role}`}
-        {item.open && ` · ${P.streaming}`}
+      <div className={`flex flex-wrap gap-x-3 text-xs ${TONES.model.soft}`}>
+        <span>{item.kind}</span>
+        {item.kind === "text" && <span>{item.role}</span>}
+        {item.open && <span>{P.streaming}</span>}
       </div>
       <p
         className={`line-clamp-2 break-words ${
@@ -385,10 +385,14 @@ function Outcome({ state }: { state: ReplayState }) {
   ];
   return (
     <div className="mt-2 border-t border-gray-200 pt-1.5 font-sans dark:border-gray-800">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="text-gray-500 dark:text-gray-400">{P.result}</span>
         <SitePill tone="neutral">{outcome.status}</SitePill>
-        <span className="text-gray-600 tabular-nums dark:text-gray-300">{facts.join(" · ")}</span>
+        {facts.map((fact) => (
+          <span key={fact} className="text-gray-600 tabular-nums dark:text-gray-300">
+            {fact}
+          </span>
+        ))}
       </div>
       {usage && <UsageBars usage={usage} />}
     </div>
@@ -405,7 +409,7 @@ const BARS: { field: keyof Omit<TokenCounts, "total">; tone: string }[] = [
 function UsageBars({ usage }: { usage: TokenCounts }) {
   const largest = Math.max(1, ...BARS.map((bar) => usage[bar.field]));
   return (
-    <div className="mt-1.5 space-y-0.5 font-mono text-[11px] leading-4">
+    <div className="mt-1.5 space-y-0.5 font-mono text-xs">
       {BARS.map((bar) => {
         const value = usage[bar.field];
         // A count too small for its share of the bar still shows.
