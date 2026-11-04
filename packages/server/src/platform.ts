@@ -185,7 +185,7 @@ import {
   SessionIndex,
   SessionOrigins,
 } from "@penguinharness/plugin-sessions/server";
-import { Workbenches } from "./mechanisms/workbenches.js";
+import { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
 import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
 import {
@@ -195,7 +195,7 @@ import {
   UsageRecording,
   UsageStore,
 } from "@penguinharness/plugin-usage/server";
-import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
+import { FileReveal, WorkspaceFiles } from "@penguinharness/plugin-projects/server";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";

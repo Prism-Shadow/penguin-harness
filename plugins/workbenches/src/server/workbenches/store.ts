@@ -19,7 +19,8 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
-import type { WorkbenchVersion } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchVersion } from "../mechanism.js";
+
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";

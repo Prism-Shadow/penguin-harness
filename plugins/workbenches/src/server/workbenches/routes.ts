@@ -20,11 +20,8 @@ import { HttpError } from "@prismshadow/penguin-server/internal";
 import { uiFileResponse } from "@prismshadow/penguin-server/internal";
 import { requireValidId } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "@prismshadow/penguin-server/internal";
+import type { WorkbenchRequest, WorkbenchResponse, Workbenches } from "../mechanism.js";
+
 import { WorkbenchNotFound } from "./service.js";
 
 /** The largest request body a workbench handler is handed. */

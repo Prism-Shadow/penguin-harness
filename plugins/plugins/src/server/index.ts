@@ -35,6 +35,7 @@ export type {
 export type { PluginCliCommands, PluginCliCommandsSlots } from "./plugin/cli-commands.js";
 export type { PluginsRouteDeps } from "./routes/plugins.js";
 export { pluginLibraryRoutes, agentPluginsRoutes, agentMcpServersRoutes, PluginRoutes, pluginRegistryRoutes, PluginRegistryRoutes } from "./routes/plugins.js";
+export * from "./mechanism.js";
 export type { PluginRoutesOptions } from "./routes/plugins.js";
 export { pluginUiRoutes, PluginUiRoutes } from "./routes/plugin-ui.js";
 export { installedPluginRoutes, InstalledPluginRoutes } from "./routes/plugins-installed.js";

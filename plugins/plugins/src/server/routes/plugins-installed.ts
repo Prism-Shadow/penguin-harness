@@ -83,7 +83,7 @@ import {
   readPluginClosure,
   readPluginDeclaration,
 } from "../plugin/loader.js";
-import type { PluginPackages } from "@prismshadow/penguin-server/internal";
+import type { PluginPackages } from "../mechanism.js";
 import {
   installedPackageDir,
   PluginInstallError,

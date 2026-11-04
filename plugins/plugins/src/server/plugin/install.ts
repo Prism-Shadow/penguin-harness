@@ -25,7 +25,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { PluginPackages } from "@prismshadow/penguin-server/internal";
+import type { PluginPackages } from "../mechanism.js";
 
 const execFileAsync = promisify(execFile);
 

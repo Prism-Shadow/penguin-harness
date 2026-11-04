@@ -7,7 +7,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readFolder } from "./store.js";
-import type { WorkbenchVersion } from "@prismshadow/penguin-server/internal";
+import type { WorkbenchVersion } from "../mechanism.js";
+
 
 const pairs = [
   ["workflows", "workbenches"],

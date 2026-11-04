@@ -5,6 +5,7 @@
  */
 export * from "./projects/project-service.js";
 export * from "./mechanism.js";
+export * from "./mechanism-workspace.js";
 export * from "./repos/projects.js";
 export * from "./repos/members.js";
 export * from "./repos/model-promotions.js";
