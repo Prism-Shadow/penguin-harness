@@ -1030,7 +1030,7 @@ export const en: Strings = {
     current: "current",
     restore: "Restore",
     restoreTitle: "Restore version",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
@@ -1063,7 +1063,10 @@ export const en: Strings = {
     importDoneToast: "Workbench imported",
     importOverwriteTitle: "Overwrite existing workbench",
     importOverwriteBody: (name: string): string =>
-      `The workbench "${name}" already exists. Overwriting replaces its source (local edits included); its data (state.json) stays, and the old source can still be restored from History. Continue?`,
+      `The workbench "${name}" already exists. Overwriting replaces its source; its data (state.json) stays. Versions that loaded can still be restored from History; local edits that never loaded are lost. Continue?`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string =>
+      `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
     /** The row's icon button: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",

@@ -27,6 +27,7 @@ import {
   Modal,
   NoticeStrip,
   SkeletonList,
+  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -49,6 +50,11 @@ import { UPLOAD_LABEL_CLASS } from "./skills-tab";
 interface PendingOverwrite {
   dataBase64: string;
   workbenchId: string;
+}
+
+/** The row of the newest version holding the workbench's current files; -1 when none does. */
+function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
+  return history.versions.findIndex((version) => version.revision === history.workbench.revision);
 }
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
@@ -113,10 +119,14 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
       toastApiError(err);
     }
   };
-  /** An upload landed: the dialog closes and the list is read again from disk. */
-  const imported = async () => {
+  /**
+   * An upload landed: the dialog closes and the list is read again from disk. Its files are
+   * written either way; a load that failed says so instead of a success.
+   */
+  const imported = async (workbench: WorkbenchInfo) => {
     setImportOpen(false);
-    toastSuccess(S.workbenches.importDoneToast);
+    if (workbench.error === null) toastSuccess(S.workbenches.importDoneToast);
+    else toastError(S.workbenches.importLoadFailedToast(workbench.error));
     await load();
     // The agent card's workbench count changed; refresh the list provider too.
     if (machineId === null) void reloadAgents();
@@ -260,12 +270,16 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
           <p className="text-sm text-fg-muted">{S.workbenches.noHistory}</p>
         )}
         <ul className="divide-y divide-line">
-          {history?.versions.map((version) => (
-            <li key={version.revision} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+          {history?.versions.map((version, index) => (
+            <li
+              key={`${version.savedAt}:${version.revision}`}
+              className="flex flex-wrap items-center gap-3 py-3 text-sm"
+            >
               <span className="font-mono">{version.revision}</span>
               <span className="text-fg-muted">{formatDateTime(version.savedAt)}</span>
               <span className="flex-1" />
-              {version.revision === history.workbench.revision ? (
+              {/* One row is current: the newest with the files the workbench has now. */}
+              {index === currentVersionAt(history) ? (
                 <span>{S.workbenches.current}</span>
               ) : (
                 <Button
@@ -320,7 +334,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
           agentId={agentId}
           machineId={machineId}
           onClose={() => setImportOpen(false)}
-          onImported={() => void imported()}
+          onImported={(workbench) => void imported(workbench)}
         />
       )}
     </div>
@@ -344,8 +358,8 @@ function WorkbenchImportDialog({
   agentId: string;
   machineId: string | null;
   onClose: () => void;
-  /** A zip landed: the tab closes the dialog and reads the list again. */
-  onImported: () => void;
+  /** A zip landed, as its load left the workbench: the tab closes the dialog and reads the list again. */
+  onImported: (workbench: WorkbenchInfo) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -355,14 +369,14 @@ function WorkbenchImportDialog({
     setUploading(true);
     setUploadError(null);
     try {
-      await api.installWorkbenchArchive(
+      const { workbench } = await api.installWorkbenchArchive(
         projectId,
         agentId,
         { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
         machineId,
       );
       setOverwriting(null);
-      onImported();
+      onImported(workbench);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.code === "workbench_exists") {
         setOverwriting({ dataBase64, workbenchId: err.details?.workbenchId ?? fallbackId });

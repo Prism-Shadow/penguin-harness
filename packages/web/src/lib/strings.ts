@@ -1166,7 +1166,7 @@ export const zh = {
     current: "当前",
     restore: "恢复",
     restoreTitle: "恢复版本",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
@@ -1196,7 +1196,9 @@ export const zh = {
     importDoneToast: "工作台已导入",
     importOverwriteTitle: "覆盖已有工作台",
     importOverwriteBody: (name: string): string =>
-      `工作台「${name}」已存在，覆盖将替换其源码（含本地改动）；数据（state.json）保留，旧源码仍可从历史恢复。确认继续？`,
+      `工作台「${name}」已存在，覆盖将替换其源码；数据（state.json）保留。加载成功过的版本仍可从历史恢复，从未加载成功的本地改动会丢失。确认继续？`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
     /** The row's icon button: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",

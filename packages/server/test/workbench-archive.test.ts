@@ -11,13 +11,23 @@
  *   import, with the failure in the answer; a scoped name is refused, naming the fix.
  * - A folder holding data but no package.json is no workbench yet: an import into it keeps its
  *   `state.json` and leaves none of the stray files beside it.
- * - `state.json`, a dot entry, `node_modules/`, a `../` entry, an entry that is both a file and a
- *   directory, an unusable package.json and a layout with no one workbench are each refused before
- *   anything is written.
- * - An id that is taken answers 409 `workbench_exists` and changes nothing.
+ * - Each of these is refused before anything is written: `state.json` in any letter case, a dot
+ *   entry, `node_modules/` in any case, a `../`, absolute, drive-letter or backslash path, a
+ *   control character, a name Windows cannot hold, a link, two names a disk that folds case or
+ *   Unicode normal form takes for one, an entry that is both a file and a directory, an unusable
+ *   package.json, a layout with no one workbench, and a root-layout id that is `node_modules` or a
+ *   staging name.
+ * - An id that is taken answers 409 `workbench_exists` and changes nothing; an id that differs from
+ *   a folder's only in letter case is that folder, for the 409 and for the overwrite.
  * - With `overwrite`, the source becomes exactly the archive's (a stale file and the directory it
  *   emptied are gone), `state.json` and `.plugin.json` survive, `.harness/` is written afresh by
- *   the load, and the answer carries the load result.
+ *   the load, and the answer carries the load result. That holds when an old name differs from a
+ *   new one only in letter case, and when a file becomes a directory or a directory a file.
+ * - An overwrite the folder cannot take — a link where a new file needs a directory, a directory
+ *   holding more than old source where a new file goes — answers 409 and leaves the folder as it
+ *   was.
+ * - Two imports of one id at once: one is written, the other answers 409, and the folder is the
+ *   first's alone.
  * - An entry over the per-file cap is refused without being inflated; a folder over the caps does
  *   not export.
  * - Someone outside the Project reaches neither route; a missing Agent or workbench is a 404.
@@ -31,6 +41,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import type { ZipOptions } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   ProjectCreateResponse,
@@ -89,17 +100,25 @@ const SERVER_FILES: Record<string, string> = {
   "ui/.DS_Store": "x",
 };
 
-const zipB64 = (files: Record<string, string | Uint8Array>): string =>
+/** A zip of `files`, base64 as the route takes it; an entry may carry its zip attributes. */
+const zipB64 = (files: Record<string, string | Uint8Array | [string, ZipOptions]>): string =>
   Buffer.from(
     zipSync(
       Object.fromEntries(
         Object.entries(files).map(([name, body]) => [
           name,
-          typeof body === "string" ? strToU8(body) : body,
+          typeof body === "string"
+            ? strToU8(body)
+            : Array.isArray(body)
+              ? ([strToU8(body[0]), body[1]] as const)
+              : body,
         ]),
       ),
     ),
   ).toString("base64");
+
+/** A package.json that parses but does not load: its load fails at once instead of compiling. */
+const brokenPkg = (name: string) => JSON.stringify({ name, penguin: { modules: [MANIFEST] } });
 
 /** The files under one top-level directory, as the export lays them out. */
 const under = (dir: string, files: Record<string, string>): Record<string, string> =>
@@ -257,7 +276,7 @@ describe("workbench archives", { timeout: 30_000 }, () => {
   });
 
   const valid = under("todo", SOURCE);
-  it.each<[string, Record<string, string>, string]>([
+  it.each<[string, Record<string, string | [string, ZipOptions]>, string]>([
     ["state.json", { ...valid, "todo/state.json": "{}" }, "state.json is the workbench's data"],
     ["a dot entry", { ...valid, "todo/.harness/plugin.d.ts": "" }, "dot entries are the server's"],
     [
@@ -293,6 +312,40 @@ describe("workbench archives", { timeout: 30_000 }, () => {
       "must set name",
     ],
     ["an archive with no files", {}, "contains no files"],
+    ["State.json", { ...valid, "todo/State.json": "{}" }, "state.json is the workbench's data"],
+    ["NODE_MODULES", { ...valid, "todo/NODE_MODULES/x.js": "" }, "node_modules is never imported"],
+    ["an absolute path", { ...valid, "/abs.ts": "" }, "Invalid zip entry path (absolute)"],
+    ["a drive letter", { ...valid, "C:/x.ts": "" }, "Invalid zip entry path (absolute)"],
+    ["a backslash", { ...valid, "todo\\x.ts": "" }, "Invalid zip entry path (backslash)"],
+    ["a NUL", { ...valid, "todo/ui/nul\u0000.js": "" }, "control character"],
+    ["a reserved device name", { ...valid, "todo/ui/CON.html": "" }, "a name Windows cannot hold"],
+    ["a colon", { ...valid, "todo/ui/x:y.js": "" }, "a name Windows cannot hold"],
+    ["a trailing dot", { ...valid, "todo/ui/trail.": "" }, "a name Windows cannot hold"],
+    [
+      "a symbolic link",
+      { ...valid, "todo/ui/lib": ["../../secret", { os: 3, attrs: 0o120777 << 16 }] },
+      "a link or a special file: todo/ui/lib",
+    ],
+    [
+      "names that differ only in letter case",
+      { ...valid, "todo/ui/A.js": "", "todo/ui/a.js": "" },
+      "where letter case is ignored",
+    ],
+    [
+      "names that differ only in Unicode normal form",
+      { ...valid, "todo/ui/caf\u00e9.js": "", "todo/ui/cafe\u0301.js": "" },
+      "where letter case is ignored",
+    ],
+    [
+      "a root-layout id node_modules",
+      { "package.json": brokenPkg("node_modules"), "index.ts": "" },
+      "which no folder can be",
+    ],
+    [
+      "a root-layout id that is a staging name",
+      { "package.json": brokenPkg("notes.penguin-tmp1"), "index.ts": "" },
+      "which no folder can be",
+    ],
   ])("an archive with %s is refused before anything is written", async (_case, files, message) => {
     const res = await member.post(`${base("refuse_agent")}/archive`, { dataBase64: zipB64(files) });
     expect(res.status).toBe(400);
@@ -359,6 +412,107 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     expect(files).toContain(".harness/harness.json");
   });
 
+  it("an id that differs from a folder's only in letter case is that folder, for the 409 and for the overwrite", async () => {
+    await createAgent("case_agent");
+    await writeFiles(folder("case_agent", "todo"), {
+      "package.json": brokenPkg("todo"),
+      "index.ts": "old",
+    });
+    const zip = zipB64({ "Todo/package.json": brokenPkg("todo"), "Todo/index.ts": "new" });
+    const taken = await member.post(`${base("case_agent")}/archive`, { dataBase64: zip });
+    expect(taken.status).toBe(409);
+    expect(((await taken.json()) as { error: { details: unknown } }).error.details).toEqual({
+      workbenchId: "todo",
+    });
+    const res = await member.post(`${base("case_agent")}/archive`, {
+      dataBase64: zip,
+      overwrite: true,
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as WorkbenchArchiveInstallResponse).workbench.id).toBe("todo");
+    expect(await fs.readdir(workbenchesDir(t.root, projectId, "case_agent"))).toEqual(["todo"]);
+    expect(await fs.readFile(path.join(folder("case_agent", "todo"), "index.ts"), "utf8")).toBe(
+      "new",
+    );
+  });
+
+  it("an overwrite is exact across names that differ only in letter case and across files that become directories and back", async () => {
+    await createAgent("swap_agent");
+    const dir = folder("swap_agent", "todo");
+    await writeFiles(dir, {
+      "package.json": brokenPkg("todo"),
+      "Index.ts": "old index",
+      "lib/a.ts": "old lib",
+      src: "old src file",
+      "state.json": "{}",
+    });
+    await fs.mkdir(path.join(dir, "assets", "empty"), { recursive: true });
+    const archive: Record<string, string> = {
+      "package.json": brokenPkg("todo"),
+      "index.ts": "new index",
+      lib: "new lib file",
+      "src/x.ts": "new src",
+      assets: "new assets file",
+    };
+    const res = await member.post(`${base("swap_agent")}/archive`, {
+      dataBase64: zipB64(under("todo", archive)),
+      overwrite: true,
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect((await filesUnder(dir)).filter((rel) => !rel.startsWith("."))).toEqual(
+      [...Object.keys(archive), "state.json"].sort(),
+    );
+    for (const [rel, body] of Object.entries(archive)) {
+      expect(await fs.readFile(path.join(dir, rel), "utf8")).toBe(body);
+    }
+  });
+
+  it("an overwrite the folder cannot take answers 409 and leaves the folder as it was", async () => {
+    await createAgent("conflict_agent");
+    const outside = path.join(t.root, "outside-lib");
+    await writeFiles(outside, { "kept.ts": "outside" });
+    const linked = folder("conflict_agent", "linked");
+    await writeFiles(linked, { "package.json": brokenPkg("linked"), "old.ts": "old" });
+    await fs.symlink(outside, path.join(linked, "lib"), "junction");
+    const held = folder("conflict_agent", "held");
+    await writeFiles(held, {
+      "package.json": brokenPkg("held"),
+      "old.ts": "old",
+      "lib/.cache/x": "not source",
+    });
+    for (const [id, dir, archive] of [
+      ["linked", linked, { "lib/x.ts": "new" }],
+      ["held", held, { lib: "new" }],
+    ] as const) {
+      const before = await filesUnder(dir);
+      const res = await member.post(`${base("conflict_agent")}/archive`, {
+        dataBase64: zipB64(under(id, { "package.json": brokenPkg(id), ...archive })),
+        overwrite: true,
+      });
+      expect(res.status).toBe(409);
+      expect(await messageOf(res)).toContain("lib");
+      expect(await filesUnder(dir)).toEqual(before);
+      expect(await fs.readFile(path.join(dir, "old.ts"), "utf8")).toBe("old");
+    }
+    expect(await fs.readdir(outside)).toEqual(["kept.ts"]);
+  });
+
+  it("two imports of one id at once: one is written, the other answers 409, and the folder is the first's alone", async () => {
+    await createAgent("race_agent");
+    const upload = (marker: string) =>
+      member.post(`${base("race_agent")}/archive`, {
+        dataBase64: zipB64(
+          under("todo", { "package.json": brokenPkg("todo"), [`${marker}.ts`]: marker }),
+        ),
+      });
+    const answers = await Promise.all([upload("first"), upload("second")]);
+    expect(answers.map((res) => res.status).sort()).toEqual([201, 409]);
+    const winner = answers[0]!.status === 201 ? "first" : "second";
+    expect(
+      (await filesUnder(folder("race_agent", "todo"))).filter((rel) => !rel.startsWith(".")),
+    ).toEqual([`${winner}.ts`, "package.json"]);
+  });
+
   it("an entry over the per-file cap is refused without being inflated, and a folder over the caps does not export", async () => {
     await createAgent("cap_agent");
     // 8MB of zeros deflate to a few KB: only a cap read before inflating stops it.
@@ -398,16 +552,14 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     );
     if (!moves) ctx.skip();
 
-    // Neither package sets "type": "module", so each load fails at once instead of compiling:
-    // what is asserted is where the folders are, not that they load.
-    const pkg = (name: string) => JSON.stringify({ name, penguin: { modules: [MANIFEST] } });
+    // Neither package loads, so neither compiles: what is asserted is where the folders are.
     await writeFiles(path.join(home, "workbenches", "legacy"), {
-      "package.json": pkg("legacy"),
+      "package.json": brokenPkg("legacy"),
       "index.ts": SOURCE["index.ts"]!,
       "state.json": SERVER_FILES["state.json"]!,
     });
     const res = await member.post(`${base("legacy_agent")}/archive`, {
-      dataBase64: zipB64({ "package.json": pkg("notes"), "index.ts": SOURCE["index.ts"]! }),
+      dataBase64: zipB64({ "package.json": brokenPkg("notes"), "index.ts": SOURCE["index.ts"]! }),
     });
     expect(res.status, await res.clone().text()).toBe(201);
     const listed = await member.get(base("legacy_agent"));

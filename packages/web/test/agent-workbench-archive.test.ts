@@ -2,17 +2,19 @@
 /**
  * The Workbenches tab's zip import and per-row export (features/agents/workbenches-tab.tsx).
  *
- * - Picking a zip in the import dialog posts it as it was read, closes the dialog and lists the
- *   workbench it installed.
+ * - Picking a zip in the import dialog posts it as it was read, to the server the Agent lives on,
+ *   closes the dialog, says it was imported and lists the workbench it installed.
+ * - An import whose load failed says so, with the load's error, and never that it succeeded.
  * - A zip whose id is taken asks before overwriting, naming the id the answer names: cancelling
  *   sends nothing more, confirming resends the same zip with `overwrite`.
  * - A refused zip leaves the dialog open with the reason in it.
  * - Export downloads the workbench's archive from the machine the Agent lives on, under the name
- *   the server gives it.
+ *   the server gives it; one the server refuses says why.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import { toastStore } from "@prismshadow/penguin-ui";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -43,12 +45,33 @@ const ZIP = "PK zip bytes";
 const ZIP_BASE64 = Buffer.from(ZIP).toString("base64");
 const ARCHIVE = `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/archive`;
 
-/** The tab with Support listed; `imported` is what an upload installs. */
-async function openTab(imported?: WorkbenchInfo, machine?: FakeMachine) {
+const GPU: FakeMachine = { machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] };
+
+/** The toasts on screen, by kind. */
+const toasts = (kind: "success" | "error") =>
+  toastStore
+    .getState()
+    .items.filter((item) => item.kind === kind)
+    .map((item) => item.text);
+
+/**
+ * The tab with Support listed; `imported` is what an upload installs, `machine` where the Agent
+ * lives, `archiveRefusal` what a download answers instead of the zip.
+ */
+async function openTab({
+  imported,
+  machine,
+  archiveRefusal,
+}: {
+  imported?: WorkbenchInfo;
+  machine?: FakeMachine;
+  archiveRefusal?: { status: number; code: string };
+} = {}) {
   const server = agentServer(undefined, {
     workbenches: [info("support", "Support")],
     ...(imported !== undefined ? { importedWorkbench: imported } : {}),
     ...(machine !== undefined ? { machines: [machine] } : {}),
+    ...(archiveRefusal !== undefined ? { archiveRefusal } : {}),
   });
   const query = machine !== undefined ? `&machine=${machine.machineId}` : "";
   await mountAgentApp(h(AgentSettingsPage), { at: `/agents/${AGENT_ID}?tab=workbenches${query}` });
@@ -69,24 +92,42 @@ async function importZip(): Promise<void> {
 }
 
 describe("the Workbenches tab's archives", () => {
-  beforeEach(() => setActiveStrings(en));
+  beforeEach(() => {
+    setActiveStrings(en);
+    toastStore.setState({ items: [] });
+  });
   afterEach(async () => {
     await unmountAll();
     vi.restoreAllMocks();
     setActiveStrings(zh);
   });
 
-  it("posts a picked zip as it was read, closes the dialog and lists what it installed", async () => {
-    const server = await openTab(info("todo", "Todo"));
+  it("posts a picked zip as it was read to the Agent's machine, closes the dialog, says so and lists what it installed", async () => {
+    const server = await openTab({ imported: info("todo", "Todo"), machine: GPU });
     await importZip();
     await waitFor(() => server.writes(ARCHIVE).length === 1);
-    expect(server.writes(ARCHIVE)[0]!.body).toEqual({ dataBase64: ZIP_BASE64 });
+    expect(server.writes(ARCHIVE)[0]).toMatchObject({
+      machine: "gpu1",
+      body: { dataBase64: ZIP_BASE64 },
+    });
     await waitFor(() => dialogs().length === 0);
     await waitFor(() => document.body.textContent?.includes("Todo") === true);
+    expect(toasts("success")).toHaveLength(1);
+    expect(toasts("error")).toEqual([]);
+  });
+
+  it("says an import whose load failed did not load, with the load's error, and never that it succeeded", async () => {
+    const broken = { ...info("todo", "Todo"), error: 'package.json must set "type": "module"' };
+    await openTab({ imported: broken });
+    await importZip();
+    await waitFor(() => dialogs().length === 0);
+    expect(toasts("success")).toEqual([]);
+    expect(toasts("error")).toHaveLength(1);
+    expect(toasts("error")[0]).toContain('package.json must set "type": "module"');
   });
 
   it("asks before overwriting a taken id: cancelling sends nothing more, confirming resends the zip with overwrite", async () => {
-    const server = await openTab(info("support", "Support"));
+    const server = await openTab({ imported: info("support", "Support") });
     await importZip();
     await waitFor(() => dialogs().length === 2);
     expect(topDialog().textContent).toContain(en.workbenches.importOverwriteBody("support"));
@@ -107,7 +148,7 @@ describe("the Workbenches tab's archives", () => {
   });
 
   it("keeps the dialog open with the reason when the zip is refused", async () => {
-    const server = await openTab(info("todo", "Todo"));
+    const server = await openTab({ imported: info("todo", "Todo") });
     server.refuseNext(400, "bad_request", "The zip must contain package.json at its root");
     await importZip();
     await waitFor(
@@ -117,8 +158,7 @@ describe("the Workbenches tab's archives", () => {
   });
 
   it("downloads a workbench's archive from the machine its Agent lives on, under the server's name", async () => {
-    const machine: FakeMachine = { machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] };
-    const server = await openTab(undefined, machine);
+    const server = await openTab({ machine: GPU });
     // jsdom has no object URLs and navigates nowhere: the anchor's click is where the file is saved.
     const NodeUrl = globalThis.URL;
     vi.stubGlobal(
@@ -141,5 +181,14 @@ describe("the Workbenches tab's archives", () => {
       .requests()
       .find((request) => request.path.endsWith("/workbenches/support/archive"));
     expect(download).toMatchObject({ method: "GET", machine: "gpu1" });
+  });
+
+  it("says why the server refused an export, and saves nothing", async () => {
+    await openTab({ archiveRefusal: { status: 413, code: "workbench_too_large" } });
+    const click_ = vi.spyOn(HTMLAnchorElement.prototype, "click");
+    await click(button(`${en.workbenches.exportWorkbench} Support`));
+    await waitFor(() => toasts("error").length === 1);
+    expect(toasts("error")).toEqual([en.errors.byCode.workbench_too_large]);
+    expect(click_).not.toHaveBeenCalled();
   });
 });

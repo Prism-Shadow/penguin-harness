@@ -5,9 +5,9 @@
  *   POST   /archive {dataBase64, overwrite?}  import one workbench's source from a zip, then load it
  *   GET    /:id/archive            the workbench's source as a zip, which imports back unchanged
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
- *   GET    /:id/history            recorded versions, newest first
+ *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
- *   DELETE /:id                    remove the folder and its recorded versions
+ *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
  *   GET    /:id/sdk/ui/*           the page runtime compiled pages import (see ui-runtime.ts)
@@ -41,6 +41,7 @@ import type {
 } from "../mechanisms/workbenches.js";
 import {
   collectWorkbenchArchive,
+  folderNameFor,
   parseWorkbenchArchive,
   workbenchArchiveName,
   writeWorkbenchSource,
@@ -270,8 +271,25 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     return workbenchesDir(deps.root, projectId, agentId);
   };
 
+  /**
+   * Imports into one Agent run one at a time: which folder an id lands in, whether it is taken
+   * and what is written there are decided together, or two uploads of one id would both find it
+   * free and write into each other.
+   */
+  const importing = new Map<string, Promise<unknown>>();
+  const oneAtATime = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+    const next = (importing.get(key) ?? Promise.resolve()).catch(() => undefined).then(run);
+    importing.set(key, next);
+    void next
+      .finally(() => {
+        if (importing.get(key) === next) importing.delete(key);
+      })
+      .catch(() => undefined);
+    return next;
+  };
+
   // Import one workbench from an uploaded zip (member-level, like the Skills archive route). Its
-  // source is written in place and loaded at once, so the answer carries what the load came to.
+  // source is written and loaded at once, so the answer carries what the load came to.
   app.post("/archive", async (c) => {
     const { projectId, agentId } = scope(c);
     await deps.agentConfig.requireExists(projectId, agentId);
@@ -283,16 +301,21 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     if (archive.byteLength > MAX_ARCHIVE_BYTES) {
       throw badRequest("The zip archive exceeds the 14MB limit.");
     }
-    const { id, files } = parseWorkbenchArchive(archive);
-    const dir = path.join(await folders(projectId, agentId), id);
-    // Taken means what the listing means by a workbench: the folder has a package.json.
-    if (!overwrite && (await isFile(path.join(dir, "package.json")))) {
-      throw new HttpError(409, "workbench_exists", `Workbench already exists: ${id}`, undefined, {
-        workbenchId: id,
-      });
-    }
-    await writeWorkbenchSource(dir, files);
-    const workbench = await deps.workbenches.reload(projectId, agentId, id).catch(notFound);
+    const parsed = parseWorkbenchArchive(archive);
+    const workbench = await oneAtATime(`${projectId}/${agentId}`, async () => {
+      const base = await folders(projectId, agentId);
+      // An id that differs from a folder's only in letter case is that folder.
+      const id = await folderNameFor(base, parsed.id);
+      const dir = path.join(base, id);
+      // Taken means what the listing means by a workbench: the folder has a package.json.
+      if (!overwrite && (await isFile(path.join(dir, "package.json")))) {
+        throw new HttpError(409, "workbench_exists", `Workbench already exists: ${id}`, undefined, {
+          workbenchId: id,
+        });
+      }
+      await writeWorkbenchSource(dir, parsed.files);
+      return deps.workbenches.reload(projectId, agentId, id).catch(notFound);
+    });
     return c.json({ workbench } satisfies WorkbenchArchiveInstallResponse, 201);
   });
 

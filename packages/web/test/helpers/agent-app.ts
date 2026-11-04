@@ -239,6 +239,8 @@ export function agentServer(
      * refused with 400.
      */
     importedWorkbench?: WorkbenchInfo;
+    /** What a workbench's zip download answers instead of the archive. */
+    archiveRefusal?: { status: number; code: string };
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -585,6 +587,8 @@ export function agentServer(
         return new Response(null, { status: 204 });
       }
       if (action === "archive") {
+        const refusal = options.archiveRefusal;
+        if (refusal !== undefined) return apiError(refusal.status, refusal.code);
         return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
           headers: {
             "content-type": "application/zip",
