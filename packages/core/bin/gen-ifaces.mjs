@@ -5,12 +5,19 @@
  * kernel's signature-level form (core kernel/sig.ts) and write ONE `ifaces.json` per
  * package — the table the module-tree check (kernel/check.ts) runs over.
  *
- *   node scripts/gen-ifaces.mjs --project packages/server/tsconfig.json --out packages/server/src/ifaces.json
- *   node scripts/gen-ifaces.mjs ... --check        # CI: fail when the file on disk is stale
+ *   penguin-gen-ifaces --project tsconfig.json --out ifaces.json   # a plugin package's build
+ *   penguin-gen-ifaces ... --check                                 # CI: fail when the file on disk is stale
+ *
+ * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
+ * outside this repository builds its table the way the shipped plugins do; inside the repo,
+ * scripts/gen-ifaces.mjs runs this file. It compiles with the `typescript` of the package
+ * being built (resolved from the working directory), else with whatever core itself resolves.
  *
  * The table also carries every module's manifest, read STATICALLY off its class — the
  * `@Module({...})` / `@Component({...})` literal and the `@Use` / `@Provide` / `@Bind`
- * fields, identifiers resolved to their declarations, never executed. A @Component is a
+ * fields, identifiers resolved to their declarations, never executed. `contributes` is pure
+ * data the host reads without running the package, so a value under it that is not written
+ * out (a constant, a spread, a shorthand property) is refused. A @Component is a
  * class that exports itself: its key is `<name>#<Class>`, its interface is its public
  * surface (members that do not project become opaque with a warning), and a bare
  * `@Use()` field typed by a component is wired to that component.
@@ -43,8 +50,29 @@
  */
 import fs from "node:fs";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import path from "node:path";
-import ts from "typescript";
+
+/**
+ * The compiler: the invoking package's own `typescript` first — a plugin lists it in its
+ * devDependencies, and its table should come from the compiler its sources are written for —
+ * then the one core resolves (its devDependency inside this repository). Only "not found"
+ * moves on to the next place; a typescript that fails to load is that failure.
+ */
+function loadTypeScript() {
+  for (const from of [path.join(process.cwd(), "package.json"), import.meta.url]) {
+    try {
+      return createRequire(from)("typescript");
+    } catch (err) {
+      if (err?.code !== "MODULE_NOT_FOUND") throw err;
+    }
+  }
+  console.error(
+    "gen-ifaces: cannot find the `typescript` package; add it to this package's devDependencies",
+  );
+  process.exit(2);
+}
+const ts = loadTypeScript();
 
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -189,6 +217,16 @@ for (const project of projects) {
     }
   };
 
+  const where = (node) => {
+    const sf = node.getSourceFile();
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart());
+    return `${path.relative(process.cwd(), sf.fileName)}:${line + 1}`;
+  };
+  const unwrap = (e) =>
+    ts.isSatisfiesExpression(e) || ts.isAsExpression(e) || ts.isParenthesizedExpression(e)
+      ? unwrap(e.expression)
+      : e;
+
   // Module manifests: the first argument of every defineModule(...) call, which must be a
   // pure literal — the static half that is checked before any module code runs.
   const literal = (node, file) => {
@@ -236,7 +274,73 @@ for (const project of projects) {
   // decorator argument names the providing module class. Identifiers resolve to their
   // declarations — never executed. Pass 1 collects names; pass 2 resolves references.
   const moduleClasses = new Map(); // class symbol → { node, meta, file }
-  const refLiteral = (node, file) => {
+  /** A key as it reads in a path: `.id`, or `["PluginLibraryModule.skills"]`. */
+  const keyLabel = (key) =>
+    /^[A-Za-z_$][\w$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
+  /**
+   * A value under a class's `contributes`. The host reads contributions out of ifaces.json
+   * without running the package (a content plugin has no code to run), so each one is written
+   * out in full. refLiteral resolves an identifier to its declaration, which is right for
+   * `children` and `exports` (they name classes) and would serialize a compiler symbol here.
+   * The leaves are literal()'s; a refusal also names the key it sits at.
+   */
+  const contributionLiteral = (node, label) => {
+    const refuse = (at, what, keyPath = label) => {
+      errors.push(
+        `${where(at)}: ${keyPath}: ${what} — a contribution is data the host reads without running the package; write the value out`,
+      );
+      return null;
+    };
+    const value = unwrap(node);
+    if (ts.isObjectLiteralExpression(value)) {
+      const out = {};
+      for (const prop of value.properties) {
+        if (ts.isSpreadAssignment(prop)) refuse(prop, `'${prop.getText()}' is a spread`);
+        else if (ts.isShorthandPropertyAssignment(prop))
+          refuse(
+            prop,
+            `'${prop.name.text}' is shorthand for a reference`,
+            `${label}${keyLabel(prop.name.text)}`,
+          );
+        else if (!ts.isPropertyAssignment(prop))
+          refuse(prop, `'${prop.getText().slice(0, 40)}' is not a plain property`);
+        else if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name))
+          refuse(prop.name, `the key '${prop.name.getText()}' is not a plain name`);
+        else
+          out[prop.name.text] = contributionLiteral(
+            prop.initializer,
+            `${label}${keyLabel(prop.name.text)}`,
+          );
+      }
+      return out;
+    }
+    if (ts.isArrayLiteralExpression(value))
+      return value.elements.map((e, i) =>
+        ts.isSpreadElement(e)
+          ? refuse(e, `'${e.getText()}' is a spread`)
+          : contributionLiteral(e, `${label}[${i}]`),
+      );
+    if (ts.isIdentifier(value)) return refuse(value, `'${value.text}' is a reference`);
+    if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
+    if (ts.isNumericLiteral(value)) return Number(value.text);
+    if (value.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (value.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (value.kind === ts.SyntaxKind.NullKeyword) return null;
+    return refuse(value, `'${value.getText().slice(0, 40)}' is not a literal`);
+  };
+  /**
+   * A decorator's meta, which must be the object literal itself: one held in a constant would
+   * hide its `contributes` from this reader. `owner` is the class it decorates, and turns on
+   * the data rule for its `contributes`.
+   */
+  const metaLiteral = (arg, file, decorator, owner) => {
+    if (ts.isObjectLiteralExpression(unwrap(arg))) return refLiteral(unwrap(arg), file, owner);
+    errors.push(
+      `${where(arg)}: @${decorator}(${arg.getText().slice(0, 40)}) on ${owner}: the argument must be an object literal — the generator reads it off the source and never runs it`,
+    );
+    return {};
+  };
+  const refLiteral = (node, file, owner = null) => {
     if (ts.isIdentifier(node)) {
       const sym = checker.getSymbolAtLocation(node);
       return { $id: sym && sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym };
@@ -257,7 +361,10 @@ for (const project of projects) {
           errors.push(`${file}: @Module literal: computed property names are not allowed`);
           continue;
         }
-        out[key] = refLiteral(prop.initializer, file);
+        out[key] =
+          owner !== null && key === "contributes"
+            ? contributionLiteral(prop.initializer, `${owner} contributes`)
+            : refLiteral(prop.initializer, file);
       }
       return out;
     }
@@ -289,7 +396,15 @@ for (const project of projects) {
         if (call && call.arguments.length <= 1) {
           moduleClasses.set(checker.getSymbolAtLocation(node.name), {
             node,
-            meta: call.arguments.length === 0 ? {} : refLiteral(call.arguments[0], file),
+            meta:
+              call.arguments.length === 0
+                ? {}
+                : metaLiteral(
+                    call.arguments[0],
+                    file,
+                    asModule ? "Module" : "Component",
+                    node.name.text,
+                  ),
             file,
             kind: asModule ? "module" : "component",
             className: node.name.text,
@@ -320,10 +435,6 @@ for (const project of projects) {
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
   // Each element must be a module class of this package; anything else is refused.
-  const unwrap = (e) =>
-    ts.isSatisfiesExpression(e) || ts.isAsExpression(e) || ts.isParenthesizedExpression(e)
-      ? unwrap(e.expression)
-      : e;
   for (const sf of program.getSourceFiles()) {
     if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
     for (const st of sf.statements) {
@@ -391,12 +502,6 @@ for (const project of projects) {
     keys.set(symbol, key);
     pending.push({ symbol, decl, key });
     return key;
-  };
-
-  const where = (node) => {
-    const sf = node.getSourceFile();
-    const { line } = sf.getLineAndCharacterOfPosition(node.getStart());
-    return `${path.relative(process.cwd(), sf.fileName)}:${line + 1}`;
   };
 
   const fail = (node, message) => {
