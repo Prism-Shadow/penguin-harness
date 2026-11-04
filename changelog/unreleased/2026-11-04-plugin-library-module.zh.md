@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** refactor
 - **Scope:** `server`, `plugins`
+- **PR:** [#1478](https://github.com/Prism-Shadow/penguin-harness/pull/1478)
 
 [English](2026-11-04-plugin-library-module.md)
 
