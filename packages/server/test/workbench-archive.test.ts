@@ -28,6 +28,8 @@
  *   was.
  * - Two imports of one id at once: one is written, the other answers 409, and the folder is the
  *   first's alone.
+ * - A staging folder an import left behind over an hour ago is removed by the next import into
+ *   that Agent; a younger one, and any other dot entry, stays.
  * - An entry over the per-file cap is refused without being inflated; a folder over the caps does
  *   not export.
  * - Someone outside the Project reaches neither route; a missing Agent or workbench is a 404.
@@ -469,6 +471,24 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     for (const [rel, body] of Object.entries(archive)) {
       expect(await fs.readFile(path.join(dir, rel), "utf8")).toBe(body);
     }
+  });
+
+  it("a staging folder an import left behind over an hour ago is removed by the next import into that Agent", async () => {
+    await createAgent("leftover_agent");
+    const workbenches = workbenchesDir(t.root, projectId, "leftover_agent");
+    const old = ".todo.penguin-tmp0123456789ab";
+    const young = ".todo.penguin-tmpba9876543210";
+    for (const name of [old, young, ".kept"]) {
+      await writeFiles(path.join(workbenches, name), { "package.json": brokenPkg("todo") });
+    }
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(path.join(workbenches, old), twoHoursAgo, twoHoursAgo);
+    await fs.utimes(path.join(workbenches, ".kept"), twoHoursAgo, twoHoursAgo);
+    const res = await member.post(`${base("leftover_agent")}/archive`, {
+      dataBase64: zipB64(under("notes", { "package.json": brokenPkg("notes") })),
+    });
+    expect(res.status).toBe(201);
+    expect((await fs.readdir(workbenches)).sort()).toEqual([".kept", young, "notes"].sort());
   });
 
   it("an overwrite the folder cannot take answers 409 and leaves the folder as it was", async () => {

@@ -381,6 +381,36 @@ async function removeSource(dir: string, rel: string): Promise<void> {
   }
 }
 
+/** How long a staging directory may sit before an import takes it for one a crash left behind. */
+const STALE_STAGING_MS = 60 * 60 * 1000;
+
+/** A staging directory as writeWorkbenchSource names one: `.<id>.penguin-tmp<12 hex>`. */
+const STAGING_NAME = new RegExp(`^\\..+${TMP_SUFFIX.replace(/[.]/g, "\\.")}[0-9a-f]{12}$`);
+
+const stagingName = (dir: string): string =>
+  `.${path.basename(dir)}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`;
+
+/**
+ * Removes the staging directories in `base` older than an hour: what an import that never got to
+ * its cleanup (a crash, a kill) left behind. A younger one may belong to an import still running,
+ * and is left.
+ */
+async function removeStaleStaging(base: string, now: number): Promise<void> {
+  let names: string[];
+  try {
+    names = await fs.readdir(base);
+  } catch {
+    return;
+  }
+  for (const name of names.filter((n) => STAGING_NAME.test(n))) {
+    const at = path.join(base, name);
+    const stat = await fs.lstat(at).catch(() => null);
+    if (stat?.isDirectory() && now - stat.mtimeMs > STALE_STAGING_MS) {
+      await fs.rm(at, { recursive: true, force: true });
+    }
+  }
+}
+
 /**
  * Makes `dir`'s source exactly `files`. Everything is checked first (planRemovals) and the
  * archive is written out in full beside the folder, so a refusal or a file the disk will not take
@@ -388,7 +418,7 @@ async function removeSource(dir: string, rel: string): Promise<void> {
  * place, the remaining old source is removed, and `.harness/` goes so the next load writes this
  * host's types — as a plugin update does. `state.json`, `.plugin.json` and `.build/` stay. The
  * staging directory is a dot entry beside the folder: never a workbench id, so neither the
- * listing nor the watcher sees it.
+ * listing nor the watcher sees it. One older than an hour is a crash's leftover and goes first.
  */
 export async function writeWorkbenchSource(
   dir: string,
@@ -396,11 +426,9 @@ export async function writeWorkbenchSource(
 ): Promise<void> {
   const removals = await planRemovals(dir, files);
   const base = path.dirname(dir);
+  await removeStaleStaging(base, Date.now());
   await fs.mkdir(base, { recursive: true });
-  const staging = path.join(
-    base,
-    `.${path.basename(dir)}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`,
-  );
+  const staging = path.join(base, stagingName(dir));
   try {
     for (const [rel, body] of files) {
       await fs.mkdir(path.dirname(path.join(staging, rel)), { recursive: true });
