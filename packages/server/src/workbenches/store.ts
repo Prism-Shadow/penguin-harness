@@ -1,5 +1,5 @@
 /**
- * Where an Agent's workbenches live and how their versions are kept.
+ * Where an Agent's workbenches live and what a folder's revision is.
  *
  *   <agentStateDir>/workbenches/<id>/package.json   `penguin.modules` manifests (a plugin package)
  *   <agentStateDir>/workbenches/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
@@ -7,24 +7,20 @@
  *   <agentStateDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
- *   <agentDir>/workbenches-history/<id>/<revision>/   a full copy of the folder at each successful load
- *   <agentDir>/workbenches-history/<id>/versions.json  the list, newest first
  *
- * The revision is the content hash of every file except `state.json` (the state is the
- * workbench's data, not its code, and survives a rollback untouched), `node_modules` and the
- * dot-directories, which are the server's. Reading is tolerant:
- * a folder without a package.json is not a workbench, a broken versions.json is an empty list.
+ * The folder's source is every file except `state.json` (the state is the workbench's data,
+ * not its code, and survives a rollback untouched), `node_modules` and the dot entries, which
+ * are the server's. Its revision is git's tree id of that source (./repo.ts), so the versions
+ * the Agent State repository records carry the same revision. Reading is tolerant: a folder
+ * without a package.json is not a workbench.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir } from "@prismshadow/penguin-core";
-import type { WorkbenchVersion } from "../mechanisms/workbenches.js";
+import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
-/** Versions kept per workbench; older copies are removed with their folders. */
-export const KEEP_VERSIONS = 20;
 
 export interface WorkbenchFolder {
   id: string;
@@ -38,10 +34,6 @@ export interface WorkbenchFolder {
 
 export { workbenchesDir } from "@prismshadow/penguin-core";
 
-export function historyDir(root: string, projectId: string, agentId: string): string {
-  return path.join(agentDir(root, projectId, agentId), "workbenches-history");
-}
-
 /** A workbench id is one path segment of the folder's own name; nothing else is accepted. */
 export function isWorkbenchId(id: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && id !== "." && id !== "..";
@@ -50,6 +42,19 @@ export function isWorkbenchId(id: string): boolean {
 export function isSafeRelPath(rel: string): boolean {
   if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
+}
+
+/**
+ * A name the folder's source can hold: not the server's (dot entries, staged writes), not
+ * installed packages, and not a name git reserves (no version could hold it).
+ */
+function isSourceName(name: string): boolean {
+  return name !== "node_modules" && !name.startsWith(".") && !isTempName(name) && !isGitName(name);
+}
+
+/** A path inside the folder that is part of its source, and so what a restore may write. */
+export function isSourcePath(rel: string): boolean {
+  return isSafeRelPath(rel) && rel !== STATE_FILE && rel.split("/").every(isSourceName);
 }
 
 async function walk(dir: string, prefix = ""): Promise<string[]> {
@@ -61,7 +66,7 @@ async function walk(dir: string, prefix = ""): Promise<string[]> {
   }
   const out: string[] = [];
   for (const e of entries) {
-    if (e.name === "node_modules" || e.name.startsWith(".") || isTempName(e.name)) continue;
+    if (!isSourceName(e.name)) continue;
     const rel = prefix === "" ? e.name : `${prefix}/${e.name}`;
     if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), rel)));
     else if (e.isFile()) out.push(rel);
@@ -69,23 +74,24 @@ async function walk(dir: string, prefix = ""): Promise<string[]> {
   return out.sort();
 }
 
-async function hashFiles(dir: string, files: string[]): Promise<string> {
-  const h = createHash("sha256");
+async function readFiles(dir: string, files: string[]): Promise<SourceFile[]> {
+  const out: SourceFile[] = [];
   for (const rel of files) {
     // A file listed a moment ago can be gone by now — an editor's own scratch file, the
     // Agent deleting one mid-write. That is a folder that has changed, not a broken read:
-    // the hash covers what is still there, and the watcher brings the next one round.
-    // Reading whatever is there is also what every other read in this module does.
-    let body: Buffer;
+    // what is still there is read, and the watcher brings the next one round.
     try {
-      body = await fs.readFile(path.join(dir, rel));
+      out.push({ rel, body: await fs.readFile(path.join(dir, rel)) });
     } catch {
       continue;
     }
-    h.update(rel).update("\0");
-    h.update(body).update("\0");
   }
-  return h.digest("hex").slice(0, 12);
+  return out;
+}
+
+/** The git tree id of these files: a revision. */
+function revisionOf(files: readonly SourceFile[]): string {
+  return treeId(files.map((f) => ({ rel: f.rel, oid: blobOid(f.body) })));
 }
 
 /** Reads one workbench folder; null when it is not a workbench (no package.json). */
@@ -103,18 +109,31 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
     // A broken package.json is still a workbench folder: the loader reports the error.
   }
   const files = (await walk(dir)).filter((f) => f !== STATE_FILE);
-  const ui = files.filter((f) => f.startsWith(`${UI_DIR}/`));
+  const source = await readFiles(dir, files);
+  // The pages' revision is the tree id of `ui/` itself.
+  const ui = source
+    .filter((f) => f.rel.startsWith(`${UI_DIR}/`))
+    .map((f) => ({ ...f, rel: f.rel.slice(UI_DIR.length + 1) }));
   return {
     id,
     dir,
     files,
-    revision: await hashFiles(dir, files),
-    uiRev: ui.length === 0 ? null : await hashFiles(dir, ui),
+    revision: revisionOf(source),
+    uiRev: ui.length === 0 ? null : revisionOf(ui),
     pkg: {
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
   };
+}
+
+/**
+ * The folder's source as it was read: the files on disk now, or null when they no longer have
+ * the folder's revision (edited since).
+ */
+export async function readLoadedSource(folder: WorkbenchFolder): Promise<SourceFile[] | null> {
+  const files = await readFiles(folder.dir, folder.files);
+  return revisionOf(files) === folder.revision ? files : null;
 }
 
 export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
@@ -164,83 +183,53 @@ export async function writeState(dir: string, state: unknown): Promise<void> {
   }
 }
 
-async function readVersions(dir: string): Promise<WorkbenchVersion[]> {
+/** Removes what stands where `rel` goes: a file in place of one of its directories, a directory in place of it. */
+async function clearWay(dir: string, rel: string): Promise<void> {
+  const segments = rel.split("/");
+  for (let i = 1; i < segments.length; i++) {
+    const ancestor = path.join(dir, ...segments.slice(0, i));
+    const stat = await fs.lstat(ancestor).catch(() => null);
+    if (stat === null) return;
+    if (!stat.isDirectory()) {
+      await fs.rm(ancestor, { force: true });
+      return;
+    }
+  }
+  const target = path.join(dir, rel);
+  if ((await fs.lstat(target).catch(() => null))?.isDirectory()) {
+    await fs.rm(target, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Makes the folder's source exactly `files`: the source files it has and they lack are removed,
+ * the rest put in place, whatever stood where they go (a file where a directory now is, or the
+ * reverse). `state.json` and the dot entries are not source and stay as they are. Everything is
+ * validated and written aside first, so a version holding something other than source (one
+ * recorded by hand can hold anything) or a failed write leaves the folder as it was.
+ */
+export async function restoreSource(
+  folder: WorkbenchFolder,
+  files: readonly SourceFile[],
+): Promise<void> {
+  const foreign = files.find((f) => !isSourcePath(f.rel));
+  if (foreign) throw new Error(`that version holds ${foreign.rel}, which is not workbench source`);
+  const staged = await fs.mkdtemp(path.join(folder.dir, `.restore${TMP_SUFFIX}`));
   try {
-    const parsed = JSON.parse(await fs.readFile(path.join(dir, "versions.json"), "utf8"));
-    return Array.isArray(parsed) ? (parsed as WorkbenchVersion[]) : [];
-  } catch {
-    return [];
+    for (const [i, file] of files.entries()) {
+      await fs.writeFile(path.join(staged, String(i)), file.body);
+    }
+    const keep = new Set(files.map((f) => f.rel));
+    for (const rel of folder.files) {
+      if (!keep.has(rel)) await fs.rm(path.join(folder.dir, rel), { force: true });
+    }
+    for (const [i, file] of files.entries()) {
+      await clearWay(folder.dir, file.rel);
+      const target = path.join(folder.dir, file.rel);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.rename(path.join(staged, String(i)), target);
+    }
+  } finally {
+    await fs.rm(staged, { recursive: true, force: true });
   }
-}
-
-async function writeVersions(dir: string, versions: WorkbenchVersion[]): Promise<void> {
-  await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, "versions.json");
-  const staged = tempPath(file);
-  await fs.writeFile(staged, JSON.stringify(versions, null, 2));
-  await fs.rename(staged, file);
-}
-
-/**
- * Records the folder's current content as a version (no-op when that revision is already
- * the newest), copying the files and trimming to KEEP_VERSIONS.
- */
-export async function recordVersion(
-  history: string,
-  folder: WorkbenchFolder,
-  now: Date,
-): Promise<WorkbenchVersion[]> {
-  const dir = path.join(history, folder.id);
-  const versions = await readVersions(dir);
-  if (versions[0]?.revision === folder.revision) return versions;
-  const target = path.join(dir, folder.revision);
-  await fs.rm(target, { recursive: true, force: true });
-  for (const rel of folder.files) {
-    await fs.mkdir(path.dirname(path.join(target, rel)), { recursive: true });
-    await fs.copyFile(path.join(folder.dir, rel), path.join(target, rel));
-  }
-  const entry: WorkbenchVersion = {
-    revision: folder.revision,
-    savedAt: now.toISOString(),
-    name: folder.pkg.name,
-    version: folder.pkg.version,
-    uiRev: folder.uiRev,
-    files: folder.files,
-  };
-  // A revision seen before moves to the front rather than duplicating (a rollback IS such a load).
-  const next = [entry, ...versions.filter((v) => v.revision !== folder.revision)];
-  for (const old of next.splice(KEEP_VERSIONS)) {
-    await fs.rm(path.join(dir, old.revision), { recursive: true, force: true });
-  }
-  await writeVersions(dir, next);
-  return next;
-}
-
-export function listVersions(history: string, id: string): Promise<WorkbenchVersion[]> {
-  return readVersions(path.join(history, id));
-}
-
-/**
- * Replaces the folder's code files with a recorded version's, keeping state.json. Files
- * the current folder has and the version lacks are removed, so the result is exactly that
- * version. Returns false when the version is not recorded.
- */
-export async function restoreVersion(
-  history: string,
-  folder: WorkbenchFolder,
-  revision: string,
-): Promise<boolean> {
-  const versions = await readVersions(path.join(history, folder.id));
-  const version = versions.find((v) => v.revision === revision);
-  if (!version) return false;
-  const source = path.join(history, folder.id, revision);
-  const keep = new Set(version.files);
-  for (const rel of folder.files) {
-    if (!keep.has(rel)) await fs.rm(path.join(folder.dir, rel), { force: true });
-  }
-  for (const rel of version.files) {
-    await fs.mkdir(path.dirname(path.join(folder.dir, rel)), { recursive: true });
-    await fs.copyFile(path.join(source, rel), path.join(folder.dir, rel));
-  }
-  return true;
 }

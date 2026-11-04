@@ -36,6 +36,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  agentDir,
   McpServerNameTakenError,
   WorkbenchNameTakenError,
   assertPluginWorkbenchesInstallable,
@@ -90,6 +91,7 @@ import {
   unscopedName,
   zipPluginPackage,
 } from "../../services/plugin-archive.js";
+import { migrateWorkbenches } from "../../workbenches/migrate.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -186,6 +188,8 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const root = deps.config.root;
+    // Workbenches in the layout before Agent State are listed from where they move to.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -212,6 +216,9 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // leaving a half-installed state.
     const plugins = resolveLibraryPlugins(names);
     const root = deps.config.root;
+    // Before the install: one that wrote a workbench into Agent State ahead of the move would
+    // take its id, and the Agent's existing folder, data included, would stay in the old place.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
     await refusingTakenNames(async () => {
       await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
       await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);

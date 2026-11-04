@@ -1,0 +1,23 @@
+# Workbench versions are git commits
+
+- **Date:** 2026-11-03
+- **Type:** feature
+- **Scope:** `server`, `web`
+- **PR:** [#1443](https://github.com/Prism-Shadow/penguin-harness/pull/1443)
+
+[中文版](2026-11-03-workbench-versions-are-git-commits.zh.md)
+
+Workbench versions moved from full folder copies under `<agentDir>/workbenches-history/` into a bare git repository beside the Agent State, `<agentDir>/agent_state.git/`, which records the files of `agent_state/` and which the server writes with the bundled isomorphic-git (no system git needed). Nothing was added inside `agent_state/`. A workbench's versions became the commits that touched `workbenches/<id>/`, and its revision became that folder's git tree id. Versions recorded before the change are carried over by the one-time migration; see [backward compatibility](2026-11-03-backward-compatibility.md).
+
+## Details
+
+- Recording: each successful load commits the workbench's source as `workbenches/<id>/` on top of HEAD, subject `workbench <id> @<revision>`, author `PenguinHarness <penguin@localhost>`; a load of unchanged files commits nothing, and files edited after the load read them are left for the next load. The first commit creates the repository on branch `main`, built aside and renamed into place, with ignore rules for people in its `info/exclude`. The server writes git objects and the branch ref directly, the ref replaced whole; there is no index and no working tree. People read history with `git --git-dir=<agentDir>/agent_state.git log -- workbenches/<id>`.
+- Never committed: `.vault.toml`, `state.json`, `.build/`, `.harness/`, `.plugin.json`, `node_modules/`, staged temporary files, symbolic links, and names git reserves for itself (`.git` in any spelling, `git~1`); every file is committed as mode `100644`. Skills, hooks, `AGENTS.md`, `system_config.yaml` and `memory/` are not committed.
+- Revision: `WorkbenchInfo.revision` became the first 12 hex digits of the folder's git tree id (what `git rev-parse HEAD:workbenches/<id>` prints), and `uiRev` that of its `ui/`. `.build/<revision>/` and `status.json` follow the new value; the next load prunes builds named by the old hash.
+- History: `GET …/workbenches/:id/history` lists at most 50 versions found within the newest 2,000 first-parent commits, newest first, each `{ revision, commit, savedAt }`; the version the folder has now is listed even when it is older than that walk. `name`, `version`, `uiRev` and `files` were dropped. The Web App's in-tab history list stopped showing a version's package version and file count, keys its rows by commit, and marks only the newest entry of the current revision as current. The 20-version cap and its trimming were removed.
+- Rollback: `POST …/:id/rollback` takes a listed revision (404 otherwise) and makes the folder's source exactly that tree, a file where a directory was or the reverse included, leaving `state.json` and the dot entries as they are; the files are written aside first, so a failure leaves the folder as it was. The reload that follows records the restore as the newest version. A recorded tree that holds anything other than source is refused.
+- Delete: `DELETE …/:id` removes the folder with its state and commits the removal (`workbench <id>: removed`). The earlier commits stay in the repository but are no longer listed; a workbench made again under the same id starts a new history.
+- Failures: a repository that cannot be written is logged as `version not recorded` and never fails a load; a history that cannot be read answers 500 `workbench_history_unreadable`, which the pages offer to retry. A detached or unreadable HEAD, or a branch ref that is empty or not a commit id, is such a failure rather than a fresh history.
+- Snapshots: Agent State snapshots and exports leave out each workbench's `.build/` and `node_modules/`. An import extracts no entry with a `.git` path segment, in any case or spelling git treats as `.git` and after a drive prefix such as `C:` is removed. Before an import the current State is always packed into a new `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`; an existing `v<version>.tar.gz` is no longer reused as the backup and is never overwritten. An export or an import first runs the workbench migration, and an import first releases the Agent's workbenches, whose watcher sits inside `agent_state/`.
+- Writes to one Agent's repository run one at a time in the server. isomorphic-git does not pack, so objects stay loose; deleting `agent_state.git/` wipes the history.
+- `isomorphic-git` `^1.44.0` became a dependency of `@prismshadow/penguin-server`.
