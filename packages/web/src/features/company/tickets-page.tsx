@@ -501,7 +501,7 @@ export function TicketsPage() {
             ref={drag.ghostRef}
             aria-hidden
             style={{ width: lifted.width, transform: drag.ghostTransform() }}
-            className="pointer-events-none fixed left-0 top-0 z-[60]"
+            className="pointer-events-none fixed left-0 top-0 z-drag-preview"
           >
             <div className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-accent`}>
               {cardBody(lifted.ticket)}

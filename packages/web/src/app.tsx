@@ -64,7 +64,7 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
                   <CrashBoundary className="h-dvh">
                     <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
                   </CrashBoundary>
-                  {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
+                  {/* Top toast overlay: portaled to body on the `toast` layer, above dialogs, shared site-wide. */}
                   <Toaster />
                   {/* The problem report opened from a toast, a notice or a crash: one dialog. */}
                   <ReportHost />

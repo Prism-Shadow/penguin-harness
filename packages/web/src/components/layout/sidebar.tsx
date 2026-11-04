@@ -2637,7 +2637,7 @@ function GroupBlock({
       {dropEdge !== null && (
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-accent ${
+          className={`pointer-events-none absolute inset-x-1 z-raised h-0.5 rounded-full bg-accent ${
             dropEdge === "above" ? "top-1" : "-bottom-1"
           }`}
         />

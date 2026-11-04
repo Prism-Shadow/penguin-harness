@@ -28,6 +28,7 @@ const PUBLISHED_VARS = [
   "--wb-radius",
   "--wb-font",
   "--wb-mono",
+  "--wb-canvas",
 ];
 const PUBLISHED_CLASSES = ["wb-muted", "wb-rows", "wb-primary", "wb-card", "wb-row"];
 

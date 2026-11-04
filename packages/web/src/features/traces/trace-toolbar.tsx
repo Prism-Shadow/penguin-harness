@@ -6,7 +6,8 @@
  *
  * It bleeds over the scroll box's side padding (`-mx-3` against the box's `px-3`) so its rule runs
  * edge to edge, and it paints the panel's surface so the rows scrolling under it do not show
- * through (the dock's own canvas). Its `z-10` keeps it above the rows' own positioned content (the timeline's bars).
+ * through (the dock's own canvas). The `sticky-head` layer keeps it above the rows' own positioned
+ * content (the timeline's sticky labels and bars).
  */
 import type { ReactNode } from "react";
 
@@ -25,7 +26,7 @@ export function TraceToolbar({
   return (
     <div
       data-slot="toolbar"
-      className="sticky top-0 z-10 -mx-3 mb-4 flex items-center gap-2 border-b border-line bg-canvas px-3 py-1.5"
+      className="sticky top-0 z-sticky-head -mx-3 mb-4 flex items-center gap-2 border-b border-line bg-canvas px-3 py-1.5"
     >
       <div className="flex min-w-0 flex-1 items-center">{start}</div>
       {nav}

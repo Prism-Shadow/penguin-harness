@@ -348,7 +348,7 @@ describe("Tooltip", () => {
         "border-line",
         "bg-overlay",
         "text-fg",
-        "z-[60]",
+        "z-tooltip",
       ]),
     );
     expect(source).toContain("aria-hidden");

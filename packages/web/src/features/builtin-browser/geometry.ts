@@ -72,14 +72,47 @@ export function parkedPlacement(size: Size): Placement {
 }
 
 /**
+ * What of `visible` stays in view under `cover`, a surface laid over it: all of it when the two do
+ * not meet, nothing when the cover hides it, and the open side when the cover reaches across it
+ * from one edge — the bottom dock lifted to fullscreen climbs over the right dock from below. A
+ * cover that takes only a corner, or a band through the middle, leaves no rectangle and changes
+ * nothing; no surface covers a slot that way.
+ */
+export function uncovered(visible: Rect, cover: Rect): Rect | null {
+  const overlap = intersect(visible, cover);
+  if (overlap === null) return visible;
+  const right = visible.left + visible.width;
+  const bottom = visible.top + visible.height;
+  const across = overlap.left === visible.left && overlap.width === visible.width;
+  const down = overlap.top === visible.top && overlap.height === visible.height;
+  if (across && down) return null;
+  if (across && overlap.top + overlap.height === bottom) {
+    return { ...visible, height: overlap.top - visible.top };
+  }
+  if (across && overlap.top === visible.top) {
+    const top = overlap.top + overlap.height;
+    return { ...visible, top, height: bottom - top };
+  }
+  if (down && overlap.left + overlap.width === right) {
+    return { ...visible, width: overlap.left - visible.left };
+  }
+  if (down && overlap.left === visible.left) {
+    const left = overlap.left + overlap.width;
+    return { ...visible, left, width: right - left };
+  }
+  return visible;
+}
+
+/**
  * The placement of the page on screen: over `slot`, clipped by every ancestor box in `clips`
- * (the dock's own clipping window, the app's main area). Parked at `parkSize` when there is
- * no slot or nothing of it is visible.
+ * (the dock's own clipping window, the app's main area) and cut by every surface in `covers`
+ * laid over it. Parked at `parkSize` when there is no slot or nothing of it is visible.
  */
 export function slotPlacement(
   slot: Rect | null,
   clips: readonly Rect[],
   parkSize: Size,
+  covers: readonly Rect[] = [],
 ): Placement {
   if (slot === null) return parkedPlacement(parkSize);
   const whole = snapRect(slot);
@@ -87,6 +120,10 @@ export function slotPlacement(
   for (const clip of clips) {
     if (visible === null) break;
     visible = intersect(visible, snapRect(clip));
+  }
+  for (const cover of covers) {
+    if (visible === null) break;
+    visible = uncovered(visible, snapRect(cover));
   }
   if (visible === null || whole.width <= 0 || whole.height <= 0) return parkedPlacement(parkSize);
   return {

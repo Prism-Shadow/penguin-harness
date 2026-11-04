@@ -34,6 +34,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   ActivityIcon,
+  AppWindow,
   Button,
   ConfirmModal,
   CopyButton,
@@ -49,6 +50,7 @@ import {
   Skeleton,
   StatChip,
   WallpaperSurface,
+  WindowStack,
   toastError,
   toastInfo,
   toastSuccess,
@@ -159,6 +161,7 @@ import { ChatDockProvider } from "./chat-dock-context";
 import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
 import { reownTerminals, setDockConversation } from "../dock/dock-terminal";
+import { setDockRevealer } from "../dock/dock-reveal";
 import {
   adoptDockScope,
   closedDockView,
@@ -596,6 +599,16 @@ export function ChatPage() {
       returnWorkbench.machineId === pageMachineId
       ? returnWorkbench.tabId
       : null,
+  );
+  /** A workbench tab is the window on screen, and the Chat window is hidden under it. */
+  const workbenchShown =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null;
+  // A dock shortcut pressed while the workbench is up brings Chat back first, then does what it
+  // does there (dock-reveal.ts).
+  const showChat = workbenchTabs.setActive;
+  useEffect(
+    () => (workbenchShown ? setDockRevealer(() => showChat(null)) : undefined),
+    [workbenchShown, showChat],
   );
   // The docks' terminals belong to this conversation: they are created under its Session id,
   // start in its Workspace — its files are what a terminal opened here is for — on the machine
@@ -2310,592 +2323,591 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
-  /**
-   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
-   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
-   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
-   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
-   * leading edge), and each of them showed through the page — the handle as a line that lit up
-   * under the pointer, took the cursor and resized the hidden dock.
-   */
-  const coveredByWorkbench =
-    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
-
   return (
-    // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
-    // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
     // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
     // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
-    // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
-    <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
-      {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
-          chat (which stays mounted, so its state survives a look at the page, but is not
-          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
-          no workbench with a UI. */}
+    // and the transcript's sticky rows, painted in the same token, sit on it without a seam. Both
+    // windows below sit on it: a workbench page that paints no background of its own shows the
+    // same surface the chat does.
+    <WallpaperSurface className="flex h-full flex-col bg-canvas">
+      {/* Workbench tabs: the Agent's own pages beside the chat; the strip is absent when the
+          Agent has no workbench with a UI. It switches between sibling windows in the area
+          below: Chat — the toolbar, the transcript, the composer and the docks — and the
+          workbench tab's page. Chat stays mounted under a workbench tab, unpainted and inert
+          (AppWindow), so nothing in it reflows and its scroll and docks are as they were on the
+          way back. */}
       <WorkbenchTabStrip
         tabs={workbenchTabs.tabs}
         notices={workbenchTabs.notices}
         active={workbenchTabs.active}
         onSelect={workbenchTabs.setActive}
       />
-      {workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
-        <div className="absolute inset-x-0 bottom-0 top-9 z-10">
-          <WorkbenchFrame
-            // Per tab: the frame keeps this workbench's history fold, its error and its
-            // armed Remove, and none of that belongs to the next tab.
-            key={workbenchTabs.activeTab.tabId}
-            projectId={projectId}
-            agentId={pageAgentId}
-            tab={workbenchTabs.activeTab}
-            onChanged={() => void workbenchTabs.refresh()}
-            onRemoved={() => {
-              workbenchTabs.setActive(null);
-              void workbenchTabs.refresh();
-            }}
-          />
-        </div>
-      )}
-      {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
-          nothing of the conversation is read until it is unarchived. */}
-      {archivedRow && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
-          <Heading level={5} as="h1" className="flex min-w-0">
-            <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
-          </Heading>
-        </div>
-      )}
-      {/* Thin top toolbar */}
-      {selected && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
-            <Heading level={5} as="h1" className="flex min-w-0">
-              <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
-            </Heading>
-            {/* Session-level state: a turning hourglass while the run is active, and nothing at
-                all once it settles — the conversation on screen is by definition read, and the
-                unread dot is a sidebar affordance for the rows you are NOT looking at. The
-                compacting state stays in the stream banner rather than being repeated here.
-                Below sm only the glyph remains so the title keeps its room. */}
-            {headerActivity === "running" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <ActivityIcon
-                  activity={headerActivity}
-                  label={sessionActivityLabel(headerActivity)}
-                />
-                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
-              </span>
-            )}
-          </div>
-
-          {/* Panel switcher (icon-only): pinned triggers + the "create" dropdown with
-              placement actions and pin toggles. Every entry is a dock tab (features/dock)
-              — the toolbar reads and drives the dock store directly; this page only feeds
-              the pending-approval dot. */}
-          <DockToggles agentsPending={anySubagentPending} />
-
-          {/* Conversation index fallback: exactly when the gutter tick rail can't show
-              (phones without a hover pointer; a desktop window whose gutter a docked panel
-              ate) the index moves up here as a dropdown — navigation stays reachable. */}
-          {!railFit.shown && (
-            <OutlineMenuButton
-              entries={outline}
-              turnOffset={stream.outlineOffset}
-              scrollRef={streamScrollRef}
-              running={stream.taskState !== "idle"}
-            />
+      <WindowStack>
+        {/* The Chat window. data-dock-host: the docks' edge bands, drop preview and the bottom
+            dock's height ratio all measure it (dock-drag.tsx / dock-panel.tsx). */}
+        <AppWindow shown={!workbenchShown} data-dock-host>
+          {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
+              nothing of the conversation is read until it is unarchived. */}
+          {archivedRow && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+              <Heading level={5} as="h1" className="flex min-w-0">
+                <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
+              </Heading>
+            </div>
           )}
-
-          {/* Details entry, at the toolbar's far right — the stats ARE the trigger: wide
-              viewports show the live chips (Token / cost / elapsed, plus the running-services
-              count while any process is alive) and clicking them opens the details card; narrow
-              viewports collapse the whole thing to the single info icon. There is no separate
-              info icon while the chips are visible. */}
-          <Dropdown
-            open={infoOpen}
-            setOpen={setInfoOpen}
-            menuClass="right-0 top-full mt-1 w-96 max-w-[calc(100vw-1.5rem)] origin-top-right"
-            button={
-              <button
-                type="button"
-                data-tooltip={S.chat.infoPanel}
-                aria-label={S.chat.infoPanel}
-                aria-expanded={infoOpen}
-                onClick={() => setInfoOpen(!infoOpen)}
-                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-control-hover ${
-                  infoOpen ? "bg-control-selected" : ""
-                }`}
-              >
-                {/* Wide: the chip row, a glyph and a total per chip, each named by its label.
-                    No breakdown rides on a chip: a hover hint on a visible reading never opens,
-                    and this button holds no "?", so the breakdowns are in the details card it
-                    opens. The row sets the chips' face and ink, and keeps each on one line. */}
-                <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
-                  <StatChip
-                    glyph={STAT_ICONS.tokens}
-                    value={hs.tokensText}
-                    label={`${S.chat.statTokens}（Token）`}
-                  />
-                  {/* When there's no cost (the Model has no pricing configured), don't render
-                      this stat at all, rather than showing a "—" — that would take up space
-                      while saying nothing, only making people think the cost is zero or
-                      something's broken. */}
-                  {hs.costText != null && (
-                    <StatChip
-                      glyph={STAT_ICONS.cost}
-                      value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
-                      label={`${S.common.cost}（${currency}）`}
+          {/* Thin top toolbar */}
+          {selected && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
+                <Heading level={5} as="h1" className="flex min-w-0">
+                  <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
+                </Heading>
+                {/* Session-level state: a turning hourglass while the run is active, and nothing at
+                    all once it settles — the conversation on screen is by definition read, and the
+                    unread dot is a sidebar affordance for the rows you are NOT looking at. The
+                    compacting state stays in the stream banner rather than being repeated here.
+                    Below sm only the glyph remains so the title keeps its room. */}
+                {headerActivity === "running" && (
+                  <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <ActivityIcon
+                      activity={headerActivity}
+                      label={sessionActivityLabel(headerActivity)}
                     />
-                  )}
-                  <StatChip
-                    glyph={STAT_ICONS.elapsed}
-                    value={hs.elapsedNode}
-                    label={S.chat.statElapsed}
-                  />
-                  {/* Right of the time, only while the conversation still owns background
-                      work — command processes past their yield window, background subagents
-                      mid-round: their count, in the same tone, figure and glyph as the
-                      session row's mark and read live off the row. A count is what this
-                      reading is, and a glyph beside a number is how every other chip in this
-                      row says what its number counts. Bare ink like the chips beside it, not
-                      a tinted pill: this is one more reading in the stat row, not a badge
-                      that should out-weigh them. In the live-status green (`busy`), the same
-                      tone as the session row's mark: background work is work still running
-                      behind this conversation, and glyph and number wear that colour together
-                      wherever they appear; the title still names the count in words. */}
-                  {backgroundCount > 0 && (
-                    <span
-                      data-tooltip={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
-                    >
-                      <GlyphIcon d={ICONS.pulse} />
-                      {backgroundCount}
-                    </span>
-                  )}
-                </span>
-                {/* Narrow: the info icon alone (the chips would crowd the title out). */}
-                <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
-                </span>
-              </button>
-            }
-          >
-            <div className="space-y-3 px-3.5 py-2.5 text-sm">
-              {/* Agent, above the Model: a conversation belongs to an Agent first, and the
-                  Model it runs on is one of that Agent's settings. Paired the same way as the
-                  Model row — the id the API speaks, then the display name, which is dropped
-                  when the Agent has none of its own and the two would simply repeat. */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.chat.agent}
-                </p>
-                <p className="truncate text-xs">
-                  <span className="font-mono">{selected.agentId}</span>
-                  {sessionAgentName !== null && (
-                    <span className="ml-1.5 text-gray-400 dark:text-gray-500">
-                      {sessionAgentName}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.chat.model}
-                </p>
-                {/* Paired display: upstream model_id + provider name (two separate fields on the Session DTO). */}
-                <p className="truncate text-xs">
-                  <span className="font-mono">{selected.modelId}</span>
-                  <span className="ml-1.5 text-gray-400 dark:text-gray-500">
-                    {providerInfo(selected.provider)?.label ?? selected.provider}
+                    <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
                   </span>
-                </p>
+                )}
               </div>
-              <SessionIdRow sessionId={selected.sessionId} />
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.chat.workspace}
-                </p>
-                {/* The machine too: a path names a directory only together with the
-                    filesystem it is on, and the same path exists on more than one of them. */}
-                <p className="break-all font-mono text-xs leading-5">
-                  {nameOnMachine(selected.workspace, machineNameOf(selected.sessionId))}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.common.created}
-                </p>
-                <p className="font-mono text-xs">{formatDateTime(selected.createdAt)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.chat.sessionStats}
-                </p>
-                {/* One total per bullet, each from the usage fetch or the live stream as its
-                    reading needs, with its breakdown behind a "?" right of it. No-cost
-                    sessions omit the cost bullet entirely, as the chip does. */}
-                <SessionStatsList
-                  tokens={hs.tokensText}
-                  usage={usageBuckets}
-                  cost={
-                    hs.costText != null
-                      ? { text: hs.costText, uncosted: hs.costUncosted, parts: usageCostParts }
-                      : null
-                  }
-                  currency={currency}
-                  elapsed={hs.elapsedNode}
-                  elapsedSplit={hs.elapsedSplit}
+
+              {/* Panel switcher (icon-only): pinned triggers + the "create" dropdown with
+                  placement actions and pin toggles. Every entry is a dock tab (features/dock)
+                  — the toolbar reads and drives the dock store directly; this page only feeds
+                  the pending-approval dot. */}
+              <DockToggles agentsPending={anySubagentPending} />
+
+              {/* Conversation index fallback: exactly when the gutter tick rail can't show
+                  (phones without a hover pointer; a desktop window whose gutter a docked panel
+                  ate) the index moves up here as a dropdown — navigation stays reachable. */}
+              {!railFit.shown && (
+                <OutlineMenuButton
+                  entries={outline}
+                  turnOffset={stream.outlineOffset}
+                  scrollRef={streamScrollRef}
+                  running={stream.taskState !== "idle"}
                 />
-              </div>
-              {/* Background processes the conversation started (e.g. a dev server on
-                  localhost:3000): live rows carry a stop button — the kill signals the whole
-                  process group and the row drops on the follow-up refresh; exited rows keep
-                  their "exited" label and carry a remove button that deletes the entry from
-                  the list (#312), and the heading carries one action removing every exited
-                  row at once. A command too long for its row shows whole in a tooltip. Hidden
-                  entirely while there are none. */}
-              {processes.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {S.chat.processList}
-                    </p>
-                    {/* Only while something has exited. Words rather than a glyph, in the quiet
-                        text-action style of the memory card's "Open memory list": the same
-                        text size as the heading beside it, so the heading row keeps its height
-                        when the first process exits. The same no-confirm tidy-up as a single
-                        row's Remove, and its hint, like that button's, says what leaves with
-                        the rows. */}
-                    {exitedIds.length > 0 && (
-                      <button
-                        type="button"
-                        data-tooltip={S.chat.processClearExitedHint}
-                        data-tooltip-extra
-                        disabled={procBusy !== null}
-                        onClick={() => void onClearExitedProcesses()}
-                        className="shrink-0 whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
-                      >
-                        {S.chat.processClearExited}
-                      </button>
-                    )}
-                  </div>
-                  <ul className="mt-1 space-y-1.5">
-                    {processes.map((p) => (
-                      <li key={p.processId} className="flex items-center gap-2">
-                        {p.running ? (
-                          <Dot tone="success" pulse />
-                        ) : (
-                          <span
-                            aria-hidden
-                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
-                          />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
-                          <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
-                            {formatDateTime(p.startedAt)}
-                            {p.pid !== null && ` · pid ${p.pid}`}
-                            {/* Detected service URL (output scan or port probe), running rows
-                                only — an exited process serves nothing to open. Scheme dropped
-                                at this size; the tooltip and the link carry the full URL. */}
-                            {p.running && p.serviceUrl !== undefined && (
-                              <>
-                                {" · "}
-                                <a
-                                  href={p.serviceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  data-tooltip={p.serviceUrl}
-                                  className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
-                                >
-                                  {p.serviceUrl.replace(/^https?:\/\//i, "")}
-                                </a>
-                              </>
-                            )}
-                          </span>
+              )}
+
+              {/* Details entry, at the toolbar's far right — the stats ARE the trigger: wide
+                  viewports show the live chips (Token / cost / elapsed, plus the running-services
+                  count while any process is alive) and clicking them opens the details card; narrow
+                  viewports collapse the whole thing to the single info icon. There is no separate
+                  info icon while the chips are visible. The card drops over the docks: portaled,
+                  so a dock lifted to fullscreen or the built-in browser's page, which is laid over
+                  the Chat window from outside it, never covers it. */}
+              <Dropdown
+                open={infoOpen}
+                setOpen={setInfoOpen}
+                portal={{ direction: "down", align: "right" }}
+                menuClass="w-96 max-w-[calc(100vw-1.5rem)]"
+                button={
+                  <button
+                    type="button"
+                    data-tooltip={S.chat.infoPanel}
+                    aria-label={S.chat.infoPanel}
+                    aria-expanded={infoOpen}
+                    onClick={() => setInfoOpen(!infoOpen)}
+                    className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-control-hover ${
+                      infoOpen ? "bg-control-selected" : ""
+                    }`}
+                  >
+                    {/* Wide: the chip row, a glyph and a total per chip, each named by its label.
+                        No breakdown rides on a chip: a hover hint on a visible reading never opens,
+                        and this button holds no "?", so the breakdowns are in the details card it
+                        opens. The row sets the chips' face and ink, and keeps each on one line. */}
+                    <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
+                      <StatChip
+                        glyph={STAT_ICONS.tokens}
+                        value={hs.tokensText}
+                        label={`${S.chat.statTokens}（Token）`}
+                      />
+                      {/* When there's no cost (the Model has no pricing configured), don't render
+                          this stat at all, rather than showing a "—" — that would take up space
+                          while saying nothing, only making people think the cost is zero or
+                          something's broken. */}
+                      {hs.costText != null && (
+                        <StatChip
+                          glyph={STAT_ICONS.cost}
+                          value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
+                          label={`${S.common.cost}（${currency}）`}
+                        />
+                      )}
+                      <StatChip
+                        glyph={STAT_ICONS.elapsed}
+                        value={hs.elapsedNode}
+                        label={S.chat.statElapsed}
+                      />
+                      {/* Right of the time, only while the conversation still owns background
+                          work — command processes past their yield window, background subagents
+                          mid-round: their count, in the same tone, figure and glyph as the
+                          session row's mark and read live off the row. A count is what this
+                          reading is, and a glyph beside a number is how every other chip in this
+                          row says what its number counts. Bare ink like the chips beside it, not
+                          a tinted pill: this is one more reading in the stat row, not a badge
+                          that should out-weigh them. In the live-status green (`busy`), the same
+                          tone as the session row's mark: background work is work still running
+                          behind this conversation, and glyph and number wear that colour together
+                          wherever they appear; the title still names the count in words. */}
+                      {backgroundCount > 0 && (
+                        <span
+                          data-tooltip={S.chat.backgroundTasks(backgroundCount)}
+                          className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
+                        >
+                          <GlyphIcon d={ICONS.pulse} />
+                          {backgroundCount}
                         </span>
-                        {p.running ? (
+                      )}
+                    </span>
+                    {/* Narrow: the info icon alone (the chips would crowd the title out). */}
+                    <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
+                      <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
+                    </span>
+                  </button>
+                }
+              >
+                <div className="space-y-3 px-3.5 py-2.5 text-sm">
+                  {/* Agent, above the Model: a conversation belongs to an Agent first, and the
+                      Model it runs on is one of that Agent's settings. Paired the same way as the
+                      Model row — the id the API speaks, then the display name, which is dropped
+                      when the Agent has none of its own and the two would simply repeat. */}
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.agent}
+                    </p>
+                    <p className="truncate text-xs">
+                      <span className="font-mono">{selected.agentId}</span>
+                      {sessionAgentName !== null && (
+                        <span className="ml-1.5 text-gray-400 dark:text-gray-500">
+                          {sessionAgentName}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.model}
+                    </p>
+                    {/* Paired display: upstream model_id + provider name (two separate fields on the Session DTO). */}
+                    <p className="truncate text-xs">
+                      <span className="font-mono">{selected.modelId}</span>
+                      <span className="ml-1.5 text-gray-400 dark:text-gray-500">
+                        {providerInfo(selected.provider)?.label ?? selected.provider}
+                      </span>
+                    </p>
+                  </div>
+                  <SessionIdRow sessionId={selected.sessionId} />
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.workspace}
+                    </p>
+                    {/* The machine too: a path names a directory only together with the
+                        filesystem it is on, and the same path exists on more than one of them. */}
+                    <p className="break-all font-mono text-xs leading-5">
+                      {nameOnMachine(selected.workspace, machineNameOf(selected.sessionId))}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.common.created}
+                    </p>
+                    <p className="font-mono text-xs">{formatDateTime(selected.createdAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.sessionStats}
+                    </p>
+                    {/* One total per bullet, each from the usage fetch or the live stream as its
+                        reading needs, with its breakdown behind a "?" right of it. No-cost
+                        sessions omit the cost bullet entirely, as the chip does. */}
+                    <SessionStatsList
+                      tokens={hs.tokensText}
+                      usage={usageBuckets}
+                      cost={
+                        hs.costText != null
+                          ? { text: hs.costText, uncosted: hs.costUncosted, parts: usageCostParts }
+                          : null
+                      }
+                      currency={currency}
+                      elapsed={hs.elapsedNode}
+                      elapsedSplit={hs.elapsedSplit}
+                    />
+                  </div>
+                  {/* Background processes the conversation started (e.g. a dev server on
+                      localhost:3000): live rows carry a stop button — the kill signals the whole
+                      process group and the row drops on the follow-up refresh; exited rows keep
+                      their "exited" label and carry a remove button that deletes the entry from
+                      the list (#312), and the heading carries one action removing every exited
+                      row at once. A command too long for its row shows whole in a tooltip. Hidden
+                      entirely while there are none. */}
+                  {processes.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          {S.chat.processList}
+                        </p>
+                        {/* Only while something has exited. Words rather than a glyph, in the quiet
+                            text-action style of the memory card's "Open memory list": the same
+                            text size as the heading beside it, so the heading row keeps its height
+                            when the first process exits. The same no-confirm tidy-up as a single
+                            row's Remove, and its hint, like that button's, says what leaves with
+                            the rows. */}
+                        {exitedIds.length > 0 && (
                           <button
                             type="button"
+                            data-tooltip={S.chat.processClearExitedHint}
+                            data-tooltip-extra
                             disabled={procBusy !== null}
-                            onClick={() => setProcToKill(p)}
-                            className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            onClick={() => void onClearExitedProcesses()}
+                            className="shrink-0 whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
                           >
-                            {procBusy?.includes(p.processId)
-                              ? S.common.loading
-                              : S.chat.processStop}
+                            {S.chat.processClearExited}
                           </button>
-                        ) : (
-                          <>
-                            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                              {S.chat.processExited}
-                            </span>
-                            {/* The row is the only handle on that process's captured
-                                output — removing the entry drops it from the runtime
-                                registry, so the model can no longer be asked to read it
-                                (input_command answers "unknown process_id"). No confirm
-                                step for a one-click tidy-up of a dead row, but the title
-                                says what leaves with it. */}
-                            <button
-                              type="button"
-                              data-tooltip={S.chat.processRemoveHint}
-                              data-tooltip-extra
-                              disabled={procBusy !== null}
-                              onClick={() => void onRemoveProcess(p.processId)}
-                              className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            >
-                              {procBusy?.includes(p.processId)
-                                ? S.common.loading
-                                : S.chat.processRemove}
-                            </button>
-                          </>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </Dropdown>
-        </div>
-      )}
-
-      {/* The state the dock panels' bodies read (chat-dock-context.tsx): one provider over
-          the row's right dock and the bottom dock after it — a provider adds no element. */}
-      <ChatDockProvider value={chatDock}>
-        {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
-            (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
-            dock covers the row alone. Layout-neutral: it takes the column's remaining height
-            exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
-          {/* Body: chat column + the right dock on this row (below the toolbar — a dock
-              beside the whole page would squeeze the header), with the bottom dock after the
-              row spanning the full page width. data-dock-row is what the drag preview
-              measures for a right landing. */}
-          <div data-dock-row className="flex min-h-0 flex-1">
-            {/* The chat area, and the only region a dragged file may be dropped on (#311): it
-                covers the conversation and the composer in both branches below, and nothing else
-                — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-                it (terminal panes included) are all outside, where a file drop is inert (see
-                drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
-            <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-              {draft ? (
-                // Draft state: DraftView's vertically centered input card + Agent / Workspace
-                // selection panel; the Session is only created once the first message is sent. Keyed
-                // by Project (switching Project remounts onto that Project's draft cache) and by the
-                // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
-                // chat" while already on the draft page (which just parked the typed text) remounts
-                // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
-                // so it's not part of the key.)
-                <DraftView
-                  key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
-                  projectId={projectId}
-                  models={models}
-                  {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
-                  composerRef={composerRef}
-                  onWorkspaceChange={onDraftWorkspace}
-                  onAgentChange={onDraftAgent}
-                />
-              ) : (
-                // Keyed by Session: the whole block does a light fade-in when switching sessions.
-                <div
-                  key={routed?.sessionId ?? "empty"}
-                  className="anim-fade flex min-h-0 flex-1 flex-col"
-                >
-                  {archivedRow ? (
-                    <ArchivedSessionStub
-                      session={archivedRow}
-                      onUnarchived={(row) => {
-                        // Back among the conversations: the list takes the row (and counts it),
-                        // and this page loads the conversation in its place.
-                        setFetchedSession(row);
-                        replace(row);
-                      }}
-                      onDeleted={(row) => {
-                        removeSession(row.sessionId);
-                        navigate("/chat");
-                      }}
-                    />
-                  ) : selected ? (
-                    stream.error ? (
-                      // History failed to load: say why and offer the way on, instead of staying on
-                      // a misleading empty state — for a conversation on a machine out of reach,
-                      // the machine's state rather than the transport's error.
-                      <HistoryLoadFailed
-                        projectId={projectId}
-                        sessionId={selected.sessionId}
-                        error={stream.error}
-                        cause={stream.errorCause}
-                        onRetry={stream.retry}
-                      />
-                    ) : stream.loading ? (
-                      // The skeleton, and past a second, for a conversation on a machine, how far
-                      // its newest messages have come over and how the link stands.
-                      <HistoryLoading
-                        projectId={projectId}
-                        sessionId={selected.sessionId}
-                        progress={stream.transfer.window}
-                        onRetryNow={stream.retryNow}
-                      />
-                    ) : (
-                      // The empty state shares the same structure as the message stream (message
-                      // area + bottom input area): only the message area's content differs, and
-                      // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                      // recreated when the first message arrives (preserving draft/focus).
-                      <>
-                        {/* `relative`: the floating dock launcher below anchors to this body —
-                            the region between the toolbar and the composer — so clamping to
-                            it keeps the launcher off both. */}
-                        <div className="relative min-h-0 flex-1">
-                          {emptyChat ? (
-                            <div className="flex h-full items-center justify-center px-4">
-                              <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
-                                {S.chat.emptyGreeting}
-                              </p>
-                            </div>
-                          ) : (
-                            <MessageStream
-                              items={allItems}
-                              version={stream.version}
-                              ctx={ctx}
-                              scrollElRef={streamScrollRef}
-                              // The selection menu's "Add to conversation": the excerpt is staged
-                              // in this composer as a chip, the same way the Files panel stages a
-                              // quoted range.
-                              onAddExcerpt={addComposerReference}
-                              // Scroll-up backfill of older history windows (tail-first
-                              // loading): near-top scrolling prepends the previous window,
-                              // scroll position anchored (see MessageStream).
-                              older={{
-                                hasMore: stream.older.hasMore,
-                                loading: stream.older.loading,
-                                error: stream.older.error,
-                                errorCause: stream.older.errorCause,
-                                prependedCount: stream.prefixItems.length,
-                                onLoad: stream.loadOlder,
-                                transfer: stream.transfer,
-                                beyondTail: stream.older.beyondTail,
-                              }}
-                              // Tick-rail minimap over the stream's left gutter (zero layout
-                              // width; hides itself when the gutter is too narrow or the
-                              // pointer can't hover).
-                              outline={
-                                <ConversationOutline
-                                  entries={outline}
-                                  turnOffset={stream.outlineOffset}
-                                  version={stream.version}
-                                  scrollRef={streamScrollRef}
-                                  running={stream.taskState !== "idle"}
-                                  fit={railFit}
-                                />
-                              }
-                            />
-                          )}
-                          {/* The right dock's floating launcher: rides this body's right edge
-                              while that dock is hidden, and opens its panels in one click. */}
-                          <DockLauncher agentsPending={anySubagentPending} />
-                          <RequestFailureDialog
-                            failure={failureShown}
-                            sessionId={selected?.sessionId ?? null}
-                            sessionModel={activeModelRef}
-                            workspace={selected?.workspace ?? null}
-                            onClose={() => setFailureShown(null)}
-                          />
-                        </div>
-                        {/* Measured: the bottom dock's docked height stops where this box would
-                            be covered, and gives way as it grows. */}
-                        <WallpaperSurface
-                          ref={measureComposer}
-                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
-                        >
-                          <div className="mx-auto max-w-3xl">
-                            {/* Goal banner docked above the composer: an in-flight goal's progress
-                                (restored on load while still active), or the terminal state reached
-                                during this page's lifetime. The stop button is the composer's
-                                regular stop (one abort ends the whole goal loop). */}
-                            {/* A conversation on a machine whose server needs a restart: its live
-                                updates stay away until then, and this says so instead of the
-                                stream retrying in silence. */}
-                            {!draft && pageMachineId !== null && (
-                              <MachineRestartNotice machineId={pageMachineId} />
+                      </div>
+                      <ul className="mt-1 space-y-1.5">
+                        {processes.map((p) => (
+                          <li key={p.processId} className="flex items-center gap-2">
+                            {p.running ? (
+                              <Dot tone="success" pulse />
+                            ) : (
+                              <span
+                                aria-hidden
+                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                              />
                             )}
-                            {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                            {input}
-                          </div>
-                        </WallpaperSurface>
-                      </>
-                    )
-                  ) : routeSessionOffline ? (
-                    <RouteOfflineNotice
-                      owner={routeSessionOwner}
-                      offline={routeLookup.silent}
-                      disconnected={routeLookup.disconnected}
-                      labels={machineLabels}
-                    />
-                  ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
-                    // The machine holding it will not show it to this server: said in place,
-                    // neither gone nor out of reach.
-                    <RouteRefusedNotice
-                      machineId={routeLookup.refused.machineId}
-                      alias={routeLookup.refused.alias}
-                      labels={machineLabels}
-                    />
-                  ) : !sessionsLoading && routeOutcome === "notFound" ? (
-                    // A dead link: said in place, with the one way on that fits the mode —
-                    // a new conversation, or back to the organization in company mode.
-                    <EmptyState
-                      title={S.chat.sessionNotFound}
-                      description={S.chat.sessionNotFoundHint}
-                      action={
-                        company.workMode === "company" ? (
-                          <Button onClick={() => navigate("/org")}>
-                            {S.company.backToOverview}
-                          </Button>
-                        ) : (
-                          <Button onClick={newChat}>{S.nav.newChat}</Button>
-                        )
-                      }
-                    />
-                  ) : sessionsLoading || routeSessionPending ? (
-                    <div className="space-y-3 p-6">
-                      <Skeleton className="h-5 w-1/2" />
+                            <span className="min-w-0 flex-1">
+                              <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
+                              <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
+                                {formatDateTime(p.startedAt)}
+                                {p.pid !== null && ` · pid ${p.pid}`}
+                                {/* Detected service URL (output scan or port probe), running rows
+                                    only — an exited process serves nothing to open. Scheme dropped
+                                    at this size; the tooltip and the link carry the full URL. */}
+                                {p.running && p.serviceUrl !== undefined && (
+                                  <>
+                                    {" · "}
+                                    <a
+                                      href={p.serviceUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      data-tooltip={p.serviceUrl}
+                                      className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
+                                    >
+                                      {p.serviceUrl.replace(/^https?:\/\//i, "")}
+                                    </a>
+                                  </>
+                                )}
+                              </span>
+                            </span>
+                            {p.running ? (
+                              <button
+                                type="button"
+                                disabled={procBusy !== null}
+                                // The confirmation replaces the card: a portaled card would
+                                // otherwise stay over the dialog it opened.
+                                onClick={() => {
+                                  setInfoOpen(false);
+                                  setProcToKill(p);
+                                }}
+                                className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                              >
+                                {procBusy?.includes(p.processId)
+                                  ? S.common.loading
+                                  : S.chat.processStop}
+                              </button>
+                            ) : (
+                              <>
+                                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                                  {S.chat.processExited}
+                                </span>
+                                {/* The row is the only handle on that process's captured
+                                    output — removing the entry drops it from the runtime
+                                    registry, so the model can no longer be asked to read it
+                                    (input_command answers "unknown process_id"). No confirm
+                                    step for a one-click tidy-up of a dead row, but the title
+                                    says what leaves with it. */}
+                                <button
+                                  type="button"
+                                  data-tooltip={S.chat.processRemoveHint}
+                                  data-tooltip-extra
+                                  disabled={procBusy !== null}
+                                  onClick={() => void onRemoveProcess(p.processId)}
+                                  className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                >
+                                  {procBusy?.includes(p.processId)
+                                    ? S.common.loading
+                                    : S.chat.processRemove}
+                                </button>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  ) : (
-                    <EmptyState
-                      title={S.chat.noSessions}
-                      action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
-                    />
                   )}
                 </div>
-              )}
-            </ChatDropRegion>
-
-            {archivedRow === null && rightMount.view && (
-              <DockPanel
-                view={rightMount.view}
-                open={rightMount.open}
-                animateEntrance={rightMount.animateEntrance}
-                panelBadges={{ agents: anySubagentPending }}
-              />
-            )}
-          </div>
-
-          {archivedRow === null && bottomMount.view && (
-            <DockPanel
-              view={bottomMount.view}
-              open={bottomMount.open}
-              animateEntrance={bottomMount.animateEntrance}
-              panelBadges={{ agents: anySubagentPending }}
-            />
+              </Dropdown>
+            </div>
           )}
-        </div>
-      </ChatDockProvider>
+
+          {/* The state the dock panels' bodies read (chat-dock-context.tsx): one provider over
+              the row's right dock and the bottom dock after it — a provider adds no element. */}
+          <ChatDockProvider value={chatDock}>
+            {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
+                (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
+                dock covers the row alone. Layout-neutral: it takes the column's remaining height
+                exactly as the row and the dock did when they sat in the column themselves. */}
+            <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+              {/* Body: chat column + the right dock on this row (below the toolbar — a dock
+                  beside the whole page would squeeze the header), with the bottom dock after the
+                  row spanning the full page width. data-dock-row is what the drag preview
+                  measures for a right landing. */}
+              <div data-dock-row className="flex min-h-0 flex-1">
+                {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+                    covers the conversation and the composer in both branches below, and nothing else
+                    — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+                    it (terminal panes included) are all outside, where a file drop is inert (see
+                    drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
+                <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                  {draft ? (
+                    // Draft state: DraftView's vertically centered input card + Agent / Workspace
+                    // selection panel; the Session is only created once the first message is sent. Keyed
+                    // by Project (switching Project remounts onto that Project's draft cache) and by the
+                    // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
+                    // chat" while already on the draft page (which just parked the typed text) remounts
+                    // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
+                    // so it's not part of the key.)
+                    <DraftView
+                      key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
+                      projectId={projectId}
+                      models={models}
+                      {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+                      composerRef={composerRef}
+                      onWorkspaceChange={onDraftWorkspace}
+                      onAgentChange={onDraftAgent}
+                    />
+                  ) : (
+                    // Keyed by Session: the whole block does a light fade-in when switching sessions.
+                    <div
+                      key={routed?.sessionId ?? "empty"}
+                      className="anim-fade flex min-h-0 flex-1 flex-col"
+                    >
+                      {archivedRow ? (
+                        <ArchivedSessionStub
+                          session={archivedRow}
+                          onUnarchived={(row) => {
+                            // Back among the conversations: the list takes the row (and counts it),
+                            // and this page loads the conversation in its place.
+                            setFetchedSession(row);
+                            replace(row);
+                          }}
+                          onDeleted={(row) => {
+                            removeSession(row.sessionId);
+                            navigate("/chat");
+                          }}
+                        />
+                      ) : selected ? (
+                        stream.error ? (
+                          // History failed to load: say why and offer the way on, instead of staying on
+                          // a misleading empty state — for a conversation on a machine out of reach,
+                          // the machine's state rather than the transport's error.
+                          <HistoryLoadFailed
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            error={stream.error}
+                            cause={stream.errorCause}
+                            onRetry={stream.retry}
+                          />
+                        ) : stream.loading ? (
+                          // The skeleton, and past a second, for a conversation on a machine, how far
+                          // its newest messages have come over and how the link stands.
+                          <HistoryLoading
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            progress={stream.transfer.window}
+                            onRetryNow={stream.retryNow}
+                          />
+                        ) : (
+                          // The empty state shares the same structure as the message stream (message
+                          // area + bottom input area): only the message area's content differs, and
+                          // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
+                          // recreated when the first message arrives (preserving draft/focus).
+                          <>
+                            {/* `relative`: the floating dock launcher below anchors to this body —
+                                the region between the toolbar and the composer — so clamping to
+                                it keeps the launcher off both. */}
+                            <div className="relative min-h-0 flex-1">
+                              {emptyChat ? (
+                                <div className="flex h-full items-center justify-center px-4">
+                                  <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
+                                    {S.chat.emptyGreeting}
+                                  </p>
+                                </div>
+                              ) : (
+                                <MessageStream
+                                  items={allItems}
+                                  version={stream.version}
+                                  ctx={ctx}
+                                  scrollElRef={streamScrollRef}
+                                  // The selection menu's "Add to conversation": the excerpt is staged
+                                  // in this composer as a chip, the same way the Files panel stages a
+                                  // quoted range.
+                                  onAddExcerpt={addComposerReference}
+                                  // Scroll-up backfill of older history windows (tail-first
+                                  // loading): near-top scrolling prepends the previous window,
+                                  // scroll position anchored (see MessageStream).
+                                  older={{
+                                    hasMore: stream.older.hasMore,
+                                    loading: stream.older.loading,
+                                    error: stream.older.error,
+                                    errorCause: stream.older.errorCause,
+                                    prependedCount: stream.prefixItems.length,
+                                    onLoad: stream.loadOlder,
+                                    transfer: stream.transfer,
+                                    beyondTail: stream.older.beyondTail,
+                                  }}
+                                  // Tick-rail minimap over the stream's left gutter (zero layout
+                                  // width; hides itself when the gutter is too narrow or the
+                                  // pointer can't hover).
+                                  outline={
+                                    <ConversationOutline
+                                      entries={outline}
+                                      turnOffset={stream.outlineOffset}
+                                      version={stream.version}
+                                      scrollRef={streamScrollRef}
+                                      running={stream.taskState !== "idle"}
+                                      fit={railFit}
+                                    />
+                                  }
+                                />
+                              )}
+                              {/* The right dock's floating launcher: rides this body's right edge
+                                  while that dock is hidden, and opens its panels in one click. */}
+                              <DockLauncher agentsPending={anySubagentPending} />
+                              <RequestFailureDialog
+                                failure={failureShown}
+                                sessionId={selected?.sessionId ?? null}
+                                sessionModel={activeModelRef}
+                                workspace={selected?.workspace ?? null}
+                                onClose={() => setFailureShown(null)}
+                              />
+                            </div>
+                            {/* Measured: the bottom dock's docked height stops where this box would
+                                be covered, and gives way as it grows. */}
+                            <WallpaperSurface
+                              ref={measureComposer}
+                              className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                            >
+                              <div className="mx-auto max-w-3xl">
+                                {/* Goal banner docked above the composer: an in-flight goal's progress
+                                    (restored on load while still active), or the terminal state reached
+                                    during this page's lifetime. The stop button is the composer's
+                                    regular stop (one abort ends the whole goal loop). */}
+                                {/* A conversation on a machine whose server needs a restart: its live
+                                    updates stay away until then, and this says so instead of the
+                                    stream retrying in silence. */}
+                                {!draft && pageMachineId !== null && (
+                                  <MachineRestartNotice machineId={pageMachineId} />
+                                )}
+                                {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                                {input}
+                              </div>
+                            </WallpaperSurface>
+                          </>
+                        )
+                      ) : routeSessionOffline ? (
+                        <RouteOfflineNotice
+                          owner={routeSessionOwner}
+                          offline={routeLookup.silent}
+                          disconnected={routeLookup.disconnected}
+                          labels={machineLabels}
+                        />
+                      ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
+                        // The machine holding it will not show it to this server: said in place,
+                        // neither gone nor out of reach.
+                        <RouteRefusedNotice
+                          machineId={routeLookup.refused.machineId}
+                          alias={routeLookup.refused.alias}
+                          labels={machineLabels}
+                        />
+                      ) : !sessionsLoading && routeOutcome === "notFound" ? (
+                        // A dead link: said in place, with the one way on that fits the mode —
+                        // a new conversation, or back to the organization in company mode.
+                        <EmptyState
+                          title={S.chat.sessionNotFound}
+                          description={S.chat.sessionNotFoundHint}
+                          action={
+                            company.workMode === "company" ? (
+                              <Button onClick={() => navigate("/org")}>
+                                {S.company.backToOverview}
+                              </Button>
+                            ) : (
+                              <Button onClick={newChat}>{S.nav.newChat}</Button>
+                            )
+                          }
+                        />
+                      ) : sessionsLoading || routeSessionPending ? (
+                        <div className="space-y-3 p-6">
+                          <Skeleton className="h-5 w-1/2" />
+                        </div>
+                      ) : (
+                        <EmptyState
+                          title={S.chat.noSessions}
+                          action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
+                        />
+                      )}
+                    </div>
+                  )}
+                </ChatDropRegion>
+
+                {archivedRow === null && rightMount.view && (
+                  <DockPanel
+                    view={rightMount.view}
+                    open={rightMount.open}
+                    animateEntrance={rightMount.animateEntrance}
+                    panelBadges={{ agents: anySubagentPending }}
+                  />
+                )}
+              </div>
+
+              {archivedRow === null && bottomMount.view && (
+                <DockPanel
+                  view={bottomMount.view}
+                  open={bottomMount.open}
+                  animateEntrance={bottomMount.animateEntrance}
+                  panelBadges={{ agents: anySubagentPending }}
+                />
+              )}
+            </div>
+          </ChatDockProvider>
+        </AppWindow>
+        {workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
+          <AppWindow shown>
+            <WorkbenchFrame
+              // Per tab: the frame keeps this workbench's history fold, its error and its
+              // armed Remove, and none of that belongs to the next tab.
+              key={workbenchTabs.activeTab.tabId}
+              projectId={projectId}
+              agentId={pageAgentId}
+              tab={workbenchTabs.activeTab}
+              onChanged={() => void workbenchTabs.refresh()}
+              onRemoved={() => {
+                workbenchTabs.setActive(null);
+                void workbenchTabs.refresh();
+              }}
+            />
+          </AppWindow>
+        )}
+      </WindowStack>
 
       <Modal
         open={credentialGuide}

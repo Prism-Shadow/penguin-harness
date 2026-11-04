@@ -22,7 +22,7 @@
  * bottom dock below stay in view), the bottom dock's area up to the toolbar (the row and itself,
  * over the right dock). The box in the flow keeps its size as a placeholder — the conversation
  * beside or above it does not reflow, so nothing under the cover scrolls or refits — and only the
- * content box inside it lifts off (`fixed`, at `DOCK_FULLSCREEN_Z`); the bodies are the same
+ * content box inside it lifts off (`fixed`, on the `dock` layer); the bodies are the same
  * elements, so a terminal, a file preview or an editor draft carries over untouched. The resize
  * handle moves to the lifted box's LEADING edge (the right dock's left, the bottom dock's top),
  * where a pull back inward is the way out by drag, while the placeholder keeps the handle's
@@ -51,20 +51,11 @@ import type {
   Ref,
   RefObject,
 } from "react";
+import { layer } from "../../../layers";
 import { WallpaperLayer } from "../app-shell/wallpaper";
 import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 
 export type DockEdge = "right" | "bottom";
-
-/**
- * The layer a fullscreen dock surface paints at: level with the in-flow menus (z-40, where the
- * dock wins by document order — it comes after the toolbar and the navigation column in the
- * tree), under the dialogs and drawers (z-50), the portaled menus and tooltips (z-[60]) and the
- * toasts (z-[100]), so the dock's own confirmations, its "+" menu and its tooltips still paint
- * over it. Content laid over the surface by coordinates (the built-in browser's page) takes the
- * step above (+1), and so does the resize handle seated on the surface's leading edge.
- */
-export const DOCK_FULLSCREEN_Z = 40;
 
 /** Where a lifted surface is on its way; the root carries it as `data-fullscreen`. */
 export type DockFullscreenPhase = "entering" | "full" | "exiting";
@@ -469,8 +460,9 @@ export function DockFrame({
   // edge. Lifted, the seat is a fixed box on the lifted surface's LEADING edge, where a pull back
   // inward is the way out: a band straddling the right dock's left edge for the handle to fill, a
   // zero-height line along the bottom dock's top edge for the overlay handle to straddle as it
-  // straddles the root's. It takes the step above the surface (the box comes later in the tree,
-  // so an equal index would paint it over the handle) and follows the box's rect, with the box's
+  // straddles the root's. It sits on the `dock-handle` layer, above the surface's `dock` (the box
+  // comes later in the tree, so one layer for both would paint it over the handle), and follows
+  // the box's rect, with the box's
   // layout motion while it moves. The SEAT changes, never the handle: one element through every
   // phase, so a drag that began on it in the flow goes on when the snap lifts the surface
   // mid-gesture — a remounted handle would keep the pointer's capture and never report the
@@ -483,14 +475,14 @@ export function DockFrame({
             left: box.left - RESIZE_HANDLE_PX / 2,
             width: RESIZE_HANDLE_PX,
             height: box.height,
-            zIndex: DOCK_FULLSCREEN_Z + 1,
+            zIndex: layer("dock-handle"),
           }
         : {
             top: box.top,
             left: box.left,
             width: box.width,
             height: 0,
-            zIndex: DOCK_FULLSCREEN_Z + 1,
+            zIndex: layer("dock-handle"),
           }
       : undefined;
   const seatClass =
@@ -512,7 +504,7 @@ export function DockFrame({
           left: box.left,
           width: box.width,
           height: box.height,
-          zIndex: DOCK_FULLSCREEN_Z,
+          zIndex: layer("dock"),
         }
       : position === "bottom"
         ? { height: contentSize }

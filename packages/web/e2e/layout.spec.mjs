@@ -630,7 +630,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  const panel = page.locator("div.anim-pop.z-40");
+  const panel = page.locator("div.anim-pop.z-menu");
   /** Assert the one open menu panel and the page itself stay inside the viewport. */
   const checkPanel = async (name) => {
     await expect(panel, `${name}: menu open`).toHaveCount(1);

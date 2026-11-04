@@ -19,9 +19,9 @@
  * it is fundamentally unaffected by its overflow, without having to audit every call site's
  * ancestor chain. Positioning and close behaviour live in use-portal-panel.ts.
  *
- * The panel uses z-[60] (above the modal overlay's z-50): a portaled node sits in the root
- * stacking context, and this component may also be used inside a Modal form, where z-40 would
- * get covered by the overlay.
+ * The panel takes the `popover` layer, above a dialog's `modal`: a portaled node sits in the root
+ * stacking context, and this component may also be used inside a Modal form, where the `menu`
+ * layer would be covered by the overlay.
  */
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
@@ -141,7 +141,7 @@ export function OptionMenu<T extends string>({
               left: position.left,
               minWidth: position.triggerWidth,
             }}
-            className={`ui-glass ${menuPanelClass} z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)]`}
+            className={`ui-glass ${menuPanelClass} z-popover max-h-[70vh] w-72 max-w-[calc(100vw-2rem)]`}
           >
             {options.map((opt) => (
               <button
