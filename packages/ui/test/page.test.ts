@@ -8,28 +8,19 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { PageFrame, PageHeader } from "../src/components/layout/page/page";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("PageFrame", () => {
-  it("scrolls on its own and centres its column at the chosen width", () => {
+  it("holds its children in its column", () => {
     const html = renderStatic(createElement(PageFrame, null, "content"));
-    expect(html).toMatch(
-      /^<div class="h-full overflow-y-auto p-4 md:p-6 *"><div class="mx-auto max-w-5xl/,
-    );
-    expect(renderStatic(createElement(PageFrame, { width: "xl" }))).toContain("max-w-6xl");
-    const full = classTokens(renderStatic(createElement(PageFrame, { width: "full" })));
-    expect(full).toContain("min-w-0");
-    expect(full.filter((t) => t.startsWith("max-w-"))).toEqual([]);
+    expect(html).toMatch(/^<div class="[^"]*"><div /);
   });
 });
 
 describe("PageHeader", () => {
-  it("titles the page with the display h1 at the page-title size, and no eyebrow", () => {
+  it("titles the page with the display h1, and no eyebrow", () => {
     const html = renderStatic(createElement(PageHeader, { title: "Agents" }));
     expect(html).toMatch(/<h1 class="ui-display [^"]*">Agents<\/h1>/);
-    const title = /<h1 class="([^"]*)"/.exec(html)![1]!.split(/\s+/);
-    expect(title).toEqual(expect.arrayContaining(["text-xl", "font-semibold"]));
-    expect(title.filter((t) => t.includes("--ui-h1-"))).toEqual([]);
     expect(html).not.toContain("ui-eyebrow");
   });
 

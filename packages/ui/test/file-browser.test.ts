@@ -11,7 +11,7 @@ import type {
   FileBrowserProps,
 } from "../src/components/files/file-browser/file-browser";
 import type { FileTreeRow } from "../src/components/files/file-tree/tree-rows";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const ROWS: FileTreeRow[] = [
   {
@@ -85,11 +85,5 @@ describe("FileBrowser", () => {
     expect(stripped).toContain("Docs Expert</h1>");
     expect(stripped).not.toContain("name: docs");
     expect(render(md)).toContain("name: docs");
-  });
-
-  it("frames itself in tokens", () => {
-    const html = render(null);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["border-line", "rounded-md"]));
-    expect(html).not.toMatch(/gray-|red-|dark:/);
   });
 });

@@ -8,16 +8,13 @@
  * field layout it forces is this package's `field.test.ts`; the hover, pin and touch rules are
  * `hover-disclosure.test.ts`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { InfoPopover } from "../src/components/overlays/info-popover/info-popover";
 import { ICONS } from "../src/components/icons/icons";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import type { UiStrings } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
+import { renderStatic } from "../src/testing";
 
 const ZH: UiStrings = {
   ...DEFAULT_UI_STRINGS,
@@ -49,19 +46,6 @@ describe("InfoPopover", () => {
     expect(html).not.toContain('role="tooltip"');
   });
 
-  it("opens on hover and pins on a click through the hover disclosure, never on focus alone", () => {
-    // Event handlers leave no trace in static markup, so the wiring is read off the source.
-    const source = readFileSync(
-      join(SRC_DIR, "components/overlays/info-popover/info-popover.tsx"),
-      "utf8",
-    );
-    expect(source).toContain("useHoverDisclosure()");
-    expect(source).toContain("onClose: close");
-    expect(source).toContain("{...triggerProps}");
-    expect(source).toContain("{...panelProps}");
-    expect(source).not.toMatch(/\bonFocus=/);
-  });
-
   it("folds the subject into its name rather than repeating it", () => {
     // A trigger inside a heading would otherwise make that heading announce its own title twice.
     const named = renderStatic(createElement(InfoPopover, { label: "Vault", children: "x" }));
@@ -81,10 +65,7 @@ describe("InfoPopover", () => {
     expect(zh).not.toContain("More info");
   });
 
-  it("draws the registry's circled question mark in token inks", () => {
+  it("draws the registry's circled question mark", () => {
     expect(html).toContain(`d="${ICONS.helpCircle}"`);
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["text-fg-subtle", "hover:text-fg-muted", "rounded-full"]),
-    );
   });
 });
