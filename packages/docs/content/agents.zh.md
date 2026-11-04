@@ -145,7 +145,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 **Agent State** 区块显示 **Agent State 版本**和 **State 路径**（Agent State 在服务端所在的文件夹），点击复制按钮可以复制路径。
 
 - **导出快照**：把 Agent State 下载为 `.tar.gz` 包。包里不含密钥保险柜，密钥不会随快照流出。
-- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜与工作台版本历史，从不采用包内的版本历史。导入前会先对当前版本做一次快照。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
+- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜。工作台的版本历史位于 Agent State 之外，导入不会改动它。导入前会先对当前版本做一次快照。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
 
 版本和快照的工作机制见[自我进化](/self-improvement#快照与版本)。
 
@@ -283,9 +283,9 @@ PenguinHarness 依次连接每个 Server 并发现它的工具，不会保存任
 **工作台**标签页列出 Agent 的工作台，加载失败的也在其中。每个工作台都可以打开、**重新加载**、在**历史**中**恢复**较早的版本、用**打包导出**把源码下载为 zip，或者**移除**。
 
 - **历史**最多列出 50 个版本，最新的在前。**恢复**把工作台的源码精确换成该版本并立即重新加载，数据（`state.json`）保持不变。
-- **移除**删除工作台及其数据，此前的版本不再列出。
+- **移除**删除工作台及其数据，此前的版本不再列出，即使之后再建同 id 的工作台也是如此。手工删除文件夹则不同：之后同 id 的工作台仍会列出这些版本。
 - **打包导出**下载的 zip 只有一个以工作台 id 命名的顶层文件夹，从不包含 `state.json`、隐藏文件和 `node_modules`，可以原样导回。
-- **导入 zip** 从 zip 添加工作台：`package.json` 位于 zip 根目录，或位于唯一一个以工作台 id 命名的顶层文件夹中。含有 `state.json`、隐藏文件或 `node_modules` 的 zip 会被拒绝。Agent 已有同 id 的工作台时，覆盖其源码之前会先确认；数据保留，旧源码仍可从**历史**恢复。
+- **导入 zip** 从 zip 添加工作台：`package.json` 位于 zip 根目录，或位于唯一一个以工作台 id 命名的顶层文件夹中。zip 中若有位于工作台顶层的 `state.json`、隐藏文件、`node_modules`、链接、git 保留的名称或 Windows 不能使用的名称，会在写入任何文件之前被拒绝。Agent 已有同 id 的工作台时，覆盖其源码之前会先确认；数据保留，加载成功过的版本仍可从**历史**恢复，从未加载成功的本地改动会丢失。导入后工作台立即加载；加载失败时显示加载错误，而不是成功提示。
 
 任何 Project 成员都能使用这个标签页。在对话旁打开工作台时，它的标签栏同样提供**历史**和**移除**。见 [Workbench 插件](/skills#workbench-插件)。
 
@@ -414,4 +414,4 @@ Agent 的配置和数据存放在它的 Agent State 里，也就是概览标签�
 - 记忆是 `agent_state/memory/` 下的文件，每个分组有一个 `MEMORY.md` 索引。存储方式见[记忆](/configuration#记忆)。
 - 密钥保险柜变量保存在 `agent_state/.vault.toml`。文件格式见[密钥保险柜](/configuration#vault)。
 - 定时任务以 TOML 文件保存在 `agent_state/schedule/` 下，也可以手动编辑。文件格式见[定时任务](/configuration#定时任务)。
-- 工作台是 `agent_state/workbenches/<id>/` 下的文件夹，它们的版本是 `agent_state/.git` 中的提交，这个 git 仓库位于 Agent State 根目录，由服务端维护。见 [Workbench 插件](/skills#workbench-插件)。
+- 工作台是 `agent_state/workbenches/<id>/` 下的文件夹，它们的版本是 `agent_state.git/` 中的提交，这是服务端在 `agent_state/` 旁维护的裸 git 仓库。见 [Workbench 插件](/skills#workbench-插件)。
