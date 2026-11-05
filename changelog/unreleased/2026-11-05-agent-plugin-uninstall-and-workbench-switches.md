@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `server`, `core`
+- **PR:** [#1496](https://github.com/Prism-Shadow/penguin-harness/pull/1496)
 
 [中文版](2026-11-05-agent-plugin-uninstall-and-workbench-switches.zh.md)
 
