@@ -23,7 +23,7 @@ Derived from the [GDPevo Benchmark](https://arxiv.org/abs/2608.03764), GDPEVO Es
 
 Each sub-benchmark's environment embeds enterprise rules that are not stated directly in the task prompts, such as priority policies, risk thresholds, and exception-handling rules. During training, the Agent needs to interact with the business system, learn these rules from grading feedback, and consolidate them into `SKILL.md` to perform well on the test tasks.
 
-Every sub-benchmark follows three core rules:
+In our experiments, every sub-benchmark follows three settings:
 
 - **Independent Training and Testing per Benchmark**: The six sub-benchmarks are strictly independent. Each Benchmark runs its own training session and exports a dedicated `SKILL.md` document without mixing training data or sharing learned skills across Benchmarks.
 - **Training Phase**: All 5 training tasks of a Benchmark run sequentially inside a single business container and one persistent Agent session under a 6-hour budget without resetting the workspace. The container serves a read-only business API on loopback and exposes an online judge endpoint `POST /api/judge` for diagnostic feedback. Whether to query this endpoint is determined by each self-evolution method: supervised methods use it to guide revisions, whereas unsupervised methods rely solely on self-constructed virtual tests.
