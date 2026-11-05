@@ -1,4 +1,7 @@
-import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import type {
+  AgentArchiveImportResponse,
+  OrgChannelNoticeKind,
+} from "@prismshadow/penguin-server/api";
 
 /**
  * CLI text internationalization (i18n).
@@ -249,6 +252,49 @@ export interface Messages {
     apiSignInRequired(): string;
     /** On stderr after `--open` switched keyless access on. */
     apiOpenWarning(): string;
+    /** `penguin agent export`: the command, its options, and the line once the zip is written. */
+    exportDesc: string;
+    exportOut: string;
+    exportNoSkills: string;
+    exportNoHooks: string;
+    exportNoMemory: string;
+    exportNoWorkbenches: string;
+    exportNoWorkbenchData: string;
+    exportSchedules: string;
+    /** `--traces`; `maxLast` is the most Sessions `last:<N>` takes. */
+    exportTraces(maxLast: number): string;
+    /** A `--traces` value the server would refuse; nothing was sent. */
+    exportTracesInvalid(value: string, maxLast: number): string;
+    exported(agentId: string, file: string, size: string): string;
+    /** `penguin agent import`: the command and its options. */
+    importDesc: string;
+    importAgentId: string;
+    importOverwrite: string;
+    /** Refusals before anything is sent: no such path, a folder without its manifest, past the upload cap. */
+    importNotFound(file: string): string;
+    importNoManifest(dir: string): string;
+    importTooLarge(file: string, maxMib: number): string;
+    /** Under the server's 409 `agent_exists`: how to import anyway. */
+    importExistsHint(): string;
+    /** The report's first line: the Agent created, or replaced (with the version it had). */
+    importCreated(agentId: string, projectId: string, version: number): string;
+    importOverwritten(
+      agentId: string,
+      projectId: string,
+      version: number,
+      previousVersion: number | undefined,
+    ): string;
+    /** The snapshot an overwrite wrote first. */
+    importBackup(file: string): string;
+    /** What came along, beyond the config. */
+    importCounts(imported: AgentArchiveImportResponse["imported"]): string;
+    /** The report's lists: Sessions left out (each with its reason), what to fill in, the server's notes. */
+    importSkippedTitle(): string;
+    importSkippedReason(
+      reason: AgentArchiveImportResponse["skippedTraces"][number]["reason"],
+    ): string;
+    importToFillTitle(): string;
+    importNotesTitle(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1413,6 +1459,58 @@ const en: Messages = {
       "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
     apiOpenWarning: () =>
       "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
+    exportDesc:
+      "Export an agent as a zip: its config always, and the parts the options choose (Skills, hooks, memory and workbenches unless left out; schedules and Traces only when asked)",
+    exportOut:
+      "Where to write the zip: a file, or a directory that takes the server's file name (defaults to the current directory)",
+    exportNoSkills: "Leave the Skills out",
+    exportNoHooks: "Leave the hook packages out",
+    exportNoMemory: "Leave the memory out",
+    exportNoWorkbenches: "Leave the workbenches out",
+    exportNoWorkbenchData: "Keep the workbenches' source but leave their data (state.json) out",
+    exportSchedules: "Include the schedules; they run on the install that imports the zip",
+    exportTraces: (maxLast) =>
+      `Traces to include: none (default), last:<N> for the N most recently active Sessions (1-${maxLast}), or <from>..<to> for the Sessions dated in that range (YYYY-MM-DD, inclusive)`,
+    exportTracesInvalid: (value, maxLast) =>
+      `Invalid --traces "${value}": expected none, last:<N> with N from 1 to ${maxLast}, or <from>..<to> with real dates written YYYY-MM-DD and from on or before to.`,
+    exported: (agentId, file, size) => `Exported agent ${agentId} to ${file} (${size}).`,
+    importDesc:
+      "Import an agent from a zip, an old .tar.gz Agent State package, or a folder laid out as the zip (manifest.json at its root), which is zipped and uploaded",
+    importAgentId: "Id for the agent (defaults to the id in the file)",
+    importOverwrite:
+      "Replace the state of the agent that has this id (Project owners only): a backup is written first, and its Traces, vault and API keys stay",
+    importNotFound: (file) => `${file} does not exist.`,
+    importNoManifest: (dir) =>
+      `${dir} has no manifest.json at its root. A folder imports only when it is laid out as an Agent zip, as the agent-porting Skill writes one.`,
+    importTooLarge: (file, maxMib) =>
+      `${file} is larger than an import accepts (${maxMib} MiB). Export it with fewer Traces, or leave a large part out.`,
+    importExistsHint: () =>
+      "Import it under another id with --agent-id <id>, or replace that agent with --overwrite (Project owners only; a backup is written first).",
+    importCreated: (agentId, projectId, version) =>
+      `Agent ${agentId} created in project ${projectId} (Agent State v${version}).`,
+    importOverwritten: (agentId, projectId, version, previousVersion) =>
+      `Agent ${agentId} in project ${projectId} replaced from the file (Agent State v${version}${previousVersion !== undefined ? `, was v${previousVersion}` : ""}).`,
+    importBackup: (file) => `Backup written first: ${file}`,
+    importCounts: ({ skills, hooks, memoryFiles, workbenches, schedules, traces }) => {
+      const n = (count: number, one: string, many: string) =>
+        `${count} ${count === 1 ? one : many}`;
+      const parts = [
+        skills > 0 ? n(skills, "Skill", "Skills") : null,
+        hooks > 0 ? n(hooks, "hook package", "hook packages") : null,
+        memoryFiles > 0 ? n(memoryFiles, "memory file", "memory files") : null,
+        workbenches > 0 ? n(workbenches, "workbench", "workbenches") : null,
+        schedules > 0 ? n(schedules, "schedule", "schedules") : null,
+        traces.sessions > 0
+          ? `${n(traces.sessions, "Session", "Sessions")} (${n(traces.files, "file", "files")})`
+          : null,
+      ].filter((part): part is string => part !== null);
+      return parts.length === 0 ? "Imported: the config only." : `Imported: ${parts.join(", ")}.`;
+    },
+    importSkippedTitle: () => "Sessions not imported:",
+    importSkippedReason: (reason) =>
+      reason === "exists" ? "already in this install" : "its files are missing or do not match",
+    importToFillTitle: () => "To fill in (vault keys and blanked MCP values; no value travels):",
+    importNotesTitle: () => "Notes:",
   },
   project: {
     desc: "Manage projects",
@@ -2549,6 +2647,52 @@ const zh: Messages = {
       "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
     apiOpenWarning: () =>
       "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
+    exportDesc:
+      "把 Agent 导出为 zip：配置总会带上，其余部分按选项选择（Skill、钩子、记忆与工作台缺省包含；定时任务与 Trace 需明确要求）",
+    exportOut: "zip 的写入位置：文件路径，或一个目录（文件名取服务器给出的名字；缺省为当前目录）",
+    exportNoSkills: "不含 Skill",
+    exportNoHooks: "不含钩子包",
+    exportNoMemory: "不含记忆",
+    exportNoWorkbenches: "不含工作台",
+    exportNoWorkbenchData: "带上工作台的源码，但不含其数据（state.json）",
+    exportSchedules: "包含定时任务；导入后会在导入方按计划运行",
+    exportTraces: (maxLast) =>
+      `要带上的 Trace：none（缺省）、last:<N>（最近活跃的 N 个 Session，1–${maxLast}），或 <from>..<to>（日期落在该范围内的 Session，格式 YYYY-MM-DD，含首尾）`,
+    exportTracesInvalid: (value, maxLast) =>
+      `--traces「${value}」无效：应为 none、last:<N>（N 为 1–${maxLast}），或 <from>..<to>（真实日期，格式 YYYY-MM-DD，from 不晚于 to）。`,
+    exported: (agentId, file, size) => `已将 Agent ${agentId} 导出到 ${file}（${size}）。`,
+    importDesc:
+      "导入 Agent：zip、旧版 .tar.gz Agent State 包，或按 zip 布局组织的目录（根部有 manifest.json，会先打包再上传）",
+    importAgentId: "Agent 的 id（缺省取文件中的 id）",
+    importOverwrite:
+      "替换该 id 对应 Agent 的状态（仅 Project 所有者）：会先写备份，它的 Trace、vault 与 API 密钥保留",
+    importNotFound: (file) => `${file} 不存在。`,
+    importNoManifest: (dir) =>
+      `${dir} 的根部没有 manifest.json。只有按 Agent zip 布局组织的目录才能导入，agent-porting Skill 写出的目录就是这样。`,
+    importTooLarge: (file, maxMib) =>
+      `${file} 超出了导入上限（${maxMib} MiB）。可少带一些 Trace 重新导出，或去掉较大的部分。`,
+    importExistsHint: () =>
+      "可用 --agent-id <id> 换一个 id 导入，或用 --overwrite 替换该 Agent（仅 Project 所有者；会先写备份）。",
+    importCreated: (agentId, projectId, version) =>
+      `已在 Project ${projectId} 创建 Agent ${agentId}（Agent State v${version}）。`,
+    importOverwritten: (agentId, projectId, version, previousVersion) =>
+      `已从文件替换 Project ${projectId} 中的 Agent ${agentId}（Agent State v${version}${previousVersion !== undefined ? `，原为 v${previousVersion}` : ""}）。`,
+    importBackup: (file) => `替换前已写备份：${file}`,
+    importCounts: ({ skills, hooks, memoryFiles, workbenches, schedules, traces }) => {
+      const parts = [
+        skills > 0 ? `${skills} 个 Skill` : null,
+        hooks > 0 ? `${hooks} 个钩子包` : null,
+        memoryFiles > 0 ? `${memoryFiles} 个记忆文件` : null,
+        workbenches > 0 ? `${workbenches} 个工作台` : null,
+        schedules > 0 ? `${schedules} 个定时任务` : null,
+        traces.sessions > 0 ? `${traces.sessions} 个 Session（${traces.files} 个文件）` : null,
+      ].filter((part): part is string => part !== null);
+      return parts.length === 0 ? "已导入：仅配置。" : `已导入：${parts.join("、")}。`;
+    },
+    importSkippedTitle: () => "未导入的 Session：",
+    importSkippedReason: (reason) => (reason === "exists" ? "本安装中已有" : "文件缺失或不匹配"),
+    importToFillTitle: () => "待填写（vault 密钥与被清空的 MCP 值；任何值都不会随文件迁移）：",
+    importNotesTitle: () => "说明：",
   },
   project: {
     desc: "管理 Project",

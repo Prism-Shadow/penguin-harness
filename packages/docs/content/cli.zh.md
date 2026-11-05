@@ -246,11 +246,13 @@ penguin session rename 402a2e24 -t "Q3 发布准备" --json
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent export` 和 `agent import` 以 zip 迁移 Agent，见 [penguin agent export](#penguin-agent-export) 和 [penguin agent import](#penguin-agent-import)。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
 penguin agent create --agent-id <id> [options]
+penguin agent export <agent-id> [options]
+penguin agent import <file.zip|file.tar.gz|directory> [options]
 ```
 
 `agent create` 的选项：
@@ -265,6 +267,45 @@ penguin agent create --agent-id <id> [options]
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export
+
+把 Agent 写成 zip，与 Agents 页面上的**导出**得到的文件相同。zip 总会带上 Agent 的配置：`system_config.yaml`（形似凭据的 MCP 值会被清空，并在 manifest 中列出名称）、`AGENTS.md` 和 `tools/`。其余部分由选项选择，缺省值与导出对话框一致。vault 的值从不随文件迁移，manifest 只列出 vault 的键名。zip 以流式写入磁盘，命令最后打印写入位置和大小。
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--out <file\|dir>` | zip 的写入位置：文件路径（会创建其父目录），或一个目录（文件名取服务器给出的 `<agent-id>-<yyyymmdd>.zip`）。 | 当前目录 |
+| `--no-skills` / `--no-hooks` / `--no-memory` | 不含 Skill、钩子包或记忆。 | 包含 |
+| `--no-workbenches` / `--no-workbench-data` | 不含工作台；或带上工作台源码、不含其数据（`state.json`）。 | 包含，连同数据 |
+| `--schedules` | 包含定时任务。导入后，它们会在导入方按计划运行。 | 不含 |
+| `--traces <selection>` | 要带上的 Trace：`none`；`last:<N>`，即最近活跃的 N 个 Session（1–500）；或 `<from>..<to>`，即日期落在该范围内的 Session（`YYYY-MM-DD`，含首尾）。Session 整体迁移，连同其 subagent 子 Session。其他取值会在发出请求之前报错。 | `none` |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印 `{agentId, projectId, file, bytes}`。 | — |
+
+```bash
+penguin agent export helper --out ./exports
+penguin agent export helper --traces last:20 --no-skills --no-memory --schedules
+penguin agent export helper --traces 2026-10-01..2026-10-31 --json
+```
+
+### penguin agent import
+
+从 zip 创建 Agent，作用与 Agents 页面上的**导入 Agent** 相同。它也接受旧版 `.tar.gz` Agent State 包（此时需要 `--agent-id`），以及按 zip 布局组织、根部有 `manifest.json` 的目录。这样的目录由 CLI 自行打包（不含 `.git`），无需 `zip` 程序；`agent-porting` Skill 正是这样把其他编程工具中的 Agent 迁移进来的。超过 100 MiB 的文件或打包后的目录会被拒绝，此时不会发送任何内容。
+
+Agent id 取 `--agent-id`，否则取 manifest 中的 id。id 已被占用时报 `agent_exists`：换一个 id 导入，或用 `--overwrite` 替换现有 Agent。替换会用文件中的内容替换 Agent 的状态，保留它的 Trace、vault、API 密钥和雇佣关系；文件未包含的部分保留 Agent 当前的内容。服务器会先写一份备份快照，且只有 Project 所有者可以替换。
+
+命令会打印创建或替换的 Agent 及其 Agent State 版本、备份、导入的内容、未导入的 Session（本安装中已有，或文件缺失）、待填写的内容（vault 密钥与被清空的 MCP 值），以及服务器给出的说明。
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--agent-id <id>` | Agent 的 id。 | 文件中的 id |
+| `--overwrite` | 按上文所述替换该 id 对应的 Agent。 | 关 |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印服务器的完整响应。 | — |
+
+```bash
+penguin agent import ./exports/helper-20261104.zip --agent-id helper_2
+penguin agent import ./agent-port/helper --project-id my-project
+penguin agent import ./helper-v12.tar.gz --agent-id helper --overwrite
 ```
 
 ### penguin agent api
