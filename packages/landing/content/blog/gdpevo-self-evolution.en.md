@@ -1,5 +1,5 @@
 ---
-title: "Running an End-to-End Agent Self-Evolution Experiment Loop on Real Enterprise Tasks with PenguinHarness"
+title: "Running an Agent Self-Evolution Experiment Loop on Real Enterprise Tasks with PenguinHarness"
 date: 2026-11-04
 category: practice
 author: Leijun Zhou (Prism Shadow AI)
