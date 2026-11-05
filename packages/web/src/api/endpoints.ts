@@ -13,6 +13,7 @@ import type {
   AgentApiKeyCreateResponse,
   AgentApiResponse,
   AgentApiUpdateRequest,
+  AgentArchivePreview,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -21,8 +22,6 @@ import type {
   AgentDeletionResponse,
   AgentHooksResponse,
   AgentMcpServersResponse,
-  AgentImportRequest,
-  AgentImportResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -2144,29 +2143,55 @@ export const benchmarkCaseFileUrl = (
   );
 };
 
-// Agent State snapshot export / import ------------------------------------------------------
+// Agent archive (zip export / import) ------------------------------------------------------
 
-/** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
-export const agentExportUrl = (
+const agentArchivePath = (projectId: string, agentId: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/archive`;
+
+/**
+ * The Agent's zip download URL, for the fetch-then-save helper (archive-download.ts); the server
+ * streams it with Content-Disposition attachment. `parts` is the `<parts>` query already encoded
+ * (features/agents/archive-parts.ts `archivePartsQuery`).
+ */
+export const agentArchiveUrl = (
   projectId: string,
   agentId: string,
+  parts: Record<string, string>,
   machineId: string | null,
 ): string =>
-  apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`,
-    machineId,
-  );
+  `${apiUrl(agentArchivePath(projectId, agentId), machineId)}?${new URLSearchParams(parts)}`;
 
-export const importAgent = (
+/** What the zip of those parts would hold, before it is downloaded: counts, sizes, the Sessions it skips. */
+export const previewAgentArchive = (
   projectId: string,
   agentId: string,
-  body: AgentImportRequest,
+  parts: Record<string, string>,
   machineId: string | null,
 ) =>
-  apiFetch<AgentImportResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
-    { method: "POST", body, server: machineId },
+  apiFetch<AgentArchivePreview>(`${agentArchivePath(projectId, agentId)}/preview`, {
+    query: parts,
+    server: machineId,
+  });
+
+/**
+ * The import route's URL, for the raw upload (features/agents/archive-upload.ts): the file is the
+ * body, not JSON. `agentId` names the Agent to create (absent: the one the archive names), and
+ * `overwrite` replaces an existing one's State instead of answering 409 `agent_exists`.
+ */
+export const agentImportUrl = (
+  projectId: string,
+  options: { agentId?: string; overwrite?: boolean },
+  machineId: string | null,
+): string => {
+  const query = new URLSearchParams();
+  if (options.agentId) query.set("agentId", options.agentId);
+  if (options.overwrite === true) query.set("overwrite", "1");
+  const qs = query.toString();
+  return (
+    apiUrl(`/api/projects/${encodeURIComponent(projectId)}/agents/import`, machineId) +
+    (qs ? `?${qs}` : "")
   );
+};
 
 // Machines (admin only) ----------------------------------------------------------------
 

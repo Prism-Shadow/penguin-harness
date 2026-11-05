@@ -1636,13 +1636,8 @@ export const en: Strings = {
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
     createDirSkillsClear: "Don't import from a directory",
-    createSnapshot: "Initialize from a snapshot",
-    createSnapshotPick: "Choose a snapshot package",
-    createSnapshotHint:
-      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
-    createSnapshotSkillsOff:
-      "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
-    createSnapshotClear: "Remove the selected package",
+    /** The create dialog's footer line: a new Agent from an exported file is the Agents page's import (importAgent), not this form. */
+    createFromFileHint: "Creating an agent from an exported file?",
     aiCreateTitle: "Create an agent with AI",
     aiCreateIntro:
       "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
@@ -1901,20 +1896,123 @@ export const en: Strings = {
       `${total.toLocaleString("en-US")} ${total === 1 ? "item" : "items"} removed`,
     deleteRetryOnRestart: (error: string): string =>
       `${error}. The rest is removed when the server next starts.`,
+    /** Agent State section: the State version with the export / replace actions, plus the copyable State path. */
     stateTitle: "Agent State",
     stateVersion: "Agent State version",
     transferDesc:
-      "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
-    exportSnapshot: "Export snapshot",
-    importSnapshot: "Import snapshot",
+      "Export… packs the agent into a zip, with whichever of its skills, hooks, memory, workbenches, scheduled tasks and conversations you pick. Replace from file… replaces its Agent State from an exported zip; its conversations, vault and API keys stay, and a backup snapshot is written first.",
+    /** The Overview's two actions: the shared export dialog, and the import dialog in replace mode (owner only). */
+    exportOpen: "Export…",
+    replaceOpen: "Replace from file…",
+    /** The Agents page: a card's export icon, and the header button beside the create pair (also the import dialog's title). */
+    exportAgent: "Export agent",
+    importAgent: "Import agent",
+    /** The export dialog (agent-export-dialog.tsx): what the zip carries beyond the config. */
+    exportTitle: (name: string): string => `Export agent: ${name}`,
+    exportInclude: "Include",
+    /** The workbenches' sub-option: their `state.json` beside the source. */
+    exportWorkbenchData: "With their data",
+    exportSchedulesHint: "They run on their schedule once imported",
+    exportTraces: "Conversations",
+    exportTracesNone: "None",
+    exportTracesLast: "Latest N",
+    exportTracesRange: "Date range",
+    exportTracesCount: "Number of conversations",
+    exportTracesCountHint: (max: number): string => `1–${max}`,
+    exportTracesCountError: (max: number): string => `Enter a whole number from 1 to ${max}`,
+    exportTracesFrom: "From",
+    exportTracesTo: "To",
+    exportTracesRangeError: "The end date is before the start date",
+    /** The line under the choices, from the preview: until its first answer, then what the zip would hold. */
+    exportEstimating: "Estimating…",
+    exportSummary: (files: number, size: string, sessions: number | null): string =>
+      `${files === 1 ? "1 file" : `${files} files`}, about ${size}${
+        sessions === null
+          ? ""
+          : `, ${sessions === 1 ? "1 conversation" : `${sessions} conversations`}`
+      }`,
+    exportOverLimit: (limit: string): string =>
+      `Over ${limit} uncompressed: the zip may be too large to import again`,
+    exportSkipped: (n: number, ids: string): string =>
+      `${n === 1 ? "1 conversation has a file" : `${n} conversations have files`} too large to export and ${n === 1 ? "is" : "are"} left out: ${ids}`,
+    exportAction: "Export",
+    exporting: "Exporting…",
+    /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's "Replace from file…". */
+    replaceTitle: (name: string): string => `Replace from file: ${name}`,
+    migrateTitle: "Migrate from another framework",
+    migrateInfo:
+      "The Project's default agent reads the source's setup in a new conversation with the agent-porting skill, creates the new agent, and says what it could not move. The prompt only lands in the message box; sending it is up to you.",
+    migrateFramework: "Source framework",
+    /** The source frameworks, by id (agent-migration.ts); the product names stay as they are. */
+    migrateFrameworks: {
+      "claude-code": "Claude Code",
+      codex: "Codex",
+      "deepseek-harness": "DeepSeek Harness",
+      qoder: "Qoder",
+      "qwen-code": "Qwen Code",
+      workbuddy: "WorkBuddy",
+      other: "Other",
+    },
+    migratePath: "Path",
+    /** The field's label for "Other", where it is required: there is no default directory to read. */
+    migratePathOther: "Path or description",
+    migratePathHint: (home: string): string => `Empty reads ${home}`,
+    /** Stands in the prompt preview for "Other"'s source until something is typed. */
+    migratePathToken: "<path or description>",
+    /**
+     * The new conversation's prompt (agent-migration.ts): the framework (null for "Other") and the
+     * source it reads, then what the agent-porting Skill is asked to do, ending in the CLI import
+     * into this Project.
+     */
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `Migrate this source into a new PenguinHarness agent: ${source}`
+          : `Migrate the ${framework} setup into a new PenguinHarness agent. Source: ${source}`,
+        "Use the agent-porting skill:",
+        "- Read the source in full: instruction files, skills, MCP servers, hooks, subagents and commands. Read only; change nothing in the source.",
+        "- Never copy the value of a key, token or password; note only the names that need filling in.",
+        "- Write the new agent in a scratch folder, in the agent zip layout the skill describes (manifest.json and agent_state/).",
+        `- Import it with \`penguin agent import <that folder> --project-id ${projectId}\`; if the id is taken, pick another with --agent-id.`,
+        "- Finally tell me the new agent's id, what was mapped, what was not and why, and the vault keys to fill in.",
+      ].join("\n"),
+    importFileTitle: "Import a file",
+    importFileInfo:
+      "Creates a new agent from an exported zip. The conversations in it are imported too; one this server already has is skipped.",
+    replaceFileInfo:
+      "Replaces this agent's Agent State from an exported zip: whatever the file leaves out keeps its current contents, its conversations, vault and API keys stay, and a backup snapshot is written first.",
+    importFileHint: ".zip, or an older .tar.gz package until 1.0",
+    importPick: "Choose a file",
+    importClearFile: "Remove the chosen file",
+    importIdHint: "Filled in from the file name; empty uses the id the file records",
+    importAction: "Import",
     importing: "Importing…",
-    importDone: (v: number): string => `Import finished, Agent State version v${v}`,
-    importConflictTitle: "Version conflict",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `Replace the whole Agent State with ${file}? Everything in it is replaced by the snapshot (the Vault is kept); the current version is snapshotted first.`,
-    importConflictBody:
-      "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
+    /** A taken id (409 agent_exists), inline under the id: the two ways on — another id, or (owners) overwrite. */
+    importExists: (id: string): string => `The id ${id} is taken`,
+    importRename: "Use another id",
+    importOverwrite: "Overwrite the existing agent",
+    replaceAction: "Replace",
+    /** The one confirmation before a State is replaced (overwrite on import, or replace mode). */
+    overwriteTitle: "Replace the Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `Replace the Agent State of ${agentId} from ${file}? Its conversations, vault and API keys stay, and whatever the file leaves out keeps its current contents. A backup snapshot is written first.`,
+    /** The toast after an import (import-report.ts): what was done, then the counts, the skipped conversations and the keys to fill in. */
+    importDoneCreated: (name: string): string => `Imported the agent ${name}`,
+    importDoneReplaced: (name: string, from: number | undefined, to: number): string =>
+      `Replaced the Agent State of ${name} (${from === undefined ? "" : `v${from} → `}v${to})`,
+    importCounts: {
+      skills: (n: number): string => (n === 1 ? "1 skill" : `${n} skills`),
+      hooks: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+      memoryFiles: (n: number): string => (n === 1 ? "1 memory file" : `${n} memory files`),
+      workbenches: (n: number): string => (n === 1 ? "1 workbench" : `${n} workbenches`),
+      schedules: (n: number): string => (n === 1 ? "1 scheduled task" : `${n} scheduled tasks`),
+      sessions: (n: number): string => (n === 1 ? "1 conversation" : `${n} conversations`),
+    },
+    importSkipped: (n: number): string =>
+      `skipped ${n === 1 ? "1 conversation that already exists or is" : `${n} conversations that already exist or are`} incomplete`,
+    importToFill: (keys: string): string => `to fill in: ${keys}`,
+    /** How the toast's pieces join: after the lead, between the counts, between the clauses. */
+    importReportJoin: { lead: ": ", list: ", ", clause: "; " },
     resetConfigTitle: "Restore default configuration",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:

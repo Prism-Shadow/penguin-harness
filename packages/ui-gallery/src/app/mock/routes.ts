@@ -15,6 +15,7 @@ import type {
   AgentApiKeyInfo,
   AgentApiResponse,
   AgentApiSettings,
+  AgentArchivePreview,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentDeleteResponse,
@@ -28,6 +29,7 @@ import type {
   AgentSkillsConfigDto,
   AgentSkillsResponse,
   AgentsResponse,
+  AgentSummary,
   AgentVaultConfigDto,
   ApprovalMode,
   ArchivedSessionGroup,
@@ -2426,17 +2428,71 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent State export / import
+// Agent archive (zip export / import)
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * What an Agent's zip would hold, read off its card's counts: two files of a few kilobytes per
+ * Skill, hook package, memory, workbench and schedule the parts query switches on, and the
+ * Sessions the Trace selection names out of the Agent's count, one file each. An absent key takes
+ * the export dialog's default, as the server's does.
+ */
+function archivePreviewOf(agent: AgentSummary, query: URLSearchParams): AgentArchivePreview {
+  const on = (key: string, fallback: boolean) =>
+    query.has(key) ? query.get(key) === "1" : fallback;
+  const part = (selected: boolean, count: number) =>
+    selected ? { files: count * 2, bytes: count * 6_400 } : { files: 0, bytes: 0 };
+  const workbenches = on("workbenches", true);
+  const parts = {
+    skills: part(on("skills", true), agent.skillCount),
+    hooks: part(on("hooks", true), agent.hookCount),
+    memory: part(on("memory", true), agent.memoryCount),
+    workbenches: part(
+      workbenches,
+      (agent.workbenchCount ?? 0) * (on("workbenchData", true) ? 2 : 1),
+    ),
+    schedules: part(on("schedules", false), agent.scheduleCount),
+  };
+  const traces = query.get("traces") ?? "none";
+  const last = /^last:(\d+)$/.exec(traces);
+  const sessions =
+    traces === "none"
+      ? 0
+      : last
+        ? Math.min(Number(last[1]), agent.sessionCount)
+        : agent.sessionCount;
+  const traceBytes = sessions * 184_000;
+  return {
+    parts,
+    traces: {
+      sessions,
+      files: sessions,
+      bytes: traceBytes,
+      skipped: [],
+      newest: null,
+      oldest: null,
+    },
+    totalBytes: Object.values(parts).reduce((sum, p) => sum + p.bytes, 0) + traceBytes + 12_288,
+    vaultKeys: [],
+    redacted: [],
+  };
+}
+
+/** Today as the export names its file: `yyyymmdd`. */
+const exportStamp = (): string => new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/export", ({ params }) =>
-    raw("\u001f\u008b demo snapshot", {
-      "content-type": "application/gzip",
-      "content-disposition": `attachment; filename="${params.agentId}.tar.gz"`,
-    }),
+  .get("/api/projects/:projectId/agents/:agentId/archive/preview", (ctx): AgentArchivePreview =>
+    archivePreviewOf(agentOf(ctx), ctx.query),
   )
-  .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
+  .get("/api/projects/:projectId/agents/:agentId/archive", (ctx) => {
+    const agent = agentOf(ctx);
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${agent.agentId}-${exportStamp()}.zip"`,
+    });
+  })
+  .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
 
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)

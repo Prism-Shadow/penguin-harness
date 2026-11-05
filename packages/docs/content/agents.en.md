@@ -6,9 +6,9 @@ description: Create agents, and configure their prompts, tools, Skills, hooks, m
 An agent is a configured assistant in a Project. Each agent has its own instructions, runtime settings, tools, Skills, hook packages, memory, vault variables and scheduled tasks, stored together as its Agent State. You create agents and change their settings on the **Agents** page.
 
 - To see the agents in a Project, see [The Agents page](#the-agents-page).
-- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai) or [Create an agent manually](#create-an-agent-manually).
+- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai), [Create an agent manually](#create-an-agent-manually) or [Import an agent](#import-an-agent).
 - To change an agent, see [Agent settings](#agent-settings) and the section for each tab.
-- To back up, move or reset an agent, see [Overview tab](#overview-tab).
+- To back up or move an agent, see [Export an agent](#export-an-agent) and [Import an agent](#import-an-agent); to reset one, see [Overview tab](#overview-tab).
 - To delete an agent, see [Delete an agent](#delete-an-agent).
 
 ## The Agents page
@@ -22,7 +22,7 @@ Each agent card shows:
 - the agent's name, its id, its Agent State version (for example `v3`) and its description; an agent whose API is on carries an API icon after its name (**API access on**);
 - a row of counts: Sessions, tools, Skills, hook packages, memories, vault variables and scheduled tasks, plus when the agent was last modified. Select a count to open the matching settings tab;
 - the agent's Session activity over the last 30 days;
-- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; and a delete button.
+- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; an export button (**Export agent**); and a delete button.
 
 When a newer kernel is available for some agents, their cards show **Kernel update needed**, and a notice at the top of the page offers **Update now** and **Dismiss**. See [Update the kernel](#update-the-kernel).
 
@@ -30,7 +30,7 @@ When a newer kernel is available for some agents, their cards show **Kernel upda
 
 An agent belongs to the server it lives on. When the Project uses machines, each connected machine's own agents sit in the same list as this server's, in the list's order (oldest first), the way the sidebar lists machine workspaces beside local ones. Each machine card carries the machine after the agent's name, as in `[SSH: gpu-box]`. A machine's agent is never merged with one of this server's, even when the ids match: every machine has its own `default_agent`.
 
-Everything on such a card acts on that machine. **Settings** and the counts open the agent's settings there, and every change is saved there. **New chat** starts a conversation in that machine's temporary workspace, and delete removes the agent from that machine. **Cost Center** counts this server's agents only, so the card's costs button is off. While a machine is reconnecting or its server is stopped, the agents it last listed stay in the list, greyed, with an unplugged icon after the machine's name: point at it for the reason. Their buttons are off. Only admins see machines.
+Everything on such a card acts on that machine. **Settings** and the counts open the agent's settings there, and every change is saved there. **New chat** starts a conversation in that machine's temporary workspace, export downloads the agent from that machine, and delete removes the agent from that machine. **Cost Center** counts this server's agents only, so the card's costs button is off. While a machine is reconnecting or its server is stopped, the agents it last listed stay in the list, greyed, with an unplugged icon after the machine's name: point at it for the reason. Their buttons are off. Only admins see machines.
 
 You can also reach an agent from the sidebar. When conversations are grouped by agent, each agent's group header has a **New chat** button and an **Agent settings** button, and the sidebar has a **Create agent** button that opens the **Create agent** dialog.
 
@@ -68,15 +68,51 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 
 Any Project member can create an agent.
 
-### Import an agent from a file
+A new agent can also come from a file or from another coding agent: see [Import an agent](#import-an-agent).
 
-An exported agent is a zip file. You can create an agent from one, for example to copy an agent to another Project or another installation. An Agent State package written by an earlier version (`.tar.gz`) imports the same way until 1.0.
+## Import an agent
 
-1. On the **Agents** page, select **Import agent**. Under **Import a file**, pick the file. **Agent id** is filled in from the file name.
-2. Optional: change **Agent id**.
-3. Select **Import**. The new agent has the file's configuration, name and version, the parts the file carries, and the conversations the export included.
+On the **Agents** page, select **Import agent**. The dialog offers two ways in: a migration from another framework, done by an agent in a new conversation, and a file exported from PenguinHarness. Any Project member can import an agent.
 
-A file can be up to 100 MB. If the id is taken, choose another one, or, as the Project owner, overwrite that agent: see [Export an agent, or replace it from a file](#export-an-agent-or-replace-it-from-a-file). When the import finishes, it names what to set next: the vault keys the agent expects and any MCP credential the export left blank. A conversation that already exists in this installation is not imported twice; the import lists it as skipped.
+### Migrate from another framework
+
+1. Under **Migrate from another framework**, in **Source framework**, select **Claude Code**, **Codex**, **DeepSeek Harness**, **Qoder**, **Qwen Code**, **WorkBuddy** or **Other**.
+2. Optional: in **Path**, enter where the source's setup lives. Left empty, the framework's user directory is read: `~/.claude`, `~/.codex`, `~/.dsh`, `~/.qoder`, `~/.qwen` or `~/.workbuddy-ai`. For **Other**, the field is **Path or description**, and it is required.
+3. Optional: expand **Full prompt** to read the instructions, or copy them.
+4. Select **Open a new chat**. A new conversation with the Project's default agent opens with the prompt filled in. Nothing is sent yet.
+5. Review the prompt and send it.
+
+The prompt tells the agent to use the `agent-porting` Skill and to:
+
+- read the source in full, without changing anything in it;
+- never copy the value of a key, token or password, only note the names to fill in;
+- write the new agent in a scratch folder, in the layout of an exported zip, and import it with `penguin agent import <folder> --project-id <project>`;
+- report the new agent's id, what it mapped, what it could not map and why, and the vault keys to fill in.
+
+### Import a file
+
+**Before you begin**
+
+- A zip exported from PenguinHarness, up to 100 MB; to make one, see [Export an agent](#export-an-agent). Until 1.0, an Agent State package (`.tar.gz`) exported by an earlier version is accepted too.
+
+1. Under **Import a file**, select **Choose a file** and pick the file. **Agent id** is filled in from the file name: `<id>-<yyyymmdd>.zip` and `<id>-v<n>.tar.gz` give `<id>`. You can change it; left empty, the id recorded in the file is used.
+2. Select **Import**.
+
+The new agent has the file's configuration, name and Agent State version, the parts the file carries, and the conversations the export included. A conversation that already exists in this installation is not imported twice: it is listed as skipped. A message then lists what came in, the conversations that were skipped, and what you still have to set: the vault keys the agent expects, and any MCP credential the export left blank, since secret values never travel in a zip.
+
+If the id is taken, the dialog says so under **Agent id**. Select **Use another id** and enter a new one, or, as the Project owner, select **Overwrite the existing agent** and confirm. An overwrite replaces that agent's Agent State as [Replace from a file](#export-and-replace-from-a-file) does.
+
+## Export an agent
+
+Select the export button on the agent's card, or **Export…** in the **Agent State** section of its Overview tab. The **Export agent** dialog opens.
+
+1. Under **Include**, choose what goes in beside the configuration (`system_config.yaml`, `AGENTS.md` and the agent's custom tools), which always does: **Skills**, **Hooks**, **Memory**, **Workbenches** — with **With their data** for each workbench's saved data — and **Schedules**. Schedules are off by default, because imported scheduled tasks run on their schedule.
+2. Under **Conversations**, select **None**, **Latest N** (20 unless you change it, up to 500), or **Date range** and pick the first and last day.
+3. Select **Export**. The zip is saved as `<agent-id>-<yyyymmdd>.zip`.
+
+The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, and names the conversations left out because one of their files is too large.
+
+A zip never carries the vault's values, only its key names. MCP server environment variables and headers that look like credentials are left blank, unless they are written as `${KEY}` vault references. The choices are not remembered: the dialog opens with the defaults every time.
 
 ## Delete an agent
 
@@ -94,7 +130,7 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 
 | Tab | What you configure |
 | --- | --- |
-| **Overview** | Name and description, exporting the agent and replacing its Agent State from a file, kernel updates, and restoring the default configuration |
+| **Overview** | Name and description, export and replace from a file, kernel updates, and restoring the default configuration |
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
@@ -122,7 +158,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 
 Any Project member can change most settings. These actions are for the Project owner only:
 
-- deleting the agent and replacing its Agent State from a file;
+- deleting the agent, replacing its Agent State from a file, and overwriting it from an import;
 - turning **Enable hooks** on or off;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
@@ -135,12 +171,12 @@ Any Project member can change most settings. These actions are for the Project o
 
 Change **Name** or **Description**, then select **Save**.
 
-### Export an agent, or replace it from a file
+### Export and replace from a file
 
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
-- **Export…** opens the export dialog, which the export button on the agent's card also opens. Choose what goes into the zip: Skills, hooks, memory, workbenches (with or without their data), schedules, and conversations (none, the most recent ones, or those of a date range). The configuration always goes in. MCP credentials in it are left blank unless they are written as `${KEY}` vault references, and the vault itself never travels, only the names of its keys. Schedules are off by default: an imported schedule runs on the installation it is imported into.
-- **Replace from file…**, for the Project owner, replaces this agent's Agent State with an exported zip or an older `.tar.gz` package, and adopts the version inside it. The agent keeps its identity, conversations, vault, API keys and company employments, and every part the file leaves out keeps the agent's own contents; so does a blanked MCP credential. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every replace and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. The workbench version history sits beside the Agent State, so a replace leaves it as it is.
+- **Export…** opens the **Export agent** dialog; see [Export an agent](#export-an-agent).
+- **Replace from file…** replaces the agent's Agent State from an exported zip, or until 1.0 from an older `.tar.gz` package, and adopts the version inside it. Choose the file, select **Replace**, and confirm. The agent keeps its identity, conversations, vault, API keys and company employments, and every part the file leaves out keeps the agent's own contents; so does an MCP credential the export left blank. The workbench version history sits beside the Agent State, so a replace leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every replace and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can replace an agent's Agent State.
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 

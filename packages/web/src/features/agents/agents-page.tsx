@@ -12,9 +12,12 @@
  * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
- * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
- * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
+ * ?agentId= to the usage center), "Export" (the shared export dialog, agent-export-dialog.tsx)
+ * and "Delete" (with confirmation; built-in Agents show a non-interactive light gray placeholder
+ * with an undeletable tooltip) are square icon buttons (tooltip shows the full name). Beside the
+ * create pair in the header, "Import agent" opens the import dialog (agent-import-dialog.tsx): a
+ * migration chat from another framework, or a zip that creates an Agent. "Create Agent"
+ * (create-agent-dialog.tsx) fills in name +
  * description and picks what the new Agent starts with — plugins from the library (each one's
  * skills, hook package and MCP servers), and Skills from a project directory's .agents/skills or
  * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
@@ -86,6 +89,8 @@ import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
 import { followAgentDeletion } from "./agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -111,6 +116,10 @@ const CARD_ICONS = {
   usage: ICONS.barChart,
   /** Memory count: the brain every Memory surface wears; opens the settings tab. */
   memory: ICONS.brain,
+  /** Export: the tray every zip download wears (the Skills, Hooks and Workbenches tabs' export). */
+  export: ICONS.download,
+  /** The header's import: the same tray with the arrow going in. */
+  import: ICONS.upload,
 } as const;
 
 /**
@@ -213,6 +222,14 @@ export function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
+  /** The import dialog (a migration chat, or a file), mounted while open. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The Agent whose export dialog is open, with the machine it lives on (null: this server). */
+  const [exporting, setExporting] = useState<{
+    agentId: string;
+    name: string;
+    machineId: string | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   /**
    * Plugin library for the create dialog's picker, flattened out of its groups: the picker is a
@@ -661,6 +678,22 @@ export function AgentsPage() {
               className="text-gray-600 dark:text-gray-300"
             />
           </Button>
+          {/* Export: the shared dialog, on the server the Agent lives on. */}
+          <Button
+            size="icon"
+            title={offReason ?? S.agent.exportAgent}
+            aria-label={S.agent.exportAgent}
+            disabled={!reachable}
+            onClick={() =>
+              setExporting({ agentId: a.agentId, name: agentDisplayName(a), machineId })
+            }
+          >
+            <GlyphIcon
+              d={CARD_ICONS.export}
+              size={15}
+              className="text-gray-600 dark:text-gray-300"
+            />
+          </Button>
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -704,10 +737,10 @@ export function AgentsPage() {
     <PageFrame>
       {/* The title row and the notice under it share one header block, so the gap below it (to
           the list) is the same whether or not the notice is showing — the models page's header
-          has the same shape. Search plus the create pair sit at the end of the title row: on a
-          narrow screen they wrap onto their own line and the box shrinks with it, fixed width
-          from sm up. Both controls take the form rung — CreateButtons defaults to it — so the
-          buttons read at the size of the box beside them. */}
+          has the same shape. Search, the create pair and Import sit at the end of the title row:
+          on a narrow screen they wrap onto their own line and the box shrinks with it, fixed
+          width from sm up. Every control takes the form rung — CreateButtons defaults to it — so
+          the buttons read at the size of the box beside them. */}
       <PageHeader
         title={S.agent.listTitle}
         actions={
@@ -721,6 +754,10 @@ export function AgentsPage() {
               />
             </div>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <GlyphIcon d={CARD_ICONS.import} />
+              {S.agent.importAgent}
+            </Button>
           </>
         }
       >
@@ -805,7 +842,33 @@ export function AgentsPage() {
           .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
         onCreated={onCreated}
+        onImport={() => {
+          setCreateOpen(false);
+          setImportOpen(true);
+        }}
       />
+
+      {/* Import: a migration chat with the default agent, or a zip that creates an Agent here.
+          The dialog reads the list again once a file lands. */}
+      {importOpen && projectId && (
+        <AgentImportDialog
+          projectId={projectId}
+          machineId={null}
+          onClose={() => setImportOpen(false)}
+          onImported={() => setImportOpen(false)}
+        />
+      )}
+
+      {exporting !== null && projectId && (
+        <AgentExportDialog
+          open
+          projectId={projectId}
+          agentId={exporting.agentId}
+          agentName={exporting.name}
+          machineId={exporting.machineId}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the
