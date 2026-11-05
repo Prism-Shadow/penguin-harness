@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1493](https://github.com/Prism-Shadow/penguin-harness/pull/1493)
 
 [中文版](2026-11-05-image-size-carry.zh.md)
 
