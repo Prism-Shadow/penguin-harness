@@ -6284,6 +6284,23 @@ export interface OrganizationsResponse {
   organizations: OrganizationSummary[];
 }
 
+/**
+ * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
+ * Project's trash either way; with `?deleteAgents=1` each of its employees' Agents (its CEO
+ * included) is then deleted for good, exactly as `DELETE …/agents/:agentId` deletes one, unless
+ * it is built in or another organization of the Project still employs it. Without the flag the
+ * three lists are empty.
+ */
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /** Left as they are, and why. */
+  keptAgents: Array<{ agentId: string; reason: "employed_elsewhere" | "builtin" }>;
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
+}
+
 export interface OrgEmployeeItem {
   agentId: string;
   /**

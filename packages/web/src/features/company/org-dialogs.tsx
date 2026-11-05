@@ -6,11 +6,18 @@
  * chosen), the company workspace (the organization's own directory unless one is picked) and
  * the CEO's monthly budget, which is the whole company's and is typed in the currency the
  * reader reads money in but stored in USD — and an organization's
- * settings: name, mission, model, workspace, timezone, working language, approval mode, and
- * pause / resume — the one lifecycle control there is, since an organization is never deleted
- * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
+ * settings: name, mission, model, workspace, timezone, working language, approval mode, pause /
+ * resume, and delete. Pause / resume writes its own PATCH the moment it is clicked; everything
  * else is a draft until Save, which is live once a field differs from what is stored and none
  * of the required ones is empty. Closing the settings with unsaved edits asks first.
+ *
+ * Deleting is the Project owner's, confirmed by typing the id. The organization goes to the
+ * Project's trash, and by default its employees' Agents go with it for good: the confirmation
+ * reads the Agent list afresh when it opens and names the Agents that would be deleted and the
+ * ones kept (built in, or employed by another organization too), and a checkbox, on by default,
+ * keeps them all instead. Afterwards the Agent list is read again, as it is after a create, a
+ * hire or a leave: every employment mark the shell shows — the Agents page's delete button, the
+ * sidebar's grouping, the pickers — comes from that list.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -27,9 +34,10 @@
  * dialog does once it succeeds — adopt the organization as the shell's current one, then open
  * where the creation leads.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
+  AgentSummary,
   ModelRefDto,
   ModelsResponse,
   OrgApprovalMode,
@@ -41,6 +49,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  Checkbox,
   ConfirmModal,
   FieldError,
   ICON_GAP,
@@ -49,6 +58,7 @@ import {
   Modal,
   Select,
   Textarea,
+  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -60,7 +70,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { projectDisplayName, useProject } from "../../state/project";
+import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
@@ -78,6 +88,10 @@ import {
   saveOrgDraft,
 } from "./org-draft";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failedList } from "../../lib/bulk-update";
+import { followAgentDeletion } from "../agents/agent-deletion-progress";
+import { orgDeletePlan } from "./org-delete-plan";
+import type { OrgDeletePlan } from "./org-delete-plan";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 
@@ -265,7 +279,7 @@ export function CreateOrganizationDialog({
   onClose: () => void;
   onCreated: (detail: OrganizationDetail) => void;
 }) {
-  const { projects, currentProject } = useProject();
+  const { projects, currentProject, reloadAgents } = useProject();
   const { user } = useAuth();
   const { currency } = useTheme();
   const [projectId, setProjectId] = useState("");
@@ -392,6 +406,9 @@ export function CreateOrganizationDialog({
         ...(ceoBudgetUsd !== null ? { ceoBudget: ceoBudgetUsd } : {}),
       };
       const detail = await api.createOrganization(projectId, body);
+      // The creation made the CEO's Agent, an employee from the start: the Agent list carries
+      // every employment mark the shell shows, so it is read again.
+      void reloadAgents().catch(() => undefined);
       // The draft did its job: what it held is now an organization.
       if (draftKey !== null) clearOrgDraft(draftKey);
       setRestored(false);
@@ -583,6 +600,37 @@ const normalizedOrgDraft = (d: OrgSettingsDraft) => ({
     d.modelRef === null ? null : { provider: d.modelRef.provider, modelId: d.modelRef.modelId },
 });
 
+/**
+ * What the delete takes along, under its checkbox: the Agents deleted for good and the ones
+ * kept with the reason, one line each (a long line truncates and shows whole on hover).
+ */
+function DeletePlanLines({ plan, failed }: { plan: OrgDeletePlan | null; failed: boolean }) {
+  if (failed) return <span className="block">{S.company.deleteOrgAgentsLoadFailed}</span>;
+  if (plan === null) return <span className="block">{S.common.loading}</span>;
+  const separator = S.todo.listSeparator;
+  const deleted = plan.toDelete.map(agentDisplayName).join(separator);
+  const kept = plan.kept
+    .map(({ agent, reason }) =>
+      reason.kind === "builtin"
+        ? S.company.deleteOrgKeptBuiltin(agentDisplayName(agent))
+        : S.company.deleteOrgKeptElsewhere(
+            agentDisplayName(agent),
+            reason.orgNames.join(separator),
+          ),
+    )
+    .join(separator);
+  return (
+    <>
+      {plan.toDelete.length > 0 && (
+        <span className="block truncate">{S.company.deleteOrgWillDelete(deleted)}</span>
+      )}
+      {plan.kept.length > 0 && (
+        <span className="block truncate">{S.company.deleteOrgWillKeep(kept)}</span>
+      )}
+    </>
+  );
+}
+
 export function OrganizationSettingsDialog(props: OrganizationSettingsProps) {
   // Mounted only while open, so every opening reads the stored settings afresh.
   return props.open ? <OrganizationSettingsForm {...props} /> : null;
@@ -601,20 +649,74 @@ function OrganizationSettingsForm({
   const form = useFormDraft(orgSettingsDraft(settings), { normalize: normalizedOrgDraft });
   const { name, mission, timezone, language, approvalMode, modelRef, workspace } = form.draft;
   const [busy, setBusy] = useState(false);
+  const { reloadAgents } = useProject();
   /** The delete confirmation, and what has been typed into it (the id, to mean it). */
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typedId, setTypedId] = useState("");
+  /** Whether the organization's Agents go with it: the confirmation's checkbox, on by default. */
+  const [deleteAgents, setDeleteAgents] = useState(true);
+  /** The Project's Agents as read when the confirmation opened; null while they are read. */
+  const [deleteList, setDeleteList] = useState<AgentSummary[] | null>(null);
+  const [deleteListFailed, setDeleteListFailed] = useState(false);
+  /** Reads of that list so far: only the newest one's answer is applied. */
+  const deleteListAsked = useRef(0);
   const { models, error: modelsError } = useProjectModels(projectId, true);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** The organization always has a name, a mission and a timezone: an emptied one holds Save. */
   const valid = name.trim() !== "" && mission.trim() !== "" && timezone.trim() !== "";
+  const deletePlan: OrgDeletePlan | null =
+    deleteList === null ? null : orgDeletePlan(deleteList, orgId);
+
+  const openDeleteConfirm = () => {
+    setTypedId("");
+    setDeleteAgents(true);
+    setDeleteList(null);
+    setDeleteListFailed(false);
+    setConfirmDelete(true);
+    // Read afresh rather than from the shell's copy, which may predate the last hire: these
+    // are the Agents the confirmation says will go.
+    const ask = ++deleteListAsked.current;
+    api
+      .listAgents(projectId, null)
+      .then((res) => {
+        if (ask === deleteListAsked.current) setDeleteList(res.agents);
+      })
+      .catch(() => {
+        if (ask === deleteListAsked.current) setDeleteListFailed(true);
+      });
+  };
 
   const doDelete = async () => {
     setBusy(true);
     try {
-      await api.deleteOrganization(projectId, orgId);
+      const report = await api.deleteOrganization(projectId, orgId, { deleteAgents });
       setConfirmDelete(false);
-      toastSuccess(S.company.deleted(orgId));
+      const nameOf = (agentId: string) => {
+        const agent = deleteList?.find((a) => a.agentId === agentId);
+        return agent === undefined ? agentId : agentDisplayName(agent);
+      };
+      // Each Agent is off every list already; its files go in the background, on a card that
+      // shows once that takes a while.
+      for (const { agentId, deletion } of report.deletedAgents) {
+        void followAgentDeletion({ projectId, machineId: null, name: nameOf(agentId), deletion });
+      }
+      const [firstFailure] = report.failedAgents;
+      if (firstFailure !== undefined) {
+        const names = failedList(
+          report.failedAgents.map((f) => nameOf(f.agentId)),
+          S.todo.listSeparator,
+        );
+        // The report carries each refusal's code: worded as the same error answered alone would be.
+        const reason = apiErrorText(new ApiError(409, firstFailure.code, firstFailure.message));
+        toastError(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}`);
+      } else if (report.deletedAgents.length > 0) {
+        toastSuccess(S.company.deletedWithAgents(orgId, report.deletedAgents.length));
+      } else {
+        toastSuccess(S.company.deleted(orgId));
+      }
+      // Whether or not its Agents went, the organization's employments did: the Agent list
+      // carries every employment mark the shell shows, so it is read again.
+      void reloadAgents().catch(() => undefined);
       onClose();
       onDeleted?.();
     } catch (e) {
@@ -818,10 +920,7 @@ function OrganizationSettingsForm({
             size="sm"
             variant="danger"
             disabled={!hydrated || busy}
-            onClick={() => {
-              setTypedId("");
-              setConfirmDelete(true);
-            }}
+            onClick={openDeleteConfirm}
           >
             {S.common.delete}
           </Button>
@@ -834,10 +933,24 @@ function OrganizationSettingsForm({
         confirmDisabled={typedId.trim() !== orgId}
         confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
+        widthClass="sm:max-w-md"
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.company.deleteOrgConfirm}</p>
+        <Checkbox
+          size="sm"
+          className="mt-3 w-full"
+          checked={deleteAgents}
+          disabled={busy}
+          onChange={setDeleteAgents}
+          label={S.company.deleteOrgAgents(deletePlan === null ? null : deletePlan.toDelete.length)}
+          hint={
+            deleteAgents ? (
+              <DeletePlanLines plan={deletePlan} failed={deleteListFailed} />
+            ) : undefined
+          }
+        />
         <Input
           size="sm"
           className="mt-3 font-mono"

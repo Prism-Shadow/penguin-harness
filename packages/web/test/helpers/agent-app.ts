@@ -31,6 +31,13 @@
  * answers them masked, and the state switch turns one on or off. This server answers which
  * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
+ * This server can hold organizations too ({@link FakeOrganization}): their employees are Agents
+ * of the Project, listed with their employments the way the Agent list marks them. An
+ * organization's settings read; a hire adds an employee (a new Agent with it, when it names
+ * one); and a delete takes the organization away and, with `deleteAgents=1`, every employee's
+ * Agent that is not built in and that no other organization employs, answering the report the
+ * real route answers.
+ *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
  * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. Beside the
@@ -47,6 +54,10 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
   AgentSummary,
+  Employment,
+  OrgHireRequest,
+  OrganizationDeleteResponse,
+  OrganizationSettings,
   ChatDefaultsDto,
   MachineInfo,
   MessagingAccountHoldersResponse,
@@ -177,6 +188,20 @@ export interface FakeMachine {
   sessions?: SessionInfo[];
 }
 
+/** An organization of the Project, as far as these suites reach it. */
+export interface FakeOrganization {
+  orgId: string;
+  name: string;
+  /**
+   * Its employees, the CEO first; each is (or becomes) one of this server's Agents. A `busy`
+   * one's folder cannot be moved: deleting it with the organization fails.
+   */
+  employees: Array<{ agentId: string; title: string; busy?: boolean }>;
+}
+
+/** The Agents the server provisions with every Project and never deletes. */
+const BUILTIN_AGENTS = new Set(["default_agent", "penguin_support"]);
+
 export interface AgentServer {
   fetch: FakeFetch;
   /** The ids of a machine's own Agents now. */
@@ -252,6 +277,8 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** This server's organizations (by default none); their employees join its Agents. */
+    organizations?: FakeOrganization[];
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -307,8 +334,26 @@ export function agentServer(
   let pages: Array<{ machine: string | null; path: RegExp }> = [];
   /** Requests to hold once each, oldest first, with the answers they wait for. */
   let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
-  /** This server's Agents: the one the suites configure, unless a test deleted it. */
-  let localAgentIds = [AGENT_ID];
+  let organizations = (options.organizations ?? []).map((o) => ({
+    ...o,
+    employees: [...o.employees],
+  }));
+  /** This server's Agents: the one the suites configure, unless a test deleted it, and every employee. */
+  let localAgentIds = [
+    ...new Set([AGENT_ID, ...organizations.flatMap((o) => o.employees.map((e) => e.agentId))]),
+  ];
+  /** The organizations employing an Agent, as the Agent list carries them. */
+  const employmentsOf = (agentId: string): Employment[] =>
+    organizations.flatMap((o) =>
+      o.employees
+        .filter((e) => e.agentId === agentId)
+        .map((e) => ({
+          orgId: o.orgId,
+          orgName: o.name,
+          title: e.title,
+          status: "active" as const,
+        })),
+    );
   const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
@@ -504,10 +549,14 @@ export function agentServer(
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
       return json({
-        agents: localAgentIds.map((id) => ({
-          ...summaryOf(id),
-          name: id === AGENT_ID ? stored.config.name : id,
-        })),
+        agents: localAgentIds.map((id) => {
+          const employments = employmentsOf(id);
+          return {
+            ...summaryOf(id),
+            name: id === AGENT_ID ? stored.config.name : id,
+            ...(employments.length > 0 ? { employments } : {}),
+          };
+        }),
       });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
@@ -551,6 +600,76 @@ export function agentServer(
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
+    }
+    const orgPath = /^\/api\/projects\/[^/]+\/organizations\/([^/]+)(\/employees)?$/.exec(path);
+    const org =
+      orgPath === null || request.machine !== null
+        ? undefined
+        : organizations.find((o) => o.orgId === decodeURIComponent(orgPath[1]!));
+    if (orgPath !== null && request.machine === null) {
+      if (org === undefined) return apiError(404, "org_not_found");
+      if (orgPath[2] === undefined && method === "GET") {
+        const settings: OrganizationSettings = {
+          name: org.name,
+          mission: "Run the company",
+          status: "active",
+          timezone: "UTC",
+          approvalMode: "allow-all",
+          mentionChainLimit: 3,
+          budgetWarnRatio: 0.8,
+          budgetPauseRatio: 1,
+          createdBy: "admin",
+        };
+        return json({ settings });
+      }
+      if (orgPath[2] === undefined && method === "DELETE") {
+        organizations = organizations.filter((o) => o !== org);
+        const report: OrganizationDeleteResponse = {
+          orgId: org.orgId,
+          deletedAgents: [],
+          keptAgents: [],
+          failedAgents: [],
+        };
+        if (request.query.get("deleteAgents") === "1") {
+          for (const { agentId, busy } of org.employees) {
+            if (BUILTIN_AGENTS.has(agentId)) {
+              report.keptAgents.push({ agentId, reason: "builtin" });
+            } else if (employmentsOf(agentId).length > 0) {
+              report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
+            } else if (busy === true) {
+              report.failedAgents.push({
+                agentId,
+                code: "agent_folder_busy",
+                message:
+                  "The agent's folder could not be moved aside (EBUSY). Nothing was deleted.",
+              });
+            } else {
+              localAgentIds = localAgentIds.filter((id) => id !== agentId);
+              const deletion = { deletionId: `${agentId}-0`, agentId, total: 0, removed: 0 };
+              report.deletedAgents.push({ agentId, deletion: { ...deletion, phase: "done" } });
+            }
+          }
+        }
+        return json(report);
+      }
+      if (orgPath[2] !== undefined && method === "POST") {
+        const body = request.body as OrgHireRequest;
+        const agentId = body.newAgent?.agentId ?? body.agentId ?? "";
+        if (!localAgentIds.includes(agentId)) localAgentIds = [...localAgentIds, agentId];
+        org.employees.push({ agentId, title: body.title });
+        return json(
+          {
+            agentId,
+            name: agentId,
+            title: body.title,
+            reportsTo: body.reportsTo,
+            workspace: agentId,
+            state: "idle",
+            spend: { own: 0, cumulative: 0 },
+          },
+          201,
+        );
+      }
     }
     const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
     if (localAgent !== null && method === "DELETE" && request.machine === null) {
