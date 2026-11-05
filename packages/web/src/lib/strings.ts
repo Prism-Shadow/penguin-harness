@@ -1757,13 +1757,8 @@ export const zh = {
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
     createDirSkillsClear: "不从目录导入",
-    /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
-    createSnapshot: "从快照初始化",
-    createSnapshotPick: "选择快照包",
-    createSnapshotHint:
-      "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
-    createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
-    createSnapshotClear: "移除已选快照包",
+    /** The create dialog's footer line: a new Agent from an exported file is the Agents page's import (importAgent), not this form. */
+    createFromFileHint: "要从导出的文件新建 Agent？",
     /**
      * The "Create with AI" dialog, a separate surface from the create form above: its title, the
      * lead line, the prompt box's placeholder, the clickable examples and the fixed instruction
@@ -2027,19 +2022,117 @@ export const zh = {
     /** A removal that stopped short: the operating system's reason, and when the rest goes. */
     deleteRetryOnRestart: (error: string): string =>
       `${error}。其余文件会在服务端下次启动时再删除。`,
-    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    /** Agent State section: the State version with the export / replace actions, plus the copyable State path. */
     stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
-    exportSnapshot: "导出快照",
-    importSnapshot: "导入快照",
+    transferDesc:
+      "「导出…」把该 Agent 打成一个 zip，技能、钩子、记忆、工作台、定时任务与对话按你的勾选带上；「从文件替换…」用导出的 zip 替换它的 Agent State，对话、保险柜与 API 密钥保留，替换前先写一份备份快照。",
+    /** The Overview's two actions: the shared export dialog, and the import dialog in replace mode (owner only). */
+    exportOpen: "导出…",
+    replaceOpen: "从文件替换…",
+    /** The Agents page: a card's export icon, and the header button beside the create pair (also the import dialog's title). */
+    exportAgent: "导出 Agent",
+    importAgent: "导入 Agent",
+    /** The export dialog (agent-export-dialog.tsx): what the zip carries beyond the config. */
+    exportTitle: (name: string): string => `导出 Agent：${name}`,
+    exportInclude: "包含",
+    /** The workbenches' sub-option: their `state.json` beside the source. */
+    exportWorkbenchData: "含其数据",
+    exportSchedulesHint: "导入后会按计划运行",
+    exportTraces: "对话",
+    exportTracesNone: "不含",
+    exportTracesLast: "最近 N 条",
+    exportTracesRange: "日期范围",
+    exportTracesCount: "对话条数",
+    exportTracesCountHint: (max: number): string => `1–${max}`,
+    exportTracesCountError: (max: number): string => `填写 1–${max} 之间的整数`,
+    exportTracesFrom: "起始日期",
+    exportTracesTo: "结束日期",
+    exportTracesRangeError: "结束日期早于起始日期",
+    /** The line under the choices, from the preview: until its first answer, then what the zip would hold. */
+    exportEstimating: "正在估算…",
+    exportSummary: (files: number, size: string, sessions: number | null): string =>
+      `${files} 个文件，约 ${size}${sessions === null ? "" : `，${sessions} 个对话`}`,
+    exportOverLimit: (limit: string): string => `未压缩已超过 ${limit}，导出的 zip 可能无法再导入`,
+    exportSkipped: (n: number, ids: string): string =>
+      `${n} 个对话含有过大的文件，不会导出：${ids}`,
+    exportAction: "导出",
+    exporting: "导出中…",
+    /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's 「从文件替换…」. */
+    replaceTitle: (name: string): string => `从文件替换：${name}`,
+    migrateTitle: "从其他框架迁移",
+    migrateInfo:
+      "Project 的默认 Agent 会在一个新对话里用 agent-porting 技能读取来源的配置，建好新的 Agent，并说明哪些内容没能迁移。Prompt 只填进输入框，发送由你决定。",
+    migrateFramework: "来源框架",
+    /** The source frameworks, by id (agent-migration.ts); the product names stay as they are. */
+    migrateFrameworks: {
+      "claude-code": "Claude Code",
+      codex: "Codex",
+      "deepseek-harness": "DeepSeek Harness",
+      qoder: "Qoder",
+      "qwen-code": "Qwen Code",
+      workbuddy: "WorkBuddy",
+      other: "其他",
+    },
+    migratePath: "路径",
+    /** The field's label for 「其他」, where it is required: there is no default directory to read. */
+    migratePathOther: "路径或说明",
+    migratePathHint: (home: string): string => `留空则读取 ${home}`,
+    /** Stands in the prompt preview for 「其他」's source until something is typed. */
+    migratePathToken: "<路径或说明>",
+    /**
+     * The new conversation's prompt (agent-migration.ts): the framework (null for 「其他」) and the
+     * source it reads, then what the agent-porting Skill is asked to do, ending in the CLI import
+     * into this Project.
+     */
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `把这个来源迁移成 PenguinHarness 的一个新 Agent：${source}`
+          : `把 ${framework} 的配置迁移成 PenguinHarness 的一个新 Agent，来源：${source}`,
+        "用 agent-porting 技能完成迁移：",
+        "- 完整读取来源：指令文件、技能、MCP 服务器、钩子、子 Agent 与命令；只读，不改动来源里的任何文件。",
+        "- 绝不复制密钥、令牌或密码的值，只记下需要填写的键名。",
+        "- 在临时目录里按技能说明的 Agent zip 布局（manifest.json 与 agent_state/）写出新 Agent。",
+        `- 运行 \`penguin agent import <该目录> --project-id ${projectId}\` 导入；id 已被占用时用 --agent-id 换一个。`,
+        "- 最后告诉我：新 Agent 的 id，映射了哪些内容，哪些没能映射及原因，以及需要在保险柜里填写的键。",
+      ].join("\n"),
+    importFileTitle: "导入文件",
+    importFileInfo:
+      "用导出的 zip 新建一个 Agent。zip 里的对话一并导入；这台服务端上已有的对话会被略过。",
+    replaceFileInfo:
+      "用导出的 zip 替换该 Agent 的 Agent State：文件没带的部分保留现有内容，对话、保险柜与 API 密钥保留，替换前先写一份备份快照。",
+    importFileHint: ".zip；1.0 之前也接受旧的 .tar.gz 快照包",
+    importPick: "选择文件",
+    importClearFile: "移除已选文件",
+    importIdHint: "按文件名预填；留空则使用文件里记录的 id",
+    importAction: "导入",
     importing: "导入中…",
-    importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
-    importConflictTitle: "版本冲突",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `用「${file}」替换整个 Agent State？现有内容都会被快照包取代（Vault 保留），导入前会自动为当前版本存一份快照。`,
-    importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    /** A taken id (409 agent_exists), inline under the id: the two ways on — another id, or (owners) overwrite. */
+    importExists: (id: string): string => `id ${id} 已存在`,
+    importRename: "改用其他 id",
+    importOverwrite: "覆盖现有 Agent",
+    replaceAction: "替换",
+    /** The one confirmation before a State is replaced (overwrite on import, or replace mode). */
+    overwriteTitle: "替换 Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `用「${file}」替换「${agentId}」的 Agent State？它的对话、保险柜与 API 密钥保留，文件没带的部分保留现有内容；替换前会先写一份备份快照。`,
+    /** The toast after an import (import-report.ts): what was done, then the counts, the skipped conversations and the keys to fill in. */
+    importDoneCreated: (name: string): string => `已导入 Agent「${name}」`,
+    importDoneReplaced: (name: string, from: number | undefined, to: number): string =>
+      `已替换「${name}」的 Agent State（${from === undefined ? "" : `v${from} → `}v${to}）`,
+    importCounts: {
+      skills: (n: number): string => `${n} 个技能`,
+      hooks: (n: number): string => `${n} 个钩子包`,
+      memoryFiles: (n: number): string => `${n} 个记忆文件`,
+      workbenches: (n: number): string => `${n} 个工作台`,
+      schedules: (n: number): string => `${n} 个定时任务`,
+      sessions: (n: number): string => `${n} 个对话`,
+    },
+    importSkipped: (n: number): string => `略过 ${n} 个已存在或不完整的对话`,
+    importToFill: (keys: string): string => `须填写：${keys}`,
+    /** How the toast's pieces join: after the lead, between the counts, between the clauses. */
+    importReportJoin: { lead: "：", list: "、", clause: "；" },
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
