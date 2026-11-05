@@ -7,11 +7,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 同一个模型，放进不同的 Harness 里，执行任务时的表现往往存在明显差距。在优化 Harness 或引入 RSI 算法改进 Agent 之前，需要先建立一条固定基线：当底层模型完全固定时，切换不同的 Harness，最终的任务通过率、多轮运行的稳定性和资源开销会差多少？
 
-本文整理了 PenguinHarness、DSH、Pi、Codex 四种 Harness 在五个评测集、共 50 道题上的三轮实验的具体数据，并介绍如何用 PenguinHarness 组织复现这套实验。
+本文整理了 PenguinHarness、DSH、Pi、Codex 四种 Harness 在五个评测集、共 50 道题上进行的三轮实验的具体数据，并介绍如何用 PenguinHarness 组织复现这套实验。
 
 ## 1. 实验设计与任务设定
 
-四组实验统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度为 max，版本分别为 PenguinHarness 0.2.17、DSH 0.2.1-rc.2、Pi 1.4.0 与 Codex 0.162.1，通过 Harbor 0.23.0 在独立 Docker 容器中各自将 50 道题完整测试 3 轮，合计完成 600 次作答：
+四组实验统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度为 max，通过 Harbor 0.23.0 在独立 Docker 容器中各自将 50 道题完整测试 3 轮，合计完成 600 次作答：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/03-experiment-design.png" width="2880" height="1730" alt="图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计" /><figcaption>图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计</figcaption></figure>
 
@@ -27,13 +27,13 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 ## 2. 用 PenguinHarness 复现实验
 
-本文分析的 600 次作答历史记录归档于仓库 `experiments/harness-comparison/` 目录。复现实验时，在 PenguinHarness 中创建一个组织 Agent 负责准备环境、启动批处理和汇总结果，由 Harbor 0.23.0 在独立 Docker 容器中调度 PenguinHarness、DSH、Pi、Codex 四种被测 Harness 平级作答。发起实验只需三步：
+本文分析的 600 次作答历史记录归档于仓库 `experiments/harness-comparison/` 目录。复现实验时，在 PenguinHarness 中创建一个组织 Agent 负责准备环境、启动批处理和汇总结果，由 Harbor 0.23.0 在独立 Docker 容器中调度 PenguinHarness、DSH、Pi、Codex 四种被测 Harness 作答。发起实验只需三步：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="2110" alt="图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程" /><figcaption>图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程</figcaption></figure>
 
 **第一步：配置模型**
 
-在 PenguinHarness Web 界面的模型设置中，选择提供商 `deepseek`，添加模型 `DeepSeek-V4.1-Flash-1017` 并保存 API Key；也可以在终端通过 CLI 注册并设为默认模型：
+在 PenguinHarness Web 界面的模型设置中，选择提供商 `deepseek`，添加模型 `DeepSeek-V4.1-Flash-1017`；也可以在终端通过 CLI 注册并设为默认模型：
 
 ```bash
 penguin config model add \
@@ -45,7 +45,7 @@ penguin config model add \
 
 **第二步：把 Prompt 发给 Penguin Agent**
 
-在 PenguinHarness 中新建会话，将以下任务 Prompt 发给组织 Agent，由 Agent 核实四种被测 Harness 均按各自适配器的实际参数启用 `max` 思考强度并完成实验：
+在 PenguinHarness 中新建会话，将以下任务 Prompt 发给组织实验的 Agent，由 Agent 组织四种被测 Harness 均按各自适配器的实际参数启用 `max` 思考强度并完成实验：
 
 ```text
 请帮我组织并复现四种 Harness 的三轮对比实验，具体要求如下：
@@ -88,7 +88,7 @@ penguin config model add \
 
 **第一环节：准备离线运行包与隔离密钥**
 
-开跑前，先锁定 50 道题对应的 40 位任务仓库提交快照、被测 Harness 版本号与各子集运行上限。为避免每个容器启动时重复从公网下载运行环境，或改动题目容器原有的 Python 与 Node 工具链，各被测运行环境预先打包为离线安装包，容器启动时直接挂载解压到独立目录。同时，适配器仅提取当前被测模型的单条密钥，写入容器日志目录之外的临时私有路径，并在单题结束后立即擦除，防止密钥出现在命令行参数或归档日志中。
+为避免每个容器启动时重复从公网下载运行环境，或改动题目容器原有的 Python 与 Node 工具链，各被测 Harness 的运行环境预先打包为离线安装包，容器启动时直接挂载解压到独立目录。
 
 **第二环节：单题验证与批量并发控制**
 
