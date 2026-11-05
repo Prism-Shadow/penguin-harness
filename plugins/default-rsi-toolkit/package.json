@@ -21,6 +21,7 @@
     "icon.svg",
     "skills",
     "hooks",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
@@ -41,5 +42,11 @@
     },
     "title": "Default RSI Toolkit",
     "title_zh": "默认自进化工具包"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }

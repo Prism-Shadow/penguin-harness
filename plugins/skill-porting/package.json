@@ -21,6 +21,7 @@
     "icon.svg",
     "skills",
     "hooks",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
@@ -43,9 +44,11 @@
     "title_zh": "外部插件移植"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
   },
   "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "vitest": "^4.1.12"
   }

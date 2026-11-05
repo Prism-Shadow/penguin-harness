@@ -20,6 +20,7 @@
   "files": [
     "icon.svg",
     "skills",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
@@ -43,5 +44,11 @@
     "references": [
       "https://arxiv.org/abs/2606.06741"
     ]
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }
