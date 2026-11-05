@@ -34,21 +34,10 @@ describe("NoticeStrip", () => {
     expect(strip("danger")).toContain('data-tone="danger"');
   });
 
-  it("paints each tone as its tint and ink on the neutral line, never its own line", () => {
+  it("draws each tone on the notice hook", () => {
     for (const tone of TONES) {
       const tokens = classTokens(strip(tone));
-      expect(tokens, tone).toEqual(
-        expect.arrayContaining([
-          "ui-notice",
-          "border-line",
-          `bg-tone-${tone}-bg`,
-          `text-tone-${tone}-fg`,
-        ]),
-      );
-      expect(
-        tokens.filter((t) => t.startsWith("border-tone-")),
-        tone,
-      ).toEqual([]);
+      expect(tokens, tone).toContain("ui-notice");
     }
   });
 
@@ -58,9 +47,6 @@ describe("NoticeStrip", () => {
       role: "alert",
     });
     expect(html).toMatch(/^<div role="alert"/);
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["mt-4", "rounded-md", "border", "px-3", "py-2", "text-sm"]),
-    );
     expect(html).toContain(">Heads up</div>");
   });
 

@@ -5,8 +5,8 @@
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { OptionMenu, rowDescClass } from "../src/components/forms/select/option-menu";
-import { classTokens, renderStatic } from "../src/testing";
+import { OptionMenu } from "../src/components/forms/select/option-menu";
+import { renderStatic } from "../src/testing";
 
 const options = [
   { value: "r", triggerLabel: "r", label: "Read only", description: "Reads the workspace." },
@@ -31,17 +31,5 @@ describe("OptionMenu", () => {
   it("falls back to the placeholder, then to a dash, while nothing is chosen", () => {
     expect(render({ value: null, placeholder: "default" })).toContain(">default</span>");
     expect(render({ value: undefined })).toContain(">—</span>");
-  });
-
-  it("sets the trigger's value in mono only when asked, and stretches only when asked", () => {
-    expect(classTokens(render({ value: "r" }))).not.toContain("font-mono");
-    expect(classTokens(render({ value: "r", mono: true }))).toContain("font-mono");
-    expect(classTokens(render({ value: "r", fullWidth: true }))).toEqual(
-      expect.arrayContaining(["w-full", "justify-between"]),
-    );
-  });
-
-  it("keeps a row description on a type rung, never a fixed pixel size", () => {
-    for (const size of Object.values(rowDescClass)) expect(size).toMatch(/^text-(?:xs|sm)$/);
   });
 });

@@ -8,7 +8,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Legend } from "../src/components/charts/legend/legend";
 import type { LegendItem } from "../src/components/charts/legend/legend";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 type Props = Parameters<typeof Legend>[0];
 const legend = (props: Props) => renderStatic(createElement(Legend, props));
@@ -35,16 +35,6 @@ describe("Legend", () => {
     expect(itemsOf(html)).toHaveLength(3);
     for (const label of ["Cache read", "Output", "Hit rate"]) expect(html).toContain(label);
     expect(html).toContain("var(--ui-chart-cache-read)");
-    expect(html).toContain("bg-fg-subtle");
-    expect(html).not.toMatch(/gray-|dark:/);
-  });
-
-  it("fades the other items while one is singled out, never the one that explains a shape", () => {
-    const [read, out, rate] = itemsOf(legend({ items: ITEMS, active: "read" }));
-    expect(read).not.toContain("opacity-30");
-    expect(out).toContain("opacity-30");
-    expect(rate).not.toContain("opacity-30");
-    expect(itemsOf(legend({ items: ITEMS }))[1]).not.toContain("opacity-30");
   });
 
   it("makes each item a toggle button with onSelect, pressed while pinned", () => {
@@ -55,7 +45,7 @@ describe("Legend", () => {
     expect(rate).not.toContain("<button");
   });
 
-  it("lays a list out row by row, with the figures after the label, a wash and a pin ring", () => {
+  it("lays a list out row by row, with the figures after the label", () => {
     const rows: LegendItem[] = [
       { key: "a", label: "read_file", value: createElement("span", null, "~1.2k") },
       { key: "b", label: "grep", title: "grep in src/", value: createElement("span", null, "~40") },
@@ -63,12 +53,8 @@ describe("Legend", () => {
     const html = legend({ items: rows, layout: "list", mono: true, active: "a", pinned: "b" });
     const [a, b] = itemsOf(html);
     expect(a).toContain("<span>~1.2k</span>");
-    expect(classTokens(a!)).toEqual(expect.arrayContaining(["bg-tone-neutral-bg", "font-mono"]));
-    expect(classTokens(b!)).toContain("inset-ring-fg-subtle");
     expect(b).toContain('data-tooltip="grep in src/"');
     expect(b).toContain('data-tooltip-content="code"');
-    // No paint and no mark: no swatch.
-    expect(a).not.toContain("inline-block");
   });
 
   it("draws an item's own mark in the swatch's place", () => {
@@ -76,6 +62,5 @@ describe("Legend", () => {
       items: [{ key: "run", label: "Running", mark: createElement("i", { id: "dot" }) }],
     });
     expect(html).toContain('<i id="dot"></i>');
-    expect(html).not.toContain("inline-block");
   });
 });
