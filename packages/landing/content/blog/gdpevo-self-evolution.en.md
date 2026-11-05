@@ -188,7 +188,13 @@ Enterprise benchmarks contain backend services, databases, Docker environments, 
 
 To solve this, we adopted a progressive loading mechanism: the heavy benchmark data stays in a separate repository, while PenguinHarness ships only lightweight package files that record the experimental rules and data locations. When an experiment starts, the Controller Agent reads those local files, fetches the required data on its own, and organizes the run—keeping PenguinHarness lightweight without sacrificing functionality.
 
-### 3. Execution Drift and Critic Agent
+### 3. Overfitting and Validation Splits
+
+Comparing training curves against final test scores shows that an Agent sometimes achieves steadily higher scores on the training set without seeing a commensurate gain on the test set. In Court Clerk Operations, for example, SkillAdam's training mean rose from 69.54 to 85.42, yet its held-out test score improved by only 2.77 points over Baseline. When the Agent repeatedly refines SKILL.md against just 5 training tasks, some of the learned rules inevitably overfit to those specific examples.
+
+Just as traditional deep learning relies on a validation set to prevent overfitting, future agent self-evolution experiments need a dedicated Validation split: distilling edits on the training set, selecting checkpoints on the Validation set to ensure the learned rules generalize, and only then evaluating on the held-out test set. The current GDPEVO release only provides Train and Test splits, which we plan to address in the upcoming GDPEVO V3 release while also experimenting with Train, Validation, and Test splits on traditional benchmarks.
+
+### 4. Execution Drift and Critic Agent
 
 Reviewing the execution logs of DeepSeek-V4.1-Flash-1017 shows that when a problem produces a clear error—such as a container startup timeout, an image pull conflict, or restricted directory permissions—the Controller Agent can usually find the cause and recover on its own. However, for procedural details that do not trigger an error, the Controller Agent occasionally introduces subtle deviations without realizing it:
 
