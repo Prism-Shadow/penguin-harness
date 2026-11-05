@@ -83,37 +83,43 @@ The steps below show how to launch the experiment in four steps from the Penguin
 
 Open the Models page from the left sidebar, find the model used for the experiment, DeepSeek V4.1 Flash, enter its API key, and click Save.
 
-<img src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="Configuring the API key for DeepSeek V4.1 Flash in the Model settings dialog on the Models page" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="Configuring the API key for DeepSeek V4.1 Flash in the Model settings dialog on the Models page" />
 
 ### Step 2: Create a Controller Agent and Install the RSI Toolkit
 
 Open the Agents page from the left sidebar, click Create manually in the top-right corner, and set the agent's name and ID. In the Plugins dropdown below, search for skill and select skilladam-rsi-toolkit—or select skillopt-rsi-toolkit, trace-rsi-toolkit, and openskill-rsi-toolkit as well if you plan to compare multiple methods—then click Create.
 
-<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Setting the agent name and ID and selecting self-evolution toolkit plugins in the Create agent dialog" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Setting the agent name and ID and selecting self-evolution toolkit plugins in the Create agent dialog" />
 
 ### Step 3: Open the Chat View and Select the Model
 
-Once the agent is created, find its card in the Agents list and click New chat on the right to open its conversation view, then select DeepSeek V4.1 Flash in the model picker below the input box and set the thinking effort to max.
+Once the agent is created, find its card in the Agents list and click New chat on the right to open its conversation view.
 
-<img src="/blog-screenshots/gdpevo-agent-new-chat.webp" width="2127" height="898" alt="Clicking New chat on the newly created agent card in the Agents list" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-agent-new-chat.webp" width="2127" height="898" alt="Clicking New chat on the newly created agent card in the Agents list" />
 
-<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the chat view" />
+In the conversation view, select DeepSeek V4.1 Flash in the model picker below the input box and set the thinking effort to max.
+
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the chat view" />
 
 ### Step 4: Attach the RSI Toolkit and Send the Launch Prompt
 
-Attach skilladam-rsi-toolkit in the chat input and specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
+Type `/` in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
+
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-slash-skill.webp" width="1636" height="1035" alt="Typing a slash in the chat input to open the command menu and select skilladam-rsi-toolkit" />
 
 To evaluate a single sub-benchmark such as service-ticket-resolution, send:
 
 > Use skilladam-rsi-toolkit to run a self-evolution experiment on the service-ticket-resolution Benchmark of GDPEVO Essential with 2 training iterations and 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-launch-single.webp" width="1615" height="495" alt="Attaching skilladam-rsi-toolkit and entering the launch prompt for a single sub-benchmark" />
+
 To evaluate all six sub-benchmarks in the GDPEVO Essential series, send:
 
 > Use skilladam-rsi-toolkit to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series with 2 training iterations and 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
-To evaluate another self-evolution algorithm, replace the attached RSI toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-launch-all.webp" width="1615" height="458" alt="Attaching skilladam-rsi-toolkit and entering the launch prompt for all six sub-benchmarks in GDPEVO Essential" />
 
-> **TODO (Screenshot Placeholder — Attaching the RSI Toolkit & Sending the Launch Prompt)**: Insert screenshot showing skilladam-rsi-toolkit attached in the chat composer with the launch prompt above.
+To evaluate another self-evolution algorithm, replace the attached RSI toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
 
 ## 4. Internal Execution Pipeline After Launch
 
