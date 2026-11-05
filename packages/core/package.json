@@ -45,6 +45,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "penguin-gen-ifaces": "./bin/gen-ifaces.mjs"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ../../scripts/build-benchmarks.mjs && vitest run --passWithNoTests",
@@ -73,6 +76,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "LICENSE"
   ],
   "publishConfig": {
