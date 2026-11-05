@@ -10,7 +10,7 @@ excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 B
 
 ## 1. GDPEVO Essential 系列 Benchmark 的构成与评测规则
 
-GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成，合计包含 30 道训练题与 30 道测试题（共 60 道题）。在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库与 PenguinHarness 内置评测库中，每个子 Benchmark 均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道保留测试题：
+GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成，合计包含 30 道训练题与 30 道测试题。在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库与 PenguinHarness 内置评测库中，每个子 Benchmark 均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道保留测试题：
 
 | Benchmark 名称 | Benchmark 标识 | 题目数量 | 任务概述 |
 | :--- | :--- | :--- | :--- |
@@ -24,14 +24,14 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 在 GDPEVO Essential 系列 Benchmark 的评测规则下，每个子 Benchmark 的实验遵循以下三项设定：
 
 - **按 Benchmark 独立训练与测试**：六个子 Benchmark 彼此独立，每个 Benchmark 单独开展训练并产出一份专属的 `SKILL.md` 技能文档，不同 Benchmark 之间不混合训练数据，也不共享习得的技能。
-- **训练阶段（5 道题共享单容器连续会话，限时 6 小时）**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
-- **测试阶段（5 道题 × 3 轮独立容器评测，每题限时 4 小时）**：训练产出的 `SKILL.md` 一经导出即被冻结，随后在该 Benchmark 的 5 道保留测试题上完整重复评测 3 轮（单个 Benchmark 共 15 次测试运行，全系列 6 个 Benchmark 共 90 次测试运行）。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
+- **训练阶段**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，限时 6 小时，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
+- **测试阶段**：训练产出的 `SKILL.md` 一经导出即被冻结，随后在该 Benchmark 的 5 道保留测试题上完整重复评测 3 轮，单题限时 4 小时。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
 
 ## 2. 自进化方法：以 SkillAdam 为例
 
 在本次实验中，我们将 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 与 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种近期学术界的自进化工作复现并适配为 PenguinHarness 的内置方法插件，以便在统一的业务容器与评分标准下横向评测它们的效果。
 
-这里以我们适配的 [SkillAdam](https://arxiv.org/abs/2609.08944v1)（对应插件 `skilladam-rsi-toolkit`）为例说明容器内的演进过程。在连续训练环境中，目标 Agent 需要根据 5 道训练题的反馈不断修订 `SKILL.md`。如果直接让模型在每轮之后自由改写整份文档，实践中很容易遇到两类问题：一是缺乏对历史失败修改的记录，模型容易在已被证伪的方向上反复尝试，二是单次改动的步幅难以控制，为了修好某一道题的局部问题，常常把原本在其他题目上生效的规则改坏。
+这里以我们适配的 [SkillAdam](https://arxiv.org/abs/2609.08944v1) 为例说明容器内的演进过程。在连续训练环境中，目标 Agent 需要根据 5 道训练题的反馈不断修订 `SKILL.md`。如果直接让模型在每轮之后自由改写整份文档，实践中很容易遇到两类问题：一是缺乏对历史失败修改的记录，模型容易在已被证伪的方向上反复尝试，二是单次改动的步幅难以控制，为了修好某一道题的局部问题，常常把原本在其他题目上生效的规则改坏。
 
 针对这两个痛点，SkillAdam 原论文借鉴了深度学习中 Adam 优化器“一阶动量 + 二阶方差自适应步长”的设计思路。在我们的插件适配中，训练容器内的目标 Agent 按以下四步闭环迭代演进 `SKILL.md`：
 
@@ -75,59 +75,63 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 
 ## 3. 在 PenguinHarness Web 界面启动实验
 
-在 PenguinHarness 中开展 GDPEVO 自进化实验，不需要编写底层调度脚本。我们可以直接从新建一个主控 Agent 开始，为其挂载对应的 RSI 工具包插件，再通过对话发起实验。
+在 PenguinHarness 中开展 GDPEVO Essential 自进化实验无需编写底层调度脚本，通过 Web 界面按顺序完成以下四步即可发起实验。
 
-### 第一步：新建主控 Agent 并挂载 RSI 工具包
+### 第一步：配置模型 API Key
 
-1. 打开 Web 界面左侧的 **Agents** 页面，点击右上角的**手动创建**（`Create manually`）。
-2. 填写智能体名称（例如 `GDPEVO Controller`）与标识（例如 `gdpevo_controller`）。
-3. 在创建弹窗的**插件**（`Plugins`）下拉列表中搜索 `skill`，勾选 `skilladam-rsi-toolkit`（如需对比其他方法，也可一并勾选 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`），点击**创建**（`Create`）。
+打开左侧导航栏的 Models 页面，找到实验所要使用的模型 DeepSeek V4.1 Flash，填入对应的 API Key 并保存。
 
-<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中填写 GDPEVO Controller 并搜索勾选 skilladam-rsi-toolkit 插件" />
+> **TODO（配图占位 — 配置模型 API Key）**：此处预留 Models 页面配置 DeepSeek V4.1 Flash API Key 的截图。
 
-### 第二步：进入该 Agent 的对话界面并配置模型
+### 第二步：新建主控 Agent 并安装自进化工具包
 
-创建完成后，直接在 **Agents** 列表的 `GDPEVO Controller` 卡片右侧点击 **`+ New chat`** 进入它的专属对话界面，在输入框下方将模型选为 `DeepSeek V4.1 Flash`，并将思考强度调为 `max`。
+进入左侧的 Agents 页面，点击右上角的 Create manually，将智能体名称设为 GDPEVO Controller，Agent id 设为 gdpevo_controller。接着在下方的插件下拉框中搜索 skill，勾选本次实验使用的 skilladam-rsi-toolkit，也可以同时勾选 skillopt-rsi-toolkit、trace-rsi-toolkit 和 openskill-rsi-toolkit 以便后续对比不同算法，最后点击 Create 完成创建。
+
+<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中填写 GDPEVO Controller 并搜索勾选自进化工具包插件" />
+
+### 第三步：进入对话界面并选择模型
+
+创建完成后，直接在 Agents 列表的 GDPEVO Controller 卡片右侧点击 New chat 进入它的对话界面，在输入框下方将模型选为 DeepSeek V4.1 Flash，并将思考强度调为 max。
 
 <img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在 GDPEVO Controller 的对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
 
-### 第三步：选择工具包并发送启动指令
+### 第四步：挂载工具包并发送启动指令
 
-由于“单容器连续训练一次、冻结导出 `SKILL.md`、在测试集上对 Baseline 与 Final 各重复测试 3 轮”以及具体的任务路径和评分规则均已内置在 `skilladam-rsi-toolkit` 与 Benchmark 包说明中，启动指令无需重复描述实验流程，只需在输入框中通过 `/skilladam-rsi-toolkit`（或点击技能图标）挂载工具包，并指明工具包名称、目标 Benchmark、模型与思考强度以及 Docker 并发上限即可。
+单容器连续训练、冻结导出 SKILL.md 以及测试集上的 3 轮重复测试等规则均已内置在工具包与 Benchmark 说明中，因此启动指令无需重复描述实验流程。在输入框中挂载 skilladam-rsi-toolkit 后，直接说明工具包名称、目标 Benchmark、模型、思考强度与 Docker 并发上限即可。
 
-如果只跑单个 Benchmark（以 `service-ticket-resolution` 为例），在聊天框输入：
+如果只评测单个子 Benchmark，例如 service-ticket-resolution，在聊天框输入：
 
-> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 的 `service-ticket-resolution` Benchmark 上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-如果直接开展 GDPEVO Essential 系列全部六个子 Benchmark 的实验，在聊天框输入：
+如果直接评测 GDPEVO Essential 系列的全部六个子 Benchmark，在聊天框输入：
 
-> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-如果要评测其他自进化算法，只需将挂载的技能与指令中的 `skilladam-rsi-toolkit` 替换为 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`。
+评测其他自进化算法时，只需将挂载的工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
-> **TODO（配图占位 3 — 挂载 `skilladam-rsi-toolkit` 并发送启动指令）**：此处预留截图，展示在聊天输入框中挂载 `skilladam-rsi-toolkit` 技能标签并输入上述启动指令的界面。
+> **TODO（配图占位 — 挂载工具包并发送启动指令）**：此处预留聊天输入框挂载 skilladam-rsi-toolkit 并输入上述启动指令的截图。
 
 ## 4. 实验启动后的内部执行流程
 
-在 Web 界面发送启动指令后，**主控 Agent** 会在后台自动按以下四个阶段完成训练与测试：
+在 Web 界面发送启动指令后，主控 Agent 会在后台自动按以下四个阶段完成训练与测试：
 
 <figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>多轮训练循环：主控 Agent 通过 Harbor 拉起 1 Shared Docker，目标 Agent 在 T1–T5 上完成多轮演进</li><li>产出进化 Agent：训练结束后导出并锁定只读 SKILL.md，装配为进化 Agent</li><li>多轮隔离测试：主控 Agent 通过 Harbor 调度一分五并发测试，在 Isolated Dockers 中对 Test 1–5 各独立运行 3 轮</li><li>离线判分出分：五合一汇入离线评分器，统计各题得分与最终均分</li></ol><figcaption>主控 Agent 在后台自动执行的四阶段实验流程。</figcaption></figure>
 
 ### 1. 多轮训练循环
 
-任务环境准备就绪后，**主控 Agent** 先保留一份不挂载任何业务技能的初始状态作为基线对照（Baseline），同时通过 **Harbor** 为当前 Benchmark 拉起一个共享训练容器。Docker 为该 Benchmark 提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。**目标 Agent** 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题，经历多轮诊断与迭代修改。
+任务环境准备就绪后，主控 Agent 先保留一份不挂载任何业务技能的初始状态作为基线对照，同时通过 Harbor 为当前 Benchmark 拉起一个共享训练容器。Docker 为该 Benchmark 提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。目标 Agent 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题，经历多轮诊断与迭代修改。
 
 ### 2. 产出进化 Agent
 
-当共享容器内的多轮训练循环结束后，**主控 Agent** 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的**进化 Agent**。
+当共享容器内的多轮训练循环结束后，主控 Agent 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的进化 Agent。
 
 ### 3. 多轮隔离测试
 
-**主控 Agent** 通过 **Harbor** 将**进化 Agent**（以及基线对照状态）投放到该 Benchmark 的 5 道保留测试题上，完整重复运行 3 轮测试（单个 Benchmark 共 15 个独立测试容器）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭在线训练评分接口。
+主控 Agent 通过 Harbor 将进化 Agent 与基线状态分别投放到该 Benchmark 的 5 道保留测试题上，完整重复运行 3 轮测试。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭在线训练评分接口。
 
 ### 4. 离线判分出分
 
-所有测试容器运行完毕后，各题作答结果汇入**离线评分器**统一判分，逐题计算百分制得分，并汇总得出最终均分与标准差（如 `68.95 ± 0.74`）。
+所有测试容器运行完毕后，各题作答结果汇入离线评分器统一判分，逐题计算百分制得分，并汇总得出最终均分与标准差。
 
 ## 5. 结果统计与实测数据
 

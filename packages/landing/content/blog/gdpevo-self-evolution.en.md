@@ -10,7 +10,7 @@ This guide explains how to use PenguinHarness 0.2.19 to run agent self-evolution
 
 ## 1. Structure and Rules of the GDPEVO Essential Benchmark Series
 
-GDPEVO Essential is a benchmark series designed for evaluating enterprise task solving and agent self-evolution, consisting of six independent sub-benchmarks with 30 training tasks and 30 held-out test tasks in total (60 tasks overall). In the [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) repository and PenguinHarness's built-in benchmark library, each sub-benchmark is packaged as a paired training set and held-out test set containing 5 training tasks and 5 held-out test tasks:
+GDPEVO Essential is a benchmark series designed for evaluating enterprise task solving and agent self-evolution, consisting of six independent sub-benchmarks with 30 training tasks and 30 held-out test tasks in total. In the [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) repository and PenguinHarness's built-in benchmark library, each sub-benchmark is packaged as a paired training set and held-out test set containing 5 training tasks and 5 held-out test tasks:
 
 | Benchmark | Benchmark ID | Tasks | Task Overview |
 | :--- | :--- | :--- | :--- |
@@ -24,14 +24,14 @@ GDPEVO Essential is a benchmark series designed for evaluating enterprise task s
 Under the GDPEVO Essential evaluation protocol, every sub-benchmark follows three core rules:
 
 - **Independent Training and Testing per Benchmark**: The six sub-benchmarks are strictly independent. Each Benchmark runs its own training session and exports a dedicated `SKILL.md` document without mixing training data or sharing learned skills across Benchmarks.
-- **Training Phase (5 tasks in 1 shared container and continuous session, 6-hour budget)**: All 5 training tasks of a Benchmark run sequentially inside a single business container and one persistent Agent session without resetting the workspace. The container serves a read-only business API on loopback and exposes an online judge endpoint (`POST /api/judge`) for diagnostic feedback. Whether to query this endpoint is determined by each self-evolution method: supervised methods use it to guide revisions, whereas unsupervised methods rely solely on self-constructed virtual tests.
-- **Testing Phase (5 held-out tasks × 3 repetitions in fresh containers, 4-hour budget per task)**: Once exported, the learned `SKILL.md` is immediately frozen and evaluated across 3 full repetitions of the 5 held-out test tasks in that Benchmark (15 test trials per Benchmark, 90 test trials across all 6 Benchmarks in the series). Every single test question in every repetition launches in a brand-new isolated container and clean session with the online training judge disabled, and is scored after completion by the offline verifier.
+- **Training Phase**: All 5 training tasks of a Benchmark run sequentially inside a single business container and one persistent Agent session under a 6-hour budget without resetting the workspace. The container serves a read-only business API on loopback and exposes an online judge endpoint `POST /api/judge` for diagnostic feedback. Whether to query this endpoint is determined by each self-evolution method: supervised methods use it to guide revisions, whereas unsupervised methods rely solely on self-constructed virtual tests.
+- **Testing Phase**: Once exported, the learned `SKILL.md` is immediately frozen and evaluated across 3 full repetitions of the 5 held-out test tasks in that Benchmark, with a 4-hour budget per task. Every single test question in every repetition launches in a brand-new isolated container and clean session with the online training judge disabled, and is scored after completion by the offline verifier.
 
 ## 2. Self-Evolution Method: SkillAdam as an Example
 
 In this study, we reproduced and adapted four recent academic self-evolution methods—[SkillAdam](https://arxiv.org/abs/2609.08944v1), [SkillOpt](https://arxiv.org/abs/2605.23904v1), [TRACE](https://arxiv.org/abs/2608.22793v2), and [OpenSkill](https://arxiv.org/abs/2606.06741v1)—into built-in PenguinHarness plugins so they can be evaluated side by side under identical container isolation and grading rules.
 
-We use our adaptation of [SkillAdam](https://arxiv.org/abs/2609.08944v1) (`skilladam-rsi-toolkit`) to illustrate how in-container evolution works. During continuous training, the target Agent iteratively refines `SKILL.md` across the 5 training tasks. Allowing an LLM to freely rewrite the entire skill document after every round leads to two recurring failure modes in practice: without a persistent record of failed edits, the model repeatedly retries directions that were already disproven, and without step-size control, an aggressive edit that fixes one question often overwrites rules that were working on the other questions.
+We use our adaptation of [SkillAdam](https://arxiv.org/abs/2609.08944v1) to illustrate how in-container evolution works. During continuous training, the target Agent iteratively refines `SKILL.md` across the 5 training tasks. Allowing an LLM to freely rewrite the entire skill document after every round leads to two recurring failure modes in practice: without a persistent record of failed edits, the model repeatedly retries directions that were already disproven, and without step-size control, an aggressive edit that fixes one question often overwrites rules that were working on the other questions.
 
 To address both issues, SkillAdam adapts the Adam optimizer's "first-order momentum + second-order variance step-size scaling" into a four-step natural-language evolution loop inside the training container:
 
@@ -75,59 +75,63 @@ Alongside SkillAdam, we evaluated three additional representative self-evolution
 
 ## 3. Launching the Experiment in the PenguinHarness Web UI
 
-Running a GDPEVO self-evolution experiment in PenguinHarness requires no custom orchestration scripts. We start by creating a dedicated Controller Agent, installing the RSI toolkit plugin onto it, and sending the launch prompt in chat.
+Running a GDPEVO Essential self-evolution experiment in PenguinHarness requires no custom orchestration scripts. You can launch an experiment in four steps through the Web UI.
 
-### Step 1: Create a Controller Agent and Install the RSI Toolkit
+### Step 1: Configure the Model API Key
 
-1. Open the **Agents** page from the left sidebar and click **Create manually** in the top-right corner.
-2. Enter a name (for example, `GDPEVO Controller`) and an ID (for example, `gdpevo_controller`).
-3. In the **Plugins** dropdown of the creation dialog, search for `skill` and select `skilladam-rsi-toolkit` (you can also select `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit` if you plan to compare multiple methods), then click **Create**.
+Open the Models page from the left sidebar, find the model used for the experiment, DeepSeek V4.1 Flash, enter its API key, and save.
 
-<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Filling in GDPEVO Controller and selecting skilladam-rsi-toolkit in the Create agent dialog" />
+> **TODO (Screenshot Placeholder — Configuring Model API Key)**: Insert screenshot of configuring the DeepSeek V4.1 Flash API key on the Models page.
 
-### Step 2: Open a Chat from the Agent and Configure the Model
+### Step 2: Create a Controller Agent and Install the RSI Toolkit
 
-Once `GDPEVO Controller` is created, click **`+ New chat`** directly on its card in the **Agents** list to open a conversation with it, then select `DeepSeek V4.1 Flash` and set the thinking effort to `max` in the composer bar before sending a message.
+Open the Agents page from the left sidebar, click Create manually in the top-right corner, set the agent name to GDPEVO Controller, and set the Agent id to gdpevo_controller. In the Plugins dropdown below, search for skill and select skilladam-rsi-toolkit—or select skillopt-rsi-toolkit, trace-rsi-toolkit, and openskill-rsi-toolkit as well if you plan to compare multiple methods—then click Create.
+
+<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Filling in GDPEVO Controller and selecting self-evolution toolkit plugins in the Create agent dialog" />
+
+### Step 3: Open the Chat View and Select the Model
+
+Once GDPEVO Controller is created, click New chat on its card in the Agents list to open its conversation view, then select DeepSeek V4.1 Flash in the model picker below the input box and set the thinking effort to max.
 
 <img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the GDPEVO Controller chat view" />
 
-### Step 3: Select the Toolkit and Send the Launch Prompt
+### Step 4: Attach the Toolkit and Send the Launch Prompt
 
-Because the full protocol—running one continuous training session, freezing the exported `SKILL.md`, and evaluating both Baseline and Final for 3 repetitions on the held-out test set—along with task paths and grading rules is already built into `skilladam-rsi-toolkit` and the Benchmark packages, the launch prompt does not need to repeat those steps. Simply attach `skilladam-rsi-toolkit` in the composer (by typing `/skilladam-rsi-toolkit` or clicking the Skills icon) and specify the toolkit name, target Benchmark, model, thinking level, and Docker concurrency limit.
+Because single-container continuous training, freezing the exported SKILL.md, and running 3 test repetitions are already built into the toolkit and Benchmark definitions, the launch prompt does not need to repeat the procedural rules. Attach skilladam-rsi-toolkit in the chat input and specify the toolkit name, target Benchmark, model, thinking level, and Docker concurrency limit.
 
-To run a single Benchmark (for example, `service-ticket-resolution`), send:
+To evaluate a single sub-benchmark such as service-ticket-resolution, send:
 
-> Use `skilladam-rsi-toolkit` to run a self-evolution experiment on the `service-ticket-resolution` Benchmark of GDPEVO Essential. Use model `DeepSeek V4.1 Flash`, thinking level `max`, and Docker concurrency limit `4`.
+> Use skilladam-rsi-toolkit to run a self-evolution experiment on the service-ticket-resolution Benchmark of GDPEVO Essential. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
-To run the full experiment across all six Benchmarks in the GDPEVO Essential series, send:
+To evaluate all six sub-benchmarks in the GDPEVO Essential series, send:
 
-> Use `skilladam-rsi-toolkit` to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series. Use model `DeepSeek V4.1 Flash`, thinking level `max`, and Docker concurrency limit `4`.
+> Use skilladam-rsi-toolkit to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
-To benchmark another self-evolution algorithm, simply replace the attached skill and `skilladam-rsi-toolkit` in the prompt with `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit`.
+To evaluate another self-evolution algorithm, replace the attached toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
 
-> **TODO (Screenshot Placeholder 3 — Attaching `skilladam-rsi-toolkit` & Sending the Launch Prompt)**: Insert screenshot showing `skilladam-rsi-toolkit` attached in the chat composer with the launch prompt above.
+> **TODO (Screenshot Placeholder — Attaching the Toolkit & Sending the Launch Prompt)**: Insert screenshot showing skilladam-rsi-toolkit attached in the chat composer with the launch prompt above.
 
 ## 4. Internal Execution Pipeline After Launch
 
-Once the launch prompt is sent in the Web UI, the **Controller Agent** automatically runs training and testing in the background through four stages:
+Once the launch prompt is sent in the Web UI, the Controller Agent automatically runs training and testing in the background through four stages:
 
 <figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Multi-Round Train: Controller Agent launches 1 Shared Docker via Harbor, where Target Agent evolves SKILL.md across T1–T5</li><li>Evolved Agent: freezes and exports SKILL.md as a read-only artifact mounted onto Evolved Agent</li><li>Isolated Testing: Controller Agent dispatches 1-to-5 fan-out via Harbor into Isolated Dockers across Test 1–5 for 3 repetitions (15 fresh containers)</li><li>Scoreboard: 5-to-1 convergence into Offline Verifier to grade per-task and overall mean scores</li></ol><figcaption>Four-stage execution pipeline driven by the Controller Agent.</figcaption></figure>
 
 ### 1. Multi-Round Training Loop
 
-After preparing the task checkout, the **Controller Agent** preserves a clean initial state without any domain skill as the frozen Baseline reference, and uses **Harbor** to launch one shared training container for the Benchmark. Docker provides full environment isolation for the Benchmark: the business backend service, task payloads, and online judge run inside the container while external network access is restricted to loopback business calls and the model API. Within one persistent session inside the shared container, the **Target Agent** cycles through all 5 training tasks across multiple rounds, diagnosing errors and iteratively updating its skill document.
+After preparing the task checkout, the Controller Agent preserves a clean initial state without any domain skill as the frozen Baseline reference, and uses Harbor to launch one shared training container for the Benchmark. Docker provides full environment isolation for the Benchmark: the business backend service, task payloads, and online judge run inside the container while external network access is restricted to loopback business calls and the model API. Within one persistent session inside the shared container, the Target Agent cycles through all 5 training tasks across multiple rounds, diagnosing errors and iteratively updating its skill document.
 
 ### 2. Producing the Evolved Agent
 
-Once the multi-round training loop finishes, the **Controller Agent** exports the last accepted `SKILL.md`, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen **Evolved Agent**.
+Once the multi-round training loop finishes, the Controller Agent exports the last accepted `SKILL.md`, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen Evolved Agent.
 
 ### 3. Multi-Run Isolated Testing
 
-The **Controller Agent** uses **Harbor** to run the frozen **Evolved Agent** (alongside the Baseline state) across the Benchmark's 5 held-out test tasks for 3 full repetitions (15 fresh test containers per Benchmark). Every question in every repetition starts in a brand-new Docker container and clean session—no filesystem state, database state, or conversation history is shared across questions or runs, and the online training judge is disabled.
+The Controller Agent uses Harbor to run the frozen Evolved Agent and the Baseline state across the Benchmark's 5 held-out test tasks for 3 full repetitions. Every question in every repetition starts in a brand-new Docker container and clean session—no filesystem state, database state, or conversation history is shared across questions or runs, and the online training judge is disabled.
 
 ### 4. Offline Scoring
 
-As test containers finish, outputs from the 5 test tasks are graded by the **Offline Verifier** on a 100-point scale and aggregated into the final mean score and standard deviation (such as `68.95 ± 0.74`).
+As test containers finish, outputs from the 5 test tasks are graded by the Offline Verifier on a 100-point scale and aggregated into the final mean score and standard deviation.
 
 ## 5. Metric Aggregation and Empirical Results
 
