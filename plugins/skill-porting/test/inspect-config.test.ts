@@ -91,7 +91,7 @@ describe("a Claude Code ~/.claude.json", () => {
     mcpServers: {
       github: {
         command: "npx",
-        args: ["-y", "example-github-mcp", "--token", secret(2)],
+        args: ["-y", "@example/github-mcp", "--token", secret(2)],
         env: { GITHUB_PERSONAL_ACCESS_TOKEN: secret(3), LOG_LEVEL: "${LOG_LEVEL}" },
       },
       docs: {
@@ -124,7 +124,7 @@ describe("a Claude Code ~/.claude.json", () => {
     for (const kept of [
       '"npx"',
       '"-y"',
-      '"example-github-mcp"',
+      '"@example/github-mcp"',
       '"--token"',
       "GITHUB_PERSONAL_ACCESS_TOKEN",
       '"${LOG_LEVEL}"',
@@ -212,7 +212,6 @@ describe("a DeepSeek Harness cordis.patch.yml", () => {
       '"@deepseek-ai/dsh-mcp-client"',
       '"${credential:github}"',
       "OTHER_TOKEN",
-      '"example-github-mcp"',
     ]) {
       expect(out).toContain(kept);
     }
@@ -497,5 +496,506 @@ describe("reading a text file with --show", () => {
     expect(out).toContain("<redacted line: credential assignment>");
     expect(out).toContain('curl -H "Authorization: Bearer $API_TOKEN" "$URL"');
     expect(out).toContain("Use the staging server.");
+  });
+});
+
+// ---- The third review's probes -------------------------------------------------------------
+
+/** The r3 probe markers: every planted value, whatever its case. */
+const R3 =
+  /PROBE[sS][eE][cC][rR][eE][tT][0-9A-Za-z]*|Pr0bE9x|Pr0bEk3y|f00dfacecafebeef0123456789abcdef|d00dfeedbeefcafe0123456789abcdef|c0ffee00ba5eba11deadbeef00112233|0badc0de0badc0de0badc0de0badc0de/;
+/** A webhook address, assembled at run time like the other token-shaped fixtures. */
+const webhook = (a: string, b: string, tail: string) =>
+  shaped("https://hooks.slack", ".invalid/services/", a, "/", b, "/", tail);
+
+describe("the third review's probes", () => {
+  const args = JSON.stringify({
+    mcpServers: {
+      pw: { command: "mcp-db", args: ["--pw", "PROBEsecretAAAA"] },
+      capP: { command: "mcp-db", args: ["-P", "PROBEsecretBBBB"] },
+      pos: { command: "mcp-db", args: ["serve", "root", "PROBEsecretCCCC", "Pr0bE9x"] },
+      conn: { command: "mcp-db", args: ["--connection", "host=db user=app PROBEsecretDDDD"] },
+      seg: { type: "http", url: "https://mcp.example.invalid/PROBEsecretEEEEEEEEEEEE/mcp" },
+      hookstr: { hooks: { Stop: "notify.sh f00dfacecafebeef0123456789abcdef" } },
+      names: {
+        env_key: "PROBEsecretFFFF",
+        bearer_token_env_var: "Pr0bEk3y",
+        env_http_headers: { "X-Api-Key": "PROBEsecretGGGG" },
+      },
+      ref: { headers: { Authorization: "Bearer ${PROBEsecretHHHH}" } },
+      keyname: { env: { PROBEsecretIIII: "x" } },
+      prose: {
+        description:
+          "Log in with the password PROBEsecretJJJJ, then use the deploy key d00dfeedbeefcafe0123456789abcdef.",
+      },
+    },
+  });
+  const agentToml = [
+    'name = "reviewer"',
+    'description = "Reviews code"',
+    'developer_instructions = """',
+    "You review code.",
+    "The staging database password is PROBEsecretKKKK and the admin token is c0ffee00ba5eba11deadbeef00112233.",
+    '"""',
+    "",
+  ].join("\n");
+  const claudeMd = [
+    "# Notes",
+    "",
+    "- The staging password is PROBEsecretLLLL.",
+    `- Notion integration: ${shaped("secret", "_", "PROBEsecretMMMMxyz")}`,
+    "- Deploy key for prod: 0badc0de0badc0de0badc0de0badc0de",
+    `- Webhook: ${webhook("T0PROBE1", "B0PROBE2", "PROBEsecretNNNNNNNNNNNN")}`,
+    "",
+  ].join("\n");
+  const subagent = [
+    "---",
+    "name: reviewer",
+    "description: Reviews code",
+    "mcpServers:",
+    "  db:",
+    "    command: mcp-db",
+    "    env:",
+    "      API: PROBEsecretOOOO",
+    `      SLACK_HOOK: ${webhook("T0PROBE3", "B0PROBE4", "PROBEsecretPPPPPPPPPPPP")}`,
+    "---",
+    "",
+    "You review code.",
+    "",
+  ].join("\n");
+
+  it("arguments, a path segment, a hook-event string, name positions and prose print nothing planted", async () => {
+    const { out, status } = await inspect("r3-args.json", args);
+    expect(status).toBe(0);
+    expect(out).not.toMatch(R3);
+    for (const kept of [
+      '"--pw"',
+      '"-P"',
+      '"--connection"',
+      '"notify.sh <redacted:1 more word>"',
+      "--show <file> --key mcpServers.prose.description",
+    ]) {
+      expect(out).toContain(kept);
+    }
+  });
+
+  it("a Codex agent's instructions point to --show, which masks their flagged lines", async () => {
+    const root = await folder({ "reviewer.toml": agentToml });
+    const viewed = run(path.join(root, "reviewer.toml"));
+    expect(viewed.out).not.toMatch(R3);
+    expect(viewed.out).toContain("--key developer_instructions");
+    const shown = run(
+      "--show",
+      path.join(root, "reviewer.toml"),
+      "--key",
+      "developer_instructions",
+    );
+    expect(shown.out).not.toMatch(R3);
+    expect(shown.out).toContain("You review code.");
+    expect(shown.out).toContain("<redacted line: ");
+  });
+
+  it("--show masks the Markdown's flagged lines and its frontmatter by allowlist", async () => {
+    const root = await folder({ "CLAUDE.md": claudeMd, "reviewer-agent.md": subagent });
+    const { out } = run(
+      "--show",
+      path.join(root, "CLAUDE.md"),
+      path.join(root, "reviewer-agent.md"),
+    );
+    expect(out).not.toMatch(R3);
+    expect(out).toContain("# Notes");
+    expect(out).toContain("You review code.");
+    expect(out).toContain('"command": "mcp-db"');
+  });
+
+  it("--scan flags the same Markdown and fails", async () => {
+    const root = await folder({ "CLAUDE.md": claudeMd, "reviewer-agent.md": subagent });
+    const { out, status } = run("--scan", root);
+    expect(status).toBe(1);
+    expect(out).not.toMatch(R3);
+    for (const line of [3, 4, 5, 6]) expect(out).toContain(`CLAUDE.md:${line}: `);
+    for (const line of [8, 9]) expect(out).toContain(`reviewer-agent.md:${line}: `);
+  });
+});
+
+// ---- --emit and --append -----------------------------------------------------------------
+
+/** A port folder with the manifest the agent writes before it emits anything. */
+async function portFolder(id = "ported"): Promise<string> {
+  const root = await fs.mkdtemp(path.join(dir, "port-"));
+  const port = path.join(root, id);
+  await fs.mkdir(port, { recursive: true });
+  await fs.writeFile(
+    path.join(port, "manifest.json"),
+    JSON.stringify({
+      format: "penguin-agent-zip/1",
+      exportedAt: "2026-11-05T09:00:00Z",
+      agentId: id,
+      name: "Ported",
+      parts: {
+        skills: false,
+        hooks: false,
+        memory: false,
+        workbenches: false,
+        workbenchData: false,
+        schedules: false,
+        traces: { kind: "none" },
+      },
+      vaultKeys: [],
+      redacted: [],
+      definition: {},
+    }),
+  );
+  return port;
+}
+
+type Manifest = {
+  vaultKeys: string[];
+  parts: { hooks: boolean };
+  definition: {
+    mcpServers?: Array<{ name: string; config: Record<string, unknown> }>;
+    model?: { thinkingLevel?: string };
+  };
+};
+const manifestOf = async (port: string) =>
+  JSON.parse(await fs.readFile(path.join(port, "manifest.json"), "utf8")) as Manifest;
+const server = (m: Manifest, name: string) =>
+  m.definition.mcpServers?.find((s) => s.name === name)?.config;
+
+describe("--emit writes the mapped servers into the port folder", () => {
+  it("keeps a Claude Code server's command, arguments and plain values exactly, and makes each secret a Vault reference", async () => {
+    const src = await folder({
+      ".claude.json": JSON.stringify({
+        oauthAccount: { accessToken: secret(30) },
+        mcpServers: {
+          github: {
+            command: "npx",
+            args: ["-y", "example-github-mcp", "--token", secret(31), "--region", "eu"],
+            env: {
+              GITHUB_PERSONAL_ACCESS_TOKEN: secret(32),
+              LOG_LEVEL: "${LOG_LEVEL}",
+              REGION: "eu",
+            },
+          },
+          docs: {
+            type: "http",
+            url: `https://mcp.example.com/mcp?api_key=${secret(33)}&region=eu`,
+            headers: {
+              Authorization: "Bearer ${DOCS_TOKEN}",
+              "X-Api-Key": secret(34),
+              "X-Team": "platform",
+            },
+          },
+        },
+        projects: {
+          "/home/u/repo": {
+            mcpServers: { db: { command: "db-mcp", args: [`--password=${secret(35)}`] } },
+          },
+        },
+      }),
+    });
+    const port = await portFolder();
+    const first = run(
+      "--emit",
+      path.join(src, ".claude.json"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+    );
+    const second = run(
+      "--emit",
+      path.join(src, ".claude.json"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+      "--project",
+      "/home/u/repo",
+    );
+    expect(first.status).toBe(0);
+    expect(second.status).toBe(0);
+    for (let n = 30; n <= 35; n++) {
+      expect(first.out).not.toContain(secret(n));
+      expect(second.out).not.toContain(secret(n));
+    }
+    expect(first.out).toContain("--project");
+
+    const m = await manifestOf(port);
+    expect(server(m, "github")).toEqual({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "example-github-mcp", "--token", "${GITHUB_TOKEN}", "--region", "eu"],
+      env: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}",
+        LOG_LEVEL: "${LOG_LEVEL}",
+        REGION: "eu",
+      },
+    });
+    expect(server(m, "docs")).toEqual({
+      transport: "http",
+      url: "https://mcp.example.com/mcp?api_key=${DOCS_API_KEY}&region=eu",
+      headers: {
+        Authorization: "Bearer ${DOCS_TOKEN}",
+        "X-Api-Key": "${DOCS_X_API_KEY}",
+        "X-Team": "platform",
+      },
+    });
+    expect(server(m, "db")).toEqual({
+      transport: "stdio",
+      command: "db-mcp",
+      args: ["--password=${DB_PASSWORD}"],
+    });
+    expect(m.vaultKeys).toEqual([
+      "DB_PASSWORD",
+      "DOCS_API_KEY",
+      "DOCS_TOKEN",
+      "DOCS_X_API_KEY",
+      "GITHUB_PERSONAL_ACCESS_TOKEN",
+      "GITHUB_TOKEN",
+      "LOG_LEVEL",
+    ]);
+    const text = await fs.readFile(path.join(port, "manifest.json"), "utf8");
+    for (let n = 30; n <= 35; n++) expect(text).not.toContain(secret(n));
+  });
+
+  it("maps a Codex config's variable names, headers, OAuth secret and effort", async () => {
+    const src = await folder({
+      "config.toml": [
+        'model_reasoning_effort = "ultra"',
+        "[mcp_servers.github]",
+        'command = "npx"',
+        'args = ["-y", "example-github-mcp"]',
+        `env = { GITHUB_TOKEN = "${secret(36)}" }`,
+        'env_vars = ["GH_HOST"]',
+        "[mcp_servers.remote]",
+        'url = "https://mcp.example.com/mcp"',
+        'bearer_token_env_var = "REMOTE_TOKEN"',
+        `http_headers = { "X-Api-Key" = "${secret(37)}" }`,
+        'env_http_headers = { "X-Org" = "ORG_ID" }',
+        "tool_timeout_sec = 30",
+        "[mcp_servers.remote.oauth]",
+        'client_id = "public-client"',
+        `client_secret = "${secret(38)}"`,
+        "",
+      ].join("\n"),
+    });
+    const port = await portFolder();
+    const { out, status } = run(
+      "--emit",
+      path.join(src, "config.toml"),
+      "--framework",
+      "codex",
+      "--out",
+      port,
+    );
+    expect(status).toBe(0);
+    for (let n = 36; n <= 38; n++) expect(out).not.toContain(secret(n));
+    const m = await manifestOf(port);
+    expect(server(m, "github")).toEqual({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "example-github-mcp"],
+      env: { GITHUB_TOKEN: "${GITHUB_TOKEN}", GH_HOST: "${GH_HOST}" },
+    });
+    expect(server(m, "remote")).toEqual({
+      transport: "http",
+      url: "https://mcp.example.com/mcp",
+      headers: {
+        "X-Api-Key": "${REMOTE_X_API_KEY}",
+        "X-Org": "${ORG_ID}",
+        Authorization: "Bearer ${REMOTE_TOKEN}",
+      },
+      timeoutMs: 30000,
+      oauth: { client_id: "public-client", client_secret: "${REMOTE_CLIENT_SECRET}" },
+    });
+    expect(m.definition.model?.thinkingLevel).toBe("max");
+  });
+
+  it("turns a DeepSeek Harness credential reference into a Vault key", async () => {
+    const src = await folder({
+      "cordis.patch.yml": [
+        "- insert:",
+        "    - id: mcp-github",
+        "      name: '@deepseek-ai/dsh-mcp-client'",
+        "      config:",
+        "        serverName: github",
+        "        transport: stdio",
+        "        command: npx",
+        "        args: [-y, example-github-mcp]",
+        "        env:",
+        "          GITHUB_TOKEN: ${credential:github}",
+        `          OTHER_TOKEN: ${secret(39)}`,
+        "",
+      ].join("\n"),
+    });
+    const port = await portFolder();
+    const { out } = run(
+      "--emit",
+      path.join(src, "cordis.patch.yml"),
+      "--framework",
+      "deepseek-harness",
+      "--out",
+      port,
+    );
+    expect(out).not.toContain(secret(39));
+    expect(server(await manifestOf(port), "github")).toEqual({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "example-github-mcp"],
+      env: { GITHUB_TOKEN: "${GITHUB}", OTHER_TOKEN: "${OTHER_TOKEN}" },
+    });
+  });
+
+  it("ports the hooks that map, as wrappers that answer the way the source's command did", async () => {
+    const src = await folder({
+      "settings.json": JSON.stringify({
+        effortLevel: "high",
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: 'echo "not here" >&2; exit 2', timeout: 10 }],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: `curl -H "X-Api-Key: ${secret(40)}" https://example.invalid`,
+                },
+              ],
+            },
+          ],
+          Notification: [{ hooks: [{ type: "command", command: "notify-send done" }] }],
+        },
+      }),
+    });
+    const port = await portFolder();
+    const { out, status } = run(
+      "--emit",
+      path.join(src, "settings.json"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+    );
+    expect(status).toBe(0);
+    expect(out).not.toContain(secret(40));
+    expect(out).toContain("not ported: hook Stop");
+    expect(out).toContain("not ported: hooks on Notification");
+    const m = await manifestOf(port);
+    expect(m.parts.hooks).toBe(true);
+    expect(m.definition.model?.thinkingLevel).toBe("high");
+    const pkg = path.join(port, "agent_state", "hooks", "claude-code-hooks");
+    const hooks = JSON.parse(await fs.readFile(path.join(pkg, "hooks.json"), "utf8"));
+    expect(hooks.pre_tool_use).toEqual([{ command: "pre-tool-use-1.mjs", timeout: 10 }]);
+    expect(hooks.stop).toEqual([]);
+
+    const call = (tool: string) =>
+      spawnSync(process.execPath, [path.join(pkg, "pre-tool-use-1.mjs")], {
+        input: JSON.stringify({
+          hook: "pre_tool_use",
+          session_id: "s1",
+          tool_name: tool,
+          tool_call_id: "c1",
+          arguments: '{"cmd":"rm -rf build"}',
+        }),
+        encoding: "utf8",
+      });
+    expect(JSON.parse(call("exec_command").stdout)).toEqual({
+      decision: "deny",
+      reason: "not here",
+    });
+    expect(call("read_file").stdout).toBe("");
+    // The folder it built passes the check before the import.
+    expect(run("--scan", port).status).toBe(0);
+  });
+
+  it("writes a subagent's servers and instructions, holding back instructions that look like they carry a secret", async () => {
+    const plain =
+      "---\nname: reviewer\ndescription: Reviews code\neffort: medium\nmcpServers:\n  db:\n    command: mcp-db\n    env:\n      DB_PASSWORD: " +
+      secret(41) +
+      "\n---\n\nYou review code.\n";
+    const flagged = "---\nname: helper\n---\n\nThe staging password is PROBEsecretQQQQ.\n";
+    const src = await folder({ "reviewer.md": plain, "helper.md": flagged });
+    const port = await portFolder("reviewer");
+    const r = run(
+      "--emit",
+      path.join(src, "reviewer.md"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain(secret(41));
+    const m = await manifestOf(port);
+    expect(server(m, "db")).toEqual({
+      transport: "stdio",
+      command: "mcp-db",
+      env: { DB_PASSWORD: "${DB_PASSWORD}" },
+    });
+    expect(m.definition.model?.thinkingLevel).toBe("medium");
+    expect(await fs.readFile(path.join(port, "agent_state", "AGENTS.md"), "utf8")).toBe(
+      "You review code.\n",
+    );
+
+    const other = await portFolder("helper");
+    const held = run(
+      "--emit",
+      path.join(src, "helper.md"),
+      "--framework",
+      "claude-code",
+      "--out",
+      other,
+    );
+    expect(held.out).not.toMatch(R3);
+    expect(held.out).toContain("--confirmed");
+    await expect(fs.access(path.join(other, "agent_state", "AGENTS.md"))).rejects.toThrow();
+    run(
+      "--emit",
+      path.join(src, "helper.md"),
+      "--framework",
+      "claude-code",
+      "--out",
+      other,
+      "--confirmed",
+    );
+    expect(await fs.readFile(path.join(other, "agent_state", "AGENTS.md"), "utf8")).toContain(
+      "PROBEsecretQQQQ",
+    );
+  });
+});
+
+describe("--append copies instructions file to file", () => {
+  it("copies a rule verbatim with its scope as a sentence, and a flagged file only once confirmed", async () => {
+    const src = await folder({
+      "testing.md": "---\npaths: src/**/*.ts\n---\n\nRun the tests before you commit.\n",
+      "CLAUDE.md": "Deploy with the key 0badc0de0badc0de0badc0de0badc0de.\n",
+    });
+    const port = await portFolder();
+    const target = path.join(port, "agent_state", "AGENTS.md");
+    const ok = run(
+      "--append",
+      path.join(src, "testing.md"),
+      "--to",
+      target,
+      "--heading",
+      "Testing",
+    );
+    expect(ok.status).toBe(0);
+    expect(await fs.readFile(target, "utf8")).toBe(
+      "## Testing\n\nThese instructions apply when working on files matching `src/**/*.ts`.\n\nRun the tests before you commit.\n",
+    );
+    const held = run("--append", path.join(src, "CLAUDE.md"), "--to", target);
+    expect(held.status).toBe(1);
+    expect(held.out).not.toMatch(R3);
+    expect(await fs.readFile(target, "utf8")).not.toMatch(R3);
+    expect(run("--append", path.join(src, "CLAUDE.md"), "--to", target, "--confirmed").status).toBe(
+      0,
+    );
+    expect(await fs.readFile(target, "utf8")).toMatch(R3);
   });
 });
