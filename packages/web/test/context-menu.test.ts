@@ -1,7 +1,8 @@
 /**
  * Guard: how the app uses the row context menu (the UI package's `useRowContextMenu` and its
- * gesture rules). The rules, the hook's own guards and the Dropdown's scroll wiring are the
- * package's `context-menu.test.ts`; what is held here spans the app.
+ * gesture rules). The rules, the hook's own guards and the anchored menu's scroll behaviour are
+ * the package's `context-menu.test.ts` and `context-menu.dom.test.ts`; what is held here spans
+ * the app.
  *
  * - The scan reads every source root and reports POSIX-separated paths whatever the platform's
  *   separator (the id contract every guard's path comparison depends on, which only Windows CI
