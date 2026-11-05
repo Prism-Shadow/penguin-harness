@@ -3,11 +3,12 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1485](https://github.com/Prism-Shadow/penguin-harness/pull/1485)
 - **Issue:** [#1440](https://github.com/Prism-Shadow/penguin-harness/issues/1440)
 
 [English](2026-11-05-cited-file-preview.md)
 
-在频道里点击消息引用的文件，文件会在消息右侧的面板里打开，手机上面板会盖住消息。在组织的对话（desk 或工单会话）里，文件在停靠栏的「文件预览」标签页打开。Markdown 在阅读器里显示，文本显示为高亮源码，图片和 PDF 直接显示。标题行可以复制完整路径、下载文件，也放着阅读器的大纲和查找。
+在频道里点击消息引用的文件，文件会在消息右侧的面板里打开，手机上面板会盖住消息。在组织的对话（工位或工单会话）里，文件在停靠栏的「文件预览」标签页打开。Markdown 在阅读器里显示，文本显示为高亮源码，图片和 PDF 直接显示。标题行可以复制完整路径、下载文件，也放着阅读器的大纲和查找。
 
 ## 细节
 
