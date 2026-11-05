@@ -6,9 +6,10 @@
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  * A new Project also starts with its Benchmarks — the example and the shipped packages, written
  * once when it is created — which the Benchmark API lists with their packaged metadata, every
- * file of a package copied byte for byte, whatever the shipped catalog holds. A
- * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
- * missing ones (packages of the test's own stand in for the catalog there).
+ * file of a package copied byte for byte and no evaluations of its own (packages of the test's
+ * own stand in for the catalog). The real catalog reaches a Project whole: default_project
+ * lists every package the build fetched. A default_project adopted at bootstrap keeps the
+ * Benchmarks it holds and is given only the missing ones.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -54,11 +55,24 @@ async function filesUnder(dir: string): Promise<Map<string, Buffer>> {
   return out;
 }
 
-/** A Benchmark package as the build would fetch one: a manifest and one case. */
-async function writePackage(parent: string, id: string, title: string): Promise<BuiltinBenchmark> {
+/**
+ * A Benchmark package as the build would fetch one: a manifest and one case. With `manifest`,
+ * the manifest carries everything a shipped one does (id, version, status, runs, origin).
+ */
+async function writePackage(
+  parent: string,
+  id: string,
+  title: string,
+  { manifest = false }: { manifest?: boolean } = {},
+): Promise<BuiltinBenchmark> {
   const directory = path.join(parent, id);
   await fs.mkdir(path.join(directory, "CASE-001-task", "statement"), { recursive: true });
-  await fs.writeFile(path.join(directory, "benchmark_config.toml"), `title = "${title}"\n`);
+  await fs.writeFile(
+    path.join(directory, "benchmark_config.toml"),
+    manifest
+      ? `id = "${id}"\ntitle = "${title}"\nversion = "1.0.0"\nstatus = "published"\nruns = 2\n\n[origin]\nkind = "builtin"\n`
+      : `title = "${title}"\n`,
+  );
   await fs.writeFile(
     path.join(directory, "CASE-001-task", "statement", "README.md"),
     `# ${title}: the task\n`,
@@ -175,11 +189,24 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the shipped packages, keeping their metadata and statements", async () => {
-    // The one scenario that reads the shipped catalog whole, on an app that writes it as
-    // production does (createTestApp leaves the built-ins out unless asked).
-    const packages = await readBuiltinBenchmarks();
-    const shipped = await createTestApp({ builtinBenchmarks: true });
+  it("a new Project, initial or created, comes with the example and the shipped packages, copied unchanged with their metadata and statements", async () => {
+    // Two packages of the test's own stand in for the catalog: one with nested and binary
+    // files, one carrying a scoreboard of its own that a Project must not inherit.
+    const catalog = await makeTempRoot();
+    const packages = [
+      await writePackage(catalog, "shipped-one", "Shipped one", { manifest: true }),
+      await writePackage(catalog, "shipped-two", "Shipped two", { manifest: true }),
+    ];
+    await fs.mkdir(path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets"));
+    await fs.writeFile(
+      path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets", "table.bin"),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+    );
+    await fs.writeFile(
+      path.join(packages[1]!.directory, SCOREBOARD),
+      "evaluations:\n  - agent_id: default_agent\n",
+    );
+    const shipped = await createTestApp({ builtinBenchmarks: packages });
     try {
       const owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
       const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
@@ -189,45 +216,67 @@ describe("built-in Agent provisioning", () => {
       for (const projectId of [projects.projects[0]!.projectId, created.project.projectId]) {
         const base = `/api/projects/${projectId}/benchmarks`;
         const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
-        const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
-        const builtins = body.benchmarks.filter((b) => b.id !== "example-benchmark");
-        expect(builtins.map((b) => b.id).sort(), projectId).toEqual(
-          packages.map((b) => b.id).sort(),
-        );
-        expect(body.benchmarks.map((b) => b.id)).toEqual([
-          "example-benchmark",
-          ...builtins.map((b) => b.id),
-        ]);
-        expect(example.origin).toEqual({ kind: "builtin" });
-        expect(example.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-        for (const bench of builtins) {
-          const source = packages.find((p) => p.id === bench.id)!;
+        const ids = body.benchmarks.map((b) => b.id);
+        expect(ids[0], projectId).toBe("example-benchmark");
+        expect(ids.slice(1).sort(), projectId).toEqual(packages.map((p) => p.id).sort());
+        expect(body.benchmarks[0]!.origin).toEqual({ kind: "builtin" });
+        for (const source of packages) {
+          const bench = body.benchmarks.find((b) => b.id === source.id)!;
           const manifest = (await readBenchmarkManifest(source.directory))!;
-          expect(bench.origin, bench.id).toEqual(manifest.origin);
-          expect(bench.version, bench.id).toBe(manifest.version);
-          expect(bench.status, bench.id).toBe(manifest.status);
-          expect(bench.runs, bench.id).toBe(manifest.runs);
-          // No baseline ships with a package.
-          expect(bench.evaluations).toEqual([]);
-          const cases = (await (
-            await owner.get(`${base}/${bench.id}/cases`)
-          ).json()) as BenchmarkCasesResponse;
-          expect(cases.cases).toHaveLength(bench.caseCount);
+          expect(bench, source.id).toMatchObject({
+            title: manifest.title,
+            origin: manifest.origin,
+            version: manifest.version,
+            status: manifest.status,
+            runs: manifest.runs,
+            caseCount: 1,
+            // No baseline comes with a package, whatever its directory holds.
+            evaluations: [],
+          });
+          // The case's statement is served as the package wrote it.
+          const statement = await (
+            await owner.get(`${base}/${source.id}/cases/CASE-001-task/files/content?path=README.md`)
+          ).text();
+          expect(statement, source.id).toBe(
+            await fs.readFile(
+              path.join(source.directory, "CASE-001-task", "statement", "README.md"),
+              "utf8",
+            ),
+          );
           // Every file the package ships is the Project's, byte for byte; only the scoreboard
           // is the Project's own.
           const copy = await filesUnder(
-            path.join(benchmarksDir(shipped.root, projectId), bench.id),
+            path.join(benchmarksDir(shipped.root, projectId), source.id),
           );
           const shippedFiles = await filesUnder(source.directory);
           shippedFiles.delete(SCOREBOARD);
-          expect([...copy.keys()].filter((f) => f !== SCOREBOARD).sort(), bench.id).toEqual(
+          expect([...copy.keys()].filter((f) => f !== SCOREBOARD).sort(), source.id).toEqual(
             [...shippedFiles.keys()].sort(),
           );
           for (const [file, bytes] of shippedFiles) {
-            expect(copy.get(file)?.equals(bytes), `${bench.id}/${file}`).toBe(true);
+            expect(copy.get(file)?.equals(bytes), `${source.id}/${file}`).toBe(true);
           }
         }
       }
+    } finally {
+      await shipped.cleanup();
+    }
+  });
+
+  it("the shipped catalog reaches a Project whole: default_project lists the example and every package the build fetched", async () => {
+    // The one scenario on the real catalog, on an app that writes it as production does
+    // (createTestApp leaves the built-ins out unless asked). Only what holds for any catalog
+    // is asserted: the ids, read from the catalog at test time.
+    const packages = await readBuiltinBenchmarks();
+    const shipped = await createTestApp({ builtinBenchmarks: true });
+    try {
+      const admin = apiClient(shipped.app, (await loginAdmin(shipped.app)).cookie);
+      const body = (await (
+        await admin.get("/api/projects/default_project/benchmarks")
+      ).json()) as BenchmarksResponse;
+      const ids = body.benchmarks.map((b) => b.id);
+      expect(ids[0]).toBe("example-benchmark");
+      expect(ids.slice(1).sort()).toEqual(packages.map((p) => p.id).sort());
     } finally {
       await shipped.cleanup();
     }
