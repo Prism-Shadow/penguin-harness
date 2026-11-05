@@ -10,18 +10,20 @@ excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 B
 
 ## 1. GDPEVO Essential 系列 Benchmark 的构成与评测规则
 
-GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成，合计包含 30 道训练题与 30 道测试题。在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库与 PenguinHarness 内置评测库中，每个子 Benchmark 均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道保留测试题：
+GDPEVO Essential 源自 [GDPevo 论文](https://arxiv.org/abs/2608.03764)，是一套面向真实企业任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成。每一个子 Benchmark 都是一个完整的评测单元，内部包含 5 道训练题、5 道保留测试题以及一个配套的交互式训练评测环境，全系列合计包含 30 道训练题与 30 道测试题：
 
-| Benchmark 名称 | Benchmark 标识 | 题目数量 | 任务概述 |
+| Benchmark 名称 | Benchmark 标识 | 单个子 Benchmark 构成 | 任务概述 |
 | :--- | :--- | :--- | :--- |
-| 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练 / 5 测试 | 查询客服后台记录，核实并处理待办工单 |
-| 财务管控 | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练 / 5 测试 | 根据财务系统数据完成账目核对与结账核算 |
-| 投资组合管理 | [portfolio-management](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 训练 / 5 测试 | 读取资管平台数据，计算持仓估值与调仓方案 |
-| 医保审核 | [coverage-review](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 训练 / 5 测试 | 对照医保条款与申报材料，给出理赔审核结论 |
-| 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练 / 5 测试 | 核对立案卷宗材料，整理案件排期与归档信息 |
-| 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练 / 5 测试 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
+| 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练题 + 5 测试题 + 评测环境 | 查询客服后台记录，核实并处理待办工单 |
+| 财务管控 | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练题 + 5 测试题 + 评测环境 | 根据财务系统数据完成账目核对与结账核算 |
+| 投资组合管理 | [portfolio-management](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 训练题 + 5 测试题 + 评测环境 | 读取资管平台数据，计算持仓估值与调仓方案 |
+| 医保审核 | [coverage-review](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 训练题 + 5 测试题 + 评测环境 | 对照医保条款与申报材料，给出理赔审核结论 |
+| 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练题 + 5 测试题 + 评测环境 | 核对立案卷宗材料，整理案件排期与归档信息 |
+| 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练题 + 5 测试题 + 评测环境 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
 
-在 GDPEVO Essential 系列 Benchmark 的评测规则下，每个子 Benchmark 的实验遵循以下三项设定：
+在真实企业业务中，单凭题目的字面指令往往无法直接把任务做对，业务系统背后还存在大量未在题面明文写出的企业内部规则，例如客户等级优先级、黑名单过滤策略、供应商风控阈值或特殊异常处理口径。按照 [GDPevo 论文](https://arxiv.org/abs/2608.03764)提出的规则杂交设计，每个子 Benchmark 都将复杂的企业业务逻辑拆解为多条底层元规则，分散埋藏在 5 道训练题与配套的训练环境中，每道训练题仅触发其中一部分规则，而 5 道保留测试题则将这些元规则重新交叉组合为新的复合任务。这意味着 Agent 不能靠死记硬背训练题答案过关，必须在训练环境中通过查询业务后端、对照确定性规则打分点排查失分原因，把分散隐含的企业规则摸清并归纳到 `SKILL.md` 中，才能在同时触发多条规则的测试题上真正泛化生效。
+
+围绕这一设计，每个子 Benchmark 的实验遵循以下三项设定：
 
 - **按 Benchmark 独立训练与测试**：六个子 Benchmark 彼此独立，每个 Benchmark 单独开展训练并产出一份专属的 `SKILL.md` 技能文档，不同 Benchmark 之间不混合训练数据，也不共享习得的技能。
 - **训练阶段**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，限时 6 小时，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
