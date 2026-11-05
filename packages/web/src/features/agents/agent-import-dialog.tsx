@@ -8,7 +8,8 @@
  *    prompt lands in a new conversation with the Project's default agent (the AI bridge), where
  *    the `agent-porting` Skill does the mapping. Nothing is sent; sending stays the user's. While
  *    that agent lacks the Skill, the section says so and offers to install the plugin that ships
- *    it, and the chat waits (porting-skill-gate.ts).
+ *    it, and the chat waits (porting-skill-gate.ts). That install replaces whatever the Agent
+ *    already has of the plugin, so then it asks first, with the Plugins page's update confirmation.
  * 2. **Import a file.** A zip export (or, until 1.0, an older `.tar.gz` package) no larger than an
  *    import takes — a larger one is refused before anything is sent — the Agent id its file name
  *    suggests (editable; empty takes the id a zip records, while a `.tar.gz`, which records none,
@@ -67,6 +68,7 @@ import { MIGRATION_SOURCES, SOURCE_HOME, migrationPrompt } from "./agent-migrati
 import type { MigrationSource } from "./agent-migration";
 import { importReportText } from "./import-report";
 import { PORTING_PLUGIN, usePortingSkill } from "./porting-skill-gate";
+import { ChangedPartRows } from "../plugins/changed-part-rows";
 
 export interface AgentImportDialogProps {
   projectId: string;
@@ -119,12 +121,14 @@ export function AgentImportDialog({
   const [taken, setTaken] = useState<string | null>(null);
   /** The one confirmation before a State is replaced is open. */
   const [confirming, setConfirming] = useState(false);
+  /** The confirmation before the porting plugin's install rewrites what the Agent has of it. */
+  const [confirmingPorting, setConfirmingPorting] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
   const idFieldId = useId();
 
   const id = agentId.trim();
-  /** A `.tar.gz` records no id: the import needs one named for it. */
-  const idRequired = file !== null && isTarPackage(file.name);
+  /** A `.tar.gz` records no id: an import needs one named for it (a replace is this Agent's). */
+  const idRequired = replace === undefined && file !== null && isTarPackage(file.name);
   const idValid = id === "" ? !idRequired : SEMANTIC_ID_PATTERN.test(id);
   /** More than an import takes: refused here, before a byte of it is sent. */
   const tooLarge = file !== null && file.size > AGENT_ARCHIVE_MAX_UPLOAD_BYTES;
@@ -161,6 +165,19 @@ export function AgentImportDialog({
     }
     // The Agent's Skill count moved; its card reads the list.
     void reloadAgents().catch(() => {});
+  };
+  /**
+   * The install's way in: straight on when it rewrites nothing the Agent has, else through the
+   * update confirmation, as on the Plugins page — it replaces those Skills whole.
+   */
+  const askPorting = () => {
+    if (porting.rewrites !== null && porting.rewrites.length === 0) void installPorting();
+    else setConfirmingPorting(true);
+  };
+  /** The confirmation's action: the install that rewrites the parts it names. */
+  const updatePorting = () => {
+    setConfirmingPorting(false);
+    void installPorting();
   };
 
   /** A picked file suggests the id from its name (the export's `<id>-<yyyymmdd>.zip`). */
@@ -278,7 +295,7 @@ export function AgentImportDialog({
                           variant="link"
                           disabled={porting.status === "installing"}
                           aria-busy={porting.status === "installing"}
-                          onClick={() => void installPorting()}
+                          onClick={askPorting}
                         >
                           {porting.status === "installing"
                             ? S.agent.migrateSkillInstalling
@@ -437,6 +454,35 @@ export function AgentImportDialog({
           {file !== null && target !== null ? S.agent.overwriteBody(target, file.name) : ""}
         </p>
       </ConfirmModal>
+
+      {/* The porting plugin's install over what the Agent already has of it: the Plugins page's
+          update confirmation, naming the parts the reinstall rewrites. */}
+      {confirmingPorting && chatAgent !== null && (
+        <ConfirmModal
+          open
+          title={S.plugins.updateConfirmTitle(PORTING_PLUGIN)}
+          tone="primary"
+          widthClass="sm:max-w-lg"
+          confirmLabel={S.skills.updateAction}
+          cancelLabel={S.common.cancel}
+          onClose={() => setConfirmingPorting(false)}
+          onConfirm={updatePorting}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {S.plugins.updateConfirmWarning(PORTING_PLUGIN)}
+            </p>
+            {porting.rewrites !== null && porting.rewrites.length > 0 && (
+              <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                <li className="px-3 py-1.5 text-xs">
+                  <span className="block truncate">{agentDisplayName(chatAgent)}</span>
+                  <ChangedPartRows parts={porting.rewrites} />
+                </li>
+              </ul>
+            )}
+          </div>
+        </ConfirmModal>
+      )}
     </>
   );
 }

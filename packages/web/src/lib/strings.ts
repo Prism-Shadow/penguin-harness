@@ -2072,7 +2072,11 @@ export const zh = {
       unknownTool: (tool: string): string => `这台服务端没有内置工具 ${tool}，未启用`,
       noKnownTools: "定义里的内置工具这台服务端都没有，保留了默认工具集",
       linkSkipped: (part: string): string => `${part}的目录是一个链接，不会导出`,
+      currentConfigInvalid:
+        "该 Agent 原有的 system_config.yaml 无法解析，文件里被清空的凭据没有用它补回",
     },
+    /** The preview's 422 `invalid_config`: the Agent's own config does not parse, whatever is chosen. */
+    exportConfigInvalid: "该 Agent 的 system_config.yaml 无法解析，请先修正这个文件再导出。",
     exportAction: "导出",
     exporting: "导出中…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's 「从文件替换…」. */

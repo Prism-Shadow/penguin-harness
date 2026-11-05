@@ -36,6 +36,8 @@ export function archiveNoteText(note: AgentArchiveNote): string {
       return said.noKnownTools;
     case "link_skipped":
       return note.subject === undefined ? note.message : said.linkSkipped(partName(note.subject));
+    case "current_config_invalid":
+      return said.currentConfigInvalid;
     default:
       return note.message;
   }

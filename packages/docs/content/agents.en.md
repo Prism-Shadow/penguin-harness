@@ -82,7 +82,7 @@ On the **Agents** page, select **Import agent**. The dialog offers two ways in: 
 4. Select **Open a new chat**. A new conversation with the Project's default agent opens with the prompt filled in. Nothing is sent yet. If you picked a file under **Import a file**, you are asked first, since the file does not go with the chat.
 5. Review the prompt and send it.
 
-The migration needs the `agent-porting` Skill on the Project's default agent. An agent created before this version does not have it: the section then says so, and **Open a new chat** stays off until you select **Install the skill-porting plugin**, which installs the plugin on that agent, or updates the copy it already has.
+The migration needs the `agent-porting` Skill on the Project's default agent. An agent created before this version does not have it: the section then says so, and **Open a new chat** stays off until you select **Install the skill-porting plugin**, which installs the plugin on that agent, or updates the copy it already has. An update replaces the plugin's Skills the agent already has with the library copies, local edits included, so it first asks with the same confirmation as an update on the **Plugins** page, listing them.
 
 The prompt tells the agent to use the `agent-porting` Skill, to stop and say so if it does not have it, and to:
 

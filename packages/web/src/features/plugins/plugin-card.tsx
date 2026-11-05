@@ -58,6 +58,7 @@ import { SkillTile } from "../skills/skill-icon-view";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
+import { ChangedPartRows } from "./changed-part-rows";
 import {
   PluginTag,
   StatusMark,
@@ -583,30 +584,7 @@ export function PluginCard(props: PluginCardProps) {
                 return (
                   <li key={key} className="px-3 py-1.5 text-xs">
                     <span className="block truncate">{nameOf(key)}</span>
-                    {changedParts(plugin, installed.get(key)).map((part) => (
-                      <span
-                        key={`${part.kind}:${part.name}`}
-                        className="mt-0.5 flex items-center justify-between gap-3 text-gray-500 dark:text-gray-400"
-                      >
-                        {part.kind === "hooks" ? (
-                          <span className="min-w-0 truncate">{S.plugins.detailHooks}</span>
-                        ) : part.kind === "mcp" ? (
-                          <span className="min-w-0 truncate">
-                            <span className="font-mono">{part.name}</span> (
-                            {S.plugins.updatePartMcp})
-                          </span>
-                        ) : (
-                          <span className="min-w-0 truncate font-mono">{part.name}</span>
-                        )}
-                        {part.kind === "mcp" ? (
-                          <span className="shrink-0">{S.plugins.updatePartReplaced}</span>
-                        ) : (
-                          <span className="shrink-0 font-mono">
-                            {part.installed || "?"} → {part.library}
-                          </span>
-                        )}
-                      </span>
-                    ))}
+                    <ChangedPartRows parts={changedParts(plugin, installed.get(key))} />
                   </li>
                 );
               })}
