@@ -154,7 +154,7 @@ uvx --from harbor==0.23.0 harbor run \
 
 **第一，不同题型的得分分化显著，600 次作答并集划出了“模型能力边界”与“Harness 优化空间”的分水岭。**
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。" /><figcaption>图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。" /><figcaption>图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。误差线在 0–100 边界处截断。</figcaption></figure>
 
 如图 6 所示，没有单一 Harness 在全部五个子集上同时占优。在 Sec A 数据分析上，PenguinHarness 以 70.00 ± 10.00 与 DSH 的 70.00 ± 0.00 并列第一；在断网隔离的 Sec B 软件工程上，PenguinHarness 以 70.00 ± 10.00 取得单子集最高分，三轮得分为 60、70、80，DSH、Pi、Codex 分别为 63.33 ± 15.28、60.00 ± 10.00 与 53.33 ± 5.77；在 Sec C 自动化工作流上，DSH 以 36.67 ± 5.77 居首，PenguinHarness 为 30.00 ± 10.00；在 Sec E 终端任务上，Pi 取得最高均分 23.33 ± 15.28，高于 PenguinHarness 的 20.00 ± 0.00 与 DSH 的 20.00 ± 10.00；而 Sec D 科学计算则是所有被测 Harness 的共同短板，均分都在 0.00 到 10.00 之间。
 
