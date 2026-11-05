@@ -1666,7 +1666,7 @@ export const zh = {
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式，命中即拒绝执行，不受审批模式影响。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
+      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式。命中「拒绝」规则即拒绝执行，命中「需确认」规则则等人同意后才执行，都不受审批模式影响；两种规则同时命中时以拒绝为准。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
@@ -1683,6 +1683,11 @@ export const zh = {
     commandPolicyRuleName: "名称",
     commandPolicyRulePattern: "正则表达式",
     commandPolicyRuleDesc: "描述",
+    commandPolicyRuleAction: "命中时",
+    commandPolicyActionDeny: "拒绝",
+    commandPolicyActionAsk: "需确认",
+    commandPolicyAskPill: "需确认",
+    commandPolicyAskPillHint: "命中的命令要等人允许后才运行，不受审批模式影响。",
     commandPolicyInvalidPattern: "正则表达式无效",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
@@ -3954,6 +3959,10 @@ Benchmark：
     compact: "压缩上下文",
     approve: "允许",
     deny: "拒绝",
+    /** The approval block's muted line when a command-policy `ask` rule, not the approval mode, sent the call to a person. */
+    approvalPolicyReason: (rule: string) => `由命令策略规则「${rule}」要求确认`,
+    approvalPolicyReasonHint:
+      "Project 命令策略中这条规则要求每次都由人确认，不受当前审批模式影响。可在 Project 设置的安全策略页修改。",
     decisionAllow: "已批准",
     decisionDeny: "已拒绝",
     decisionManual: "手动",

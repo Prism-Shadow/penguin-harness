@@ -795,4 +795,28 @@ describe("Session pre-tool-use hooks", () => {
     expect((decision!.payload as { decision: string }).decision).toBe("forbidden");
     expect(llm.toolOutputs).toEqual(["Tool call denied by policy."]);
   });
+
+  it("a hook allow does not get past an ask rule: the call still goes to a person", async () => {
+    const llm = toolLLM("gh pr merge 7");
+    const asked: string[] = [];
+    const s = session(llm, [{ name: "opener", run: async () => ({ decision: "allow" }) }], {
+      rules: [{ name: "ask-merge", pattern: "^gh pr merge", action: "ask" }],
+    });
+    const stream: AmspRecord[] = [];
+    for await (const msg of s.run([userText("go")], {
+      approve: async () => "allow",
+      askHuman: async (_tc, hit) => {
+        asked.push(hit.rule);
+        return "deny";
+      },
+    })) {
+      stream.push(msg);
+    }
+    expect(asked).toEqual(["ask-merge"]);
+    const decision = stream.find(
+      (m) => isEventMessage(m) && m.payload.type === "approval_decision",
+    );
+    expect((decision!.payload as { decision: string }).decision).toBe("deny");
+    expect(llm.toolOutputs).toEqual(["Tool call denied by user."]);
+  });
 });

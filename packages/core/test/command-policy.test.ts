@@ -307,6 +307,100 @@ describe("factory rule metadata", () => {
   });
 });
 
+/**
+ * The factory `ask` rules: the commonest commands that act beyond this machine and are hard to
+ * take back are put to a person, and their routine neighbours are not.
+ */
+describe("command policy factory ask rules", () => {
+  it.each([
+    ["gh pr merge 12 --squash", "gh-pr-merge-close"],
+    ["gh pr close 7", "gh-pr-merge-close"],
+    ["cd repo && gh pr merge 3 --admin", "gh-pr-merge-close"],
+    ["/usr/local/bin/gh pr merge 1", "gh-pr-merge-close"],
+    ["sh -c 'gh pr merge 1'", "gh-pr-merge-close"],
+    ["gh release create v1.2.0 --notes x", "gh-release"],
+    ["gh release delete v1 -y", "gh-release"],
+    ["gh release edit v1 --draft=false", "gh-release"],
+    ["git push --force", "git-push-force"],
+    ["git push -f origin feat", "git-push-force"],
+    ["git push origin feat --force-with-lease", "git-push-force"],
+    ["git push --force-with-lease=feat:abc123 origin feat", "git-push-force"],
+    ["git -C /repo push -f", "git-push-force"],
+    ["git push origin main", "git-push-default-branch"],
+    ["git push -u origin master", "git-push-default-branch"],
+    ["git push origin HEAD:main", "git-push-default-branch"],
+    ["git push origin feat:refs/heads/main", "git-push-default-branch"],
+    ["git push origin :main", "git-push-default-branch"],
+    ["git -C repo push origin main", "git-push-default-branch"],
+    ["npm publish", "package-publish"],
+    ["pnpm publish --access public", "package-publish"],
+    ["yarn publish", "package-publish"],
+    ["pnpm -r publish", "package-publish"],
+    ["pnpm --filter @scope/pkg publish --no-git-checks", "package-publish"],
+    // Text matching cannot tell a rehearsal from the real thing: one click, by design.
+    ["npm publish --dry-run", "package-publish"],
+  ])("puts `%s` to a person (%s)", (cmd, rule) => {
+    expect(evaluateCommandPolicy(cmd)).toEqual({ rule, action: "ask" });
+  });
+
+  it.each([
+    "gh pr list",
+    "gh pr view 3",
+    "gh pr create --base main --fill",
+    "gh issue close 4",
+    "gh release list",
+    "gh release view v1",
+    "gh release download v1",
+    "git push",
+    "git push origin feat",
+    "git push origin feat/main",
+    "git push origin main-fix",
+    "git push origin main:feature",
+    "git push --follow-tags origin feat",
+    "git pull origin main",
+    "git fetch -f origin",
+    "git commit -m 'push -f later' && git push origin feat",
+    "npm run publish-docs",
+    "pnpm install",
+    "npm pack",
+  ])("lets `%s` through to the approval mode", (cmd) => {
+    expect(evaluateCommandPolicy(cmd)).toBeNull();
+  });
+});
+
+describe("deny and ask rules together", () => {
+  it("a deny hit outranks an ask hit wherever the two sit in the list", () => {
+    const policy: CommandPolicyConfig = {
+      rules: [
+        { name: "ask-sudo", pattern: "\\bsudo\\b", action: "ask" },
+        { name: "no-rm", pattern: "rm -rf" },
+      ],
+    };
+    expect(evaluateCommandPolicy("sudo rm -rf /", policy)).toEqual({
+      rule: "no-rm",
+      action: "deny",
+    });
+    expect(evaluateCommandPolicy("sudo ls", policy)).toEqual({ rule: "ask-sudo", action: "ask" });
+  });
+
+  it("among ask rules the first match in list order names the decision", () => {
+    const policy: CommandPolicyConfig = {
+      rules: [
+        { name: "ask-git", pattern: "\\bgit\\b", action: "ask" },
+        { name: "ask-push", pattern: "\\bpush\\b", action: "ask" },
+      ],
+    };
+    expect(evaluateCommandPolicy("git push origin feat", policy)?.rule).toBe("ask-git");
+  });
+
+  it("a switched-off ask rule asks nothing", () => {
+    const policy: CommandPolicyConfig = {
+      rules: [{ name: "ask-git", pattern: "\\bgit\\b", action: "ask", enabled: false }],
+    };
+    expect(evaluateCommandPolicy("git push", policy)).toBeNull();
+  });
+});
+
 describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   const call = (cmd: string, name = "exec_command"): AmspRecord =>
     toolCall({ name, arguments: JSON.stringify({ cmd }), toolCallId: "c1" });
@@ -382,6 +476,57 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
       },
     );
     expect(await failing(call("rm -rf /") as never)).toBe("forbidden");
+  });
+
+  it("hands an ask hit to askHuman with the rule's name, and approve is not consulted", async () => {
+    let approved = 0;
+    const asked: string[] = [];
+    const guarded = withCommandPolicy(
+      async () => {
+        approved += 1;
+        return "allow";
+      },
+      undefined,
+      async (_tc, hit) => {
+        asked.push(hit.rule);
+        return "deny";
+      },
+    );
+
+    // allow-all stands for the host here: it would have said yes.
+    expect(await guarded(call("gh pr merge 12") as never)).toBe("deny");
+    expect(asked).toEqual(["gh-pr-merge-close"]);
+    expect(approved).toBe(0);
+    // A call no rule matches still goes to the approval mode, and askHuman is not bothered.
+    expect(await guarded(call("gh pr view 12") as never)).toBe("allow");
+    expect(asked).toHaveLength(1);
+  });
+
+  it("without askHuman, the approval callback decides an ask hit", async () => {
+    const guarded = withCommandPolicy(async () => "allow");
+    expect(await guarded(call("gh pr merge 12") as never)).toBe("allow");
+  });
+
+  it("a child wrapping the parent's wrapper hands an ask hit to the parent's askHuman, once", async () => {
+    let hostApproved = 0;
+    let asked = 0;
+    const parent = withCommandPolicy(
+      async () => {
+        hostApproved += 1;
+        return "allow";
+      },
+      undefined,
+      async () => {
+        asked += 1;
+        return "allow";
+      },
+    );
+    // A child Session wraps the callback it was forwarded, with no askHuman of its own.
+    const child = withCommandPolicy(parent);
+
+    expect(await child(call("git push --force origin feat") as never)).toBe("allow");
+    expect(asked).toBe(1);
+    expect(hostApproved).toBe(0);
   });
 });
 
@@ -519,5 +664,111 @@ describe("Session applies the policy at the approval boundary", () => {
 
     expect(approveCalls).toBe(1);
     expect(executedCmd).toBe("rm -rf ./build");
+  });
+
+  it("under allow-all, an ask hit waits for askHuman, whose answer is the recorded decision", async () => {
+    let approveCalls = 0;
+    let executed = 0;
+    const asked: string[] = [];
+    let turn = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+        if (turn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "gh pr merge 42 --squash" }),
+            toolCallId: "call_merge",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("I will ask before merging.");
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        executed += 1;
+        throw new Error("a call the person refused must never be executed");
+      },
+      toolPermission: () => undefined,
+    };
+    // No commandPolicy in the config: the factory rule set applies, its ask rules included.
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ llm }),
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+    });
+
+    const all: AmspRecord[] = [];
+    for await (const msg of session.run([userText("merge it")], {
+      approve: async () => {
+        approveCalls += 1;
+        return "allow";
+      },
+      askHuman: async (_tc, hit) => {
+        asked.push(hit.rule);
+        return "deny";
+      },
+    })) {
+      all.push(msg);
+    }
+
+    expect(asked).toEqual(["gh-pr-merge-close"]);
+    expect(approveCalls).toBe(0);
+    expect(executed).toBe(0);
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    // A person's answer, recorded as one: not the policy's own "forbidden".
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+  });
+
+  it("wraps the host's fallback sink for child approvals, so a child's ask hit reaches askHuman", async () => {
+    let fallback: ApproveFn | undefined;
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        throw new Error("not reached");
+      },
+      toolPermission: () => undefined,
+      setSubagentApprovalFallback: (approve) => {
+        fallback = approve;
+      },
+    };
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ llm: { streamGenerate: async function* () {} } as never }),
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+    });
+    const asked: string[] = [];
+    let hostApproved = 0;
+    session.setSubagentApprovalFallback(
+      async () => {
+        hostApproved += 1;
+        return "allow";
+      },
+      async (_tc, hit) => {
+        asked.push(hit.rule);
+        return "allow";
+      },
+    );
+    const childCall = (cmd: string): AmspRecord =>
+      ({
+        ...toolCall({ name: "exec_command", arguments: JSON.stringify({ cmd }), toolCallId: "c" }),
+        origin: ["child-1"],
+      }) as AmspRecord;
+
+    expect(await fallback!(childCall("npm publish") as never)).toBe("allow");
+    expect(asked).toEqual(["package-publish"]);
+    expect(await fallback!(childCall("rm -rf /") as never)).toBe("forbidden");
+    expect(await fallback!(childCall("ls") as never)).toBe("allow");
+    expect(hostApproved).toBe(1);
   });
 });

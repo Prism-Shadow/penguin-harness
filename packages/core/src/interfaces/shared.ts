@@ -52,10 +52,24 @@ export interface RunCutoff {
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
  * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
  * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
- * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
+ * and a call a `deny` rule matches answers `"forbidden"` without the wrapped callback being
+ * consulted.
  * Docs: /docs/interfaces § "ApproveFn".
  */
 export type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+
+/**
+ * The host's route to a person, for a call a command-policy `ask` rule matched
+ * (`RunOptions.askHuman`): consulted whatever the approval mode, so it must not auto-allow.
+ * Shaped like {@link ApproveFn}, plus the rule that asked, so the host can say why it asks
+ * (any `ApproveFn` is also an `AskHumanFn`). It answers `"allow"` or `"deny"`; the engine
+ * records the answer like any other decision.
+ * Docs: /docs/tools § "Approval".
+ */
+export type AskHumanFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  hit: { rule: string },
+) => Promise<ApprovalDecision>;
 
 /**
  * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the
@@ -109,9 +123,15 @@ export type UserPromptFn = (
 ) => Promise<UserPromptOutcome | null>;
 
 /**
- * One command-policy deny rule — plain project-editable data: a name (identifies the rule
- * in the settings UI), a regex source tested against the whitespace-normalized command, an
- * optional free-text description, and a per-rule switch.
+ * What a command-policy hit does: `deny` refuses the call as `"forbidden"` without asking
+ * anyone; `ask` hands it to a person (`RunOptions.askHuman`) whatever the approval mode.
+ */
+export type CommandPolicyAction = "deny" | "ask";
+
+/**
+ * One command-policy rule — plain project-editable data: a name (identifies the rule in the
+ * settings UI), a regex source tested against the whitespace-normalized command, an optional
+ * free-text description, a per-rule switch, and what a hit does.
  * Docs: /docs/configuration § "Command policy".
  */
 export interface CommandPolicyRule {
@@ -122,13 +142,16 @@ export interface CommandPolicyRule {
   description?: string;
   /** Per-rule switch; absent = true. */
   enabled?: boolean;
+  /** What a hit does; absent = `"deny"`. */
+  action?: CommandPolicyAction;
 }
 
 /**
  * The project sandbox command policy (the `[command_policy]` block of
  * `.project_config.toml`, threaded into every Session the Agent creates). `Session.run`
- * wraps the injected approval callback with it, so a hit is denied without the human being
- * asked — under every approval mode. It is Project-owned security config, deliberately
+ * wraps the injected approval callback with it, so a `deny` hit is refused without the human
+ * being asked and an `ask` hit is put to a person — under every approval mode. It is
+ * Project-owned security config, deliberately
  * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
  * new projects like model presets (copied at creation, never rewritten); an absent config
  * or an absent `rules` list means the factory set applies, and `enabled: false` switches
@@ -139,6 +162,6 @@ export interface CommandPolicyRule {
 export interface CommandPolicyConfig {
   /** Master switch; absent = true. */
   enabled?: boolean;
-  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
+  /** The rule list; absent = the factory set (a stored empty list means no rules). A `deny` hit outranks an `ask` hit; within one action the first match in list order names the rule. */
   rules?: CommandPolicyRule[];
 }

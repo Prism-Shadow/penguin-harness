@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
+  CommandPolicyActionDto,
   CommandPolicyDto,
   CommandPolicyRuleDto,
   MemberInfo,
@@ -25,12 +26,14 @@ import {
   ConfirmModal,
   FieldError,
   FieldLabel,
+  FieldLegend,
   ICONS,
   InfoPopover,
   Input,
   Modal,
   NavList,
   NavRow,
+  Segmented,
   Select,
   SettingRow,
   Switch,
@@ -874,13 +877,14 @@ function chatDefaultsDraft(
   };
 }
 
-/** Field-level equality for the security page's dirty check (description "" ≡ absent). */
+/** Field-level equality for the security page's dirty check (description "" ≡ absent, action deny ≡ absent). */
 function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
   return (
     a.name === b.name &&
     a.pattern === b.pattern &&
     (a.description ?? "") === (b.description ?? "") &&
-    a.enabled === b.enabled
+    a.enabled === b.enabled &&
+    (a.action ?? "deny") === (b.action ?? "deny")
   );
 }
 
@@ -908,13 +912,19 @@ export function RuleEditor({
       name: initial?.name ?? "",
       pattern: initial?.pattern ?? "",
       desc: initial?.description ?? "",
+      action: initial?.action ?? ("deny" as CommandPolicyActionDto),
     },
     {
       ...(scope !== undefined ? { scope } : {}),
-      normalize: (d) => ({ name: d.name.trim(), pattern: d.pattern.trim(), desc: d.desc.trim() }),
+      normalize: (d) => ({
+        name: d.name.trim(),
+        pattern: d.pattern.trim(),
+        desc: d.desc.trim(),
+        action: d.action,
+      }),
     },
   );
-  const { name, pattern, desc } = form.draft;
+  const { name, pattern, desc, action } = form.draft;
   const [err, setErr] = useState<string | undefined>(undefined);
 
   const apply = () => {
@@ -933,6 +943,8 @@ export function RuleEditor({
       pattern: p,
       ...(d !== "" ? { description: d } : {}),
       enabled: initial?.enabled ?? true,
+      // Stored only where it departs from the default, as the server serves it back.
+      ...(action === "ask" ? { action } : {}),
     });
   };
 
@@ -983,6 +995,20 @@ export function RuleEditor({
         maxLength={300}
         onChange={(e) => form.patch({ desc: e.target.value })}
       />
+      {/* What a hit does: refuse it, or wait for a person whatever the approval mode. The
+          fieldset's legend names the two options as one question. */}
+      <fieldset className="min-w-0 sm:w-56">
+        <FieldLegend>{S.project.commandPolicyRuleAction}</FieldLegend>
+        <Segmented<CommandPolicyActionDto>
+          cols={2}
+          value={action}
+          onChange={(next) => form.patch({ action: next })}
+          options={[
+            { value: "deny", label: S.project.commandPolicyActionDeny },
+            { value: "ask", label: S.project.commandPolicyActionAsk },
+          ]}
+        />
+      </fieldset>
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>
           {S.common.cancel}
@@ -1021,6 +1047,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
         pattern: r.pattern,
         description: r.description ?? "",
         enabled: r.enabled,
+        action: r.action ?? "deny",
       })),
   });
   const rules = form.draft;
@@ -1143,9 +1170,10 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   asked for it: the factory rules alone make the list taller than the dialog's
                   scroll box, so a form appended after them would open below the fold and the
                   click would look like it did nothing. The rule it applies stays where it was
-                  typed for the same reason. Deny rules are order-independent — every enabled
-                  match refuses, and list order only picks which rule name the refusal
-                  reports — so the head of the list is as good a home as the tail. */}
+                  typed for the same reason. The rules are order-independent — a deny match
+                  refuses wherever it sits, even past an ask match, and list order only picks
+                  which rule name a decision reports — so the head of the list is as good a
+                  home as the tail. */}
               {editing === "new" && (
                 <RuleEditor
                   initial={null}
@@ -1175,7 +1203,20 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                     className={`flex items-center gap-3 py-2.5 ${r.enabled ? "" : "opacity-60"}`}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{r.name}</p>
+                      <p className="flex items-center gap-2 text-sm font-medium">
+                        <span className="min-w-0 truncate">{r.name}</span>
+                        {/* A deny rule is the default and carries no mark; an ask rule says so in
+                            a labelled pill, its meaning on hover. */}
+                        {r.action === "ask" && (
+                          <Badge
+                            tone="attention"
+                            size="sm"
+                            tooltip={S.project.commandPolicyAskPillHint}
+                          >
+                            {S.project.commandPolicyAskPill}
+                          </Badge>
+                        )}
+                      </p>
                       {r.description !== undefined && (
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}

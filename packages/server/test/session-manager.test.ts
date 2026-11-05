@@ -82,7 +82,7 @@ import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
-import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import type { RunOpts, RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
@@ -765,7 +765,7 @@ describe("session-manager", () => {
     const runInputs: string[][] = [];
     const fake = approvalFakeSession("session-1");
     const origRun = fake.run.bind(fake);
-    fake.run = function (input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    fake.run = function (input: AmspRecord[], opts: RunOpts) {
       runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
       return origRun(input, opts);
     };

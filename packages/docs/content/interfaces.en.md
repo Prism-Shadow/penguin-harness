@@ -77,6 +77,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
+  askHuman?: AskHumanFn;   // route to a person for a command-policy `ask` hit; read by the Session, never by the engine
   preToolUse?: PreToolUseFn; // pre-tool-use hook consult; the Session wires it from installed hook packages
   userPrompt?: UserPromptFn; // user-prompt hook consult; the Session wires it from installed hook packages
 }
@@ -200,7 +201,16 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 | No callback injected | The engine denies everything (the conservative default) |
 | Subagents | A subagent inherits its parent's approval callback, invoked with an `origin` tag, so the approval policy spans the whole delegation tree |
 
-`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a vetoed command gets `"forbidden"` before the host is asked at all.
+`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a command a `deny` rule matches gets `"forbidden"` before the host is asked at all. A command an `ask` rule matches goes to `RunOptions.askHuman` instead of `approve`, whatever the approval mode. Its type is `ApproveFn` plus the rule that asked, so any `ApproveFn` also fits:
+
+```ts
+type AskHumanFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  hit: { rule: string },
+) => Promise<ApprovalDecision>;
+```
+
+Without `askHuman`, `approve` decides an `ask` hit like any other call. A child Session forwards nothing extra: the callback it inherits is the parent's policy wrapper, which matches the call again and hands it to the parent's `askHuman`.
 
 Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 
