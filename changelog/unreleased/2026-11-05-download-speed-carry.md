@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1494](https://github.com/Prism-Shadow/penguin-harness/pull/1494)
 
 [中文版](2026-11-05-download-speed-carry.zh.md)
 
