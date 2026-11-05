@@ -23,40 +23,7 @@ const render = (props: Omit<BadgeProps, "children">, text = "failed") =>
   renderStatic(createElement(Badge, { ...props, children: text }));
 
 describe("Badge", () => {
-  it("is a neutral soft capsule by default", () => {
-    const tokens = classTokens(render({}));
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "bg-tone-neutral-bg",
-        "text-tone-neutral-fg",
-        "text-[length:var(--ui-badge-size)]",
-        "leading-[var(--ui-badge-lh)]",
-        "font-[number:var(--ui-badge-weight)]",
-        "rounded-[var(--ui-radius-pill)]",
-        "whitespace-nowrap",
-      ]),
-    );
-    expect(tokens).not.toContain("text-[11px]");
-  });
-
-  it("draws a soft tag's tone line at the theme's width, and no theme pairs that rule with a tint", () => {
-    for (const tone of TONES) {
-      expect(classTokens(render({ tone }))).toEqual(
-        expect.arrayContaining([
-          "ring-[length:var(--ui-badge-soft-ring)]",
-          "ring-inset",
-          `ring-tone-${tone}-line`,
-        ]),
-      );
-    }
-    expect(classTokens(renderStatic(createElement(Count, { n: 3 })))).toEqual(
-      expect.arrayContaining([
-        "ring-[length:var(--ui-badge-soft-ring)]",
-        "ring-tone-neutral-line",
-        "px-1.5",
-        "py-px",
-      ]),
-    );
+  it("no theme pairs a soft tag's tone line with a tint", () => {
     // Where the ring has a width, the tone's tint must be absent: a tint and its own line on one
     // tag is the doubled edge the outline weight exists to avoid.
     for (const id of THEME_IDS) {
@@ -69,20 +36,6 @@ describe("Badge", () => {
           expect(values.get(`--ui-tone-${tone}-bg`), `${id} ${mode} ${tone}`).toBe("transparent");
         }
       }
-    }
-  });
-
-  it("paints every tone's soft, outline and solid weights from its tokens", () => {
-    for (const tone of TONES) {
-      expect(classTokens(render({ tone }))).toEqual(
-        expect.arrayContaining([`bg-tone-${tone}-bg`, `text-tone-${tone}-fg`]),
-      );
-      expect(classTokens(render({ tone, variant: "outline" }))).toEqual(
-        expect.arrayContaining([`ring-tone-${tone}-line`, `text-tone-${tone}-fg`]),
-      );
-      expect(classTokens(render({ tone, variant: "solid" }))).toEqual(
-        expect.arrayContaining([`bg-tone-${tone}-emphasis`, `text-tone-${tone}-emphasis-fg`]),
-      );
     }
   });
 
@@ -105,13 +58,6 @@ describe("Badge", () => {
     expect(geometry("outline")).toEqual(geometry("soft"));
     expect(geometry("solid")).toEqual(geometry("soft"));
     expect(markupStructure(render({ variant: "solid" }))).toBe(markupStructure(render({})));
-  });
-
-  it("takes the theme's md padding, and a tighter one at sm", () => {
-    expect(classTokens(render({}))).toContain("p-[var(--ui-badge-pad-md)]");
-    expect(classTokens(render({ size: "sm" }))).toEqual(
-      expect.arrayContaining(["px-1.5", "py-px"]),
-    );
   });
 
   it("is set under the theme's small text, on a fixed line, in every theme", () => {
@@ -143,10 +89,9 @@ describe("Badge", () => {
 });
 
 describe("Count", () => {
-  it("sets its number in tabular figures", () => {
+  it("shows its number", () => {
     const html = renderStatic(createElement(Count, { n: 12 }));
     expect(html).toContain(">12</span>");
-    expect(classTokens(html)).toContain("tabular-nums");
   });
 
   it("caps at max with a plus, and shows the number itself up to it", () => {

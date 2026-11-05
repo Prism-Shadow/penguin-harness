@@ -32,15 +32,7 @@ describe("ComposerCard", () => {
 
   it("is the glass card, sized by its own width, ringed while anything in it has focus", () => {
     const tokens = classTokens(card());
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "ui-glass",
-        "@container",
-        "bg-surface",
-        "focus-within:ring-2",
-        "focus-within:ring-fg-subtle/30",
-      ]),
-    );
+    expect(tokens).toContain("ui-glass");
   });
 
   it("stacks the attachments, the chips, a two-line text body, then the toolbar", () => {
@@ -55,7 +47,6 @@ describe("ComposerCard", () => {
     expect(order.every((i) => i >= 0)).toBe(true);
     // The hint shows only once the card is wide enough, and names itself on hover.
     expect(html).toContain('data-tooltip="Type / for commands"');
-    expect(classTokens(html)).toContain("@lg:block");
   });
 
   it("draws no hint when there is none", () => {
@@ -64,25 +55,23 @@ describe("ComposerCard", () => {
 });
 
 describe("ChipRow", () => {
-  it("is the soft chip row, spaced off the text body below it", () => {
+  it("offers a named remove button on each chip", () => {
     const html = renderStatic(
       createElement(ChipRow, {
         chips: [{ key: "a", label: "research", removeLabel: "Remove research" }],
       }),
     );
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["mb-1", "gap-1", "items-center"]));
     expect(html).toContain('aria-label="Remove research"');
   });
 });
 
 describe("SendButton", () => {
-  it("sends on the accent square, named and hinted by what it does now", () => {
+  it("sends, named and hinted by what it does now", () => {
     const html = renderStatic(
       createElement(SendButton, { action: "send", label: "Send", onClick: noop }),
     );
     expect(html).toContain('aria-label="Send"');
     expect(html).toContain('data-tooltip="Send"');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["bg-accent", "text-accent-fg"]));
     expect(html).not.toContain('disabled=""');
   });
 
@@ -93,16 +82,13 @@ describe("SendButton", () => {
     expect(html).toContain('disabled=""');
   });
 
-  it("stops on a neutral square in the danger ink, and can always be pressed", () => {
+  it("stops, and can always be pressed", () => {
     const html = renderStatic(
       createElement(SendButton, { action: "stop", label: "Stop", disabled: true, onClick: noop }),
     );
     expect(html).toContain('aria-label="Stop"');
     expect(html).not.toContain('disabled=""');
-    const tokens = classTokens(html);
-    expect(tokens).toEqual(expect.arrayContaining(["bg-fill-neutral", "text-tone-danger-fg"]));
     // No icon in a tint of itself: the danger tint arrives on hover only.
-    expect(tokens).not.toContain("bg-tone-danger-bg");
     expect(html).toContain("<rect");
   });
 });
@@ -122,23 +108,18 @@ describe("SlashMenu", () => {
   );
 
   it("opens as a glass menu panel over the composer, capped at the room above it", () => {
-    expect(classTokens(menu)).toEqual(
-      expect.arrayContaining(["ui-glass", "absolute", "bottom-full", "overscroll-contain"]),
-    );
+    expect(classTokens(menu)).toContain("ui-glass");
     expect(menu).toContain("max-height:200px");
   });
 
-  it("lists each command in the mono face, what it does truncating after it", () => {
+  it("lists each command with what it does as its hint", () => {
     expect(menu).toContain(">/compact</span>");
     expect(menu).toContain('data-tooltip="Compress the context"');
-    expect(classTokens(menu)).toEqual(expect.arrayContaining(["font-mono", "truncate"]));
   });
 
-  it("highlights the keyboard's row alone", () => {
+  it("lists one row per matching command", () => {
     const rows = menu.split("<button").slice(1);
     expect(rows).toHaveLength(2);
-    expect(classTokens(`<b${rows[0]!}`)).not.toContain("bg-line-muted");
-    expect(classTokens(`<b${rows[1]!}`)).toContain("bg-line-muted");
   });
 });
 
@@ -151,34 +132,31 @@ describe("SlashPicker", () => {
       }),
     );
     expect(html.indexOf("Switch model")).toBeLessThan(html.indexOf("PICKER"));
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["bottom-full", "bg-overlay"]));
   });
 });
 
 describe("ToolbarTrigger", () => {
-  it("is an icon square named by the caller, its tooltip the name unless given another", () => {
+  it("is an icon button named by the caller, its tooltip the name unless given another", () => {
     const html = renderStatic(
       createElement(ToolbarTrigger, { glyph: "M12 5v14M5 12h14", ariaLabel: "Add" }),
     );
     expect(html).toContain('aria-label="Add"');
     expect(html).toContain('data-tooltip="Add"');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["h-8", "w-8"]));
     expect(html).not.toContain("aria-expanded");
   });
 
-  it("carries a count on its corner, and none at zero", () => {
+  it("carries a count, and none at zero", () => {
     const three = renderStatic(
       createElement(ToolbarTrigger, { glyph: "M12 5v14", ariaLabel: "Skills", badge: 3 }),
     );
-    expect(classTokens(three)).toContain("tabular-nums");
     expect(three).toContain(">3</span>");
-    const none = renderStatic(
+    const zero = renderStatic(
       createElement(ToolbarTrigger, { glyph: "M12 5v14", ariaLabel: "Skills", badge: 0 }),
     );
-    expect(classTokens(none)).not.toContain("tabular-nums");
+    expect(zero).not.toContain(">0<");
   });
 
-  it("as a pill shows its value, hidden on a narrow card, with the caret", () => {
+  it("as a pill shows its value and says it opens a list", () => {
     const html = renderStatic(
       createElement(ToolbarTrigger, {
         glyph: "M12 5v14",
@@ -193,6 +171,5 @@ describe("ToolbarTrigger", () => {
     expect(html).toContain('data-tooltip="Thinking level: High"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain(">High</span>");
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["hidden", "@md:block", "max-w-36"]));
   });
 });

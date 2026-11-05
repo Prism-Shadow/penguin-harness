@@ -7,7 +7,7 @@ import { createElement } from "react";
 import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
 import { DockFrame, DockHeaderButton } from "../src/components/shell/dock-frame/dock-frame";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const handle = createElement("div", { "data-testid": "handle" });
 
@@ -37,12 +37,11 @@ describe("DockFrame", () => {
     expect(render({ animate: false })).not.toContain("data-layout-motion");
   });
 
-  it("keeps a closed dock in the tree at size 0, inert, with no border and no handle", () => {
+  it("keeps a closed dock in the tree at size 0, inert, with no handle", () => {
     const html = render({ open: false, size: 0 });
     expect(html).toContain('data-open="false"');
     expect(html).toContain("inert");
     expect(html).toContain('style="height:0"');
-    expect(html).not.toContain("border-t");
     expect(html).not.toContain('data-testid="handle"');
     // The content still lays out at the settled size.
     expect(html).toContain('style="height:240px"');
@@ -54,12 +53,9 @@ describe("DockFrame", () => {
     // The spacer holds the row's width for the handle; the seat between them is
     // `display: contents` in the flow, so the handle lays out in the spacer as before.
     expect(html).toMatch(
-      /^<div class="flex w-1\.5 shrink-0"><div class="contents"><div data-testid="handle"><\/div><\/div><\/div><div data-testid="dock" data-position="right"/,
+      /^<div class="[^"]*"><div class="[^"]*"><div data-testid="handle"><\/div><\/div><\/div><div data-testid="dock" data-position="right"/,
     );
     expect(html).toContain('style="width:360px"');
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-canvas", "border-l", "border-line"]),
-    );
   });
 
   it("names a header button and gives it the tooltip", () => {

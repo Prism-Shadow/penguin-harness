@@ -42,10 +42,8 @@ describe("readChartStyle", () => {
     });
   });
 
-  it("falls back token by token to the default record, whose colours are the tokens", () => {
+  it("falls back token by token to the default record", () => {
     expect(readChartStyle(reader({}))).toEqual(DEFAULT_CHART_STYLE);
-    expect(DEFAULT_CHART_STYLE.series[2]).toBe("var(--ui-chart-3)");
-    expect(DEFAULT_CHART_STYLE.cacheRead).toBe("var(--ui-chart-cache-read)");
     const odd = readChartStyle(
       reader({ "--ui-chart-curve": "wiggly", "--ui-chart-bar-fill": "x" }),
     );

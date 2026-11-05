@@ -9,19 +9,15 @@
  * feature must not be mouse-only: touch screens have neither hover nor a secondary button, so
  * touch keeps a path of its own (press-and-hold).
  *
- * The hook and the Dropdown it drives need a DOM this suite does not have, so what they must do
- * is pinned against their source: the one handler that suppresses the native menu, the
- * containment guard that keeps the portaled panel's own events from re-anchoring it, and the
- * Dropdown asking `scrollMovesAnchor` before an anchored panel dismisses itself (the rule's cases
- * are in portal-panel.test.ts). How the app wires rows to it is the web app's
- * `context-menu.test.ts`.
+ * The hook and the Dropdown it drives need a DOM this suite does not have; what they do with a
+ * real page is context-menu.dom.test.ts: the native menu suppressed on the row only, the portaled
+ * panel's own right-click leaving it in place, a short touch press opening nothing, and the
+ * anchored panel's scroll rule (the rule's cases are in portal-panel.test.ts). How the app wires
+ * rows to it is the web app's `context-menu.test.ts`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   IDLE_HOLD,
-  LONG_PRESS_MS,
   LONG_PRESS_SETTLE_MS,
   LONG_PRESS_SLOP_PX,
   contextMenuAnchor,
@@ -34,7 +30,6 @@ import {
   withinSettleWindow,
 } from "../src/components/overlays/portal-panel/context-menu";
 import type { HoldEvent } from "../src/components/overlays/portal-panel/context-menu";
-import { SRC_DIR } from "./helpers/paths";
 
 const ROW = { top: 100, bottom: 132, left: 8, right: 260 };
 
@@ -96,11 +91,6 @@ describe("press-and-hold (the touch path)", () => {
     expect(longPressMoved(from, { x: 100 + LONG_PRESS_SLOP_PX, y: 200 })).toBe(false);
     expect(longPressMoved(from, { x: 100, y: 200 + LONG_PRESS_SLOP_PX + 1 })).toBe(true);
     expect(longPressMoved(from, { x: 100 - LONG_PRESS_SLOP_PX - 1, y: 200 })).toBe(true);
-  });
-
-  it("waits long enough not to fire on an ordinary tap", () => {
-    expect(LONG_PRESS_MS).toBeGreaterThanOrEqual(400);
-    expect(LONG_PRESS_SETTLE_MS).toBeGreaterThan(0);
   });
 
   it("ignores a dismiss inside the grace window that started at the given moment", () => {
@@ -222,47 +212,5 @@ describe("reduceHold", () => {
     ]);
     expect(first!.swallow).toBe(true);
     expect(second!.swallow).toBe(false);
-  });
-});
-
-const read = (rel: string) => readFileSync(join(SRC_DIR, rel), "utf8");
-const HOOK = read("components/overlays/portal-panel/use-row-context-menu.ts");
-const DROPDOWN = read("components/overlays/dropdown/dropdown.tsx");
-
-describe("anchored dismissal wiring", () => {
-  it("asks scrollMovesAnchor before dismissing an anchored panel", () => {
-    // What a node-only suite cannot reach is the component consulting the rule at all, and that
-    // is where this silently breaks: drop the call and every case of the rule still passes while
-    // the reported bug — a streaming message list wiping a menu opened in the sidebar — comes
-    // straight back.
-    const onScroll = /const onScroll = \(e: Event\) => \{([\s\S]*?)\n {4}\};/.exec(DROPDOWN);
-    expect(onScroll, "onScroll should be declared in dropdown.tsx").not.toBeNull();
-    expect(onScroll![1]).toContain("scrollMovesAnchor(");
-    // The owner is the element the anchorRect was measured from, read at event time.
-    expect(onScroll![1]).toContain("anchorOwnerRef.current");
-  });
-});
-
-describe("native-menu suppression scope", () => {
-  it("calls preventDefault inside the contextmenu handler itself, not somewhere adjacent", () => {
-    // Tied to the handler rather than to the file: preventDefault also appears in onKeyDown, so
-    // file-level presence would prove nothing about the native menu.
-    const handler = /onContextMenu:\s*\(e\)\s*=>\s*\{([\s\S]*?)\n {4}\},/.exec(HOOK);
-    expect(handler).not.toBeNull();
-    expect(handler![1]).toContain("e.preventDefault()");
-  });
-
-  it("ignores events that bubbled out of the portaled panel rather than the row", () => {
-    // React propagates through its own tree, so the Dropdown's body portal — a React child of
-    // the row — would otherwise re-anchor the open menu when one of its items is right-clicked.
-    // A DOM containment check separates the two trees.
-    expect(HOOK).toContain("host.contains(e.target as Node)");
-    for (const handler of ["onContextMenu", "onKeyDown", "onPointerDown"]) {
-      const body = new RegExp(`${handler}:\\s*\\(e\\)\\s*=>\\s*\\{([\\s\\S]*?)\\n {4}\\},`).exec(
-        HOOK,
-      );
-      expect(body, `${handler} should exist`).not.toBeNull();
-      expect(body![1], `${handler} should guard on fromRow`).toContain("if (!fromRow(e)) return;");
-    }
   });
 });

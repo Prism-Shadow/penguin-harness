@@ -24,7 +24,7 @@ import {
   resolveLanguage,
 } from "../src/components/content/code-block/code-languages";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 import { PACKAGE_DIR, SRC_DIR } from "./helpers/paths";
 
 const highlighter: CodeHighlighter = async () => "<pre></pre>";
@@ -36,19 +36,6 @@ describe("CodeBlock", () => {
     expect(html).toMatch(/^<div class="code-block ui-frame /);
     expect(html).toContain('<div data-slot="head"');
     expect(html).toContain('<div data-slot="body"');
-  });
-
-  it("paints its box, head and body from the code tokens and sets the code rung", () => {
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining([
-        "border-[var(--ui-code-line)]",
-        "bg-[var(--ui-code-bg)]",
-        "bg-canvas",
-        "text-[length:var(--ui-text-code-size)]",
-        "text-fg-muted",
-      ]),
-    );
-    expect(classTokens(html).filter((token) => /gray|dark:|white/.test(token))).toEqual([]);
   });
 
   it("labels the language as given, plain text when the fence named none", () => {

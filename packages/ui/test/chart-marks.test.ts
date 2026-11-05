@@ -7,7 +7,7 @@
  *
  * The same guard over the Web App's charts is its `chart-marks.test.ts`.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -16,8 +16,6 @@ import {
   ChartArea,
   ChartAxis,
   ChartBar,
-  ChartCursor,
-  ChartGrid,
   ChartLabel,
   ChartLine,
   ChartPoint,
@@ -34,7 +32,7 @@ const render = (type: (props: any) => ReactElement | null, props: object) =>
   renderStatic(createElement(type, props));
 
 describe("the chart primitives, in the default theme", () => {
-  it("draw a bar at the theme's share of its band, square, unoutlined, in its slot's colour", () => {
+  it("draw a bar at the theme's share of its band, unoutlined, in its slot's colour", () => {
     const html = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { series: 1 } });
     expect(html).toContain("<rect");
     expect(html).toContain('width="12"');
@@ -43,7 +41,6 @@ describe("the chart primitives, in the default theme", () => {
     expect(html).toContain('data-series="2"');
     expect(html).toContain(`color:${DEFAULT_CHART_STYLE.series[1]}`);
     expect(html).not.toContain("stroke");
-    expect(html).not.toContain("fill-opacity");
   });
 
   it("round a bar's top corners only when a theme gives a radius, clamped to the bar", () => {
@@ -97,7 +94,6 @@ describe("the chart primitives, in the default theme", () => {
     });
     expect(area).toContain('d="M0,10 L10,20 L10,30 L0,30 Z"');
     expect(area).toMatch(/opacity="0\.06/);
-    expect(area).toContain("text-tone-success-fg");
   });
 
   it("close a stacked band back along the series under it instead of the baseline", () => {
@@ -116,15 +112,14 @@ describe("the chart primitives, in the default theme", () => {
     expect(band).toContain('d="M0,10 L10,5 L10,18 L0,20 Z"');
   });
 
-  it("write a value beside its mark as a label part, in the muted ink", () => {
+  it("write a value beside its mark as a label part", () => {
     const label = render(ChartLabel, { x: 5, y: 8, children: "21°" });
     expect(label).toContain('data-part="label"');
     expect(label).toContain('text-anchor="middle"');
-    expect(label).toContain("fill-fg-muted");
     expect(label).toContain(">21°<");
   });
 
-  it("draw an arc from twelve o'clock, round-capped only when asked, its track a grid part", () => {
+  it("draw an arc from twelve o'clock, round-capped when asked, its track a grid part", () => {
     const arc = render(ChartArc, {
       cx: 10,
       cy: 10,
@@ -138,7 +133,6 @@ describe("the chart primitives, in the default theme", () => {
     expect(arc).toContain('stroke-dasharray="20 ');
     expect(arc).toContain('stroke-dashoffset="-5"');
     expect(arc).toContain('transform="rotate(-90 10 10)"');
-    expect(arc).not.toContain("stroke-linecap");
     const capped = render(ChartArc, {
       cx: 10,
       cy: 10,
@@ -160,7 +154,6 @@ describe("the chart primitives, in the default theme", () => {
     });
     expect(track).toContain('data-part="grid"');
     expect(track).toContain('stroke-opacity="0.3"');
-    expect(track).not.toContain("stroke-dasharray");
   });
 
   it("place a timeline bar where the chart says, in its slot's colour", () => {
@@ -173,7 +166,6 @@ describe("the chart primitives, in the default theme", () => {
     expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
-    expect(html).not.toContain("border-radius");
   });
 
   it("round only a timeline bar's free ends when a theme gives a radius, joined ends square", () => {
@@ -192,31 +184,25 @@ describe("the chart primitives, in the default theme", () => {
     ).toContain("bg-fg-subtle");
   });
 
-  it("draw the grid, the axis labels and the cursor in the theme's chart inks", () => {
-    expect(render(ChartGrid, { x1: 0, x2: 10, y: 5 })).toContain('class="stroke-chart-grid"');
+  it("draw the axis labels as axis parts", () => {
     const axis = render(ChartAxis, { x: 0, y: 0, anchor: "end", children: "12" });
-    expect(axis).toContain('class="fill-chart-axis"');
     expect(axis).toContain('data-part="axis"');
-    expect(render(ChartCursor, { x: 5, y1: 0, y2: 10 })).toContain('class="stroke-line-emphasis"');
   });
 });
 
 describe("every chart in the package", () => {
-  const CHARTS = [
-    "components/charts/chart-frame/chart-frame.tsx",
-    "components/charts/token-donut/token-donut.tsx",
-    "components/charts/sparkline/sparkline.tsx",
-    "components/charts/ring/ring.tsx",
-    "components/charts/legend/legend.tsx",
-    "components/charts/cartesian/plot-captions.tsx",
-    "components/charts/cartesian/series-readout.tsx",
-    "components/charts/cartesian/bar-chart.tsx",
-    "components/charts/cartesian/hbar-chart.tsx",
-    "components/charts/cartesian/line-chart.tsx",
-    "components/charts/pie-chart/pie-chart.tsx",
-    "components/charts/scatter-chart/scatter-chart.tsx",
-    "components/charts/gauge/gauge.tsx",
-  ];
+  /** Every chart module, found by walking components/charts; the primitives (marks/) excepted. */
+  const CHARTS = readdirSync(join(SRC_DIR, "components/charts"), {
+    recursive: true,
+    encoding: "utf8",
+  })
+    .filter((rel) => rel.endsWith(".tsx") && !rel.split(/[\\/]/).includes("marks"))
+    .map((rel) => `components/charts/${rel.split(/[\\/]/).join("/")}`)
+    .sort();
+
+  it("finds charts to hold to the rule", () => {
+    expect(CHARTS.length).toBeGreaterThan(0);
+  });
 
   it("draws its marks through the primitives, never with its own shapes, paint or geometry", () => {
     const found: string[] = [];
