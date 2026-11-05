@@ -27,6 +27,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
+import {
+  AGENT_ARCHIVE_MAX_LAST_SESSIONS,
+  AGENT_ARCHIVE_MAX_UPLOAD_BYTES,
+} from "@prismshadow/penguin-server/api";
 import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import type { UploadBody } from "../client.js";
@@ -35,10 +39,6 @@ import { zipFolder } from "../zip-folder.js";
 
 const enc = encodeURIComponent;
 const MiB = 1024 * 1024;
-
-/** The server's caps (its agent-archive/limits.ts), checked here before anything is sent. */
-const MAX_UPLOAD_BYTES = 100 * MiB;
-const MAX_LAST_SESSIONS = 500;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -51,7 +51,7 @@ function isDate(value: string): boolean {
 }
 
 /**
- * `--traces` as the server reads it: `none`, `last:<N>` with N from 1 to 500, or `<from>..<to>`
+ * `--traces` as the server reads it: `none`, `last:<N>` with N from 1 to the server's cap, or `<from>..<to>`
  * with real dates and `from` on or before `to`. Answers the query value, or null for anything else.
  */
 function traceSelection(raw: string): string | null {
@@ -60,7 +60,7 @@ function traceSelection(raw: string): string | null {
   const last = /^last:(\d+)$/.exec(value);
   if (last !== null) {
     const count = Number(last[1]);
-    return count >= 1 && count <= MAX_LAST_SESSIONS ? `last:${count}` : null;
+    return count >= 1 && count <= AGENT_ARCHIVE_MAX_LAST_SESSIONS ? `last:${count}` : null;
   }
   const range = /^([^.]+)\.\.([^.]+)$/.exec(value);
   if (range === null) return null;
@@ -161,15 +161,16 @@ function formatSize(bytes: number): string {
 async function uploadBody(source: string, t: Messages): Promise<UploadBody> {
   const stat = await fs.promises.stat(source).catch(() => null);
   if (stat === null) throw new Error(t.agent.importNotFound(source));
-  const maxMib = MAX_UPLOAD_BYTES / MiB;
+  const maxMib = AGENT_ARCHIVE_MAX_UPLOAD_BYTES / MiB;
   if (stat.isDirectory()) {
     const manifest = await fs.promises.stat(path.join(source, "manifest.json")).catch(() => null);
     if (manifest === null || !manifest.isFile()) throw new Error(t.agent.importNoManifest(source));
-    const zip = await zipFolder(source, MAX_UPLOAD_BYTES);
+    const zip = await zipFolder(source, AGENT_ARCHIVE_MAX_UPLOAD_BYTES);
     if (zip === null) throw new Error(t.agent.importTooLarge(source, maxMib));
     return zip;
   }
-  if (stat.size > MAX_UPLOAD_BYTES) throw new Error(t.agent.importTooLarge(source, maxMib));
+  if (stat.size > AGENT_ARCHIVE_MAX_UPLOAD_BYTES)
+    throw new Error(t.agent.importTooLarge(source, maxMib));
   return () => fs.createReadStream(source);
 }
 
@@ -205,13 +206,16 @@ export function registerArchiveCommands(agent: Command, t: Messages): void {
     .option("--no-workbenches", t.agent.exportNoWorkbenches)
     .option("--no-workbench-data", t.agent.exportNoWorkbenchData)
     .option("--schedules", t.agent.exportSchedules)
-    .option("--traces <selection>", t.agent.exportTraces)
+    .option("--traces <selection>", t.agent.exportTraces(AGENT_ARCHIVE_MAX_LAST_SESSIONS))
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (agentIdArg: string, opts: ExportOpts) => {
       const traces = opts.traces === undefined ? "none" : traceSelection(opts.traces);
-      if (traces === null) throw new Error(t.agent.exportTracesInvalid(String(opts.traces)));
+      if (traces === null)
+        throw new Error(
+          t.agent.exportTracesInvalid(String(opts.traces), AGENT_ARCHIVE_MAX_LAST_SESSIONS),
+        );
       const agentId = agentIdArg.trim();
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);

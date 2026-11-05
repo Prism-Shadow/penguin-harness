@@ -261,9 +261,10 @@ export interface Messages {
     exportNoWorkbenches: string;
     exportNoWorkbenchData: string;
     exportSchedules: string;
-    exportTraces: string;
+    /** `--traces`; `maxLast` is the most Sessions `last:<N>` takes. */
+    exportTraces(maxLast: number): string;
     /** A `--traces` value the server would refuse; nothing was sent. */
-    exportTracesInvalid(value: string): string;
+    exportTracesInvalid(value: string, maxLast: number): string;
     exported(agentId: string, file: string, size: string): string;
     /** `penguin agent import`: the command and its options. */
     importDesc: string;
@@ -1468,10 +1469,10 @@ const en: Messages = {
     exportNoWorkbenches: "Leave the workbenches out",
     exportNoWorkbenchData: "Keep the workbenches' source but leave their data (state.json) out",
     exportSchedules: "Include the schedules; they run on the install that imports the zip",
-    exportTraces:
-      "Traces to include: none (default), last:<N> for the N most recently active Sessions (1-500), or <from>..<to> for the Sessions dated in that range (YYYY-MM-DD, inclusive)",
-    exportTracesInvalid: (value) =>
-      `Invalid --traces "${value}": expected none, last:<N> with N from 1 to 500, or <from>..<to> with real dates written YYYY-MM-DD and from on or before to.`,
+    exportTraces: (maxLast) =>
+      `Traces to include: none (default), last:<N> for the N most recently active Sessions (1-${maxLast}), or <from>..<to> for the Sessions dated in that range (YYYY-MM-DD, inclusive)`,
+    exportTracesInvalid: (value, maxLast) =>
+      `Invalid --traces "${value}": expected none, last:<N> with N from 1 to ${maxLast}, or <from>..<to> with real dates written YYYY-MM-DD and from on or before to.`,
     exported: (agentId, file, size) => `Exported agent ${agentId} to ${file} (${size}).`,
     importDesc:
       "Import an agent from a zip, an old .tar.gz Agent State package, or a folder laid out as the zip (manifest.json at its root), which is zipped and uploaded",
@@ -2655,10 +2656,10 @@ const zh: Messages = {
     exportNoWorkbenches: "不含工作台",
     exportNoWorkbenchData: "带上工作台的源码，但不含其数据（state.json）",
     exportSchedules: "包含定时任务；导入后会在导入方按计划运行",
-    exportTraces:
-      "要带上的 Trace：none（缺省）、last:<N>（最近活跃的 N 个 Session，1–500），或 <from>..<to>（日期落在该范围内的 Session，格式 YYYY-MM-DD，含首尾）",
-    exportTracesInvalid: (value) =>
-      `--traces「${value}」无效：应为 none、last:<N>（N 为 1–500），或 <from>..<to>（真实日期，格式 YYYY-MM-DD，from 不晚于 to）。`,
+    exportTraces: (maxLast) =>
+      `要带上的 Trace：none（缺省）、last:<N>（最近活跃的 N 个 Session，1–${maxLast}），或 <from>..<to>（日期落在该范围内的 Session，格式 YYYY-MM-DD，含首尾）`,
+    exportTracesInvalid: (value, maxLast) =>
+      `--traces「${value}」无效：应为 none、last:<N>（N 为 1–${maxLast}），或 <from>..<to>（真实日期，格式 YYYY-MM-DD，from 不晚于 to）。`,
     exported: (agentId, file, size) => `已将 Agent ${agentId} 导出到 ${file}（${size}）。`,
     importDesc:
       "导入 Agent：zip、旧版 .tar.gz Agent State 包，或按 zip 布局组织的目录（根部有 manifest.json，会先打包再上传）",
