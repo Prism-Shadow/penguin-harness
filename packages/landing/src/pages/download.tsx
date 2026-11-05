@@ -88,7 +88,7 @@ function FaqItem({
   );
 }
 
-function formatSpeed(bytesPerSecond: number): string {
+export function formatSpeed(bytesPerSecond: number): string {
   if (bytesPerSecond >= 1024 * 1024) {
     return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
   }
