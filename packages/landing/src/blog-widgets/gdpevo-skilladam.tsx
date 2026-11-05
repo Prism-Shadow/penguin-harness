@@ -1,17 +1,18 @@
 /**
  * Progressive 4-Stage Spotlight Diagram for Section 2 of the GDPEVO blog post (SkillAdam).
  *
- * Since the entire SkillAdam algorithm runs inside the training container, no redundant Docker
- * wrapper box is drawn here. Instead, four equal-height algorithm modules (y = 20..184, h = 164)
- * form a clean left-to-right closed loop with gray (0.24) -> bright spotlight -> calm neutral transitions:
+ * Four equal-height algorithm modules (y = 16..180, h = 164) form a clean left-to-right closed
+ * loop with gray (0.24) -> bright spotlight -> calm neutral transitions:
  *   Stage 1 (Col 1, x = 8..196):   `1. 五题试跑测分差` / `1. 5-Task Rollout`
- *                                  Target Agent runs T1..T5, measuring scores and per-task deltas
+ *                                  Target Agent runs T1..T5, measuring scores and uneven deltas
  *   Stage 2 (Col 2, x = 220..356): `2. 严格均分门控` / `2. Strict Mean Gate`
  *                                  Compares Cand Mean (97.3) vs Best Mean (74.9) -> ACCEPT
  *   Stage 3 (Col 3, x = 380..532): `3. Adam 状态更新` / `3. Adam Controller`
- *                                  Updates 1st-moment EIT Ledger + 2nd-moment Variance Budget (Bt = 2/4)
- *   Stage 4 (Col 4, x = 556..712): `4. 受限修改 SKILL.md` / `4. Bounded Skill Edit`
- *                                  Edits only unlocked blocks B1, B2 (locking B3, B4) and loops back to Col 1
+ *                                  1st-moment EIT Ledger (what to fix) + 2nd-moment Edit Quota
+ *                                  (high variance shrinks quota from 4 down to Max 2 / 4 edits)
+ *   Stage 4 (Col 4, x = 556..712): `4. 局部微调 SKILL.md` / `4. Bounded Skill Edit`
+ *                                  Applies only 2 localized diffs (+ Diff 1, + Diff 2) inside
+ *                                  SKILL.md while keeping the rest untouched, then loops back.
  */
 import { useEffect, useState } from "react";
 import { SitePlaybackButton } from "@prismshadow/penguin-ui/site";
@@ -29,7 +30,7 @@ const STAGES: readonly StageDef[] = [
   { id: "rollout", tabZh: "1. 五题试跑测分差", tabEn: "1. 5-Task Rollout" },
   { id: "gate", tabZh: "2. 严格均分门控", tabEn: "2. Strict Mean Gate" },
   { id: "adam", tabZh: "3. Adam 状态更新", tabEn: "3. Adam Controller" },
-  { id: "edit", tabZh: "4. 受限修改 SKILL.md", tabEn: "4. Bounded Skill Edit" },
+  { id: "edit", tabZh: "4. 局部微调 SKILL.md", tabEn: "4. Bounded Skill Edit" },
 ];
 
 const TASK_ROLLOUT = [
@@ -40,13 +41,15 @@ const TASK_ROLLOUT = [
   { label: "T5", width: 70, delta: "+33" },
 ] as const;
 
-/**
- * 10 ticks per full cycle:
- *   Ticks 0..4 (Stage 0): Sweep T1 -> T2 -> T3 -> T4 -> T5 in Col 1 (480ms each = 2.4s)
- *   Tick 5     (Stage 1): Spotlight Col 2 (`Strict Mean Gate`: 97.3 > 74.9 -> ACCEPT) (2000ms)
- *   Tick 6     (Stage 2): Spotlight Col 3 (`Adam Controller`: EIT + Vt 0.06 -> Bt 2/4) (2000ms)
- *   Ticks 7..9 (Stage 3): Spotlight Col 4 (`Bounded Skill Edit`: Edit B1/B2, Lock B3/B4 + loop back) (2600ms)
- */
+/** 5 document lines representing SKILL.md in Col 4: only 2 lines receive localized diffs. */
+const DOC_LINES = [
+  { edited: false, width: 62, diffIdx: 0 },
+  { edited: true, width: 54, diffIdx: 1 },
+  { edited: false, width: 68, diffIdx: 0 },
+  { edited: true, width: 58, diffIdx: 2 },
+  { edited: false, width: 50, diffIdx: 0 },
+] as const;
+
 const TOTAL_TICKS = 10;
 
 function tickDelayMs(tick: number): number {
@@ -61,7 +64,6 @@ export function SkillAdamWidget() {
   const reduced = usePrefersReducedMotion();
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
 
-  // SSR / reduced-motion starts at completed tick 9; live view starts at tick 0 when scrolled into view.
   const [tick, setTick] = useState<number>(9);
   const [paused, setPaused] = useState<boolean>(false);
   const [hasStarted, setHasStarted] = useState<boolean>(false);
@@ -121,12 +123,13 @@ export function SkillAdamWidget() {
         candLabel: "本轮均分",
         acceptWord: "采纳晋级",
         col3Title: "Adam 控制器",
-        eitLabel: "EIT 问题账本",
-        eitSub: "记录失误与历史修复",
-        col4Title: "受限修改 SKILL.md",
-        editTag: "修改",
-        lockTag: "锁定",
-        nextSkill: "输出候选 SKILL.md",
+        eitLabel: "一阶：EIT 问题账本",
+        eitSub: "定方向：记失误与历史",
+        quotaLeft: "修改额度",
+        quotaRight: "限 2 / 4 处",
+        col4Title: "局部微调 SKILL.md",
+        diffLabel: (n: number) => `修改 ${n}`,
+        nextSkill: "输出新版 SKILL.md",
       }
     : {
         play: "Play evolution flow",
@@ -137,12 +140,13 @@ export function SkillAdamWidget() {
         candLabel: "Cand",
         acceptWord: "ACCEPT",
         col3Title: "Adam Controller",
-        eitLabel: "EIT Issue Ledger",
-        eitSub: "Tracks errors & fixes",
-        col4Title: "Bounded SKILL.md",
-        editTag: "Edit",
-        lockTag: "Lock",
-        nextSkill: "Next Candidate Skill",
+        eitLabel: "1st: EIT Ledger",
+        eitSub: "What to fix & avoid",
+        quotaLeft: "Edit Quota",
+        quotaRight: "Max 2 / 4",
+        col4Title: "SKILL.md (2 Edits)",
+        diffLabel: (n: number) => `Diff ${n}`,
+        nextSkill: "Updated SKILL.md",
       };
 
   return (
@@ -461,7 +465,7 @@ export function SkillAdamWidget() {
           </text>
         </g>
 
-        {/* ==================== STAGE 3: ADAM CONTROLLER (EIT + BUDGET Bt) (x=380..532, y=16..180, CY=98) ==================== */}
+        {/* ==================== STAGE 3: ADAM CONTROLLER (EIT + EDIT QUOTA) (x=380..532, y=16..180, CY=98) ==================== */}
         <g style={{ opacity: reachedS2 ? 1 : 0.24 }} className="transition-opacity duration-200">
           <path
             d="M356,98 L378,98"
@@ -500,7 +504,7 @@ export function SkillAdamWidget() {
             {copy.col3Title}
           </text>
 
-          {/* 1st Moment: EIT Issue Ledger */}
+          {/* 1st Moment: EIT Issue Ledger (Proportional Font so it fits with generous margin) */}
           <rect
             x="392"
             y="50"
@@ -520,8 +524,8 @@ export function SkillAdamWidget() {
             textAnchor="middle"
             className={
               isS2
-                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-                : "fill-gray-700 font-mono text-xs font-semibold dark:fill-gray-300"
+                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-700 text-xs font-semibold dark:fill-gray-300"
             }
           >
             {copy.eitLabel}
@@ -535,16 +539,16 @@ export function SkillAdamWidget() {
             {copy.eitSub}
           </text>
 
-          {/* 2nd Moment: Variance Vt -> 4-Slot Edit Budget Bt */}
+          {/* 2nd Moment: Edit Quota (Max 2 of 4 Edits Permitted) */}
           <text
-            x="394"
+            x="392"
             y="118"
-            className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
+            className="fill-gray-500 text-xs dark:fill-gray-400"
           >
-            Vt 0.06
+            {copy.quotaLeft}
           </text>
           <text
-            x="518"
+            x="520"
             y="118"
             textAnchor="end"
             className={
@@ -553,11 +557,11 @@ export function SkillAdamWidget() {
                 : "fill-gray-700 font-mono text-xs font-semibold tabular-nums dark:fill-gray-300"
             }
           >
-            Bt 2/4
+            {copy.quotaRight}
           </text>
 
           {[0, 1, 2, 3].map((slot) => {
-            const unlocked = slot < 2;
+            const allowed = slot < 2;
             const sx = 392 + slot * 33;
             return (
               <g key={slot}>
@@ -569,7 +573,7 @@ export function SkillAdamWidget() {
                   rx="5"
                   strokeWidth="1.25"
                   className={
-                    unlocked
+                    allowed
                       ? isS2
                         ? "fill-brand-600 stroke-brand-700 dark:fill-brand-500 dark:stroke-brand-300"
                         : "fill-gray-200 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
@@ -581,21 +585,21 @@ export function SkillAdamWidget() {
                   y="151"
                   textAnchor="middle"
                   className={
-                    unlocked
+                    allowed
                       ? isS2
                         ? "fill-white font-mono text-xs font-semibold dark:fill-gray-950"
                         : "fill-gray-700 font-mono text-xs font-semibold dark:fill-gray-300"
                       : "fill-gray-400 font-mono text-xs font-medium dark:fill-gray-500"
                   }
                 >
-                  {`B${slot + 1}`}
+                  {allowed ? `#${slot + 1}` : "—"}
                 </text>
               </g>
             );
           })}
         </g>
 
-        {/* ==================== STAGE 4: BOUNDED SKILL.MD EDIT (x=556..712, y=16..180, CY=98) ==================== */}
+        {/* ==================== STAGE 4: BOUNDED SKILL.MD DIFF VIEW (x=556..712, y=16..180, CY=98) ==================== */}
         <g style={{ opacity: reachedS3 ? 1 : 0.24 }} className="transition-opacity duration-200">
           <path
             d="M532,98 L554,98"
@@ -634,52 +638,62 @@ export function SkillAdamWidget() {
             {copy.col4Title}
           </text>
 
-          {/* 4 Structural Blocks inside SKILL.md (B1, B2 Editable; B3, B4 Locked) */}
-          {[0, 1, 2, 3].map((bi) => {
-            const editable = bi < 2;
-            const by = 50 + bi * 22;
-            const barStyle = editable
-              ? isS3
-                ? "fill-brand-500 dark:fill-brand-400"
-                : "fill-gray-400 dark:fill-gray-500"
-              : "fill-gray-200 dark:fill-gray-800";
-            const pillStyle = editable
-              ? isS3
-                ? "fill-brand-600 dark:fill-brand-400"
-                : "fill-gray-300 dark:fill-gray-700"
-              : "fill-gray-100 dark:fill-gray-800";
+          {/* 5 Document Lines of SKILL.md: Only 2 Lines Receive Localized Diffs */}
+          {DOC_LINES.map((line, li) => {
+            const ly = 50 + li * 17;
             return (
-              <g key={bi}>
-                <text
-                  x="570"
-                  y={by + 12}
-                  className="fill-gray-700 font-mono text-xs font-medium dark:fill-gray-300"
-                >
-                  {`B${bi + 1}`}
-                </text>
-                <rect x="594" y={by + 5} width="56" height="7" rx="3.5" className={barStyle} />
-                <rect x="658" y={by + 1} width="40" height="15" rx="3" className={pillStyle} />
-                <text
-                  x="678"
-                  y={by + 12}
-                  textAnchor="middle"
+              <g key={li}>
+                <rect
+                  x="568"
+                  y={ly + 3}
+                  width={line.width}
+                  height="6"
+                  rx="3"
                   className={
-                    editable && isS3
-                      ? "fill-white font-mono text-xs font-semibold dark:fill-gray-950"
-                      : "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+                    line.edited
+                      ? isS3
+                        ? "fill-brand-600 dark:fill-brand-400"
+                        : "fill-gray-400 dark:fill-gray-500"
+                      : "fill-gray-200 dark:fill-gray-800"
                   }
-                >
-                  {editable ? copy.editTag : copy.lockTag}
-                </text>
+                />
+                {line.edited && (
+                  <>
+                    <rect
+                      x="644"
+                      y={ly - 1}
+                      width="56"
+                      height="14"
+                      rx="3"
+                      className={
+                        isS3
+                          ? "fill-brand-600 dark:fill-brand-400"
+                          : "fill-gray-300 dark:fill-gray-700"
+                      }
+                    />
+                    <text
+                      x="672"
+                      y={ly + 10}
+                      textAnchor="middle"
+                      className={
+                        isS3
+                          ? "fill-white font-mono text-xs font-semibold dark:fill-gray-950"
+                          : "fill-gray-600 font-mono text-xs font-medium dark:fill-gray-300"
+                      }
+                    >
+                      {copy.diffLabel(line.diffIdx)}
+                    </text>
+                  </>
+                )}
               </g>
             );
           })}
 
-          {/* Next Candidate Output Badge at Bottom of Col 4 */}
+          {/* Bottom Output Pill (132px wide, Proportional Font so both EN and ZH fit with >16px margin) */}
           <rect
-            x="570"
+            x="568"
             y="142"
-            width="128"
+            width="132"
             height="26"
             rx="5"
             className={
@@ -694,8 +708,8 @@ export function SkillAdamWidget() {
             textAnchor="middle"
             className={
               isS3
-                ? "fill-white font-mono text-xs font-semibold dark:fill-gray-950"
-                : "fill-gray-500 font-mono text-xs dark:fill-gray-400"
+                ? "fill-white text-xs font-semibold dark:fill-gray-950"
+                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
             }
           >
             {copy.nextSkill}
