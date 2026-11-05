@@ -81,8 +81,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 1. 打开 Web 界面左侧的 **Agents** 页面，点击右上角的**手动创建**（`Create manually`）。
 2. 填写智能体名称（例如 `GDPEVO Controller`）与标识（例如 `gdpevo_controller`）。
-3. 在创建弹窗的**插件**（`Plugins`）下拉列表中搜索 `skill`，勾选本次实验要使用的自进化工具包 `skilladam-rsi-toolkit`（如需对比其他方法，也可一并勾选 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`），点击**创建**（`Create`）。
-   - 如果希望在已有的 Agent 上运行实验，也可以打开左侧的 **Plugins** 页面，在 **Agent 自进化**分类下找到 `skilladam-rsi-toolkit` 卡片，直接安装到该 Agent。
+3. 在创建弹窗的**插件**（`Plugins`）下拉列表中搜索 `skill`，勾选 `skilladam-rsi-toolkit`（如需对比其他方法，也可一并勾选 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`），点击**创建**（`Create`）。
 
 <img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中填写 GDPEVO Controller 并搜索勾选 skilladam-rsi-toolkit 插件" />
 

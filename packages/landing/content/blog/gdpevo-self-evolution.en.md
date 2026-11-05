@@ -82,7 +82,6 @@ Running a GDPEVO self-evolution experiment in PenguinHarness requires no custom 
 1. Open the **Agents** page from the left sidebar and click **Create manually** in the top-right corner.
 2. Enter a name (for example, `GDPEVO Controller`) and an ID (for example, `gdpevo_controller`).
 3. In the **Plugins** dropdown of the creation dialog, search for `skill` and select `skilladam-rsi-toolkit` (you can also select `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit` if you plan to compare multiple methods), then click **Create**.
-   - To use an existing Agent instead, open the **Plugins** page from the sidebar, find `skilladam-rsi-toolkit` under the **Agent Self-Evolution** category, and install it onto that Agent.
 
 <img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Filling in GDPEVO Controller and selecting skilladam-rsi-toolkit in the Create agent dialog" />
 
