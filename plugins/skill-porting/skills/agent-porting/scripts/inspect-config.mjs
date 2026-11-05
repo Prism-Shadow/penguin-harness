@@ -4,7 +4,7 @@
 //
 //   node inspect-config.mjs <config>... [--only <key>[,<key>...]] [--keys]
 //   node inspect-config.mjs --emit <source> --framework <name> --out <port folder>
-//                           [--project <path>] [--confirmed]
+//                           [--project <path>] [--profile <name>] [--confirmed]
 //   node inspect-config.mjs --append <text file> --to <file> [--heading <text>] [--confirmed]
 //   node inspect-config.mjs --scan <dir-or-file>...
 //   node inspect-config.mjs --show <file>... [--lines <from>-<to>] [--key <dotted.path>]
@@ -39,7 +39,7 @@ import { formatOf, keysOnly, parseConfig, parseYaml, splitFrontmatter } from "./
 
 const USAGE = [
   "usage: node inspect-config.mjs <config>... [--only <key>[,<key>...]] [--keys]",
-  "       node inspect-config.mjs --emit <source> --framework <name> --out <port folder> [--project <path>] [--confirmed]",
+  "       node inspect-config.mjs --emit <source> --framework <name> --out <port folder> [--project <path>] [--profile <name>] [--confirmed]",
   "       node inspect-config.mjs --append <text file> --to <file> [--heading <text>] [--confirmed]",
   "       node inspect-config.mjs --scan <dir-or-file>...",
   "       node inspect-config.mjs --show <file>... [--lines <from>-<to>] [--key <dotted.path>]",
@@ -312,13 +312,18 @@ if (mode === "--show") {
   process.exit(show(rest, range, opts.key ?? null));
 }
 if (mode === "--emit") {
-  const { opts, rest } = options(args.slice(1), ["framework", "out", "project"], ["confirmed"]);
+  const { opts, rest } = options(
+    args.slice(1),
+    ["framework", "out", "project", "profile"],
+    ["confirmed"],
+  );
   if (rest.length !== 1 || opts.framework === undefined || opts.out === undefined) usage();
   process.exit(
     emit(rest[0], {
       framework: opts.framework,
       out: opts.out,
       project: opts.project ?? null,
+      profile: opts.profile ?? null,
       confirmed: opts.confirmed === true,
     }),
   );

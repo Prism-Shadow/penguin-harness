@@ -1,7 +1,7 @@
 ---
 name: agent-porting
 description: Migrate an agent into PenguinHarness from Claude Code, Codex, DeepSeek Harness (dsh), Qoder, Qwen Code, WorkBuddy, Pi or another coding agent — emit its MCP servers, hooks and settings and copy its instructions, skills and memory into an Agent zip folder (a manifest.json with a definition, plus agent_state/) without a secret passing through the conversation, create the agent with `penguin agent import`, and report what did not move.
-version: 2026.11.05.4
+version: 2026.11.05.5
 ---
 
 # Agent Porting
@@ -155,7 +155,9 @@ A PenguinHarness Agent zip (`<id>-<yyyymmdd>.zip`, from **Export agent** 「导�
 - **Transport**: `stdio` (`command`, `args`, `env`, `cwd`), `http` (streamable HTTP: `url`, `headers`) or `sse`. Claude Code's `type` becomes `transport`; Qwen Code's `httpUrl` is `http` and its `url` is `sse`; DeepSeek Harness's `streamable-http` is `http`. A WebSocket server, a disabled one, and one that runs a file inside another tool's plugin (`${CLAUDE_PLUGIN_ROOT}`) are not ported, and the summary says so.
 - **Values**: the command, every argument, the address and every plain `env` and header value are written exactly as the source has them. A credential becomes a `${NAME}` Vault reference listed in `vaultKeys`: a value under a credential name (`GITHUB_TOKEN`, `Authorization`, `X-Api-Key`), the word after a credential flag (`--token`, `--api-key`, `--pw`, `-u user:pw`), a `--password=…`, a credential query parameter, and anything shaped like a token. A source reference keeps its variable's name (`${VAR}`; `${VAR:-default}` loses its default; `${credential:name}` becomes `${NAME}`); Codex's `env_vars`, `bearer_token_env_var` and `env_http_headers` become `env` entries and headers that read those names; a new key is named after the field it fills (`GITHUB_TOKEN`, `DOCS_X_API_KEY`, `DB_PASSWORD`). A secret the source keeps under a plain name in a plain shape cannot be told from a setting: it is written as it is, to the file, as the source itself has it.
 - **Sign-in**: an `oauth` block keeps its scopes and client id, and its client secret becomes a reference; this version cannot sign in yet, so the server waits as "sign-in required" unless it also takes a token as `Authorization: Bearer ${KEY}`. Say so in the report.
-- **Left out**: any other field (`trust`, `alwaysAllow`, `includeTools`, …) is dropped and named.
+- **This machine's variables**: a `${HOME}`, `${PATH}`, `${USER}`, `${PWD}`, `${TMPDIR}`, `${SHELL}` or `${LANG}` is no Vault key, but PenguinHarness fills `${…}` from the Vault only: the summary says the server "needs a path on this machine", and the report asks the user to write the value in.
+- **Codex profiles**: `[profiles.<name>.mcp_servers]` are named in the summary and ported with `--profile <name>`, which also takes the profile's effort.
+- **Left out**: any other field (`trust`, `alwaysAllow`, `includeTools`, …) is dropped and named; an `env` value that is not a string is left out, and a server whose arguments hold a nested list or object is not ported.
 
 Do not run the `plugin-porting` skill's `scripts/port-mcp.mjs` on a source here: it prints the servers it converts without masking them.
 
@@ -165,11 +167,11 @@ PenguinHarness hooks are packages: `agent_state/hooks/<name>/hooks.json` plus pl
 
 | Source event | Point | What the wrapper answers |
 | --- | --- | --- |
-| `PreToolUse` | `pre_tool_use` | A block (exit code 2, `"decision": "block"`, `permissionDecision: "deny"`) becomes `{ "decision": "deny", "reason": … }`; an explicit allow, `{ "decision": "allow" }` |
-| `Stop` | `stop` | A block with a reason becomes `{ "decision": "continue", "input": <the reason> }`, which starts the next Task. A hook that blocks every time would loop: check it stops |
-| `UserPromptSubmit` | `user_prompt`, `"trigger": "prompt"` | Added context (plain stdout, `additionalContext`) becomes `{ "context": … }`; refusing the prompt has no counterpart |
+| `PreToolUse` | `pre_tool_use` | A block (exit code 2, `"decision": "block"`, `permissionDecision: "deny"`) becomes `{ "decision": "deny", "reason": … }`; an explicit allow, `{ "decision": "allow" }`; an `"ask"`, a deny ("the source hook asked for confirmation"), since a hook here cannot ask. A guard whose command cannot start (not found, not executable) denies, naming itself: a guard that silently does not run would be a bypass |
+| `Stop` | `stop` | A block with a reason becomes `{ "decision": "continue", "input": <the reason> }`, which starts the next Task. The wrapper tells the command `stop_hook_active: true` when it blocked this Session's previous stop, as Claude Code does, and after 3 blocks in a row lets the stop through |
+| `UserPromptSubmit` | `user_prompt`, `"trigger": "prompt"` | Added context (plain stdout, `additionalContext`) becomes `{ "context": … }`; refusing the prompt has no counterpart, and the summary says so |
 
-The wrapper holds the source's command, runs it with the source tool's own input (Claude Code's `session_id`, `hook_event_name`, `tool_name`, `tool_input`, `prompt`) and translates the answer; its matcher reads PenguinHarness's tool names as the source's (`exec_command` as `Bash`, `read_file` as `Read`, `edit_file` as `Edit`, `write_file` as `Write`, `run_subagent` as `Task`). A command that holds a credential-looking value, or needs `$CLAUDE_PROJECT_DIR` or another tool's plugin directory, is not ported: the summary names its event and program, and the report says the user ports it by hand. Review a script the command runs (read it with `--show`) as `skill-porting` asks.
+The wrapper holds the source's command and runs it in the Session's Workspace (read from the head of the Session's Trace; the package directory only when there is none), with `CLAUDE_PROJECT_DIR` set to it and the source tool's own input (Claude Code's `session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`, `prompt`, `stop_hook_active`); then it translates the answer. Its matcher reads PenguinHarness's tool names as the source's (`exec_command` as `Bash`, `read_file` as `Read`, `edit_file` as `Edit`, `write_file` as `Write`, `run_subagent` as `Task`), case-insensitively, and an `mcp__<server>__` in it is renamed as the server is. The timeout is the source's, or 600 s. Emitting the same file again replaces the hooks it wrote. A command that holds a credential-looking value, or runs a file inside another tool's plugin, is not ported: the summary names its event and program, and the report says the user ports it by hand. Review a script the command runs (read it with `--show`) as `skill-porting` asks.
 
 ## 3. Write the folder
 
