@@ -5,13 +5,13 @@ category: practice
 excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
 ---
 
-同一个模型，放进不同的 Harness 里，执行任务的表现往往存在明显差距。在优化 Harness 或引入 RSI 算法改进 Agent 之前，需要先建立一条固定基线：当底层模型完全固定时，切换不同的 Harness，最终的任务通过率、多轮运行的稳定性和资源开销会差多少？
+同一个模型，放进不同的 Harness 里，执行任务时的表现往往存在明显差距。在优化 Harness 或引入 RSI 算法改进 Agent 之前，需要先建立一条固定基线：当底层模型完全固定时，切换不同的 Harness，最终的任务通过率、多轮运行的稳定性和资源开销会差多少？
 
-本文整理了 PenguinHarness、DSH、Pi、Codex 四种 Harness 在五个评测集、共 50 道题上的三轮测试对比结果，并说明模型配置、实验启动流程，以及如何通过 PenguinHarness 组织和复现这套评测。
+本文整理了 PenguinHarness、DSH、Pi、Codex 四种 Harness 在五个评测集、共 50 道题上的三轮测试对比结果，并讲明如何通过 PenguinHarness 创建组织 Agent，由它准备配置、编写并执行批处理脚本，通过 Harbor 与各自适配器平级调度四种被测 Harness，最后收集并汇总实验结果。
 
 ## 1. 实验设计与任务设定
 
-四组实验统一接入模型 DeepSeek-V4.1-Flash-1017，思考强度固定为 max，被测版本分别锁定为 PenguinHarness 0.2.17、DSH 0.2.1-rc.2、Pi 1.4.0 与 Codex 0.162.1，通过 Harbor 0.23.0 在独立 Docker 容器中各自将 50 道题完整测试 3 轮，合计完成 600 次作答：
+四组实验统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度为 max，版本分别为 PenguinHarness 0.2.17、DSH 0.2.1-rc.2、Pi 1.4.0 与 Codex 0.162.1，通过 Harbor 0.23.0 在独立 Docker 容器中各自将 50 道题完整测试 3 轮，合计完成 600 次作答：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/03-experiment-design.png" width="2880" height="1730" alt="图 1｜实验设计：四种 Harness 锁定版本号，在相同的模型配置下，对 A–E 五个子集共 50 道固定任务各测试三轮，合计完成 600 次作答。" /><figcaption>图 1｜实验设计：四种 Harness 锁定版本号，在相同的模型配置下，对 A–E 五个子集共 50 道固定任务各测试三轮，合计完成 600 次作答。</figcaption></figure>
 
@@ -27,9 +27,9 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 ## 2. 模型配置与实验启动流程
 
-用 PenguinHarness 组织和复现这套实验，需要先配好模型与思考强度，再按被测对象走对应的启动路径。如图 2 所示，评测 PenguinHarness 内部 Agent 时，从评估中心调用预置的 `agent-evaluation` 技能发起；评测 DSH、Pi、Codex 等外部 Harness 时，则在工作区对话中由组织 Agent 调用自定义批处理脚本。两条路径共用底层的 Harbor 容器调度与独立验证器判分。
+这套横评在组织层与被测层之间做了明确切分：宿主机上，用户在 PenguinHarness 中创建一个负责编排实验的**组织 Agent**；而在每个独立 Docker 任务容器内部，作为被测对象的 **PenguinHarness 与 DSH、Pi、Codex 完全平级**。如图 2 所示，组织 Agent 在工作区对话中准备配置、编写并执行批处理脚本，统一调用 Harbor 加载四种被测 Harness 各自的适配器；容器内作答结束后，由独立验证器判分，运行器与适配器记录结束状态和资源开销，最后由组织 Agent 收集并汇总为标准归档。
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="2080" alt="图 2｜复现组织方案：上层由 PenguinHarness 的组织 Agent 发起；内部 Agent 走左侧评估中心与 agent-evaluation 技能路径，DSH、Pi、Codex 走右侧自定义批处理路径；底层共用 Harbor 容器调度、适配器加载、独立验证器判分与结果归档。" /><figcaption>图 2｜复现组织方案：上层由 PenguinHarness 的组织 Agent 发起；内部 Agent 走左侧评估中心与 agent-evaluation 技能路径，DSH、Pi、Codex 走右侧自定义批处理路径；底层共用 Harbor 容器调度、适配器加载、独立验证器判分与结果归档。</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="2110" alt="图 2｜复现组织方案：上层在 PenguinHarness 中创建组织 Agent，由它准备配置、编写并运行批处理脚本；中层通过 Harbor 与各自适配器在独立任务容器中平级调度 PenguinHarness、DSH、Pi、Codex 四种被测 Harness；下层由独立验证器判分，运行器与适配器记录结束状态和资源开销，最后汇总生成标准归档。" /><figcaption>图 2｜复现组织方案：上层在 PenguinHarness 中创建组织 Agent，由它准备配置、编写并运行批处理脚本；中层通过 Harbor 与各自适配器在独立任务容器中平级调度 PenguinHarness、DSH、Pi、Codex 四种被测 Harness；下层由独立验证器判分，运行器与适配器记录结束状态和资源开销，最后汇总生成标准归档。</figcaption></figure>
 
 **第一步：配置模型与思考强度**
 
@@ -43,35 +43,15 @@ penguin config model add \
   --set-default
 ```
 
-需要注意，**组织会话与被测 Agent 的思考强度是分开生效的**：在聊天输入框下方将思考强度切到 `Max`，只作用于当前负责编排实验的组织会话；通过 `agent-evaluation` 技能评测内部 Agent 时，被测 Agent 的 `thinking_level` 会从其自身的配置文件 `system_config.yaml` 中读取，因此实验前需先在被测 Agent 的设置中将思考强度设为 `max`。通过批处理脚本测试外部 Harness 时，则在启动参数中显式传入 `thinking=max`。
+需要注意，**宿主机上组织 Agent 的思考强度与容器内被测 Harness 的思考强度是分开生效的**：在 PenguinHarness 聊天输入框下方将思考强度切到 `Max`，只作用于当前负责编排实验的组织会话；而在容器内实际作答的四种被测 Harness，其思考强度统一由批处理脚本在启动参数中显式传入 `thinking=max`，确保四组被测对象在容器内均以 `max` 思考强度运行。
 
-**第二步：评测 PenguinHarness 内部 Agent——评估中心与 `agent-evaluation` 技能**
+**第二步：由组织 Agent 编写并执行批处理脚本，平级调度四种 Harness**
 
-新建的 PenguinHarness Project 已内置 Sec A 至 Sec E 五个评测集，默认智能体 `default_agent` 也已预装 `Default RSI Toolkit` 插件中的 `agent-evaluation` 技能。对应图 2 左侧分支，发起评测分为三步：
+在历史横评实验中，PenguinHarness、DSH、Pi、Codex 四组实验均通过 Harbor 0.23.0 与各自适配器在独立容器中按同一套流程跑完 A 至 E 五个子集的三轮测试，原始结果归档于仓库 `experiments/harness-comparison/` 目录。单组实验从启动到归档的执行链路如下：
 
-- **在评估中心选择参数**：进入左侧「评估中心」，点击目标评测集右上角的「使用」，在「评估」标签页设置四项参数——被测智能体选 `default_agent`，执行评估的智能体选装有 `agent-evaluation` 技能的 `default_agent`，评估会话模型选 `deepseek/DeepSeek-V4.1-Flash-1017`，运行次数 `runs` 填 `3`。
-- **预选技能并发送指令**：点击确认后，系统会自动新建对话、预选 `agent-evaluation` 技能并填入评估指令；也可以手动新建对话，勾选 `agent-evaluation` 技能后发送以下指令：
+> **组织 Agent 准备配置并启动批处理脚本 → `harbor run` 加载对应适配器 → 独立任务容器内运行被测 Harness → 独立验证器判分，运行器与适配器记录状态与开销 → 汇总生成 `meta_info.yaml`、`test/attempt-1..3.yaml` 与 `test/summary.yaml`**
 
-```markdown
-[use_skills]
-- agent-evaluation
-[/use_skills]
-请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。
-
-- test_agent_id：`default_agent`
-- benchmark_id：`penguinharness-benchmark-sec-e`
-- runs：`3`
-```
-
-- **主会话派发评测 Worker**：收到指令后，主会话先按 `agent-evaluation` 技能规范检出仓库快照、创建共享 Docker 网络并构建离线安装包，随后循环调度 `10 题 × 3 轮 = 30` 个评测单元，通过 `run_subagent` 在后台并发派发子会话 Worker，默认最多同时运行 4 个。每个 Worker 每次只接收**一个内部 `test_agent_id`、一道题目和一次运行编号**，打包被测 Agent 的 `agent_state` 并在独立 Docker 容器中调用 `harbor run` 完成作答与判分；30 个单元全部返回后，主会话汇总均分并写入该评测集的 `scoreboard.yaml`。
-
-**第三步：评测 DSH、Pi、Codex——工作区对话调用自定义批处理**
-
-`agent-evaluation` 技能面向 PenguinHarness 内部的 `test_agent_id`，不会在单条指令里直接驱动外部命令行工具。评测 DSH、Pi、Codex 时，需通过各自的 Harbor 适配器与任务配置接入，对应图 2 右侧分支：
-
-> **PenguinHarness 工作区对话启动批处理脚本 → `harbor run -c <任务配置> -y` → 容器内加载对应适配器运行被测 Harness → 独立验证器判分 → 归档逐题记录与统计汇总**
-
-当前评测仓库的 `agents/` 目录内置了 `penguin_agent:PenguinAgent` 适配器，并在 `experiments/harness-comparison/` 下归档了四组实验结果，但未包含 DSH、Pi、Codex 的外部适配器代码。下面以仓库内置的 `penguin_agent:PenguinAgent` 为例，演示如何在普通工作区对话中不依赖 `agent-evaluation` 技能，直接通过 Harbor 命令行跑通 PenguinHarness 的单题冒烟与整子集评测闭环：
+在公开复现仓库中，`agents/` 目录内置了可直接运行的 `penguin_agent:PenguinAgent` 适配器作为标准参考实现，未包含 DSH、Pi、Codex 的外部适配器源码。下面以内置的 `penguin_agent:PenguinAgent` 为例，展示组织 Agent 在工作区中准备离线运行包、执行 Sec E 单题冒烟验证，以及拉起整子集批量评测的具体命令：
 
 ```bash
 git clone https://github.com/Prism-Shadow/penguin-harness-benchmark.git
@@ -105,22 +85,22 @@ uvx --from harbor==0.23.0 harbor run \
   --job-name terminal-bench-attempt-1 -y
 ```
 
-上述命令用于跑通 PenguinHarness 路径；若要复现 DSH、Pi、Codex 三组实验，需要为三者分别提供符合 Harbor `InstalledAgent` 接口的适配器实现并传入 `-a`，再按第 1 至第 3 轮顺序跑完五个子集，每轮结束后生成标准格式的 `meta_info.yaml`、`test/attempt-1..3.yaml` 与 `test/summary.yaml`。
+上述命令展示了调度容器内被测 PenguinHarness 的完整闭环；复现 DSH、Pi、Codex 三组实验时，组织 Agent 只需将符合 Harbor `InstalledAgent` 接口的对应适配器传入 `-a`，并挂载各自的离线运行包，其余容器调度、时限控制、独立验证器判分与三轮归档流程完全相同。
 
 ## 3. 四组实验共同遵循的执行与判分规则
 
-无论是通过 `agent-evaluation` 技能派发评测 Worker，还是通过批处理脚本调用 Harbor，四种被测 Harness 在环境准备、网络隔离、容器内执行与异常重跑上均遵循同一套规则。在每个独立任务容器内部，被测的 PenguinHarness 与 DSH、Pi、Codex 处于完全对等的位置，统一由 Harbor 调度并交由独立验证器判分。
+宿主机上的组织 Agent 只负责外部任务编排与结果收集；一旦进入 Harbor 启动的独立任务容器，四种被测 Harness 在环境准备、网络隔离、容器内执行与异常重跑上均遵循同一套规则，处于完全对等的位置。
 
 **第一环节：准备离线运行包与隔离密钥**
 
-开跑前，先锁定 50 道题对应的 40 位仓库提交快照、被测 Harness 版本号与各子集运行上限。为避免每个容器启动时重复从公网下载运行环境，或污染题目容器原有的 Python 与 Node 工具链，宿主机预先将各被测运行环境打包为离线安装包，容器启动时直接挂载解压到独立目录。同时，适配器只从宿主机配置中提取当前被测模型的单条密钥，写入容器日志目录之外的临时私有路径，并在单题结束后立即擦除，确保密钥不会出现在命令行参数或归档日志中。
+开跑前，组织 Agent 先核对并锁定 50 道题对应的 40 位仓库提交快照、被测 Harness 版本号与各子集运行上限。为避免每个容器启动时重复从公网下载运行环境，或污染题目容器原有的 Python 与 Node 工具链，宿主机预先将各被测运行环境打包为离线安装包，容器启动时直接挂载解压到独立目录。同时，适配器只从宿主机配置中提取当前被测模型的单条密钥，写入容器日志目录之外的临时私有路径，并在单题结束后立即擦除，确保密钥不会出现在命令行参数或归档日志中。
 
 **第二环节：单题冒烟验证与批量并发控制**
 
 正式拉起三轮完整实验前，先以单并发跑通一道题，核实离线包解压、模型请求、产物落盘与验证器判分全链路正常，再推进五个子集的批量运行。批量运行期间执行两项环境控制：
 
 - **子集网络隔离**：Sec A、C、D、E 允许访问公网并复用 `penguin-bench` 共享桥接网络；而考察开源仓库缺陷修复的 Sec B 全程禁用公网，仅通过 `--allow-agent-host` 放行模型 API 主机，防止被测 Agent 搜索线上现成的修复 PR 或 Issue。
-- **并发度与 Docker 地址池管理**：Harbor 默认会为每个任务容器创建独立网络，而标准 Docker 守护进程默认仅提供 31 个子网地址池。使用 `agent-evaluation` 技能复现时默认最多并发运行 4 个子会话；在预先配置共享桥接网络或扩容地址池的批处理服务器环境中，历史实验曾以最高 10 并发运行以缩短墙钟耗时。
+- **并发度与 Docker 地址池管理**：Harbor 默认会为每个任务容器创建独立网络，而标准 Docker 守护进程默认仅提供 31 个子网地址池。单机复现时默认将并发度控制在 4 以内并复用共享桥接网络，以避免子网耗尽；在预先扩容地址池的批处理服务器环境中，历史实验曾以最高 10 并发运行以缩短整体耗时。
 
 **第三环节：单题容器内执行与独立判分**
 
@@ -134,7 +114,7 @@ uvx --from harbor==0.23.0 harbor run \
 
 **第四环节：筛查未启动异常并生成标准归档**
 
-每轮运行结束后，系统按 `tools/measure/reruns.py` 核查试次完整性，严格区分“环境未就绪”与“作答失败”：只有当容器因服务启动失败、配置异常而从未发出任何模型请求，或因 Docker 子网地址池耗尽未能分配容器网络时，才判定为未实质启动并降低并发补跑；一旦 Agent 已发出模型请求开始答题，无论中途工具报错还是超时停止，一律保留原始结果；若因验证器自身故障未能产出分值，则作为无效试次单独排查，不直接记为 0 分。
+每轮运行结束后，按 `tools/measure/reruns.py` 核查试次完整性，严格区分“环境未就绪”与“作答失败”：只有当容器因服务启动失败、配置异常而从未发出任何模型请求，或因 Docker 子网地址池耗尽未能分配容器网络时，才判定为未实质启动并降低并发补跑；一旦 Agent 已发出模型请求开始答题，无论中途工具报错还是超时停止，一律保留原始结果；若因验证器自身故障未能产出分值，则作为无效试次单独排查，不直接记为 0 分。
 
 ## 4. 评分与统计方法
 
@@ -157,7 +137,7 @@ uvx --from harbor==0.23.0 harbor run \
 将 A 至 E 五个子集的三轮平均开销相加，用来衡量跑完完整一轮 50 道题的平均资源投入：
 
 - **API 费用**：按统一目录单价计算的五个子集单轮平均费用之和；由于各子集归档费用已做四舍五入，文中统一记为约数。
-- **累计 Agent 运行时间**：50 道题在各自容器内运行耗时的直接累加，反映单轮总计算时长而非并行执行时的墙钟等待时间。
+- **累计 Agent 运行时间**：50 道题在各自容器内运行耗时的直接累加，代表单轮 50 题在容器内的总执行时长。
 - **三类 Token 用量**：多轮工具调用中，终端输出与历史消息会作为后续轮次的输入重复发送，原始输入总量中已包含缓存读取部分。为避免重复累加，文中按图 10 口径将 Token 拆分为**非缓存输入**、**缓存读取**和**输出**三项；其中输出仅包含模型自身生成的思考内容、回复文本与工具调用参数，不包含工具返回结果。
 
 ## 5. 实测结果与数据洞察
@@ -174,13 +154,13 @@ uvx --from harbor==0.23.0 harbor run \
 
 下面结合五个子集的得分分布、逐题通过频次与资源开销，逐项展开四点具体发现：
 
-**第一，不同题型的得分分化显著，四组实验同时呈现跨 Harness 的任务覆盖差异与单 Harness 内部的重复执行差异。**
+**第一，不同题型的得分分化显著，各组单轮均分同时受限于单组解出题目范围与跨轮重复执行波动。**
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。误差线在 0–100 边界处截断。" /><figcaption>图 6｜五个子集的得分对比：A–E 五个子集各 10 题的三轮均分与样本标准差，所有面板统一采用 0 至 100 分刻度，黑色端帽表示正负 1 个样本标准差。误差线在 0–100 边界处截断。</figcaption></figure>
 
 如图 6 所示，没有单一 Harness 在全部五个子集上同时占优。在 Sec A 数据分析上，PenguinHarness 以 70.00 ± 10.00 与 DSH 的 70.00 ± 0.00 并列第一；在断网隔离的 Sec B 软件工程上，PenguinHarness 以 70.00 ± 10.00 取得单子集最高分，三轮得分为 60、70、80，DSH、Pi、Codex 分别为 63.33 ± 15.28、60.00 ± 10.00 与 53.33 ± 5.77；在 Sec C 自动化工作流上，DSH 以 36.67 ± 5.77 居首，PenguinHarness 为 30.00 ± 10.00；在 Sec E 终端任务上，Pi 取得最高均分 23.33 ± 15.28，高于 PenguinHarness 的 20.00 ± 0.00 与 DSH 的 20.00 ± 10.00；而 Sec D 科学计算则是所有被测 Harness 的共同短板，均分都在 0.00 到 10.00 之间。
 
-把四种 Harness 的三轮共 600 次作答取并集，每道题共经历了 12 次尝试：50 道题中有 19 道题在 12 次尝试中均未通过，其中 Sec D 科学计算占 7 题、Sec C 与 Sec E 各占 5 题、Sec A 占 2 题；其余 31 道题至少被某一种 Harness 解出过，当中又有 17 道题四种 Harness 全部能够解出，Sec B 的 10 道软件工程题更是全部被打通。需要注意，19 道题在 12 次尝试中未通过，只说明在当前模型 DeepSeek-V4.1-Flash-1017、现有提示词与通用工具配置下尚未解出，不能直接断言它们超出了模型本身的能力上限；同理，31 道已解出题对应的 62 分是跨四种 Harness 的并集覆盖分，它与单轮均分 30.00–38.67 分之间的差距同时包含两部分：一是**不同 Harness 各自擅长题目不同带来的覆盖差异**——单一 Harness 在三轮内至少解出一次的题目为 22–25 道，对应单组观测覆盖分 44–50 分，与跨组并集的 62 分之间存在 12–18 分的互补空间；二是**同一 Harness 在自身已解出题目上的重复执行损耗**——例如 DSH 与 PenguinHarness 各自在三轮内解出过 25 道题、对应 50 分的单组观测覆盖分，但三轮总体均分分别为 38.67 分与 38.00 分，中间 11.33 分与 12.00 分的落差，才直接来自同一 Harness 跨轮次重复执行时的稳定性损耗。
+汇总全部 600 次作答，每道题在四种 Harness 下合计经历了 12 次尝试。本次实验中，共有 31 道题至少被某一种 Harness 解出过一次，其中 17 道题四种 Harness 全部解出过，Sec B 的 10 道软件工程题全部有人通过；其余 19 道题在本次 12 次尝试中均未通过，分布为 Sec D 7 题、Sec C 5 题、Sec E 5 题、Sec A 2 题。将跨组并集的 31 题与各组实际表现对照，可以看到两个层面的差异：一是**不同 Harness 之间的解出题目互补**——单看任意一种 Harness，三轮内至少通过一次的题目为 22–25 道，尚未覆盖全部 31 道已解出题；二是**同一 Harness 在已解出题目上的跨轮波动**——例如 DSH 与 PenguinHarness 在三轮内都解出过 25 道不同题目，若这 25 道题每轮都能稳定复现，单轮得分可达 50 分，而实际三轮总体均分分别为 38.67 分与 38.00 分，中间 11.33 分与 12.00 分的落差来自部分已解出题目未能每轮稳定通过。
 
 **第二，各组“至少解出一次”的题目数高度接近，真正拉开总分差距的是摇摆题在“通过两次”与“仅过一次”之间的分布差异。**
 
@@ -219,12 +199,12 @@ uvx --from harbor==0.23.0 harbor run \
 
 **后续工作：这套基线用来检查哪些改动？**
 
-这 50 道题已完成逐题拆解，后续将作为检验 Harness 工程改动的固定回归基线，重点检查三方面变化：
+通过 PenguinHarness 组织 Agent 跑通并归档的这 50 道题横评数据，已完成逐题拆解，后续将作为检验 Harness 工程改动的固定回归基线，在相同模型与 Harbor 判分规则下重点检查三方面变化：
 
 - **高频摇摆题的收敛情况**：对照 Sec A、Sec B、Sec C 的执行轨迹，检查提示词与自测流程改动后，“2 / 3 次通过”的高频摇摆题能否稳定收敛为三轮全过，同时 Sec B 较高的输出 Token 消耗能否下降。
-- **逐题通过矩阵的退化检查**：每次版本迭代直接比对三轮逐题得分矩阵，防止轮次间不同题目的一增一减掩盖真实退化。
+- **逐题通过矩阵的退化检查**：每次版本迭代由组织 Agent 跑完三轮后，直接比对三轮逐题得分矩阵，防止轮次间不同题目的一增一减掩盖真实退化。
 - **长耗时子集的执行效率**：跟踪 Sec D 的单题耗时分布与终止状态，验证超时提醒或早停机制能否减少无效长耗时尝试。
 
 至于需要避免公开题目过拟合的 RSI 实验，则交由仓库中划分了独立训练集与留出测试集的 GDPevo 基准开展。
 
-*实验数据快照：本文全部数据对应 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2) 仓库快照 6ad65ea054fe8035c1c48724dbb5626d699f6cb2。相关文档：[横评归档目录](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/experiments/harness-comparison) · [仓库运行说明 README.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/README.zh.md) · [50 题筛选说明 SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md) · [评估集导入包说明 packages/README.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/packages/README.zh.md) · [PenguinAgent 适配器说明](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/agents/README.md) · [评估数据与提交流程规范](https://club.penguin.ooo/zh/workflow/evaluation/)*
+*实验数据快照：本文全部数据对应 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2) 仓库快照 6ad65ea054fe8035c1c48724dbb5626d699f6cb2。相关文档：[横评归档目录](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/experiments/harness-comparison) · [仓库运行说明 README.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/README.zh.md) · [50 题筛选说明 SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md) · [评测集数据说明 data/README.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/README.md) · [PenguinAgent 适配器说明](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/agents/README.md) · [评估数据与提交流程规范](https://club.penguin.ooo/zh/workflow/evaluation/)*
