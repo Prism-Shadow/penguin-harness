@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `server`, `docs`
+- **PR:** [#1483](https://github.com/Prism-Shadow/penguin-harness/pull/1483)
 - **Issue:** [#1440](https://github.com/Prism-Shadow/penguin-harness/issues/1440)
 
 [中文版](2026-11-05-cited-file-route.zh.md)
