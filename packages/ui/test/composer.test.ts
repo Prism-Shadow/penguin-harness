@@ -117,7 +117,7 @@ describe("SlashMenu", () => {
     expect(menu).toContain('data-tooltip="Compress the context"');
   });
 
-  it("highlights the keyboard's row alone", () => {
+  it("lists one row per matching command", () => {
     const rows = menu.split("<button").slice(1);
     expect(rows).toHaveLength(2);
   });
@@ -150,6 +150,10 @@ describe("ToolbarTrigger", () => {
       createElement(ToolbarTrigger, { glyph: "M12 5v14", ariaLabel: "Skills", badge: 3 }),
     );
     expect(three).toContain(">3</span>");
+    const zero = renderStatic(
+      createElement(ToolbarTrigger, { glyph: "M12 5v14", ariaLabel: "Skills", badge: 0 }),
+    );
+    expect(zero).not.toContain(">0<");
   });
 
   it("as a pill shows its value and says it opens a list", () => {

@@ -7,7 +7,7 @@
  *
  * The same guard over the Web App's charts is its `chart-marks.test.ts`.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -119,7 +119,7 @@ describe("the chart primitives, in the default theme", () => {
     expect(label).toContain(">21°<");
   });
 
-  it("draw an arc from twelve o'clock, round-capped only when asked, its track a grid part", () => {
+  it("draw an arc from twelve o'clock, round-capped when asked, its track a grid part", () => {
     const arc = render(ChartArc, {
       cx: 10,
       cy: 10,
@@ -184,28 +184,25 @@ describe("the chart primitives, in the default theme", () => {
     ).toContain("bg-fg-subtle");
   });
 
-  it("draw the grid, the axis labels and the cursor", () => {
+  it("draw the axis labels as axis parts", () => {
     const axis = render(ChartAxis, { x: 0, y: 0, anchor: "end", children: "12" });
     expect(axis).toContain('data-part="axis"');
   });
 });
 
 describe("every chart in the package", () => {
-  const CHARTS = [
-    "components/charts/chart-frame/chart-frame.tsx",
-    "components/charts/token-donut/token-donut.tsx",
-    "components/charts/sparkline/sparkline.tsx",
-    "components/charts/ring/ring.tsx",
-    "components/charts/legend/legend.tsx",
-    "components/charts/cartesian/plot-captions.tsx",
-    "components/charts/cartesian/series-readout.tsx",
-    "components/charts/cartesian/bar-chart.tsx",
-    "components/charts/cartesian/hbar-chart.tsx",
-    "components/charts/cartesian/line-chart.tsx",
-    "components/charts/pie-chart/pie-chart.tsx",
-    "components/charts/scatter-chart/scatter-chart.tsx",
-    "components/charts/gauge/gauge.tsx",
-  ];
+  /** Every chart module, found by walking components/charts; the primitives (marks/) excepted. */
+  const CHARTS = readdirSync(join(SRC_DIR, "components/charts"), {
+    recursive: true,
+    encoding: "utf8",
+  })
+    .filter((rel) => rel.endsWith(".tsx") && !rel.split(/[\\/]/).includes("marks"))
+    .map((rel) => `components/charts/${rel.split(/[\\/]/).join("/")}`)
+    .sort();
+
+  it("finds charts to hold to the rule", () => {
+    expect(CHARTS.length).toBeGreaterThan(0);
+  });
 
   it("draws its marks through the primitives, never with its own shapes, paint or geometry", () => {
     const found: string[] = [];

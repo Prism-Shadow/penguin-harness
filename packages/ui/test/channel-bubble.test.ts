@@ -1,11 +1,9 @@
 /**
  * ChannelRun and ChannelBubble (src/components/chat/channel-bubble/channel-bubble.tsx): a sender's
  * run of messages — the avatar and the name once, or only a screen reader's word on the reader's
- * own side — and one message in it, with its time, its tail corner and its surface; and the
- * stylesheet that deepens inline code and table rules inside it.
+ * own side — and one message in it, with its time and its side. Its stylesheet is held with every
+ * component stylesheet by component-stylesheets.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ChannelBubble, ChannelRun } from "../src/components/chat/channel-bubble/channel-bubble";
@@ -14,10 +12,6 @@ import type {
   ChannelRunProps,
 } from "../src/components/chat/channel-bubble/channel-bubble";
 import { renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
-
-const DIR = join(SRC_DIR, "components/chat/channel-bubble");
-const read = (name: string) => readFileSync(join(DIR, name), "utf8");
 
 const run = (props: Partial<ChannelRunProps> = {}) =>
   renderStatic(
@@ -84,14 +78,5 @@ describe("ChannelBubble", () => {
   it("marks the reader's own bubble as their side", () => {
     const html = bubble({ own: true });
     expect(html).toContain('data-side="own"');
-  });
-});
-
-describe("the channel bubble stylesheet", () => {
-  const rules = read("channel-bubble.css").replace(/\/\*[\s\S]*?\*\//g, "");
-
-  it("stays unlayered, so it out-ranks the unlayered Markdown rules, and reads tokens only", () => {
-    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
-    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(|--color-|\.dark\b/i);
   });
 });

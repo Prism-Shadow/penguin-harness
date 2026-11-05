@@ -39,5 +39,8 @@ describe("CardHeader", () => {
   it("is a title row in a card, and the frame's head slot across a flush one", () => {
     const padded = renderStatic(createElement(Card, null, header));
     expect(padded).not.toContain("data-slot");
+    // The frame's head slot is the ui-frame hook's: the themes restyle a flush card's header by it.
+    const flush = renderStatic(createElement(Card, { padding: "none" }, header));
+    expect(flush).toContain('data-slot="head"');
   });
 });

@@ -34,7 +34,7 @@ describe("Gauge", () => {
     );
   });
 
-  it("draws a round-capped arc of the share from min, and closes the ring when full", () => {
+  it("draws a round-capped arc of the share from min, clamped to the ring", () => {
     expect(gaugeShare(150, 300, 100)).toBe(0.25);
     expect(gaugeShare(-5, 100)).toBe(0);
     expect(gaugeShare(140, 100)).toBe(1);

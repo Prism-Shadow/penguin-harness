@@ -84,7 +84,7 @@ describe("CommandPalette", () => {
     expect(palette({ hint: "Enter to run" })).toMatch(/border-t[^"]*">Enter to run<\/div>/);
   });
 
-  it("dims the page through the scrim hook, and paints in tokens", () => {
+  it("dims the page through the scrim hook", () => {
     expect(classTokens(palette())).toContain("ui-scrim");
   });
 });

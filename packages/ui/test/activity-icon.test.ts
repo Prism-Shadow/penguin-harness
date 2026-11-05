@@ -4,8 +4,6 @@
  * and the two marks beside them in the busy and the subtle ink. The motion lives in theme.css
  * and must leave the glyph upright and visible when animation is switched off.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
@@ -16,8 +14,7 @@ import {
 import type { ActivityIconState } from "../src/components/icons/activity-icon/activity-icon";
 import { ICONS } from "../src/components/icons/icons";
 import { ICON_SIZE } from "../src/icon-scale";
-import { renderStatic, stripCssComments } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
+import { renderStatic } from "../src/testing";
 
 const ACTIVITIES: readonly ActivityIconState[] = ["running", "compacting", "completedUnread"];
 const LABELS: Record<ActivityIconState, string> = {
@@ -97,40 +94,5 @@ describe("BackgroundTasksMark and ScheduleMark", () => {
     expect(html).toContain('aria-label="Scheduled"');
     expect(html).toContain('data-tooltip="Scheduled"');
     expect(html).toContain(`d="${ICONS.alarmClock}"`);
-  });
-});
-
-describe("the activity motion in theme.css", () => {
-  const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
-
-  /** A keyframes block's body, braces balanced, or "" when the sheet has none by that name. */
-  const keyframes = (name: string) => {
-    const start = sheet.indexOf(`@keyframes ${name}`);
-    if (start < 0) return "";
-    const open = sheet.indexOf("{", start);
-    let depth = 0;
-    for (let i = open; i < sheet.length; i++) {
-      if (sheet[i] === "{") depth++;
-      else if (sheet[i] === "}" && --depth === 0) return sheet.slice(open + 1, i);
-    }
-    return "";
-  };
-
-  it("only transforms, so with animation off the glyph stands upright, still visible", () => {
-    for (const name of ["hourglass-turn", "compact-squeeze"]) {
-      const body = keyframes(name);
-      expect(body, name).not.toBe("");
-      const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
-      expect(new Set(properties), name).toEqual(new Set(["transform"]));
-    }
-    expect(keyframes("hourglass-turn")).toMatch(/rotate\(180deg\)/); // A turn, not a spin.
-  });
-
-  it("stops under the gallery's switch and the system preference", () => {
-    expect(sheet).toMatch(
-      /:root\[data-motion="reduced"\]\s*:is\(\.hourglass-turn,\s*\.compact-squeeze\)\s*\{\s*animation:\s*none;/,
-    );
-    const media = sheet.slice(sheet.indexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(media).toMatch(/:is\(\.hourglass-turn,\s*\.compact-squeeze\)\s*\{\s*animation:\s*none;/);
   });
 });

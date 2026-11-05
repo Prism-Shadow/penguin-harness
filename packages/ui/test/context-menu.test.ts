@@ -9,12 +9,11 @@
  * feature must not be mouse-only: touch screens have neither hover nor a secondary button, so
  * touch keeps a path of its own (press-and-hold).
  *
- * The hook and the Dropdown it drives need a DOM this suite does not have, so what they must do
- * is pinned against their source: the one handler that suppresses the native menu, the
- * containment guard that keeps the portaled panel's own events from re-anchoring it, and the
- * Dropdown asking `scrollMovesAnchor` before an anchored panel dismisses itself (the rule's cases
- * are in portal-panel.test.ts). How the app wires rows to it is the web app's
- * `context-menu.test.ts`.
+ * The hook and the Dropdown it drives need a DOM this suite does not have; what they do with a
+ * real page is context-menu.dom.test.ts: the native menu suppressed on the row only, the portaled
+ * panel's own right-click leaving it in place, a short touch press opening nothing, and the
+ * anchored panel's scroll rule (the rule's cases are in portal-panel.test.ts). How the app wires
+ * rows to it is the web app's `context-menu.test.ts`.
  */
 import { describe, expect, it } from "vitest";
 import {
