@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1497](https://github.com/Prism-Shadow/penguin-harness/pull/1497)
 
 [中文版](2026-11-05-agent-settings-plugins-tab.zh.md)
 
