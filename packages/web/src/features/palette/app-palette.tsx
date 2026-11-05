@@ -78,7 +78,12 @@ export function hostCommandActions(
   locale: "en" | "zh",
 ): { command: string; action: HostAction }[] {
   return offers.flatMap(({ command, label, labelZh }) => {
-    const known: HostAction | undefined = HOST_ACTIONS[command as HostCommand];
+    // Own properties only: the host writes the id, so "constructor", "toString" or
+    // "__proto__" must reach the host's-words path below, not an inherited object member
+    // that would pass the check and then throw inside label().
+    const known = Object.hasOwn(HOST_ACTIONS, command)
+      ? HOST_ACTIONS[command as HostCommand]
+      : undefined;
     if (known !== undefined) return [{ command, action: known }];
     const words = (locale === "zh" ? labelZh : label) || label || labelZh;
     if (words === "") return [];

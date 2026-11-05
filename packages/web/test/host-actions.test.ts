@@ -69,4 +69,19 @@ describe("hostCommandActions", () => {
     // Only such a host sends bare ids, and it has nothing to offer this build lacks words for.
     expect(hostCommandActions([offer("some-command-from-the-future")], "en")).toEqual([]);
   });
+
+  it("treats a prototype-property id as a stranger, not an inherited action", () => {
+    // The host writes the id; "toString" is an inherited member of the lookup object and a
+    // plain read would mistake it for a known action, then throw inside label().
+    const [action, ...rest] = hostCommandActions(
+      [offer("toString", "Turn into a string", "变成字符串")],
+      "en",
+    );
+    expect(rest).toEqual([]);
+    expect(action?.command).toBe("toString");
+    expect(action?.action.label()).toBe("Turn into a string");
+    for (const command of ["constructor", "__proto__", "hasOwnProperty"]) {
+      expect(hostCommandActions([offer(command)], "en")).toEqual([]);
+    }
+  });
 });
