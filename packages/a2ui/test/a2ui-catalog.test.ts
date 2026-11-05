@@ -1,11 +1,11 @@
 /**
- * L1 validation of one ```a2ui body (a2ui/catalog.ts): a valid block of each type round-trips
+ * L1 validation of one ```a2ui body (src/catalog.ts): a valid block of each type round-trips
  * to its spec with no issue; every error code fires on the mistake it names and withholds the
  * spec; the warnings fire past the "warn" marks and still return the spec. A form's fields have
  * their own file (a2ui-form.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { parseA2ui } from "../src/a2ui/index.js";
+import { parseA2ui } from "../src/index.js";
 
 const parse = (value: unknown) => parseA2ui(JSON.stringify(value));
 const codes = (value: unknown) => parse(value).issues.map((issue) => issue.code);

@@ -1,5 +1,5 @@
 /**
- * `@prismshadow/penguin-core/a2ui`: the grammar of A2UI blocks — catalog types and limits, fence
+ * `@prismshadow/a2ui`: the grammar of A2UI blocks — catalog types and limits, fence
  * discovery, L1 validation, a form field's answer rule, the mermaid checks, the whole-reply check
  * with its score, the reply's language, the text fallback, the composer fill texts and their
  * inverse (an answered block's answers read back from the message), the self-review rubric, and

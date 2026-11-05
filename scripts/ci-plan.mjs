@@ -66,8 +66,10 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     if (file.startsWith("plugins/")) {
       // These tests read the on-disk plugins, including ones no package imports: the server's
       // suite reads the shipped library (its package is the library's host), core's runs the
-      // plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them.
+      // plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them,
+      // and the A2UI grammar's suite reads the a2ui Skill and its bundled checker.
       for (const name of ["core", "server", "docs", "landing"]) add(`${prefix}${name}`);
+      add("@prismshadow/a2ui");
     }
     if (file === "packages/web/index.html") add(`${prefix}ui`);
   }

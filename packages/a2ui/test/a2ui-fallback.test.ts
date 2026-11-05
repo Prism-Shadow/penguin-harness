@@ -1,11 +1,11 @@
 /**
- * The text fallback and the composer fill texts (a2ui/fallback.ts): each block type as readable
+ * The text fallback and the composer fill texts (src/fallback.ts): each block type as readable
  * Markdown in both languages, mermaid and invalid blocks left untouched, and the exact strings a
  * pick fills — the model reads them as ordinary user text next turn. A form's bullet says what
  * each kind takes (options, range, format, yes / no), its default and its hint; its fill text
  * writes each kind's answer (a switch as Yes / No, several lines indented, a datetime with a
  * space), and a form left at its initial answers fills its defaults. Widgets print for a pinned
- * moment and zone; the helpers they share with the renderers (a2ui/widgets.ts) get direct cases
+ * moment and zone; the helpers they share with the renderers (src/widgets.ts) get direct cases
  * only where the fallback does not already show them.
  */
 import { describe, expect, it } from "vitest";
@@ -22,7 +22,7 @@ import {
   type A2uiMetric,
   type A2uiMetrics,
   type A2uiWeather,
-} from "../src/a2ui/index.js";
+} from "../src/index.js";
 
 const fence = (spec: unknown) => `\`\`\`a2ui\n${JSON.stringify(spec)}\n\`\`\``;
 

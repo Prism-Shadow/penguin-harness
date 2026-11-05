@@ -1,11 +1,11 @@
 /**
- * The mermaid rules (a2ui/mermaid.ts): a supported header, no configuration or link syntax from
+ * The mermaid rules (src/mermaid.ts): a supported header, no configuration or link syntax from
  * the model (frontmatter and directives are errors even under strict mode, because themeCSS is
  * not on Mermaid's secure list), a best-effort balance check that respects quotes, free-text
  * diagram types and multi-line class bodies, and the size warning.
  */
 import { describe, expect, it } from "vitest";
-import { checkMermaid } from "../src/a2ui/index.js";
+import { checkMermaid } from "../src/index.js";
 
 const codes = (source: string) => checkMermaid(source).map((issue) => issue.code);
 

@@ -11,8 +11,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { A2UI_SCORING, checkMermaid, checkReply, parseA2ui } from "../src/a2ui/index.js";
-import { scanFences } from "../src/a2ui/fences.js";
+import { A2UI_SCORING, checkMermaid, checkReply, parseA2ui } from "../src/index.js";
+import { scanFences } from "../src/fences.js";
 import {
   BUNDLE_PATH,
   HASH_MARKER,

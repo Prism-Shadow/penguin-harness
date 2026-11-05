@@ -7,12 +7,20 @@
  * - A password session against the same desktop server gets 403, an anonymous caller 401, and
  *   nothing reaches the shell (install replaces the running app, so its gate is pinned every
  *   way); a plain server has no such routes; with no shell wired a command answers 503.
+ * - /api/command lists what the host offers (nothing on a plain server) and forwards a run, for
+ *   any admin session; a known command not offered here answers 409, an unknown one 404.
  * - Only a well-formed updater frame is read.
  * - A wired port stores pushed frames, ignores garbage, and carries commands out.
  * - A plain Node process has no shell port to wire.
  */
 import { describe, expect, it } from "vitest";
-import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
+import {
+  createDesktopApp,
+  createTestApp,
+  desktopLoginCookie,
+  loginAdmin,
+  provisionUser,
+} from "./helpers.js";
 import type {
   DesktopUpdateStatus,
   DesktopUpdateStatusResponse,
@@ -167,6 +175,70 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
   });
 });
 
+describe("/api/command", () => {
+  it("lists what the host offers and forwards a run; a plain server offers nothing", async () => {
+    const plain = await createTestApp();
+    try {
+      const { cookie } = await loginAdmin(plain.app);
+      const listed = await plain.app.request("/api/command", { headers: { cookie } });
+      expect(listed.status).toBe(200);
+      expect(await listed.json()).toEqual({ commands: [] });
+      const run = await plain.app.request("/api/command/install-cli", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(run.status).toBe(409);
+    } finally {
+      await plain.cleanup();
+    }
+
+    const t = await createDesktopApp();
+    try {
+      // Any admin session, not only the shell's own window: the command acts on the host.
+      const { cookie } = await loginAdmin(t.app);
+      t.deps.desktop!.setCommands(["install-cli"]);
+      const ran: string[] = [];
+      t.deps.desktop!.onCommand((command) => ran.push(command));
+      const listed = await t.app.request("/api/command", { headers: { cookie } });
+      expect(await listed.json()).toEqual({ commands: ["install-cli"] });
+      const run = await t.app.request("/api/command/install-cli", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(run.status).toBe(202);
+      expect(ran).toEqual(["install-cli"]);
+      // Known but not offered here, and not a command at all.
+      const notOffered = await t.app.request("/api/command/check-updates", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(notOffered.status).toBe(409);
+      const unknown = await t.app.request("/api/command/format-disk", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(unknown.status).toBe(404);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("is an admin's alone", async () => {
+    const t = await createTestApp();
+    try {
+      const { cookie } = await provisionUser(t.app, "bob");
+      const res = await t.app.request("/api/command", { headers: { cookie } });
+      expect(res.status).toBe(403);
+    } finally {
+      await t.cleanup();
+    }
+  });
+});
+
 describe("desktop-update-port", () => {
   it("parses only well-formed status frames", () => {
     expect(parseUpdaterStatusMessage({ type: "desktop-updater-status", status: STATUS })).toEqual(
@@ -199,6 +271,15 @@ describe("desktop-update-port", () => {
 
     expect(desktop.requestUpdateCommand("check")).toBe(true);
     expect(port.sent).toEqual([{ type: "desktop-updater-command", action: "check" }]);
+
+    // The host's commands ride the same port: its offer in, the page's ask out. Unknown
+    // names in an offer are dropped, not stored.
+    port.emit({ type: "host-commands", commands: ["install-cli", "format-disk"] });
+    expect(desktop.getCommands()).toEqual(["install-cli"]);
+    port.emit({ type: "host-commands", commands: "install-cli" });
+    expect(desktop.getCommands()).toEqual(["install-cli"]);
+    expect(desktop.requestCommand("install-cli")).toBe(true);
+    expect(port.sent.at(-1)).toEqual({ type: "host-command", command: "install-cli" });
   });
 
   it("finds no shell port on a plain Node process without parentPort", () => {
