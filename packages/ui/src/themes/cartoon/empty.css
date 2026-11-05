@@ -1,0 +1,63 @@
+/**
+ * Doodle's empty states (`ui-empty`; `themes/cartoon.css` imports this after the line and the
+ * marks).
+ *
+ * - The page form shows its art, which theme.css hides in every theme: the slot is displayed, the
+ *   line set's drawing hidden and the doodle shown in its place — a pencil squiggle looped once
+ *   and trailing off, drawn in the slot's subtle ink, the same small drawing for every empty
+ *   state. It says nothing the words do not; the title and the description stay as the host sets
+ *   them, in the theme's hand.
+ * - The slot form (a settings tab's empty table) is a dashed pencil frame: the dashed surface
+ *   image (`--_stroke-surface-dashed`, laid with `round` so its dashes stay whole) in place of the
+ *   host's dashed border, with a pencil tick at each of its four corners, a hair inside the line
+ *   (`::before`, a short piece of the pencil rule each way meeting at each corner), the way a
+ *   space left for something is marked out on paper.
+ */
+@layer ui-theme {
+  :root[data-theme="cartoon"] .ui-empty [data-slot="art"] {
+    display: flex;
+  }
+  :root[data-theme="cartoon"] .ui-empty [data-slot="art"] > [data-set="line"] {
+    display: none;
+  }
+  :root[data-theme="cartoon"] .ui-empty [data-slot="art"] > [data-set="doodle"] {
+    display: block;
+  }
+
+  @media (forced-colors: none) {
+    :root[data-theme="cartoon"] .ui-empty[data-form="slot"] {
+      position: relative;
+      border-style: solid;
+      border-color: transparent;
+      border-image: var(--_stroke-surface-dashed) 14 / 14px / 0 round;
+    }
+    :root[data-theme="cartoon"] .ui-empty[data-form="slot"]::before {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      pointer-events: none;
+      background-image:
+        var(--_rule-pencil-h), var(--_rule-pencil-v), var(--_rule-pencil-h), var(--_rule-pencil-v),
+        var(--_rule-pencil-h), var(--_rule-pencil-v), var(--_rule-pencil-h), var(--_rule-pencil-v);
+      background-repeat: no-repeat;
+      background-size:
+        10px 4px,
+        4px 10px,
+        10px 4px,
+        4px 10px,
+        10px 4px,
+        4px 10px,
+        10px 4px,
+        4px 10px;
+      background-position:
+        left 2px top 0,
+        left 0 top 2px,
+        right 2px top 0,
+        right 0 top 2px,
+        left 2px bottom 0,
+        left 0 bottom 2px,
+        right 2px bottom 0,
+        right 0 bottom 2px;
+    }
+  }
+}

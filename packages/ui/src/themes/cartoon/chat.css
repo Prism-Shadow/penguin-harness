@@ -1,0 +1,103 @@
+/**
+ * Doodle's conversation (`themes/cartoon.css` imports this after the line and the marks).
+ *
+ * - The person's own words are written in the ballpoint blue: their bubble (`MessageBubble`'s
+ *   `user` variant, a `ui-edge` box on the accent's tint) keeps its outline and its clip and
+ *   swaps the ink pen for the blue one, `--_stroke-surface-you` — the one place a second ink
+ *   says something: who wrote this. A steer sent into a running Task (the `steering` chip, the
+ *   same tint at a control's size) takes the blue pen and the outline of a control. The bubbles
+ *   are told apart from every other `ui-edge` box by the tint they alone sit on, and from each
+ *   other by the chip's smaller corner. The reply has no box, as in every theme.
+ * - The composer and its slash list are floating slips drawn by `line.css`, redrawn in blue while
+ *   the composer has focus; nothing is added here.
+ * - An activity card's steps (`ui-tree`: the rows under the card's head, which carry no depth-0
+ *   row, so the head is their parent) hang off the head on pencil lines: a dashed guide runs down
+ *   the parent's mark column past every row but the last, a short solid tick leads into each
+ *   row's mark, and the last row takes a solid `└`. The recipe indents each row to make room for
+ *   the guide, which runs in that indent, where a row's own fill (opaque, since a row sticks while
+ *   its body scrolls) never covers it; the tick runs on over the row's inset to just short of its
+ *   mark, at the row's own sticky level (under the head's) and drawn after the row, so the fill
+ *   does not cover it either. The rules the host draws between the rows go, since the lines
+ *   already say where each row hangs. A level's column is the parent's mark (the host's 12px row
+ *   inset and half of its 14px glyph), so the guide falls under the head's own mark. A branch
+ *   (`data-branch`, a level nested under a row) carries its parent's guide on past the rows it
+ *   holds unless the parent is the last of its level. Pencil is the theme's line ink at
+ *   emphasis, the colour of the drawn pencil rules.
+ */
+@layer ui-theme {
+  @media (forced-colors: none) {
+    :root[data-theme="cartoon"] .ui-edge:where(div[class~="bg-accent-tint"]) {
+      border-image-source: var(--_stroke-surface-you);
+    }
+    :root[data-theme="cartoon"] .ui-edge:where(div[class~="bg-accent-tint"][class~="rounded-md"]) {
+      border-image: var(--_stroke-control-focus) 9 / 9px / 0 stretch;
+    }
+    @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+      :root[data-theme="cartoon"]
+        .ui-edge:where(div[class~="bg-accent-tint"][class~="rounded-md"]) {
+        clip-path: var(--_clip-control);
+      }
+    }
+  }
+
+  :root[data-theme="cartoon"] .ui-tree {
+    --_tree-mark: calc(0.75rem + 7px);
+    --_tree-step: calc(var(--_tree-mark) + 0.375rem);
+    --_tree-elbow: 0.9375rem;
+  }
+  :root[data-theme="cartoon"] .ui-tree > :is([data-depth], [data-branch]) {
+    border-color: transparent;
+  }
+  :root[data-theme="cartoon"] .ui-tree [data-depth]:not([data-branch]) {
+    position: relative;
+    padding-inline-start: calc(var(--_tree-step) * var(--_depth));
+  }
+  :root[data-theme="cartoon"]
+    .ui-tree
+    :is(
+      [data-depth]:not([data-branch], [data-depth="0"]),
+      [data-branch]:not([data-depth="0"], [data-depth="1"])
+    ) {
+    position: relative;
+  }
+  :root[data-theme="cartoon"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::before,
+  :root[data-theme="cartoon"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    inset-inline-start: calc(var(--_tree-step) * (var(--_depth) - 1) + var(--_tree-mark) - 0.5px);
+  }
+  /* The guide past a row that has a sibling after it, and the tick into the row. */
+  :root[data-theme="cartoon"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::before {
+    inset-block: 0;
+    border-inline-start: 1px dashed var(--ui-line-emphasis);
+  }
+  :root[data-theme="cartoon"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::after {
+    top: var(--_tree-elbow);
+    z-index: 4;
+    width: calc(var(--_tree-step) + 0.5rem - var(--_tree-mark));
+    border-top: 1px solid var(--ui-line-emphasis);
+  }
+  /* The last row of a level: one solid `└` from the row's top into it. */
+  :root[data-theme="cartoon"]
+    .ui-tree
+    [data-depth][data-last="true"]:not([data-branch], [data-depth="0"])::before {
+    bottom: auto;
+    height: var(--_tree-elbow);
+    border-inline-start-style: solid;
+  }
+  /* A branch carries its parent's guide on past the rows it holds. */
+  :root[data-theme="cartoon"]
+    .ui-tree
+    [data-branch]:not([data-depth="0"], [data-depth="1"])::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--_tree-step) * (var(--_depth) - 2) + var(--_tree-mark) - 0.5px);
+    border-inline-start: 1px dashed var(--ui-line-emphasis);
+    pointer-events: none;
+  }
+  :root[data-theme="cartoon"] .ui-tree [data-last="true"] + [data-branch]::before {
+    content: none;
+  }
+}

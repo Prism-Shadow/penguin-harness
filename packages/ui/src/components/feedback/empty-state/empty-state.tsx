@@ -11,13 +11,22 @@
  * It carries the `ui-empty` hook: the frame names its form (`data-form="page" | "slot"`) and its
  * parts their slots (`art`, `title`, `description`, `action`), so a theme can dress an empty state
  * as a whole. The page form holds a small piece of art above the title, drawn in every style at
- * once (the line set's drawing here; a theme adds its own beside it), which theme.css hides: no
- * theme shows art until its own file says so, and the art never says what the words do not.
+ * once — the line set's open folder, and a doodle, a pencil squiggle looped once and trailing
+ * off — which theme.css hides: no theme shows art until its own file says so (Doodle shows the
+ * doodle), and the art never says what the words do not.
  */
 import type { ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
+
+/**
+ * The doodle: one pencil stroke on a 24px grid — a wavy line that loops once in the middle and
+ * runs out in a short tail, the scribble a pencil leaves in a margin. Not a letter or an icon: a
+ * ring read as "refresh", a coil as handwriting.
+ */
+const DOODLE =
+  "M2 13C4 10.5 6 10.5 7.6 12.4C9 14 10.6 15.6 12.6 14.6C14.8 13.4 14.4 9.6 12.2 9.6C10 9.6 9.8 13.6 12.8 14.6C15.4 15.4 17.4 11.6 19.4 11.4C20.6 11.3 21.4 12 22 12.8";
 
 export function EmptyState({
   title,
@@ -45,6 +54,15 @@ export function EmptyState({
           <span data-set="line" className="flex">
             <GlyphIcon d={ICONS.folderOpen} size={ICON_SIZE.sectionMark} decor="empty" />
           </span>
+          <svg data-set="doodle" width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path
+              d={DOODLE}
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
       )}
       <p

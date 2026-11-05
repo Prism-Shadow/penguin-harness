@@ -31,7 +31,7 @@ describe("EmptyState", () => {
     expect(html).toContain('<button type="button">Create</button>');
   });
 
-  it("names its form and its parts, and holds the page form's art in the line set", () => {
+  it("names its form and its parts, and draws the page form's art in the line set and as a doodle", () => {
     const page = renderStatic(
       createElement(EmptyState, {
         title: "Empty",
@@ -40,7 +40,10 @@ describe("EmptyState", () => {
       }),
     );
     expect(page).toMatch(/^<div data-form="page" class="ui-empty /);
-    expect(page).toMatch(/<div data-slot="art" aria-hidden="true"[^>]*><span data-set="line"/);
+    // One drawing per style, each a direct child of the slot, so a theme shows its own.
+    expect(page).toMatch(
+      /<div data-slot="art" aria-hidden="true"[^>]*><span data-set="line"[^>]*>.*?<\/span><svg data-set="doodle"[^>]*><path [^>]*><\/path><\/svg><\/div>/,
+    );
     expect(page).toContain('<p data-slot="title"');
     expect(page).toContain('<p data-slot="description"');
     expect(page).toContain('<div data-slot="action"');

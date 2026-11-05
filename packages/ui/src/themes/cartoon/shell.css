@@ -1,0 +1,98 @@
+/**
+ * Doodle's app window (`themes/cartoon.css` imports this after the line and the marks): the
+ * navigation column is the pad a step darker than the paper, ruled off from the page by a pencil
+ * line, and the sidebar it holds is dressed in pencil. The same sidebar on a phone sits in a drawer
+ * (the panel after a drawer's scrim, outside the column), and every mark here reaches it there.
+ *
+ * - The column's rule is the pencil rule (`--_rule-pencil-v`) repeated down the column's right
+ *   edge in place of its 1px border, so it wavers like a ruled line; the account row's rule at
+ *   the sidebar's foot (the block right after its scroll area) is the same pencil, drawn across.
+ * - The selected row on the column — the highlighter band across it, the blue pencil bracket in
+ *   its margin — is `run.css`'s, which reads where the reader is beside what is running. In the
+ *   drawer the row is outside the column, so it is marked here the same way: the band on the
+ *   row's `::before`, under its words (the row isolates itself), the bracket on its `::after` in
+ *   the margin, and the open conversation's wash, which sits on the row around its button,
+ *   cleared.
+ * - New chat, the one entry pinned above the list (the block right before the scroll area), is
+ *   the one button on the column, drawn in a dashed pencil box (`--_stroke-control-dashed`, laid
+ *   with `round`) on its own border, taken out of its padding so nothing moves; on the start page
+ *   it is also the selected row, and the band and bracket sit inside and beside the box.
+ * - The list's group label (「工作区」, an eyebrow) is followed by a short pencil rule, the way a
+ *   section is named in a ruled notebook.
+ *
+ * Nothing here moves: the marks are images, laid once; hover keeps the column's ink wash.
+ */
+@layer ui-theme {
+  @media (forced-colors: none) {
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] {
+      border-right-color: transparent;
+      background-image: var(--_rule-pencil-v);
+      background-repeat: repeat-y;
+      background-position: right top;
+      background-origin: border-box;
+    }
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], .ui-scrim + *)
+      [data-find-region]
+      + div {
+      border-top-color: transparent;
+      background-image: var(--_rule-pencil-h);
+      background-repeat: repeat-x;
+      background-position: left top;
+      background-origin: border-box;
+    }
+
+    :root[data-theme="cartoon"] .ui-scrim + * [aria-current="page"],
+    :root[data-theme="cartoon"] .ui-scrim + * li > :has(> [aria-current="page"]) {
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-scrim + * [aria-current="page"] {
+      position: relative;
+      isolation: isolate;
+    }
+    :root[data-theme="cartoon"] .ui-scrim + * [aria-current="page"]::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 0 12px;
+      border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+    }
+    :root[data-theme="cartoon"] .ui-scrim + * [aria-current="page"]::after {
+      content: "";
+      position: absolute;
+      inset-block: 3px;
+      inset-inline-start: -8px;
+      inline-size: 8px;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 8px 0;
+      border-image: var(--_mark-bracket) 8 0 fill / 8px 0 / 0 stretch;
+    }
+
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], .ui-scrim + *)
+      div:has(+ [data-find-region])
+      button {
+      border: 1px solid transparent;
+      padding: calc(0.375rem - 1px) calc(0.625rem - 1px);
+      background-clip: padding-box;
+      border-image: var(--_stroke-control-dashed) 9 / 9px / 0 round;
+    }
+
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], .ui-scrim + *)
+      .ui-eyebrow::after {
+      content: "";
+      display: inline-block;
+      vertical-align: middle;
+      width: 1.75rem;
+      height: 4px;
+      margin-inline-start: 0.5rem;
+      background-image: var(--_rule-pencil-h);
+      background-repeat: repeat-x;
+    }
+  }
+}
