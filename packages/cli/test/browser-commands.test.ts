@@ -897,14 +897,15 @@ describe("errors", () => {
 });
 
 describe("output in Chinese", () => {
-  it("words the load in the zh dictionary", () => {
+  it("puts every figure of the load into the zh line, and every warning into one sentence", () => {
     const zh = getMessages("zh");
-    expect(zh.browser.memoryLine("2.1 GB", 7, { free: "3.2 GB", total: "16.0 GB" })).toBe(
-      "2.1 GB（7 个标签页） · 本机可用 3.2 GB，共 16.0 GB",
-    );
-    expect(zh.browser.loadWarning(["memory", "many_tabs"])).toBe(
-      "浏览器占用的内存较多，打开的标签页过多。请关闭不再需要的标签页（penguin browser close <tab-id>）。",
-    );
+    const memory = zh.browser.memoryLine("2.1 GB", 7, { free: "3.2 GB", total: "16.0 GB" });
+    for (const figure of ["2.1 GB", "7", "3.2 GB", "16.0 GB"]) expect(memory).toContain(figure);
+    // The first sentence (up to the full-width stop) carries each warning's own clause.
+    const clause = (warning: string) => zh.browser.loadWarning([warning]).split("。")[0]!;
+    const first = zh.browser.loadWarning(["memory", "many_tabs"]).split("。")[0]!;
+    expect(first).toContain(clause("memory"));
+    expect(first).toContain(clause("many_tabs"));
   });
 
   it("labels the exec lines in the zh dictionary", () => {

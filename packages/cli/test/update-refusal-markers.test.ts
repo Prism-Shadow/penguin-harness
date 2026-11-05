@@ -1,59 +1,41 @@
 /**
- * Drift guard for the server's self-update classifier.
+ * The server's self-update classifier, as the CLI's refusals meet it.
  *
- * POST /api/version/update (packages/server/src/http/routes/version.ts) tells a refusal
- * ("unsupported") apart from a successful run by matching `penguin update` output against
- * REFUSAL_MARKERS — five English fragments duplicated from this package's i18n catalog.
- * The server cannot import the CLI (the dependency runs the other way), so the fragments
- * are hardcoded here too, on purpose: editing a refusal message without updating
- * REFUSAL_MARKERS would silently misclassify refusals as "updated", and this test turns
- * that drift into a loud failure at edit time. If it fails, change the marker in
- * packages/server/src/http/routes/version.ts REFUSAL_MARKERS together with the string
- * (or keep the fragment intact in the new wording).
+ * POST /api/version/update reads a clean `penguin update` exit as a refusal ("unsupported")
+ * when its output carries one of the server's UPDATE_REFUSAL_MARKERS, and as "updated"
+ * otherwise. The server cannot import the CLI, so the markers are English fragments of the
+ * CLI's refusal copy, read here from the server's own contract:
+ *
+ * - Given every refusal the server can see (it always runs with `--yes`), the English message
+ *   carries one of the server's markers, so the server reports it as unsupported.
+ * - Every marker the server matches still occurs in one of those messages.
  */
+import { UPDATE_REFUSAL_MARKERS } from "@prismshadow/penguin-server/api";
 import { describe, expect, it } from "vitest";
 import { getMessages } from "../src/i18n.js";
 
 const en = getMessages("en").update;
 
-/**
- * Keep in sync with REFUSAL_MARKERS in packages/server/src/http/routes/version.ts —
- * one marker per refusal message, paired with the en output that must contain it.
- * (`needsYes` / `cancelled` are not refusals the server can see: it always runs with
- * `--yes`.) The argument values are arbitrary; markers must not depend on them.
- */
-const MARKERS: ReadonlyArray<{ marker: string; name: string; message: string }> = [
-  {
-    marker: "runs from a source checkout",
-    name: "sourceCheckout",
-    message: en.sourceCheckout(),
-  },
-  {
-    marker: "Cannot tell how this penguin was installed",
-    name: "unknownInstall",
-    message: en.unknownInstall("/opt/penguin/cli.js"),
-  },
-  {
-    marker: "could not be identified",
-    name: "npmUnknownManager",
-    message: en.npmUnknownManager("/usr/lib/node_modules", "1.2.3"),
-  },
-  {
-    marker: "does not run on Windows",
-    name: "windowsUnsupported",
-    message: en.windowsUnsupported(),
-  },
-  {
-    marker: "cannot run your package manager for you",
-    name: "windowsGlobalInstall",
-    message: en.windowsGlobalInstall("npm install -g @prismshadow/penguin-cli@1.2.3"),
-  },
-];
+/** The refusals a server-run `penguin update --yes` can print; the argument values are arbitrary. */
+const REFUSALS: Record<string, string> = {
+  sourceCheckout: en.sourceCheckout(),
+  unknownInstall: en.unknownInstall("/opt/penguin/cli.js"),
+  npmUnknownManager: en.npmUnknownManager("/usr/lib/node_modules", "1.2.3"),
+  windowsUnsupported: en.windowsUnsupported(),
+  windowsGlobalInstall: en.windowsGlobalInstall("npm install -g @prismshadow/penguin-cli@1.2.3"),
+};
 
-describe("update refusal markers (server classifier contract)", () => {
-  for (const { marker, name, message } of MARKERS) {
-    it(`en update.${name} still contains its server-side marker`, () => {
-      expect(message).toContain(marker);
-    });
-  }
+describe("update refusals and the server's classifier", () => {
+  it.each(Object.entries(REFUSALS))("update.%s reads as a refusal to the server", (_name, text) => {
+    expect(UPDATE_REFUSAL_MARKERS.some((marker) => text.includes(marker))).toBe(true);
+  });
+
+  it("matches nothing the refusals no longer say", () => {
+    for (const marker of UPDATE_REFUSAL_MARKERS) {
+      expect(
+        Object.values(REFUSALS).some((text) => text.includes(marker)),
+        marker,
+      ).toBe(true);
+    }
+  });
 });

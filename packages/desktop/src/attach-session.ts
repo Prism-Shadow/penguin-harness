@@ -17,16 +17,15 @@
  *
  * Pure, and free of Electron: the minter is a parameter, so the tests drive every outcome.
  */
+import { SESSION_COOKIE } from "@prismshadow/penguin-server/api";
 import type { MintedVia, MintTokenResult } from "@prismshadow/penguin-server/auth-token";
 import { isAppUrl } from "./util.js";
 
 /**
- * The session cookie's name. Duplicated from the server's SESSION_COOKIE rather than
- * imported: the shell mints through the one server module that deliberately needs no running
- * server, and re-exporting the name from it would drag the HTTP layer the name belongs to
- * into this bundle and the CLI's. A test pins the two values together instead.
+ * The session cookie's name: the server's, from its API contract (a module of types and a few
+ * shared constants, so the HTTP layer stays out of this bundle).
  */
-export const SESSION_COOKIE = "penguin_session";
+export { SESSION_COOKIE };
 
 /**
  * How long a minted session lives: thirty days, which is both what the server gives an

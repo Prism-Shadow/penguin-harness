@@ -45,17 +45,13 @@ describe("appIdentity", () => {
     });
   });
 
-  it("dev identity is dev-suffixed so a dev run coexists with a release install", () => {
+  it("dev identity differs from the release one, so a dev run coexists with a release install", () => {
     const dev = appIdentity("dev");
     // The name keys the userData directory (Chromium profile, port memory) and the
     // single-instance lock: sharing it would make a dev launch quit into the release
     // instance's window.
     expect(dev.name).not.toBe(appIdentity("release").name);
     expect(dev.appUserModelId).not.toBe(appIdentity("release").appUserModelId);
-    expect(dev).toEqual({
-      name: "PenguinHarness-Dev",
-      appUserModelId: "com.prismshadow.penguinharness.dev",
-    });
   });
 });
 

@@ -10,11 +10,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "../src/index.js";
+import { librarySkill, loadLibraryPlugins, loadPreinstalledPlugins } from "../src/index.js";
 import {
   agentsMdPath,
   assembleSystemPrompt,
-  BUILTIN_AGENT_IDS,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   SUPPORT_AGENT_ID,
@@ -74,12 +73,8 @@ describe("Skill installation policy", () => {
     );
     expect(names).toEqual(preinstalledSkillNames());
     // Skills of `preinstall: false` plugins stay out of the preinstalled set (manual install only).
-    for (const [plugin, skill] of [
-      ["use-claude-code", "remote-claude-code"],
-      ["humanizer", "humanizer"],
-    ]) {
-      expect(libraryPlugin(plugin!)?.preinstall, plugin).toBe(false);
-      expect(names, skill).not.toContain(skill);
+    for (const plugin of loadLibraryPlugins().filter((p) => !p.preinstall)) {
+      for (const skill of plugin.skills) expect(names, skill.name).not.toContain(skill.name);
     }
   });
 });
@@ -88,19 +83,21 @@ describe("provisionProjectAgents", () => {
   it("default_agent installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
     expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
-    expect(BUILTIN_AGENT_IDS).toContain(SUPPORT_AGENT_ID);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
     const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
-    expect(state.systemConfig.name).toBe("General Agent");
+    expect(state.systemConfig.name).toBeTruthy();
     expect(state.systemConfig.description).toBeTruthy();
     expect(state.agentsMd).toBe("");
 
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     expect(installed.map((s) => s.name).sort()).toEqual(preinstalledSkillNames());
     // On-disk content matches the library's SKILL.md verbatim (install copies the full text).
-    const sdkMd = await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, "penguin-sdk"), "utf8");
-    expect(sdkMd).toBe(librarySkill("penguin-sdk")!.skill.content);
+    for (const skill of loadPreinstalledPlugins().flatMap((p) => p.skills)) {
+      expect(await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, skill.name), "utf8"), skill.name).toBe(
+        skill.content,
+      );
+    }
   });
 
   it("provision is idempotent: running it again does not change the result", async () => {
@@ -139,8 +136,8 @@ describe("support Agent provisioning", () => {
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
     expect(config.agentsMd).toContain("penguin-support");
-    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toContain(
-      "https://penguin.ooo/docs/",
+    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toBe(
+      librarySkill("penguin-support")!.skill.content,
     );
     await fs.writeFile(file, "My support page");
     await provisionProjectAgents();

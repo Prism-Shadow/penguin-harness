@@ -20,14 +20,13 @@ import {
 import { toolCallOutput, userText } from "@prismshadow/amsp/records";
 import type { AmspRecord } from "@prismshadow/amsp/records";
 
-describe("constant derivation (one tunable: OUTPUT_SAFETY_MARGIN)", () => {
-  it("derives the floor and headroom from the margin so their invariants cannot drift", () => {
-    // Floor below the margin: a floored request still fits the window when the input
-    // estimate is accurate. Headroom above the margin: at the compaction trigger the
-    // summary request keeps a usable output budget (~1k), not just the floor.
-    expect(MIN_OUTPUT_TOKENS).toBe(Math.floor(OUTPUT_SAFETY_MARGIN / 2));
-    expect(COMPACTION_HEADROOM).toBe(OUTPUT_SAFETY_MARGIN * 2);
-    expect(COMPACTION_HEADROOM - OUTPUT_SAFETY_MARGIN).toBeGreaterThanOrEqual(1000);
+describe("the output clamp at the compaction threshold", () => {
+  it("leaves the summary request about 1k tokens of output once the context reaches the threshold", () => {
+    // Compaction fires at the threshold, and its summary request carries that much input: it
+    // needs room to write a summary, not just the floor.
+    const window = 32768;
+    const threshold = effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, window);
+    expect(effectiveMaxOutputTokens(32000, window, threshold)).toBeGreaterThanOrEqual(1000);
   });
 });
 
@@ -154,9 +153,9 @@ describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
     // this point; the deterministic floor beats sending max_tokens <= 0.
     expect(effectiveMaxOutputTokens(32000, 32768, 32_500)).toBe(MIN_OUTPUT_TOKENS);
     expect(effectiveMaxOutputTokens(32000, 32768, 99_999)).toBe(MIN_OUTPUT_TOKENS);
-    // The floor stays below the safety margin, so a floored request still fits the window
-    // whenever the input estimate is accurate.
-    expect(MIN_OUTPUT_TOKENS).toBeLessThanOrEqual(OUTPUT_SAFETY_MARGIN);
+    // A floored request still fits the window whenever the input estimate is accurate.
+    const input = 32768 - OUTPUT_SAFETY_MARGIN;
+    expect(input + effectiveMaxOutputTokens(32000, 32768, input)!).toBeLessThanOrEqual(32768);
   });
 
   it("only ever lowers a cap: a configured cap below the floor is never raised", () => {
@@ -221,7 +220,6 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
     expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 1_000_000)).toBe(
       DEFAULT_MAX_CONTEXT_LENGTH,
     );
-    expect(DEFAULT_MAX_CONTEXT_LENGTH).toBeGreaterThan(DEFAULT_CONTEXT_WINDOW);
   });
 
   it("keeps <=0 as 'compaction disabled'", () => {

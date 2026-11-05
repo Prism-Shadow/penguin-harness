@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,12 +191,35 @@ describe("hostBinding", () => {
 });
 
 describe("packaged layout", () => {
-  it("stages into the first node_modules above the server bundle", () => {
-    expect(NODE_PTY_RELDIR).toEqual(["dist", "node_modules", "node-pty"]);
+  it("stages where a require from the server bundle finds it", () => {
+    // The packaged server is one file at <app>/dist/server.js; Node resolves `node-pty` from it by
+    // walking up to the first node_modules, so the staged copy has to sit there.
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-pty-src-"));
+    const app = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-pty-app-"));
+    try {
+      fakeNodePty(src);
+      fs.writeFileSync(
+        path.join(src, "package.json"),
+        JSON.stringify({ name: "node-pty", main: "lib/index.js" }),
+      );
+      const staged = path.join(app, ...NODE_PTY_RELDIR);
+      stageNodePty(src, staged);
+
+      const fromServer = createRequire(path.join(app, "dist", "server.js"));
+      expect(fs.realpathSync(fromServer.resolve("node-pty"))).toBe(
+        fs.realpathSync(path.join(staged, "lib", "index.js")),
+      );
+    } finally {
+      fs.rmSync(src, { recursive: true, force: true });
+      fs.rmSync(app, { recursive: true, force: true });
+    }
   });
 
   it("is listed in electron-builder's files, which otherwise excludes every node_modules", () => {
     const builderConfig = fs.readFileSync(path.join(pkgDir, "electron-builder.yml"), "utf8");
-    expect(builderConfig).toContain("- dist/node_modules/**/*");
+    // The listing names the staging directory's node_modules, so moving the staging fails here
+    // until the config moves with it.
+    const listing = `- ${NODE_PTY_RELDIR.slice(0, -1).join("/")}/**/*`;
+    expect(builderConfig.split("\n").map((line) => line.trim())).toContain(listing);
   });
 });
