@@ -184,7 +184,7 @@ Once we packaged the experimental rules into an RSI toolkit, DeepSeek-V4.1-Flash
 
 ### 2. Progressive Benchmark Loading
 
-Enterprise benchmarks contain backend services, databases, Docker environments, and grading scripts; bundling all of that data directly inside PenguinHarness would make the system heavy and bloated.
+Many benchmarks—including GDPEVO as well as SWE-bench and Terminal-Bench—contain large amounts of task data, code repositories, Docker environments, and grading scripts; bundling all of that content directly inside PenguinHarness would make the system heavy and bloated.
 
 To solve this, we adopted a progressive loading mechanism: the heavy benchmark data stays in a separate repository, while PenguinHarness ships only lightweight package files that record the experimental rules and data locations. When an experiment starts, the Controller Agent reads those local files, fetches the required data on its own, and organizes the run—keeping PenguinHarness lightweight without sacrificing functionality.
 

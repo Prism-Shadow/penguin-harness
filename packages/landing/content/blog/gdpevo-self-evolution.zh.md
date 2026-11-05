@@ -184,7 +184,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ### 2. Benchmark 渐进式加载
 
-企业级 Benchmark 包含完整的业务后端、数据库、Docker 环境与评分脚本，如果直接打包进 PenguinHarness，会让整个系统变得非常笨重。
+无论是 GDPEVO，还是 SWE-bench、Terminal-Bench 等诸多 Benchmark，往往都包含大量任务数据、代码仓库、Docker 环境与评分脚本，如果直接打包进 PenguinHarness，会让整个系统变得非常笨重。
 
 因此我们采用了类似渐进式加载的机制，将重型任务数据保留在独立的外部仓库中，而在 PenguinHarness 本地只内置轻量的说明文件，用来记录实验规则与数据位置。实验启动时，主控 Agent 先读取本地说明，再自行去外部仓库拉取对应数据并组织实验，这样既让 PenguinHarness 保持轻巧，又不影响实验功能的完整性。
 
