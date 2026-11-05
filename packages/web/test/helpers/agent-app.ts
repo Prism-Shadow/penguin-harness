@@ -34,9 +34,11 @@
  * Every server answers the Agent archive too: the preview of a parts query (`archivePreview`,
  * by default a fixed small one), the zip download under `<agentId>-20261104.zip`, and the import
  * of an uploaded file — read no further than its name — which creates the Agent the `agentId`
- * query names (`imported` without one), answers 409 `agent_exists` for one this server already
- * lists unless `overwrite=1` asks to replace it, and answers 403 for that from a member. The
- * signed-in user owns the Project unless `role` says member.
+ * query names (without one, the id the file records: `archiveAgentId`, `imported` by default),
+ * answers 409 `agent_exists` for one this server already lists unless `overwrite=1` asks to
+ * replace it, and answers 403 for that from a member. The signed-in user owns the Project unless
+ * `role` says member. An Agent's Skill list is what was installed on it (from the library, or
+ * `skills` for the configured Agent from the start).
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -263,6 +265,10 @@ export function agentServer(
     accountHolders?: MessagingAccountHoldersResponse;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
+    /** The Skills the configured Agent carries from the start, on this server. */
+    skills?: string[];
+    /** The Agent id an uploaded file records, which an import without `agentId` takes. */
+    archiveAgentId?: string;
     /** What an archive preview answers for its parts query (by default a fixed small one). */
     archivePreview?: (query: URLSearchParams) => AgentArchivePreview;
     /** What a landed import reports beside its mode and Agent (by default nothing came in). */
@@ -274,6 +280,7 @@ export function agentServer(
   /** Installed Skill names by `<machine or "">/<agent>`. */
   const installs = new Map<string, string[]>();
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  if (options.skills !== undefined) installs.set(installKey(null, AGENT_ID), [...options.skills]);
   const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
@@ -570,7 +577,7 @@ export function agentServer(
       if (refusedWrite !== null) return refusedWrite;
     }
     if (path === `/api/projects/${PROJECT_ID}/agents/import` && method === "POST") {
-      const agentId = request.query.get("agentId") || "imported";
+      const agentId = request.query.get("agentId") || (options.archiveAgentId ?? "imported");
       const overwrite = request.query.get("overwrite") === "1";
       if (overwrite && options.role === "member") return apiError(403, "forbidden");
       const exists =
@@ -629,8 +636,10 @@ export function agentServer(
             },
             traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
             totalBytes: 4096,
+            entries: 5,
             vaultKeys: [],
             redacted: [],
+            notes: [],
           },
         );
       }
@@ -746,7 +755,13 @@ export function agentServer(
       );
       return new Response(null, { status: 204 });
     }
-    if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
+    const skillsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/skills$/.exec(path);
+    if (skillsPath !== null && method === "GET") {
+      const names = installs.get(installKey(request.machine, decodeURIComponent(skillsPath[1]!)));
+      return json({
+        skills: (names ?? []).map((name) => ({ name, description: "", version: "" })),
+      });
+    }
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
     if (path === `${AGENT_PATH}/memory`) {
       return json({

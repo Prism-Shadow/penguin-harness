@@ -2,10 +2,11 @@
  * What an Agent import says when it lands, as one toast: created or replaced (with the State
  * versions), then what came in — only the parts that brought something — the conversations it
  * skipped, the vault keys and blanked MCP values the user has to fill in, and the server's notes
- * (a built-in tool this install lacks, say).
+ * (a built-in tool this install lacks, say) in the reader's language (archive-notes.ts).
  */
 import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { archiveNoteText } from "./archive-notes";
 
 export function importReportText(res: AgentArchiveImportResponse, name: string): string {
   const join = S.agent.importReportJoin;
@@ -27,7 +28,7 @@ export function importReportText(res: AgentArchiveImportResponse, name: string):
     brought.length > 0 ? `${lead}${join.lead}${brought.join(join.list)}` : lead,
     res.skippedTraces.length > 0 ? S.agent.importSkipped(res.skippedTraces.length) : null,
     res.toFill.length > 0 ? S.agent.importToFill(res.toFill.join(join.list)) : null,
-    ...res.notes,
+    ...res.notes.map(archiveNoteText),
   ].filter((clause): clause is string => clause !== null);
   return clauses.join(join.clause);
 }

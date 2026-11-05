@@ -1933,8 +1933,25 @@ export const en: Strings = {
       }`,
     exportOverLimit: (limit: string): string =>
       `Over ${limit} uncompressed: the zip may be too large to import again`,
-    exportSkipped: (n: number, ids: string): string =>
-      `${n === 1 ? "1 conversation has a file" : `${n} conversations have files`} too large to export and ${n === 1 ? "is" : "are"} left out: ${ids}`,
+    exportSkipped: (n: number): string =>
+      `${n === 1 ? "1 conversation has a file" : `${n} conversations have files`} larger than an import takes, and ${n === 1 ? "is" : "are"} left out`,
+    /** The preview's refusal: the selection is past what an import accepts, so the export is refused too. */
+    exportRefused: {
+      entries: (limit: number): string =>
+        `More than ${limit.toLocaleString("en-US")} entries, more than an import takes: this cannot be exported`,
+      inflated: (limit: string): string =>
+        `Over ${limit} uncompressed, more than an import takes: this cannot be exported`,
+      entry: (file: string, limit: string): string =>
+        `${file} is over ${limit}, more than an import takes: this cannot be exported`,
+    },
+    /** The server's archive notes by code (archive-notes.ts); an unknown code shows its own sentence. */
+    archiveNotes: {
+      unknownTool: (tool: string): string =>
+        `This install has no built-in tool ${tool}; it was not enabled`,
+      noKnownTools:
+        "None of the definition's built-in tools exist here; the default toolset was kept",
+      linkSkipped: (part: string): string => `The ${part} directory is a link and is left out`,
+    },
     exportAction: "Export",
     exporting: "Exporting…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's "Replace from file…". */
@@ -1956,7 +1973,17 @@ export const en: Strings = {
     migratePath: "Path",
     /** The field's label for "Other", where it is required: there is no default directory to read. */
     migratePathOther: "Path or description",
-    migratePathHint: (home: string): string => `Empty reads ${home}`,
+    /**
+     * The default agent lacks the agent-porting Skill (porting-skill-gate.ts): the line, the
+     * install of the plugin that ships it (installing again is the update), and why an install
+     * that landed still left it missing.
+     */
+    migrateSkillMissing: (agent: string): string =>
+      `${agent} does not have the agent-porting skill, which the migration uses`,
+    migrateSkillInstall: "Install the skill-porting plugin",
+    migrateSkillInstalling: "Installing…",
+    migrateSkillNotInPlugin:
+      "The installed skill-porting plugin has no agent-porting skill: this server's plugin library predates it. Update PenguinHarness first.",
     /** Stands in the prompt preview for "Other"'s source until something is typed. */
     migratePathToken: "<path or description>",
     /**
@@ -1970,6 +1997,7 @@ export const en: Strings = {
           ? `Migrate this source into a new PenguinHarness agent: ${source}`
           : `Migrate the ${framework} setup into a new PenguinHarness agent. Source: ${source}`,
         "Use the agent-porting skill:",
+        "- If you do not have the agent-porting skill, stop and tell me so; do not migrate without it.",
         "- Read the source in full: instruction files, skills, MCP servers, hooks, subagents and commands. Read only; change nothing in the source.",
         "- Never copy the value of a key, token or password; note only the names that need filling in.",
         "- Write the new agent in a scratch folder, in the agent zip layout the skill describes (manifest.json and agent_state/).",
@@ -1981,10 +2009,16 @@ export const en: Strings = {
       "Creates a new agent from an exported zip. The conversations in it are imported too; one this server already has is skipped.",
     replaceFileInfo:
       "Replaces this agent's Agent State from an exported zip: whatever the file leaves out keeps its current contents, its conversations, vault and API keys stay, and a backup snapshot is written first.",
-    importFileHint: ".zip, or an older .tar.gz package until 1.0",
+    importFileHint: (limit: string): string =>
+      `.zip, up to ${limit}, or an older .tar.gz package until 1.0`,
+    importTooLarge: (limit: string): string =>
+      `The file is over ${limit}, more than an import takes`,
     importPick: "Choose a file",
     importClearFile: "Remove the chosen file",
     importIdHint: "Filled in from the file name; empty uses the id the file records",
+    /** A `.tar.gz` package records no id: the field is required for one. */
+    importIdHintTar:
+      "Filled in from the file name; an older .tar.gz package records no id, so one is required",
     importAction: "Import",
     importing: "Importing…",
     /** A taken id (409 agent_exists), inline under the id: the two ways on — another id, or (owners) overwrite. */

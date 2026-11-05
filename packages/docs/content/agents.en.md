@@ -79,10 +79,12 @@ On the **Agents** page, select **Import agent**. The dialog offers two ways in: 
 1. Under **Migrate from another framework**, in **Source framework**, select **Claude Code**, **Codex**, **DeepSeek Harness**, **Qoder**, **Qwen Code**, **WorkBuddy** or **Other**.
 2. Optional: in **Path**, enter where the source's setup lives. Left empty, the framework's user directory is read: `~/.claude`, `~/.codex`, `~/.dsh`, `~/.qoder`, `~/.qwen` or `~/.workbuddy-ai`. For **Other**, the field is **Path or description**, and it is required.
 3. Optional: expand **Full prompt** to read the instructions, or copy them.
-4. Select **Open a new chat**. A new conversation with the Project's default agent opens with the prompt filled in. Nothing is sent yet.
+4. Select **Open a new chat**. A new conversation with the Project's default agent opens with the prompt filled in. Nothing is sent yet. If you picked a file under **Import a file**, you are asked first, since the file does not go with the chat.
 5. Review the prompt and send it.
 
-The prompt tells the agent to use the `agent-porting` Skill and to:
+The migration needs the `agent-porting` Skill on the Project's default agent. An agent created before this version does not have it: the section then says so, and **Open a new chat** stays off until you select **Install the skill-porting plugin**, which installs the plugin on that agent, or updates the copy it already has.
+
+The prompt tells the agent to use the `agent-porting` Skill, to stop and say so if it does not have it, and to:
 
 - read the source in full, without changing anything in it;
 - never copy the value of a key, token or password, only note the names to fill in;
@@ -95,7 +97,7 @@ The prompt tells the agent to use the `agent-porting` Skill and to:
 
 - A zip exported from PenguinHarness, up to 100 MB; to make one, see [Export an agent](#export-an-agent). Until 1.0, an Agent State package (`.tar.gz`) exported by an earlier version is accepted too.
 
-1. Under **Import a file**, select **Choose a file** and pick the file. **Agent id** is filled in from the file name: `<id>-<yyyymmdd>.zip` and `<id>-v<n>.tar.gz` give `<id>`. You can change it; left empty, the id recorded in the file is used.
+1. Under **Import a file**, select **Choose a file** and pick the file. **Agent id** is filled in from the file name: `<id>-<yyyymmdd>.zip` and `<id>-v<n>.tar.gz` give `<id>`. You can change it; left empty, the id recorded in the zip is used. An older `.tar.gz` package records no id, so for one the field is required. A file over 100 MB is refused before anything is sent.
 2. Select **Import**.
 
 The new agent has the file's configuration, name and Agent State version, the parts the file carries, and the conversations the export included. A conversation that already exists in this installation is not imported twice: it is listed as skipped. A message then lists what came in, the conversations that were skipped, and what you still have to set: the vault keys the agent expects, and any MCP credential the export left blank, since secret values never travel in a zip.
@@ -110,7 +112,7 @@ Select the export button on the agent's card, or **Export…** in the **Agent St
 2. Under **Conversations**, select **None**, **Latest N** (20 unless you change it, up to 500), or **Date range** and pick the first and last day.
 3. Select **Export**. The zip is saved as `<agent-id>-<yyyymmdd>.zip`.
 
-The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, and names the conversations left out because one of their files is too large.
+The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, says how many conversations are left out because one of their files is too large, and names a part left out because its folder is a link. A selection past what an import accepts at all (too many files, too large uncompressed, or one file too large) cannot be exported: the line says why, and **Export** stays off until you choose less.
 
 A zip never carries the vault's values, only its key names. In MCP server settings, credentials are left blank — environment variables and headers that look like them, OAuth secrets, and passwords and keys in a URL or on the command line — unless they are written as `${KEY}` vault references. In the conversations it carries, the agent's vault values are replaced by `[vault:<KEY>]`. The choices are not remembered: the dialog opens with the defaults every time.
 

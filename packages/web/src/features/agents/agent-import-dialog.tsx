@@ -6,12 +6,16 @@
  * 1. **Migrate from another framework.** The framework, a path — its user directory while nothing
  *    is typed, required for "Other" — the full prompt in the fold, and "Open a new chat": the
  *    prompt lands in a new conversation with the Project's default agent (the AI bridge), where
- *    the `agent-porting` Skill does the mapping. Nothing is sent; sending stays the user's.
- * 2. **Import a file.** A zip export (or, until 1.0, an older `.tar.gz` package), the Agent id
- *    its file name suggests (editable; empty takes the id the file records), and Import, which
- *    uploads the file as it is (archive-upload.ts). A taken id — 409 `agent_exists` — shows in
- *    place, with "Use another id", which focuses the id, and for the Project owner "Overwrite the
- *    existing agent", which asks once (danger) and sends the file again with `overwrite`.
+ *    the `agent-porting` Skill does the mapping. Nothing is sent; sending stays the user's. While
+ *    that agent lacks the Skill, the section says so and offers to install the plugin that ships
+ *    it, and the chat waits (porting-skill-gate.ts).
+ * 2. **Import a file.** A zip export (or, until 1.0, an older `.tar.gz` package) no larger than an
+ *    import takes — a larger one is refused before anything is sent — the Agent id its file name
+ *    suggests (editable; empty takes the id a zip records, while a `.tar.gz`, which records none,
+ *    needs one), and Import, which uploads the file as it is (archive-upload.ts). A taken id —
+ *    409 `agent_exists` — shows in place, with "Use another id", which focuses the id, and for the
+ *    Project owner "Overwrite the existing agent", which asks once (danger) and sends the file
+ *    again with `overwrite`.
  *
  * Replace mode drops the first section and the id: the file replaces this Agent's State, and
  * the primary is "Replace", behind the same one confirmation. A landed import says what came in,
@@ -20,15 +24,18 @@
  *
  * A record dialog under the settings commit model: what was typed or picked is its draft, so
  * closing with any of it asks first, and nothing closes it while an upload is in flight. Opening
- * the chat hands the source over, so the draft is forgotten before the page moves on.
+ * the chat hands the migration's source over, so that part is forgotten before the page moves on;
+ * a picked file goes nowhere with it, so the chat asks first while one is picked.
  */
 import { useId, useState } from "react";
 import type { ChangeEvent } from "react";
+import { AGENT_ARCHIVE_MAX_UPLOAD_BYTES } from "@prismshadow/penguin-server/api";
 import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
   CloseIcon,
   ConfirmModal,
+  FieldError,
   FieldHint,
   HiddenFileInput,
   InfoPopover,
@@ -44,15 +51,22 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { formatBytes } from "../../lib/format";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
+import {
+  ARCHIVE_ACCEPT,
+  ARCHIVE_BUTTON_CLASS,
+  agentIdFromArchiveName,
+  isTarPackage,
+} from "./archive-file";
 import { uploadArchive } from "./archive-upload";
 import { MIGRATION_SOURCES, SOURCE_HOME, migrationPrompt } from "./agent-migration";
 import type { MigrationSource } from "./agent-migration";
 import { importReportText } from "./import-report";
+import { PORTING_PLUGIN, usePortingSkill } from "./porting-skill-gate";
 
 export interface AgentImportDialogProps {
   projectId: string;
@@ -109,19 +123,44 @@ export function AgentImportDialog({
   const idFieldId = useId();
 
   const id = agentId.trim();
-  const idValid = id === "" || SEMANTIC_ID_PATTERN.test(id);
+  /** A `.tar.gz` records no id: the import needs one named for it. */
+  const idRequired = file !== null && isTarPackage(file.name);
+  const idValid = id === "" ? !idRequired : SEMANTIC_ID_PATTERN.test(id);
+  /** More than an import takes: refused here, before a byte of it is sent. */
+  const tooLarge = file !== null && file.size > AGENT_ARCHIVE_MAX_UPLOAD_BYTES;
+  const limit = formatBytes(AGENT_ARCHIVE_MAX_UPLOAD_BYTES);
   /** Who the migration chat goes to; null in a Project with no Agent, which disables it. */
   const chatAgent = pickDefaultAgent(agents);
+  /** Whether that Agent carries the Skill the prompt names (asked only where the section shows). */
+  const porting = usePortingSkill(
+    projectId,
+    replace === undefined ? (chatAgent?.agentId ?? null) : null,
+  );
   const prompt = migrationPrompt(framework, path, projectId);
   const home = SOURCE_HOME[framework];
   /** The Agent an overwrite replaces: this one in replace mode, else the one the 409 named. */
   const target = replace?.agentId ?? taken;
 
-  const openChat = () => {
+  /** Over to the chat: the source goes with it, so nothing typed is left to lose. */
+  const goToChat = () => {
     if (prompt === null || chatAgent === null) return;
     discardUnsaved(form.scope);
     openAiChat({ agentId: chatAgent.agentId, text: prompt });
     onClose();
+  };
+  /** The same, through the guard: a picked file does not go with the chat, so it asks first. */
+  const requestChat = useGuardedClose(goToChat, form.scope, { locked: uploading });
+  const openChat = () => (file !== null ? requestChat() : goToChat());
+
+  const installPorting = async () => {
+    if (chatAgent === null) return;
+    if (await porting.install()) {
+      toastSuccess(
+        `${S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent))}${S.agent.takesEffectSuffix}`,
+      );
+    }
+    // The Agent's Skill count moved; its card reads the list.
+    void reloadAgents().catch(() => {});
   };
 
   /** A picked file suggests the id from its name (the export's `<id>-<yyyymmdd>.zip`). */
@@ -141,7 +180,7 @@ export function AgentImportDialog({
    * button. Landed, the dialog is done with: it says what came in and hands over.
    */
   const send = async (overwrite: boolean, as: string | null) => {
-    if (file === null || uploading) return;
+    if (file === null || tooLarge || uploading) return;
     setUploading(true);
     setRefusal(null);
     try {
@@ -223,16 +262,41 @@ export function AgentImportDialog({
                   autoComplete="off"
                   spellCheck={false}
                   onChange={(e) => form.patch({ path: e.target.value })}
-                  {...(home !== null ? { hint: S.agent.migratePathHint(home) } : {})}
                 />
                 <PromptFold
                   text={prompt ?? S.agent.migratePrompt(null, S.agent.migratePathToken, projectId)}
                 />
+                {chatAgent !== null &&
+                  (porting.status === "missing" || porting.status === "installing") && (
+                    <div role="status" className="space-y-1 text-xs">
+                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className={toneInk.attention}>
+                          {S.agent.migrateSkillMissing(agentDisplayName(chatAgent))}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="link"
+                          disabled={porting.status === "installing"}
+                          aria-busy={porting.status === "installing"}
+                          onClick={() => void installPorting()}
+                        >
+                          {porting.status === "installing"
+                            ? S.agent.migrateSkillInstalling
+                            : S.agent.migrateSkillInstall}
+                        </Button>
+                      </p>
+                      {porting.installError !== null && (
+                        <p className={toneInk.danger}>{porting.installError}</p>
+                      )}
+                    </div>
+                  )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={prompt === null || chatAgent === null || uploading}
+                    disabled={
+                      prompt === null || chatAgent === null || porting.holdsChat || uploading
+                    }
                     onClick={openChat}
                   >
                     {S.skills.importOpenChat}
@@ -287,7 +351,11 @@ export function AgentImportDialog({
                     </button>
                   </div>
                 )}
-                <FieldHint>{S.agent.importFileHint}</FieldHint>
+                {tooLarge ? (
+                  <FieldError>{S.agent.importTooLarge(limit)}</FieldError>
+                ) : (
+                  <FieldHint>{S.agent.importFileHint(limit)}</FieldHint>
+                )}
               </div>
               {replace === undefined && file !== null && (
                 <div>
@@ -295,6 +363,7 @@ export function AgentImportDialog({
                     id={idFieldId}
                     size="sm"
                     label={S.agent.id}
+                    required={idRequired}
                     value={agentId}
                     autoComplete="off"
                     spellCheck={false}
@@ -303,7 +372,9 @@ export function AgentImportDialog({
                       form.patch({ agentId: e.target.value });
                       setTaken(null);
                     }}
-                    {...(idValid ? { hint: S.agent.importIdHint } : { error: S.agent.idHint })}
+                    {...(idValid
+                      ? { hint: idRequired ? S.agent.importIdHintTar : S.agent.importIdHint }
+                      : { error: id === "" ? S.agent.importIdHintTar : S.agent.idHint })}
                   />
                   {taken !== null && (
                     <p
@@ -327,7 +398,7 @@ export function AgentImportDialog({
                 <Button
                   size="sm"
                   variant="primary"
-                  disabled={file === null || !idValid || uploading}
+                  disabled={file === null || tooLarge || !idValid || uploading}
                   aria-busy={uploading}
                   onClick={() =>
                     replace === undefined ? void send(false, id) : setConfirming(true)
