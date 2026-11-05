@@ -1,8 +1,8 @@
 /**
  * Lightbox and ZoomableImage (src/components/overlays/lightbox/lightbox.tsx): the thumbnail keeps
  * the caller's styling and mounts nothing else until clicked; the lightbox names its close glyph in
- * the interface's words, dims the page through the scrim hook, and closes on Escape only through
- * the shared layer stack, so a lightbox opened inside a dialog closes alone.
+ * the interface's words and dims the page through the scrim hook. Escape through the shared layer
+ * stack (a layer above it keeps it open) is overlay-layers.dom.test.ts.
  */
 import { createElement } from "react";
 import type { ReactNode } from "react";
@@ -62,7 +62,7 @@ describe("Lightbox", () => {
     expect(lightbox("Close the image")).toContain('aria-label="Close the image"');
   });
 
-  it("dims the page through the scrim, and paints in tokens", () => {
+  it("dims the page through the scrim hook", () => {
     expect(classTokens(lightbox())).toContain("ui-scrim");
   });
 });

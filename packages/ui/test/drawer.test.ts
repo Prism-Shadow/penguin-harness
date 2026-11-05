@@ -1,8 +1,8 @@
 /**
  * Drawer and Sheet (src/components/overlays/drawer/): the side panel and the spring sheet. Both
  * render in place (no portal), dim the page through the scrim hook, name their close cross in the
- * interface's words, and close on Escape only through the shared layer stack, so a dialog opened
- * from inside one takes the first Escape alone.
+ * interface's words. Escape through the shared layer stack (a menu opened inside one takes the
+ * first Escape alone) is overlay-layers.dom.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -31,7 +31,7 @@ describe("Drawer", () => {
     );
   });
 
-  it("dims the page through the scrim, and paints its panel in tokens", () => {
+  it("dims the page through the scrim hook", () => {
     expect(classTokens(drawer())).toContain("ui-scrim");
   });
 
@@ -74,7 +74,7 @@ describe("Sheet", () => {
     expect(html).toContain('aria-label="Close"');
   });
 
-  it("dims the page through the scrim, and lifts its panel on the drawer shadow token", () => {
+  it("dims the page through the scrim hook, as the Drawer does", () => {
     expect(classTokens(sheet())).toContain("ui-scrim");
   });
 });

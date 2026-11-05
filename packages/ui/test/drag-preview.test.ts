@@ -3,7 +3,7 @@
  * (src/components/overlays/drag-preview/drag-preview.ts): a copy of the row in an opaque chip
  * painted in tokens, at the row's width, offset by the pointer's place in the row, gone a task
  * later. The suite has no DOM, so the helper runs against a few stand-in nodes that record what
- * it does; the rows that drag are held to calling it against their source.
+ * it does; that a row hands it over for its own drag only is disclosure-drag.dom.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

@@ -6,7 +6,8 @@
  *
  * Where it may appear — only beside a title — is the web app's `disclosure-anchor.test.ts`; the
  * field layout it forces is this package's `field.test.ts`; the hover, pin and touch rules are
- * `hover-disclosure.test.ts`.
+ * `hover-disclosure.test.ts`, and the trigger opening on a resting mouse or a click, never on
+ * focus alone, is disclosure-drag.dom.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";

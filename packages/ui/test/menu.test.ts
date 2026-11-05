@@ -80,9 +80,10 @@ describe("MenuItem", () => {
     expect(node).not.toContain("ui-icon-decor");
   });
 
-  it("keeps the check's slot on a row that is not the current choice", () => {
-    const off = render({ label: "B", checked: false });
-    expect(off).toMatch(/<span aria-hidden="true" class="[^"]*w-3[^"]*"><\/span><\/button>$/);
+  it("keeps the check's slot on a row that is not the current choice, and none on an action row", () => {
+    const slot = /<span aria-hidden="true"[^>]*><\/span><\/button>$/;
+    expect(render({ label: "B", checked: false })).toMatch(slot);
+    expect(render({ label: "C" })).not.toMatch(slot);
   });
 
   it("sets a description under the label and a note at the row's end", () => {

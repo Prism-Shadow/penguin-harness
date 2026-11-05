@@ -3,11 +3,11 @@
  * built on it (src/components/forms/select/form-picker.tsx).
  *
  * The panel mounts only while open, and its portal mode reaches for `document.body`, which a
- * static render has none of; the in-flow panel renders, and what the portal path must keep doing
- * (share the dialogs' focusable set and Escape stack, and focus its first item once placed) is
- * pinned against the source. How the app's
- * menus consult the scroll rule is `context-menu.test.ts`; that dialogs and menus share one
- * focusable selector is the web app's `modal-focus.test.ts`.
+ * static render has none of; the in-flow panel renders here. On a real page,
+ * overlay-layers.dom.test.ts holds its Escape layer (a menu inside a Drawer takes the first
+ * Escape alone) and its wait for placement before it focuses the first item; the anchored
+ * panel's scroll rule is context-menu.dom.test.ts. That dialogs and menus share one focusable
+ * selector is the web app's `modal-focus.test.ts`.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
