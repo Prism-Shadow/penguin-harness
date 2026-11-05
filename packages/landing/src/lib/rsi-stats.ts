@@ -3,13 +3,12 @@
  * (their homepages), the self-evolution toolkits (the plugins of the library's `rsi` category,
  * each algorithm linked to its paper) and the benchmarks the built-in Benchmarks are drawn from
  * (each linked to its repository). Toolkit labels are names, the same in every language; a
- * benchmark is shown by its kind, which lives in the dictionaries, index-aligned with BENCHMARKS.
+ * benchmark is shown by its kind, a key into the dictionaries' `hero.benchmarkKinds`.
  *
- * test/rsi-stats.test.ts pins RSI_TOOLKITS to the library's `rsi` plugins and BENCHMARKS to
- * the shipped Benchmark packages' upstream links, so neither list can ship behind its
- * source.
+ * The lists are kept by hand: a new toolkit or built-in Benchmark adds its entry here.
  */
 import type { ModelProvider } from "../components/icons";
+import type { Strings } from "./strings";
 
 /** In the order the hero draws the logos; `name` is the brand's own casing (link label). */
 export const MODEL_PROVIDERS = [
@@ -41,25 +40,24 @@ export const RSI_TOOLKITS = [
 
 /**
  * One entry per upstream benchmark, in display order. GDPEVO Essential's six scenarios
- * share one upstream and one entry; package ids are owned by the Benchmark repository.
+ * share one upstream and one entry; a Benchmark written for the Benchmark repository itself has
+ * no upstream and links to its own package there. Package ids are owned by that repository.
  */
 export const BENCHMARKS = [
+  { kind: "dataAnalysis", href: "https://github.com/Prism-Shadow/rag-bench-essential" },
+  { kind: "softwareEngineering", href: "https://github.com/datacurve-ai/deep-swe" },
+  { kind: "businessAutomation", href: "https://github.com/zapier/AutomationBench" },
   {
-    href: "https://github.com/Prism-Shadow/rag-bench-essential",
-  },
-  {
-    href: "https://github.com/datacurve-ai/deep-swe",
-  },
-  {
-    href: "https://github.com/zapier/AutomationBench",
-  },
-  {
+    kind: "scientificResearch",
     href: "https://github.com/harbor-framework/terminal-bench-science",
   },
+  { kind: "terminalTasks", href: "https://github.com/harbor-framework/terminal-bench" },
   {
-    href: "https://github.com/harbor-framework/terminal-bench",
+    kind: "biomedicine",
+    href: "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-biomedical-repeated-measures",
   },
-  {
-    href: "https://github.com/Prism-Shadow/GDPevo",
-  },
-] as const;
+  { kind: "agentSelfEvolution", href: "https://github.com/Prism-Shadow/GDPevo" },
+] as const satisfies ReadonlyArray<{
+  kind: keyof Strings["hero"]["benchmarkKinds"];
+  href: string;
+}>;

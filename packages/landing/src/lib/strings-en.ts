@@ -74,14 +74,15 @@ export const en: Strings = {
     supportedModelsMore: "and more",
     algorithmsLabel: "RSI Algorithms",
     benchmarksLabel: "Benchmarks",
-    benchmarkKinds: [
-      "Data analysis",
-      "Software engineering",
-      "Business automation",
-      "Scientific research",
-      "Terminal tasks",
-      "Agent self-evolution",
-    ],
+    benchmarkKinds: {
+      dataAnalysis: "Data analysis",
+      softwareEngineering: "Software engineering",
+      businessAutomation: "Business automation",
+      scientificResearch: "Scientific research",
+      terminalTasks: "Terminal tasks",
+      biomedicine: "Biomedicine",
+      agentSelfEvolution: "Agent self-evolution",
+    },
     externalLink: {
       title: "You're about to open an external link",
       body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
