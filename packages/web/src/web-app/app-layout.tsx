@@ -105,10 +105,11 @@ function WidgetDock() {
  *
  * Left alone, a frame that size would swallow every click over its rectangle, so it is
  * `pointer-events: none` and the page beneath keeps working. While the pointer is over the
- * frame, the host relays its position to the document as `{ penguin: "widget-probe", x, y }` in
- * the frame's own pixels; the document answers `{ penguin: "widget-over", over }` when the
- * position is on something it drew, and only then does the frame take pointer events. The
- * document reports the pointer leaving by itself, which hands the page the pointer back.
+ * frame — or a finger taps in it — the host relays the position to the document as
+ * `{ penguin: "widget-probe", x, y }` in the frame's own pixels; the document answers
+ * `{ penguin: "widget-over", over }` when the position is on something it drew, and only then
+ * does the frame take pointer events. The document reports the pointer leaving by itself,
+ * which hands the page the pointer back.
  */
 function BareWidget({ src, title }: { src: string; title: string }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -125,7 +126,7 @@ function BareWidget({ src, title }: { src: string; title: string }) {
   }, []);
   useEffect(() => {
     if (over) return; // the frame holds the pointer now; it says when the pointer has left it
-    const onMove = (e: PointerEvent) => {
+    const relay = (e: PointerEvent) => {
       const frame = frameRef.current;
       if (frame === null || frame.contentWindow === null) return;
       const box = frame.getBoundingClientRect();
@@ -134,8 +135,13 @@ function BareWidget({ src, title }: { src: string; title: string }) {
       if (x < 0 || y < 0 || x > box.width || y > box.height) return;
       frame.contentWindow.postMessage({ penguin: "widget-probe", x, y }, location.origin);
     };
-    addEventListener("pointermove", onMove);
-    return () => removeEventListener("pointermove", onMove);
+    addEventListener("pointermove", relay);
+    // A touch has no move before its tap, so the tap itself asks where it landed.
+    addEventListener("pointerdown", relay);
+    return () => {
+      removeEventListener("pointermove", relay);
+      removeEventListener("pointerdown", relay);
+    };
   }, [over]);
   return (
     <iframe
