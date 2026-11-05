@@ -11,6 +11,7 @@
  *   GET|PUT       …/:orgId/handbook                 (the index, handbook/README.md)
  *   GET           …/:orgId/handbook/files
  *   GET|PUT|DELETE …/:orgId/handbook/files/<path>
+ *   GET           …/:orgId/file?path=<cited path>   # a file cited in its messages, read-only
  *   GET|POST      …/:orgId/calendar ; GET|PUT|DELETE …/:orgId/calendar/:agentId/:name
  *   GET|POST      …/:orgId/tickets ; GET|PUT …/:orgId/tickets/:ticketId
  *   POST          …/:orgId/tickets/:ticketId/(move|block|unblock|progress|start|attach)
@@ -49,6 +50,8 @@ import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
 import type { Actor, OrgService } from "../../runtime/organization/service.js";
+import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import { fileContentResponse } from "./workspace-files.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
@@ -169,6 +172,8 @@ function requireChannelParam(c: Context<AppEnv>): string {
 /** What this route group needs — declared here, at the consumer. */
 export interface OrgRouteDeps {
   orgService: OrgService;
+  /** Serves a cited file once the organization has placed it (organization/cited-file.ts). */
+  workspaceFiles: WorkspaceFiles;
   projectService: Pick<ProjectLifecycle, "requireProjectAccess" | "requireProjectOwner">;
   serverSettingsRepo: Pick<Settings, "getCompanyMode">;
 }
@@ -459,6 +464,16 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const orgId = requireValidId(c, "orgId");
     member(c, projectId);
     return c.json(await deps.orgService.handbookFile(projectId, orgId, c.req.param("path")));
+  });
+
+  app.get("/:orgId/file", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    const cited = c.req.query("path")?.trim() ?? "";
+    if (cited === "") throw badRequest("path is required.");
+    const file = await deps.orgService.citedFile(projectId, orgId, cited);
+    return await fileContentResponse(c, deps.workspaceFiles, file.workspace, file.path);
   });
 
   app.put("/:orgId/handbook/files/:path{.+}", async (c) => {
@@ -982,12 +997,14 @@ function parseModel(
 })
 export class OrgRoutes {
   @Use() private readonly orgService!: OrgService;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly settings!: Settings;
   @Bind("OrgRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = organizationRoutes({
       orgService: this.orgService,
+      workspaceFiles: this.workspaceFiles,
       projectService: this.projectService,
       serverSettingsRepo: this.settings,
     });
