@@ -1,5 +1,5 @@
 /**
- * A form as the grammar reads it (a2ui/form.ts) and the one rule for whether an answer is
+ * A form as the grammar reads it (src/form.ts) and the one rule for whether an answer is
  * acceptable, which the renderer's fill gate, its error line and its drafts all ask.
  *
  * - Given every kind across three forms (past four fields a form warns) — hints, a length
@@ -29,7 +29,7 @@ import {
   parseA2ui,
   type A2uiFormAnswer,
   type A2uiFormField,
-} from "../src/a2ui/index.js";
+} from "../src/index.js";
 
 const parse = (value: unknown) => parseA2ui(JSON.stringify(value));
 const form = (...fields: Record<string, unknown>[]) => ({ type: "form", fields });

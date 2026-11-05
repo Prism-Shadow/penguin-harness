@@ -33,10 +33,6 @@
       "types": "./dist/state/model-connection.d.ts",
       "import": "./dist/state/model-connection.js"
     },
-    "./a2ui": {
-      "types": "./dist/a2ui/index.d.ts",
-      "import": "./dist/a2ui/index.js"
-    },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
       "import": "./dist/kernel/index.js",

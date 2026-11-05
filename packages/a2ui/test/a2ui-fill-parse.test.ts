@@ -1,5 +1,5 @@
 /**
- * An answered block's answers, read back out of the message the reader sent (a2ui/fill-parse.ts):
+ * An answered block's answers, read back out of the message the reader sent (src/fill-parse.ts):
  * the inverse of the fill texts, so a reply that is no longer the open question can show what
  * was answered after a reload.
  *
@@ -31,7 +31,7 @@ import {
   type A2uiForm,
   type A2uiFormAnswers,
   type A2uiLang,
-} from "../src/a2ui/index.js";
+} from "../src/index.js";
 
 /** Every kind, with option values, a unit on each figure and a pattern on the text. */
 const EVERY_KIND: A2uiForm = {
