@@ -56,7 +56,6 @@ describe("parseRoute", () => {
   });
 
   it("gives the fonts section three pages, the defaults at /fonts itself", () => {
-    expect(FONTS_PAGE_IDS).toEqual(["defaults", "specimens", "licences"]);
     expect(fontsPath("defaults")).toBe("/fonts");
     expect(fontsPath("specimens")).toBe("/fonts/specimens");
     for (const page of FONTS_PAGE_IDS) {

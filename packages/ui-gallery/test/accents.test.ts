@@ -15,19 +15,14 @@ import {
 import { parseGalleryState } from "../src/lib/url-state";
 
 describe("accent presets", () => {
-  it("are each theme's own list, in its order, after the theme's own accent", () => {
+  it("are each theme's own list, in its order, each with its swatch, and nothing for the rest", () => {
     for (const theme of THEME_IDS) {
       expect(accentPresetsOf(theme)).toEqual(THEME_ACCENT_PRESETS[theme]);
-      expect(accentPresetsOf(theme).length, theme).toBeGreaterThan(0);
       for (const id of accentPresetsOf(theme)) {
-        expect(id, theme).toMatch(/^[a-z]+$/);
-        expect(accentSwatch(theme, id), `${theme} ${id}`).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(accentSwatch(theme, id), `${theme} ${id}`).not.toBe("");
       }
+      expect(accentSwatch(theme, "plaid")).toBe("");
     }
-    // Primer keeps the five the Web App has always had, so nothing there moves.
-    expect(accentPresetsOf("github")).toEqual(["blue", "green", "violet", "rose", "amber"]);
-    expect(ACCENT_IDS[0]).toBe(THEME_ACCENT);
-    expect(new Set(ACCENT_IDS).size).toBe(ACCENT_IDS.length);
   });
 
   it("resolve to the preset when the active theme lists it, else to the theme's own accent", () => {

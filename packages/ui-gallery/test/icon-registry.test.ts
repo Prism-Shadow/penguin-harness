@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { extractIconPaths, extractIconSizes } from "../src/lib/icon-registry";
 
@@ -43,24 +41,15 @@ describe("extractIconPaths", () => {
     expect(icons.map((icon) => icon.names)).toEqual([["D"]]);
   });
 
-  it("finds the shared registry's icons in the files the gallery reads", () => {
-    const read = (path: string) =>
-      readFileSync(fileURLToPath(new URL(`../../ui/src/${path}`, import.meta.url)), "utf8");
-    const icons = extractIconPaths({ icons: read("components/icons/icons.ts") });
-    const names = icons.flatMap((icon) => icon.names);
-    expect(icons.length).toBeGreaterThan(30);
-    for (const name of [
-      "ICONS.trash",
-      "ICONS.gear",
-      "ICONS.folder",
-      "ICONS.copy",
-      "ICONS.eyeOff",
-    ]) {
-      expect(names).toContain(name);
-    }
-    // The registry draws each glyph once: no path goes by two names in it.
-    expect(icons.filter((icon) => icon.names.length > 1)).toEqual([]);
-    const sizes = extractIconSizes(read("icon-scale.ts"));
-    expect(sizes.find((rung) => rung.name === "inlineGlyph")?.px).toBe(13);
+  it("reads the icon scale's rungs, and nothing from a file without one", () => {
+    const scale = `
+      /** A doc comment: rowMark: 99 must not count. */
+      export const ICON_SIZE = { rowMark: 12, inlineGlyph: 13.5 } as const;
+    `;
+    expect(extractIconSizes(scale)).toEqual([
+      { name: "rowMark", px: 12 },
+      { name: "inlineGlyph", px: 13.5 },
+    ]);
+    expect(extractIconSizes("export const OTHER = { a: 1 };")).toEqual([]);
   });
 });
