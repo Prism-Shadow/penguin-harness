@@ -79,35 +79,35 @@ Running a GDPEVO self-evolution experiment in PenguinHarness requires no custom 
 
 ### Step 1: Create a Controller Agent and Install the RSI Toolkit
 
-1. Open the **Agents** page from the left sidebar and click **Create Agent** in the top-right corner.
+1. Open the **Agents** page from the left sidebar and click **Create manually** in the top-right corner.
 2. Enter a name (for example, `GDPEVO Controller`) and an ID (for example, `gdpevo_controller`).
-3. In the **Plugins** dropdown of the creation dialog, search for and select `skilladam-rsi-toolkit` (you can also select `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit` if you plan to compare multiple methods), then click **Create**.
+3. In the **Plugins** dropdown of the creation dialog, search for `skill` and select `skilladam-rsi-toolkit` (you can also select `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit` if you plan to compare multiple methods), then click **Create**.
    - To use an existing Agent instead, open the **Plugins** page from the sidebar, find `skilladam-rsi-toolkit` under the **Agent Self-Evolution** category, and install it onto that Agent.
 
-> **TODO (Screenshot Placeholder 1 — Creating the Agent & Picking the RSI Toolkit)**: Insert screenshot showing the "Create Agent" dialog with `skilladam-rsi-toolkit` selected in the "Plugins" dropdown (or the "Plugins → Agent Self-Evolution" view).
+<img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Filling in GDPEVO Controller and selecting skilladam-rsi-toolkit in the Create agent dialog" />
 
-### Step 2: Configure the Model and Thinking Effort
+### Step 2: Select the Controller Agent, Model, and Thinking Effort
 
-1. Open the **Models** page and add `deepseek/deepseek-flash` with its API key.
-2. Open a chat with `gdpevo_controller`, select `deepseek/deepseek-flash` in the model picker below the composer, and set the thinking effort to **Max**.
+1. Open the **Models** page and make sure the target model (such as `DeepSeek V4.1 Flash`) is configured with its API key.
+2. Open **New chat**, select `GDPEVO Controller` below the composer, pick `DeepSeek V4.1 Flash` in the model selector, and set the thinking effort to `max`.
 
-> **TODO (Screenshot Placeholder 2 — Selecting Model & Max Thinking Effort)**: Insert screenshot showing the `gdpevo_controller` chat composer with `deepseek/deepseek-flash` and `Max` thinking effort selected.
+<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting GDPEVO Controller, DeepSeek V4.1 Flash, and max thinking effort in New chat" />
 
 ### Step 3: Select the Toolkit and Send the Launch Prompt
 
-In the chat composer, type `/skilladam-rsi-toolkit` (or pick `skilladam-rsi-toolkit` from the Skills selector) and send a launch prompt that explicitly names the toolkit ID, the Benchmark package IDs, the model and thinking level for both the Controller Agent and the in-container Target Agent, and the Docker concurrency limit.
+Because the full protocol—running one continuous training session, freezing the exported `SKILL.md`, and evaluating both Baseline and Final for 3 repetitions on the held-out test set—along with task paths and grading rules is already built into `skilladam-rsi-toolkit` and the Benchmark packages, the launch prompt does not need to repeat those steps. Simply attach `skilladam-rsi-toolkit` in the composer (by typing `/skilladam-rsi-toolkit` or clicking the Skills icon) and specify the toolkit name, target scenario, model, thinking level, and Docker concurrency limit.
 
-To run a single scenario (for example, Service Ticket Resolution), send:
+To run a single scenario (for example, `service-ticket-resolution`), send:
 
-> Use `skilladam-rsi-toolkit` to run a self-evolution experiment on `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train` and `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-test`: run one continuous training session on the training set, freeze the exported `SKILL.md`, and evaluate both Baseline and Final for 3 full repetitions on the test set. Use model `deepseek/deepseek-flash` with thinking level `max` for both the Controller Agent and the Target Agent, and set the Docker concurrency limit to `4`.
+> Use `skilladam-rsi-toolkit` to run a self-evolution experiment on the `service-ticket-resolution` scenario of GDPEVO Essential. Use model `DeepSeek V4.1 Flash`, thinking level `max`, and Docker concurrency limit `4`.
 
 To run the full experiment across all six scenarios, send:
 
-> Use `skilladam-rsi-toolkit` to run the full self-evolution experiment across all six GDPEVO Essential scenarios (`service-ticket-resolution`, `financial-control`, `portfolio-management`, `coverage-review`, `court-clerk-operations`, and `engineering-portfolio-analytics`, using each scenario's `-train` and `-test` packages): train once per scenario in a continuous session, freeze the exported `SKILL.md`, and evaluate both Baseline and Final for 3 full repetitions on the corresponding test set. Use model `deepseek/deepseek-flash` with thinking level `max` for both the Controller Agent and the Target Agent, and set the Docker concurrency limit to `4`.
+> Use `skilladam-rsi-toolkit` to run a self-evolution experiment across all six scenarios of GDPEVO Essential. Use model `DeepSeek V4.1 Flash`, thinking level `max`, and Docker concurrency limit `4`.
 
-To benchmark another self-evolution algorithm, simply replace `skilladam-rsi-toolkit` in the prompt with `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit`.
+To benchmark another self-evolution algorithm, simply replace the attached skill and `skilladam-rsi-toolkit` in the prompt with `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit`.
 
-> **TODO (Screenshot Placeholder 3 — Attaching `skilladam-rsi-toolkit` & Sending the Launch Prompt)**: Insert screenshot showing `skilladam-rsi-toolkit` attached in the chat composer and the Controller Agent starting the experiment.
+> **TODO (Screenshot Placeholder 3 — Attaching `skilladam-rsi-toolkit` & Sending the Launch Prompt)**: Insert screenshot showing `skilladam-rsi-toolkit` attached in the chat composer with the launch prompt above.
 
 ## 4. Internal Execution Pipeline After Launch
 
