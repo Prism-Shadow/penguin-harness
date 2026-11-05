@@ -2,13 +2,22 @@
  * `penguin agent export` and `penguin agent import`, driven through `cli()` in-process against the
  * fake server's Agent archive routes, with real temp directories for the files on either end.
  *
- * - By default `export` asks for the export dialog's parts (everything but schedules and Traces)
- *   and writes the server's zip into `--out` under the name the server gives it.
+ * - By default `export` asks for the export dialog's parts (everything but schedules and Traces),
+ *   the preview first and then the zip with the same query, and writes the server's zip into
+ *   `--out` under the name the server gives it.
  * - Every export option reaches the query, the agent-porting Skill's own command line among them.
- * - `--out` naming a file writes there, its parent created; `--json` names the file and its size.
+ * - `--out` naming a file writes there, its parent created; `--json` names the file, its size and
+ *   the preview's notes.
  * - A name the server gives cannot take the zip out of `--out`.
  * - A malformed `--traces` fails before any request, and nothing is written.
  * - A download that breaks off leaves no file behind.
+ * - What the preview says the export leaves out reaches stderr: a part whose folder is a link,
+ *   worded by the CLI, and the Sessions with a file too large for an import; `--json` carries the
+ *   notes as the server gave them.
+ * - A selection the server would refuse stops at the preview: exit 1, why on stderr, no download
+ *   and nothing written.
+ * - An Agent whose own config does not parse (the server's 422 `invalid_config`) is refused in one
+ *   line in the CLI's words, before any download.
  * - `import <folder>` uploads the folder as a raw zip (`application/octet-stream`) with its
  *   manifest at the root and without `.git`; the Agent id comes from the manifest.
  * - A taken id fails with the server's `agent_exists` and says how to import anyway; `--agent-id`
@@ -28,6 +37,8 @@
  *   notes; `--json` prints the response as it is.
  * - A note whose code the CLI knows is worded in the CLI's language, so a zh CLI does not show the
  *   server's English sentence for it; a note with any other code prints the server's sentence.
+ * - An overwrite that could not refill credentials from the Agent's unparsable config says so in
+ *   the CLI's language.
  */
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -92,6 +103,11 @@ const exportQuery = () => {
   const get = server.requests.find((r) => r.path.endsWith("/archive"));
   return Object.fromEntries(new URLSearchParams(get?.search ?? ""));
 };
+/** The query of the preview the export asked first, as a plain object. */
+const previewQuery = () => {
+  const get = server.requests.find((r) => r.path.endsWith("/archive/preview"));
+  return Object.fromEntries(new URLSearchParams(get?.search ?? ""));
+};
 /** The one import upload. */
 const upload = () => server.requests.find((r) => r.path.endsWith("/agents/import"));
 
@@ -127,8 +143,10 @@ describe("penguin agent export", () => {
     expect(await cli(["agent", "export", "writer", "--out", dir])).toBe(0);
 
     expect(server.requests.map((r) => r.path)).toEqual([
+      "/api/projects/default_project/agents/writer/archive/preview",
       "/api/projects/default_project/agents/writer/archive",
     ]);
+    expect(previewQuery()).toEqual(exportQuery());
     expect(exportQuery()).toEqual({
       skills: "1",
       hooks: "1",
@@ -185,8 +203,12 @@ describe("penguin agent export", () => {
     expect(
       await cli(["agent", "export", "writer", "--project-id", "proj-1", "--out", dir, ...argv]),
     ).toBe(0);
-    expect(server.requests[0]?.path).toBe("/api/projects/proj-1/agents/writer/archive");
+    expect(server.requests.map((r) => r.path)).toEqual([
+      "/api/projects/proj-1/agents/writer/archive/preview",
+      "/api/projects/proj-1/agents/writer/archive",
+    ]);
     expect(exportQuery()).toEqual(query);
+    expect(previewQuery()).toEqual(query);
   });
 
   it("writes to the file --out names, creating its parent, and --json names the file and its size", async () => {
@@ -201,6 +223,7 @@ describe("penguin agent export", () => {
       projectId: "default_project",
       file,
       bytes: zip.byteLength,
+      notes: [],
     });
     expect(new Uint8Array(fs.readFileSync(file))).toEqual(zip);
   });
@@ -244,6 +267,79 @@ describe("penguin agent export", () => {
     expect(await cli(["agent", "export", "writer", "--out", dir])).toBe(1);
 
     expect(err()).toContain("connection reset");
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it("says on stderr what the export leaves out, and --json carries the notes", async () => {
+    const notes = [
+      {
+        code: "link_skipped",
+        subject: "skills",
+        message: "agent_state/skills is a link, so the export leaves it out.",
+      },
+    ];
+    const tooLarge = "session-2026-08-01-09-00-00-0000000c";
+    const preview = server.agentArchive.previewed;
+    server.agentArchive.previewed = (agentId, query) => ({
+      ...(preview(agentId, query) as Record<string, unknown>),
+      notes,
+      traces: {
+        sessions: 1,
+        files: 1,
+        bytes: 10,
+        skipped: [{ sessionId: tooLarge, reason: "too_large" }],
+        newest: null,
+        oldest: null,
+      },
+    });
+    const dir = dirIn("exports");
+
+    expect(await cli(["agent", "export", "writer", "--out", dir, "--json"])).toBe(0);
+
+    expect(err()).toContain("agent_state/skills");
+    expect(err()).toContain(tooLarge);
+    expect(JSON.parse(out()).notes).toEqual(notes);
+    expect(fs.readdirSync(dir)).toEqual(["writer-20260902.zip"]);
+  });
+
+  it("refuses, in one line in its own words, an agent whose config does not parse", async () => {
+    server.agentArchive.previewed = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid_config",
+            message:
+              "The Agent's system_config.yaml does not parse; fix it before exporting the Agent.",
+          },
+        }),
+        { status: 422, headers: { "content-type": "application/json" } },
+      );
+    const dir = dirIn("exports");
+
+    expect(await cli(["agent", "export", "writer", "--out", dir])).toBe(1);
+
+    expect(err()).toBe(`${t.agent.exportInvalidConfig("writer")}\n`);
+    expect(server.requests.map((r) => r.path)).toEqual([
+      "/api/projects/default_project/agents/writer/archive/preview",
+    ]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it("stops at the preview when the server would refuse the selection, downloading nothing", async () => {
+    const file = "traces/2026-08-01/session-2026-08-01-09-00-00-0000000c_001.jsonl";
+    const preview = server.agentArchive.previewed;
+    server.agentArchive.previewed = (agentId, query) => ({
+      ...(preview(agentId, query) as Record<string, unknown>),
+      refusal: { reason: "entry", limit: 256 * 1024 * 1024, subject: file },
+    });
+    const dir = dirIn("exports");
+
+    expect(await cli(["agent", "export", "writer", "--out", dir])).toBe(1);
+
+    expect(err()).toContain(file);
+    expect(server.requests.map((r) => r.path)).toEqual([
+      "/api/projects/default_project/agents/writer/archive/preview",
+    ]);
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 });
@@ -469,6 +565,26 @@ describe("penguin agent import", () => {
       expect(text).toContain(knownNote!.subject!);
       expect(text).not.toContain(knownNote!.message);
       expect(text).toContain(unknownNote!.message);
+    });
+
+    it("says in the CLI's language that an overwrite could not refill credentials from an unparsable config", async () => {
+      const note = {
+        code: "current_config_invalid" as const,
+        message:
+          "The Agent's own system_config.yaml did not parse, so no blanked credential was filled from it.",
+      };
+      server.agentArchive.imported = () => ({ status: 201, body: { ...answer, notes: [note] } });
+      const saved = process.env.PENGUIN_LANG;
+      process.env.PENGUIN_LANG = "zh";
+      try {
+        expect(await cli(["agent", "import", portFolder(), "--overwrite"])).toBe(0);
+      } finally {
+        if (saved === undefined) delete process.env.PENGUIN_LANG;
+        else process.env.PENGUIN_LANG = saved;
+      }
+
+      expect(out()).toContain(getMessages("zh").agent.archiveNote(note));
+      expect(out()).not.toContain(note.message);
     });
 
     it("--json prints the server's response as it is", async () => {
