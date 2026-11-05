@@ -1,7 +1,7 @@
 /** Workbench payloads use the same plugin install path as Skills; runtime state is never payload. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { LibraryPlugin } from "../plugins/index.js";
+import type { LibraryPlugin } from "../plugin/library-reader.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { workbenchesDir } from "./paths.js";
 
