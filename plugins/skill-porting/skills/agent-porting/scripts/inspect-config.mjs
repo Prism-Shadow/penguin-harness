@@ -1,174 +1,292 @@
 #!/usr/bin/env node
-// Prints another coding tool's configuration file with every credential masked, so its values
-// never enter the conversation (and so never the Session's Trace, which an export may carry).
+// Reads another coding tool's files for the agent-porting skill so that no secret value enters
+// the conversation (and so never the Session's Trace, which an export may carry). It prints by
+// allowlist: what it cannot show to be harmless, it does not print.
 //
 //   node inspect-config.mjs <file>... [--only <key>[,<key>...]] [--keys]
-//   node inspect-config.mjs --scan <dir>
-//   node inspect-config.mjs --show <file>...
+//   node inspect-config.mjs --scan <dir-or-file>...
+//   node inspect-config.mjs --show <file>... [--lines <from>-<to>]
 //
-// The format comes from the file name: JSON (comments and trailing commas tolerated), TOML or
-// YAML. The file is parsed and printed as JSON, with these values replaced by
-// `<redacted:NAME>`, NAME being the key, flag or parameter that held it:
-// - every value under a key matching key|token|secret|password|passwd|auth|credential|cookie|
-//   bearer (case-insensitive), and every value inside such a key's object or list;
-// - every value of an `env`, `headers` or `http_headers` map;
-// - in any string: a `--<name>=value` or `--<name> value` argument, a `NAME=value` assignment
-//   and a `Name: value` header whose name matches the pattern, a `Bearer` / `Basic` / `Token`
-//   credential, the user info of a URL and its query parameters of those names, and anything
-//   shaped like a well-known API token.
-// A value that is only a reference stays as it is: `${VAR}`, `$VAR`, `${credential:name}`, with
-// an optional `Bearer ` in front (a `${VAR:-default}` keeps its name, not its default). So does
-// a variable *name* where the key says it holds one (`bearer_token_env_var`, `env_key`,
-// `env_vars`, `env_http_headers`).
-// `~/.claude.json` prints only its MCP servers (top level and per project), never the account
-// state around them. `--only` keeps the named top-level keys (dotted for a nested one). A file
-// that cannot be parsed prints its key names only (`--keys` asks for that view outright). A
-// credential store (`.env`, `auth.json`, `.credentials.*`, an OAuth token cache, `trust.json`)
-// is refused unread.
-// `--scan <dir>` checks a folder about to be imported: it prints every line of its text files
-// where a credential-looking value sits, with the value masked, and exits 1 when there is one,
-// 0 when the folder is clean. `--show <file>...` prints a whole text file (a script, a Markdown
-// file `--scan` flagged) with those values masked the same way. Built-in modules only.
+// A configuration file (JSON, comments and trailing commas tolerated; TOML; YAML) is parsed and
+// printed as JSON. Key names print (one shaped like a token prints as `<redacted key:N chars>`);
+// numbers, booleans and null print, except a number under a credential key. A string prints only
+// when it is
+// - a reference, `${VAR}` or `${credential:name}`, with an optional `Bearer ` / `Basic ` in front
+//   (a `${VAR:-default}` without its default). Under a credential key the reference keeps its
+//   structure only: `Bearer ${<redacted:N chars>}`;
+// - the value of a structural key (STRUCTURAL below) that no detector flags. `command` prints
+//   its program only, `<program> <redacted:N more words>`. A URL (`url`, `httpUrl`, …) prints its
+//   scheme, host and path, its user info and whole query replaced. Prose keys (`description`,
+//   `prompt`, `developer_instructions`, `instructions`) print with every flagged line replaced;
+//   or
+// - an `args` element that is a bare flag (`--verbose`, no `=`), a flag's name before its `=`, or
+//   a package or path token (`^[@\w./:~-]+$`, at most 100 characters, no token-shaped or
+//   high-entropy part), unless it follows a credential flag (`--api-key`, `--pass`, `-u`, …);
+// - an item of `env_vars`, when it is a variable name.
+// Every other string prints as `<redacted:N chars>`. A key matching CREDENTIAL redacts whatever
+// it holds, and every key inside it. `~/.claude.json` prints only its MCP servers, top level and
+// per project. `--only` keeps the named top-level keys (dotted for a nested one). A file that
+// does not parse prints "could not parse <file> (line N)" and its key names, never its content;
+// `--keys` asks for that view outright.
+//
+// `--scan` reads text files (a folder recursively) and prints `file:line: <kind>` for each line a
+// detector flags, never the line; a file by a credential-store name prints `file: <kind>`
+// unread. It exits 1 when it flags anything, 0 when nothing. `--show` prints a text file with
+// each flagged line replaced whole by `<redacted line: kind>` (a private key block to its end).
+// Credential stores are refused unread everywhere (REFUSED). Built-in modules only.
 import fs from "node:fs";
 import path from "node:path";
 
-const CREDENTIAL = /key|token|secret|password|passwd|auth|credential|cookie|bearer/i;
+const CREDENTIAL =
+  /key|token|secret|password|passwd|pass|pwd|passphrase|private|auth|credential|cookie|bearer/i;
 /** Key names the pattern catches that hold a count or a setting, never a credential. */
-const NOT_CREDENTIAL =
-  /tokens?_?(limit|budget|count|window)|max_?\w*tokens?$|^tokens$|key_?bind|^author$/i;
-/** Keys whose values are the *names* of environment variables, not their values. */
-const NAME_HOLDER = /env_?vars?$|env_?key$|envvar$|env_http_headers$/i;
-/** Maps whose every value is a credential position. */
-const SECRET_MAP = /^(env|headers|http_headers|httpheaders)$/i;
-/** Keys under a credential object that never hold one. */
-const SAFE_CHILD = /^(scopes?|type|enabled|client_?id)$/i;
-const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const URL_START = /^[a-z][a-z0-9+.-]*:\/\//i;
+const NOT_CREDENTIAL = /tokens?_?(limit|budget|count|window)|max_?\w*tokens?$|^tokens$|key_?bind/i;
+/**
+ * The keys whose string values print (after the detectors). Hook event names are listed
+ * because a few tools put a command string straight under one.
+ */
+const STRUCTURAL = new Set([
+  // identity and shape
+  "name",
+  "id",
+  "title",
+  "type",
+  "transport",
+  "kind",
+  "format",
+  "version",
+  "serverName",
+  "matcher",
+  "trigger",
+  // a process
+  "command",
+  "cwd",
+  "timeout",
+  "enabled",
+  "disabled",
+  // model and permission settings the mapping reads
+  "model",
+  "model_provider",
+  "model_reasoning_effort",
+  "reasoningEffort",
+  "effortLevel",
+  "effort",
+  "thinkingLevel",
+  "approval_policy",
+  "approvalMode",
+  "sandbox_mode",
+  "defaultMode",
+  "permissionMode",
+  // hook events
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+  "SessionStart",
+  "SessionEnd",
+  "Notification",
+  "PreCompact",
+]);
+const URL_KEYS = new Set(["url", "httpUrl", "baseUrl", "base_url", "endpoint"]);
+const PROSE_KEYS = new Set(["description", "prompt", "developer_instructions", "instructions"]);
+const NAME_LIST_KEYS = new Set(["env_vars"]);
 const TOKEN_SHAPES =
-  /\b(sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})\b/g;
+  /(sk-ant-[\w-]{16,}|sk-[\w-]{16,}|(sk|rk|pk)_(live|test)_[\w]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abposr]-[\w-]{10,}|glpat-[\w-]{16,}|hf_[A-Za-z0-9]{16,}|npm_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|AIza[\w-]{30,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})/;
+const PEM = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+/** Files that are credential stores by name: never read, by any mode. */
 const REFUSED = [
-  /^\.env(\..*)?$/i,
+  /^\.?env$/i,
+  /^\.env\..*/i,
+  /\.env$/i,
+  /^\.envrc$/i,
   /^auth\.json$/i,
   /^\.?credentials?(\.|$)/i,
   /oauth.*tokens?.*\.json$/i,
   /^trust\.json$/i,
+  /\.(pem|key|p12|pfx)$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)/i,
+  /^\.(netrc|npmrc|pypirc|pgpass)$/i,
 ];
+const isRefused = (file) => REFUSED.some((re) => re.test(path.basename(file)));
 
-const redacted = (name) => `<redacted:${name}>`;
+const chars = (s) => `<redacted:${s.length} chars>`;
 const isCredentialKey = (k) => CREDENTIAL.test(k) && !NOT_CREDENTIAL.test(k);
-const masked = (v) => v.startsWith("<redacted:");
+const REFERENCE =
+  /^((?:Bearer|Basic|Token) )?\$\{(credential:)?([A-Za-z_][A-Za-z0-9_.-]*)(:-[^}]*)?\}$/i;
 
-/** `${VAR}`, `$VAR`, `${credential:x}` and `{{x}}` references removed. */
-const withoutReferences = (s) =>
-  s
-    .replace(/\$\{[^}]*\}/g, "")
-    .replace(/\$[A-Za-z_][A-Za-z0-9_]*/g, "")
-    .replace(/\{\{[^}]*\}\}/g, "");
-
-/** A value that is nothing but references, with at most an auth scheme in front. */
-const onlyReferences = (s) =>
-  s !== withoutReferences(s) && /^\s*(bearer|basic|token)?\s*$/i.test(withoutReferences(s));
-
-/** A kept reference never shows the default it falls back to. */
-const hideDefaults = (s) =>
-  s.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):-[^}]*\}/g, "${$1:-<redacted:default>}");
-
-function maskUrl(s) {
-  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#@]*@)?([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(s);
-  if (m === null) return s;
-  const [, scheme, userinfo, rest, query, hash] = m;
-  const params = (query ?? "")
-    .slice(1)
-    .split("&")
-    .filter((p) => p !== "")
-    .map((p) => {
-      const at = p.indexOf("=");
-      const name = at === -1 ? p : p.slice(0, at);
-      const value = at === -1 ? "" : p.slice(at + 1);
-      let decoded = name;
-      try {
-        decoded = decodeURIComponent(name);
-      } catch {}
-      return isCredentialKey(decoded) && value !== "" && !onlyReferences(value)
-        ? `${name}=${redacted(decoded)}`
-        : p;
-    });
-  return `${scheme}${userinfo ? `${redacted("userinfo")}@` : ""}${rest}${params.length ? `?${params.join("&")}` : ""}${hash ?? ""}`;
-}
-
-/** The credentials a free-standing string may carry, masked in place. */
-function maskInline(s) {
-  if (URL_START.test(s)) return maskUrl(s);
-  let out = s
-    .replace(/(^|\s)(--?[A-Za-z0-9_.-]+)=(\S+)/g, (all, lead, flag, value) =>
-      isCredentialKey(flag) && !onlyReferences(value) && !masked(value)
-        ? `${lead}${flag}=${redacted(flag.replace(/^-+/, ""))}`
-        : all,
-    )
-    .replace(/(^|[\s"'])([A-Za-z_][A-Za-z0-9_]*)=(\S+)/g, (all, lead, name, value) =>
-      isCredentialKey(name) && !onlyReferences(value) && !masked(value)
-        ? `${lead}${name}=${redacted(name)}`
-        : all,
-    )
-    .replace(/^([A-Za-z0-9_-]+)\s*:\s*(.+)$/, (all, name, value) =>
-      isCredentialKey(name) && !onlyReferences(value) ? `${name}: ${redacted(name)}` : all,
-    )
-    .replace(
-      /\b(bearer)\s+(?!\$)([A-Za-z0-9._~+\/=-]{8,})/gi,
-      (all, scheme) => `${scheme} ${redacted("bearer")}`,
-    )
-    .replace(
-      /\bBasic\s+(?=[A-Za-z0-9+\/]*[0-9+\/=])([A-Za-z0-9+\/]{12,}={0,2})/g,
-      () => `Basic ${redacted("basic")}`,
-    )
-    .replace(TOKEN_SHAPES, () => redacted("token"));
-  out = out.replace(/(https?:\/\/\S+)/gi, (url) => maskUrl(url));
-  return out;
-}
+/** A part that reads as random: letters and digits mixed over 12 characters, or 40 of anything. */
+const highEntropy = (part) =>
+  (part.length >= 12 && /[0-9]/.test(part) && /[A-Za-z]/.test(part)) || part.length >= 40;
+const tokenish = (s) => TOKEN_SHAPES.test(s) || s.split(/[/.:@~_-]+/).some(highEntropy);
 
 /**
- * One string at `key`. `names`: the position holds variable names; `sensitive`: it holds
- * credentials.
+ * A package or path token: short, plain, nothing in it shaped like a token. A `${VAR}` inside
+ * (`${CLAUDE_PLUGIN_ROOT}/server.js`) counts as a plain part: a variable's name is no secret.
  */
-function maskString(s, key, { names, sensitive }) {
-  if (names) return VAR_NAME.test(s) ? s : redacted(key);
-  if (sensitive) {
-    if (onlyReferences(s)) return hideDefaults(s);
-    // An endpoint under a credential key (an OAuth `tokenUrl`) is an address, not a secret.
-    if (/(url|uri)$/i.test(key) && URL_START.test(s)) return maskUrl(s);
-    return redacted(key);
+const pathToken = (s) => {
+  const plain = s.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*\}/g, "VAR");
+  return plain.length <= 100 && /^[@\w./:~-]+$/.test(plain) && !tokenish(plain);
+};
+
+// ---- Detectors (shared by structured values, --scan and --show) ------------------------------
+
+const valueLooksSet = (v) =>
+  v !== "" &&
+  !REFERENCE.test(v) &&
+  !/^\$[A-Za-z_]\w*$/.test(v) &&
+  !/^(true|false|null|none|~|\d+(\.\d+)?)$/i.test(v) &&
+  !/^(bearer|basic|token)$/i.test(v) &&
+  !/^[[{(<]/.test(v);
+
+/**
+ * The kind of credential a line carries, or null. `code`: an unquoted right-hand side is an
+ * expression (JavaScript, TypeScript, Python), not a literal.
+ */
+function lineKind(line, code) {
+  if (PEM.test(line)) return "private key block";
+  if (TOKEN_SHAPES.test(line)) return "token-shaped string";
+  if (/[a-z][a-z0-9+.-]*:\/\/[^\s/@:"']+:[^\s/@"']+@/i.test(line)) return "URL user info";
+  for (const m of line.matchAll(/[?&]([^=&\s#"']+)=([^&\s#"']+)/g)) {
+    if (isCredentialKey(m[1]) && valueLooksSet(m[2])) return "URL credential parameter";
   }
-  return maskInline(s);
+  if (/(^|[\s"'(])(-u|--user)(\s+|=)["']?[^\s:"']+:[^\s"']+/.test(line)) return "user:password";
+  // mysql -p<password>; not -p8080, find's -print / -prune, mkdir -p, a -p <value> pair.
+  const attached = /(^|[\s"'])-p(?![\s=]|\d+\b|rint|rune|ath|erm|arents)["']?(?!\$)([^\s"']{4,})/;
+  if (attached.test(line)) {
+    return "-p password";
+  }
+  for (const m of line.matchAll(/(^|[\s"'(=])--?([A-Za-z][\w.-]*)(=|\s+)["']?([^\s"']*)/g)) {
+    if (isCredentialKey(m[2]) && valueLooksSet(m[4]) && !m[4].startsWith("-"))
+      return "credential flag";
+  }
+  if (/\bBearer\s+(?!\$)[A-Za-z0-9._~+/=-]{8,}/i.test(line)) return "bearer credential";
+  if (/\bBasic\s+(?=[A-Za-z0-9+/]*[0-9+/=])[A-Za-z0-9+/]{12,}={0,2}/.test(line))
+    return "basic credential";
+  const quoted = /(["']?)([A-Za-z_][\w.-]*)\1\s*[:=]\s*(["'])(.*?)\3/g;
+  for (const m of line.matchAll(quoted)) {
+    if (isCredentialKey(m[2]) && valueLooksSet(m[4])) return "credential assignment";
+  }
+  if (!code) {
+    const bare = /(["']?)([A-Za-z_][\w.-]*)\1\s*[:=]\s*([^\s"',}\]]+)/g;
+    for (const m of line.matchAll(bare)) {
+      if (isCredentialKey(m[2]) && valueLooksSet(m[3])) return "credential assignment";
+    }
+  }
+  return null;
 }
 
-function mask(value, key, ctx) {
+/** A text's flagged lines, each replaced whole; a private key block is replaced to its end. */
+function maskLines(text, code) {
+  const out = [];
+  let inKey = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (inKey) {
+      out.push("<redacted line: private key block>");
+      if (/-----END [A-Z0-9 ]*PRIVATE KEY-----/.test(line)) inKey = false;
+      continue;
+    }
+    const kind = lineKind(line, code);
+    if (kind === "private key block" && !/-----END /.test(line)) inKey = true;
+    out.push(kind === null ? line : `<redacted line: ${kind}>`);
+  }
+  return out.join("\n");
+}
+
+// ---- Structured values -----------------------------------------------------------------------
+
+/** A reference, whole outside a credential key, its structure only inside one. */
+function reference(s, credential) {
+  const m = REFERENCE.exec(s);
+  const scheme = m[1] ?? "";
+  const kind = m[2] ?? "";
+  if (credential) return `${scheme}\${${kind}${chars(m[3])}}`;
+  return `${scheme}\${${kind}${m[3]}${m[4] ? ":-<redacted:default>" : ""}}`;
+}
+
+function url(s) {
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(s);
+  if (m === null) return chars(s);
+  const [, scheme, authority, rest, query, hash] = m;
+  const at = authority.lastIndexOf("@");
+  const host = at === -1 ? authority : `<redacted:userinfo>@${authority.slice(at + 1)}`;
+  const pathPart = rest
+    .split("/")
+    .map((seg) => (seg === "" || pathToken(seg) ? seg : chars(seg)))
+    .join("/");
+  return `${scheme}${host}${pathPart}${query ? "?<redacted:query>" : ""}${hash ? "#<redacted:fragment>" : ""}`;
+}
+
+/** A shell line: its program, and how many more words it has. */
+function commandLine(s) {
+  const words = s.trim().split(/\s+/).filter(Boolean);
+  const program = words.findIndex((w) => !/^[A-Za-z_]\w*=/.test(w));
+  if (program === -1) return chars(s);
+  const head = pathToken(words[program]) ? words[program] : chars(words[program]);
+  const more = words.length - 1;
+  return more === 0 ? head : `${head} <redacted:${more} more word${more === 1 ? "" : "s"}>`;
+}
+
+const CREDENTIAL_FLAG = (w) =>
+  typeof w === "string" &&
+  (/^(-u|--user|-p)$/.test(w) ||
+    (/^--?[A-Za-z][\w.-]*$/.test(w) && isCredentialKey(w.replace(/^-+/, ""))));
+
+function arg(item, prev) {
+  if (CREDENTIAL_FLAG(prev)) return REFERENCE.test(item) ? reference(item, true) : chars(item);
+  if (REFERENCE.test(item)) return reference(item, false);
+  if (/^--?[A-Za-z][\w.-]*$/.test(item)) return item;
+  const flag = /^(--?[A-Za-z][\w.-]*)=(.*)$/s.exec(item);
+  if (flag)
+    return `${flag[1]}=${REFERENCE.test(flag[2]) ? reference(flag[2], isCredentialKey(flag[1])) : chars(flag[2])}`;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(item)) return url(item);
+  return pathToken(item) && lineKind(item, false) === null ? item : chars(item);
+}
+
+function stringAt(s, key, credential) {
+  if (credential) return REFERENCE.test(s) ? reference(s, true) : chars(s);
+  if (REFERENCE.test(s)) return reference(s, false);
+  if (URL_KEYS.has(key)) return /^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? url(s) : chars(s);
+  if (key === "command") return s.includes(" ") ? commandLine(s) : pathToken(s) ? s : chars(s);
+  if (PROSE_KEYS.has(key)) return maskLines(s, false);
+  if (STRUCTURAL.has(key))
+    return s.length <= 200 && lineKind(s, false) === null && !TOKEN_SHAPES.test(s) ? s : chars(s);
+  if (NAME_LIST_KEYS.has(key) && /^[A-Z_][A-Z0-9_]*$/.test(s)) return s;
+  return chars(s);
+}
+
+const safeKey = (k) => (tokenish(k) && !k.startsWith("/") ? `<redacted key:${k.length} chars>` : k);
+
+function mask(value, key, credential, args) {
   if (Array.isArray(value)) {
-    return value.map((item, i) => {
-      const prev = value[i - 1];
-      const flagged =
-        typeof prev === "string" &&
-        /^--?[A-Za-z0-9_.-]+$/.test(prev) &&
-        isCredentialKey(prev.replace(/^-+/, ""));
-      if (flagged && typeof item === "string" && !item.startsWith("-") && !onlyReferences(item)) {
-        return redacted(prev.replace(/^-+/, ""));
-      }
-      return mask(item, key, ctx);
-    });
+    return value.map((item, i) =>
+      typeof item === "string" && args && !credential
+        ? arg(item, value[i - 1])
+        : mask(item, key, credential, false),
+    );
   }
   if (value !== null && typeof value === "object") {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-      const names = ctx.names || NAME_HOLDER.test(k);
-      const sensitive =
-        !names &&
-        ((ctx.sensitive && !SAFE_CHILD.test(k)) || isCredentialKey(k) || SECRET_MAP.test(k));
-      out[k.replace(TOKEN_SHAPES, () => redacted("token"))] = mask(v, k, { names, sensitive });
+      out[safeKey(k)] = mask(
+        v,
+        k,
+        credential || isCredentialKey(k),
+        k === "args" || (k === "command" && Array.isArray(v)),
+      );
     }
     return out;
   }
-  if (typeof value === "string") return maskString(value, key, ctx);
-  if (typeof value === "number" && ctx.sensitive) return redacted(key);
+  if (typeof value === "string") return stringAt(value, key, credential);
+  if (typeof value === "number" && credential) return `<redacted:number>`;
   return value;
+}
+
+/** An error that knows the line it happened on, and nothing of the file's content. */
+function parseError(line) {
+  const err = new Error("parse");
+  err.line = line;
+  return err;
 }
 
 // ---- JSON (with comments) -------------------------------------------------------------------
@@ -189,12 +307,75 @@ function parseJson(text) {
         while (i < text.length && text[i] !== "\n") i++;
         out += "\n";
       } else if (c === "/" && text[i + 1] === "*") {
-        i = text.indexOf("*/", i + 2);
-        if (i === -1) throw new Error("unterminated comment");
-        i++;
+        const end = text.indexOf("*/", i + 2);
+        if (end === -1) throw parseError(text.slice(0, i).split("\n").length);
+        // Keep the comment's line breaks, so a later error still names the right line.
+        out += text.slice(i, end + 2).replace(/[^\n]/g, "");
+        i = end + 1;
       } else out += c;
     }
-    return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
+    const cleaned = out.replace(/,(\s*[}\]])/g, "$1");
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      throw parseError(cleaned.slice(0, jsonErrorOffset(cleaned)).split("\n").length);
+    }
+  }
+}
+
+/** Where strict JSON stops being valid: a scan that reports an offset and nothing else. */
+function jsonErrorOffset(text) {
+  let i = 0;
+  const ws = () => {
+    while (/\s/.test(text[i] ?? "")) i++;
+  };
+  const bad = () => {
+    throw i;
+  };
+  const value = () => {
+    ws();
+    const c = text[i];
+    if (c === "{" || c === "[") {
+      const close = c === "{" ? "}" : "]";
+      i++;
+      ws();
+      if (text[i] === close) return i++;
+      for (;;) {
+        if (c === "{") {
+          ws();
+          if (text[i] !== '"') bad();
+          string();
+          ws();
+          if (text[i] !== ":") bad();
+          i++;
+        }
+        value();
+        ws();
+        if (text[i] === ",") i++;
+        else if (text[i] === close) return i++;
+        else bad();
+      }
+    }
+    if (c === '"') return string();
+    const m = /^(-?\d+(\.\d+)?([eE][+-]?\d+)?|true|false|null)/.exec(text.slice(i));
+    if (m === null) bad();
+    i += m[0].length;
+  };
+  const string = () => {
+    i++;
+    while (i < text.length && text[i] !== '"') {
+      if (text[i] === "\n") bad();
+      i += text[i] === "\\" ? 2 : 1;
+    }
+    if (i >= text.length) bad();
+    i++;
+  };
+  try {
+    value();
+    ws();
+    return i < text.length ? i : text.length;
+  } catch (at) {
+    return typeof at === "number" ? at : 0;
   }
 }
 
@@ -204,8 +385,8 @@ function parseToml(text) {
   const root = {};
   let cur = root;
   let i = 0;
-  const fail = (what) => {
-    throw new Error(`TOML: ${what} at line ${text.slice(0, i).split("\n").length}`);
+  const fail = () => {
+    throw parseError(text.slice(0, i).split("\n").length);
   };
   const ws = () => {
     while (text[i] === " " || text[i] === "\t") i++;
@@ -420,7 +601,7 @@ function parseYaml(text) {
     }
     const content = raw.slice(0, cut).trimEnd();
     if (content.trim() === "" || /^(---|\.\.\.)\s*$/.test(content)) return;
-    if (/^\t/.test(content)) throw new Error(`YAML: tab indentation at line ${n + 1}`);
+    if (/^\t/.test(content)) throw parseError(n + 1);
     lines.push({
       indent: content.length - content.trimStart().length,
       text: content.trim(),
@@ -429,8 +610,8 @@ function parseYaml(text) {
     });
   });
   let at = 0;
-  const fail = (what) => {
-    throw new Error(`YAML: ${what} at line ${lines[at]?.n ?? "end"}`);
+  const fail = () => {
+    throw parseError(lines[Math.min(at, lines.length - 1)]?.n);
   };
   const isItem = (t) => t === "-" || t.startsWith("- ");
   const splitKey = (t) => {
@@ -453,7 +634,13 @@ function parseYaml(text) {
   };
   const scalar = (t) => {
     t = t.replace(/^(![^\s]*\s+)+/, "");
-    if (t.startsWith('"')) return JSON.parse(t.replace(/\\x([0-9a-fA-F]{2})/g, "\\u00$1"));
+    if (t.startsWith('"')) {
+      try {
+        return JSON.parse(t.replace(/\\x([0-9a-fA-F]{2})/g, "\\u00$1"));
+      } catch {
+        fail();
+      }
+    }
     if (t.startsWith("'")) {
       if (!t.endsWith("'") || t.length < 2) fail("unterminated string");
       return t.slice(1, -1).replace(/''/g, "'");
@@ -591,54 +778,111 @@ function keysOnly(text) {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\s+#.*$/, "").replace(/^\s*(\/\/|#).*$/, "");
     if (line.trim() === "") continue;
-    const header = /^\s*\[\[?[^\]]+\]\]?\s*$/.exec(line);
+    const header = /^(\s*)(\[\[?)([^\]]+)(\]\]?)\s*$/.exec(line);
     if (header) {
-      out.push(line.trimEnd());
+      const parts = header[3].split(".").map((p) => safeKey(p.trim().replace(/^["']|["']$/g, "")));
+      out.push(`${header[1]}${header[2]}${parts.join(".")}${header[4]}`);
       continue;
     }
     const m = /^(\s*(?:-\s+)?)("[^"]*"|'[^']*'|[A-Za-z0-9_.@$\/-]+)\s*([:=])/.exec(line);
-    if (m) out.push(`${m[1]}${m[2]}${m[3]} …`);
+    if (m) out.push(`${m[1]}${safeKey(m[2].replace(/^["']|["']$/g, ""))}${m[3]} …`);
     else if (/^\s*-/.test(line)) out.push(`${/^\s*/.exec(line)[0]}- …`);
   }
   return out.join("\n");
 }
 
-// ---- Scan a folder ---------------------------------------------------------------------------
+// ---- --scan and --show -----------------------------------------------------------------------
 
-/**
- * One line of any text file with its credential-looking values masked. `bare`: an unquoted
- * `name = value` counts too, as in YAML, TOML or a shell script; in code a literal is quoted, and
- * an unquoted right-hand side is an expression.
- */
-function maskLine(line, bare) {
-  const quoted = /(["']?)([A-Za-z0-9_.-]+)\1(\s*[:=]\s*)(["'])(.*?)\4/g;
-  const unquoted = /(["']?)([A-Za-z0-9_.-]+)\1(\s*[:=]\s*)([^"'\s,}\]\[{]+)/g;
-  const keep = (name, value) =>
-    !isCredentialKey(name) ||
-    value === "" ||
-    onlyReferences(value) ||
-    masked(value) ||
-    /^(true|false|null|\d+)$/.test(value) ||
-    // An auth scheme alone: the credential after it is judged on its own.
-    /^(bearer|basic|token)$/i.test(value);
-  let out = line.replace(quoted, (all, q, name, sep, vq, value) =>
-    keep(name, value) ? all : `${q}${name}${q}${sep}${vq}${redacted(name)}${vq}`,
-  );
-  if (bare) {
-    out = out.replace(unquoted, (all, q, name, sep, value) =>
-      keep(name, value) ? all : `${q}${name}${q}${sep}${redacted(name)}`,
-    );
-  }
-  return maskInline(out);
+/** Code, where an unquoted right-hand side is an expression rather than a literal. */
+const isCode = (name) => /\.(m?[jt]s|cjs|[jt]sx|py)$/i.test(name);
+
+/** The lines of one text file a detector flags, as `[line, kind]`; null for a binary file. */
+function flaggedLines(file) {
+  const buf = fs.readFileSync(file);
+  if (buf.includes(0)) return null;
+  const hits = [];
+  let inKey = false;
+  buf
+    .toString("utf8")
+    .split(/\r?\n/)
+    .forEach((line, n) => {
+      if (inKey) {
+        if (/-----END [A-Z0-9 ]*PRIVATE KEY-----/.test(line)) inKey = false;
+        return;
+      }
+      const kind = lineKind(line, isCode(file));
+      if (kind === null) return;
+      if (kind === "private key block" && !/-----END /.test(line)) inKey = true;
+      hits.push([n + 1, kind]);
+    });
+  return hits;
 }
 
-/** Whether a file's unquoted `name = value` is a literal (config, shell) or an expression (code). */
-const bareLiterals = (name) => !/\.(m?[jt]s|cjs|py)$/i.test(name);
+/** Folders a tool fills with transcripts, history and caches: never part of a port. */
+const SKIPPED_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "file-history",
+  "shell-snapshots",
+  "paste-cache",
+  "image-cache",
+  "debug",
+  "cache",
+  "sessions",
+  "statsig",
+  "todos",
+]);
+const MAX_SCAN_BYTES = 2 * 1024 * 1024;
 
-function show(files) {
+function scan(targets) {
+  let found = 0;
+  const visit = (target, root) => {
+    const rel = path.relative(root, target) || path.basename(target);
+    let stat;
+    try {
+      stat = fs.lstatSync(target);
+    } catch (err) {
+      console.log(`${rel}: ${err.code ?? "unreadable"}`);
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(target).sort()) {
+        if (!SKIPPED_DIRS.has(entry)) visit(path.join(target, entry), root);
+      }
+      return;
+    }
+    if (!stat.isFile() || /\.jsonl$/i.test(target)) return;
+    if (isRefused(target)) {
+      found++;
+      console.log(`${rel}: credential file (not read)`);
+      return;
+    }
+    if (stat.size > MAX_SCAN_BYTES) {
+      console.log(`${rel}: larger than 2 MiB (not scanned; not part of a port)`);
+      return;
+    }
+    const hits = flaggedLines(target);
+    for (const [line, kind] of hits ?? []) {
+      found++;
+      console.log(`${rel}:${line}: ${kind}`);
+    }
+  };
+  for (const target of targets) {
+    const stat = fs.existsSync(target) ? fs.lstatSync(target) : null;
+    visit(target, stat?.isDirectory() ? target : path.dirname(target));
+  }
+  console.log(
+    found === 0
+      ? "# no credential-looking value"
+      : `# ${found} finding(s): a real value becomes a \${KEY} Vault reference or goes; read a flagged file with --show`,
+  );
+  return found === 0 ? 0 : 1;
+}
+
+function show(files, range) {
   let status = 0;
   for (const file of files) {
-    if (REFUSED.some((re) => re.test(path.basename(file)))) {
+    if (isRefused(file)) {
       console.log(`# ${file}: a credential store; not read`);
       status = 3;
       continue;
@@ -647,7 +891,7 @@ function show(files) {
     try {
       buf = fs.readFileSync(file);
     } catch (err) {
-      console.log(`# ${file}: ${err.code ?? err.message}`);
+      console.log(`# ${file}: ${err.code ?? "unreadable"}`);
       status = 1;
       continue;
     }
@@ -655,61 +899,51 @@ function show(files) {
       console.log(`# ${file}: not a text file`);
       continue;
     }
-    const bare = bareLiterals(path.basename(file));
-    const lines = buf
-      .toString("utf8")
-      .split(/\r?\n/)
-      .map((line) => maskLine(line, bare));
-    console.log(`# ${file} (masked)\n${lines.join("\n")}`);
+    let lines = maskLines(buf.toString("utf8"), isCode(file)).split("\n");
+    const total = lines.length;
+    if (range !== null) lines = lines.slice(range[0] - 1, range[1]);
+    const span =
+      range === null ? "" : `, lines ${range[0]}-${Math.min(range[1], total)} of ${total}`;
+    console.log(`# ${file} (flagged lines masked${span})\n${lines.join("\n")}`);
   }
   return status;
 }
 
-function scan(root) {
-  let found = 0;
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== ".git" && entry.name !== "node_modules") walk(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const buf = fs.readFileSync(full);
-      if (buf.includes(0)) continue;
-      const bare = bareLiterals(entry.name);
-      buf
-        .toString("utf8")
-        .split(/\r?\n/)
-        .forEach((line, n) => {
-          const out = maskLine(line, bare);
-          if (out !== line) {
-            found++;
-            console.log(`${path.relative(root, full)}:${n + 1}: ${out.trim()}`);
-          }
-        });
-    }
-  };
-  walk(root);
-  console.log(
-    found === 0
-      ? `# ${root}: no credential-looking value`
-      : `# ${root}: ${found} line(s) above hold a value: a real one becomes a \${KEY} Vault reference or goes; a placeholder in prose may stay`,
-  );
-  return found === 0 ? 0 : 1;
-}
-
 // ---- Main ------------------------------------------------------------------------------------
+
+const USAGE =
+  "usage: node inspect-config.mjs <file>... [--only <key>[,<key>...]] [--keys]\n" +
+  "       node inspect-config.mjs --scan <dir-or-file>...\n" +
+  "       node inspect-config.mjs --show <file>... [--lines <from>-<to>]";
 
 const args = process.argv.slice(2);
 if (args[0] === "--scan") {
-  if (args[1] === undefined) {
-    console.error("usage: node inspect-config.mjs --scan <dir>");
+  if (args.length < 2) {
+    console.error(USAGE);
     process.exit(2);
   }
-  process.exit(scan(args[1]));
+  process.exit(scan(args.slice(1)));
 }
-if (args[0] === "--show") process.exit(show(args.slice(1)));
+if (args[0] === "--show") {
+  const rest = args.slice(1);
+  let range = null;
+  const at = rest.indexOf("--lines");
+  if (at !== -1) {
+    const m = /^(\d+)-(\d+)$/.exec(rest[at + 1] ?? "");
+    if (m === null) {
+      console.error(USAGE);
+      process.exit(2);
+    }
+    range = [Number(m[1]), Number(m[2])];
+    rest.splice(at, 2);
+  }
+  if (rest.length === 0) {
+    console.error(USAGE);
+    process.exit(2);
+  }
+  process.exit(show(rest, range));
+}
+
 const files = [];
 let only = null;
 let keys = false;
@@ -719,9 +953,7 @@ for (let a = 0; a < args.length; a++) {
   else files.push(args[a]);
 }
 if (files.length === 0) {
-  console.error(
-    "usage: node inspect-config.mjs <file>... [--only <key>[,<key>...]] [--keys] | --scan <dir> | --show <file>...",
-  );
+  console.error(USAGE);
   process.exit(2);
 }
 
@@ -748,8 +980,7 @@ function pick(data, paths) {
 
 let status = 0;
 for (const file of files) {
-  const base = path.basename(file);
-  if (REFUSED.some((re) => re.test(base))) {
+  if (isRefused(file)) {
     console.log(`# ${file}: a credential store; not read`);
     status = 3;
     continue;
@@ -758,10 +989,11 @@ for (const file of files) {
   try {
     text = fs.readFileSync(file, "utf8");
   } catch (err) {
-    console.log(`# ${file}: ${err.code ?? err.message}`);
+    console.log(`# ${file}: ${err.code ?? "unreadable"}`);
     status = 1;
     continue;
   }
+  const base = path.basename(file);
   const ext = path.extname(base).toLowerCase();
   const format =
     ext === ".toml"
@@ -772,9 +1004,7 @@ for (const file of files) {
           ? "json"
           : null;
   if (format === null) {
-    console.log(
-      `# ${file}: not a JSON, TOML or YAML file; read Markdown directly, ask about anything else`,
-    );
+    console.log(`# ${file}: not a JSON, TOML or YAML file; read text with --show`);
     status = 1;
     continue;
   }
@@ -787,16 +1017,15 @@ for (const file of files) {
     data =
       format === "toml" ? parseToml(text) : format === "yaml" ? parseYaml(text) : parseJson(text);
   } catch (err) {
+    const line = err?.line ?? null;
     console.log(
-      `# ${file} (${format}): could not be parsed (${err.message}); key names only\n${keysOnly(text)}`,
+      `# could not parse ${file}${line ? ` (line ${line})` : ""}; key names only\n${keysOnly(text)}`,
     );
     status = 1;
     continue;
   }
   if (base === ".claude.json") data = claudeJsonView(data ?? {});
   if (only !== null) data = pick(data ?? {}, only);
-  console.log(
-    `# ${file} (${format})\n${JSON.stringify(mask(data, "", { names: false, sensitive: false }), null, 2)}`,
-  );
+  console.log(`# ${file} (${format})\n${JSON.stringify(mask(data, "", false, false), null, 2)}`);
 }
 process.exit(status);

@@ -1,7 +1,7 @@
 ---
 name: agent-porting
 description: Migrate an agent into PenguinHarness from Claude Code, Codex, DeepSeek Harness (dsh), Qoder, Qwen Code, WorkBuddy, Pi or another coding agent — read its instructions, skills, commands, subagents, MCP servers, hooks and memory without copying a secret, write them as an Agent zip folder (a manifest.json with a definition, plus agent_state/), create the agent with `penguin agent import`, and report what did not move.
-version: 2026.11.05.1
+version: 2026.11.05.2
 ---
 
 # Agent Porting
@@ -16,8 +16,8 @@ To bring in a few skills to the current Agent instead, use `skill-porting`; to t
 - Paths are on the machine you run on, which is the server's. When the source lives on another computer, ask the user to copy it here first.
 - Pick the new Agent's id: 2–64 characters, a lowercase letter first, then lowercase letters, digits and `_` (no hyphens). Check `penguin agent ls --project-id <project>` for a collision. The Project is the one the prompt names; without one, ask.
 - Build the folder in this Session's scratchpad (`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/`), at `<scratchpad>/agent-port/<id>/`, called `<port>` below: it is an intermediate, not a deliverable. Use absolute paths, since each command starts in the Workspace.
-- `<inspect>` below is the masked reader that ships with this skill: `node <app_data_dir>/agents/<agent_id>/agent_state/skills/agent-porting/scripts/inspect-config.mjs`.
-- Keep the conversation small: list trees with `ls -la` and `find <dir> -maxdepth 3 -type f -not -name '*.jsonl'` (which leaves transcripts out), read Markdown with `sed -n '1,200p'`, and never `cat` a whole tree.
+- `<inspect>` below is the reader that ships with this skill: `node <app_data_dir>/agents/<agent_id>/agent_state/skills/agent-porting/scripts/inspect-config.mjs`. It is the only way any source file is read (step 1).
+- Keep the conversation small: list trees with `ls -la` and `find <dir> -maxdepth 3 -type f -not -name '*.jsonl'` (which leaves transcripts out), and read a long file in parts with `--lines <from>-<to>`.
 
 ## 1. Read the source, all of it
 
@@ -25,12 +25,14 @@ Read the files themselves, not a summary, and read what they point at: an `@path
 
 The layouts below were checked against each tool's own documentation on 2026-11-04. A tool may have moved things since: when a path is not where this says, list the tool's directory and map by shape.
 
-**A secret value never enters this conversation.** Everything a command prints becomes part of this Session's Trace, which is stored, sent to the model, and may later travel in an export. So:
+**A secret value never enters this conversation.** Everything a command prints becomes part of this Session's Trace, which is stored, sent to the model, and may later travel in an export. So every source file is read through `<inspect>`, and no other command (`cat`, `sed`, `head`, `grep`, `jq`, an editor) ever reads one:
 
-- **Configuration files only through `<inspect>`.** Every JSON, TOML or YAML file below (`settings*.json`, `~/.claude.json`, `.mcp.json`, `mcp.json`, `hooks.json`, `config.toml`, `cordis.patch.yml`, `models.json`, a TOML command or agent file) is read as `<inspect> <file>...`. It prints the file as JSON with every credential replaced by `<redacted:NAME>`: values under credential-looking keys, every `env` and header value, credential flags and `NAME=value` assignments in arguments and commands, a URL's user info and credential query parameters. Key names, commands, model settings and `${VAR}` references stay. `--only mcpServers,hooks` narrows the output. Never `cat`, `sed`, `grep`, `jq` or `head` such a file, and never print an environment variable.
-- **Markdown directly**: instructions, rules, skills, commands and subagents are read with `sed -n`.
-- **Scripts and supporting files after a scan.** Before reading a skill's or hook's directory, run `<inspect> --scan <dir>`: it names each line where a credential-looking value sits, masked. Read a file it names with `<inspect> --show <file>` instead of `sed`.
-- **Never at all**: the files in each tool's "never" line, transcripts and history (`*.jsonl` session logs), and any other credential store (`.env`, `auth.json`, `*credentials*`, `*tokens*.json`). The reader refuses them too.
+- **Scan first.** Run `<inspect> --scan <dir>` on each source directory before reading anything in it: the tool's home (`~/.claude`, `~/.codex`, …; transcripts and caches are skipped), the project's tool folder, and the instruction files themselves. It prints `file:line: <kind>` for each line that looks like it holds a credential, and never the line.
+- **Configuration** (JSON, TOML, YAML: `settings*.json`, `~/.claude.json`, `.mcp.json`, `mcp.json`, `hooks.json`, `config.toml`, `cordis.patch.yml`, `models.json`, a TOML command or agent file): `<inspect> <file>...` prints the file as JSON by allowlist. Key names, numbers and booleans print. A string prints only when it is a `${VAR}` / `${credential:…}` reference, the value of a structural key (`name`, `type`, `transport`, `command`, `cwd`, `matcher`, `model`, effort and approval settings, …), an `args` flag or package or path, or a URL's scheme, host and path; everything else prints as `<redacted:N chars>`. A `command` holding a shell line prints its program and a word count. Under a key that names a credential (`*token*`, `*key*`, `Authorization`, …) even a reference shows only its structure, `Bearer ${<redacted:N chars>}`. `--only mcpServers,hooks` narrows the output; a file that does not parse prints its key names only.
+- **Text** (instructions, rules, skills, commands, subagents, scripts, any supporting file): `<inspect> --show <file>`, which prints it with each flagged line replaced whole by `<redacted line: kind>`. A subagent's or skill's frontmatter can hold `mcpServers` with literal `env` values; `--show` masks such a line like any other.
+- **Never at all**: the files in each tool's "never" line, transcripts and history (`*.jsonl` session logs), and credential stores (`.env`, `*.env`, `.envrc`, `auth.json`, `*credentials*`, `*tokens*.json`, `*.pem`, `*.key`, `id_rsa*`, `.netrc`, `.npmrc`, `.pypirc`). The reader refuses them.
+
+What the reader keeps back is what you never need: a value is mapped by its name and its place, never by its content.
 
 ### Claude Code
 
@@ -152,11 +154,11 @@ Each server becomes `{ "name": …, "config": { … } }` in `definition.mcpServe
 
 - `transport`: `stdio` (`command`, `args`, `env`, `cwd`), `http` (streamable HTTP: `url`, `headers`) or `sse` (`url`, `headers`). Claude Code's `type` becomes `transport`; Qwen Code's `httpUrl` is `http` and its `url` is `sse`; DeepSeek Harness's `streamable-http` is `http`. A `ws` server has no counterpart: report it.
 - `name`: the source name lower-cased, letters, digits, `_` and `-`, starting with a letter or digit.
-- **Every credential becomes a Vault reference**, `${KEY}` with `KEY` a letter or `_` followed by letters, digits and `_`, listed in `manifest.vaultKeys`. A source reference keeps its name: `${VAR}` stays (`${VAR:-default}` loses its default, and the report says it had one), `${credential:name}` becomes `${NAME}`. Codex's `env_vars = ["X"]` becomes `env: { "X": "${X}" }`, `bearer_token_env_var = "X"` becomes `headers: { "Authorization": "Bearer ${X}" }`, and `env_http_headers = { H = "X" }` becomes `headers: { "H": "${X}" }`. A literal secret in the source, and Pi's `!command` value, becomes `${<SERVER>_<FIELD>}` (for example `${GITHUB_TOKEN}`). A reference cannot sit in the host of `url`.
+- **Every credential becomes a Vault reference**, `${KEY}` with `KEY` a letter or `_` followed by letters, digits and `_`, listed in `manifest.vaultKeys`. Name each key after the field it fills, which the reader always shows: an `env` entry `GITHUB_TOKEN` becomes `"GITHUB_TOKEN": "${GITHUB_TOKEN}"`, a header becomes `${<SERVER>_<HEADER>}` (for example `${DOCS_API_KEY}` for `X-Api-Key`), and a `bearer_token_env_var` (whose value the reader withholds) becomes `headers: { "Authorization": "Bearer ${<SERVER>_TOKEN}" }`. A reference the reader shows whole (`${VAR}` outside a credential key, Codex's `env_vars` names) keeps its name; `${VAR:-default}` loses its default, and the report says it had one. Every literal, `${credential:…}` and Pi `!command` value gets a key named the same way. A reference cannot sit in the host of `url`.
 - A server that signs in with OAuth keeps an `oauth` object without any client secret; this version cannot sign in yet, so it waits as "sign-in required" unless the server also accepts a token as `Authorization: Bearer ${KEY}`. Say so in the report.
 - A server that runs a file shipped inside another tool's plugin (`${CLAUDE_PLUGIN_ROOT}`) is not ported: report it.
 
-The `plugin-porting` skill's `scripts/port-mcp.mjs` applies the same rules to a directory whose root holds a `.mcp.json`; its output entries carry a `setup` list you drop (the keys go to `vaultKeys`) and `${PLUGIN_ROOT}` paths that do not exist for an Agent. It prints a literal `env` value as it found it, so run it only on a `.mcp.json` whose `<inspect>` output masked nothing.
+Do not run the `plugin-porting` skill's `scripts/port-mcp.mjs` on a source here: it prints the servers it converts without masking them.
 
 ### Hooks
 
@@ -170,7 +172,7 @@ Only `command` handlers on three events port, one wrapper script per command; ev
 | `Stop` | `stop` | A block with a reason answers `{ "decision": "continue", "input": <the reason>, "reason": <one line> }`, which starts the next Task. A hook that blocks every time would loop: check it stops |
 | `UserPromptSubmit` | `user_prompt`, `"trigger": "prompt"` | stdin adds `prompt`. Added context (plain stdout, `additionalContext`) answers `{ "context": … }`; refusing the prompt has no counterpart |
 
-The wrapper runs the source command with `child_process.spawnSync(command, { shell: true, input, encoding: "utf8" })`, `input` being the source tool's own stdin shape (for Claude Code: `session_id`, `hook_event_name`, `tool_name` and `tool_input` under the source's names, `prompt`), and translates the answer. Rewrite the matcher's tool names: Claude Code's `Bash` is `exec_command` (its `command` argument is `cmd`), `Read`, `Edit` / `MultiEdit` and `Write` are `read_file`, `edit_file` and `write_file`, `Task` / `Agent` is `run_subagent`, and `mcp__<server>__<tool>` stays. Copy each script the command runs into the package and call it by its path relative to the wrapper (`import.meta.dirname`). A command that needs `$CLAUDE_PROJECT_DIR` or another tool's runtime is reported, not ported. Review every script as `skill-porting` asks before you copy it.
+The reader shows a hook's command as its program and a word count, never the rest. A hook ports when that command runs a script file: find the script (list the tool's hook folder, such as `~/.claude/hooks/`, or ask the user which file it is), read it with `--show`, copy it into the package, and have the wrapper run it with `child_process.spawnSync(<program>, [<script>], { input, encoding: "utf8" })`, `input` being the source tool's own stdin shape (for Claude Code: `session_id`, `hook_event_name`, `tool_name` and `tool_input` under the source's names, `prompt`); then translate the answer. An inline shell line you cannot see is reported, with its event, matcher and program. Rewrite the matcher's tool names: Claude Code's `Bash` is `exec_command` (its `command` argument is `cmd`), `Read`, `Edit` / `MultiEdit` and `Write` are `read_file`, `edit_file` and `write_file`, `Task` / `Agent` is `run_subagent`, and `mcp__<server>__<tool>` stays. Copy each script the command runs into the package and call it by its path relative to the wrapper (`import.meta.dirname`). A command that needs `$CLAUDE_PROJECT_DIR` or another tool's runtime is reported, not ported. Review every script as `skill-porting` asks before you copy it.
 
 ## 3. Write the folder
 
@@ -258,7 +260,7 @@ An Agent leaves PenguinHarness the same way: `penguin agent export <id> --traces
 
 ## Cautions
 
-- **Never copy or print a secret**: not into `AGENTS.md`, a skill, a hook script, the manifest, a command line, a tool result or your reply. Configuration goes through `<inspect>` only; key names only.
+- **Never copy or print a secret**: not into `AGENTS.md`, a skill, a hook script, the manifest, a command line, a tool result or your reply. Every source file goes through `<inspect>` only; key names only.
 - **Read everything before writing anything**: a partial read yields an Agent that half-works and looks finished.
 - **The source is read-only**: never edit, move or delete another tool's files.
 - **One Agent per import**: several subagents are several imports.

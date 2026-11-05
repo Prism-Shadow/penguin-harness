@@ -7,7 +7,7 @@
 
 [English](2026-11-04-agent-porting-skill.md)
 
-`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.1`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
+`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.2`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
 
 ## 来源
 
@@ -17,10 +17,18 @@
 
 ## 密钥不进入对话
 
-- Agent 读取 JSON、TOML 和 YAML 配置文件时，一律经过 Skill 自带的读取脚本 `scripts/inspect-config.mjs`。它把文件打印成 JSON，所有凭据都替换为 `<redacted:NAME>`：名称像凭据的键下的值、`env` 与请求头的值、参数和命令中的凭据开关与赋值，以及 URL 的用户信息和查询参数。键名、命令和 `${VAR}` 引用保持可读。`~/.claude.json` 只显示其中的 MCP Server。
-- 凭据存储（`.env`、`auth.json`、`.credentials.*`、OAuth 令牌缓存）一律拒绝读取。
-- `--scan <dir>` 列出文件夹中含有疑似凭据值的每一行，值已遮蔽。Agent 在读取来源的 Skill 或钩子目录之前、以及导入文件夹之前运行它。`--show <file>` 以遮蔽后的形式打印被标出的文件。
-- 指令、Skill 和命令的 Markdown 直接读取。
+- Agent 读取任何来源文件都只经过 Skill 自带的读取脚本 `scripts/inspect-config.mjs`，不用其他命令。
+- JSON、TOML 和 YAML 配置文件按白名单打印成 JSON：
+  - 键名、数字和布尔值照常打印；
+  - 字符串只在以下情况打印：`${VAR}` 引用、结构性键（`name`、`type`、`transport`、`command`、`cwd`、`matcher`、`model`、推理强度与审批设置）的值、`args` 中的开关、包名或路径，以及 URL 的协议、主机和路径；
+  - `command` 中的整行 shell 命令只打印程序名和词数；
+  - 其余字符串一律打印为 `<redacted:N chars>`，凭据键下的引用也只保留结构；
+  - `~/.claude.json` 只显示其中的 MCP Server。
+- 无法解析的文件只报出错的行号，并且只打印键名，从不打印内容。
+- `--scan` 把文件或文件夹中疑似含有凭据的每一行列为 `file:line: <kind>`，从不打印该行内容。Agent 在读取任何来源目录之前、以及导入之前运行它。
+- `--show` 打印文本文件（指令、Skill、命令、脚本），被标出的行整行替换，私钥块替换到结束。
+- 凭据存储（`.env`、`*.env`、`.envrc`、`auth.json`、`.credentials.*`、OAuth 令牌缓存、`*.pem`、`*.key`、`id_rsa*`、`.netrc`、`.npmrc`、`.pypirc`）一律拒绝读取。
+- 命令是脚本文件的钩子通过该脚本移植；命令是整行 shell 命令的钩子（读取脚本不显示其内容）写进报告。
 
 ## 迁移的内容
 
