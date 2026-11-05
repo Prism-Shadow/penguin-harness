@@ -9,9 +9,10 @@
  * and conversations, with a note when the selection is larger than an import takes, how many
  * conversations are left out for a file too large, and the server's notes (a part whose directory
  * is a link). A selection past what an import accepts at all — its entry, size or per-file caps —
- * is one the server refuses to export: the preview says why, and Export waits for another choice. It is asked again 300 ms after the last change,
- * and the previous answer stays (dimmed) until the new one arrives, so the line changes only
- * when its numbers do. Export saves `<agentId>-<yyyymmdd>.zip` through the fetch-then-save
+ * is one the server refuses to export: the preview says why, and Export waits for another choice.
+ * So does an Agent whose own config does not parse (422 `invalid_config`), until it is fixed.
+ * The preview is asked again 300 ms after the last change, and the previous answer stays (dimmed)
+ * until the new one arrives, so the line changes only when its numbers do. Export saves `<agentId>-<yyyymmdd>.zip` through the fetch-then-save
  * helper (archive-download.ts), so a refused export is a toast rather than a saved error page.
  *
  * Instant controls under the settings commit model: nothing here is a draft, so closing loses
@@ -27,6 +28,7 @@ import type { AgentArchivePreview, TraceSelection } from "@prismshadow/penguin-s
 import { Button, Checkbox, FieldLegend, Input, Modal, Segmented } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, localYmd } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
@@ -81,7 +83,10 @@ function selectionOf(
 
 /** What the preview answered, for the query it was asked with; or why it could not answer. */
 type PreviewState =
-  { query: string; answer: AgentArchivePreview } | { query: string; error: string } | null;
+  | { query: string; answer: AgentArchivePreview }
+  /** `code`: the server's, when it answered one (`invalid_config`: the Agent's config does not parse). */
+  | { query: string; error: string; code: string | null }
+  | null;
 
 function ExportForm({ projectId, agentId, agentName, machineId, onClose }: AgentExportDialogProps) {
   const [switches, setSwitches] = useState<Record<ArchiveSwitch, boolean>>({ ...DEFAULT_SWITCHES });
@@ -112,7 +117,17 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
           if (!cancelled) setPreview({ query: queryText, answer });
         },
         (e: unknown) => {
-          if (!cancelled) setPreview({ query: queryText, error: apiErrorText(e) });
+          if (!cancelled) {
+            // The export's own reading of `invalid_config` (a config save answers the same code
+            // about a field, so the shared code-to-text map cannot carry this wording).
+            const unparsable =
+              e instanceof ApiError && e.status === 422 && e.code === "invalid_config";
+            setPreview({
+              query: queryText,
+              error: unparsable ? S.agent.exportConfigInvalid : apiErrorText(e),
+              code: e instanceof ApiError ? e.code : null,
+            });
+          }
         },
       );
     }, delay);
@@ -148,12 +163,16 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
     }
   };
 
-  /** The current choice is one the server would refuse to export (the preview says why). */
+  /**
+   * The current choice is one the server would refuse to export (the preview says why): past what
+   * an import accepts, or — whatever is chosen — an Agent whose own config does not parse.
+   */
   const refused =
     preview !== null &&
-    "answer" in preview &&
     preview.query === queryText &&
-    preview.answer.refusal !== undefined;
+    ("answer" in preview
+      ? preview.answer.refusal !== undefined
+      : preview.code === "invalid_config");
   const countValid = mode !== "last" || selection !== null;
   const rangeReversed =
     mode === "range" && isLocalDate(range.from) && isLocalDate(range.to) && range.from > range.to;

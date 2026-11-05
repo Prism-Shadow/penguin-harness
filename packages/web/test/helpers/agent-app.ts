@@ -32,7 +32,7 @@
  * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * Every server answers the Agent archive too: the preview of a parts query (`archivePreview`,
- * by default a fixed small one), the zip download under `<agentId>-20261104.zip`, and the import
+ * by default a fixed small one, or the refusal `previewRefusal` names), the zip download under `<agentId>-20261104.zip`, and the import
  * of an uploaded file — read no further than its name — which creates the Agent the `agentId`
  * query names (without one, the id the file records: `archiveAgentId`, `imported` by default),
  * answers 409 `agent_exists` for one this server already lists unless `overwrite=1` asks to
@@ -269,6 +269,8 @@ export function agentServer(
     skills?: string[];
     /** The Agent id an uploaded file records, which an import without `agentId` takes. */
     archiveAgentId?: string;
+    /** What an archive preview answers instead of a preview: the server's refusal. */
+    previewRefusal?: { status: number; code: string; message: string };
     /** What an archive preview answers for its parts query (by default a fixed small one). */
     archivePreview?: (query: URLSearchParams) => AgentArchivePreview;
     /** What a landed import reports beside its mode and Agent (by default nothing came in). */
@@ -625,6 +627,8 @@ export function agentServer(
     const archive = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive(\/preview)?$/.exec(path);
     if (archive !== null && method === "GET") {
       if (archive[2] !== undefined) {
+        const no = options.previewRefusal;
+        if (no !== undefined) return apiError(no.status, no.code, no.message);
         return json(
           options.archivePreview?.(request.query) ?? {
             parts: {

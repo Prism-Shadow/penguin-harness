@@ -9,13 +9,15 @@
  * - The line notes a selection larger than an import takes, and how many conversations a file too
  *   large leaves out; a selection within the limit carries neither note.
  * - A selection the server would refuse to export says why, and Export stays off; a part the
- *   export leaves out as a link is named by its tab.
+ *   export leaves out as a link is named by its tab. An Agent whose own config does not parse
+ *   (422 `invalid_config`) says so in the dialog's words, and Export stays off too.
  * - A date range exports the conversations of its dates; one that ends before it starts says so
  *   and exports nothing.
  * - Importing a file sends it under the id its name suggests; a new id creates the Agent, says
  *   what came in and what is left to fill in, and the Agent list is read again with it there.
- * - The import's notes are said in the dialog's words by their code; a code this client does not
- *   know keeps the server's own sentence.
+ * - The import's notes are said in the dialog's words by their code (an overwrite whose Agent's
+ *   own config did not parse among them); a code this client does not know keeps the server's
+ *   own sentence.
  * - A taken id shows in place with "Use another id" and, for the Project owner, "Overwrite the
  *   existing agent", which asks once and sends the same file again with overwrite.
  * - A member meets a taken id with "Use another id" alone, which puts the cursor in the id field.
@@ -321,11 +323,26 @@ describe("exporting and importing an Agent", () => {
     expect(buttonIn(topDialog(), en.agent.exportAction).disabled).toBe(true);
   });
 
+  it("says an Agent whose config does not parse cannot be exported, in its own words, and keeps Export off", async () => {
+    const server = agentServer(undefined, {
+      previewRefusal: {
+        status: 422,
+        code: "invalid_config",
+        message: "The server's own sentence.",
+      },
+    });
+    await openExport(server);
+    await waitFor(() => topDialog().textContent!.includes(en.agent.exportConfigInvalid));
+    expect(topDialog().textContent).not.toContain("The server's own sentence.");
+    expect(buttonIn(topDialog(), en.agent.exportAction).disabled).toBe(true);
+  });
+
   it("says the import's notes in its own words by code, and a code it does not know in the server's", async () => {
     agentServer(undefined, {
       importReport: {
         notes: [
           { code: "unknown_tool", subject: "web_search", message: "the server's own sentence" },
+          { code: "current_config_invalid", message: "the server's config sentence" },
           { code: "from_a_newer_server" as never, message: "a newer server's sentence" },
         ],
       },
@@ -336,6 +353,8 @@ describe("exporting and importing an Agent", () => {
     await waitFor(() => toasts("success").length === 1);
     expect(toasts("success")[0]).toContain(en.agent.archiveNotes.unknownTool("web_search"));
     expect(toasts("success")[0]).not.toContain("the server's own sentence");
+    expect(toasts("success")[0]).toContain(en.agent.archiveNotes.currentConfigInvalid);
+    expect(toasts("success")[0]).not.toContain("the server's config sentence");
     expect(toasts("success")[0]).toContain("a newer server's sentence");
   });
 

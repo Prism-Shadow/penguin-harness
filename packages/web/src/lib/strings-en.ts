@@ -1955,7 +1955,12 @@ export const en: Strings = {
       noKnownTools:
         "None of the definition's built-in tools exist here; the default toolset was kept",
       linkSkipped: (part: string): string => `The ${part} directory is a link and is left out`,
+      currentConfigInvalid:
+        "This agent's own system_config.yaml did not parse, so no credential the file left blank was filled in from it",
     },
+    /** The preview's 422 `invalid_config`: the Agent's own config does not parse, whatever is chosen. */
+    exportConfigInvalid:
+      "This agent's system_config.yaml does not parse. Fix the file before exporting the agent.",
     exportAction: "Export",
     exporting: "Exporting…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's "Replace from file…". */
