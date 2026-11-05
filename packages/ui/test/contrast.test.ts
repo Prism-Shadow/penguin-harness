@@ -41,7 +41,7 @@
  * A pair a theme cannot meet yet goes in EXCEPTIONS with the reason and the wave that fixes it; an
  * exception that has started passing fails the suite until it is removed.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -60,6 +60,7 @@ import {
   contrastRatio,
   formatColor,
   parseColor,
+  readThemeSources,
   resolveThemeValue,
 } from "../src/testing";
 import type { AccentPresetRules, Rgba, ThemeFileAnalysis } from "../src/testing";
@@ -307,7 +308,7 @@ function measure(
 function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
   const path = join(SRC_DIR, "themes", `${id}.css`);
   if (!existsSync(path)) return null;
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzeThemeFile(readThemeSources(join(SRC_DIR, "themes"), id), id);
   return analysis.isStub ? null : analysis;
 }
 
@@ -625,6 +626,59 @@ describe("the accent's tint under the person's own words", () => {
           }
         }
         expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
+      });
+    }
+  }
+});
+
+/**
+ * The keyboard focus ring's colour as a mark, 3:1, on what a focused control sits against: the
+ * page surfaces, the overlay and the navigation column. Doodle draws its ring inside the box (a
+ * box clipped to its drawn line would cut a ring outside it) with a band of the surface between
+ * the ring and a filled button's fill, so the surfaces are the ring's neighbours there too.
+ * Primer, and Frost in light, draw a translucent halo outside the box instead, below the floor
+ * by design; FOCUS_HALOS names them, and a halo that starts clearing the floor fails the suite
+ * until its entry goes.
+ */
+const FOCUS_HALOS: readonly { theme: ThemeId; mode: ThemeModeName; reason: string }[] = [
+  { theme: "github", mode: "light", reason: "a gray-500 halo at 40 % outside the box" },
+  { theme: "github", mode: "dark", reason: "a gray-500 halo at 40 % outside the box" },
+  { theme: "modern", mode: "light", reason: "the accent at 32 %, a soft halo outside the box" },
+];
+const RING_SURFACES = [...PAGE_SURFACES, "--ui-overlay", "--ui-shell-nav-bg"] as const;
+
+describe("the keyboard focus ring", () => {
+  for (const id of THEME_IDS) {
+    const theme = themeAnalysis(id);
+    if (theme === null) {
+      it.skip(`src/themes/${id}.css — PENDING, the ring not checked: no tokens declared yet`, () => {});
+      continue;
+    }
+    for (const mode of THEME_MODES) {
+      it(`${id} ${mode}: the ring clears 3:1 on every surface a focused control sits on`, () => {
+        const resolve: Resolve = (name) => {
+          const value = resolveThemeValue(name, mode, theme, defaultTheme);
+          if (value === null) return `${name} does not resolve to a value`;
+          return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
+        };
+        // The ring is an outline shorthand, `<width> <style> <colour>`.
+        const spec = resolveThemeValue("--ui-focus-ring", mode, theme, defaultTheme) ?? "";
+        const ring = parseColor(spec.replace(/^\s*[\d.]+px\s+[a-z]+\s+/, ""));
+        expect(ring, `--ui-focus-ring is \`${spec}\``).not.toBeNull();
+        const failures = RING_SURFACES.flatMap((bg) => {
+          const under = opaqueBackground(bg, mode, resolve);
+          if (typeof under === "string") return [`${bg}: ${under}`];
+          const ratio = contrastRatio(composite(ring!, under), under);
+          return ratio < 3 ? [`${bg}: ${ratio.toFixed(2)}:1 (${formatColor(under)})`] : [];
+        });
+        if (FOCUS_HALOS.some((halo) => halo.theme === id && halo.mode === mode)) {
+          expect(
+            failures.length,
+            `remove ${id} ${mode} from FOCUS_HALOS: its ring clears 3:1`,
+          ).toBeGreaterThan(0);
+        } else {
+          expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
+        }
       });
     }
   }

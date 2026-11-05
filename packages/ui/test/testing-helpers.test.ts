@@ -4,6 +4,8 @@
  * returned 21 for every pair, or a theme reader that found no declarations, would turn the
  * contract and contrast suites into green no-ops.
  */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -25,6 +27,7 @@ import {
   modeDeclarations,
   parseColor,
   parseCssRules,
+  readThemeSources,
   renderStatic,
   resolveThemeValue,
   scanSourceRoots,
@@ -228,6 +231,38 @@ describe("theme file analysis", () => {
     ]);
   });
 
+  it("skips a recipe's private custom properties, in the canonical rules and outside them", () => {
+    const recipe = `@layer ui-theme {\n:root[data-theme="modern"] .ui-frame { --_clip: inset(0); }\n}`;
+    const analysis = analyzeThemeFile(
+      `${modern(`${complete()}\n--_edge: url(a.svg);`, "--_edge: url(b.svg);")}\n${recipe}`,
+      "modern",
+    );
+    expect(analysis.structure).toEqual([]);
+    expect(contractProblems(analysis, "light")).toEqual([]);
+    expect(contractProblems(analysis, "dark")).toEqual([]);
+    expect(modeDeclarations(analysis, "light").has("--_edge")).toBe(false);
+  });
+
+  it("reads a theme and its partials as one, naming the file a problem is in", () => {
+    // The partial declares a token the file leaves out, and misplaces another.
+    const partial = [
+      `@layer ui-theme { :root[data-theme="modern"] { --ui-canvas: #fff; } }`,
+      `@layer ui-theme { .ui-frame { --ui-surface: #fff; } }`,
+    ].join("\n");
+    const file = modern(complete().replace("--ui-canvas: #123456;", ""), "");
+    const analysis = analyzeThemeFile(
+      [
+        { file: "modern/recipes.css", css: partial },
+        { file: "modern.css", css: file },
+      ],
+      "modern",
+    );
+    expect(contractProblems(analysis, "light")).toEqual([]);
+    expect(analysis.structure).toEqual([
+      expect.stringMatching(/^modern\/recipes\.css line 2: .*declares --ui-surface/),
+    ]);
+  });
+
   it("gives the default theme its attribute-less selectors and no gray-bridge duty", () => {
     const github = analyzeThemeFile(
       `@layer ui-theme {\n:root, :root[data-theme="github"] {\n${complete()}\n}\n:root.dark, :root[data-theme="github"].dark {\n${complete()}\n}\n}`,
@@ -265,6 +300,28 @@ describe("theme file analysis", () => {
       "github",
     );
     expect(resolveThemeValue("--ui-fg", "light", cycle, cycle)).toBeNull();
+  });
+});
+
+describe("readThemeSources", () => {
+  it("reads a theme's partials before the file, each partial's own first, and no package import", () => {
+    const dir = mkdtempSync(join(tmpdir(), "theme-sources-"));
+    try {
+      mkdirSync(join(dir, "modern"));
+      writeFileSync(
+        join(dir, "modern.css"),
+        `/* @import "./modern/old.css"; */\n@import "./modern/a.css";\n@import "@scope/pkg/b.css";\n`,
+      );
+      writeFileSync(join(dir, "modern", "a.css"), `@import "./c.css";\n`);
+      writeFileSync(join(dir, "modern", "c.css"), "");
+      expect(readThemeSources(dir, "modern").map((source) => source.file)).toEqual([
+        "modern/c.css",
+        "modern/a.css",
+        "modern.css",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
