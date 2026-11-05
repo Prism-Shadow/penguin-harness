@@ -1,18 +1,21 @@
 /**
  * The pinned sidebar's frame: one column, top to bottom — an optional mode switch, the switcher
- * row (the fold button and the Project or organization switcher), one pinned entry, the scroll
- * area, and the account row at the foot. The pieces the scroll area is built from are here too:
- * the page nav — pinned entries that always show, then the ones that fold away under a slim
- * toggle — its entries with their favourite toggles (a star) and the areas a dragged entry can
+ * row (the fold button and the Project or organization switcher), the fixed block (New chat and
+ * the favourite entries), the scroll area, and the account row at the foot. The pieces the nav
+ * and the list are built from are here too: the fold the other entries go away in under a slim
+ * toggle, the entries with their favourite toggles (a star) and the areas a dragged entry can
  * land in, the list's header with its label and its controls, the controls themselves, and the
  * switcher's and the account's buttons.
  *
- * The page nav and the list scroll together, so the nav rides up as the list is scrolled: the
- * scroll area is the column's only shrinkable block, and a column of fixed chrome taller than a
- * short window would push the document into a second scrollbar. The area is its own containing
- * block (`relative`), so an absolutely placed descendant (a row's visually hidden name) scrolls
- * with it rather than stretching the document, and it clips sideways (`overflow-x-clip`) so a
- * pixel of horizontal overflow never turns into a scrollbar under the list.
+ * The fixed block holds still while the scroll area scrolls under it; the fold sits at the top
+ * of the scroll area and rides up with the list. A column of fixed chrome taller than a short
+ * window would push the document into a second scrollbar, so both blocks give way: the scroll
+ * area shrinks first, down to a floor that keeps the list's header and a row or two in view,
+ * and past that the fixed block shrinks and scrolls its own rows. The scroll area is its own
+ * containing block (`relative`), so an absolutely placed descendant (a row's visually hidden
+ * name) scrolls with it rather than stretching the document, and it clips sideways
+ * (`overflow-x-clip`) so a pixel of horizontal overflow never turns into a scrollbar under the
+ * list.
  *
  * Everything on the column sits on its muted surface, so a hover and a selection are the column's
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
@@ -55,11 +58,12 @@ export interface SidebarFrameProps {
    */
   collapse?: { label: string; tooltip?: string; onClick: () => void };
   /**
-   * The one entry pinned under the switcher ("New chat"). Without one the column keeps the gap the
-   * scroll area below depends on.
+   * The fixed block under the switcher: the entries that never scroll ("New chat" and the
+   * favourites, as one `SidebarNavArea` so they share one row spacing). Without it the column
+   * keeps the gap the scroll area below depends on.
    */
   pinned?: ReactNode;
-  /** The scroll area: the page nav and the list. */
+  /** The scroll area: the fold of the page nav and the list. */
   children?: ReactNode;
   /** If set, marks the scroll area as a find-in-page region of this kind (`data-find-region`). */
   findRegion?: string;
@@ -103,17 +107,23 @@ export function SidebarFrame({
         )}
         {switcher}
       </div>
-      {/* The gap to the scroll area is this block's own bottom padding, not padding inside the
-          scroller: padding there belongs to the scrolled content and slides away with it, and a
-          scrolled nav row would end up flush against the pinned entry. */}
+      {/* The gap to the scroll area belongs to this block, not to padding inside the scroll
+          area: padding there belongs to the scrolled content and slides away with it, and a
+          scrolled row would end up flush against the last fixed one. The block keeps the same
+          gaps with its rows' own scroller inside it: that scroller holds most of each gap as its
+          padding, room for a focused row's ring, and the block a sliver outside it, so even
+          scrolled its rows stop short of the scroll area. */}
       {pinned === undefined ? (
         <div className="shrink-0 pb-2" />
       ) : (
-        <div className="shrink-0 px-2 pb-2 pt-2">{pinned}</div>
+        <nav className="flex min-h-0 flex-col py-0.5">
+          <div className="min-h-0 overflow-y-auto overflow-x-clip px-2 py-1.5">{pinned}</div>
+        </nav>
       )}
+      {/* The floor (`min-h-24`) is where the fixed block starts giving way instead. */}
       <div
         {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
-        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
+        className="relative min-h-24 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
       >
         {children}
       </div>
@@ -155,26 +165,25 @@ function DropRing() {
 }
 
 /**
- * The page nav: the pinned entries, which always show, then the rest in a group that folds away,
- * and under them a slim, full-width toggle whose caret points up while the rows show (fold them)
- * and down once they are folded (the way back). The fold slides: the rows fold through `Fold`,
- * their track tweening between `0fr` and `1fr` under the theme's layout motion while they fade,
- * and the list below glides up with it. Folding, the rows turn inert until they leave, so a
- * zero-height row is never focusable or clickable; folded, they are not mounted. The toggle's
- * resting band is the column's one fill at rest: it reads as the seam between the nav and the
- * list below it.
+ * The page nav's fold: the entries that are not favourites, in a group that folds away, and
+ * under them a slim, full-width toggle whose caret points up while the rows show (fold them) and
+ * down once they are folded (the way back). The favourites are not here: they stand in the
+ * frame's fixed block. The fold slides: the rows fold through `Fold`, their track tweening
+ * between `0fr` and `1fr` under the theme's layout motion while they fade, and the list below
+ * glides up with it. Folding, the rows turn inert until they leave, so a zero-height row is
+ * never focusable or clickable; folded, they are not mounted. The toggle's resting band is the
+ * column's one fill at rest: it reads as the seam between the nav and the list below it.
  *
- * With nothing to fold (`foldable={false}`) neither the group nor its toggle is drawn. When the
- * last entry leaves the fold (pinned), the group does not vanish in one frame: its rows fold
- * away, the band fades, and both unmount once the fold has finished. With `drop`, the group and
- * its toggle band are one drop target, ringed while a drag it would take is over them.
+ * With nothing to fold (`foldable={false}`) nothing is drawn. When the last entry leaves the
+ * fold (made a favourite), the group does not vanish in one frame: its rows fold away, the band
+ * fades, and both unmount once the fold has finished. With `drop`, the group and its toggle band
+ * are one drop target, ringed while a drag it would take is over them.
  */
 export function SidebarNavGroup({
   collapsed,
   onToggle,
   expandLabel,
   collapseLabel,
-  pinned,
   foldable = true,
   drop,
   toggleRef,
@@ -186,8 +195,6 @@ export function SidebarNavGroup({
   expandLabel: string;
   /** The toggle's name while they show. */
   collapseLabel: string;
-  /** The entries that show whatever the fold, above it (a `SidebarNavArea`). */
-  pinned?: ReactNode;
   /** Whether there is a group to fold: false draws neither the group nor its toggle. */
   foldable?: boolean;
   /** The group and its toggle band as a drop target. */
@@ -204,43 +211,40 @@ export function SidebarNavGroup({
   if (open && !holding) setHolding(true);
   // The rows fade in only when the reader unfolds them, not on every page load.
   const toggled = useArrived(collapsed);
+  if (!foldable && !holding) return null;
   return (
-    <nav className="space-y-px">
-      {pinned}
-      {(foldable || holding) && (
-        <div {...dropHandlers(drop)} className="relative flex flex-col gap-px">
-          <Fold open={open} onClosed={() => setHolding(false)}>
-            <div
-              className={`space-y-px transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}${
-                toggled ? " starting:opacity-0" : ""
-              }`}
-            >
-              {children}
-            </div>
-          </Fold>
-          <button
-            ref={toggleRef}
-            type="button"
-            onClick={onToggle}
-            aria-expanded={!collapsed}
-            aria-label={label}
-            className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-[color,background-color,opacity] duration-150 hover:bg-fg/10 hover:text-fg ${
-              foldable ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
-          >
-            <ChevronFlip up={!collapsed} />
-          </button>
-          {drop?.over === true && <DropRing />}
+    <nav {...dropHandlers(drop)} className="relative flex flex-col gap-px">
+      <Fold open={open} onClosed={() => setHolding(false)}>
+        <div
+          className={`space-y-px transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}${
+            toggled ? " starting:opacity-0" : ""
+          }`}
+        >
+          {children}
         </div>
-      )}
+      </Fold>
+      <button
+        ref={toggleRef}
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        aria-label={label}
+        className={`flex h-4 w-full items-center justify-center rounded-md ${NAV_FILL.selected} text-fg-subtle transition-[color,background-color,opacity] duration-150 hover:bg-fg/10 hover:text-fg ${
+          foldable ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      >
+        <ChevronFlip up={!collapsed} />
+      </button>
+      {drop?.over === true && <DropRing />}
     </nav>
   );
 }
 
 /**
- * A run of nav entries outside the fold — the pinned ones — as the place a dragged entry can
- * land: the caller's `drop` wiring, and the ring while a drag it would take is over it. `reserve`
- * keeps a row's height while the run is empty, so a drag still has somewhere to land.
+ * A run of nav entries outside the fold — New chat and the favourites in the fixed block — as
+ * the place a dragged entry can land: the caller's `drop` wiring, and the ring while a drag it
+ * would take is over it. Its rows stand as far apart as the fold's (`gap-px`). `reserve` keeps a
+ * row's height while the run is empty, so a drag still has somewhere to land.
  */
 export function SidebarNavArea({
   drop,

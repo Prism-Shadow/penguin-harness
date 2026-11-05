@@ -1,12 +1,13 @@
 /**
  * The sidebar's nav entries and how they fold (pure decisions, unit tested). In development
- * mode every entry — New chat, then the page manifest below — is either PINNED, always
- * shown, or COLLAPSIBLE, inside the area a nav-row-wide chevron button under it folds away
- * (arrow up = collapse; collapsed, the button stays — arrow down — as the way back). New
- * chat, Agents, Models and Plugins are pinned by default; the user moves an entry across
- * with the row's pin button or by dragging it into or out of the collapsible area. Both
- * areas keep manifest order, and with nothing collapsible there is no chevron. Company
- * mode's six entries stay outside the split: they fold as one group behind the same button.
+ * mode every entry — New chat, then the page manifest below — is either PINNED (a favourite),
+ * always shown in the fixed block under the switcher, or COLLAPSIBLE, inside the area a
+ * nav-row-wide chevron button under it folds away (arrow up = collapse; collapsed, the button
+ * stays — arrow down — as the way back). New chat, Agents, Models and Plugins are pinned by
+ * default; the user moves an entry across with the row's star or by dragging it into or out of
+ * the collapsible area. Both areas keep manifest order, and with nothing collapsible there is
+ * no chevron. Company mode's six entries split the same way, with none pinned by default and
+ * their choices kept apart from development mode's (see the company section below).
  *
  * Global storage keys, not per Project: the nav is identical everywhere, so like the
  * grouping mode (GROUP_MODE_KEY) the fold and the pin choices are single user preferences —
@@ -23,6 +24,8 @@
  * navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately absent: reading a
  * Trace happens in the chat toolbar's panel switcher, which is the only place it happens.
  */
+import { COMPANY_NAV_KEYS } from "../features/company/company-nav";
+import type { CompanyNavKey } from "../features/company/company-nav";
 import { NAV_PAGE_KEYS, PAGES } from "./pages";
 
 export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
@@ -106,13 +109,7 @@ export function splitNavEntries(
   keys: readonly NavEntryKey[],
   overrides: NavPinOverrides,
 ): { pinned: NavEntryKey[]; collapsible: NavEntryKey[] } {
-  const pinned: NavEntryKey[] = [];
-  const collapsible: NavEntryKey[] = [];
-  for (const key of keys) {
-    if (isNavPinned(key, overrides)) pinned.push(key);
-    else collapsible.push(key);
-  }
-  return { pinned, collapsible };
+  return splitBy(keys, (key) => isNavPinned(key, overrides));
 }
 
 /**
@@ -126,9 +123,35 @@ export function withNavPinned(
   key: NavEntryKey,
   pinned: boolean,
 ): NavPinOverrides {
-  if (!isNavPinnable(key) || isNavPinned(key, overrides) === pinned) return overrides;
-  const next: Partial<Record<NavEntryKey, boolean>> = { ...overrides };
-  if (pinned === DEFAULT_PINNED_NAV_KEYS.has(key)) delete next[key];
+  if (!isNavPinnable(key)) return overrides;
+  return withPinned(overrides, key, pinned, isNavPinned(key, overrides), DEFAULT_PINNED_NAV_KEYS);
+}
+
+/** Both areas of `keys`, in its order. */
+function splitBy<K extends string>(
+  keys: readonly K[],
+  isPinned: (key: K) => boolean,
+): { pinned: K[]; collapsible: K[] } {
+  const pinned: K[] = [];
+  const collapsible: K[] = [];
+  for (const key of keys) {
+    if (isPinned(key)) pinned.push(key);
+    else collapsible.push(key);
+  }
+  return { pinned, collapsible };
+}
+
+/** The deviation-only write both modes make: `now` is the entry's current state. */
+function withPinned<K extends string>(
+  overrides: Readonly<Partial<Record<K, boolean>>>,
+  key: K,
+  pinned: boolean,
+  now: boolean,
+  defaults: ReadonlySet<K>,
+): Readonly<Partial<Record<K, boolean>>> {
+  if (now === pinned) return overrides;
+  const next: Partial<Record<K, boolean>> = { ...overrides };
+  if (pinned === defaults.has(key)) delete next[key];
   else next[key] = pinned;
   return next;
 }
@@ -198,19 +221,7 @@ const NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(NAV_GROUP_KEYS);
  * `localStorage` is resolved inside the try for the reason initialNavGroupCollapsed gives.
  */
 export function initialNavPinOverrides(storage?: NavCollapseStorage): NavPinOverrides {
-  try {
-    const parsed: unknown = JSON.parse((storage ?? localStorage).getItem(NAV_PINNED_KEY) ?? "{}");
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    const overrides: Partial<Record<NavEntryKey, boolean>> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (NAV_ENTRY_KEYS.has(key) && typeof value === "boolean") {
-        overrides[key as NavEntryKey] = value;
-      }
-    }
-    return overrides;
-  } catch {
-    return {};
-  }
+  return readPinOverrides<NavEntryKey>(NAV_PINNED_KEY, NAV_ENTRY_KEYS, storage);
 }
 
 /** Writes the choices on every change (best-effort, like the fold). */
@@ -218,9 +229,98 @@ export function storeNavPinOverrides(
   overrides: NavPinOverrides,
   storage?: NavCollapseStorage,
 ): void {
+  writePinOverrides(NAV_PINNED_KEY, overrides, storage);
+}
+
+function readPinOverrides<K extends string>(
+  storageKey: string,
+  known: ReadonlySet<string>,
+  storage: NavCollapseStorage | undefined,
+): Readonly<Partial<Record<K, boolean>>> {
+  const overrides: Partial<Record<K, boolean>> = {};
   try {
-    (storage ?? localStorage).setItem(NAV_PINNED_KEY, JSON.stringify(overrides));
+    const parsed: unknown = JSON.parse((storage ?? localStorage).getItem(storageKey) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return overrides;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (known.has(key) && typeof value === "boolean") overrides[key as K] = value;
+    }
+  } catch {
+    /* no choices: the defaults */
+  }
+  return overrides;
+}
+
+function writePinOverrides(
+  storageKey: string,
+  overrides: Readonly<Partial<Record<string, boolean>>>,
+  storage: NavCollapseStorage | undefined,
+): void {
+  try {
+    (storage ?? localStorage).setItem(storageKey, JSON.stringify(overrides));
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Company mode
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Company mode's six pages (COMPANY_NAV_KEYS) split the same way, with one difference: none is
+ * pinned until the user pins it, so the whole set starts in the fold, as it did before company
+ * mode had favourites. Every entry may move; there is no New chat in company mode.
+ */
+export type CompanyNavPinOverrides = Readonly<Partial<Record<CompanyNavKey, boolean>>>;
+
+const DEFAULT_PINNED_COMPANY_NAV_KEYS: ReadonlySet<CompanyNavKey> = new Set<CompanyNavKey>();
+
+export function isCompanyNavPinned(key: CompanyNavKey, overrides: CompanyNavPinOverrides): boolean {
+  return overrides[key] ?? DEFAULT_PINNED_COMPANY_NAV_KEYS.has(key);
+}
+
+/** Both areas, in COMPANY_NAV_KEYS order. */
+export function splitCompanyNavEntries(overrides: CompanyNavPinOverrides): {
+  pinned: CompanyNavKey[];
+  collapsible: CompanyNavKey[];
+} {
+  return splitBy(COMPANY_NAV_KEYS, (key) => isCompanyNavPinned(key, overrides));
+}
+
+/** withNavPinned's write for a company entry: deviations only, and the same record when nothing changes. */
+export function withCompanyNavPinned(
+  overrides: CompanyNavPinOverrides,
+  key: CompanyNavKey,
+  pinned: boolean,
+): CompanyNavPinOverrides {
+  return withPinned(
+    overrides,
+    key,
+    pinned,
+    isCompanyNavPinned(key, overrides),
+    DEFAULT_PINNED_COMPANY_NAV_KEYS,
+  );
+}
+
+/**
+ * Company mode's choices, under a key of their own: the two modes name different pages, and a
+ * star in one mode must never move an entry in the other.
+ */
+export const COMPANY_NAV_PINNED_KEY = "penguin.sidebarCompanyNavPinned";
+
+const COMPANY_NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(COMPANY_NAV_KEYS);
+
+/** Reads company mode's choices, by initialNavPinOverrides' rules. */
+export function initialCompanyNavPinOverrides(
+  storage?: NavCollapseStorage,
+): CompanyNavPinOverrides {
+  return readPinOverrides<CompanyNavKey>(COMPANY_NAV_PINNED_KEY, COMPANY_NAV_ENTRY_KEYS, storage);
+}
+
+/** Writes company mode's choices on every change (best-effort). */
+export function storeCompanyNavPinOverrides(
+  overrides: CompanyNavPinOverrides,
+  storage?: NavCollapseStorage,
+): void {
+  writePinOverrides(COMPANY_NAV_PINNED_KEY, overrides, storage);
 }

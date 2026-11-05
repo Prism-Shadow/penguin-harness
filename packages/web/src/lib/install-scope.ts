@@ -243,6 +243,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarCompanyNavPinned",
+    scope: "browser",
+    why: "Which company-mode nav entries stay out of the fold; keyed by the compile-time company manifest, names nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
     why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",
