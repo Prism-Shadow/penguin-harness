@@ -125,8 +125,7 @@ export function SkillAdamWidget() {
         col3Title: "Adam 控制器",
         eitLabel: "一阶：EIT 问题账本",
         eitSub: "定方向：记失误与历史",
-        quotaLeft: "修改额度",
-        quotaRight: "限 2 / 4 处",
+        quotaLabel: "二阶：修改额度 2/4",
         col4Title: "局部微调 SKILL.md",
         diffLabel: (n: number) => `修改 ${n}`,
         nextSkill: "输出新版 SKILL.md",
@@ -142,8 +141,7 @@ export function SkillAdamWidget() {
         col3Title: "Adam Controller",
         eitLabel: "1st: EIT Ledger",
         eitSub: "What to fix & avoid",
-        quotaLeft: "Edit Quota",
-        quotaRight: "Max 2 / 4",
+        quotaLabel: "2nd: Edit Quota 2/4",
         col4Title: "SKILL.md (2 Edits)",
         diffLabel: (n: number) => `Diff ${n}`,
         nextSkill: "Updated SKILL.md",
@@ -539,25 +537,18 @@ export function SkillAdamWidget() {
             {copy.eitSub}
           </text>
 
-          {/* 2nd Moment: Edit Quota (Max 2 of 4 Edits Permitted) */}
+          {/* 2nd Moment: Edit Quota (Single Centered Text — Never Collides) */}
           <text
-            x="392"
+            x="456"
             y="118"
-            className="fill-gray-500 text-xs dark:fill-gray-400"
-          >
-            {copy.quotaLeft}
-          </text>
-          <text
-            x="520"
-            y="118"
-            textAnchor="end"
+            textAnchor="middle"
             className={
               isS2
-                ? "fill-brand-700 font-mono text-xs font-semibold tabular-nums dark:fill-brand-300"
-                : "fill-gray-700 font-mono text-xs font-semibold tabular-nums dark:fill-gray-300"
+                ? "fill-brand-700 text-xs font-semibold tabular-nums dark:fill-brand-300"
+                : "fill-gray-700 text-xs font-semibold tabular-nums dark:fill-gray-300"
             }
           >
-            {copy.quotaRight}
+            {copy.quotaLabel}
           </text>
 
           {[0, 1, 2, 3].map((slot) => {
