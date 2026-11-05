@@ -42,11 +42,11 @@ const STAGE_TABS: readonly StageTab[] = [
  * which then exports directly out the right wall of `1 Shared Docker` into `Evolved Agent (+ SKILL.md)`.
  */
 const TRAIN_CARDS = [
-  { label: "T1", x: 22, y: 142, w: 30, h: 32 },
-  { label: "T2", x: 56, y: 142, w: 30, h: 32 },
-  { label: "T3", x: 90, y: 142, w: 30, h: 32 },
-  { label: "T4", x: 39, y: 182, w: 30, h: 32 },
-  { label: "T5", x: 73, y: 182, w: 30, h: 32 },
+  { label: "T1", x: 22, y: 150, w: 30, h: 30 },
+  { label: "T2", x: 56, y: 150, w: 30, h: 30 },
+  { label: "T3", x: 90, y: 150, w: 30, h: 30 },
+  { label: "T4", x: 39, y: 186, w: 30, h: 30 },
+  { label: "T5", x: 73, y: 186, w: 30, h: 30 },
 ] as const;
 
 /** Vertical center Y coordinates for the 5 stacked horizontal Isolated Test Dockers (centered on CY=170). */
@@ -54,11 +54,11 @@ const TEST_ROWS_Y = [106, 138, 170, 202, 234] as const;
 
 /** Per-task verified scores displayed inside the rightmost Offline Verifier Scoreboard column. */
 const VERIFIER_SCORES = [
-  { label: "T1", score: 74.3, width: 44 },
-  { label: "T2", score: 65.8, width: 39 },
-  { label: "T3", score: 80.7, width: 48 },
-  { label: "T4", score: 63.9, width: 38 },
-  { label: "T5", score: 73.7, width: 44 },
+  { label: "Test 1", score: 74.3, width: 28 },
+  { label: "Test 2", score: 65.8, width: 25 },
+  { label: "Test 3", score: 80.7, width: 31 },
+  { label: "Test 4", score: 63.9, width: 24 },
+  { label: "Test 5", score: 73.7, width: 28 },
 ] as const;
 
 function tickDelayMs(tick: number): number {
@@ -360,16 +360,28 @@ export function GdpevoOrchestrationWidget() {
             {isS0 ? `Round ${trainRound}/2` : "2/2 Done"}
           </text>
 
-          {/* Clean Bidirectional Loop between 3+2 Task Pool on LEFT (x=16..126) and Target Agent on RIGHT (x=148..234) */}
+          {/* Clean Bidirectional Loop between Train Set Pool on LEFT (x=16..126) and Target Agent on RIGHT (x=148..234) */}
           <rect
             x="16"
-            y="134"
+            y="126"
             width="110"
-            height="88"
+            height="98"
             rx="8"
             strokeWidth="1"
             className="fill-white/80 stroke-gray-200 dark:fill-gray-800/40 dark:stroke-gray-700"
           />
+          <text
+            x="71"
+            y="141"
+            textAnchor="middle"
+            className={
+              isS0
+                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+            }
+          >
+            Train Set
+          </text>
           <path
             d="M126,166 L146,166"
             fill="none"
@@ -431,7 +443,7 @@ export function GdpevoOrchestrationWidget() {
                   strokeWidth={isCurrentTask ? "1.75" : "1.25"}
                   className={cardStyle}
                 />
-                <text x={card.x + card.w / 2} y={card.y + 20} textAnchor="middle" className={textStyle}>
+                <text x={card.x + card.w / 2} y={card.y + 19} textAnchor="middle" className={textStyle}>
                   {card.label}
                 </text>
               </g>
@@ -694,12 +706,12 @@ export function GdpevoOrchestrationWidget() {
           })}
         </g>
 
-        {/* ==================== COL 4: OFFLINE VERIFIER SCOREBOARD COLUMN (x=576..712, y=92..248, CY=170) ==================== */}
+        {/* ==================== COL 4: OFFLINE VERIFIER SCOREBOARD COLUMN (x=572..714, y=92..248, CY=170) ==================== */}
         <g style={{ opacity: reachedS3 ? 1 : 0.24 }} className="transition-opacity duration-200">
           {TEST_ROWS_Y.map((ry, idx) => (
             <path
               key={`join-${idx}`}
-              d={`M542,${ry} L559,${ry}`}
+              d={`M542,${ry} L556,${ry}`}
               fill="none"
               strokeWidth="1.5"
               className={
@@ -710,7 +722,7 @@ export function GdpevoOrchestrationWidget() {
             />
           ))}
           <path
-            d="M559,106 L559,234 M559,170 L574,170"
+            d="M556,106 L556,234 M556,170 L570,170"
             fill="none"
             strokeWidth={isS3 ? "1.75" : "1.5"}
             strokeLinejoin="round"
@@ -723,9 +735,9 @@ export function GdpevoOrchestrationWidget() {
           />
 
           <rect
-            x="576"
+            x="572"
             y="92"
-            width="136"
+            width="142"
             height="156"
             rx="10"
             strokeWidth={isS3 ? "2" : "1.5"}
@@ -736,7 +748,7 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="644"
+            x="643"
             y="112"
             textAnchor="middle"
             className={
@@ -755,23 +767,23 @@ export function GdpevoOrchestrationWidget() {
             return (
               <g key={item.label}>
                 <text
-                  x="588"
+                  x="581"
                   y={sy + 4}
                   className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
                 >
                   {item.label}
                 </text>
                 <rect
-                  x="610"
+                  x="628"
                   y={sy - 3}
-                  width="54"
+                  width="38"
                   height="7"
                   rx="3.5"
                   className="fill-gray-100 dark:fill-gray-800"
                 />
                 {shown && (
                   <rect
-                    x="610"
+                    x="628"
                     y={sy - 3}
                     width={item.width}
                     height="7"
@@ -784,7 +796,7 @@ export function GdpevoOrchestrationWidget() {
                   />
                 )}
                 <text
-                  x="700"
+                  x="704"
                   y={sy + 4}
                   textAnchor="end"
                   className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
@@ -797,7 +809,7 @@ export function GdpevoOrchestrationWidget() {
 
           {/* Final Aggregated Mean Badge at Bottom of Scoreboard Column */}
           <rect
-            x="586"
+            x="585"
             y="206"
             width="116"
             height="34"
@@ -809,7 +821,7 @@ export function GdpevoOrchestrationWidget() {
             }
           />
           <text
-            x="644"
+            x="643"
             y="220"
             textAnchor="middle"
             className={
@@ -821,7 +833,7 @@ export function GdpevoOrchestrationWidget() {
             {copy.finalScore}
           </text>
           <text
-            x="644"
+            x="643"
             y="234"
             textAnchor="middle"
             className={
