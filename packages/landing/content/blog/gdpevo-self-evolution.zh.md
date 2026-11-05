@@ -54,7 +54,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 下图与表格展示了实验中“工程项目组合分析”、“医保审核”和“法院书记员业务”三个场景在连续训练容器内的真实得分演进过程（百分制）：
 
-<figure class="post-figure" data-figure="skilladam-progression"> <svg class="fig-svg" viewBox="0 0 560 220" role="img" aria-labelledby="gdpevo-self-evolution-skilladam-progression-zh-title"> <title id="gdpevo-self-evolution-skilladam-progression-zh-title">三个代表性场景在连续训练容器内的五题平均得分演进曲线</title> <path d="M56 28H532M56 68H532M56 108H532M56 148H532" class="fig-link"/> <path d="M56 28V168H532" class="fig-axis"/> <text x="46" y="32" text-anchor="end" class="fig-tick">100</text> <text x="46" y="72" text-anchor="end" class="fig-tick">80</text> <text x="46" y="112" text-anchor="end" class="fig-tick">60</text> <text x="46" y="152" text-anchor="end" class="fig-tick">40</text> <text x="96" y="188" text-anchor="middle" class="fig-label">无技能初测</text> <text x="224" y="188" text-anchor="middle" class="fig-label">初版 Skill</text> <text x="352" y="188" text-anchor="middle" class="fig-label">第 1 轮迭代</text> <text x="480" y="188" text-anchor="middle" class="fig-label">第 2 轮迭代</text> <path d="M96 129.5L224 78.3L352 33.3L480 28.0" class="fig-edge"/> <circle cx="96" cy="129.5" r="4" class="fig-s1"/> <circle cx="224" cy="78.3" r="4" class="fig-s1"/> <circle cx="352" cy="33.3" r="4" class="fig-s1"/> <circle cx="480" cy="28.0" r="4" class="fig-s1"/> <text x="96" y="145" text-anchor="middle" class="fig-num">49.24</text> <text x="224" y="94" text-anchor="middle" class="fig-num">74.86</text> <text x="352" y="23" text-anchor="middle" class="fig-num">97.33</text> <text x="480" y="19" text-anchor="middle" class="fig-num">100.00</text> <path d="M96 61.9L224 40.3L352 40.2L480 39.2" class="fig-edge"/> <rect x="92" y="57.9" width="8" height="8" rx="1" class="fig-s2"/> <rect x="220" y="36.3" width="8" height="8" rx="1" class="fig-s2"/> <rect x="348" y="36.2" width="8" height="8" rx="1" class="fig-s2"/> <rect x="476" y="35.2" width="8" height="8" rx="1" class="fig-s2"/> <text x="96" y="52" text-anchor="middle" class="fig-num">83.07</text> <text x="224" y="31" text-anchor="middle" class="fig-num">93.87</text> <text x="352" y="54" text-anchor="middle" class="fig-num">93.93</text> <text x="510" y="43" text-anchor="start" class="fig-num">94.40</text> <path d="M96 88.9L224 68.7L352 68.5L480 57.2" class="fig-edge"/> <circle cx="96" cy="88.9" r="4" class="fig-s3"/> <circle cx="224" cy="68.7" r="4" class="fig-s3"/> <circle cx="352" cy="68.5" r="4" class="fig-s3"/> <circle cx="480" cy="57.2" r="4" class="fig-s3"/> <text x="96" y="104" text-anchor="middle" class="fig-num">69.54</text> <text x="224" y="61" text-anchor="middle" class="fig-num">79.67</text> <text x="352" y="83" text-anchor="middle" class="fig-num">79.74</text> <text x="480" y="73" text-anchor="middle" class="fig-num">85.42</text> <circle cx="110" cy="210" r="4" class="fig-s1"/> <text x="120" y="214" class="fig-label">工程项目组合分析</text> <rect x="246" y="206" width="8" height="8" rx="1" class="fig-s2"/> <text x="260" y="214" class="fig-label">医保审核</text> <circle cx="350" cy="210" r="4" class="fig-s3"/> <text x="360" y="214" class="fig-label">法院书记员业务</text> </svg> <ol class="fig-steps"> <li>工程项目组合分析：无技能初测 49.24，初版 Skill 74.86，第 1 轮迭代 97.33，第 2 轮迭代 100.00</li> <li>医保审核：无技能初测 83.07，初版 Skill 93.87，第 1 轮迭代 93.93，第 2 轮迭代 94.40</li> <li>法院书记员业务：无技能初测 69.54，初版 Skill 79.67，第 1 轮迭代 79.74，第 2 轮迭代 85.42</li> </ol> <figcaption>三个场景在连续训练容器内的五题平均分演进轨迹（百分制）：从无技能初测到初版技能提炼，再经两轮受限迭代实现单调提升。</figcaption> </figure>
+<figure class="post-figure" data-figure="skilladam-progression"> <svg class="fig-svg" viewBox="0 0 560 220" role="img" aria-labelledby="gdpevo-self-evolution-skilladam-progression-zh-title"> <title id="gdpevo-self-evolution-skilladam-progression-zh-title">三个代表性场景在连续训练容器内的五题平均得分演进曲线</title> <path d="M56 28H532M56 68H532M56 108H532M56 148H532" class="fig-link"/> <path d="M56 28V168H532" class="fig-axis"/> <text x="46" y="32" text-anchor="end" class="fig-tick">100</text> <text x="46" y="72" text-anchor="end" class="fig-tick">80</text> <text x="46" y="112" text-anchor="end" class="fig-tick">60</text> <text x="46" y="152" text-anchor="end" class="fig-tick">40</text> <text x="96" y="188" text-anchor="middle" class="fig-label">无技能初测</text> <text x="224" y="188" text-anchor="middle" class="fig-label">初版 Skill</text> <text x="352" y="188" text-anchor="middle" class="fig-label">第 1 轮迭代</text> <text x="480" y="188" text-anchor="middle" class="fig-label">第 2 轮迭代</text> <path d="M96 129.5L224 78.3L352 33.3L480 28.0" class="fig-edge"/> <circle cx="96" cy="129.5" r="4" class="fig-s1"/> <circle cx="224" cy="78.3" r="4" class="fig-s1"/> <circle cx="352" cy="33.3" r="4" class="fig-s1"/> <circle cx="480" cy="28.0" r="4" class="fig-s1"/> <text x="96" y="145" text-anchor="middle" class="fig-num">49.24</text> <text x="224" y="94" text-anchor="middle" class="fig-num">74.86</text> <text x="352" y="23" text-anchor="middle" class="fig-num">97.33</text> <text x="480" y="19" text-anchor="middle" class="fig-num">100.00</text> <path d="M96 61.9L224 40.3L352 40.2L480 39.2" class="fig-edge"/> <rect x="92" y="57.9" width="8" height="8" rx="1" class="fig-s2"/> <rect x="220" y="36.3" width="8" height="8" rx="1" class="fig-s2"/> <rect x="348" y="36.2" width="8" height="8" rx="1" class="fig-s2"/> <rect x="476" y="35.2" width="8" height="8" rx="1" class="fig-s2"/> <text x="96" y="52" text-anchor="middle" class="fig-num">83.07</text> <text x="224" y="31" text-anchor="middle" class="fig-num">93.87</text> <text x="352" y="54" text-anchor="middle" class="fig-num">93.93</text> <text x="510" y="43" text-anchor="start" class="fig-num">94.40</text> <path d="M96 88.9L224 68.7L352 68.5L480 57.2" class="fig-edge"/> <circle cx="96" cy="88.9" r="4" class="fig-s3"/> <circle cx="224" cy="68.7" r="4" class="fig-s3"/> <circle cx="352" cy="68.5" r="4" class="fig-s3"/> <circle cx="480" cy="57.2" r="4" class="fig-s3"/> <text x="96" y="104" text-anchor="middle" class="fig-num">69.54</text> <text x="224" y="61" text-anchor="middle" class="fig-num">79.67</text> <text x="352" y="83" text-anchor="middle" class="fig-num">79.74</text> <text x="480" y="73" text-anchor="middle" class="fig-num">85.42</text> <circle cx="110" cy="210" r="4" class="fig-s1"/> <text x="120" y="214" class="fig-label">工程项目组合分析</text> <rect x="246" y="206" width="8" height="8" rx="1" class="fig-s2"/> <text x="260" y="214" class="fig-label">医保审核</text> <circle cx="350" cy="210" r="4" class="fig-s3"/> <text x="360" y="214" class="fig-label">法院书记员业务</text> </svg> <ol class="fig-steps"> <li>工程项目组合分析：无技能初测 49.24，初版 Skill 74.86，第 1 轮迭代 97.33，第 2 轮迭代 100.00</li> <li>医保审核：无技能初测 83.07，初版 Skill 93.87，第 1 轮迭代 93.93，第 2 轮迭代 94.40</li> <li>法院书记员业务：无技能初测 69.54，初版 Skill 79.67，第 1 轮迭代 79.74，第 2 轮迭代 85.42</li> </ol> <figcaption>三个场景在连续训练容器内的五题平均分变化（百分制）：从无技能初测到提炼初版技能，再经两轮迭代实现提升。</figcaption> </figure>
 
 | 业务场景 | 无技能初测 | 初版 Skill | 第 1 轮迭代 | 第 2 轮迭代 | 最终保留得分 |
 | :--- | ---: | ---: | ---: | ---: | ---: |
@@ -62,7 +62,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 | 医保审核 | 83.07 | 93.87 | 93.93 (采纳) | 94.40 (采纳) | 94.40 |
 | 法院书记员业务 | 69.54 | 79.67 | 79.74 (采纳) | 85.42 (采纳) | 85.42 |
 
-可以看到，在工程项目组合分析、医保审核与法院书记员业务三个场景中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，先通过首轮轨迹诊断提炼出初版 `SKILL.md` 实现大幅跃升，随后在两轮方差受限的迭代修订中稳步消除残余失分点，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
+可以看到，在工程项目组合分析、医保审核与法院书记员业务三个场景中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，提炼出初版 `SKILL.md` 后得分明显提升，再经过两轮迭代修改，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
 
 除 SkillAdam 外，本次实验还同步评测了另外三种代表性自进化方法，四者的原论文与核心机制对比如下：
 
@@ -95,25 +95,25 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ## 4. 实验启动后的内部执行流程
 
-当实验人员在 Web 界面发出启动指令后，**主控 Agent** 便会自动接管实验现场，在后台按以下四个阶段完成从单容器多轮训练、技能冻结到隔离容器盲测与离线出分的全流程编排：
+在 Web 界面发送启动指令后，**主控 Agent** 会在后台自动按以下四个阶段完成训练与测试：
 
-<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>多轮训练循环：主控 Agent 通过 Harbor 拉起 1 Shared Docker，目标 Agent 在 T1–T5 上完成多轮演进</li><li>产出进化 Agent：训练结束后导出并锁定只读 SKILL.md，装配为进化 Agent</li><li>多轮隔离测试：主控 Agent 通过 Harbor 调度一分五并发测试，在 Isolated Dockers 中对 Test 1–5 各独立运行 3 轮</li><li>离线判分出分：五合一汇入离线评分器，统计各题得分与最终均分</li></ol><figcaption>主控 Agent 在后台自动编排的四阶段实验流程（可点击上方阶段按钮步进查看多轮训练循环、产出进化 Agent、多轮隔离测试与离线判分出分）。</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>多轮训练循环：主控 Agent 通过 Harbor 拉起 1 Shared Docker，目标 Agent 在 T1–T5 上完成多轮演进</li><li>产出进化 Agent：训练结束后导出并锁定只读 SKILL.md，装配为进化 Agent</li><li>多轮隔离测试：主控 Agent 通过 Harbor 调度一分五并发测试，在 Isolated Dockers 中对 Test 1–5 各独立运行 3 轮</li><li>离线判分出分：五合一汇入离线评分器，统计各题得分与最终均分</li></ol><figcaption>主控 Agent 在后台自动执行的四阶段实验流程（可点击上方阶段按钮步进查看多轮训练循环、产出进化 Agent、多轮隔离测试与离线判分出分）。</figcaption></figure>
 
-### 1. 多轮训练循环（1 Shared Docker）
+### 1. 多轮训练循环
 
-任务环境准备就绪后，**主控 Agent** 先保留一份不挂载任何业务技能的初始状态作为基线对照（Baseline），同时通过 **Harbor** 为当前业务场景拉起一个共享训练容器（`1 Shared Docker`）。Docker 为训练场景提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。**目标 Agent** 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题（`T1–T5`），经历多轮诊断与迭代修订（`No Skill → Skill v1 → Skill v2`）。
+任务环境准备就绪后，**主控 Agent** 先保留一份不挂载任何业务技能的初始状态作为基线对照（Baseline），同时通过 **Harbor** 为当前业务场景拉起一个共享训练容器。Docker 为训练场景提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。**目标 Agent** 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题，经历多轮诊断与迭代修改。
 
-### 2. 产出进化 Agent（+ SKILL.md）
+### 2. 产出进化 Agent
 
-当共享容器内的多轮训练循环结束后，**主控 Agent** 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的**进化 Agent（`+ SKILL.md`）**。
+当共享容器内的多轮训练循环结束后，**主控 Agent** 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的**进化 Agent**。
 
-### 3. 多轮隔离测试（Isolated Dockers）
+### 3. 多轮隔离测试
 
-**主控 Agent** 通过 **Harbor** 并发队列将**进化 Agent（`+ SKILL.md`）**（以及基线对照状态）投放到同场景的 5 道保留测试题（`Test 1–5`）上，完整重复运行 3 轮评测（单场景共 15 个全新的 `Isolated Dockers`）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭一切在线训练评分通道。
+**主控 Agent** 通过 **Harbor** 将**进化 Agent**（以及基线对照状态）投放到同场景的 5 道保留测试题上，完整重复运行 3 轮测试（单场景共 15 个独立测试容器）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭在线训练评分接口。
 
-### 4. 离线判分出分（离线评分器）
+### 4. 离线判分出分
 
-所有测试容器运行完毕后，各题作答产物按五合一汇入**离线评分器**统一判分，逐题计算百分制得分（`T1–T5`），并按跨轮次与跨场景统计规范完成两级指标聚合，产出最终均分与样本标准差（如 `68.95 ± 0.74`）。
+所有测试容器运行完毕后，各题作答结果汇入**离线评分器**统一判分，逐题计算百分制得分，并汇总得出最终均分与标准差（如 `68.95 ± 0.74`）。
 
 ## 5. 结果统计与实测数据
 
