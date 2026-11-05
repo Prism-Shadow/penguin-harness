@@ -1,5 +1,5 @@
 ---
-title: "用 Penguin Harness 在 GDPEVO 上开展自进化实验"
+title: "用 PenguinHarness 在真实企业任务上跑通 Agent 自进化工程化实验闭环"
 date: 2026-11-04
 category: practice
 author: Leijun Zhou (Prism Shadow AI)
