@@ -95,21 +95,21 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 
 <img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在 GDPEVO Controller 的对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
 
-### 第四步：挂载工具包并发送启动指令
+### 第四步：挂载 RSI 工具包并发送启动指令
 
-在聊天输入框中挂载 skilladam-rsi-toolkit，并在指令中说明工具包名称、目标 Benchmark、测试重复轮数、模型、思考强度与 Docker 并发上限。其中测试重复轮数默认为 3 轮，也可以按需在指令中指定为 5 轮或 6 轮。
+在聊天输入框中挂载 skilladam-rsi-toolkit，并在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
 
 如果只评测单个子 Benchmark，例如 service-ticket-resolution，在聊天框输入：
 
-> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验，训练迭代 2 轮，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
 如果直接评测 GDPEVO Essential 系列的全部六个子 Benchmark，在聊天框输入：
 
-> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验，训练迭代 2 轮，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-评测其他自进化算法时，只需将挂载的工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
+评测其他自进化算法时，只需将挂载的 RSI 工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
-> **TODO（配图占位 — 挂载工具包并发送启动指令）**：此处预留聊天输入框挂载 skilladam-rsi-toolkit 并输入上述启动指令的截图。
+> **TODO（配图占位 — 挂载 RSI 工具包并发送启动指令）**：此处预留聊天输入框挂载 skilladam-rsi-toolkit 并输入上述启动指令的截图。
 
 ## 4. 实验启动后的内部执行流程
 

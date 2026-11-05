@@ -95,21 +95,21 @@ Once GDPEVO Controller is created, click New chat on its card in the Agents list
 
 <img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the GDPEVO Controller chat view" />
 
-### Step 4: Attach the Toolkit and Send the Launch Prompt
+### Step 4: Attach the RSI Toolkit and Send the Launch Prompt
 
-Attach skilladam-rsi-toolkit in the chat input and specify the toolkit name, target Benchmark, number of test repetitions, model, thinking level, and Docker concurrency limit. The test repetition count defaults to 3 and can also be customized to 5 or 6 in the prompt.
+Attach skilladam-rsi-toolkit in the chat input and specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
 
 To evaluate a single sub-benchmark such as service-ticket-resolution, send:
 
-> Use skilladam-rsi-toolkit to run a self-evolution experiment on the service-ticket-resolution Benchmark of GDPEVO Essential with 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
+> Use skilladam-rsi-toolkit to run a self-evolution experiment on the service-ticket-resolution Benchmark of GDPEVO Essential with 2 training iterations and 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
 To evaluate all six sub-benchmarks in the GDPEVO Essential series, send:
 
-> Use skilladam-rsi-toolkit to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series with 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
+> Use skilladam-rsi-toolkit to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series with 2 training iterations and 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
-To evaluate another self-evolution algorithm, replace the attached toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
+To evaluate another self-evolution algorithm, replace the attached RSI toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
 
-> **TODO (Screenshot Placeholder — Attaching the Toolkit & Sending the Launch Prompt)**: Insert screenshot showing skilladam-rsi-toolkit attached in the chat composer with the launch prompt above.
+> **TODO (Screenshot Placeholder — Attaching the RSI Toolkit & Sending the Launch Prompt)**: Insert screenshot showing skilladam-rsi-toolkit attached in the chat composer with the launch prompt above.
 
 ## 4. Internal Execution Pipeline After Launch
 
