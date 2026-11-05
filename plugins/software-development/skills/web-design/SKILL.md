@@ -1,7 +1,7 @@
 ---
 name: web-design
 description: Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes, design tokens, component and chat-interface recipes, plus an opt-in warm paper editorial theme.
-version: 2026.10.04.1
+version: 2026.11.04.1
 ---
 
 # Web Design
@@ -10,11 +10,54 @@ Default visual language for every web page or frontend you generate, distilled f
 
 ## Before you start
 
-If the user's message only invokes this skill (e.g. "use web-design skill") without a concrete page or interface to build, ask what they want to build. When a concrete build is already requested (an app UI, a landing page, a RAG chat interface), do **not** ask about styling — colors, fonts, spacing, radii and layout are all decided by the defaults below; the only question ever worth asking is *what to build*, never *how it should look*. Route by request shape: conversational or docs-QA → the chat/RAG layout; product or marketing → the page layout; tool-like apps → a sticky nav + panels composed from the components.
+If the user's message only invokes this skill (e.g. "use web-design skill") without a concrete page or interface to build, ask what they want to build. When a concrete build is already requested (an app UI, a landing page, a RAG chat interface), do **not** ask about styling — colors, fonts, spacing, radii and layout are all decided by the defaults below; the only questions worth asking are *what to build* and, when the conditions below hold, *whether it runs as a Workbench or a standalone app* — never *how it should look*. Route by request shape: conversational or docs-QA → the chat/RAG layout; product or marketing → the page layout; tool-like apps → a sticky nav + panels composed from the components.
 
 Build order and stack are decided the same way. For a full-stack request, build the frontend first against mocked data so the user sees the result early, then the backend behind it. When no stack is named, pick one and state it instead of asking: persistence in a single SQLite file or `localStorage`, caching in process memory — never Redis, MySQL or other infrastructure a one-line request did not ask for.
 
 Non-negotiable for ANY text input that sends on Enter: **never send while an IME composition is in progress** (check `event.isComposing`, falling back to `event.keyCode === 229`, on keydown). For Chinese/Japanese/Korean input methods, that Enter only confirms the composed text — auto-sending on it fires half-typed messages. Details in the composer recipe below.
+
+### Workbench or standalone app?
+
+PenguinHarness can host what you build as a **Workbench**: a page embedded beside the chat that opens full page too, served by this Agent with a server-side module of its own, instead of a separate project the user has to run and deploy. Ask which one the user wants when ALL of these hold:
+
+1. The request is a web page, web app, dashboard or 工作台, anything with a UI in a browser.
+2. The Workspace holds no existing project: no `.git` directory at `CWD` or above it inside the Workspace, and no project manifest at `CWD` (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `*.csproj`, `Gemfile`, `composer.json`). Check with the shell (`git rev-parse --show-toplevel`, `ls`). An existing project means the page belongs to it: build it there without asking.
+3. The request does not already say which one it wants (a Workbench, or a separate project with its own server).
+4. The user memory index in your context has no `workbench-or-app` line. If it has one, follow it without asking.
+
+Ask with one sentence and one `choice` block (the a2ui Skill applies: run its check on the draft), then end the reply. Write it in the user's language. The Chinese form:
+
+这个页面可以做成嵌在 PenguinHarness 里的 Workbench（工作台页面），也可以做成独立运行的外部应用。你想要哪种？
+
+```a2ui
+{ "type": "choice", "id": "workbench-or-app", "question": "做成 Workbench，还是独立的外部应用？", "options": [
+  { "label": "是，做成 Workbench", "value": "做成 Workbench（内嵌页面）", "description": "嵌在对话旁的标签页，可全屏打开；由本 Agent 托管，不用另起服务。", "recommended": true },
+  { "label": "否，做独立应用", "value": "做成独立的外部应用", "description": "在工作区新建一个项目，自带启动命令，可以单独部署。" },
+  { "label": "每次都是", "value": "做成 Workbench，以后都这样，不用再问", "description": "把这个偏好记进用户记忆，下次不再问。" },
+  { "label": "每次都否", "value": "做成独立应用，以后都这样，不用再问", "description": "把这个偏好记进用户记忆，下次不再问。" }
+] }
+```
+
+In English the labels are "Yes, a Workbench", "No, a standalone app", "Always a Workbench" and "Always a standalone app", with values in the same sentence form ("Build it as a Workbench (an embedded page)", "Build it as a standalone app", "Build it as a Workbench, and always do so without asking", "Build it as a standalone app, and always do so without asking").
+
+On the answer:
+
+- **Workbench**: read the `penguin-plugin` Skill (its SKILL.md in full) and build it there; apply this Skill's visual language to its `ui/`.
+- **Standalone app**: scaffold a project in the Workspace as this Skill describes.
+- **An "always" answer**: first save it to user memory, then build. Write `<user memory dir>/workbench-or-app.md`:
+
+  ```markdown
+  ---
+  name: workbench-or-app
+  description: Default for new web pages and 工作台 — Workbench (embedded) or standalone app
+  updated_at: <YYYY-MM-DD>
+  ---
+  **Default:** Workbench | standalone app.
+  **Why:** the user answered "每次都是" / "每次都否" on <date>.
+  **How to apply:** when a web page or 工作台 is requested in a Workspace with no existing project, build the default without asking. The user can change it by asking.
+  ```
+
+  and add a line to `memory/user/MEMORY.md`: `- [Web pages: Workbench or app](workbench-or-app.md) — default <Workbench|standalone app>, set <date>; applies when the Workspace has no project`. If memory is not writable in this conversation (a sandboxed Session), say so in one sentence and build what the user chose this time.
 
 ## Ship complete
 
