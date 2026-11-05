@@ -28,7 +28,7 @@ Agent 是执行你所交代目标的主体。每个 Agent 都有自己的 Agent 
 
 ### Agent State
 
-Agent State 是 Agent 的持久化目录 `agent_state/`，存放 Agent 的配置（`system_config.yaml`）、可编辑的提示词文件 `AGENTS.md`、工具与 MCP Server 设置、Skill、钩子包、记忆、Vault 和定时任务。Agent 的行为完全由这些文件决定：你可以通过编辑文件改变它，其他 Agent 也可以。
+Agent State 是 Agent 的持久化目录 `agent_state/`，存放 Agent 的配置（`system_config.yaml`）、可编辑的提示词文件 `AGENTS.md`、工具与 MCP Server 设置、Skill、钩子包、工作台、记忆、Vault 和定时任务。Agent 的行为完全由这些文件决定：你可以通过编辑文件改变它，其他 Agent 也可以。
 
 见[配置参考](/configuration)。
 

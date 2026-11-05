@@ -163,6 +163,7 @@ import type {
   QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
+  InterruptRequest,
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
@@ -237,6 +238,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchArchiveInstallRequest,
+  WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
   WorkbenchVersion,
   VersionRollbackResponse,
@@ -1390,6 +1393,13 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     { method: "DELETE" },
   );
 
+/** Send one waiting message now — the follow-up `followUpId` names or the steering `steerId` names: the run stops and it goes out first (202; 409 follow_up_started / not_pending once it is no longer waiting). */
+export const postInterrupt = (sessionId: string, body: InterruptRequest) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+    method: "POST",
+    body,
+  });
+
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).
   apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
@@ -2318,7 +2328,9 @@ export const uninstallMachine = (projectId: string, machineId: string, removeDat
 
 // Version & self-update ----------------------------------------------------------------
 
-export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** This server's version report, or, given a machine's id, that machine's (its OS for a report). */
+export const getVersion = (machine?: string) =>
+  apiFetch<VersionResponse>("/api/version", machine === undefined ? {} : { server: machine });
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 /** Push a kept version back (admin); the swap follows the 202. */
@@ -2748,6 +2760,29 @@ export const rollbackWorkbench = (
   apiFetch<{ workbench: WorkbenchInfo }>(
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
+  );
+/** Imports one workbench's source from an uploaded zip (base64) and loads it; 409 `workbench_exists` on a taken id unless overwrite; 201 returns the workbench as its load left it. */
+export const installWorkbenchArchive = (
+  projectId: string,
+  agentId: string,
+  body: WorkbenchArchiveInstallRequest,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchArchiveInstallResponse>(`${workbenchesBase(projectId, agentId)}/archive`, {
+    method: "POST",
+    body,
+    server: machineId,
+  });
+/** Zip download URL for one workbench's source (server sets Content-Disposition attachment); the export round-trips through installWorkbenchArchive. */
+export const workbenchArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+): string =>
+  apiUrl(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/archive`,
+    machineId,
   );
 /** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
 export const removeWorkbench = (

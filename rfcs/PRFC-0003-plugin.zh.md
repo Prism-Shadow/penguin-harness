@@ -2,8 +2,8 @@
 
 [English](PRFC-0003-plugin.md)
 
-> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0003-plugin.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0003-plugin.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
+> **修订**：v1.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -51,6 +51,8 @@
 插件包以装饰器类写出它的 Module：`@Component` 或 `@Module` 类，`@Use`、`@Provide`、`@Bind` 字段是它的依赖、供给与贡献的代码半。默认导出列出要启动的类，也可以列出它要替换的平台节点。构建时对包自己的 tsconfig 运行 `gen-ifaces`，把每个类的清单与它提到的每个接口的签名写进 `ifaces.json`，随包发布。没有 `ifaces.json` 的包不带 Module。
 
 平台读 `ifaces.json` 就知道插件要什么、给什么、往哪些槽里投稿，不必执行插件代码。插件的 Module 与平台的节点进同一棵树，在任何节点创建之前整树按签名级结构校验（PRFC-0001）：它能 `@Use` 的只有平台以接口发布的东西，签名不符就具名拒绝。通过校验之后，它作为平台模块树的子节点创建，往槽里投稿：沙盒后端投给 `SandboxModule.providers`，Web 界面的页面与标签、设置分组各有自己的槽。
+
+插件库的内容同样是贡献（2026-11-04）。插件携带的 Skill、钩子包、MCP Server、Workbench 与卡片元数据，由它的 Module 以 `contributes` 投给 `PluginLibraryModule` 的五个数据槽，写进同一份 `ifaces.json`；只携带内容的插件没有运行时代码，也就没有入口。这些贡献由插件库从 `ifaces.json` 静态读取，不必启动贡献者：它们不经插件表、不随 App 的创建生效，而是照旧**按 Agent 安装**——安装把内容复制进该 Agent 的 Agent State，与清单写在 `package.json` 的 `penguin` 块时逐字节相同（05「插件库」）。种类因此由表推定：表中有 Skill、钩子包、MCP Server 或 Workbench 贡献即插件库插件（只有卡片不算，带卡片的沙箱后端因此仍只是服务端模块），包有代码入口、表中列出 Module 或 `replaces` 即服务端模块，两者可以兼有。已装进各 Agent 的副本不受影响；仍以 `penguin` 块书写、没有 `ifaces.json` 的包不再被读取，不做兼容（用户决定，同 2026-10-10 `plugin.json` 退场的先例）。
 
 插件与平台同进程。隔离止于接口：签名检查保证它拿到约定的东西，不限制它拿到之后做什么。
 
@@ -119,7 +121,7 @@ App 在以下时刻创建，每次都重新加载插件：
 今天已经是这样：
 
 - 沙盒后端在树上，并不意味着命令被约束。一条命令是否受约束、受到什么程度的约束，由它所在 Session 的策略决定；同一个进程里，一个 Session 只读，另一个 Session 完全访问。
-- 插件库的快速开始只把演示写进当前 Agent 的草稿；这是库元数据与界面的行为，不是平台模块树的 contribution 槽。
+- 插件库的快速开始只把演示写进当前 Agent 的草稿；它是插件卡片贡献里的数据，由插件库静态读取，与插件在不在树上无关。
 
 这条路可以走得更细：只为某些用户、某些 Agent 或某些 Project 打开一个插件的功能，其余的照常不受影响。机器级配置已经落地；PRFC-0004 的 Project 级配置仍是提案。平台自己的策略（例如沙盒）还可细到 Session。
 
@@ -168,8 +170,6 @@ App 在以下时刻创建，每次都重新加载插件：
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-自带插件库里的 Skill、hook 与 MCP Server 仍以 `package.json` 清单的形态按 Agent 安装；Workbench 同样经插件分发，但安装后由 Agent 应用自己的模块树加载（05「插件库」、[PRFC-0020](PRFC-0020-agent-workbench.md)）。按本提案，插件的内容只有 Module，它们应当是向 Agent 贡献的 Module；怎么迁过去、迁的时候已经装进各个 Agent 的副本怎么办，还没定。
-
 插件升级失败时怎么回退：`npm install` 在重新装配之前就改写了 `<root>/plugins/` 里的文件，重新装配失败后插件表回退到旧的版本要求，但磁盘上已经是新版本，恢复启动会再导入一次新代码。回退是否也要把包装回旧版本，还没定。
 
 ## Future possibilities
@@ -180,6 +180,11 @@ App 在以下时刻创建，每次都重新加载插件：
 只重建受影响的子树，减少一次插件变更需要重新装配的范围。
 
 ## Changes
+
+### v1.1.0
+
+- 更新：「原理」新增一段：插件库的内容（Skill、钩子包、MCP Server、Workbench 与卡片）是插件自身 Module 向 `PluginLibraryModule` 五个数据槽的贡献，从 `ifaces.json` 静态读取、照旧按 Agent 安装，包的种类由表推定；「快速开始」一条改为指向插件的卡片贡献（设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)）。
+- 删除：「Unresolved questions」中自带插件库的清单形态内容如何迁移一问，已由同一设计 PR 定下。
 
 ### v1.0.0
 

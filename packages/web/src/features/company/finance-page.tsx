@@ -103,6 +103,7 @@ import {
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const iconButtonClass =
   "inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
@@ -380,7 +381,7 @@ export function FinancePage() {
       void load();
       void company.reloadOrganizations();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

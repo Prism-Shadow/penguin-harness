@@ -1,7 +1,10 @@
 /**
  * Internal SDK interface contracts, split by which side of `context_engine` needs them:
  * `./llm.ts` (the model request), `./environment.ts` (tool execution and the environment's
- * management plane), and `./shared.ts` (the vocabulary both genuinely need). This barrel is
+ * management plane), and `./shared.ts` (the vocabulary both genuinely need). Beside them,
+ * `./history-elision.ts` is the one rule a server and the Web App share for folding a history
+ * record's bulky values (it is not an engine contract; it lives here because this is the
+ * subpath the Web App may import at run time). This barrel is
  * the published `@prismshadow/penguin-core/interfaces` entry and re-exports all three, so
  * every existing import path keeps working.
  *
@@ -23,3 +26,4 @@
 export type * from "./shared.js";
 export * from "./llm.js";
 export * from "./environment.js";
+export * from "./history-elision.js";

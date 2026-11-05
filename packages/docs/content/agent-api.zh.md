@@ -198,7 +198,7 @@ type InputItem =
 | 413 | `payload_too_large` | 请求体超过服务器的大小上限 |
 | 415 | `unsupported_media_type` | 写请求没有带 `Content-Type: application/json` |
 | 429 | `too_many_runs` | 该 Agent 已达到设置的并发上限；等 `Retry-After` 秒后重试 |
-| 503 | 以服务器返回为准 | 服务器正在关闭，或该 Agent、会话正在被删除 |
+| 503 | 以服务器返回为准 | 服务器正在关闭，或该 Agent、会话正在被删除；经 Cookie 入口时，可能持有该 Session 的机器未及时应答则为 `machine_no_answer`（见[机器](/server-api#机器仅管理员)） |
 
 流一旦开始，错误就不会以单独的帧出现：记录说明发生了什么，服务器未能完成的运行会在 `[DONE]` 之前留下最后一个未闭合的 `task_begin`。见[运行的结果](/amsp#运行的结果)和[错误](/amsp#错误)中的错误码。
 

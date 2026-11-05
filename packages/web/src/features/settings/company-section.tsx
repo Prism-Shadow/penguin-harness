@@ -14,19 +14,14 @@
  * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
  */
 import { useEffect, useState } from "react";
-import {
-  ConfirmModal,
-  SettingsGroup,
-  SettingsSection,
-  ToggleRow,
-  toastError,
-} from "@prismshadow/penguin-ui";
+import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { writeCompanyMode } from "./company-mode-write";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function CompanySection() {
   const { refresh } = useAuth();
@@ -48,7 +43,7 @@ export function CompanySection() {
         setCompanyMode(res.settings.companyMode);
       })
       .catch((e: unknown) => {
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) toastApiError(e);
       });
     return () => {
       cancelled = true;

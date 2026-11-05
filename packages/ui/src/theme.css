@@ -11,7 +11,8 @@
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
  * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
- * with, and which icon set a `ui-glyph` shows until a theme says. Token VALUES live only in
+ * with, which icon set a `ui-glyph` shows until a theme says, and (animations.css) the entrance
+ * and exit classes the components name. Token VALUES live only in
  * `themes/*.css`, and so do the user's accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
  * `ACCENT_PRESETS`).
  *
@@ -26,6 +27,7 @@
 
 @import "./wallpaper.css";
 @import "./cursors.css";
+@import "./animations.css";
 
 /* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
    mask), private to the recipes (not a token) and registered as a number so a transition can
@@ -265,6 +267,15 @@
   * {
     scrollbar-width: var(--ui-scrollbar-w);
     scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
+  }
+  /* Hide the native scrollbar: a strip that scrolls sideways without one (the composer's toolbar,
+     a timeline lane), or a view whose own controls replace it. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   /*

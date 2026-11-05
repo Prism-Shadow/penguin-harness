@@ -136,18 +136,17 @@
     color: var(--site-gray-100);
   }
 
-  /* ---------- Group labels: the TOC's heading and the docs sidebar's sections ---------- */
-  .site-eyebrow.ui-eyebrow {
-    font-family: inherit;
+  /* ---------- Group labels: the TOC's heading and the docs sidebar's sections ----------
+     Sentence case at the small size, set apart by weight and a muted ink. Not the app's eyebrow
+     hook: a site has no theme recipe, and the gallery's app themes must not restyle it. */
+  .site-eyebrow {
     font-size: var(--site-text-xs);
     line-height: var(--site-text-xs-lh);
     font-weight: 600;
-    letter-spacing: 0.025em;
-    text-transform: uppercase;
-    color: var(--site-gray-400);
-  }
-  :root.dark .site-eyebrow.ui-eyebrow {
     color: var(--site-gray-500);
+  }
+  :root.dark .site-eyebrow {
+    color: var(--site-gray-400);
   }
 
   /* ---------- Footer ---------- */
@@ -268,16 +267,18 @@
     color: var(--site-gray-500);
   }
 
-  /* ---------- Pill ---------- */
+  /* ---------- Pill ----------
+     A filled tone carries its tint alone; only the outline tone draws a line, so a pill is never
+     tint and line of one hue. The border stays, transparent, so every tone keeps one height. */
   .site-pill {
-    border: 1px solid;
+    border: 1px solid transparent;
     border-radius: 9999px;
     padding: 0.125rem 0.5rem;
-    font-size: 11px;
+    font-size: var(--site-text-xs);
+    line-height: var(--site-text-xs-lh);
     font-weight: 500;
   }
   .site-pill[data-tone="brand"] {
-    border-color: var(--site-brand-200);
     background: var(--site-brand-50);
     color: var(--site-brand-700);
   }
@@ -287,17 +288,14 @@
     color: var(--site-brand-700);
   }
   .site-pill[data-tone="teal"] {
-    border-color: var(--site-teal-300);
     background: var(--site-teal-50);
     color: var(--site-teal-800);
   }
   .site-pill[data-tone="neutral"] {
-    border-color: var(--site-gray-200);
-    background: var(--site-gray-50);
+    background: var(--site-gray-100);
     color: var(--site-gray-600);
   }
   :root.dark .site-pill[data-tone="brand"] {
-    border-color: var(--site-brand-800);
     background: var(--site-brand-950);
     color: var(--site-brand-300);
   }
@@ -306,12 +304,10 @@
     color: var(--site-brand-300);
   }
   :root.dark .site-pill[data-tone="teal"] {
-    border-color: var(--site-teal-700);
     background: var(--site-teal-950);
     color: var(--site-teal-300);
   }
   :root.dark .site-pill[data-tone="neutral"] {
-    border-color: var(--site-gray-700);
     background: var(--site-gray-800);
     color: var(--site-gray-300);
   }
@@ -393,7 +389,7 @@
     border-radius: 0.25rem;
     background: var(--site-gray-50);
     padding: 0.125rem 0.375rem;
-    font-size: 10px;
+    font-size: var(--site-text-xs);
     line-height: 1;
     color: var(--site-gray-500);
   }

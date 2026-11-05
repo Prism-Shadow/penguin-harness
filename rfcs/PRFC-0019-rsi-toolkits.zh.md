@@ -2,8 +2,8 @@
 
 [English](PRFC-0019-rsi-toolkits.md)
 
-> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0019-rsi-toolkits.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0019-rsi-toolkits.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
+> **修订**：v1.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `rsi_toolkits`
 - Start Date: 2026-10-10
@@ -102,7 +102,7 @@ Web App 不写死工具包与 Benchmark 的清单。草稿页的「自进化算�
 
 ### 「方法」选择
 
-「方法」下拉在打开「使用」对话框时由插件库的 `rsi` 分类生成，每个插件一项：名称取清单的 `title` / `title_zh`（缺省为包名），说明取 `short_description(_zh)`，缺省为 `description(_zh)`。内置的五个工具包都不写 `title`，下拉与插件市场一样显示包名。`default-rsi-toolkit` 按包名识别为默认循环：排在首位，表单与尾部同前，预选 `agent-optimization` 与 `agent-evaluation`。其余每个插件按原论文流程运行，所用 Skill 依次取与插件同名的 Skill、快速开始预选的第一个且插件自带的 Skill、插件唯一的 Skill；三者都定不下来的插件不进下拉。插件库还没读到、读取失败或分类为空时，下拉置灰并写明原因，表单按 Default 处理，「评估」tab 不受影响。选非 Default 方法时，固定尾部向该 Skill 交代 test_agent_id、benchmark_id 与 runs，要求按原论文流程运行、经其自带的评测参考测量、以同一标签记录每条完整评估，不提 `agent-evaluation`、`run_subagent` 或轮数上限；预选技能只有该 Skill。测试只验证这条映射规则（排序、Skill 的选取、按语言取名称与说明、读不到时的回落），并对仓库里实际随附的工具包跑一遍，保证每个都能映射成一项。
+「方法」下拉在打开「使用」对话框时由插件库的 `rsi` 分类生成，每个插件一项：名称取卡片贡献的 `title` / `titleZh`（缺省为包名），说明取 `shortDescription` / `shortDescriptionZh`，缺省为 npm 的 `description` / 卡片的 `descriptionZh`。内置的五个工具包都不写 `title`，下拉与插件市场一样显示包名。`default-rsi-toolkit` 按包名识别为默认循环：排在首位，表单与尾部同前，预选 `agent-optimization` 与 `agent-evaluation`。其余每个插件按原论文流程运行，所用 Skill 依次取与插件同名的 Skill、快速开始预选的第一个且插件自带的 Skill、插件唯一的 Skill；三者都定不下来的插件不进下拉。插件库还没读到、读取失败或分类为空时，下拉置灰并写明原因，表单按 Default 处理，「评估」tab 不受影响。选非 Default 方法时，固定尾部向该 Skill 交代 test_agent_id、benchmark_id 与 runs，要求按原论文流程运行、经其自带的评测参考测量、以同一标签记录每条完整评估，不提 `agent-evaluation`、`run_subagent` 或轮数上限；预选技能只有该 Skill。测试只验证这条映射规则（排序、Skill 的选取、按语言取名称与说明、读不到时的回落），并对仓库里实际随附的工具包跑一遍，保证每个都能映射成一项。
 
 ### Benchmark 复现
 
@@ -161,6 +161,10 @@ Web App 不写死工具包与 Benchmark 的清单。草稿页的「自进化算�
 - 服务端的评测执行器取代各工具包里的参考副本。
 
 ## Changes
+
+### v1.1.0
+
+- 更新：「「方法」的选择」一节的名称与说明改取插件的卡片贡献（`title` / `titleZh`、`shortDescription` / `shortDescriptionZh`），缺省为 npm 的 `description` 与卡片的 `descriptionZh`（设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)）。
 
 ### v1.0.0
 

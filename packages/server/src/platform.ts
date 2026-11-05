@@ -124,6 +124,8 @@ import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -142,6 +144,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -536,12 +539,15 @@ export class WorkbenchesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
+    PluginLibraryModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     TerminalRelay,
     SessionForwardRoutes,
+    HistoryRoutes,
+    HistoryLinesRoutes,
     WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,

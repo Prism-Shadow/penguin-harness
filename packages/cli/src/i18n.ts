@@ -283,7 +283,9 @@ export interface Messages {
     unchanged(name: string, version: string | null): string;
     /** A package directory the plugin library would refuse, with the reader's reason; nothing was sent. */
     dirRefused(dir: string, reason: string): string;
-    /** A package directory with neither skills/, hooks/, MCP servers nor ifaces.json; nothing was sent. */
+    /** A package directory without an ifaces.json: it was never built; nothing was sent. */
+    dirNotBuilt(dir: string): string;
+    /** A built package directory whose ifaces.json contributes nothing for an Agent and lists no server modules; nothing was sent. */
     dirNotPlugin(dir: string): string;
     /** A package directory past the server's upload caps; nothing was sent. */
     dirTooLarge(dir: string): string;
@@ -1067,7 +1069,7 @@ export interface Messages {
   thinkingHeld(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
-  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
+  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first (or hands over by Trace path when it cannot). */
   switchModelCurrent(model: string): string;
   /** `/switch-model` with anything but exactly `<provider> <model_id>`. */
   switchModelUsage(): string;
@@ -1083,8 +1085,8 @@ export interface Messages {
   switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
   /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
   switchModelUnavailable(model: string, detail: string): string;
-  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
-  switchModelNoCompaction(): string;
+  /** A switch that could not summarize handed the history over by its Trace path: the file the new model reads it from (absent for a Session that records no Trace). */
+  switchModelHandedOver(tracePath?: string): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
   /** `/verbose` toggled off: long tool output is collapsed again from here on. */
@@ -1122,7 +1124,7 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
-  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow and Atlas Cloud). */
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate). */
   modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
@@ -1446,8 +1448,10 @@ const en: Messages = {
       `${name}${version === null ? "" : ` ${version}`} is already installed on the server; nothing changed.`,
     dirRefused: (dir, reason) =>
       `${dir} is not a package the plugin library can read, so nothing was sent: ${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} has no ifaces.json, so it is not a built plugin package: build it first (npm install, then npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json). Nothing was sent.`,
     dirNotPlugin: (dir) =>
-      `${dir} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (penguin.mcp_servers) nor the ifaces.json of server modules. Nothing was sent.`,
+      `${dir} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry. Nothing was sent.`,
     dirTooLarge: (dir) =>
       `${dir} exceeds what a plugin package may hold (2000 files, 5MB per file, 50MB in all, a 14MB zip). Nothing was sent.`,
     uploading: (name, version, files) => `Uploading ${name} ${version} (${files} files)…`,
@@ -2241,8 +2245,8 @@ const en: Messages = {
     `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
   switchModelUnavailable: (model, detail) =>
     `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
+  switchModelHandedOver: (tracePath) =>
+    `[model switch] no summary: the new model reads the earlier history from its Trace file${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
   verboseOff: () =>
     "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
@@ -2579,8 +2583,10 @@ const zh: Messages = {
     unchanged: (name, version) =>
       `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，没有任何改动。`,
     dirRefused: (dir, reason) => `插件库无法读取 ${dir} 中的包，未发送任何内容：${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} 没有 ifaces.json，不是构建过的插件包：请先构建（npm install，然后 npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json）。未发送任何内容。`,
     dirNotPlugin: (dir) =>
-      `${dir} 不是 PenguinHarness 插件：既没有 skills/、hooks/ 与 MCP Server（penguin.mcp_servers），也没有服务端模块的 ifaces.json。未发送任何内容。`,
+      `${dir} 不是 PenguinHarness 插件：它的 ifaces.json 既没有贡献 Skill、钩子包、MCP Server 或 Workbench，也没有列出带代码入口的服务端模块。未发送任何内容。`,
     dirTooLarge: (dir) =>
       `${dir} 超出插件包的上限（2000 个文件、单个文件 5MB、合计 50MB、zip 14MB）。未发送任何内容。`,
     uploading: (name, version, files) => `正在上传 ${name} ${version}（${files} 个文件）…`,
@@ -3319,8 +3325,8 @@ const zh: Messages = {
     `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
   switchModelUnavailable: (model, detail) =>
     `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
+  switchModelHandedOver: (tracePath) =>
+    `[切换模型] 未生成摘要：新模型按需读取此前的 Trace 文件${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,

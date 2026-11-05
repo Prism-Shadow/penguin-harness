@@ -47,7 +47,6 @@ import {
   Select,
   SkeletonList,
   ToggleRow,
-  toastError,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -61,6 +60,7 @@ import { useMachineInfo } from "../../lib/machine-agent-lists";
 import { APPROVAL_MODES } from "../chat/approval-mode";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
 
@@ -268,7 +268,7 @@ export function DeleteKeyConfirm({
         onClose();
         deleteKey(projectId, agentId, record.keyId, machineId).then(
           () => onDeleted(record.keyId),
-          (error: unknown) => toastError(apiErrorText(error)),
+          (error: unknown) => toastApiError(error),
         );
       }}
       confirmLabel={S.common.delete}
@@ -604,7 +604,7 @@ export function ApiTab({
         // The Agents list marks an Agent whose API is on.
         if (patch.enabled !== undefined) void reloadAgents();
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
       } finally {
         setBusy(false);
       }
@@ -713,7 +713,7 @@ export function ApiTab({
             setSettings(outcome.api);
             setServerEnabled(outcome.serverEnabled);
             void reloadAgents();
-          } else toastError(apiErrorText(outcome.error));
+          } else toastApiError(outcome.error);
           setBusy(false);
         }}
       />
@@ -728,7 +728,7 @@ export function ApiTab({
           if ("api" in outcome) {
             setSettings(outcome.api);
             setServerEnabled(outcome.serverEnabled);
-          } else toastError(apiErrorText(outcome.error));
+          } else toastApiError(outcome.error);
           setBusy(false);
         }}
       />

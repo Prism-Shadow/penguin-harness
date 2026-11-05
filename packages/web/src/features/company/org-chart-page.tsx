@@ -43,7 +43,6 @@ import {
   MenuItem,
   MenuSeparator,
   Notice,
-  toastError,
   toastSuccess,
   usePointerDrag,
 } from "@prismshadow/penguin-ui";
@@ -80,6 +79,7 @@ import {
   HireDialog,
 } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
@@ -327,7 +327,7 @@ export function OrgChartPage() {
       }
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -345,7 +345,7 @@ export function OrgChartPage() {
       void company.reloadOrgChart();
       void company.reloadOrgSessions();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
