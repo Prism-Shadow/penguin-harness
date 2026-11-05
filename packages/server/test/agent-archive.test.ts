@@ -47,6 +47,9 @@
  *   keeps its `tools/` and its MCP credential the definition leaves blank.
  * - Given names that only contain a credential word (`--max-tokens`, `MAX_TOKENS`, `?keyword=`),
  *   their values travel; a credential reached through a YAML alias is blanked all the same.
+ * - Given names written as one word that end in a credential word (`PGPASSWORD`,
+ *   `NGROK_AUTHTOKEN`, `--secretkey`, `?accesstoken=`), their values are blanked; names that only
+ *   start with one (`--tokens`, `TOKENIZER`, `AUTHOR`, `KEYBOARD`, `KEYSTORE`) travel as written.
  * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
  *   come in another order, a credential is refilled only for the same server and the same flag:
  *   it never goes to the other address and never into another flag.
@@ -1043,6 +1046,61 @@ describe("Agent archive", () => {
     expect(exportedConfig).not.toContain("ghp_alias_secret_1");
     expect(exportedConfig).not.toContain("sk-query-1");
     for (const kept of ["--max-tokens", "4096", "--keyword=penguin", "keyword=penguin"]) {
+      expect(exportedConfig).toContain(kept);
+    }
+  });
+
+  it("a name written as one word that ends in a credential word is a credential's; one that only starts with one is not", async () => {
+    const state = await newAgent("one_word_agent");
+    await fs.writeFile(
+      path.join(state, "system_config.yaml"),
+      [
+        'system_prompt: "hi"',
+        "version: 1",
+        "tools:",
+        "  mcpServers:",
+        "    - name: db",
+        "      config:",
+        "        command: node",
+        '        args: ["server.js", "--secretkey", "sk-arg-1", "--tokens", "12"]',
+        "        env:",
+        "          PGPASSWORD: pg-secret-1",
+        "          NGROK_AUTHTOKEN: ngrok-secret-1",
+        "          TOKENIZER: bpe-small",
+        "          AUTHOR: ann-example",
+        "          KEYBOARD: us-intl",
+        "          KEYSTORE: /etc/penguin/store.p12",
+        "    - name: feed",
+        "      config:",
+        '        url: "https://feed.example.test/mcp?accesstoken=at-query-1&keyboard=dvorak"',
+        "",
+      ].join("\n"),
+    );
+
+    const entries = entriesOf(await exported("one_word_agent"));
+
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
+    expect([...manifest.redacted].sort()).toEqual(
+      [
+        "mcp:db:args:--secretkey",
+        "mcp:db:env:NGROK_AUTHTOKEN",
+        "mcp:db:env:PGPASSWORD",
+        "mcp:feed:url:query:accesstoken",
+      ].sort(),
+    );
+    const exportedConfig = strFromU8(entries["agent_state/system_config.yaml"]!);
+    for (const secret of ["sk-arg-1", "pg-secret-1", "ngrok-secret-1", "at-query-1"]) {
+      expect(exportedConfig).not.toContain(secret);
+    }
+    for (const kept of [
+      "--tokens",
+      '"12"',
+      "bpe-small",
+      "ann-example",
+      "us-intl",
+      "/etc/penguin/store.p12",
+      "keyboard=dvorak",
+    ]) {
       expect(exportedConfig).toContain(kept);
     }
   });
