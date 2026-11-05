@@ -151,7 +151,11 @@ export function SkillAdamWidget() {
     <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
       {/* Minimal Frameless Control Strip */}
       <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="SkillAdam stages">
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="tablist"
+          aria-label="SkillAdam stages"
+        >
           {STAGES.map((s, idx) => {
             const isCurrent = idx === stageIdx;
             const isReached = idx <= stageIdx;
@@ -418,9 +422,7 @@ export function SkillAdamWidget() {
             height="8"
             rx="4"
             className={
-              isS1
-                ? "fill-emerald-500 dark:fill-emerald-400"
-                : "fill-gray-400 dark:fill-gray-500"
+              isS1 ? "fill-emerald-500 dark:fill-emerald-400" : "fill-gray-400 dark:fill-gray-500"
             }
           />
 
@@ -432,9 +434,7 @@ export function SkillAdamWidget() {
             height="38"
             rx="6"
             className={
-              isS1
-                ? "fill-emerald-600 dark:fill-emerald-500"
-                : "fill-gray-200 dark:fill-gray-800"
+              isS1 ? "fill-emerald-600 dark:fill-emerald-500" : "fill-gray-200 dark:fill-gray-800"
             }
           />
           <text
@@ -688,9 +688,7 @@ export function SkillAdamWidget() {
             height="26"
             rx="5"
             className={
-              isS3
-                ? "fill-brand-600 dark:fill-brand-500"
-                : "fill-gray-100 dark:fill-gray-800"
+              isS3 ? "fill-brand-600 dark:fill-brand-500" : "fill-gray-100 dark:fill-gray-800"
             }
           />
           <text

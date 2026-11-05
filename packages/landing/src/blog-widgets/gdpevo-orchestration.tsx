@@ -30,10 +30,34 @@ interface StageTab {
 }
 
 const STAGE_TABS: readonly StageTab[] = [
-  { id: "train", labelZh: "1. 多轮训练循环", labelEn: "1. Multi-Round Train", startTick: 0, endTick: 11 },
-  { id: "freeze", labelZh: "2. 产出进化 Agent", labelEn: "2. Evolved Agent", startTick: 12, endTick: 13 },
-  { id: "test", labelZh: "3. 多轮隔离测试", labelEn: "3. Isolated Testing", startTick: 14, endTick: 17 },
-  { id: "result", labelZh: "4. 离线判分出分", labelEn: "4. Scoreboard", startTick: 18, endTick: 21 },
+  {
+    id: "train",
+    labelZh: "1. 多轮训练循环",
+    labelEn: "1. Multi-Round Train",
+    startTick: 0,
+    endTick: 11,
+  },
+  {
+    id: "freeze",
+    labelZh: "2. 产出进化 Agent",
+    labelEn: "2. Evolved Agent",
+    startTick: 12,
+    endTick: 13,
+  },
+  {
+    id: "test",
+    labelZh: "3. 多轮隔离测试",
+    labelEn: "3. Isolated Testing",
+    startTick: 14,
+    endTick: 17,
+  },
+  {
+    id: "result",
+    labelZh: "4. 离线判分出分",
+    labelEn: "4. Scoreboard",
+    startTick: 18,
+    endTick: 21,
+  },
 ];
 
 /**
@@ -72,9 +96,7 @@ function tickDelayMs(tick: number): number {
 
 /** Crisp inline SVG Docker whale + stacked container blocks mark (15x11px). */
 function DockerWhale({ x, y, active }: { x: number; y: number; active: boolean }) {
-  const fill = active
-    ? "fill-brand-600 dark:fill-brand-400"
-    : "fill-gray-400 dark:fill-gray-500";
+  const fill = active ? "fill-brand-600 dark:fill-brand-400" : "fill-gray-400 dark:fill-gray-500";
   return (
     <g transform={`translate(${x}, ${y})`} className={fill}>
       {/* Stacked container blocks on the whale's back */}
@@ -172,7 +194,11 @@ export function GdpevoOrchestrationWidget() {
     <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
       {/* Minimal Frameless Control Strip */}
       <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Experiment stages">
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="tablist"
+          aria-label="Experiment stages"
+        >
           {STAGE_TABS.map((s, idx) => {
             const isCurrent = idx === activeStageIdx;
             const isReached = tick >= s.startTick;
@@ -342,9 +368,7 @@ export function GdpevoOrchestrationWidget() {
             height="18"
             rx="4"
             className={
-              isS0
-                ? "fill-brand-100 dark:fill-brand-900/70"
-                : "fill-gray-200/80 dark:fill-gray-800"
+              isS0 ? "fill-brand-100 dark:fill-brand-900/70" : "fill-gray-200/80 dark:fill-gray-800"
             }
           />
           <text
@@ -443,7 +467,12 @@ export function GdpevoOrchestrationWidget() {
                   strokeWidth={isCurrentTask ? "1.75" : "1.25"}
                   className={cardStyle}
                 />
-                <text x={card.x + card.w / 2} y={card.y + 19} textAnchor="middle" className={textStyle}>
+                <text
+                  x={card.x + card.w / 2}
+                  y={card.y + 19}
+                  textAnchor="middle"
+                  className={textStyle}
+                >
                   {card.label}
                 </text>
               </g>
