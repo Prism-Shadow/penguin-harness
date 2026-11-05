@@ -35,7 +35,7 @@ import type {
   HostCommand,
   HostCommandOffer,
 } from "../api/types.js";
-import { HOST_COMMANDS } from "../api/types.js";
+import { LEGACY_HOST_COMMANDS } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
@@ -176,14 +176,15 @@ export class DesktopService {
   }
 
   /**
-   * The offered ids this BUILD also has words for — what a page older than `offers` is given,
-   * since such a page looks every id up in a table of its own and throws on a miss.
+   * The offered ids the legacy page knows — the pinned `LEGACY_HOST_COMMANDS`, not this
+   * build's own vocabulary: a page older than `offers` looks every id up in a table of its
+   * own and throws on a miss, so a new id rides in `offers` alone until that page is gone.
    */
   getCommands(): HostCommand[] {
     return this.offers
       .map((offer) => offer.command)
       .filter((command): command is HostCommand =>
-        (HOST_COMMANDS as readonly string[]).includes(command),
+        (LEGACY_HOST_COMMANDS as readonly string[]).includes(command),
       );
   }
 

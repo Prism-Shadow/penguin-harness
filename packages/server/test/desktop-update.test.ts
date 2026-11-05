@@ -201,20 +201,24 @@ describe("/api/command", () => {
       const installCli = { command: "install-cli", label: "Install it", labelZh: "装上它" };
       // A command this build has no words for: offered, listed, runnable.
       const revealLogs = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
+      // A command this build HAS words for that the legacy page does not: offered, runnable,
+      // but kept out of the legacy field — the old page's own table would throw on a miss.
+      const openDevtools = { command: "open-devtools", label: "DevTools", labelZh: "开发者工具" };
       // The host's own frame, put where the host would put it: the platform reads THAT,
       // never a list the runtime parsed for it.
       t.deps.shellFrames.hostCommands = {
         type: "host-commands",
-        commands: [installCli, revealLogs],
+        commands: [installCli, revealLogs, openDevtools],
       };
       const ran: unknown[] = [];
       t.deps.shellFrames.post = (frame) => ran.push(frame);
       const listed = await t.app.request("/api/command", { headers: { cookie } });
       expect(await listed.json()).toEqual({
-        // The legacy field stays narrow — a page older than `offers` looks every id up in a
-        // table of its own and a miss there blanks it.
+        // The legacy field stays pinned to `LEGACY_HOST_COMMANDS`, not this build's
+        // vocabulary — a page older than `offers` looks every id up in a table of its own
+        // and a miss there blanks it.
         commands: ["install-cli"],
-        offers: [installCli, revealLogs],
+        offers: [installCli, revealLogs, openDevtools],
       });
       const run = await t.app.request("/api/command/install-cli", {
         method: "POST",

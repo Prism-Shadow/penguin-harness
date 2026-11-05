@@ -5601,6 +5601,15 @@ export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] a
 export type HostCommand = (typeof HOST_COMMANDS)[number];
 
 /**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+
+/**
  * One command the host offers, carrying the words to show for it.
  *
  * The words travel WITH the command because the three programs involved ship apart: the
