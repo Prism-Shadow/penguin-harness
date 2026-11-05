@@ -85,12 +85,11 @@ Running a GDPEVO self-evolution experiment in PenguinHarness requires no custom 
 
 <img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Filling in GDPEVO Controller and selecting skilladam-rsi-toolkit in the Create agent dialog" />
 
-### Step 2: Select the Controller Agent, Model, and Thinking Effort
+### Step 2: Open a Chat from the Agent and Configure the Model
 
-1. Open the **Models** page and make sure the target model (such as `DeepSeek V4.1 Flash`) is configured with its API key.
-2. Open **New chat**, select `GDPEVO Controller` below the composer, pick `DeepSeek V4.1 Flash` in the model selector, and set the thinking effort to `max`.
+Once `GDPEVO Controller` is created, click **`+ New chat`** directly on its card in the **Agents** list to open a conversation with it, then select `DeepSeek V4.1 Flash` and set the thinking effort to `max` in the composer bar before sending a message.
 
-<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting GDPEVO Controller, DeepSeek V4.1 Flash, and max thinking effort in New chat" />
+<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the GDPEVO Controller chat view" />
 
 ### Step 3: Select the Toolkit and Send the Launch Prompt
 

@@ -85,12 +85,11 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 
 <img src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中填写 GDPEVO Controller 并搜索勾选 skilladam-rsi-toolkit 插件" />
 
-### 第二步：选择主控 Agent、模型与思考强度
+### 第二步：进入该 Agent 的对话界面并配置模型
 
-1. 打开左侧的 **Models** 页面，确认已添加实验使用的模型（如 `DeepSeek V4.1 Flash`）并保存 API Key。
-2. 点击左侧的 **New chat**，在输入框下方将当前对话的智能体选为刚创建的 `GDPEVO Controller`，模型选为 `DeepSeek V4.1 Flash`，并将思考强度设为 `max`。
+创建完成后，直接在 **Agents** 列表的 `GDPEVO Controller` 卡片右侧点击 **`+ New chat`** 进入它的专属对话界面，在输入框下方将模型选为 `DeepSeek V4.1 Flash`，并将思考强度调为 `max`。
 
-<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在新建对话界面选定 GDPEVO Controller、DeepSeek V4.1 Flash 模型与 max 思考强度" />
+<img src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在 GDPEVO Controller 的对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
 
 ### 第三步：选择工具包并发送启动指令
 
