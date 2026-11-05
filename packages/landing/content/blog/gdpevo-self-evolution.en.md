@@ -174,7 +174,7 @@ Per-benchmark test scores (Mean ± SD) across the six sub-benchmarks are as foll
 
 ## 6. Key Insights and Discussion
 
-In this study, the four self-evolution algorithms themselves—SkillAdam, SkillOpt, TRACE, and OpenSkill—come from published academic papers, while PenguinHarness serves as the **RSI infrastructure** that hosts and executes them. Reviewing the experimental process from an infrastructure builder's perspective yields three key insights:
+While building PenguinHarness as an RSI infrastructure and running these experiments, we made the following observations:
 
 ### 1. Controller Model Threshold
 

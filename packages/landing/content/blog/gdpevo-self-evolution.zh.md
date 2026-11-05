@@ -174,7 +174,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ## 6. 实验洞察与讨论
 
-在本次实验中，SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种算法本身均来自学术界已发表的工作，而 PenguinHarness 扮演的角色是承载这些算法与 Benchmark 的 **RSI 基础设施**。站在基础设施构建者的视角复盘整个实验过程，我们得到了以下三点启发：
+在搭建 PenguinHarness 这套 RSI 基础设施并开展实验的过程中，我们有以下几点观察与启发：
 
 ### 1. 主控 Agent 的模型能力门槛
 
