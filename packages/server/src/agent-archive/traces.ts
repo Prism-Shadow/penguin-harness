@@ -81,7 +81,8 @@ export async function selectSessions(
 ): Promise<SelectedSessions> {
   const out: SelectedSessions = { sessions: [], skipped: [] };
   if (selection.kind === "none") return out;
-  await deps.traceIndex.reconcileAgent(projectId, agentId, { force: true });
+  // The gated pass: a new Session's files move a directory's mtime, and sizes are read below.
+  await deps.traceIndex.reconcileAgent(projectId, agentId);
   const traces = new Map(
     deps.traceStore.listSessionsByAgent(projectId, agentId).map((t) => [t.sessionId, t]),
   );

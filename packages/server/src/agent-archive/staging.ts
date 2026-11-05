@@ -202,7 +202,10 @@ export async function stageZip(upload: string, extracted: string): Promise<Stage
       throw archiveTooLarge("The archive declares more than the 1GiB limit.");
     }
   }
-  const files = directory.filter((entry) => !entry.name.endsWith("/"));
+  // macOS's Archive Utility adds `__MACOSX/` (resource forks) beside the folder it zipped.
+  const files = directory.filter(
+    (entry) => !entry.name.endsWith("/") && !entry.name.startsWith("__MACOSX/"),
+  );
   const names = files.map((entry) => entry.name);
   let prefix = "";
   let topDir: string | null = null;

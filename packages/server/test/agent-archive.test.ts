@@ -25,6 +25,8 @@
  *   it declares, no config and no definition, a SKILL.md without frontmatter, a hooks.json naming
  *   a script outside its package — the import refuses before anything is written, and the id
  *   stays free.
+ * - Given a zip made by macOS's Archive Utility (a `__MACOSX/` folder beside the Agent's), it
+ *   imports.
  * - Given a hand-written zip (a definition, instructions and a skill, no parts), the Agent is
  *   created from the template with its MCP server, model level, instructions and skill; a tool
  *   this install lacks is noted and the vault key it names is to fill.
@@ -539,6 +541,16 @@ describe("Agent archive", () => {
       );
     },
   );
+
+  it("a zip macOS's Archive Utility made, with its __MACOSX folder beside the Agent's, imports", async () => {
+    const zip = unzipSync(crafted({}));
+    zip["__MACOSX/crafted/._manifest.json"] = strToU8("resource fork");
+
+    const res = await member.upload(importUrl("?agentId=from_finder"), zipSync(zip));
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).version).toBe(2);
+  });
 
   it("a hand-written zip creates the Agent from the template with its definition, instructions and skill, and notes an unknown tool", async () => {
     const zip = zipSync({
