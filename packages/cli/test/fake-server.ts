@@ -12,7 +12,8 @@
  * Credentials, as the server reads them: a request without one is let through (the token gate
  * above); a Bearer header is the local API token, which the agent API writes and the admin's
  * `agentApiEnabled` refuse with 403 `human_required`; a `penguin_session` cookie is a sign-in,
- * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent: a
+ * accepted only when it is one of `logins` (401 otherwise), and a Bearer in `staleTokens` is a
+ * token a restart replaced (401). Each request records what it sent: a
  * JSON body parsed, any other body as the raw bytes received, with its content type.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
@@ -218,6 +219,12 @@ export class FakeServer {
   }> = [];
   /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
   readonly logins = new Set<string>();
+  /**
+   * API tokens the server no longer takes, as after a restart that minted a new one: a Bearer
+   * listed here answers 401, once `onStaleToken` has run (where a test writes the new token file).
+   */
+  readonly staleTokens = new Set<string>();
+  onStaleToken: () => void = () => {};
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -1895,6 +1902,12 @@ export class FakeServer {
       if (login === undefined || !this.logins.has(login)) {
         return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
       }
+    }
+    const bearer =
+      authorization !== undefined ? /^Bearer (.+)$/.exec(authorization)?.[1] : undefined;
+    if (bearer !== undefined && this.staleTokens.has(bearer)) {
+      this.onStaleToken();
+      return this.error(401, "unauthorized", "Invalid API token.");
     }
     const viaToken = authorization !== undefined;
 

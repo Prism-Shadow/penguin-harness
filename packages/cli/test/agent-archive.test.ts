@@ -13,20 +13,36 @@
  *   manifest at the root and without `.git`; the Agent id comes from the manifest.
  * - A taken id fails with the server's `agent_exists` and says how to import anyway; `--agent-id`
  *   then imports it under another id.
+ * - Links and special files in a folder stay out of its zip: a link to a file or a directory
+ *   outside the folder is never read, and a FIFO never blocks the zip.
  * - A folder without `manifest.json` at its root is refused before any request.
+ * - A folder whose zip grows past the upload cap is refused before anything is sent (the cap is
+ *   lowered through the commands' limits, so the test writes kilobytes, not 100 MiB).
  * - `import <file>` uploads the file's bytes as they are, and `--overwrite` asks for the existing
  *   agent to be replaced.
  * - A file larger than an import accepts is refused before anything is sent.
+ * - An upload the server refuses for a token it has replaced is sent again with the new token, its
+ *   whole body included.
  * - The text report names the mode and version, the backup, what came along, the Sessions left
- *   out, what is left to fill in and the server's notes; `--json` prints the response as it is.
+ *   out (with the server's detail when it gives one), what is left to fill in and the server's
+ *   notes; `--json` prints the response as it is.
+ * - A note whose code the CLI knows is worded in the CLI's language, so a zh CLI does not show the
+ *   server's English sentence for it; a note with any other code prints the server's sentence.
  */
+import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import { Command } from "commander";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
+import type {
+  AgentArchiveImportResponse,
+  AgentArchiveNoteCode,
+} from "@prismshadow/penguin-server/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registerArchiveCommands } from "../src/commands/agent-archive.js";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -268,6 +284,42 @@ describe("penguin agent import", () => {
     expect(server.agents.map((a) => a.agentId)).toEqual(["default_agent", "writer", "writer_2"]);
   });
 
+  it("leaves links and special files out of a folder's zip, never reading what they point at", async () => {
+    const outside = dirIn("outside");
+    fs.writeFileSync(path.join(outside, "id_rsa"), "not for upload");
+    const dir = portFolder();
+    fs.symlinkSync(path.join(outside, "id_rsa"), path.join(dir, "agent_state", "key.md"));
+    // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
+    fs.symlinkSync(outside, path.join(dir, "agent_state", "linked"), "junction");
+    // Reading a FIFO nobody writes would block for ever.
+    if (process.platform !== "win32")
+      execFileSync("mkfifo", [path.join(dir, "agent_state", "pipe")]);
+
+    expect(await cli(["agent", "import", dir])).toBe(0);
+
+    expect(Object.keys(unzipSync(upload()!.raw!.bytes)).sort()).toEqual([
+      "agent_state/AGENTS.md",
+      "agent_state/skills/notes/SKILL.md",
+      "manifest.json",
+    ]);
+  });
+
+  it("refuses a folder whose zip grows past the upload cap before anything is sent", async () => {
+    const dir = portFolder();
+    // Random bytes do not compress: two of these zip to more than the cap below.
+    for (const name of ["a.bin", "b.bin"]) {
+      fs.writeFileSync(path.join(dir, "agent_state", name), randomBytes(48 * 1024));
+    }
+    const program = new Command().exitOverride();
+    registerArchiveCommands(program.command("agent"), t, { maxUploadBytes: 64 * 1024 });
+
+    await expect(program.parseAsync(["agent", "import", dir], { from: "user" })).rejects.toThrow(
+      dir,
+    );
+
+    expect(server.requests).toEqual([]);
+  });
+
   it("refuses a folder without manifest.json at its root before any request", async () => {
     const dir = folder("loose", {
       "writer/manifest.json": JSON.stringify({ format: "penguin-agent-zip/1", agentId: "writer" }),
@@ -310,6 +362,26 @@ describe("penguin agent import", () => {
     expect(err()).toContain(file);
   });
 
+  it("sends an upload again, its whole body included, when the server has replaced its token", async () => {
+    const tokenFile = path.join(process.env.PENGUIN_HOME!, "api-token");
+    fs.writeFileSync(tokenFile, "old-token\n");
+    server.staleTokens.add("old-token");
+    server.onStaleToken = () => fs.writeFileSync(tokenFile, "new-token\n");
+    // Larger than one read of the file stream, so a body sent twice is read twice from disk.
+    const bytes = randomBytes(200 * 1024);
+    const file = path.join(scratch, "writer.zip");
+    fs.writeFileSync(file, bytes);
+
+    expect(await cli(["agent", "import", file, "--agent-id", "writer"])).toBe(0);
+
+    const posts = server.requests.filter((r) => r.path.endsWith("/agents/import"));
+    expect(posts.map((r) => r.credential?.authorization)).toEqual([
+      "Bearer old-token",
+      "Bearer new-token",
+    ]);
+    expect(Buffer.from(posts[1]!.raw!.bytes)).toEqual(bytes);
+  });
+
   describe("the report", () => {
     const answer: AgentArchiveImportResponse = {
       agent: {
@@ -344,11 +416,25 @@ describe("penguin agent import", () => {
       },
       skippedTraces: [
         { sessionId: "session-2026-08-01-09-00-00-0000000a", reason: "exists" },
-        { sessionId: "session-2026-08-02-09-00-00-0000000b", reason: "invalid" },
+        {
+          sessionId: "session-2026-08-02-09-00-00-0000000b",
+          reason: "invalid",
+          detail: "session-2026-08-02-09-00-00-0000000b_002.jsonl is missing",
+        },
       ],
       toFill: ["DOCS_TOKEN", "mcp:docs:headers:Authorization"],
-      notes: ["The definition names the built-in tool web_fetch, which this install lacks."],
+      notes: [
+        {
+          code: "unknown_tool",
+          subject: "web_fetch",
+          message: 'Built-in tool "web_fetch" does not exist in this install; it was not enabled.',
+        },
+        // A code from a newer server, which this CLI does not know.
+        { code: "future_note" as AgentArchiveNoteCode, message: "Something a newer server says." },
+      ],
     };
+    const [exists, invalid] = answer.skippedTraces;
+    const [knownNote, unknownNote] = answer.notes;
 
     beforeEach(() => {
       server.agentArchive.imported = () => ({ status: 201, body: answer });
@@ -361,10 +447,28 @@ describe("penguin agent import", () => {
       expect(text).toContain(t.agent.importOverwritten("writer", "default_project", 8, 7));
       expect(text).toContain(answer.backup!);
       expect(text).toContain(t.agent.importCounts(answer.imported));
-      for (const { sessionId, reason } of answer.skippedTraces) {
-        expect(text).toContain(`${sessionId} (${t.agent.importSkippedReason(reason)})`);
+      expect(text).toContain(`${exists!.sessionId} (${t.agent.importSkippedReason("exists")})`);
+      expect(text).toContain(invalid!.sessionId);
+      expect(text).toContain(invalid!.detail!);
+      for (const line of answer.toFill) expect(text).toContain(line);
+      expect(text).toContain(knownNote!.subject!);
+      expect(text).toContain(unknownNote!.message);
+    });
+
+    it("words a note it knows in the CLI's language, and prints any other as the server's sentence", async () => {
+      const saved = process.env.PENGUIN_LANG;
+      process.env.PENGUIN_LANG = "zh";
+      try {
+        expect(await cli(["agent", "import", portFolder(), "--overwrite"])).toBe(0);
+      } finally {
+        if (saved === undefined) delete process.env.PENGUIN_LANG;
+        else process.env.PENGUIN_LANG = saved;
       }
-      for (const line of [...answer.toFill, ...answer.notes]) expect(text).toContain(line);
+
+      const text = out();
+      expect(text).toContain(knownNote!.subject!);
+      expect(text).not.toContain(knownNote!.message);
+      expect(text).toContain(unknownNote!.message);
     });
 
     it("--json prints the server's response as it is", async () => {

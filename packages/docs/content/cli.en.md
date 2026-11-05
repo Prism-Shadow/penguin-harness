@@ -271,7 +271,7 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 ### penguin agent export
 
-Writes an agent to a zip, the same file **Export** on the Agents page produces. The zip always carries the agent's config: `system_config.yaml`, with credential-looking MCP values blanked and named in the manifest, `AGENTS.md` and `tools/`. The options choose the rest, with the export dialog's defaults. Vault values never travel; the manifest lists the vault key names. The zip streams to disk, and the command prints where it went and its size.
+Writes an agent to a zip: the same file as the **Export agent** icon on its Agents page card, or **Export…** in its settings. The zip always carries the agent's config: `system_config.yaml`, with credential-looking MCP values blanked and named in the manifest, `AGENTS.md` and `tools/`. The options choose the rest, with the export dialog's defaults. Vault values never travel; the manifest lists the vault key names. The zip streams to disk, and the command prints where it went and its size.
 
 | Option | Description | Default |
 | --- | --- | --- |
@@ -290,7 +290,7 @@ penguin agent export helper --traces 2026-10-01..2026-10-31 --json
 
 ### penguin agent import
 
-Creates an agent from a zip, the way **Import Agent** on the Agents page does. It also takes an older `.tar.gz` Agent State package, which then needs `--agent-id`, and a folder laid out as the zip, with `manifest.json` at its root. The CLI zips such a folder itself, leaving `.git` out, so no `zip` program is needed. This is how the `agent-porting` Skill brings in an agent from another coding tool. A file or zipped folder larger than 100 MiB is refused before anything is sent.
+Creates an agent from a zip, the way **Import agent** on the Agents page does. It also takes an older `.tar.gz` Agent State package, which then needs `--agent-id`, and a folder laid out as the zip, with `manifest.json` at its root. The CLI zips such a folder itself, leaving `.git` out, so no `zip` program is needed. This is how the `agent-porting` Skill brings in an agent from another coding tool. A file or zipped folder larger than 100 MiB is refused before anything is sent.
 
 The agent id comes from `--agent-id`, else from the manifest. A taken id fails with `agent_exists`: import under another id, or replace the existing agent with `--overwrite`. Overwriting replaces the agent's state with what the file carries and keeps its Traces, vault, API keys and employment. A part the file leaves out keeps the agent's current contents. The server writes a backup snapshot first, and only a Project owner may overwrite.
 
