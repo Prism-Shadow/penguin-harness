@@ -45,6 +45,13 @@
  * - Given an overwrite that brings schedules and workbenches without their data, the Agent keeps
  *   its expired schedules and its workbenches' data; given a hand-written overwrite, the Agent
  *   keeps its `tools/` and its MCP credential the definition leaves blank.
+ * - Given names that only contain a credential word (`--max-tokens`, `MAX_TOKENS`, `?keyword=`),
+ *   their values travel; a credential reached through a YAML alias is blanked all the same.
+ * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
+ *   come in another order, a credential is refilled only for the same server and the same flag:
+ *   it never goes to the other address and never into another flag.
+ * - Given a selection past the import's entry cap, the preview says so.
+ * - Given an Agent whose config does not parse, its export is refused with a clear code.
  * - Given an Agent whose runtime is cached, an overwrite makes its next use rebuild it.
  * - While an overwrite swaps the State, a request for the Agent's workbenches waits for it.
  * - An export, or an overwrite, of an Agent whose workbenches were never migrated migrates them.
@@ -57,8 +64,11 @@ import type { Zippable } from "fflate";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import { agentDir, agentStateDir, agentsDir, userText } from "@prismshadow/penguin-core";
+import type { TraceIndexStore } from "../src/mechanisms/traces.js";
+import { planArchive } from "../src/agent-archive/export.js";
 import type {
   AgentApiResponse,
+  AgentArchiveParts,
   AgentArchiveImportResponse,
   AgentArchiveManifest,
   AgentArchivePreview,
@@ -783,9 +793,9 @@ describe("Agent archive", () => {
     const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
     expect([...manifest.redacted].sort()).toEqual(
       [
-        "mcp:pg:args:2:password",
-        "mcp:pg:args:3",
-        "mcp:pg:args:5",
+        "mcp:pg:args:postgresql://db.example.test:password",
+        "mcp:pg:args:--api-key",
+        "mcp:pg:args:--token",
         "mcp:remote:headers:Authorization",
         "mcp:remote:oauth:clientSecret",
         "mcp:remote:url:query:api_key",
@@ -996,5 +1006,134 @@ describe("Agent archive", () => {
     await waitFor(idle);
 
     expect(loads).toBe(2);
+  });
+
+  it("a name that only contains a credential word is no credential's, and an aliased credential is blanked", async () => {
+    const state = await newAgent("matcher_agent");
+    // Written by hand: an `env` block reached through a YAML alias, as a person may write one.
+    await fs.writeFile(
+      path.join(state, "system_config.yaml"),
+      [
+        'system_prompt: "hi"',
+        "version: 1",
+        "x-shared-env: &shared",
+        "  GITHUB_TOKEN: ghp_alias_secret_1",
+        '  MAX_TOKENS: "4096"',
+        "tools:",
+        "  mcpServers:",
+        "    - name: tuned",
+        "      config:",
+        "        command: node",
+        '        args: ["server.js", "--max-tokens", "4096", "--keyword=penguin"]',
+        "        env: *shared",
+        "    - name: search",
+        "      config:",
+        '        url: "https://search.example.test/mcp?keyword=penguin&apiKey=sk-query-1"',
+        "",
+      ].join("\n"),
+    );
+
+    const entries = entriesOf(await exported("matcher_agent"));
+
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
+    expect([...manifest.redacted].sort()).toEqual(
+      ["mcp:search:url:query:apiKey", "mcp:tuned:env:GITHUB_TOKEN"].sort(),
+    );
+    const exportedConfig = strFromU8(entries["agent_state/system_config.yaml"]!);
+    expect(exportedConfig).not.toContain("ghp_alias_secret_1");
+    expect(exportedConfig).not.toContain("sk-query-1");
+    for (const kept of ["--max-tokens", "4096", "--keyword=penguin", "keyword=penguin"]) {
+      expect(exportedConfig).toContain(kept);
+    }
+  });
+
+  it("a credential is refilled only for the same server and the same flag: never to another address, never into another flag", async () => {
+    const state = await newAgent("refill_agent");
+    const put = await owner.put(`${agentBase("refill_agent")}/config`, {
+      config: {
+        mcpServers: [
+          {
+            name: "gh",
+            config: {
+              url: "https://real.example.test/mcp",
+              headers: { Authorization: "Bearer REAL-TOKEN-1234" },
+            },
+          },
+          {
+            name: "db",
+            config: {
+              command: "dbtool",
+              args: ["--api-key", "KEY-VALUE-1", "--password", "PASS-VALUE-1"],
+            },
+          },
+        ],
+      },
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+    const zip = crafted({
+      "crafted/agent_state/system_config.yaml": strToU8(
+        [
+          'system_prompt: "hi"',
+          "version: 2",
+          "tools:",
+          "  mcpServers:",
+          "    - name: gh",
+          "      config:",
+          "        url: https://collector.example.test/mcp",
+          '        headers: { Authorization: "" }',
+          "    - name: db",
+          "      config:",
+          "        command: dbtool",
+          '        args: ["--password", "", "--api-key", ""]',
+          "",
+        ].join("\n"),
+      ),
+    });
+
+    const res = await owner.upload(importUrl("?agentId=refill_agent&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.toFill).toContain("mcp:gh:headers:Authorization");
+    const config = parseYaml(await fs.readFile(path.join(state, "system_config.yaml"), "utf8")) as {
+      tools: { mcpServers: Array<{ name: string; config: Record<string, unknown> }> };
+    };
+    const [gh, db] = config.tools.mcpServers;
+    expect(gh!.config).toMatchObject({
+      url: "https://collector.example.test/mcp",
+      headers: { Authorization: "" },
+    });
+    expect(db!.config.args).toEqual(["--password", "PASS-VALUE-1", "--api-key", "KEY-VALUE-1"]);
+  });
+
+  it("a selection past the import's entry cap is refused, and the preview says why", async () => {
+    await furnishedAgent("many_entries");
+    const deps = {
+      root: t.root,
+      now: () => NOW,
+      traceIndex: t.deps.traceIndex,
+      traceStore: t.deps.tree.api<TraceIndexStore>("TracesModule", "TraceIndexStore"),
+      traces: t.deps.traceService,
+      sessionsRepo: t.deps.sessionsRepo,
+      caps: { entries: 5 },
+    };
+
+    const plan = await planArchive(deps, projectId, "many_entries", PARTS_ALL as AgentArchiveParts);
+
+    expect(plan.preview.entries).toBeGreaterThan(5);
+    expect(plan.preview.refusal).toEqual({ reason: "entries", limit: 5 });
+  });
+
+  it("an Agent whose config does not parse is not exported, with a clear code", async () => {
+    const state = await newAgent("broken_config");
+    await fs.writeFile(
+      path.join(state, "system_config.yaml"),
+      'system_prompt: "a"\nsystem_prompt: "b"\n',
+    );
+
+    const res = await member.get(`${agentBase("broken_config")}/archive`);
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_config");
   });
 });

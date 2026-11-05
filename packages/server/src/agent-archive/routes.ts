@@ -27,6 +27,7 @@ import type { SessionManager } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
 import type { AgentSummaryDeps } from "../http/routes/agent-summary.js";
 import { planArchive, zipStream } from "./export.js";
+import { AgentHolds } from "./agent-hold.js";
 import { importAgentArchive } from "./import.js";
 import { archiveTooLarge } from "./limits.js";
 import { partsFromQuery } from "./manifest.js";
@@ -47,6 +48,8 @@ export interface AgentArchiveRouteDeps {
   sessionsRepo: SessionIndex;
   /** The cached runtimes an overwrite invalidates. */
   runtimes: Pick<SessionManager, "invalidateAgentRuntimes">;
+  /** One import at a time per Agent. */
+  holds: AgentHolds;
   /** How an imported Agent is answered: the same card the Agents list shows. */
   summary: AgentSummaryDeps;
 }
@@ -169,6 +172,7 @@ export class AgentArchiveRoutes {
       traces: this.traces,
       sessionsRepo: this.sessionsRepo,
       runtimes: this.manager as SessionManager,
+      holds: new AgentHolds(),
       summary: {
         agentApi: this.agentApi,
         manager: this.manager as SessionManager,

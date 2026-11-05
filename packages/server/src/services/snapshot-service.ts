@@ -51,7 +51,13 @@ export class SnapshotService implements Snapshots {
     } catch {
       throw new HttpError(404, "agent_not_found", "Agent does not exist.");
     }
-    const parsed = parseYaml(raw) as { version?: unknown } | null;
+    // A config that does not parse reads as version 1, so it can still be backed up and replaced.
+    let parsed: { version?: unknown } | null = null;
+    try {
+      parsed = parseYaml(raw) as { version?: unknown } | null;
+    } catch {
+      parsed = null;
+    }
     return agentStateVersion({
       version: typeof parsed?.version === "number" ? parsed.version : undefined,
     });

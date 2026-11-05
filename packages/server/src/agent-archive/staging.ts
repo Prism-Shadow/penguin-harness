@@ -153,8 +153,11 @@ const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 const APPROVAL_MODES = ["allow-all", "deny-all", "read-only", "always-ask"];
 const CLIENTS = ["web", "cli", "org", "api", "workbench"];
-/** A title as long as a rename may make it. */
-const MAX_TITLE = 120;
+/**
+ * A title as long as this install writes one, generously: a company ticket's Session takes the
+ * ticket's title (up to 200) and its number.
+ */
+const MAX_TITLE = 1000;
 const MAX_TEXT = 4096;
 
 const isTime = (value: unknown): value is string =>
