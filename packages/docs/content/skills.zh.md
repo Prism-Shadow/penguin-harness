@@ -166,7 +166,7 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。Manage installs 仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
 
-服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
+服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它的包有代码入口，`ifaces.json` 列出这些模块；同一个包也可以在模块之外携带插件库内容（见[插件文件格式](#插件文件格式)）。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
 
 在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
 
@@ -190,11 +190,11 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 要导入插件，点击页头的**导入插件**。只有管理员能看到这个按钮。弹窗的每个标签页是一种安装方式，打开时位于**Agent 安装**：
 
 - **Agent 安装**：来源是网页、仓库、仓库中的文件夹、Codex 或 Claude Code 插件，或一段描述时，把它填进来源一栏。也可以先选一个示例。弹窗会为 Project 的默认 Agent 生成一段 Prompt。Agent 审阅插件包后用 [`penguin plugin install`](/cli#penguin-plugin) 安装；来源还不是 PenguinHarness 插件包时，Agent 先按 `skill-porting` 插件中的 `plugin-porting` Skill 把它转成插件包，再安装自己构建的文件夹。展开**完整提示词**可预览或复制，也可以点**打开新对话**新建一份草稿；在你发送之前什么都不会发生。
-- **zip**：选择一个插件包目录的 zip，例如导出得到的文件。`package.json` 位于 zip 根目录或唯一的顶层目录内，且不含 `node_modules`。服务端已装有这个包的其他版本时，弹窗会先询问是否替换。只上传你信任的来源。
+- **zip**：选择一个插件包目录的 zip，例如导出得到的文件。`package.json` 位于 zip 根目录或唯一的顶层目录内，包已构建（带着构建写出的 `ifaces.json`），且不含 `node_modules`。服务端已装有这个包的其他版本时，弹窗会先询问是否替换。只上传你信任的来源。
 - **npm**：输入 npm 包名，可带版本、范围或标签（如 `@scope/name` 或 `name@1.2.0`），然后点击**安装**。服务端用 npm 从 npm 仓库安装它。
 - **链接**：输入指向 git 仓库或 tarball 的 https 链接（如 `https://github.com/acme/penguin-notes`），然后点击**安装**。服务端用 npm 获取并安装它，会访问你给出的任意 https 地址，包括内网地址。路径、`http:` 链接和带凭据的链接会在运行任何东西之前被拒绝。指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`）同样会被拒绝，因为 npm 无法安装它：输入框下方提供**改为让 Agent 安装**，点击后带着这个链接切到「Agent 安装」。
 
-转换时保留 PenguinHarness 插件能承载的部分，其余的列出来。上游的 Skill 成为插件包的 Skill，frontmatter 精简为 `name`、`description` 和日期 `version`。显示名、短描述、分类、SVG 图标和第一条默认 Prompt 写进 `penguin` 块。MCP Server 同样带入：该 Skill 的 `port-mcp.mjs` 脚本把 Codex 的 `.mcp.json` 或 Claude Code 的 `mcpServers` 映射转成 [`penguin.mcp_servers`](#插件中的-mcp-server)。`<GMAIL_PUBLIC_CLIENT_ID>` 这类占位符和上游 Server 读取的环境变量都转成指向 Vault 的 `${KEY}` 引用，并逐个列为待设置的键；上游公开的 client secret 不带入，同样改为待设置的键；随插件分发的 stdio 命令改写为以 `${PLUGIN_ROOT}` 开头。只是转向某个 Skill 的命令、子 Agent、其他工具的钩子、托管应用和图片都不带入，插件包的 README 在「未带入」一节逐项列出。托管应用（`.app.json`）是 ChatGPT 的连接器 id，只在 ChatGPT 内部有效。
+转换时保留 PenguinHarness 插件能承载的部分，其余的列出来。上游的 Skill 成为插件包的 Skill，frontmatter 精简为 `name`、`description` 和日期 `version`。显示名、短描述、分类、SVG 图标和第一条默认 Prompt 写进插件包的卡片。MCP Server 同样带入：该 Skill 的 `port-mcp.mjs` 脚本把 Codex 的 `.mcp.json` 或 Claude Code 的 `mcpServers` 映射转成插件包的 [MCP Server 条目](#插件中的-mcp-server)。它的 `write-module.mjs` 脚本把这些全部声明在插件包的 `src/index.ts` 中，Agent 先构建插件包（`npm install`，然后 `npm run build`），再安装它。`<GMAIL_PUBLIC_CLIENT_ID>` 这类占位符和上游 Server 读取的环境变量都转成指向 Vault 的 `${KEY}` 引用，并逐个列为待设置的键；上游公开的 client secret 不带入，同样改为待设置的键；随插件分发的 stdio 命令改写为以 `${PLUGIN_ROOT}` 开头。只是转向某个 Skill 的命令、子 Agent、其他工具的钩子、托管应用和图片都不带入，插件包的 README 在「未带入」一节逐项列出。托管应用（`.app.json`）是 ChatGPT 的连接器 id，只在 ChatGPT 内部有效。
 
 无论从哪种方式安装，这个包的安装脚本都会以服务端用户的身份在服务器上运行，与从 npm 安装时相同。包里的 stdio MCP Server 是一条命令：装有它的 Agent 每次开启会话，服务器都会运行它，会话设置了[沙盒](/settings#沙盒)时在沙盒内运行；远程 MCP Server 则是服务器要连接的地址。插件详情会把两者都列出来。与 PenguinHarness 自带的服务端插件同名的包会被拒绝，安装后发现不是插件的包也会被拒绝；从链接安装时，被拒绝之前它的安装脚本已经运行过。
 
@@ -233,7 +233,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 ## 内置插件库
 
-内置插件按分类列出（`PLUGIN_CATEGORIES` 定义于 `packages/core/src/plugins/index.ts`；插件会陆续增加，以插件库目录为准）：
+内置插件按分类列出（`PLUGIN_CATEGORIES` 定义于 `packages/core/src/plugin/categories.ts`；插件会陆续增加，以插件库目录为准）：
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
@@ -270,41 +270,56 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 ### 插件文件格式
 
-插件是一个 npm 包。它的 `package.json` 就是清单：npm 的标准字段，加一个 `penguin` 块存放属于 PenguinHarness 的全部字段。内容放在旁边的固定目录里，不另声明路径：
+插件是一个 npm 包。它的 `package.json` 只存放 npm 的标准字段。插件为 Agent 携带的内容在 `src/index.ts` 中声明：一个空类，它的 `@Component` 装饰器把插件的卡片、Skill、钩子包、MCP Server 和 Workbench 作为贡献投给服务端的 `PluginLibraryModule`。插件包的构建把这份声明写进 `ifaces.json`，服务端读取的就是它，从不运行插件包。内容本身仍是文件，位于声明点名的路径：
 
 ```text
 <plugin>/
-├── package.json               # the manifest: npm's fields and a `penguin` block
+├── package.json               # npm's fields, the build script and the build's devDependencies
+├── tsconfig.json              # what the build compiles: src/
+├── src/index.ts               # the declaration: card, Skills, hook package, MCP servers, workbenches
+├── ifaces.json                # written by the build; what the server reads
 ├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
 ├── README.md                  # optional: what the details show under the description
 ├── skills/<name>/SKILL.md     # zero or more skills, each with its own date version
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
-MCP Server 没有文件：包在 `penguin.mcp_servers` 中声明它们（见[插件中的 MCP Server](#插件中的-mcp-server)）。带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中至少一个条目的包是插件库插件；带 `ifaces.json` 的是[服务端插件](#服务端插件)。
+```ts
+import { Component } from "@prismshadow/penguin-core/plugin";
+import type { Plugin } from "@prismshadow/penguin-core/plugin";
 
-```json
-{
-  "name": "@penguinharness/goal",
-  "version": "0.2.13",
-  "description": "Goal mode: a stop hook that keeps the session working toward an objective …",
-  "keywords": ["penguin-plugin", "penguinharness", "hooks"],
-  "license": "Apache-2.0",
-  "penguin": {
-    "description_zh": "目标模式：…",
-    "short_description": "Loop the session on an objective until it is done.",
-    "short_description_zh": "让会话循环推进一个目标直到完成。",
-    "category": "office-productivity",
-    "icon": "icon.svg",
-    "quick_start": { "prompt": "…", "prompt_zh": "…", "goal": true },
-    "hooks": {
-      "version": "2026.10.04.1",
-      "user_prompt": [{ "command": "start.mjs", "timeout": 60, "trigger": "host" }],
-      "stop": [{ "command": "stop.mjs", "timeout": 60 }]
-    }
-  }
-}
+@Component({
+  contributes: {
+    "PluginLibraryModule.cards": [
+      {
+        id: "goal.card",
+        title: "Goal Mode",
+        titleZh: "目标模式",
+        descriptionZh: "目标模式：…",
+        shortDescription: "Loop the session on an objective until it is done.",
+        shortDescriptionZh: "让会话循环推进一个目标直到完成。",
+        category: "office-productivity",
+        icon: "icon.svg",
+        quickStart: { prompt: "…", promptZh: "…", goal: true },
+      },
+    ],
+    "PluginLibraryModule.hooks": [
+      {
+        id: "goal.hooks",
+        version: "2026.10.26.1",
+        path: "hooks",
+        user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+        stop: [{ command: "stop.mjs", timeout: 60 }],
+      },
+    ],
+  },
+})
+export class GoalPlugin {}
+
+export default { modules: [GoalPlugin] } satisfies Plugin;
 ```
+
+构建就是插件包的 `build` 脚本 `penguin-gen-ifaces --project tsconfig.json --out ifaces.json`：生成器随 `@prismshadow/penguin-core` 发布，插件包把它与 `typescript` 一起列在 `devDependencies` 中，并把 `ifaces.json` 列进 `files`。只携带内容的插件没有代码：类体为空，包既不打包，也没有入口。声明中的每个值都要写成字面量，因为服务端读取这张表时不运行插件包：构建会拒绝常量引用、展开语法和计算出的值。改了声明，就要重新构建。
 
 npm 标准字段：
 
@@ -316,60 +331,69 @@ npm 标准字段：
 | `keywords` | 可选；在 npm 上按 `penguin-plugin` 查找插件 |
 | `author`、`license`、`homepage`、`repository` | 可选；详情中展示，包里没有的项不显示 |
 
-`penguin` 块的字段，全部可选：
+贡献的每个条目都带一个以插件名开头的 `id`（`goal.card`、`agent-development.skill.penguin-config`）：
+
+| 贡献 | 条目 | 含义 |
+| --- | --- | --- |
+| `PluginLibraryModule.cards` | 卡片，至多一张 | 插件在插件页上的样子；字段见下表 |
+| `PluginLibraryModule.skills` | `{ name, path }` | 一个 Skill：`path` 是它在包内的目录，如 `skills/a2ui`，`name` 是该目录的名称。没有条目点名的 Skill 目录不会安装 |
+| `PluginLibraryModule.hooks` | `{ version, path, stop, pre_tool_use, user_prompt }`，至多一个 | 钩子包。`version` 是它的日期版本 `YYYY.MM.DD.N`，安装时写进 `hooks.json`；`path` 是脚本所在目录，如 `hooks`；各个[钩子点](/agent-loop#stop-hook)分别列出命令，`[{ command: "stop.mjs", timeout: 60 }]`，路径以 `path` 为起点且不得走出它，timeout 单位为秒。`user_prompt` 命令可以另加 `trigger`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
+| `PluginLibraryModule.mcpServers` | `{ name, config, setup }` | 安装插件时加到 Agent 上的一个 MCP Server，见[插件中的 MCP Server](#插件中的-mcp-server) |
+| `PluginLibraryModule.workbenches` | `{ name, path }` | 一个 Workbench 应用：`path` 是它的源码目录，如 `workbenches/support`，见 [Workbench 插件](#workbench-插件) |
+
+卡片字段，全部可选：
 
 | 字段 | 含义 |
 | --- | --- |
-| `title` / `title_zh` | 显示名；没有时卡片显示插件名 |
-| `description_zh` | 中文描述；没有时用英文描述 |
-| `short_description` / `short_description_zh` | 卡片上显示的简短文案；没有时用完整描述 |
+| `title` / `titleZh` | 显示名；没有时卡片显示插件名 |
+| `descriptionZh` | 中文描述；没有时用英文描述 |
+| `shortDescription` / `shortDescriptionZh` | 卡片上显示的简短文案；没有时用完整描述 |
 | `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
 | `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
-| `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
-| `hooks.version` | 钩子包的日期版本 `YYYY.MM.DD.N`；插件带 `hooks/` 时必填（没有就不列出钩子包），安装时写进 `hooks.json` |
-| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各个[钩子点](/agent-loop#stop-hook)运行的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径以 `hooks/` 为起点，timeout 单位为秒。`user_prompt` 命令可以另加 `"trigger"`：`"prompt"`（缺省）表示用户每次提交 Prompt 时运行，`"host"` 表示只在宿主按包名启动该包的流程时运行 |
-| `mcp_servers` | 安装插件时加到 Agent 上的 MCP Server，见[插件中的 MCP Server](#插件中的-mcp-server) |
+| `quickStart` | 插件页「快速开始」预填进新对话草稿的演示：`{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
+| `references` | 原始论文或上游实现的链接，官网的插件页会列出 |
 
+包是什么由它的表决定，而不是看它有哪些目录。`ifaces.json` 贡献了 Skill、钩子包、MCP Server 或 Workbench 的包是插件库插件；只有卡片不算，所以带卡片的 Agent 运行沙箱后端只是[服务端插件](#服务端插件)。有代码入口、表中列出服务端模块的包是服务端插件，同一个包可以兼为两者。
 
-缺失就是缺失。只有没有合法 `name` 或 `version` 的包才会被拒绝；其他字段缺失时只是显示为缺失，类型不对的字段会被丢弃，并在服务端日志中告警。名称不符合 `^[A-Za-z0-9_-]+$` 的 Skill 目录会被略过并告警，因为任何 Agent 都装不了它；Skill 目录中不是文本的文件（如 PNG）既不读取也不安装。插件的清单只有 `package.json`：旧包里仍带着的 `plugin.json` 不会被读取。
+缺失就是缺失。只有没有合法 `name` 或 `version` 的包才会被拒绝；其他字段缺失时只是显示为缺失，类型不对的字段会被丢弃，并在服务端日志中告警。名称不符合 `^[A-Za-z0-9_-]+$` 的 Skill 目录会被略过并告警，因为任何 Agent 都装不了它；Skill 目录中不是文本的文件（如 PNG）既不读取也不安装。插件的 `package.json` 不存放 PenguinHarness 的字段：早先的包带着的 `penguin` 块不会被读取，带着它却没有 `ifaces.json` 的包不进入插件库，服务端日志记一行。请用 `plugin-porting` Skill 重新转换它。
 
 ### 插件中的 MCP Server
 
-`penguin.mcp_servers` 列出安装插件时加到 Agent 上的 MCP Server。每个条目的形态与 `system_config.yaml` 中 `tools.mcpServers` 的条目相同（见 [MCP Server](/tools#mcp-server)），另可带一个 `setup`：
+每个 `PluginLibraryModule.mcpServers` 条目是安装插件时加到 Agent 上的一个 MCP Server。它的形态与 `system_config.yaml` 中 `tools.mcpServers` 的条目相同（见 [MCP Server](/tools#mcp-server)），另可带一个 `setup`：
 
-```json
-"penguin": {
-  "mcp_servers": [
-    {
-      "name": "cloudflare-api",
-      "config": {
-        "transport": "http",
-        "url": "https://mcp.cloudflare.com/mcp",
-        "headers": { "Authorization": "Bearer ${CLOUDFLARE_API_TOKEN}" }
-      },
-      "setup": [
-        {
-          "key": "CLOUDFLARE_API_TOKEN",
-          "label": "Cloudflare API token",
-          "label_zh": "Cloudflare API 令牌",
-          "help": "https://dash.cloudflare.com/profile/api-tokens"
-        }
-      ]
+```ts
+"PluginLibraryModule.mcpServers": [
+  {
+    id: "cloudflare.mcp.cloudflare-api",
+    name: "cloudflare-api",
+    config: {
+      transport: "http",
+      url: "https://mcp.cloudflare.com/mcp",
+      headers: { Authorization: "Bearer ${CLOUDFLARE_API_TOKEN}" },
     },
-    {
-      "name": "notes",
-      "config": { "command": "node", "args": ["${PLUGIN_ROOT}/server/index.mjs"] }
-    }
-  ]
-}
+    setup: [
+      {
+        key: "CLOUDFLARE_API_TOKEN",
+        label: "Cloudflare API token",
+        labelZh: "Cloudflare API 令牌",
+        help: "https://dash.cloudflare.com/profile/api-tokens",
+      },
+    ],
+  },
+  {
+    id: "cloudflare.mcp.notes",
+    name: "notes",
+    config: { command: "node", args: ["${PLUGIN_ROOT}/server/index.mjs"] },
+  },
+],
 ```
 
 | 字段 | 含义 |
 | --- | --- |
 | `name` | 必填。Server 的名称，也是它的工具名前缀 `mcp__<name>__<tool>`：以字母或数字开头，其后只能是字母、数字、`_` 和 `-`，在包内唯一 |
 | `config` | 必填。Server 的配置，与 `system_config.yaml` 中的写法完全相同：传输方式及其字段，以及可选的 `connectTimeoutMs`、`timeoutMs`、`maxOutputLength`、`permission` 和 `oauth` |
-| `setup` | 可选。连接之前须由用户设置的 Vault 键：`[{ "key": "…", "label": "…", "label_zh": "…", "help": "…" }]`，`help` 是一个 URL 或一句话。配置引用了、却没有 `setup` 条目的键，按键名本身提示设置 |
+| `setup` | 可选。连接之前须由用户设置的 Vault 键：`[{ key: "…", label: "…", labelZh: "…", help: "…" }]`，`help` 是一个 URL 或一句话。配置引用了、却没有 `setup` 条目的键，按键名本身提示设置 |
 
 - `config` 中任意字符串值里的 `${KEY}`（`KEY` 为 Vault 变量名）在 Server 连接时从 Agent 的 Vault 读取，Agent 的配置里保留的始终是引用。每个机密都应这样写：包里从不携带机密。`url` 的主机部分不能使用引用。见 [Vault 引用](/tools#vault-引用)。
 - `${PLUGIN_ROOT}` 不是 Vault 键。把插件安装到 Agent 时，它会替换为插件包在服务器上的目录，供命令随包分发的 stdio Server 使用。
@@ -382,15 +406,15 @@ npm 标准字段：
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
 - 自进化工具包的名字以 `-rsi-toolkit` 结尾（`default-rsi-toolkit`、`ape-rsi-toolkit`），一看就知道它是什么；算法工具包唯一的 Skill 与插件同名。
 - 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。
-- 日期版本 `YYYY.MM.DD.N`（日期加当天的序号）属于 Agent 可能在本地改动的事物：每个 Skill 的 `SKILL.md` 自带 `version`，钩子包的版本是 `penguin.hooks.version`。改了 Skill 就递增它的 `version`；改了钩子脚本或 `penguin.hooks` 中的命令就递增 `penguin.hooks.version`。CI 对每个 PR 校验这两点（`scripts/check-plugin-versions.mjs`）。
+- 日期版本 `YYYY.MM.DD.N`（日期加当天的序号）属于 Agent 可能在本地改动的事物：每个 Skill 的 `SKILL.md` 自带 `version`，钩子包的版本是它的 hooks 贡献的 `version`。改了 Skill 就递增它的 `version`；改了钩子脚本或 hooks 贡献中的命令就递增该贡献的 `version`；只改卡片则两者都不必递增。CI 对每个 PR 校验这两点（`scripts/check-plugin-versions.mjs`）。
 - 日期版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。已安装副本只要有一个部件的版本比插件库中同名部件旧，就算落后；更新提示与更新按钮按插件计一次。
-- 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包的依赖列表读取插件名，并通过 Node 解析各个包。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件就是插件库内容的唯一事实来源，每次调用都直接读取。
+- 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包（服务端、CLI 或桌面应用）的依赖列表读取插件名，并通过 Node 解析各个包；core 本身不依赖任何插件。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件与表就是插件库内容的唯一事实来源，每次调用都直接读取。在仓库的检出中，`pnpm -r build` 构建全部插件的表，`pnpm dev` 会先构建内容插件的表；改了插件的 `src/index.ts`，就要重新构建该插件。
 
 ### Skill 文件格式
 
 Skill 的目录名是权威名称，必须匹配 `^[A-Za-z0-9_-]+$`，并覆盖 frontmatter 中的任何 `name`。
 
-插件库中的 `SKILL.md` 有三个 frontmatter 字段，简短描述在包的 `penguin` 块里。
+插件库中的 `SKILL.md` 有三个 frontmatter 字段，简短描述在插件的卡片上。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -398,13 +422,13 @@ Skill 的目录名是权威名称，必须匹配 `^[A-Za-z0-9_-]+$`，并覆盖 
 | `description` | 注入系统提示词的英文单行描述 |
 | `version` | 该 Skill 自己的日期版本 `YYYY.MM.DD.N` |
 
-已安装的副本自带描述。加载时，插件库会重新生成每个 Skill 的 frontmatter，加上插件的 `short_description` 与 `short_description_zh`，保留 Skill 自己的 `version`，然后写入 `agent_state/skills/`，做法与已安装钩子包的 `hooks.json` 由清单生成时一致。更新检查读取安装副本 frontmatter 里的 `version`，Web App 则读取其中的简短描述。
+已安装的副本自带描述。加载时，插件库会重新生成每个 Skill 的 frontmatter，加上卡片的 `shortDescription` 与 `shortDescriptionZh`（写作 `short_description` 与 `short_description_zh`），保留 Skill 自己的 `version`，然后写入 `agent_state/skills/`，做法与已安装钩子包的 `hooks.json` 由 hooks 贡献生成时一致。更新检查读取安装副本 frontmatter 里的 `version`，Web App 则读取其中的简短描述。
 
 解析很宽容：只有第一个 `---` 块里的 `key: value` 标量行才算数。`version` 既不是 `YYYY.MM.DD.N`、也不是旧版安装副本使用的 `YYYY-MM-DD.N` 时，就按空值处理。空版本比任何插件库版本都旧，所以插件库里的副本算作可用的更新。管理员安装的插件中的 Skill 可以完全不带 `version`：它按无版本处理，其已安装副本永远不会被提示更新。
 
 ### 钩子包清单
 
-安装后的钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边附带一份生成的 `hooks.json`。清单保存插件的标识字段（`name`、`description`、`description_zh`）、钩子包自己的 `version`（即插件的 `penguin.hooks.version`），以及每个钩子点各自的命令列表：
+安装后的钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边附带一份生成的 `hooks.json`。清单保存插件的标识字段（`name`；`description`，取自 npm 的 `description`；`description_zh`，取自卡片的 `descriptionZh`）、钩子包自己的 `version`（即插件 hooks 贡献的 `version`），以及每个钩子点各自的命令列表：
 
 ```json
 {
@@ -455,7 +479,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 ## Workbench 插件
 
-插件可以在 Skill 之外携带 `workbenches/<id>/package.json`、`index.ts` 和界面源文件。工作台清单声明 `penguin.modules` 和日期版本 `penguin.version`（`YYYY.MM.DD.N`），npm 包的 `files` 列表需包含 `workbenches`。不要携带 `state.json`、点文件或 `node_modules`。
+插件以一个 `PluginLibraryModule.workbenches` 条目 `{ name: "<id>", path: "workbenches/<id>" }` 声明工作台，并在 Skill 之外把应用的 `package.json`、`index.ts` 和界面源文件放在该目录中。应用自己的 `package.json` 是工作台的清单，不是插件的清单：它声明 `penguin.modules` 和日期版本 `penguin.version`（`YYYY.MM.DD.N`）。npm 包的 `files` 列表需包含 `workbenches`。不要携带 `state.json`、点文件或 `node_modules`。
 
 安装插件时，工作台复制到 Agent State 中的 `agent_state/workbenches/<id>/`，Agent 自己编写的工作台也位于这里。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其状态，此前的版本不再列出。
 

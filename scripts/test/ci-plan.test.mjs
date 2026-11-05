@@ -4,7 +4,8 @@
  * - Given a docs or landing edit, when planning CI, then only affected sites run, on Linux.
  * - Given a catalog README edit, when planning CI, then only the README catalog check runs.
  * - Given README and landing edits together, when planning CI, then each keeps its own checks.
- * - Given README and core edits together, when planning CI, then core covers the catalog once.
+ * - Given README and core edits together, when planning CI, then the server suite (core's
+ *   consumer) covers the catalog once.
  * - Given a core edit, when planning CI, then its transitive consumers and native OS tests run.
  * - Given a web edit, when planning CI, then the gallery, landing and desktop are checked too.
  * - Given a web edit, when planning CI, then the web suite runs in two Linux jobs that each run
@@ -211,7 +212,7 @@ describe("affected CI", { concurrency: false }, () => {
     }
   });
 
-  it("README and core edits use the core suite without a duplicate catalog job", () => {
+  it("README and core edits use the server suite, core's consumer, without a duplicate catalog job", () => {
     write("README.md", "changed\n");
     const plan = changed("packages/core/src/index.js");
     assert.equal(plan.readme, false);

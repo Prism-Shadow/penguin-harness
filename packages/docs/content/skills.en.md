@@ -166,7 +166,7 @@ The Plugins page views one machine at a time, this server by default. Its picker
 
 The Plugins page does not offer package-global Delete plugin, which would remove the shared and other machines’ entries. Manage installs still edits Agent copies; module Remove writes only the viewed machine’s own table. Replies from a previous Project visit, including a return to the same Project, do not replace the current module snapshot.
 
-A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as an Agent Sandbox backend. It is installed on the whole server and shared by every Project: a Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
+A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as an Agent Sandbox backend. Its package has a code entry and its `ifaces.json` lists the modules; one package can carry library content beside them (see [Plugin file format](#plugin-file-format)). It is installed on the whole server and shared by every Project: a Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
 
 On the **Plugins** page, a server plugin has a card like any other. The four Agent Sandbox backends are in the **Agent Sandbox** category: `sandbox-bwrap` for Linux, `sandbox-seatbelt` for macOS, `sandbox-wsl` for Windows, and `sandbox-dsh` for all three, which confines file writes only. A server plugin's details show its package name, with a button to copy it, and the package's README.
 
@@ -190,11 +190,11 @@ To export a plugin, open its details and select **Export**. The download is the 
 To import a plugin, select **Import plugin** in the page header. Only admins see the button. Each tab of the dialog is one way in, and it opens on **Agent**:
 
 - **Agent**: for a web page, a repository, a folder in a repository, a Codex or Claude Code plugin, or a description, type the source. Choose an example or enter your own source. The dialog builds a prompt for the Project's default agent. The agent reviews the package and installs it with [`penguin plugin install`](/cli#penguin-plugin). When the source is not a PenguinHarness package yet, the agent first ports it into one by the `plugin-porting` Skill of the `skill-porting` plugin, then installs the folder it built. Expand **Full prompt** to preview or copy it, or select **Open a new chat** to start a draft; nothing is sent until you send it.
-- **Zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
+- **Zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, the package is built (it carries the `ifaces.json` its build writes), and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
 - **npm**: type an npm package name, which may carry a version, range or tag, such as `@scope/name` or `name@1.2.0`, and select **Install**. The server installs it from the npm registry.
 - **Link**: type an https link to a git repository or a tarball, such as `https://github.com/acme/penguin-notes`, and select **Install**. The server fetches and installs it with npm, from any https address you give, internal ones included. A path, an `http:` link or a link with credentials is refused before anything runs. So is a link to a folder or a file inside a GitHub repository (`…/tree/…`, `…/blob/…`), which npm cannot install: the field offers **Ask an agent**, which takes the link to the agent tab.
 
-Porting keeps what a PenguinHarness plugin can carry and lists the rest. The upstream skills become the package's skills, with their frontmatter reduced to `name`, `description` and a date `version`. The display name, the short description, the category, the SVG icon and the first default prompt go into the `penguin` block. MCP servers are carried too: the Skill's `port-mcp.mjs` script turns a Codex `.mcp.json` or a Claude Code `mcpServers` map into [`penguin.mcp_servers`](#mcp-servers-in-a-plugin). A placeholder such as `<GMAIL_PUBLIC_CLIENT_ID>` and an environment variable the upstream server reads become `${KEY}` references to the vault, each listed as a key to set up; a client secret published upstream is not carried and becomes a key to set up as well; a stdio command that ships with the plugin is rooted at `${PLUGIN_ROOT}`. Commands that only point at a skill, subagents, another tool's hooks, hosted apps and images are not carried; the package's README names each of them under "Not carried". A hosted app (`.app.json`) is a ChatGPT connector id, which resolves only inside ChatGPT.
+Porting keeps what a PenguinHarness plugin can carry and lists the rest. The upstream skills become the package's skills, with their frontmatter reduced to `name`, `description` and a date `version`. The display name, the short description, the category, the SVG icon and the first default prompt go into the package's card. MCP servers are carried too: the Skill's `port-mcp.mjs` script turns a Codex `.mcp.json` or a Claude Code `mcpServers` map into the package's [MCP server entries](#mcp-servers-in-a-plugin). Its `write-module.mjs` script declares all of it in the package's `src/index.ts`, and the agent builds the package (`npm install`, then `npm run build`) before it installs it. A placeholder such as `<GMAIL_PUBLIC_CLIENT_ID>` and an environment variable the upstream server reads become `${KEY}` references to the vault, each listed as a key to set up; a client secret published upstream is not carried and becomes a key to set up as well; a stdio command that ships with the plugin is rooted at `${PLUGIN_ROOT}`. Commands that only point at a skill, subagents, another tool's hooks, hosted apps and images are not carried; the package's README names each of them under "Not carried". A hosted app (`.app.json`) is a ChatGPT connector id, which resolves only inside ChatGPT.
 
 However it arrives, the package's install scripts run on the server as the server's user, as when a package is installed from npm. A stdio MCP server in the package is a command the server runs whenever a session of an agent that has it starts, under that session's [sandbox](/settings#sandbox) when one is set, and a remote MCP server is an address the server connects to; the plugin's details show both. A package under the name of a server plugin that ships with PenguinHarness is refused, and so is a package that turns out not to be a plugin; by the time a link is refused, its install scripts have already run.
 
@@ -233,7 +233,7 @@ Long Tasks can also feed their lessons back. With the `continual-learning` plugi
 
 ## Built-in library
 
-The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins/index.ts`; the library directory is the source of truth as plugins are added):
+The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/categories.ts`; the library directory is the source of truth as plugins are added):
 
 | Category | Plugin | Purpose |
 | --- | --- | --- |
@@ -270,41 +270,56 @@ This section describes the file formats, naming and versioning rules, loading an
 
 ### Plugin file format
 
-A plugin is an npm package. Its `package.json` is the manifest: npm's own fields, plus a `penguin` block for everything that is PenguinHarness's. The content sits beside it in fixed directories, and nothing declares where:
+A plugin is an npm package. Its `package.json` holds npm's own fields and nothing else. What the plugin carries for an agent is declared in its `src/index.ts`: an empty class whose `@Component` decorator lists, as contributions to the server's `PluginLibraryModule`, the plugin's card, its Skills, its hook package, its MCP servers and its workbenches. The package's build writes that declaration into `ifaces.json`, which is what the server reads; it never runs the package. The content itself stays in files, at the paths the declaration names:
 
 ```text
 <plugin>/
-├── package.json               # the manifest: npm's fields and a `penguin` block
+├── package.json               # npm's fields, the build script and the build's devDependencies
+├── tsconfig.json              # what the build compiles: src/
+├── src/index.ts               # the declaration: card, Skills, hook package, MCP servers, workbenches
+├── ifaces.json                # written by the build; what the server reads
 ├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
 ├── README.md                  # optional: what the details show under the description
 ├── skills/<name>/SKILL.md     # zero or more skills, each with its own date version
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
-MCP servers have no files: the package declares them in `penguin.mcp_servers` (see [MCP servers in a plugin](#mcp-servers-in-a-plugin)). A package with `skills/`, `hooks/` or at least one entry in `penguin.mcp_servers` is a plugin of the library; one with `ifaces.json` is a [server plugin](#server-plugins).
+```ts
+import { Component } from "@prismshadow/penguin-core/plugin";
+import type { Plugin } from "@prismshadow/penguin-core/plugin";
 
-```json
-{
-  "name": "@penguinharness/goal",
-  "version": "0.2.13",
-  "description": "Goal mode: a stop hook that keeps the session working toward an objective …",
-  "keywords": ["penguin-plugin", "penguinharness", "hooks"],
-  "license": "Apache-2.0",
-  "penguin": {
-    "description_zh": "目标模式：…",
-    "short_description": "Loop the session on an objective until it is done.",
-    "short_description_zh": "让会话循环推进一个目标直到完成。",
-    "category": "office-productivity",
-    "icon": "icon.svg",
-    "quick_start": { "prompt": "…", "prompt_zh": "…", "goal": true },
-    "hooks": {
-      "version": "2026.10.04.1",
-      "user_prompt": [{ "command": "start.mjs", "timeout": 60, "trigger": "host" }],
-      "stop": [{ "command": "stop.mjs", "timeout": 60 }]
-    }
-  }
-}
+@Component({
+  contributes: {
+    "PluginLibraryModule.cards": [
+      {
+        id: "goal.card",
+        title: "Goal Mode",
+        titleZh: "目标模式",
+        descriptionZh: "目标模式：…",
+        shortDescription: "Loop the session on an objective until it is done.",
+        shortDescriptionZh: "让会话循环推进一个目标直到完成。",
+        category: "office-productivity",
+        icon: "icon.svg",
+        quickStart: { prompt: "…", promptZh: "…", goal: true },
+      },
+    ],
+    "PluginLibraryModule.hooks": [
+      {
+        id: "goal.hooks",
+        version: "2026.10.26.1",
+        path: "hooks",
+        user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+        stop: [{ command: "stop.mjs", timeout: 60 }],
+      },
+    ],
+  },
+})
+export class GoalPlugin {}
+
+export default { modules: [GoalPlugin] } satisfies Plugin;
 ```
+
+The build is the package's `build` script, `penguin-gen-ifaces --project tsconfig.json --out ifaces.json`: the generator ships with `@prismshadow/penguin-core`, which the package lists in its `devDependencies` beside `typescript`, and `ifaces.json` goes in its `files`. A plugin that carries only content has no code: the class has no body, and the package has no bundle and no entry point. Every value in the declaration is written out, because the server reads the table without running the package: the build refuses a constant, a spread or a computed value. After changing the declaration, build again.
 
 npm's fields:
 
@@ -316,59 +331,69 @@ npm's fields:
 | `keywords` | Optional; `penguin-plugin` is the keyword to find plugins by on npm |
 | `author`, `license`, `homepage`, `repository` | Optional; the details show them, and leave out the ones a package lacks |
 
-`penguin` fields, all optional:
+Contributions, each entry with an `id` that starts with the plugin name (`goal.card`, `agent-development.skill.penguin-config`):
+
+| Contribution | Entry | Meaning |
+| --- | --- | --- |
+| `PluginLibraryModule.cards` | the card, at most one | How the plugin appears on the Plugins page; its fields are below |
+| `PluginLibraryModule.skills` | `{ name, path }` | One Skill: `path` is its directory in the package, such as `skills/a2ui`, and `name` is that directory's name. A Skill directory that no entry names is not installed |
+| `PluginLibraryModule.hooks` | `{ version, path, stop, pre_tool_use, user_prompt }`, at most one | The hook package. `version` is its date version, `YYYY.MM.DD.N`, written into the installed `hooks.json`; `path` is the scripts' directory, such as `hooks`; each [hook point](/agent-loop#stop-hooks) lists its commands, `[{ command: "stop.mjs", timeout: 60 }]`, with paths relative to `path` that never leave it and timeouts in seconds. A `user_prompt` command may add `trigger`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
+| `PluginLibraryModule.mcpServers` | `{ name, config, setup }` | One MCP server that installing the plugin adds to an agent; see [MCP servers in a plugin](#mcp-servers-in-a-plugin) |
+| `PluginLibraryModule.workbenches` | `{ name, path }` | One workbench app: `path` is its source directory, such as `workbenches/support`; see [Workbench plugins](#workbench-plugins) |
+
+Card fields, all optional:
 
 | Field | Meaning |
 | --- | --- |
-| `title` / `title_zh` | Display name; without it the card shows the plugin name |
-| `description_zh` | Chinese description; without it the English one stands in |
-| `short_description` / `short_description_zh` | Card labels; without them the full description stands in |
+| `title` / `titleZh` | Display name; without it the card shows the plugin name |
+| `descriptionZh` | Chinese description; without it the English one stands in |
+| `shortDescription` / `shortDescriptionZh` | Card labels; without them the full description stands in |
 | `category` | One of `rsi`, `office-productivity`, `software-development`, `ai-app-development`, or `sandbox` for an Agent Sandbox backend; a missing or unknown category lands in "Other" |
 | `icon` | Path of an SVG in the package; without it, `icon.svg` at the package root, and without that the puzzle piece. The SVG must be plain — no script, event handlers, links or external references — and at most 64 KiB, or it is not shown |
 | `preinstall` | `false` keeps the plugin out of `default_agent`'s preinstalled set, so it is installed only manually from the library |
-| `quick_start` | The demo the Plugins page pre-fills into a new-chat draft: `{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. The page never sends it; without it, quick start pre-selects the first skill |
-| `hooks.version` | The hook package's date version, `YYYY.MM.DD.N`; required when the plugin ships `hooks/` (without it no hook package is listed), and written into the installed `hooks.json` |
-| `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds. A `user_prompt` command may add `"trigger"`: `"prompt"` (the default) runs it on every prompt the user submits, `"host"` only when a host starts the package's flow by name |
-| `mcp_servers` | The MCP servers installing the plugin adds to an agent; see [MCP servers in a plugin](#mcp-servers-in-a-plugin) |
+| `quickStart` | The demo the Plugins page pre-fills into a new-chat draft: `{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. The page never sends it; without it, quick start pre-selects the first skill |
+| `references` | Links to the paper or the upstream implementation, which the website's plugin pages list |
 
-Missing means missing. Only a package without a valid `name` or `version` is refused. Any other field the package lacks shows as missing, and a field of the wrong type is dropped with a warning in the server log. A skill directory whose name does not match `^[A-Za-z0-9_-]+$` is left out with a warning, since no agent could install it, and a file in a skill directory that is not text, such as a PNG, is neither read nor installed. A plugin's `package.json` is the only manifest: a `plugin.json` that an older package still carries is not read.
+What a package is follows from its table, not from its directories. A package whose `ifaces.json` contributes Skills, a hook package, MCP servers or workbenches is a plugin of the library. A card alone does not make one, which is why the Agent Sandbox backends, which carry cards, are [server plugins](#server-plugins) only. A package with a code entry whose table lists server modules is a server plugin, and one package can be both.
+
+Missing means missing. Only a package without a valid `name` or `version` is refused. Any other field the package lacks shows as missing, and a field of the wrong type is dropped with a warning in the server log. A skill directory whose name does not match `^[A-Za-z0-9_-]+$` is left out with a warning, since no agent could install it, and a file in a skill directory that is not text, such as a PNG, is neither read nor installed. A plugin's `package.json` carries no PenguinHarness fields: the `penguin` block that earlier packages carried is not read, and a package that has one and no `ifaces.json` is left out of the library with a line in the server log. Port it again with the `plugin-porting` Skill.
 
 ### MCP servers in a plugin
 
-`penguin.mcp_servers` lists the MCP servers that installing the plugin adds to an agent. Each entry has the shape of a `tools.mcpServers` entry in `system_config.yaml` (see [MCP Servers](/tools#mcp-servers)), plus an optional `setup`:
+Each `PluginLibraryModule.mcpServers` entry is one MCP server that installing the plugin adds to an agent. It has the shape of a `tools.mcpServers` entry in `system_config.yaml` (see [MCP Servers](/tools#mcp-servers)), plus an optional `setup`:
 
-```json
-"penguin": {
-  "mcp_servers": [
-    {
-      "name": "cloudflare-api",
-      "config": {
-        "transport": "http",
-        "url": "https://mcp.cloudflare.com/mcp",
-        "headers": { "Authorization": "Bearer ${CLOUDFLARE_API_TOKEN}" }
-      },
-      "setup": [
-        {
-          "key": "CLOUDFLARE_API_TOKEN",
-          "label": "Cloudflare API token",
-          "label_zh": "Cloudflare API 令牌",
-          "help": "https://dash.cloudflare.com/profile/api-tokens"
-        }
-      ]
+```ts
+"PluginLibraryModule.mcpServers": [
+  {
+    id: "cloudflare.mcp.cloudflare-api",
+    name: "cloudflare-api",
+    config: {
+      transport: "http",
+      url: "https://mcp.cloudflare.com/mcp",
+      headers: { Authorization: "Bearer ${CLOUDFLARE_API_TOKEN}" },
     },
-    {
-      "name": "notes",
-      "config": { "command": "node", "args": ["${PLUGIN_ROOT}/server/index.mjs"] }
-    }
-  ]
-}
+    setup: [
+      {
+        key: "CLOUDFLARE_API_TOKEN",
+        label: "Cloudflare API token",
+        labelZh: "Cloudflare API 令牌",
+        help: "https://dash.cloudflare.com/profile/api-tokens",
+      },
+    ],
+  },
+  {
+    id: "cloudflare.mcp.notes",
+    name: "notes",
+    config: { command: "node", args: ["${PLUGIN_ROOT}/server/index.mjs"] },
+  },
+],
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `name` | Required. The server's name, which prefixes its tools as `mcp__<name>__<tool>`: a letter or digit, then letters, digits, `_` and `-`, unique in the package |
 | `config` | Required. The server's configuration exactly as `system_config.yaml` writes it: the transport and its fields, and the optional `connectTimeoutMs`, `timeoutMs`, `maxOutputLength`, `permission` and `oauth` |
-| `setup` | Optional. The vault keys a user sets before the server can connect: `[{ "key": "…", "label": "…", "label_zh": "…", "help": "…" }]`, where `help` is a URL or one sentence. A key the config references without a `setup` entry is asked for under its own name |
+| `setup` | Optional. The vault keys a user sets before the server can connect: `[{ key: "…", label: "…", labelZh: "…", help: "…" }]`, where `help` is a URL or one sentence. A key the config references without a `setup` entry is asked for under its own name |
 
 - `${KEY}` in any string value of `config`, where `KEY` is a vault variable name, is read from the agent's vault when the server connects and stays a reference in the agent's configuration. Write every secret this way: a package never carries one. A reference cannot sit in the host of `url`. See [Vault references](/tools#vault-references).
 - `${PLUGIN_ROOT}` is not a vault key. Installing the plugin on an agent replaces it with the directory of the plugin's package on the server, for a stdio server whose command ships in the package.
@@ -381,15 +406,15 @@ Missing means missing. Only a package without a valid `name` or `version` is ref
 - A plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product.
 - A self-evolution toolkit's name ends in `-rsi-toolkit` (`default-rsi-toolkit`, `ape-rsi-toolkit`), so the family reads as what it is; an algorithm toolkit's one Skill carries the plugin's name.
 - A plugin's version is its npm version, the `version` of its `package.json`, which follows the release.
-- Date versions, `YYYY.MM.DD.N` (the date plus a sequence number for that day), belong to what an agent may edit locally: each Skill's `SKILL.md` carries its own `version`, and the hook package's is `penguin.hooks.version`. Change a Skill and raise its `version`; change a hook script or the `penguin.hooks` commands and raise `penguin.hooks.version`. CI checks both on every pull request (`scripts/check-plugin-versions.mjs`).
+- Date versions, `YYYY.MM.DD.N` (the date plus a sequence number for that day), belong to what an agent may edit locally: each Skill's `SKILL.md` carries its own `version`, and the hook package's is the `version` of its hooks contribution. Change a Skill and raise its `version`; change a hook script or the commands of the hooks contribution and raise that contribution's `version`. A change to the card needs neither. CI checks both on every pull request (`scripts/check-plugin-versions.mjs`).
 - Date versions are compared by date, then by sequence number: `2026.08.29.10` follows `2026.08.29.9`. An installed copy is behind when one of its parts carries an older version than the library's same part; the update notice and buttons count it once per plugin.
-- Every plugin is its own npm package, `@penguinharness/<name>`, at `plugins/<name>/` in the repository. The loader in `@prismshadow/penguin-core` reads the plugin names from the host package's dependency list and resolves each package through Node. The desktop app declares the same packages as dependencies, and its installer packs them. At runtime the plugin files are the source of truth for library content and are read on every call.
+- Every plugin is its own npm package, `@penguinharness/<name>`, at `plugins/<name>/` in the repository. The loader in `@prismshadow/penguin-core` reads the plugin names from the host package's dependency list, the server's, the CLI's or the desktop app's, and resolves each package through Node; core itself depends on no plugin. The desktop app declares the same packages as dependencies, and its installer packs them. At runtime the plugin files and tables are the source of truth for library content and are read on every call. In a checkout of the repository, `pnpm -r build` builds every plugin's table and `pnpm dev` builds the content plugins' first; build a plugin again after changing its `src/index.ts`.
 
 ### Skill file format
 
 A Skill's directory name is its authoritative name and must match `^[A-Za-z0-9_-]+$`; it overrides any `name` in the frontmatter.
 
-A library `SKILL.md` has three frontmatter fields. The short descriptions live in the package's `penguin` block.
+A library `SKILL.md` has three frontmatter fields. The short descriptions live on the plugin's card.
 
 | Field | Meaning |
 | --- | --- |
@@ -397,13 +422,13 @@ A library `SKILL.md` has three frontmatter fields. The short descriptions live i
 | `description` | English one-liner injected into the system prompt |
 | `version` | The Skill's own date version, `YYYY.MM.DD.N` |
 
-The installed copy describes itself. At load time the library regenerates each Skill's frontmatter with the plugin's `short_description` and `short_description_zh` added and the Skill's own `version` kept, the same way an installed hook package's `hooks.json` is generated from the manifest, and writes that into `agent_state/skills/`. Update checks read the installed frontmatter's `version`, and the Web App reads its short descriptions.
+The installed copy describes itself. At load time the library regenerates each Skill's frontmatter with the card's `shortDescription` and `shortDescriptionZh` added, as `short_description` and `short_description_zh`, and the Skill's own `version` kept, the same way an installed hook package's `hooks.json` is generated from its hooks contribution, and writes that into `agent_state/skills/`. Update checks read the installed frontmatter's `version`, and the Web App reads its short descriptions.
 
 Parsing is tolerant: only `key: value` scalar lines inside the first `---` block count. A `version` that is neither `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` of an older installed copy reads as empty. An empty version is older than any library version, so the library's copy counts as an update. A Skill of a plugin an admin installed may carry no `version` at all; it reads as unversioned, and its installed copy is never offered an update.
 
 ### Hook package manifest
 
-An installed hook package is the plugin's `hooks/` directory, installed as `agent_state/hooks/<plugin>/` with a generated `hooks.json` beside the scripts. The manifest holds the plugin's identity fields (`name`, `description`, `description_zh`), the package's own `version` (the plugin's `penguin.hooks.version`) and one command list per hook point:
+An installed hook package is the plugin's `hooks/` directory, installed as `agent_state/hooks/<plugin>/` with a generated `hooks.json` beside the scripts. The manifest holds the plugin's identity fields (`name`; `description`, from npm's `description`; `description_zh`, from the card's `descriptionZh`), the package's own `version` (the `version` of the plugin's hooks contribution) and one command list per hook point:
 
 ```json
 {
@@ -454,7 +479,7 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 
 ## Workbench plugins
 
-A plugin can ship `workbenches/<id>/package.json`, `index.ts` and UI source files alongside its Skills. The workbench manifest declares `penguin.modules` and a dated `penguin.version` (`YYYY.MM.DD.N`). Include `workbenches` in the npm package's `files` list. Do not ship `state.json`, dot files or `node_modules`.
+A plugin declares a workbench with a `PluginLibraryModule.workbenches` entry, `{ name: "<id>", path: "workbenches/<id>" }`, and ships the app's `package.json`, `index.ts` and UI source files in that directory, alongside its Skills. The app's own `package.json` is the workbench's manifest, not the plugin's: it declares `penguin.modules` and a dated `penguin.version` (`YYYY.MM.DD.N`). Include `workbenches` in the npm package's `files` list. Do not ship `state.json`, dot files or `node_modules`.
 
 Installing the plugin copies the workbench into the agent's `agent_state/workbenches/<id>/` directory, inside its Agent State, where the workbenches an agent writes for itself live too. Updates replace shipped source files and retain ticket state and history. A name already used by another plugin or a manually created workbench is refused. Uninstalling removes the workbench and its state, and its earlier versions are no longer listed.
 

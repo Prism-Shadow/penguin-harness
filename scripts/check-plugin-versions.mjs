@@ -3,18 +3,20 @@
  * Every part of a plugin whose installed content changed since the base commit must carry a new
  * dated version. A plugin's own version is its npm version (package.json, bumped by the release);
  * the dated versions — `YYYY.MM.DD.N` — sit on the parts an install writes into an Agent and the
- * Agent may then edit: each Skill's `SKILL.md` frontmatter `version`, the hook package's
- * `penguin.hooks.version`, and each workbench's `penguin.version` in its `package.json`.
- * That version is what tells an installed copy it is
- * behind the library (the Agents page's update flag and the Plugins page read it), so a content
- * change shipped under the old version is invisible to every user until the next unrelated bump.
+ * Agent may then edit: each Skill's `SKILL.md` frontmatter `version`, the `version` of the hook
+ * package the plugin declares in `src/index.ts` (its `PluginLibraryModule.hooks` contribution),
+ * and each workbench's `penguin.version` in its own `package.json`. That version is what tells an
+ * installed copy it is behind the library (the Agents page's update flag and the Plugins page
+ * read it), so a content change shipped under the old version is invisible to every user until
+ * the next unrelated bump.
  *
  *   - a change under `plugins/<p>/skills/<s>/` needs that skill's `version` changed;
  *   - a change under `plugins/<p>/workbenches/<w>/` needs its `penguin.version` changed;
- *   - a change under `plugins/<p>/hooks/`, or to the commands of package.json's
- *     `penguin.hooks`, needs `penguin.hooks.version` changed;
- *   - the rest of `package.json`, `README.md` and `icon.svg` reach no installed copy and need
- *     nothing; neither does a change to a SKILL.md's `version` line alone.
+ *   - a change to a hook script (under the hooks contribution's `path`), or to a command the
+ *     contribution lists (`stop`, `pre_tool_use`, `user_prompt`), needs its `version` changed;
+ *   - the rest of `src/index.ts` (the card, the other declarations), `package.json`, `README.md`
+ *     and `icon.svg` reach no installed copy and need nothing; neither does a change to a
+ *     SKILL.md's `version` line alone.
  *
  * The Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
  * rule is SEEDED_BENCHMARKS below.
@@ -24,6 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const base = process.argv[2] ?? "";
 if (base.trim() === "") {
@@ -77,11 +80,52 @@ const withoutVersion = (text) => {
   const kept = front[1].split(/\r?\n/).filter((l) => !VERSION_LINE.test(l));
   return `---\n${kept.join("\n")}\n---${text.slice(front[0].length)}`;
 };
-/** A hook declaration's commands without the version: what changes an installed hooks.json. */
-const hookCommands = (hooks) => {
-  const { version: _version, ...commands } = hooks ?? {};
-  return canonical(commands);
-};
+/** The hook points of a hook package; their command lists are what an installed hooks.json runs. */
+const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"];
+/** A hook contribution's commands, absent points as empty lists: what changes an installed hooks.json. */
+const hookCommands = (hooks) =>
+  canonical(Object.fromEntries(HOOK_POINTS.map((point) => [point, hooks?.[point] ?? []])));
+
+/** Where a plugin declares what it carries: its module's decorator literal (`build` lifts it into ifaces.json). */
+const MODULE_SOURCE = "src/index.ts";
+const HOOKS_KEY = /["']PluginLibraryModule\.hooks["']\s*:\s*\[/;
+/** The index of the bracket closing the one at `open`, past strings and comments; -1 when unclosed. */
+function closingBracket(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '"' || c === "'" || c === "`") {
+      for (i += 1; i < text.length && text[i] !== c; i += 1) if (text[i] === "\\") i += 1;
+    } else if (c === "/" && text[i + 1] === "/") {
+      i = text.indexOf("\n", i);
+      if (i === -1) return -1;
+    } else if (c === "/" && text[i + 1] === "*") {
+      i = text.indexOf("*/", i + 2) + 1;
+      if (i === 0) return -1;
+    } else if (c === "[" || c === "{") depth += 1;
+    else if ((c === "]" || c === "}") && --depth === 0) return i;
+  }
+  return -1;
+}
+/**
+ * The hook package a module source declares: the first `PluginLibraryModule.hooks` entry, read as
+ * the data it is (the generator accepts nothing but literals there) in an empty context. Null
+ * when the source declares none; undefined when the declaration will not read.
+ */
+function hookContribution(source) {
+  const key = source === null ? null : HOOKS_KEY.exec(source);
+  if (key === null) return null;
+  const open = key.index + key[0].length - 1;
+  const close = closingBracket(source, open);
+  if (close === -1) return undefined;
+  try {
+    const entries = vm.runInNewContext(`(${source.slice(open, close + 1)})`, {}, { timeout: 1000 });
+    const entry = Array.isArray(entries) ? entries[0] : undefined;
+    return entry !== null && typeof entry === "object" ? entry : null;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The example remains authored here; shipped Benchmark versions live in their packages. */
 const SEEDED_BENCHMARKS = [
@@ -147,16 +191,10 @@ const problems = [];
 const bumped = [];
 for (const name of plugins) {
   const dir = `plugins/${name}`;
-  const manifestFile = `${dir}/package.json`;
-  const head = json(atHead(manifestFile));
-  const baseManifest = json(atBase(manifestFile));
-  /** The hook declaration at the base. */
-  const before =
-    baseManifest?.penguin !== undefined
-      ? (baseManifest.penguin.hooks ?? null)
-      : // The base may predate the move to package.json; drop once main carries no plugin.json.
-        (json(atBase(`${dir}/plugin.json`))?.hooks ?? null);
-  const after = head?.penguin?.hooks ?? null;
+  const moduleFile = `${dir}/${MODULE_SOURCE}`;
+  /** The hook package declared at the base and now. */
+  const before = hookContribution(atBase(moduleFile));
+  const after = hookContribution(atHead(moduleFile));
 
   for (const workbench of new Set(
     changed
@@ -210,16 +248,25 @@ for (const name of plugins) {
     }
   }
 
-  // The hook package: its scripts, or the commands package.json declares for it.
+  // The hook package: its scripts, or the commands its contribution lists.
+  if (after === undefined) {
+    problems.push(`${moduleFile}: its PluginLibraryModule.hooks entry does not read as a literal`);
+    continue;
+  }
+  if (after === null) continue; // no hook package now: nothing to version
+  const scripts = (hooks) => `${dir}/${String(hooks?.path ?? "hooks").replace(/^\.\/|\/+$/g, "")}/`;
   const hooksChanged =
-    changed.some((file) => file.startsWith(`${dir}/hooks/`)) ||
-    (before !== null && head !== null && hookCommands(before) !== hookCommands(after));
-  if (hooksChanged && head !== null && existsSync(`${dir}/hooks`)) {
-    const version = after?.version;
+    changed.some((file) => file.startsWith(scripts(after))) ||
+    (before && changed.some((file) => file.startsWith(scripts(before)))) ||
+    (before && hookCommands(before) !== hookCommands(after));
+  if (hooksChanged) {
+    const version = after.version;
     if (typeof version !== "string" || !DATED.test(version)) {
-      problems.push(`${manifestFile}: penguin.hooks.version must be YYYY.MM.DD.N, got ${version}`);
+      problems.push(
+        `${moduleFile}: the hooks contribution's version must be YYYY.MM.DD.N, got ${version}`,
+      );
     } else if (typeof before?.version === "string" && before.version === version) {
-      problems.push(`${dir}/hooks changed but penguin.hooks.version is still ${version}`);
+      problems.push(`${dir}: the hook package changed but its version is still ${version}`);
     } else {
       bumped.push(`${name} hooks`);
     }
