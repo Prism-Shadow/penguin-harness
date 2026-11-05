@@ -66,6 +66,8 @@
 @import "./cartoon/start.css";
 @import "./cartoon/forms.css";
 @import "./cartoon/overlays.css";
+@import "./cartoon/charts.css";
+@import "./cartoon/ledger.css";
 
 @layer ui-theme {
   :root[data-theme="cartoon"] {

@@ -289,6 +289,12 @@
   rect[data-part="point"] {
     fill: var(--_paint);
   }
+  /* The HTML marks — a timeline bar, a legend's or a bubble's swatch — take their background from
+     their `--_paint` the same way; an ink's mark is painted by its own background class, which
+     sits above this layer. */
+  span:is([data-part="bar"], [data-part="swatch"]) {
+    background-color: var(--_paint);
+  }
 
   /*
    * Motion. A component never writes a duration, an easing, a keyframe or a transform for these:

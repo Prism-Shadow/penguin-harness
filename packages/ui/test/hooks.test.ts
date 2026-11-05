@@ -43,7 +43,8 @@
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
- *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
+ *   a chart's parts are the seven the recipes style and a legend's swatch, and a glyph's the one
+ *   (`duo`),
  *   wherever a `data-part` is written, and a drawing's sets are the ones a recipe shows (a glyph's
  *   `line`, `octicons` and `pixel`, the spinner's `arc` and `scribble`, an empty state's art's
  *   `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which the foundation's
@@ -316,8 +317,11 @@ const RUN_STATES = new Set(["running"]);
 const EMPTY_FORMS = new Set(["page", "slot"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
-/** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
-const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
+/**
+ * A chart's parts, wherever a chart's children are written (a mark component draws into the
+ * frame's svg), and the swatch a legend or a bubble draws a series' paint in.
+ */
+const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label", "swatch"]);
 /** A glyph's one part (the duotone body under its line drawing). */
 const GLYPH_PARTS = new Set(["duo"]);
 /**
@@ -569,7 +573,7 @@ describe("style hooks", () => {
         const part = element.attributes.get("data-part");
         if (typeof part === "string" && !CHART_PARTS.has(part) && !GLYPH_PARTS.has(part)) {
           problems.push(
-            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label or duo`,
+            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label|swatch or duo`,
           );
         }
         const set = element.attributes.get("data-set");
