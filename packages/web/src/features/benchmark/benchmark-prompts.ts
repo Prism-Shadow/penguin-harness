@@ -144,7 +144,7 @@ export interface AskEvaluationParams {
   time: string;
   /** The series label text, or the unlabeled placeholder the legend uses. */
   label: string;
-  version: number;
+  version: number | string;
   provider: string;
   modelId: string;
   thinkingLevel: string;
