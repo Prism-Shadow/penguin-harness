@@ -10,6 +10,7 @@ import {
   isCode,
   isCredentialName,
   isEnvName,
+  isPathOnDisk,
   isRefused,
   lineKind,
   pathToken,
@@ -587,8 +588,29 @@ const payload = {
   ...(POINT === "user_prompt" ? { prompt: input.prompt ?? "" } : {}),
   ...(POINT === "stop" ? { stop_hook_active: previous > 0 } : {}),
 };
+// The command is the source's own, in the source shell's syntax. On Windows node's shell:true is
+// cmd.exe, which reads none of the POSIX command (\`>&2\`, \`;\`, \`./guard.sh\`): find bash — Git for
+// Windows, which the source tool leans on there — and run the command through it. Without one,
+// cmd is all there is, and the command fails on its own terms. On POSIX shell:true is /bin/sh.
+function shellFor() {
+  if (process.platform !== "win32") return true;
+  const dirs = (process.env.PATH ?? "").split(";").filter(Boolean);
+  dirs.push("C:\\\\Program Files\\\\Git\\\\bin", "C:\\\\Program Files (x86)\\\\Git\\\\bin");
+  const system = \`\${(process.env.SystemRoot ?? "C:\\\\Windows").toLowerCase()}\\\\system32\`;
+  for (const name of ["bash.exe", "sh.exe"]) {
+    for (const dir of dirs) {
+      const exe = path.join(dir, name);
+      // bash.exe in the system directory is the WSL launcher: another filesystem's view.
+      if (name === "bash.exe" && exe.toLowerCase().startsWith(system + "\\\\")) continue;
+      try {
+        if (fs.statSync(exe).isFile()) return exe;
+      } catch {}
+    }
+  }
+  return true;
+}
 const run = spawnSync(COMMAND, {
-  shell: true,
+  shell: shellFor(),
   cwd,
   input: JSON.stringify(payload),
   encoding: "utf8",
@@ -760,7 +782,12 @@ function emitHooks(hooks, framework, out, summary, sourceKey, knownServers) {
         summary.unmapped.push(`hook ${where}: no command`);
         continue;
       }
-      if (lineKind(command, false) !== null || command.split(/\s+/).some((w) => tokenish(w))) {
+      // A word that is a path on this machine (an absolute script path in the command) is not a
+      // credential, however random the OS temp folders along it read.
+      if (
+        lineKind(command, false) !== null ||
+        command.split(/\s+/).some((w) => tokenish(w) && !isPathOnDisk(w))
+      ) {
         summary.unmapped.push(
           `hook ${where}: its command holds a credential-looking value; port it by hand`,
         );

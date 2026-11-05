@@ -1051,7 +1051,17 @@ describe("a ported hook behaves like its source", () => {
       ].join("\n"),
     });
     const { pkg, manifest } = await ported({
-      Stop: [{ hooks: [{ type: "command", command: `node ${path.join(src, "guard.mjs")}` }] }],
+      Stop: [
+        {
+          hooks: [
+            // Forward slashes: the command runs in a POSIX shell, which eats `\` as an escape.
+            {
+              type: "command",
+              command: `node ${path.join(src, "guard.mjs").split(path.sep).join("/")}`,
+            },
+          ],
+        },
+      ],
     });
     const file = manifest.stop![0]!.command;
     const tmp = await tmpDir();

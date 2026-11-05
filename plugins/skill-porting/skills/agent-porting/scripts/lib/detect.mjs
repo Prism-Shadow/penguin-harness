@@ -1,5 +1,6 @@
 // What the agent-porting reader treats as a credential, a name or a harmless token. Shared by the
 // masked view, `--scan`, `--show` and `--emit`. Built-in modules only.
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 /** Key and flag names the masked view treats as a credential's (broad on purpose). */
@@ -72,6 +73,27 @@ export const isRefused = (file) => REFUSED.some((re) => re.test(path.basename(fi
 
 /** Code, where an unquoted right-hand side is an expression rather than a literal. */
 export const isCode = (name) => /\.(m?[jt]s|cjs|[jt]sx|py)$/i.test(name);
+
+/**
+ * A word that is a path to a file this machine actually has: a `/`-rooted or drive-letter absolute
+ * path that exists. A path stored in a JSON file (a side file, an emitted wrapper) keeps its
+ * backslashes escaped, so the JSON-unescaped form is tried too. A value cannot also be a
+ * credential: OS temp paths (`/var/folders/…`, `C:\Users\…\AppData\Local\Temp`) read as
+ * high-entropy strings otherwise. Refused names stay refused even at an existing path.
+ */
+export const isPathOnDisk = (word) => {
+  const absolute = (s) =>
+    (s.startsWith("/") || /^[A-Za-z]:[\\/]/.test(s)) && !isRefused(s) && existsSync(s);
+  if (absolute(word)) return true;
+  if (word.includes("\\\\")) {
+    try {
+      return absolute(JSON.parse(`"${word}"`));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
 
 /** A part that reads as random: letters and digits mixed over 12 characters, or 40 of anything. */
 const highEntropy = (part) =>
@@ -196,7 +218,12 @@ export function lineKind(line, code) {
     }
   }
   for (const word of line.split(/[\s"'`,;()<>[\]{}|]+/)) {
-    if (word.length >= 12 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(word) && tokenish(word)) {
+    if (
+      word.length >= 12 &&
+      !/^[a-z][a-z0-9+.-]*:\/\//i.test(word) &&
+      tokenish(word) &&
+      !isPathOnDisk(word)
+    ) {
       return "high-entropy string";
     }
   }
