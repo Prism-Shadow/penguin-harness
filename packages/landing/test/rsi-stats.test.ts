@@ -45,10 +45,13 @@ function builtinUpstreams(): string[] {
   }>;
   return [
     ...new Set(
-      packages.map(
-        (benchmark) =>
-          /^- Upstream: (https:\/\/\S+)/m.exec(benchmark.cases[0]!.statement)?.[1] ?? "",
-      ),
+      packages.flatMap((benchmark) => {
+        // A benchmark written for this repository has no upstream to link to
+        // (for example the biomedical repeated-measures benchmark), so it
+        // contributes no entry to the hero's upstream list.
+        const upstream = /^- Upstream: (https:\/\/\S+)/m.exec(benchmark.cases[0]!.statement)?.[1];
+        return upstream === undefined ? [] : [upstream];
+      }),
     ),
   ].sort();
 }
