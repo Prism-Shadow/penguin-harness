@@ -79,9 +79,9 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 
 ### 第一步：配置模型 API Key
 
-打开左侧导航栏的 Models 页面，找到实验所要使用的模型 DeepSeek V4.1 Flash，填入对应的 API Key 并保存。
+打开左侧导航栏的 Models 页面，找到实验所要使用的模型 DeepSeek V4.1 Flash，填入对应的 API Key 并点击 Save 保存。
 
-> **TODO（配图占位 — 配置模型 API Key）**：此处预留 Models 页面配置 DeepSeek V4.1 Flash API Key 的截图。
+<img src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="在 Models 页面的 Model settings 弹窗中配置 DeepSeek V4.1 Flash 的 API Key" />
 
 ### 第二步：新建主控 Agent 并安装自进化工具包
 

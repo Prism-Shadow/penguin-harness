@@ -79,9 +79,9 @@ Running a GDPEVO Essential self-evolution experiment in PenguinHarness requires 
 
 ### Step 1: Configure the Model API Key
 
-Open the Models page from the left sidebar, find the model used for the experiment, DeepSeek V4.1 Flash, enter its API key, and save.
+Open the Models page from the left sidebar, find the model used for the experiment, DeepSeek V4.1 Flash, enter its API key, and click Save.
 
-> **TODO (Screenshot Placeholder — Configuring Model API Key)**: Insert screenshot of configuring the DeepSeek V4.1 Flash API key on the Models page.
+<img src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="Configuring the API key for DeepSeek V4.1 Flash in the Model settings dialog on the Models page" />
 
 ### Step 2: Create a Controller Agent and Install the RSI Toolkit
 
