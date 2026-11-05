@@ -6286,17 +6286,27 @@ export interface OrganizationsResponse {
 
 /**
  * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
- * Project's trash either way; with `?deleteAgents=1` each of its employees' Agents (its CEO
- * included) is then deleted for good, exactly as `DELETE …/agents/:agentId` deletes one, unless
- * it is built in or another organization of the Project still employs it. Without the flag the
- * three lists are empty.
+ * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
+ * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
+ * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
+ * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
+ * Project still employs it, or another organization's chart cannot be read. Every other
+ * employee is kept with its reason. Without the flag the three lists are empty.
  */
 export interface OrganizationDeleteResponse {
   orgId: string;
   /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
   deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
-  /** Left as they are, and why. */
-  keptAgents: Array<{ agentId: string; reason: "employed_elsewhere" | "builtin" }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it may
+   * employ it); `not_confirmed` (not in `agentIds`: hired after the confirmation read the list,
+   * or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
   /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
   failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }

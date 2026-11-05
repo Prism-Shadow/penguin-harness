@@ -156,6 +156,14 @@ export interface Actor {
   agentId?: string;
 }
 
+/** Who the Project's organizations employ, and which of them cannot say (see `employmentCensus`). */
+export interface EmploymentCensus {
+  /** By Agent id, as `employments` answers it. */
+  employments: Record<string, Employment[]>;
+  /** The organizations whose `org_chart.yaml` is missing or does not parse. */
+  unreadableCharts: string[];
+}
+
 const notFound = (orgId: string): HttpError =>
   new HttpError(404, "org_not_found", `Organization does not exist: ${orgId}`);
 
@@ -316,20 +324,31 @@ export class OrganizationService {
    * read it with `Object.hasOwn`, as an Agent id may be any word, `constructor` included.
    */
   async employments(projectId: string): Promise<Record<string, Employment[]>> {
-    const out: Record<string, Employment[]> = {};
+    return (await this.employmentCensus(projectId)).employments;
+  }
+
+  /**
+   * {@link employments}, and the organizations whose `org_chart.yaml` is missing or does not
+   * parse: beyond their CEO, whom they employ is unknown. Deleting an organization with its
+   * Agents reads both, and keeps an employee it cannot prove is employed nowhere else.
+   */
+  async employmentCensus(projectId: string): Promise<EmploymentCensus> {
+    const employments: Record<string, Employment[]> = {};
+    const unreadableCharts: string[] = [];
     const add = (agentId: string, employment: Employment) => {
-      if (Object.hasOwn(out, agentId)) out[agentId]!.push(employment);
-      else out[agentId] = [employment];
+      if (Object.hasOwn(employments, agentId)) employments[agentId]!.push(employment);
+      else employments[agentId] = [employment];
     };
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
+      if (org.chartUnreadable === true) unreadableCharts.push(orgId);
       const base = { orgId, orgName: org.config.name, status: org.config.status };
       for (const e of org.chart.employees) add(e.agentId, { ...base, title: e.title });
       const ceo = ceoAgentId(orgId);
       if (!org.byId.has(ceo)) add(ceo, { ...base, title: "CEO" });
     }
-    return out;
+    return { employments, unreadableCharts };
   }
 
   /** The organizations employing one Agent (see `employments`); empty when none does. */
@@ -2818,6 +2837,7 @@ export abstract class OrgService extends Interface<
   Pick<
     OrganizationService,
     | "employments"
+    | "employmentCensus"
     | "employersOf"
     | "list"
     | "create"

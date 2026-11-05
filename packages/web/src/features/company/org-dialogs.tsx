@@ -15,9 +15,13 @@
  * Project's trash, and by default its employees' Agents go with it for good: the confirmation
  * reads the Agent list afresh when it opens and names the Agents that would be deleted and the
  * ones kept (built in, or employed by another organization too), and a checkbox, on by default,
- * keeps them all instead. Afterwards the Agent list is read again, as it is after a create, a
- * hire or a leave: every employment mark the shell shows — the Agents page's delete button, the
- * sidebar's grouping, the pickers — comes from that list.
+ * keeps them all instead. Until that list has arrived nothing is armed; if it cannot be read,
+ * the checkbox stays off (the organization alone can still go) and the read can be retried.
+ * The request names the Agents the confirmation listed, and the server deletes no other — one
+ * hired meanwhile is kept, and the toast names whoever was kept against the list. While the
+ * delete runs the confirmation cannot be closed. Afterwards the Agent list is read again, as it
+ * is after a create, a hire or a leave: every employment mark the shell shows — the Agents
+ * page's delete button, the sidebar's grouping, the pickers — comes from that list.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -604,9 +608,7 @@ const normalizedOrgDraft = (d: OrgSettingsDraft) => ({
  * What the delete takes along, under its checkbox: the Agents deleted for good and the ones
  * kept with the reason, one line each (a long line truncates and shows whole on hover).
  */
-function DeletePlanLines({ plan, failed }: { plan: OrgDeletePlan | null; failed: boolean }) {
-  if (failed) return <span className="block">{S.company.deleteOrgAgentsLoadFailed}</span>;
-  if (plan === null) return <span className="block">{S.common.loading}</span>;
+function DeletePlanLines({ plan }: { plan: OrgDeletePlan }) {
   const separator = S.todo.listSeparator;
   const deleted = plan.toDelete.map(agentDisplayName).join(separator);
   const kept = plan.kept
@@ -666,15 +668,13 @@ function OrganizationSettingsForm({
   const valid = name.trim() !== "" && mission.trim() !== "" && timezone.trim() !== "";
   const deletePlan: OrgDeletePlan | null =
     deleteList === null ? null : orgDeletePlan(deleteList, orgId);
+  /** The Agents go too: the box is on and the list it names has arrived. */
+  const agentsGo = deleteAgents && deletePlan !== null;
 
-  const openDeleteConfirm = () => {
-    setTypedId("");
-    setDeleteAgents(true);
+  /** Reads the Agent list afresh, never the shell's copy, which may predate the last hire. */
+  const readDeleteList = () => {
     setDeleteList(null);
     setDeleteListFailed(false);
-    setConfirmDelete(true);
-    // Read afresh rather than from the shell's copy, which may predate the last hire: these
-    // are the Agents the confirmation says will go.
     const ask = ++deleteListAsked.current;
     api
       .listAgents(projectId, null)
@@ -686,10 +686,24 @@ function OrganizationSettingsForm({
       });
   };
 
+  const openDeleteConfirm = () => {
+    setTypedId("");
+    setDeleteAgents(true);
+    setConfirmDelete(true);
+    readDeleteList();
+  };
+
   const doDelete = async () => {
     setBusy(true);
     try {
-      const report = await api.deleteOrganization(projectId, orgId, { deleteAgents });
+      // The request names what the confirmation showed as going; the server deletes no other.
+      const report = await api.deleteOrganization(
+        projectId,
+        orgId,
+        agentsGo && deletePlan !== null
+          ? { agentIds: deletePlan.toDelete.map((a) => a.agentId) }
+          : {},
+      );
       setConfirmDelete(false);
       const nameOf = (agentId: string) => {
         const agent = deleteList?.find((a) => a.agentId === agentId);
@@ -700,6 +714,15 @@ function OrganizationSettingsForm({
       for (const { agentId, deletion } of report.deletedAgents) {
         void followAgentDeletion({ projectId, machineId: null, name: nameOf(agentId), deletion });
       }
+      // Kept against what the confirmation said: hired since, or employed elsewhere since.
+      const shownKept = new Set(deletePlan?.kept.map(({ agent }) => agent.agentId) ?? []);
+      const keptAfterAll = report.keptAgents
+        .filter((k) => !shownKept.has(k.agentId))
+        .map((k) => nameOf(k.agentId));
+      const kept =
+        keptAfterAll.length === 0
+          ? ""
+          : S.company.deleteOrgKeptAfterAll(failedList(keptAfterAll, S.todo.listSeparator));
       const [firstFailure] = report.failedAgents;
       if (firstFailure !== undefined) {
         const names = failedList(
@@ -708,21 +731,21 @@ function OrganizationSettingsForm({
         );
         // The report carries each refusal's code: worded as the same error answered alone would be.
         const reason = apiErrorText(new ApiError(409, firstFailure.code, firstFailure.message));
-        toastError(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}`);
+        toastError(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}${kept}`);
       } else if (report.deletedAgents.length > 0) {
-        toastSuccess(S.company.deletedWithAgents(orgId, report.deletedAgents.length));
+        toastSuccess(`${S.company.deletedWithAgents(orgId, report.deletedAgents.length)}${kept}`);
       } else {
-        toastSuccess(S.company.deleted(orgId));
+        toastSuccess(`${S.company.deleted(orgId)}${kept}`);
       }
-      // Whether or not its Agents went, the organization's employments did: the Agent list
-      // carries every employment mark the shell shows, so it is read again.
-      void reloadAgents().catch(() => undefined);
       onClose();
       onDeleted?.();
     } catch (e) {
       toastApiError(e);
     } finally {
       setBusy(false);
+      // Whatever the answer, even none in time, employments may have changed: the Agent list
+      // carries every employment mark the shell shows, so it is read again.
+      void reloadAgents().catch(() => undefined);
     }
   };
 
@@ -930,33 +953,44 @@ function OrganizationSettingsForm({
         open={confirmDelete}
         title={S.company.deleteOrg}
         busy={busy}
-        confirmDisabled={typedId.trim() !== orgId}
+        // Nothing is armed until the Agents it names have arrived; after a failed read the box
+        // is off, and the organization alone can go.
+        confirmDisabled={typedId.trim() !== orgId || (deleteList === null && !deleteListFailed)}
         confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
         widthClass="sm:max-w-md"
-        onClose={() => setConfirmDelete(false)}
+        // The delete is permanent for the Agents: once it runs, it is seen through.
+        onClose={() => (busy ? undefined : setConfirmDelete(false))}
         onConfirm={() => void doDelete()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.company.deleteOrgConfirm}</p>
         <Checkbox
           size="sm"
           className="mt-3 w-full"
-          checked={deleteAgents}
-          disabled={busy}
+          checked={agentsGo}
+          disabled={busy || deletePlan === null}
           onChange={setDeleteAgents}
           label={S.company.deleteOrgAgents(deletePlan === null ? null : deletePlan.toDelete.length)}
-          hint={
-            deleteAgents ? (
-              <DeletePlanLines plan={deletePlan} failed={deleteListFailed} />
-            ) : undefined
-          }
+          hint={agentsGo ? <DeletePlanLines plan={deletePlan} /> : undefined}
         />
+        {deleteListFailed ? (
+          <ErrorLine
+            className="mt-2"
+            message={S.company.deleteOrgAgentsLoadFailed}
+            onRetry={readDeleteList}
+          />
+        ) : (
+          deletePlan === null && (
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{S.common.loading}</p>
+          )
+        )}
         <Input
           size="sm"
           className="mt-3 font-mono"
           aria-label={S.company.deleteOrgTypeId(orgId)}
           placeholder={orgId}
           value={typedId}
+          disabled={busy}
           hint={S.company.deleteOrgTypeId(orgId)}
           onChange={(e) => setTypedId(e.target.value)}
         />

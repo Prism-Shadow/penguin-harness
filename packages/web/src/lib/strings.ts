@@ -5865,7 +5865,10 @@ Benchmark：
     deleteOrgWillKeep: (names: string) => `保留：${names}`,
     deleteOrgKeptBuiltin: (name: string) => `${name}（内置）`,
     deleteOrgKeptElsewhere: (name: string, orgNames: string) => `${name}（另受雇于 ${orgNames}）`,
-    deleteOrgAgentsLoadFailed: "该组织的 Agent 读取失败，删除时由服务端判断哪些 Agent 随之删除。",
+    deleteOrgAgentsLoadFailed:
+      "该组织的 Agent 读取失败。请重试；或者只删除组织，它的 Agent 都会保留。",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) => `；保留了 ${names}（确认之后情况有变）`,
     deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
     deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     deletedWithAgents: (orgId: string, count: number) =>

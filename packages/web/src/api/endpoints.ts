@@ -2414,18 +2414,22 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization goes to the Project's trash, restorable by hand. With
- * `deleteAgents` its employees' Agents are deleted for good as well — except those built in or
- * employed by another organization — and the answer reports each one; without it they and
- * their Sessions are left as they are.
+ * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
+ * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
+ * well, as far as they still qualify (not built in, employed nowhere else), and the answer
+ * reports every employee; without it the Agents and their Sessions are left as they are.
  */
 export const deleteOrganization = (
   projectId: string,
   orgId: string,
-  opts: { deleteAgents?: boolean } = {},
+  opts: { agentIds?: readonly string[] } = {},
 ) =>
   apiFetch<OrganizationDeleteResponse>(
-    `${orgBase(projectId, orgId)}${opts.deleteAgents === true ? "?deleteAgents=1" : ""}`,
+    `${orgBase(projectId, orgId)}${
+      opts.agentIds === undefined
+        ? ""
+        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
+    }`,
     { method: "DELETE" },
   );
 

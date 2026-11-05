@@ -1,29 +1,42 @@
 // @vitest-environment jsdom
 /**
- * Deleting an organization from its settings (features/company/org-dialogs.tsx) and hiring into
- * one (features/company/employee-dialogs.tsx), beside the Agents page, whose delete buttons read
- * every Agent's employments off the Project's Agent list (state/project.tsx).
+ * Deleting an organization from its settings (features/company/org-dialogs.tsx), creating one,
+ * hiring into one (features/company/employee-dialogs.tsx) and leaving one (the org chart's
+ * menu), beside the Agents page, whose delete buttons read every Agent's employments off the
+ * Project's Agent list (state/project.tsx).
  *
  * - When the delete's confirmation opens, the Agent list is read again, and the confirmation
  *   names the Agents that would be deleted for good and those kept with their reason (another
  *   organization employs it too, it is built in), under a checkbox that is on.
- * - Confirmed with the box on, the organization goes with its Agents, and they leave the Agents
- *   page at once; the Agent another organization employs stays there, still undeletable.
+ * - Until that list has arrived the delete cannot be confirmed and the box is off; once it
+ *   arrives the box is on.
+ * - When that list cannot be read, the box stays off and the delete of the organization alone
+ *   can still be confirmed; Retry reads the list again and turns the box on.
+ * - Confirmed with the box on, the organization goes with the Agents it listed, and they leave
+ *   the Agents page at once; the Agent another organization employs stays there, undeletable.
+ * - An employee hired after the confirmation read the list is kept, and the toast names it.
  * - Confirmed with the box off, only the organization goes, and the Agents page turns its former
  *   employee's delete button on at once, without a reload.
+ * - While the delete runs, Esc does not close the confirmation.
  * - An Agent the server could not delete with its organization is named in an error toast.
  * - After a hire of a new Agent, the Agents page lists it at once, as an employee whose delete
- *   is off.
+ *   is off; after a leave, the former employee's delete button turns on at once; after a
+ *   creation, the new CEO's Agent is listed at once, as an employee.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, Fragment, useState } from "react";
 import type { OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AgentsPage } from "../src/features/agents/agents-page";
-import { OrganizationSettingsDialog } from "../src/features/company/org-dialogs";
+import {
+  CreateOrganizationDialog,
+  OrganizationSettingsDialog,
+} from "../src/features/company/org-dialogs";
 import { HireDialog } from "../src/features/company/employee-dialogs";
+import { OrgChartPage } from "../src/features/company/org-chart-page";
+import { OrgContext } from "../src/features/company/org-layout";
 import { CompanyProvider } from "../src/state/company";
 import { ThemeProvider } from "../src/state/theme";
 import {
@@ -35,7 +48,7 @@ import {
   topDialog,
 } from "./helpers/agent-app";
 import type { FakeOrganization } from "./helpers/agent-app";
-import { button, click, field, type, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, field, pressEscape, type, unmountAll, waitFor } from "./helpers/dom";
 
 const ACME: FakeOrganization = {
   orgId: "acme",
@@ -57,20 +70,26 @@ const NORTH: FakeOrganization = {
 };
 
 const agentsPath = `/api/projects/${PROJECT_ID}/agents`;
+/** The Agent list's own read, and nothing under it. */
+const agentListRead = new RegExp(`^${agentsPath}$`);
 
-/** The Agents page's card of `agentId` (its name is its id here), or undefined when it is not listed. */
-function cardOf(agentId: string): HTMLElement | undefined {
+/** The Agents page's card named `name` (an employee's name is its id here), or undefined when it is not listed. */
+function cardOf(name: string): HTMLElement | undefined {
   return [...document.querySelectorAll<HTMLElement>(".ui-frame")].find(
-    (card) => card.querySelector("a")?.textContent === agentId,
+    (card) => card.querySelector("a")?.textContent === name,
   );
 }
 
+/** Whether the org chart shows `agentId`'s personnel menu. */
+const hasMenuOf = (agentId: string) =>
+  document.querySelector(`button[aria-label="${agentId} · ${en.company.chart.nodeMenu}"]`) !== null;
+
 /** That card's delete button. */
-function deleteButtonOf(agentId: string): HTMLButtonElement {
-  const found = cardOf(agentId)?.querySelector<HTMLButtonElement>(
+function deleteButtonOf(name: string): HTMLButtonElement {
+  const found = cardOf(name)?.querySelector<HTMLButtonElement>(
     `button[aria-label="${en.agent.deleteAgent}"]`,
   );
-  if (found == null) throw new Error(`no delete button on ${agentId}'s card`);
+  if (found == null) throw new Error(`no delete button on ${name}'s card`);
   return found;
 }
 
@@ -111,10 +130,15 @@ async function openDeleteConfirmation(server: ReturnType<typeof agentServer>) {
 }
 
 const checkbox = () => topDialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+const confirmButton = () => buttonIn(topDialog(), en.common.delete);
+
+async function typeOrgId() {
+  await type(fieldIn(topDialog(), en.company.deleteOrgTypeId("acme")), "acme");
+}
 
 async function confirmDelete() {
-  await type(fieldIn(topDialog(), en.company.deleteOrgTypeId("acme")), "acme");
-  await click(buttonIn(topDialog(), en.common.delete));
+  await typeOrgId();
+  await click(confirmButton());
 }
 
 const orgDeletes = (server: ReturnType<typeof agentServer>) =>
@@ -146,15 +170,80 @@ describe("deleting an organization beside the Agents page", () => {
     );
   });
 
-  it("deletes the organization with its Agents, which leave the Agents page at once", async () => {
+  it("holds the delete until the Agent list has arrived, then turns the box on", async () => {
+    const server = await openSettings();
+    const read = server.holdNext(null, agentListRead);
+    await click(buttonIn(topDialog(), en.common.delete));
+    await typeOrgId();
+
+    expect(confirmButton().disabled).toBe(true);
+    expect(checkbox().checked).toBe(false);
+    expect(checkbox().disabled).toBe(true);
+    read.release();
+    await waitFor(() => checkbox().checked);
+    expect(confirmButton().disabled).toBe(false);
+  });
+
+  it("keeps the box off after a failed read, lets the organization alone go, and retries the read", async () => {
+    const server = await openSettings();
+    server.failNext(null, agentListRead);
+    await click(buttonIn(topDialog(), en.common.delete));
+    await waitFor(() => topDialog().textContent?.includes(en.common.retry) === true);
+    await typeOrgId();
+
+    expect(checkbox().checked).toBe(false);
+    expect(checkbox().disabled).toBe(true);
+    expect(confirmButton().disabled).toBe(false);
+    await click(buttonIn(topDialog(), en.common.retry));
+    await waitFor(() => checkbox().checked);
+    expect(topDialog().textContent).toContain("acme_dev");
+  });
+
+  it("deletes the organization with the Agents it listed, which leave the Agents page at once", async () => {
     const server = await openSettings();
     await openDeleteConfirmation(server);
     await confirmDelete();
 
     await waitFor(() => cardOf("acme_dev") === undefined);
-    expect(orgDeletes(server).map((r) => r.query.get("deleteAgents"))).toEqual(["1"]);
+    expect(
+      orgDeletes(server).map((r) => [r.query.get("deleteAgents"), r.query.get("agentIds")]),
+    ).toEqual([["1", "acme_ceo,acme_dev"]]);
     expect(cardOf("acme_ceo")).toBeUndefined();
     expect(deleteButtonOf("shared_writer").disabled).toBe(true);
+  });
+
+  it("keeps an employee hired after the list was read, and names it in the toast", async () => {
+    const server = await openSettings();
+    await openDeleteConfirmation(server);
+    // Meanwhile the CEO hires the Project's own Agent from its desk.
+    await fetch(`/api/projects/${PROJECT_ID}/organizations/acme/employees`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "helper", title: "Intern", reportsTo: "acme_ceo" }),
+    });
+    await confirmDelete();
+
+    await waitFor(() => toastStore.getState().items.length > 0);
+    const [toast] = toastStore.getState().items;
+    expect(toast?.kind).toBe("success");
+    expect(toast?.text).toContain("Helper");
+    expect(cardOf("acme_dev")).toBeUndefined();
+    expect(server.localAgents()).toContain("helper");
+    // Its card names it by its display name, and its delete is back on.
+    expect(deleteButtonOf("Helper").disabled).toBe(false);
+  });
+
+  it("does not close the confirmation on Esc while the delete runs", async () => {
+    const server = await openSettings();
+    await openDeleteConfirmation(server);
+    server.hold();
+    await confirmDelete();
+    await pressEscape();
+
+    expect(checkbox()).not.toBeNull();
+    expect(cardOf("acme_dev")).toBeDefined();
+    server.release();
+    await waitFor(() => cardOf("acme_dev") === undefined);
   });
 
   it("with the box off deletes only the organization, and its former employee turns deletable at once", async () => {
@@ -220,7 +309,39 @@ function HireBeside() {
   );
 }
 
-describe("hiring beside the Agents page", () => {
+/** The Agents page with the org chart beside it, as the organization's route mounts it. */
+function ChartBeside() {
+  return h(
+    ThemeProvider,
+    null,
+    h(
+      CompanyProvider,
+      null,
+      h(
+        OrgContext.Provider,
+        { value: { projectId: PROJECT_ID, orgId: "acme", org: null } },
+        h(AgentsPage),
+        h(OrgChartPage),
+      ),
+    ),
+  );
+}
+
+/** The Agents page with the create dialog open beside it. */
+function CreateBeside({ onCreated }: { onCreated: () => void }) {
+  return h(
+    ThemeProvider,
+    null,
+    h(
+      CompanyProvider,
+      null,
+      h(AgentsPage),
+      h(CreateOrganizationDialog, { open: true, onClose: () => {}, onCreated }),
+    ),
+  );
+}
+
+describe("hiring, leaving and creating beside the Agents page", () => {
   beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
@@ -248,5 +369,33 @@ describe("hiring beside the Agents page", () => {
       1,
     );
     expect(deleteButtonOf("writer").disabled).toBe(true);
+  });
+
+  it("turns a former employee's delete button on at once after it leaves", async () => {
+    agentServer(undefined, { organizations: [ACME] });
+    await mountAgentApp(h(ChartBeside), { route: "/list", at: "/list" });
+    await waitFor(() => cardOf("acme_dev") !== undefined);
+    expect(deleteButtonOf("acme_dev").disabled).toBe(true);
+    await waitFor(() => hasMenuOf("acme_dev"));
+    await click(button(`acme_dev · ${en.company.chart.nodeMenu}`));
+    await click(button(en.company.chart.leave));
+    await click(buttonIn(topDialog(), en.company.chart.leave));
+
+    await waitFor(() => !deleteButtonOf("acme_dev").disabled);
+    expect(deleteButtonOf("shared_writer").disabled).toBe(true);
+  });
+
+  it("lists the new CEO's Agent at once after a creation, as an employee", async () => {
+    agentServer();
+    const onCreated = vi.fn();
+    await mountAgentApp(h(CreateBeside, { onCreated }), { route: "/list", at: "/list" });
+    await waitFor(() => cardOf("Helper") !== undefined);
+    await type(field(en.company.orgId), "zeta");
+    await type(field(en.company.mission), "Ship the site");
+    await click(buttonIn(topDialog(), en.common.create));
+
+    await waitFor(() => onCreated.mock.calls.length === 1);
+    await waitFor(() => cardOf("zeta_ceo") !== undefined);
+    expect(deleteButtonOf("zeta_ceo").disabled).toBe(true);
   });
 });

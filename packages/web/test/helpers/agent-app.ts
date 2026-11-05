@@ -33,10 +33,11 @@
  *
  * This server can hold organizations too ({@link FakeOrganization}): their employees are Agents
  * of the Project, listed with their employments the way the Agent list marks them. An
- * organization's settings read; a hire adds an employee (a new Agent with it, when it names
- * one); and a delete takes the organization away and, with `deleteAgents=1`, every employee's
+ * organization's settings and chart read; a creation adds one with its CEO's Agent; a hire adds
+ * an employee (a new Agent with it, when it names one) and a leave removes one; and a delete
+ * takes the organization away and, with `deleteAgents=1&agentIds=…`, every listed employee's
  * Agent that is not built in and that no other organization employs, answering the report the
- * real route answers.
+ * real route answers (the flag without the list is a 400).
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -56,6 +57,7 @@ import type {
   AgentSummary,
   Employment,
   OrgHireRequest,
+  OrganizationCreateRequest,
   OrganizationDeleteResponse,
   OrganizationSettings,
   ChatDefaultsDto,
@@ -601,14 +603,33 @@ export function agentServer(
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
     }
-    const orgPath = /^\/api\/projects\/[^/]+\/organizations\/([^/]+)(\/employees)?$/.exec(path);
+    if (
+      path === `/api/projects/${PROJECT_ID}/organizations` &&
+      method === "POST" &&
+      request.machine === null
+    ) {
+      // A creation makes the CEO's Agent, an employee from the start.
+      const { orgId, name } = request.body as OrganizationCreateRequest;
+      const ceo = `${orgId}_ceo`;
+      organizations = [
+        ...organizations,
+        { orgId, name: name ?? orgId, employees: [{ agentId: ceo, title: "CEO" }] },
+      ];
+      if (!localAgentIds.includes(ceo)) localAgentIds = [...localAgentIds, ceo];
+      return json({ projectId: PROJECT_ID, orgId, name: name ?? orgId }, 201);
+    }
+    const orgPath =
+      /^\/api\/projects\/[^/]+\/organizations\/([^/]+)(?:\/(chart|employees)(?:\/([^/]+))?)?$/.exec(
+        path,
+      );
     const org =
       orgPath === null || request.machine !== null
         ? undefined
         : organizations.find((o) => o.orgId === decodeURIComponent(orgPath[1]!));
     if (orgPath !== null && request.machine === null) {
       if (org === undefined) return apiError(404, "org_not_found");
-      if (orgPath[2] === undefined && method === "GET") {
+      const [, , part, employeeId] = orgPath;
+      if (part === undefined && method === "GET") {
         const settings: OrganizationSettings = {
           name: org.name,
           mission: "Run the company",
@@ -622,7 +643,10 @@ export function agentServer(
         };
         return json({ settings });
       }
-      if (orgPath[2] === undefined && method === "DELETE") {
+      if (part === undefined && method === "DELETE") {
+        const deleteAgents = request.query.get("deleteAgents") === "1";
+        const listed = request.query.get("agentIds");
+        if (deleteAgents && listed === null) return apiError(400, "bad_request");
         organizations = organizations.filter((o) => o !== org);
         const report: OrganizationDeleteResponse = {
           orgId: org.orgId,
@@ -630,12 +654,15 @@ export function agentServer(
           keptAgents: [],
           failedAgents: [],
         };
-        if (request.query.get("deleteAgents") === "1") {
+        if (deleteAgents) {
+          const confirmed = new Set(listed === "" ? [] : (listed ?? "").split(","));
           for (const { agentId, busy } of org.employees) {
             if (BUILTIN_AGENTS.has(agentId)) {
               report.keptAgents.push({ agentId, reason: "builtin" });
             } else if (employmentsOf(agentId).length > 0) {
               report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
+            } else if (!confirmed.has(agentId)) {
+              report.keptAgents.push({ agentId, reason: "not_confirmed" });
             } else if (busy === true) {
               report.failedAgents.push({
                 agentId,
@@ -652,23 +679,33 @@ export function agentServer(
         }
         return json(report);
       }
-      if (orgPath[2] !== undefined && method === "POST") {
+      const employeeItem = (e: { agentId: string; title: string }, i: number) => ({
+        agentId: e.agentId,
+        name: e.agentId,
+        title: e.title,
+        reportsTo: i === 0 ? null : org.employees[0]!.agentId,
+        workspace: i === 0 ? "ceo" : e.agentId,
+        state: "idle",
+        spend: { own: 0, cumulative: 0 },
+      });
+      if (part === "chart" && method === "GET") {
+        return json({
+          ceoAgentId: org.employees[0]!.agentId,
+          employees: org.employees.map(employeeItem),
+        });
+      }
+      if (part === "employees" && employeeId === undefined && method === "POST") {
         const body = request.body as OrgHireRequest;
         const agentId = body.newAgent?.agentId ?? body.agentId ?? "";
         if (!localAgentIds.includes(agentId)) localAgentIds = [...localAgentIds, agentId];
         org.employees.push({ agentId, title: body.title });
-        return json(
-          {
-            agentId,
-            name: agentId,
-            title: body.title,
-            reportsTo: body.reportsTo,
-            workspace: agentId,
-            state: "idle",
-            spend: { own: 0, cumulative: 0 },
-          },
-          201,
-        );
+        return json(employeeItem({ agentId, title: body.title }, org.employees.length - 1), 201);
+      }
+      if (part === "employees" && employeeId !== undefined && method === "DELETE") {
+        // A leave: the Agent stays, no longer this organization's employee.
+        const agentId = decodeURIComponent(employeeId);
+        org.employees = org.employees.filter((e) => e.agentId !== agentId);
+        return new Response(null, { status: 204 });
       }
     }
     const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);

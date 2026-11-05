@@ -2,7 +2,7 @@
  * Company-mode routes, nested under a Project:
  *   GET|POST      /api/projects/:p/organizations
  *   GET|PATCH     /api/projects/:p/organizations/:orgId
- *   DELETE        …/:orgId[?deleteAgents=1]                 # owner only; to the Project's trash
+ *   DELETE        …/:orgId[?deleteAgents=1&agentIds=a,b]    # owner only; to the Project's trash
  *   GET           …/:orgId/chart
  *   POST          …/:orgId/employees                        # hire
  *   PATCH|DELETE  …/:orgId/employees/:agentId
@@ -293,19 +293,29 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
   // ---- employees ----
 
   // Deleting is a Project-level management operation, like deleting an Agent: owner only.
-  // The organization goes to the Project's trash; with `?deleteAgents=1` its employees' Agents
-  // are then deleted for good, each as `DELETE …/agents/:agentId` deletes one, except those
-  // built in or still employed by another organization. The answer reports each one.
+  // The organization goes to the Project's trash; with `?deleteAgents=1` the employees' Agents
+  // named in `agentIds` — the ones the caller's confirmation listed — are then deleted for good,
+  // each as `DELETE …/agents/:agentId` deletes one, unless they no longer qualify. The flag
+  // without the list is refused before anything is touched: deleting Agents nobody listed is
+  // not a default. The answer reports each employee.
   app.delete("/:orgId", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const orgId = requireValidId(c, "orgId");
-    const deleteAgents = c.req.query("deleteAgents") === "1";
+    let agentIds: string[] | undefined;
+    if (c.req.query("deleteAgents") === "1") {
+      const listed = c.req.query("agentIds");
+      if (listed === undefined) {
+        throw badRequest("deleteAgents=1 needs agentIds: the Agents the confirmation listed.");
+      }
+      agentIds = listed === "" ? [] : listed.split(",");
+      if (agentIds.some((id) => !isValidId(id))) throw badRequest("Invalid agentIds.");
+    }
     const report: OrganizationDeleteResponse = await deleteOrganizationWithAgents(
       { ...deps.agentDeletion, orgService: deps.orgService },
       projectId,
       orgId,
-      { deleteAgents },
+      agentIds === undefined ? {} : { agentIds },
     );
     return c.json(report);
   });

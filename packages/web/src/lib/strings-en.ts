@@ -5624,7 +5624,10 @@ Scenarios:
     deleteOrgKeptElsewhere: (name: string, orgNames: string) =>
       `${name} (also employed by ${orgNames})`,
     deleteOrgAgentsLoadFailed:
-      "The organization's agents could not be read; the server decides which go with it when you delete.",
+      "The organization's agents could not be read. Retry, or delete the organization alone and keep all of its agents.",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) =>
+      `; kept ${names}, as they changed after the confirmation was shown`,
     deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
     deleted: (orgId: string) => `Organization ${orgId} deleted`,
     deletedWithAgents: (orgId: string, count: number) =>

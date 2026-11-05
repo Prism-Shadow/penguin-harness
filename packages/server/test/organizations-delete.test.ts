@@ -1,15 +1,22 @@
 /**
  * Deleting an organization, with and without its Agents, over the real app on a real temp root
- * (DELETE /api/projects/:p/organizations/:orgId[?deleteAgents=1]).
+ * (DELETE /api/projects/:p/organizations/:orgId[?deleteAgents=1&agentIds=a,b]).
  *
  * - Given an organization employing its CEO, a developer, an Agent another organization also
  *   employs and the built-in `default_agent`, with a chart entry whose Agent is gone, when its
- *   owner deletes it with `deleteAgents=1`: the CEO and the developer are deleted for good (off
- *   the Agent list, their Sessions with them), the shared Agent and `default_agent` are kept
- *   with their reasons, the gone entry is in no list, and the organization is in the Project's
- *   trash and off the organization list.
+ *   owner deletes it listing the CEO and the developer: those two are deleted for good (off the
+ *   Agent list, their Sessions with them), the shared Agent and `default_agent` are kept with
+ *   their reasons, the gone entry is in no list, and the organization is in the Project's trash
+ *   and off the organization list.
+ * - Given the list read before a hire and a second employment: an employee the caller did not
+ *   list is kept as `not_confirmed`, and a listed one another organization has employed since is
+ *   kept as `employed_elsewhere`; only the rest are deleted.
+ * - Given another organization whose chart does not parse, no employee is deleted: each is kept
+ *   as `employment_unknown`.
  * - Given one employee whose folder cannot be moved, it is reported as failed with
  *   `agent_folder_busy` and still listed, while the others are deleted.
+ * - Given `deleteAgents=1` without `agentIds`, the delete is refused with 400 and nothing goes,
+ *   the organization included.
  * - Given the organization deleted without the flag, every employee stays an Agent, the report
  *   lists nothing, and a later delete of an employee's Agent goes through at once (no 409).
  * - Given an organization that does not exist, the delete answers 404 and deletes no Agent.
@@ -24,6 +31,7 @@ import type {
   OrganizationsResponse,
 } from "../src/api/types.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
+import { orgChartPath } from "../src/organization/paths.js";
 import { OrgStore, TRASH_DIR } from "../src/organization/store.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -81,7 +89,7 @@ describe("deleting an organization", () => {
     });
   }
 
-  async function listed(): Promise<string[]> {
+  async function listedAgents(): Promise<string[]> {
     const res = await api.get(agentsPath);
     expect(res.status).toBe(200);
     return ((await res.json()) as AgentsResponse).agents.map((a) => a.agentId);
@@ -93,14 +101,19 @@ describe("deleting an organization", () => {
     return ((await res.json()) as OrganizationsResponse).organizations.map((o) => o.orgId);
   }
 
+  /** The delete as the confirmation sends it: `agentIds` are the Agents it listed (null: none asked for). */
   async function deleteOrg(
     orgId: string,
-    query = "?deleteAgents=1",
+    agentIds: string[] | null,
   ): Promise<OrganizationDeleteResponse> {
+    const query = agentIds === null ? "" : `?deleteAgents=1&agentIds=${agentIds.join(",")}`;
     const res = await api.delete(`${orgsPath}/${orgId}${query}`);
     expect(res.status).toBe(200);
     return (await res.json()) as OrganizationDeleteResponse;
   }
+
+  const sortedKept = (report: OrganizationDeleteResponse) =>
+    [...report.keptAgents].sort((a, b) => (a.agentId < b.agentId ? -1 : 1));
 
   function insertSession(sessionId: string, agentId: string): void {
     t.deps.sessionsRepo.insert({
@@ -125,19 +138,16 @@ describe("deleting an organization", () => {
     const desk = "session-2026-11-04-09-00-00-0abc0001";
     insertSession(desk, "acme_dev");
 
-    const report = await deleteOrg("acme");
+    const report = await deleteOrg("acme", ["acme_ceo", "acme_dev"]);
 
     expect(report.orgId).toBe("acme");
     expect(report.deletedAgents.map((d) => d.agentId).sort()).toEqual(["acme_ceo", "acme_dev"]);
-    expect(report.keptAgents).toEqual(
-      expect.arrayContaining([
-        { agentId: "shared_writer", reason: "employed_elsewhere" },
-        { agentId: "default_agent", reason: "builtin" },
-      ]),
-    );
-    expect(report.keptAgents).toHaveLength(2);
+    expect(sortedKept(report)).toEqual([
+      { agentId: "default_agent", reason: "builtin" },
+      { agentId: "shared_writer", reason: "employed_elsewhere" },
+    ]);
     expect(report.failedAgents).toEqual([]);
-    const agents = await listed();
+    const agents = await listedAgents();
     expect(agents).not.toContain("acme_ceo");
     expect(agents).not.toContain("acme_dev");
     expect(agents).toEqual(expect.arrayContaining(["shared_writer", "default_agent"]));
@@ -145,6 +155,57 @@ describe("deleting an organization", () => {
     expect(await organizations()).toEqual(["north"]);
     const trash = await fs.readdir(path.join(path.dirname(store.dir(PROJECT, "acme")), TRASH_DIR));
     expect(trash.some((name) => name.startsWith("acme-"))).toBe(true);
+  });
+
+  it("deletes only the listed employees that still qualify, keeping a later hire and a new employment", async () => {
+    await createAgents("delta_ceo", "delta_dev", "delta_new", "delta_ops");
+    // The confirmation read the list when delta employed its CEO, the developer and ops, and
+    // showed those three as going.
+    const confirmed = ["delta_ceo", "delta_dev", "delta_ops"];
+    // Before the click, delta hired one more, and another organization took ops on.
+    await writeOrg("delta", ["delta_dev", "delta_ops", "delta_new"]);
+    await writeOrg("south", ["delta_ops"]);
+
+    const report = await deleteOrg("delta", confirmed);
+
+    expect(report.deletedAgents.map((d) => d.agentId).sort()).toEqual(["delta_ceo", "delta_dev"]);
+    expect(sortedKept(report)).toEqual([
+      { agentId: "delta_new", reason: "not_confirmed" },
+      { agentId: "delta_ops", reason: "employed_elsewhere" },
+    ]);
+    expect(await listedAgents()).toEqual(expect.arrayContaining(["delta_new", "delta_ops"]));
+  });
+
+  it("deletes no employee while another organization's chart cannot be read", async () => {
+    await createAgents("omega_ceo", "omega_dev");
+    await writeOrg("omega", ["omega_dev"]);
+    await writeOrg("broken", []);
+    const brokenChart = orgChartPath(store.dir(PROJECT, "broken"));
+    await fs.writeFile(brokenChart, "employees: [\n");
+    try {
+      const report = await deleteOrg("omega", ["omega_ceo", "omega_dev"]);
+
+      expect(report.deletedAgents).toEqual([]);
+      expect(sortedKept(report)).toEqual([
+        { agentId: "omega_ceo", reason: "employment_unknown" },
+        { agentId: "omega_dev", reason: "employment_unknown" },
+      ]);
+      expect(await listedAgents()).toEqual(expect.arrayContaining(["omega_ceo", "omega_dev"]));
+    } finally {
+      // The other scenarios share this Project: an unreadable chart would keep all of theirs.
+      await fs.rm(store.dir(PROJECT, "broken"), { recursive: true, force: true });
+    }
+  });
+
+  it("refuses deleteAgents without the list it confirmed, before anything goes", async () => {
+    await createAgents("kappa_ceo");
+    await writeOrg("kappa", []);
+
+    const res = await api.delete(`${orgsPath}/kappa?deleteAgents=1`);
+
+    expect(res.status).toBe(400);
+    expect(await organizations()).toContain("kappa");
+    expect(await listedAgents()).toContain("kappa_ceo");
   });
 
   it.skipIf(!permissionsHold)(
@@ -161,7 +222,7 @@ describe("deleting an organization", () => {
       let report: OrganizationDeleteResponse;
       try {
         let settled = false;
-        const pending = deleteOrg("gamma").finally(() => {
+        const pending = deleteOrg("gamma", ["gamma_ceo", "gamma_ops"]).finally(() => {
           settled = true;
         });
         while (!settled) {
@@ -178,7 +239,7 @@ describe("deleting an organization", () => {
       expect(report.failedAgents).toEqual([
         expect.objectContaining({ agentId: "gamma_ops", code: "agent_folder_busy" }),
       ]);
-      const agents = await listed();
+      const agents = await listedAgents();
       expect(agents).toContain("gamma_ops");
       expect(agents).not.toContain("gamma_ceo");
       expect(await organizations()).not.toContain("gamma");
@@ -191,19 +252,19 @@ describe("deleting an organization", () => {
     // While employed, the Agent route refuses.
     expect((await api.delete(`${agentsPath}/beta_dev`)).status).toBe(409);
 
-    const report = await deleteOrg("beta", "");
+    const report = await deleteOrg("beta", null);
 
     expect(report).toEqual({ orgId: "beta", deletedAgents: [], keptAgents: [], failedAgents: [] });
-    expect(await listed()).toEqual(expect.arrayContaining(["beta_ceo", "beta_dev"]));
+    expect(await listedAgents()).toEqual(expect.arrayContaining(["beta_ceo", "beta_dev"]));
     expect(await organizations()).not.toContain("beta");
     expect((await api.delete(`${agentsPath}/beta_dev`)).status).toBe(202);
-    expect(await listed()).not.toContain("beta_dev");
+    expect(await listedAgents()).not.toContain("beta_dev");
   });
 
   it("answers 404 for an organization that does not exist, and deletes no Agent", async () => {
-    const before = await listed();
-    const res = await api.delete(`${orgsPath}/nowhere?deleteAgents=1`);
+    const before = await listedAgents();
+    const res = await api.delete(`${orgsPath}/nowhere?deleteAgents=1&agentIds=default_agent`);
     expect(res.status).toBe(404);
-    expect(await listed()).toEqual(before);
+    expect(await listedAgents()).toEqual(before);
   });
 });
