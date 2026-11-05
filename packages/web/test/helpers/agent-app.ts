@@ -636,8 +636,10 @@ export function agentServer(
             },
             traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
             totalBytes: 4096,
+            entries: 5,
             vaultKeys: [],
             redacted: [],
+            notes: [],
           },
         );
       }

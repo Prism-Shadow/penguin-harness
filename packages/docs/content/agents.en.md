@@ -112,7 +112,7 @@ Select the export button on the agent's card, or **Export…** in the **Agent St
 2. Under **Conversations**, select **None**, **Latest N** (20 unless you change it, up to 500), or **Date range** and pick the first and last day.
 3. Select **Export**. The zip is saved as `<agent-id>-<yyyymmdd>.zip`.
 
-The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, and names the conversations left out because one of their files is too large.
+The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, says how many conversations are left out because one of their files is too large, and names a part left out because its folder is a link. A selection past what an import accepts at all (too many files, too large uncompressed, or one file too large) cannot be exported: the line says why, and **Export** stays off until you choose less.
 
 A zip never carries the vault's values, only its key names. MCP server environment variables and headers that look like credentials are left blank, unless they are written as `${KEY}` vault references. The choices are not remembered: the dialog opens with the defaults every time.
 

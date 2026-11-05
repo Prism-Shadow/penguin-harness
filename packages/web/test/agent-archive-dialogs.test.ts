@@ -8,10 +8,14 @@
  *   downloads the zip of those same choices under the server's name.
  * - The line notes a selection larger than an import takes, and how many conversations a file too
  *   large leaves out; a selection within the limit carries neither note.
+ * - A selection the server would refuse to export says why, and Export stays off; a part the
+ *   export leaves out as a link is named by its tab.
  * - A date range exports the conversations of its dates; one that ends before it starts says so
  *   and exports nothing.
  * - Importing a file sends it under the id its name suggests; a new id creates the Agent, says
  *   what came in and what is left to fill in, and the Agent list is read again with it there.
+ * - The import's notes are said in the dialog's words by their code; a code this client does not
+ *   know keeps the server's own sentence.
  * - A taken id shows in place with "Use another id" and, for the Project owner, "Overwrite the
  *   existing agent", which asks once and sends the same file again with overwrite.
  * - A member meets a taken id with "Use another id" alone, which puts the cursor in the id field.
@@ -102,14 +106,17 @@ function previewFor(query: URLSearchParams): AgentArchivePreview {
     query.get(key) === "1" ? { files: 1, bytes: 1000 } : { files: 0, bytes: 0 };
   const last = /^last:(\d+)$/.exec(query.get("traces") ?? "");
   const sessions = last ? Number(last[1]) : 0;
+  const parts = {
+    skills: part("skills"),
+    hooks: part("hooks"),
+    memory: part("memory"),
+    workbenches: part("workbenches"),
+    schedules: part("schedules"),
+  };
   return {
-    parts: {
-      skills: part("skills"),
-      hooks: part("hooks"),
-      memory: part("memory"),
-      workbenches: part("workbenches"),
-      schedules: part("schedules"),
-    },
+    parts,
+    entries: Object.values(parts).reduce((sum, p) => sum + p.files, 0) + sessions,
+    notes: [],
     traces: {
       sessions,
       files: sessions,
@@ -288,6 +295,41 @@ describe("exporting and importing an Agent", () => {
     await openExport(server);
     await waitFor(() => topDialog().textContent!.includes(en.agent.exportOverLimit(LIMIT)));
     expect(topDialog().textContent).toContain(en.agent.exportSkipped(2));
+  });
+
+  it("says why a selection the server would refuse cannot be exported, and names a part left out as a link", async () => {
+    const server = agentServer(undefined, {
+      archivePreview: (query) => ({
+        ...previewFor(query),
+        refusal: { reason: "inflated", limit: 1024 * 1024 * 1024 },
+        notes: [{ code: "link_skipped", subject: "memory", message: "memory/ is a link" }],
+      }),
+    });
+    await openExport(server);
+    const refusal = en.agent.exportRefused.inflated(formatBytes(1024 * 1024 * 1024));
+    await waitFor(() => topDialog().textContent!.includes(refusal));
+    expect(topDialog().textContent).toContain(
+      en.agent.archiveNotes.linkSkipped(en.agent.tabMemory),
+    );
+    expect(buttonIn(topDialog(), en.agent.exportAction).disabled).toBe(true);
+  });
+
+  it("says the import's notes in its own words by code, and a code it does not know in the server's", async () => {
+    agentServer(undefined, {
+      importReport: {
+        notes: [
+          { code: "unknown_tool", subject: "web_search", message: "the server's own sentence" },
+          { code: "from_a_newer_server" as never, message: "a newer server's sentence" },
+        ],
+      },
+    });
+    await openImport();
+    await pickArchive("notes-20261104.zip");
+    await click(buttonIn(topDialog(), en.agent.importAction));
+    await waitFor(() => toasts("success").length === 1);
+    expect(toasts("success")[0]).toContain(en.agent.archiveNotes.unknownTool("web_search"));
+    expect(toasts("success")[0]).not.toContain("the server's own sentence");
+    expect(toasts("success")[0]).toContain("a newer server's sentence");
   });
 
   it("creates an Agent from a file under the id its name suggests, says what came in, and lists it", async () => {

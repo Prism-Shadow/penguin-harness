@@ -1935,6 +1935,23 @@ export const en: Strings = {
       `Over ${limit} uncompressed: the zip may be too large to import again`,
     exportSkipped: (n: number): string =>
       `${n === 1 ? "1 conversation has a file" : `${n} conversations have files`} larger than an import takes, and ${n === 1 ? "is" : "are"} left out`,
+    /** The preview's refusal: the selection is past what an import accepts, so the export is refused too. */
+    exportRefused: {
+      entries: (limit: number): string =>
+        `More than ${limit.toLocaleString("en-US")} entries, more than an import takes: this cannot be exported`,
+      inflated: (limit: string): string =>
+        `Over ${limit} uncompressed, more than an import takes: this cannot be exported`,
+      entry: (file: string, limit: string): string =>
+        `${file} is over ${limit}, more than an import takes: this cannot be exported`,
+    },
+    /** The server's archive notes by code (archive-notes.ts); an unknown code shows its own sentence. */
+    archiveNotes: {
+      unknownTool: (tool: string): string =>
+        `This install has no built-in tool ${tool}; it was not enabled`,
+      noKnownTools:
+        "None of the definition's built-in tools exist here; the default toolset was kept",
+      linkSkipped: (part: string): string => `The ${part} directory is a link and is left out`,
+    },
     exportAction: "Export",
     exporting: "Exporting…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's "Replace from file…". */

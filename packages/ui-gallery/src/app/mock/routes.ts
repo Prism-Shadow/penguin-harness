@@ -2473,8 +2473,11 @@ function archivePreviewOf(agent: AgentSummary, query: URLSearchParams): AgentArc
       oldest: null,
     },
     totalBytes: Object.values(parts).reduce((sum, p) => sum + p.bytes, 0) + traceBytes + 12_288,
+    // The parts' files, one per Session, and the config, the manifest and the sessions table.
+    entries: Object.values(parts).reduce((sum, p) => sum + p.files, 0) + sessions + 4,
     vaultKeys: [],
     redacted: [],
+    notes: [],
   };
 }
 

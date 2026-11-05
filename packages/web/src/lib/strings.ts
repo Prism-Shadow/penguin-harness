@@ -2055,6 +2055,19 @@ export const zh = {
       `${files} 个文件，约 ${size}${sessions === null ? "" : `，${sessions} 个对话`}`,
     exportOverLimit: (limit: string): string => `未压缩已超过 ${limit}，导出的 zip 可能无法再导入`,
     exportSkipped: (n: number): string => `${n} 个对话含有超过导入上限的文件，不会导出`,
+    /** The preview's refusal: the selection is past what an import accepts, so the export is refused too. */
+    exportRefused: {
+      entries: (limit: number): string =>
+        `条目超过 ${limit.toLocaleString("zh-CN")} 个，导入不接受，无法导出`,
+      inflated: (limit: string): string => `未压缩超过 ${limit}，导入不接受，无法导出`,
+      entry: (file: string, limit: string): string => `${file} 超过 ${limit}，导入不接受，无法导出`,
+    },
+    /** The server's archive notes by code (archive-notes.ts); an unknown code shows its own sentence. */
+    archiveNotes: {
+      unknownTool: (tool: string): string => `这台服务端没有内置工具 ${tool}，未启用`,
+      noKnownTools: "定义里的内置工具这台服务端都没有，保留了默认工具集",
+      linkSkipped: (part: string): string => `${part}的目录是一个链接，不会导出`,
+    },
     exportAction: "导出",
     exporting: "导出中…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's 「从文件替换…」. */

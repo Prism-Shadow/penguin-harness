@@ -6,8 +6,10 @@
  * on its new server — and which conversations, as none, the latest N, or those of a date range.
  *
  * Under the choices, one line says what that comes to, from the server's preview: files, size
- * and conversations, with a note when the selection is larger than an import takes and how many
- * conversations are left out for a file too large. It is asked again 300 ms after the last change,
+ * and conversations, with a note when the selection is larger than an import takes, how many
+ * conversations are left out for a file too large, and the server's notes (a part whose directory
+ * is a link). A selection past what an import accepts at all — its entry, size or per-file caps —
+ * is one the server refuses to export: the preview says why, and Export waits for another choice. It is asked again 300 ms after the last change,
  * and the previous answer stays (dimmed) until the new one arrives, so the line changes only
  * when its numbers do. Export saves `<agentId>-<yyyymmdd>.zip` through the fetch-then-save
  * helper (archive-download.ts), so a refused export is a toast rather than a saved error page.
@@ -30,6 +32,7 @@ import { formatBytes, localYmd } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
+import { archiveNoteText } from "./archive-notes";
 import { DEFAULT_SWITCHES, DEFAULT_TRACE_COUNT, archivePartsQuery } from "./archive-parts";
 import type { ArchiveSwitch } from "./archive-parts";
 
@@ -145,6 +148,12 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
     }
   };
 
+  /** The current choice is one the server would refuse to export (the preview says why). */
+  const refused =
+    preview !== null &&
+    "answer" in preview &&
+    preview.query === queryText &&
+    preview.answer.refusal !== undefined;
   const countValid = mode !== "last" || selection !== null;
   const rangeReversed =
     mode === "range" && isLocalDate(range.from) && isLocalDate(range.to) && range.from > range.to;
@@ -163,7 +172,7 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
           <Button
             size="sm"
             variant="primary"
-            disabled={query === null || downloading}
+            disabled={query === null || refused || downloading}
             aria-busy={downloading}
             onClick={() => void runExport()}
           >
@@ -287,9 +296,22 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
   );
 }
 
+/** Why the server would refuse this export, in the reader's words. */
+function refusalText(refusal: NonNullable<AgentArchivePreview["refusal"]>): string {
+  switch (refusal.reason) {
+    case "entries":
+      return S.agent.exportRefused.entries(refusal.limit);
+    case "inflated":
+      return S.agent.exportRefused.inflated(formatBytes(refusal.limit));
+    case "entry":
+      return S.agent.exportRefused.entry(refusal.subject ?? "", formatBytes(refusal.limit));
+  }
+}
+
 /**
- * The preview's line: what the zip would hold, the note past the import limit, and how many
- * conversations are left out (the preview names them by id only, which tells a reader nothing).
+ * The preview's line: what the zip would hold, the note past the import limit, how many
+ * conversations are left out (the preview names them by id only, which tells a reader nothing),
+ * the server's notes, and its refusal when there is one.
  * An answer for an earlier choice stays, dimmed, until the current one arrives.
  */
 function PreviewLine({
@@ -310,14 +332,12 @@ function PreviewLine({
     return <p className={`text-xs ${toneInk.danger} ${stale}`}>{preview.error}</p>;
   }
   const { answer } = preview;
-  const files =
-    Object.values(answer.parts).reduce((sum, part) => sum + part.files, 0) + answer.traces.files;
   const skipped = answer.traces.skipped;
   return (
     <div aria-live="polite" className={`space-y-1 text-xs ${stale}`}>
       <p className="text-fg-muted">
         {S.agent.exportSummary(
-          files,
+          answer.entries,
           formatBytes(answer.totalBytes),
           withTraces ? answer.traces.sessions : null,
         )}
@@ -329,6 +349,16 @@ function PreviewLine({
       )}
       {skipped.length > 0 && (
         <p className={toneInk.attention}>{S.agent.exportSkipped(skipped.length)}</p>
+      )}
+      {answer.notes.map((note, i) => (
+        <p key={i} className={toneInk.attention}>
+          {archiveNoteText(note)}
+        </p>
+      ))}
+      {answer.refusal !== undefined && (
+        <p role="alert" className={toneInk.danger}>
+          {refusalText(answer.refusal)}
+        </p>
       )}
     </div>
   );
