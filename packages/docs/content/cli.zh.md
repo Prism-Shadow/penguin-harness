@@ -271,7 +271,7 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 ### penguin agent export
 
-把 Agent 写成 zip，与 Agents 页面卡片上的**导出 Agent** 图标、或 Agent 设置中的**导出…**得到的文件相同。zip 总会带上 Agent 的配置：`system_config.yaml`（形似凭据的 MCP 值会被清空，并在 manifest 中列出名称）、`AGENTS.md` 和 `tools/`。其余部分由选项选择，缺省值与导出对话框一致。vault 的值从不随文件迁移，manifest 只列出 vault 的键名。zip 以流式写入磁盘，命令最后打印写入位置和大小。
+把 Agent 写成 zip，与 Agents 页面卡片上的**导出 Agent** 图标、或 Agent 设置中的**导出…**得到的文件相同。zip 总会带上 Agent 的配置：`system_config.yaml`（形似凭据的 MCP 值会被清空，并在 manifest 中列出名称）、`AGENTS.md` 和 `tools/`。其余部分由选项选择，缺省值与导出对话框一致。vault 的值从不随文件迁移，manifest 只列出 vault 的键名。命令先向服务器询问 zip 将包含的内容，并在 stderr 上列出导出会略过的内容：目录是链接的部分，以及有文件超过导入上限的 Session。所选内容超出导入上限时，命令到此为止，不下载任何内容；否则 zip 以流式写入磁盘，命令最后打印写入位置和大小。
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -280,7 +280,7 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 | `--no-workbenches` / `--no-workbench-data` | 不含工作台；或带上工作台源码、不含其数据（`state.json`）。 | 包含，连同数据 |
 | `--schedules` | 包含定时任务。导入后，它们会在导入方按计划运行。 | 不含 |
 | `--traces <selection>` | 要带上的 Trace：`none`；`last:<N>`，即最近活跃的 N 个 Session（1–500）；或 `<from>..<to>`，即日期落在该范围内的 Session（`YYYY-MM-DD`，含首尾）。Session 整体迁移，连同其 subagent 子 Session。其他取值会在发出请求之前报错。 | `none` |
-| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印 `{agentId, projectId, file, bytes}`。 | — |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印 `{agentId, projectId, file, bytes, notes}`，`notes` 是服务器对导出略过内容的说明。 | — |
 
 ```bash
 penguin agent export helper --out ./exports

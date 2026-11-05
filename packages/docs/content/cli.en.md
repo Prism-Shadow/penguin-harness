@@ -271,7 +271,7 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 ### penguin agent export
 
-Writes an agent to a zip: the same file as the **Export agent** icon on its Agents page card, or **Export…** in its settings. The zip always carries the agent's config: `system_config.yaml`, with credential-looking MCP values blanked and named in the manifest, `AGENTS.md` and `tools/`. The options choose the rest, with the export dialog's defaults. Vault values never travel; the manifest lists the vault key names. The zip streams to disk, and the command prints where it went and its size.
+Writes an agent to a zip: the same file as the **Export agent** icon on its Agents page card, or **Export…** in its settings. The zip always carries the agent's config: `system_config.yaml`, with credential-looking MCP values blanked and named in the manifest, `AGENTS.md` and `tools/`. The options choose the rest, with the export dialog's defaults. Vault values never travel; the manifest lists the vault key names. The command first asks the server what the zip would hold. It prints on stderr what the export leaves out: a part whose folder is a link, and Sessions with a file larger than an import accepts. When the selection is more than an import accepts, it stops there and downloads nothing. Otherwise the zip streams to disk, and the command prints where it went and its size.
 
 | Option | Description | Default |
 | --- | --- | --- |
@@ -280,7 +280,7 @@ Writes an agent to a zip: the same file as the **Export agent** icon on its Agen
 | `--no-workbenches` / `--no-workbench-data` | Leave the workbenches out, or keep their source and leave their data (`state.json`) out. | Included, with their data |
 | `--schedules` | Include the schedules. They run on the install that imports the zip. | Left out |
 | `--traces <selection>` | The Traces to include: `none`; `last:<N>`, the N most recently active Sessions (1–500); or `<from>..<to>`, the Sessions dated in that range (`YYYY-MM-DD`, inclusive). A Session travels whole, with its subagent children. Any other value fails before a request is sent. | `none` |
-| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). `--json` prints `{agentId, projectId, file, bytes}`. | — |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). `--json` prints `{agentId, projectId, file, bytes, notes}`, `notes` being the server's notes on what the export leaves out. | — |
 
 ```bash
 penguin agent export helper --out ./exports

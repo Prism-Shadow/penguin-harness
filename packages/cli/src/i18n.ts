@@ -295,9 +295,19 @@ export interface Messages {
       reason: AgentArchiveImportResponse["skippedTraces"][number]["reason"],
     ): string;
     importToFillTitle(): string;
-    importNotesTitle(): string;
+    /** The heading of the server's notes, in an import report and on an export's stderr. */
+    archiveNotesTitle(): string;
     /** One of the server's notes, worded here for a code this CLI knows; the server's English sentence otherwise. */
-    importNote(note: AgentArchiveNote): string;
+    archiveNote(note: AgentArchiveNote): string;
+    /** An export's stderr: the Sessions the preview leaves out, a file of theirs past an import's cap. */
+    exportSkippedTitle(): string;
+    /** Why the server would refuse an export (its preview's `refusal`); nothing is downloaded. */
+    exportRefused: {
+      entries(limit: number): string;
+      inflated(limit: string): string;
+      entry(file: string | undefined, limit: string): string;
+      other(): string;
+    };
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1515,8 +1525,8 @@ const en: Messages = {
     importSkippedReason: (reason) =>
       reason === "exists" ? "already in this install" : "its files are missing or do not match",
     importToFillTitle: () => "To fill in (vault keys and blanked MCP values; no value travels):",
-    importNotesTitle: () => "Notes:",
-    importNote: (note) => {
+    archiveNotesTitle: () => "Notes:",
+    archiveNote: (note) => {
       if (note.code === "unknown_tool" && note.subject !== undefined) {
         return `The built-in tool "${note.subject}" is not in this install, so it was not enabled.`;
       }
@@ -1524,9 +1534,21 @@ const en: Messages = {
         return "None of the built-in tools named are in this install, so the default toolset was kept.";
       }
       if (note.code === "link_skipped" && note.subject !== undefined) {
-        return `agent_state/${note.subject} is a link, so it was left out.`;
+        return `agent_state/${note.subject} is a link, so it is left out.`;
       }
       return note.message;
+    },
+    exportSkippedTitle: () =>
+      "Sessions left out (a file of theirs is larger than an import accepts):",
+    exportRefused: {
+      entries: (limit) =>
+        `The selection holds more than ${limit.toLocaleString("en-US")} entries, more than an import accepts, so it is not exported: select fewer Traces.`,
+      inflated: (limit) =>
+        `The selection is over ${limit} uncompressed, more than an import accepts, so it is not exported: select fewer Traces or parts.`,
+      entry: (file, limit) =>
+        `${file ?? "One file"} is over ${limit}, more than an import accepts for one file, so the selection is not exported: leave its part out.`,
+      other: () =>
+        "The selection is more than an import accepts, so it is not exported: select fewer Traces or parts.",
     },
   },
   project: {
@@ -2711,8 +2733,8 @@ const zh: Messages = {
     importSkippedTitle: () => "未导入的 Session：",
     importSkippedReason: (reason) => (reason === "exists" ? "本安装中已有" : "文件缺失或不匹配"),
     importToFillTitle: () => "待填写（vault 密钥与被清空的 MCP 值；任何值都不会随文件迁移）：",
-    importNotesTitle: () => "说明：",
-    importNote: (note) => {
+    archiveNotesTitle: () => "说明：",
+    archiveNote: (note) => {
       if (note.code === "unknown_tool" && note.subject !== undefined) {
         return `本安装中没有内置工具「${note.subject}」，未启用它。`;
       }
@@ -2720,9 +2742,19 @@ const zh: Messages = {
         return "所列的内置工具在本安装中都不存在，保留了默认工具集。";
       }
       if (note.code === "link_skipped" && note.subject !== undefined) {
-        return `agent_state/${note.subject} 是链接，已略过。`;
+        return `agent_state/${note.subject} 是链接，不会导出。`;
       }
       return note.message;
+    },
+    exportSkippedTitle: () => "未带上的 Session（其中有文件超过导入上限）：",
+    exportRefused: {
+      entries: (limit) =>
+        `所选内容超过 ${limit.toLocaleString("zh-CN")} 个条目，导入不接受，因此不导出：请少选一些 Trace。`,
+      inflated: (limit) =>
+        `所选内容未压缩超过 ${limit}，导入不接受，因此不导出：请少选一些 Trace 或部分。`,
+      entry: (file, limit) =>
+        `${file === undefined ? "有一个文件" : `${file} `}超过 ${limit}，超出导入对单个文件的上限，因此不导出：请去掉它所在的部分。`,
+      other: () => "所选内容超出导入上限，因此不导出：请少选一些 Trace 或部分。",
     },
   },
   project: {

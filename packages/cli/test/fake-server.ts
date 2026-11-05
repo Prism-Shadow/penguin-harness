@@ -369,7 +369,9 @@ export class FakeServer {
   };
 
   /**
-   * An agent's archive. `exported` answers GET …/agents/:a/archive for its query as sent: the zip's
+   * An agent's archive. `previewed` answers GET …/agents/:a/archive/preview for its query: by
+   * default an export that leaves nothing out and that the server would make. `exported` answers
+   * GET …/agents/:a/archive for its query as sent: the zip's
    * body — bytes, or a stream a test can break off — and the attachment filename the response names
    * (none when absent). The default is a small zip of that agent named `<agentId>-20260902.zip`.
    * `imported` answers POST …/agents/import for the raw body as received and its query. The default
@@ -378,12 +380,31 @@ export class FakeServer {
    * created (listed from then on) or overwritten, with nothing imported.
    */
   agentArchive: {
+    previewed: (agentId: string, query: URLSearchParams) => Json;
     exported: (
       agentId: string,
       query: URLSearchParams,
     ) => { body: Uint8Array | ReadableStream<Uint8Array>; fileName?: string };
     imported: (bytes: Uint8Array, query: URLSearchParams) => { status?: number; body: unknown };
   } = {
+    previewed: () => {
+      const none = { files: 0, bytes: 0 };
+      return {
+        parts: {
+          skills: none,
+          hooks: none,
+          memory: none,
+          workbenches: none,
+          schedules: none,
+        },
+        traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
+        totalBytes: 0,
+        entries: 1,
+        vaultKeys: [],
+        redacted: [],
+        notes: [],
+      };
+    },
     exported: (agentId) => ({
       body: zipSync({
         [`${agentId}/manifest.json`]: strToU8(
@@ -1922,6 +1943,14 @@ export class FakeServer {
       return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
     }
 
+    const previewMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive\/preview$/.exec(
+      apiPath,
+    );
+    if (previewMatch && method === "GET") {
+      return this.json(
+        this.agentArchive.previewed(decodeURIComponent(previewMatch[1]!), url.searchParams),
+      );
+    }
     const archiveMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive$/.exec(apiPath);
     if (archiveMatch && method === "GET") {
       const answer = this.agentArchive.exported(

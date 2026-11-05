@@ -12,7 +12,10 @@
  * `export` chooses the parts the way the export dialog does, with its defaults: the config always;
  * Skills, hooks, memory and workbenches with their data unless left out; schedules only when asked,
  * since they run on the install that imports them; no Traces unless `--traces` selects some. Every
- * part goes in the query explicitly. A malformed `--traces` is refused before any request. The zip
+ * part goes in the query explicitly. A malformed `--traces` is refused before any request. The
+ * preview is asked first with the same parts: what the export leaves out (its notes, such as a
+ * part whose folder is a link, and the Sessions with a file larger than an import accepts) goes to
+ * stderr, and a selection the server would refuse stops there, before any download. The zip
  * streams to the path `--out` gives, under the name the server gives it.
  *
  * `import` uploads a zip or an old `.tar.gz` Agent State package as it is, or a folder laid out as
@@ -31,7 +34,10 @@ import {
   AGENT_ARCHIVE_MAX_LAST_SESSIONS,
   AGENT_ARCHIVE_MAX_UPLOAD_BYTES,
 } from "@prismshadow/penguin-server/api";
-import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
+import type {
+  AgentArchiveImportResponse,
+  AgentArchivePreview,
+} from "@prismshadow/penguin-server/api";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import type { UploadBody } from "../client.js";
 import type { Messages } from "../i18n.js";
@@ -182,6 +188,39 @@ export interface ArchiveLimits {
   maxUploadBytes: number;
 }
 
+/** What an export leaves out, from its preview, as stderr lines (empty when nothing is left out). */
+function exportWarnings(t: Messages, preview: AgentArchivePreview): string {
+  const lines: string[] = [];
+  const list = (title: string, items: string[]) => {
+    if (items.length > 0) lines.push(title, ...items.map((item) => `  - ${item}`));
+  };
+  list(
+    t.agent.archiveNotesTitle(),
+    preview.notes.map((note) => t.agent.archiveNote(note)),
+  );
+  list(
+    t.agent.exportSkippedTitle(),
+    preview.traces.skipped.map((s) => s.sessionId),
+  );
+  return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
+}
+
+/** Why the server would refuse this export, in the CLI's words. */
+function refusalMessage(t: Messages, refusal: NonNullable<AgentArchivePreview["refusal"]>): string {
+  const limit = formatSize(refusal.limit);
+  switch (refusal.reason) {
+    case "entries":
+      return t.agent.exportRefused.entries(refusal.limit);
+    case "inflated":
+      return t.agent.exportRefused.inflated(limit);
+    case "entry":
+      return t.agent.exportRefused.entry(refusal.subject, limit);
+    default:
+      // A reason from a newer server.
+      return t.agent.exportRefused.other();
+  }
+}
+
 /** The text report of an import: what was created or replaced, what came along, what did not. */
 function importReport(t: Messages, projectId: string, res: AgentArchiveImportResponse): string {
   const lines = [
@@ -203,8 +242,8 @@ function importReport(t: Messages, projectId: string, res: AgentArchiveImportRes
   );
   list(t.agent.importToFillTitle(), res.toFill);
   list(
-    t.agent.importNotesTitle(),
-    res.notes.map((note) => t.agent.importNote(note)),
+    t.agent.archiveNotesTitle(),
+    res.notes.map((note) => t.agent.archiveNote(note)),
   );
   return `${lines.join("\n")}\n`;
 }
@@ -237,12 +276,21 @@ export function registerArchiveCommands(
       const agentId = agentIdArg.trim();
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
-      const { file, bytes } = await client.download(
-        `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/archive?${partsQuery(opts, traces)}`,
-        (name) => resolveOutPath(opts.out, name, `${agentId}.zip`),
+      const archive = `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/archive`;
+      const query = partsQuery(opts, traces);
+      const preview = await client.request<AgentArchivePreview>(
+        "GET",
+        `${archive}/preview?${query}`,
+      );
+      const warnings = exportWarnings(t, preview);
+      if (warnings !== "") process.stderr.write(warnings);
+      if (preview.refusal !== undefined) throw new Error(refusalMessage(t, preview.refusal));
+      const { file, bytes } = await client.download(`${archive}?${query}`, (name) =>
+        resolveOutPath(opts.out, name, `${agentId}.zip`),
       );
       if (opts.json === true) {
-        process.stdout.write(`${JSON.stringify({ agentId, projectId, file, bytes })}\n`);
+        const notes = preview.notes;
+        process.stdout.write(`${JSON.stringify({ agentId, projectId, file, bytes, notes })}\n`);
         return;
       }
       process.stdout.write(`${t.agent.exported(agentId, file, formatSize(bytes))}\n`);
