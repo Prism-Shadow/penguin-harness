@@ -15,6 +15,18 @@
  *   titles, dates, archived mark and approval mode, in their date directories, and list.
  * - Given a Session id the receiving install already has, that Session is skipped as `exists`,
  *   one whose files are missing as `invalid`, and the rest land.
+ * - Given a subagent child that ran under another Agent, the export does not carry it.
+ * - Given a pinned thinking level and a kept mark, the imported Session has both.
+ * - Given the Agent's vault values printed in a Trace, the export carries them replaced and counts
+ *   them in the manifest; a value too short to replace safely stays.
+ * - Given a `sessions.json` row with an unknown thinking level, a time that is no time, or an
+ *   unknown client, that Session is skipped as `invalid` with the reason; given a first file whose
+ *   first line runs past the head window, the Session is `invalid` too.
+ * - Given a manifest whose parts select no Traces, Trace entries the zip holds are not imported.
+ * - Given two Sessions whose ids differ only in letter case, the import is refused; on a disk that
+ *   folds letter case, one whose case variant already lies there is skipped as `exists` and the
+ *   file there is left as it was; on any disk, whatever already lies at a Session's place is
+ *   left as it is and the Session is skipped as `exists`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -40,6 +52,8 @@ const S2 = "session-2026-10-05-09-00-00-0000aaa2";
 const S3 = "session-2026-10-10-09-00-00-0000aaa3";
 const CHILD = "session-2026-10-10-09-05-00-0000ccc1";
 const BIG = "session-2026-10-12-09-00-00-0000bbb1";
+const ELSEWHERE = "session-2026-10-10-09-06-00-0000ccc2";
+const VAULT_VALUE = "vault-value-0123456789";
 
 const rec = (type: AmspRecord["type"], payload: unknown): AmspRecord =>
   ({ timestamp: "2026-10-01T09:00:00.000Z", type, payload }) as AmspRecord;
@@ -109,9 +123,41 @@ describe("Agent archive Traces", () => {
       "2026-10-10",
       S3,
       1,
-      trace(S3, "user", "third", [rec("event_msg", { type: "subagent", session_id: CHILD })]),
+      trace(S3, "user", "third", [
+        rec("event_msg", { type: "subagent", session_id: CHILD }),
+        rec("event_msg", { type: "subagent", session_id: ELSEWHERE }),
+        rec("model_msg", {
+          type: "text",
+          role: "assistant",
+          text: `printed ${VAULT_VALUE} and short`,
+        }),
+        rec("model_msg", { type: "text", role: "assistant", text: `again ${VAULT_VALUE}` }),
+      ]),
     );
     await write("2026-10-10", CHILD, 1, trace(CHILD, "subagent", "child work"));
+    // A child the parent spawned under another Agent of the Project.
+    expect(
+      (await a.owner.post(`/api/projects/${a.projectId}/agents`, { agentId: "helper" })).status,
+    ).toBe(201);
+    await writeTraceFile(
+      a.t.root,
+      a.projectId,
+      "helper",
+      "2026-10-10",
+      ELSEWHERE,
+      1,
+      trace(ELSEWHERE, "subagent", "helper work"),
+    );
+    expect(
+      (
+        await a.owner.put(`/api/projects/${a.projectId}/agents/${AGENT}/vault`, {
+          entries: [
+            { key: "API_TOKEN", value: VAULT_VALUE },
+            { key: "PIN", value: "short" },
+          ],
+        })
+      ).status,
+    ).toBe(200);
     const big = await write("2026-10-12", BIG, 1, trace(BIG, "user", "big"));
     // Past the entry cap without writing it: a sparse file only declares its size.
     await fs.truncate(big, MAX_ENTRY_BYTES + 1);
@@ -136,6 +182,8 @@ describe("Agent archive Traces", () => {
     row(CHILD, "Child", "2026-10-10T09:05:00.000Z", "2026-10-10T09:05:00.000Z");
     row(BIG, "Big", "2026-10-12T09:00:00.000Z", "2026-10-12T10:00:00.000Z");
     a.t.deps.sessionsRepo.setListing([S2], "archived", "2026-10-21T00:00:00.000Z");
+    a.t.deps.sessionsRepo.setListing([S3], "kept", "2026-10-16T00:00:00.000Z");
+    a.t.deps.sessionsRepo.updateThinkingLevel(S3, "high");
   });
   afterAll(async () => {
     await Promise.all([a.t.cleanup(), b.t.cleanup()]);
@@ -200,10 +248,15 @@ describe("Agent archive Traces", () => {
     expect(res.status).toBe(200);
     const { traces } = (await res.json()) as AgentArchivePreview;
     const files = Object.entries(entries).filter(([n]) => n.endsWith(".jsonl"));
+    // The bytes on disk: what a Trace carries is its file, before the vault's values are replaced.
+    const agentRoot = agentDir(a.t.root, a.projectId, AGENT);
+    const onDisk = await Promise.all(
+      files.map(async ([n]) => (await fs.stat(path.join(agentRoot, n))).size),
+    );
     expect(traces).toEqual({
       sessions: 3,
       files: files.length,
-      bytes: files.reduce((sum, [, bytes]) => sum + bytes.byteLength, 0),
+      bytes: onDisk.reduce((sum, size) => sum + size, 0),
       skipped: [{ sessionId: BIG, reason: "too_large" }],
       oldest: { sessionId: S2, title: "Second", createdAt: "2026-10-05T09:00:00.000Z" },
       newest: { sessionId: S3, title: "Third", createdAt: "2026-10-10T09:00:00.000Z" },
@@ -233,6 +286,10 @@ describe("Agent archive Traces", () => {
       archivedAt: "2026-10-21T00:00:00.000Z",
     });
     expect(b.t.deps.sessionsRepo.findById(CHILD)?.agentId).toBe("landed");
+    expect(b.t.deps.sessionsRepo.findById(S3)).toMatchObject({
+      thinkingLevel: "high",
+      keptAt: "2026-10-16T00:00:00.000Z",
+    });
     await expect(
       fs.access(
         path.join(
@@ -293,7 +350,7 @@ describe("Agent archive Traces", () => {
     const body = (await res.json()) as AgentArchiveImportResponse;
     expect(body.skippedTraces).toEqual([
       { sessionId: S1, reason: "exists" },
-      { sessionId: ghost, reason: "invalid" },
+      { sessionId: ghost, reason: "invalid", detail: expect.any(String) },
     ]);
     expect(body.imported.traces).toEqual({ sessions: 1, files: 1 });
     expect(b.t.deps.sessionsRepo.findById(S1)?.agentId).toBe("default_agent");
@@ -301,5 +358,223 @@ describe("Agent archive Traces", () => {
       agentId: "partial",
       title: "Fresh",
     });
+  });
+
+  it("a subagent child that ran under another Agent is not carried", async () => {
+    const names = Object.keys(entriesOf(await exported("?traces=last:2")));
+
+    expect(names.some((n) => n.includes(CHILD))).toBe(true);
+    expect(names.some((n) => n.includes(ELSEWHERE))).toBe(false);
+  });
+
+  it("the Agent's vault values in a Trace travel replaced and counted; a short value stays", async () => {
+    const entries = entriesOf(await exported("?traces=last:2"));
+
+    const text = strFromU8(entries[`traces/2026-10-10/${S3}_001.jsonl`]!);
+    expect(text).not.toContain(VAULT_VALUE);
+    expect(text.match(/\[vault:API_TOKEN\]/g)).toHaveLength(2);
+    expect(text).toContain("and short");
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as { redacted: string[] };
+    expect(manifest.redacted).toContain("traces:vault-values:2");
+  });
+
+  /** A zip of one Agent carrying only these Sessions, each `[facts, first file text]`. */
+  function sessionsZip(
+    sessions: Array<[Record<string, unknown>, string]>,
+    parts: object = { traces: { kind: "last", count: 10 } },
+  ): Uint8Array {
+    const files: Record<string, Uint8Array> = {
+      "s/manifest.json": strToU8(
+        JSON.stringify({
+          format: "penguin-agent-zip/1",
+          agentId: "s",
+          parts,
+          vaultKeys: [],
+          redacted: [],
+        }),
+      ),
+      "s/agent_state/system_config.yaml": strToU8('system_prompt: "s"\nversion: 1\n'),
+      "s/traces/sessions.json": strToU8(JSON.stringify(sessions.map(([facts]) => facts))),
+    };
+    for (const [facts, text] of sessions) {
+      files[`s/traces/2026-10-20/${String(facts.sessionId)}_001.jsonl`] = strToU8(text);
+    }
+    return zipSync(files);
+  }
+  const lines = (records: AmspRecord[]) => records.map((r) => JSON.stringify(r)).join("\n") + "\n";
+  const facts = (sessionId: string, over: Record<string, unknown> = {}) => ({
+    sessionId,
+    files: 1,
+    createdAt: "2026-10-20T09:00:00.000Z",
+    lastActiveAt: "2026-10-20T09:00:00.000Z",
+    title: "t",
+    archivedAt: null,
+    keptAt: null,
+    approvalMode: "allow-all",
+    thinkingLevel: null,
+    client: "web",
+    workspace: "/tmp/w",
+    provider: "custom",
+    modelId: "m",
+    ...over,
+  });
+
+  it("a row with an unknown thinking level, a time that is no time or an unknown client, or a first line past the head window, is skipped as invalid with the reason", async () => {
+    const ids = [
+      "session-2026-10-20-09-00-00-0000f001",
+      "session-2026-10-20-09-00-00-0000f002",
+      "session-2026-10-20-09-00-00-0000f003",
+      "session-2026-10-20-09-00-00-0000f004",
+      "session-2026-10-20-09-00-00-0000f005",
+    ];
+    const zip = sessionsZip([
+      [facts(ids[0]!, { thinkingLevel: "ultra-mega" }), lines(trace(ids[0]!, "user", "a"))],
+      [facts(ids[1]!, { createdAt: "not a date" }), lines(trace(ids[1]!, "user", "b"))],
+      [facts(ids[2]!, { client: "somewhere" }), lines(trace(ids[2]!, "user", "c"))],
+      // A session_meta whose one line is longer than the head window: never read whole.
+      [
+        facts(ids[3]!),
+        lines([
+          rec("session_meta", {
+            session_id: ids[3],
+            model_id: "m",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "x".repeat(300 * 1024),
+            agent_state: "/tmp/a",
+            workspace: "/tmp/w",
+            source: "user",
+          }),
+        ]),
+      ],
+      [facts(ids[4]!), lines(trace(ids[4]!, "user", "e"))],
+    ]);
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=checked`,
+      zip,
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.skippedTraces).toEqual([
+      { sessionId: ids[0], reason: "invalid", detail: expect.stringContaining("thinkingLevel") },
+      { sessionId: ids[1], reason: "invalid", detail: expect.stringContaining("createdAt") },
+      { sessionId: ids[2], reason: "invalid", detail: expect.stringContaining("client") },
+      { sessionId: ids[3], reason: "invalid", detail: expect.stringContaining("session_meta") },
+    ]);
+    expect(body.imported.traces).toEqual({ sessions: 1, files: 1 });
+    expect(b.t.deps.sessionsRepo.findById(ids[0]!)).toBeNull();
+  });
+
+  it("a manifest whose parts select no Traces imports none of the Trace entries the zip holds", async () => {
+    const sid = "session-2026-10-20-09-00-00-0000f101";
+    const zip = sessionsZip([[facts(sid), lines(trace(sid, "user", "a"))]], {
+      skills: true,
+      hooks: true,
+      memory: true,
+      workbenches: true,
+      workbenchData: true,
+      schedules: false,
+      traces: { kind: "none" },
+    });
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=no_traces`,
+      zip,
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).imported.traces).toEqual({
+      sessions: 0,
+      files: 0,
+    });
+    expect(b.t.deps.sessionsRepo.findById(sid)).toBeNull();
+  });
+
+  it("two Sessions whose ids differ only in letter case are refused", async () => {
+    const lower = "session-2026-10-20-09-00-00-0000abcd";
+    const upper = "session-2026-10-20-09-00-00-0000ABCD";
+    const zip = sessionsZip([
+      [facts(lower), lines(trace(lower, "user", "a"))],
+      [facts(upper), lines(trace(upper, "user", "b"))],
+    ]);
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=cased`,
+      zip,
+    );
+
+    expect(res.status).toBe(400);
+    expect(b.t.deps.sessionsRepo.findById(lower)).toBeNull();
+  });
+
+  it("something already at a Session's place in the Trace directory is left as it is, and the Session is skipped as exists", async () => {
+    const sid = "session-2026-10-20-09-00-00-0000f201";
+    expect(
+      (await b.owner.post(`/api/projects/${b.projectId}/agents`, { agentId: "occupied" })).status,
+    ).toBe(201);
+    // Not a Trace file the index takes up: a directory under the Session's file name.
+    const place = path.join(
+      agentDir(b.t.root, b.projectId, "occupied"),
+      "traces",
+      "2026-10-20",
+      `${sid}_001.jsonl`,
+    );
+    await fs.mkdir(path.join(place, "inside"), { recursive: true });
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=occupied&overwrite=1`,
+      sessionsZip([[facts(sid), lines(trace(sid, "user", "imported"))]]),
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).skippedTraces).toEqual([
+      { sessionId: sid, reason: "exists" },
+    ]);
+    await expect(fs.readdir(place)).resolves.toEqual(["inside"]);
+    expect(b.t.deps.sessionsRepo.findById(sid)).toBeNull();
+  });
+
+  /** Whether the disk under `dir` takes two names that differ in letter case for one. */
+  async function foldsCase(dir: string): Promise<boolean> {
+    const probe = path.join(dir, "Case-Probe");
+    await fs.writeFile(probe, "");
+    const folds = await fs.access(path.join(dir, "case-probe")).then(
+      () => true,
+      () => false,
+    );
+    await fs.rm(probe);
+    return folds;
+  }
+
+  it("on a disk that folds letter case, a Session whose case variant lies there already is skipped as exists, and that file is left as it was", async (ctx) => {
+    if (!(await foldsCase(b.t.root))) ctx.skip();
+    const existing = "session-2026-10-20-09-00-00-0000cafe";
+    const variant = "session-2026-10-20-09-00-00-0000CAFE";
+    expect(
+      (await b.owner.post(`/api/projects/${b.projectId}/agents`, { agentId: "folded" })).status,
+    ).toBe(201);
+    const file = await writeTraceFile(
+      b.t.root,
+      b.projectId,
+      "folded",
+      "2026-10-20",
+      existing,
+      1,
+      trace(existing, "user", "the one already here"),
+    );
+    const before = await fs.readFile(file, "utf8");
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=folded&overwrite=1`,
+      sessionsZip([[facts(variant), lines(trace(variant, "user", "imported"))]]),
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).skippedTraces).toEqual([
+      { sessionId: variant, reason: "exists" },
+    ]);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
   });
 });

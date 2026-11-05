@@ -6,22 +6,22 @@
  * counted, sniffed (`PK` for a zip, `1f 8b` for gzip), checked and written out in staging
  * (staging.ts, tar-compat.ts), and checked again as a State (state-checks.ts) — all before any
  * Agent is touched. The staging folder goes in `finally`; one a crash left behind is swept at the
- * next import.
+ * next import, unless it is marked as holding an Agent's State (state-swap.ts).
  *
  * Create: the Agent is made from the template (AgentService.createAgent), then its State is
- * replaced by the archive's in one swap; a hand-written archive (a `definition`, no
- * `system_config.yaml`) has the definition applied to the template's config through the config
- * service first, which validates it. Any failure after the Agent exists removes it again, so
- * the id is free for a retry.
+ * replaced by the archive's in one swap. Overwrite (the caller has checked the owner): the Agent
+ * keeps its identity, Traces, API keys, vault and employment; only its State is replaced, after a
+ * backup snapshot. A part the archive leaves out keeps the Agent's own (so do its expired
+ * schedules, its workbenches' data when the archive carries none, and anything in its State the
+ * archive format does not know), and a credential the export blanked keeps the Agent's own value
+ * at the same place. A hand-written archive (a `definition`, no `system_config.yaml`) has its
+ * definition applied to a copy of the Agent's own config, validated as the config route validates
+ * it; the live config is never written before the swap.
  *
- * Overwrite (the caller has checked the owner): the Agent keeps its identity, Traces, API keys,
- * vault and employment; only its State is replaced, after a backup snapshot. A part the archive
- * leaves out keeps the Agent's own (so do its expired schedules, its workbenches' data when the
- * archive carries none, and anything in its State the archive format does not know), and a
- * credential the export blanked keeps the Agent's own value under the same server and name.
- *
- * Then the archive's Sessions move in (TraceService.importTraceFiles); one whose id the install
- * already knows is skipped and reported.
+ * Until the swap, any failure leaves the Agent as it was (a created one is removed again, so the
+ * id is free). Once the State is swapped the import is committed and answers with its report:
+ * the cached runtimes of an overwritten Agent are invalidated, and the archive's Sessions move in
+ * one by one (TraceService.importTraceFiles) — one that cannot is skipped and reported.
  */
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -30,6 +30,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { parse as parseYaml } from "yaml";
 import {
   agentDir,
   agentStateDir,
@@ -37,6 +38,7 @@ import {
   ensureUserMemoryDir,
   loadAgentVault,
 } from "@prismshadow/penguin-core";
+import type { ToolDefinitionConfig } from "@prismshadow/penguin-core";
 import type {
   AgentArchiveImportResponse,
   AgentArchiveManifest,
@@ -47,6 +49,9 @@ import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agent
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndex, Traces } from "../mechanisms/traces.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { SessionManager } from "../runtime/session-manager.js";
+import { updatedConfigText } from "../services/agent-config-service.js";
+import { SWAP_MARK } from "../services/state-swap.js";
 import { packageStateVersion, VAULT_BASENAME } from "../services/agent-state-layout.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "../services/ids.js";
 import { countMemoryTopics } from "../services/memory-service.js";
@@ -72,6 +77,9 @@ export interface ImportDeps {
   traces: Pick<Traces, "importTraceFiles">;
   sessionsRepo: Pick<SessionIndex, "deleteByAgent">;
   traceIndex: Pick<TraceIndex, "removeAgent">;
+  /** The cached runtimes of an Agent whose State an overwrite replaced. */
+  runtimes: Pick<SessionManager, "invalidateAgentRuntimes">;
+  log: (line: string) => void;
 }
 
 export interface ImportRequest {
@@ -219,24 +227,28 @@ async function carriedPaths(
 }
 
 /**
- * Applies a hand-written archive's definition to the Agent's own config through the config
- * service, which validates it: name and description, model preferences, MCP servers, and the
- * built-in tools it names, selected from the toolset the Agent already carries. A name this
- * install does not ship cannot be conjured and goes to `notes`; a selection that keeps nothing
- * keeps the toolset as it is.
+ * A hand-written archive's definition applied to `config` (the Agent's own config, copied — the
+ * live file is never written before the swap), validated as `PUT …/config` validates it: name and
+ * description, model preferences, MCP servers, and the built-in tools it names, selected from
+ * the toolset that config carries. A name this install does not ship cannot be conjured and goes
+ * to `notes`; a selection that keeps nothing keeps the toolset as it is.
  */
-async function applyDefinition(
-  deps: ImportDeps,
-  projectId: string,
-  agentId: string,
+function definitionConfig(
+  config: string,
   manifest: AgentArchiveManifest,
   notes: AgentArchiveNote[],
-): Promise<void> {
+): string {
   const definition = manifest.definition ?? {};
   let toolsBuiltin;
   if (definition.tools !== undefined && definition.tools.builtin.length > 0) {
-    const view = await deps.agentConfigService.getConfig(projectId, agentId);
-    const known = new Map(view.config.toolsBuiltin.map((tool) => [tool.name, tool]));
+    const builtin = (
+      parseYaml(config) as { tools?: { builtin?: Array<{ name?: unknown }> } } | null
+    )?.tools?.builtin;
+    const known = new Map(
+      (Array.isArray(builtin) ? builtin : []).flatMap((tool) =>
+        typeof tool?.name === "string" ? [[tool.name, tool] as const] : [],
+      ),
+    );
     toolsBuiltin = definition.tools.builtin.flatMap((name) => {
       const tool = known.get(name);
       if (tool === undefined) {
@@ -247,7 +259,7 @@ async function applyDefinition(
         });
         return [];
       }
-      return [tool];
+      return [tool as unknown as ToolDefinitionConfig];
     });
     if (toolsBuiltin.length === 0) {
       notes.push({
@@ -257,16 +269,13 @@ async function applyDefinition(
       toolsBuiltin = undefined;
     }
   }
-  const config = {
+  return updatedConfigText(config, {
     ...(manifest.name !== undefined ? { name: manifest.name } : {}),
     ...(manifest.description !== undefined ? { description: manifest.description } : {}),
     ...(definition.model !== undefined ? { model: definition.model } : {}),
     ...(definition.mcpServers !== undefined ? { mcpServers: definition.mcpServers } : {}),
     ...(toolsBuiltin !== undefined ? { toolsBuiltin } : {}),
-  };
-  if (Object.keys(config).length > 0) {
-    await deps.agentConfigService.updateConfig(projectId, agentId, { config });
-  }
+  });
 }
 
 /** Removes an Agent this import created and could not finish, so its id is free again. */
@@ -307,14 +316,13 @@ async function apply(
   try {
     await fs.mkdir(incoming, { recursive: true });
     const configFile = path.join(incoming, "system_config.yaml");
+    const currentConfig = await fs.readFile(path.join(current, "system_config.yaml"), "utf8");
     if (!staged.hasConfig) {
-      await applyDefinition(deps, projectId, agentId, manifest, notes);
-      await fs.copyFile(path.join(current, "system_config.yaml"), configFile);
-    } else if (mode === "overwritten") {
-      const restored = restoreCredentials(
-        await fs.readFile(configFile, "utf8"),
-        await fs.readFile(path.join(current, "system_config.yaml"), "utf8"),
-      );
+      await fs.writeFile(configFile, definitionConfig(currentConfig, manifest, notes));
+    }
+    if (mode === "overwritten") {
+      // A blank credential keeps the Agent's own value at the same place, whichever the zip.
+      const restored = restoreCredentials(await fs.readFile(configFile, "utf8"), currentConfig);
       if (restored !== null) await fs.writeFile(configFile, restored);
     }
     const carry = await carriedPaths(current, incoming, manifest, !staged.hasConfig);
@@ -324,23 +332,40 @@ async function apply(
     // What the server holds open in the State lets go until the swap is over (Windows cannot
     // rename a watched directory).
     await deps.workbenches.whileReleased(projectId, agentId, async () => {
-      await deps.snapshots.swapAgentState(projectId, agentId, incoming, carry);
+      await deps.snapshots.swapAgentState(projectId, agentId, incoming, carry, backup ?? null);
       // A State without workbenches would leave the old place's link leading nowhere.
-      await ensureWorkbenchLinkTarget(dir);
-    });
-    await ensureUserMemoryDir(deps.root, projectId, agentId);
-    const traces = await deps.traces.importTraceFiles(projectId, agentId, staged.sessions);
-    return await report(deps, projectId, agentId, staged, mode, {
-      imported: { ...imported, traces: traces.imported },
-      notes,
-      traces,
-      ...(previousVersion !== undefined ? { previousVersion } : {}),
-      ...(backup !== undefined ? { backup } : {}),
+      await ensureWorkbenchLinkTarget(dir).catch((err: unknown) => {
+        deps.log(`[agent-archive] workbench link of ${projectId}/${agentId}: ${String(err)}`);
+      });
     });
   } catch (err) {
     if (mode === "created") await removeHalfBuilt(deps, projectId, agentId);
     throw err;
   }
+  // The State is swapped: the import is committed, and nothing below turns it into an error.
+  if (mode === "overwritten") deps.runtimes.invalidateAgentRuntimes(projectId, agentId);
+  await ensureUserMemoryDir(deps.root, projectId, agentId).catch(() => undefined);
+  let traces: Awaited<ReturnType<Traces["importTraceFiles"]>>;
+  try {
+    traces = await deps.traces.importTraceFiles(projectId, agentId, staged.sessions);
+  } catch (err) {
+    deps.log(`[agent-archive] Sessions of ${projectId}/${agentId} not imported: ${String(err)}`);
+    traces = {
+      imported: { sessions: 0, files: 0 },
+      skipped: staged.sessions.map((s) => ({
+        sessionId: s.facts.sessionId,
+        reason: "invalid" as const,
+        detail: "It could not be moved in.",
+      })),
+    };
+  }
+  return report(deps, projectId, agentId, staged, mode, {
+    imported: { ...imported, traces: traces.imported },
+    notes,
+    traces,
+    ...(previousVersion !== undefined ? { previousVersion } : {}),
+    ...(backup !== undefined ? { backup } : {}),
+  });
 }
 
 /** The import's account of itself, read back from the Agent as it now is. */
@@ -358,17 +383,23 @@ async function report(
     backup?: string;
   },
 ): Promise<ImportOutcome> {
+  // Read back defensively: the State is committed, so a read that fails costs a detail of the
+  // report, never the answer.
   const state = agentStateDir(deps.root, projectId, agentId);
-  const vault = await loadAgentVault(deps.root, projectId, agentId);
-  const config = await fs.readFile(path.join(state, "system_config.yaml"), "utf8");
-  const fill = credentialsToFill(config);
+  const vault = await loadAgentVault(deps.root, projectId, agentId).catch(() => ({}));
+  const fill = await fs
+    .readFile(path.join(state, "system_config.yaml"), "utf8")
+    .then(credentialsToFill)
+    .catch(() => ({ blank: [] as string[], vaultRefs: [] as string[] }));
   const missingKeys = [...new Set([...staged.manifest.vaultKeys, ...fill.vaultRefs])].filter(
     (key) => !Object.hasOwn(vault, key),
   );
   return {
     agentId,
     mode,
-    version: await deps.snapshots.currentVersion(projectId, agentId),
+    version: await deps.snapshots
+      .currentVersion(projectId, agentId)
+      .catch(() => staged.manifest.source?.version ?? 1),
     ...(done.previousVersion !== undefined ? { previousVersion: done.previousVersion } : {}),
     ...(done.backup !== undefined ? { backup: done.backup } : {}),
     imported: done.imported,
@@ -393,7 +424,7 @@ export async function importAgentArchive(
   }
   const base = agentsDir(deps.root, projectId);
   await fs.mkdir(base, { recursive: true });
-  await removeLeftovers(base, STAGING_PREFIX);
+  await removeLeftovers(base, STAGING_PREFIX, Date.now(), SWAP_MARK);
   const staging = path.join(base, `${STAGING_PREFIX}${randomBytes(6).toString("hex")}`);
   await fs.mkdir(staging);
   try {
@@ -413,6 +444,8 @@ export async function importAgentArchive(
       );
     }
     const agentId = requireAgentId(req.agentId ?? (staged.manifest.agentId || staged.topDir || ""));
+    // An earlier import of this Agent that was interrupted gives back what it moved aside first.
+    await deps.snapshots.recoverStrandedSwaps({ projectId, agentId });
     if (staged.hasConfig) await packageStateVersion(staged.stateDir);
     else if (staged.manifest.definition === undefined) {
       throw badRequest(

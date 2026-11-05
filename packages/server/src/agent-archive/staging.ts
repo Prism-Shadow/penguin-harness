@@ -34,6 +34,7 @@ import {
   readZipDirectory,
 } from "../services/zip-entries.js";
 import type { ZipDirectoryEntry } from "../services/zip-entries.js";
+import { THINKING_LEVEL_NAMES } from "@prismshadow/penguin-core";
 import { MAX_ENTRIES, MAX_ENTRY_BYTES, MAX_INFLATED_BYTES, archiveTooLarge } from "./limits.js";
 import { DIR_PARTS, MANIFEST_FILE, PART_DIRS, SESSIONS_FILE, parseManifest } from "./manifest.js";
 
@@ -96,16 +97,15 @@ function partAllows(manifest: AgentArchiveManifest, rel: string): boolean {
 }
 
 /**
- * Inflates one entry to `target`, counting what it writes: past the entry's declared size or the
- * archive's running total it stops, and an entry that ends short of its size or fails its CRC
- * is refused.
+ * Inflates one entry to `target`, counting what it writes: past the entry's declared size it
+ * stops — which, with the declared sizes already held to the caps, bounds what an archive can
+ * write in all — and an entry that ends short of its size or fails its CRC is refused.
  */
 async function inflateEntry(
   upload: string,
   handle: FileHandle,
   entry: ZipDirectoryEntry,
   target: string,
-  budget: { left: number },
 ): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
   if (entry.compressedSize === 0) {
@@ -121,8 +121,6 @@ async function inflateEntry(
       written += chunk.byteLength;
       if (written > entry.size)
         throw badRequest(`Zip entry is larger than it declares: ${entry.name}`);
-      budget.left -= chunk.byteLength;
-      if (budget.left < 0) throw archiveTooLarge("The archive inflates past the 1GiB limit.");
       crc = zlib.crc32(chunk, crc);
       yield chunk;
     }
@@ -151,30 +149,71 @@ async function readJsonFile(file: string, what: string): Promise<unknown> {
   }
 }
 
-const str = (value: unknown): string => (typeof value === "string" ? value : "");
-const strOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
+const APPROVAL_MODES = ["allow-all", "deny-all", "read-only", "always-ask"];
+const CLIENTS = ["web", "cli", "org", "api", "workbench"];
+/** A title as long as a rename may make it. */
+const MAX_TITLE = 120;
+const MAX_TEXT = 4096;
 
-/** One `sessions.json` row as the facts type, or null when it does not name a Session. */
-function factsOf(raw: unknown): ArchivedSessionFacts | null {
+const isTime = (value: unknown): value is string =>
+  typeof value === "string" && ISO_TIME.test(value) && !Number.isNaN(Date.parse(value));
+
+/**
+ * One `sessions.json` row: its facts, or why they do not hold up (each field's type, enum,
+ * length and date checked) — the Session is then skipped as `invalid`. Null when the row does not
+ * even name a Session.
+ */
+function rowOf(raw: unknown): { facts: ArchivedSessionFacts; problem?: string } | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.sessionId !== "string" || r.sessionId === "") return null;
-  return {
+  const text = (value: unknown, max: number): value is string =>
+    typeof value === "string" && value.length <= max;
+  const problems: Array<[boolean, string]> = [
+    [SESSION_ID.test(r.sessionId), "sessionId is not a Session id"],
+    [
+      typeof r.files === "number" && Number.isInteger(r.files) && r.files >= 1 && r.files <= 999,
+      "files is not 1 to 999",
+    ],
+    [isTime(r.createdAt), "createdAt is not an ISO time"],
+    [isTime(r.lastActiveAt), "lastActiveAt is not an ISO time"],
+    [r.title === null || text(r.title, MAX_TITLE), `title is not text of at most ${MAX_TITLE}`],
+    [r.archivedAt === null || isTime(r.archivedAt), "archivedAt is not an ISO time"],
+    [r.keptAt === null || isTime(r.keptAt), "keptAt is not an ISO time"],
+    [APPROVAL_MODES.includes(r.approvalMode as string), "approvalMode is not an approval mode"],
+    [
+      r.thinkingLevel === null || THINKING_LEVEL_NAMES.includes(r.thinkingLevel as never),
+      "thinkingLevel is not a thinking level",
+    ],
+    [CLIENTS.includes(r.client as string), "client is not a client"],
+    [text(r.workspace, MAX_TEXT), "workspace is not a path"],
+    [text(r.provider, 256) && text(r.modelId, 256), "provider or modelId is not a name"],
+    [
+      r.parentSessionId === undefined ||
+        (typeof r.parentSessionId === "string" && SESSION_ID.test(r.parentSessionId)),
+      "parentSessionId is not a Session id",
+    ],
+  ];
+  const problem = problems.find(([ok]) => !ok)?.[1];
+  const facts = {
     sessionId: r.sessionId,
-    files: typeof r.files === "number" && Number.isInteger(r.files) ? r.files : 0,
-    createdAt: str(r.createdAt),
-    lastActiveAt: str(r.lastActiveAt),
-    title: strOrNull(r.title),
-    archivedAt: strOrNull(r.archivedAt),
-    keptAt: strOrNull(r.keptAt),
-    approvalMode: str(r.approvalMode) as ArchivedSessionFacts["approvalMode"],
-    thinkingLevel: strOrNull(r.thinkingLevel) as ArchivedSessionFacts["thinkingLevel"],
-    client: str(r.client),
-    workspace: str(r.workspace),
-    provider: str(r.provider),
-    modelId: str(r.modelId),
+    files: r.files,
+    createdAt: r.createdAt,
+    lastActiveAt: r.lastActiveAt,
+    title: r.title,
+    archivedAt: r.archivedAt,
+    keptAt: r.keptAt,
+    approvalMode: r.approvalMode,
+    thinkingLevel: r.thinkingLevel,
+    client: r.client,
+    workspace: r.workspace,
+    provider: r.provider,
+    modelId: r.modelId,
     ...(typeof r.parentSessionId === "string" ? { parentSessionId: r.parentSessionId } : {}),
-  };
+  } as ArchivedSessionFacts;
+  return problem === undefined ? { facts } : { facts, problem: `Its row's ${problem}.` };
 }
 
 /** Checks the zip at `upload` and writes what the import takes into `extracted/`. */
@@ -230,25 +269,30 @@ export async function stageZip(upload: string, extracted: string): Promise<Stage
     }
     placed.set(entry, placement);
   }
+  // Every path staging writes, Trace files included, as a disk that folds names sees it.
   assertDistinct(
-    [...placed.values()].flatMap((p) => (p.kind === "state" ? [p.rel] : [])),
-    `${prefix}agent_state/`,
+    [...placed.entries()].map(([entry]) => entry.name.slice(prefix.length)),
+    prefix,
   );
 
   const handle = await fs.open(upload, "r");
   try {
-    const budget = { left: MAX_INFLATED_BYTES };
     const manifestEntry = files.find((entry) => entry.name === `${prefix}${MANIFEST_FILE}`)!;
     if (manifestEntry.size > MAX_JSON_BYTES) throw badRequest("manifest.json is too large.");
     const manifestFile = path.join(extracted, MANIFEST_FILE);
-    await inflateEntry(upload, handle, manifestEntry, manifestFile, budget);
+    await inflateEntry(upload, handle, manifestEntry, manifestFile);
     const stateRels = [...placed.values()].flatMap((p) => (p.kind === "state" ? [p.rel] : []));
     const present = (dir: string): boolean => stateRels.some((rel) => rel.startsWith(`${dir}/`));
-    const manifest = parseManifest(await readJsonFile(manifestFile, "manifest.json"), (part) =>
+    const raw = await readJsonFile(manifestFile, "manifest.json");
+    const manifest = parseManifest(raw, (part) =>
       part === "workbenchData"
         ? stateRels.some((rel) => /^workbenches\/[^/]+\/state\.json$/i.test(rel))
         : present(PART_DIRS[part]),
     );
+    // A manifest that names its parts says whether Traces come; one that names none brings what
+    // the zip holds.
+    const takeTraces =
+      (raw as { parts?: unknown }).parts === undefined || manifest.parts.traces.kind !== "none";
 
     const stateDir = path.join(extracted, "agent_state");
     const traceDir = path.join(extracted, "traces");
@@ -258,24 +302,20 @@ export async function stageZip(upload: string, extracted: string): Promise<Stage
       if (placement.kind === "manifest") continue;
       if (placement.kind === "state") {
         if (!partAllows(manifest, placement.rel)) continue;
-        await inflateEntry(
-          upload,
-          handle,
-          entry,
-          path.join(stateDir, ...placement.rel.split("/")),
-          budget,
-        );
+        await inflateEntry(upload, handle, entry, path.join(stateDir, ...placement.rel.split("/")));
+      } else if (!takeTraces) {
+        continue;
       } else if (placement.kind === "sessions") {
         if (entry.size > MAX_JSON_BYTES) throw badRequest("traces/sessions.json is too large.");
         sessionsFile = path.join(traceDir, SESSIONS_FILE);
-        await inflateEntry(upload, handle, entry, sessionsFile, budget);
+        await inflateEntry(upload, handle, entry, sessionsFile);
       } else {
         const target = path.join(
           traceDir,
           placement.date,
           `${placement.sessionId}_${String(placement.index).padStart(3, "0")}.jsonl`,
         );
-        await inflateEntry(upload, handle, entry, target, budget);
+        await inflateEntry(upload, handle, entry, target);
         const list = traceFiles.get(placement.sessionId) ?? [];
         list.push({ index: placement.index, date: placement.date, path: target });
         traceFiles.set(placement.sessionId, list);
@@ -287,11 +327,15 @@ export async function stageZip(upload: string, extracted: string): Promise<Stage
       const rows = await readJsonFile(sessionsFile, "traces/sessions.json");
       if (!Array.isArray(rows)) throw badRequest("traces/sessions.json must be an array.");
       const listed = new Set<string>();
-      for (const row of rows) {
-        const facts = factsOf(row);
-        if (facts === null || listed.has(facts.sessionId)) continue;
-        listed.add(facts.sessionId);
-        sessions.push({ facts, files: traceFiles.get(facts.sessionId) ?? [] });
+      for (const raw of rows) {
+        const row = rowOf(raw);
+        if (row === null || listed.has(row.facts.sessionId)) continue;
+        listed.add(row.facts.sessionId);
+        sessions.push({
+          facts: row.facts,
+          files: traceFiles.get(row.facts.sessionId) ?? [],
+          ...(row.problem !== undefined ? { problem: row.problem } : {}),
+        });
       }
     }
     const hasConfig = await fs

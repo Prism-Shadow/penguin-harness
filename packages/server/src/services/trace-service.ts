@@ -60,7 +60,7 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { readTraceHead } from "../internal/trace-head.js";
+import { readTraceHeadWithin } from "../internal/trace-head.js";
 import {
   ratesAt,
   requestCostParts,
@@ -284,12 +284,14 @@ export interface StagedTraceSession {
   facts: ArchivedSessionFacts;
   /** Its `_NNN` files as staged: the index, the date directory it goes to, and where it is now. */
   files: Array<{ index: number; date: string; path: string }>;
+  /** Why its row does not hold up, when it does not: the Session is skipped as `invalid`. */
+  problem?: string;
 }
 
 /** What `importTraceFiles` did with the Sessions it was handed. */
 export interface StagedTraceImport {
   imported: { sessions: number; files: number };
-  skipped: Array<{ sessionId: string; reason: "exists" | "invalid" }>;
+  skipped: Array<{ sessionId: string; reason: "exists" | "invalid"; detail?: string }>;
 }
 
 const DATE_DIR_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -2275,13 +2277,19 @@ export class TraceService implements Traces {
     sessions: readonly StagedTraceSession[],
   ): Promise<StagedTraceImport> {
     const out: StagedTraceImport = { imported: { sessions: 0, files: 0 }, skipped: [] };
-    const base = tracesDir(this.root, projectId, agentId);
     for (const session of sessions) {
       const sessionId = session.facts.sessionId;
+      const skip = (reason: "exists" | "invalid", detail?: string): void => {
+        out.skipped.push({ sessionId, reason, ...(detail !== undefined ? { detail } : {}) });
+      };
+      if (session.problem !== undefined) {
+        skip("invalid", session.problem);
+        continue;
+      }
       const files = [...session.files].sort((a, b) => a.index - b.index);
       const head = await this.stagedHead(sessionId, files, session.facts.files);
-      if (head === null) {
-        out.skipped.push({ sessionId, reason: "invalid" });
+      if (typeof head === "string") {
+        skip("invalid", head);
         continue;
       }
       if (
@@ -2289,16 +2297,67 @@ export class TraceService implements Traces {
         this.sessions?.findById?.(sessionId) ||
         (await this.locateAll(projectId, agentId, sessionId)).length > 0
       ) {
-        out.skipped.push({ sessionId, reason: "exists" });
+        skip("exists");
         continue;
       }
-      const placed: Array<{ index: number; date: string; size: number }> = [];
+      try {
+        const placed = await this.placeStaged(projectId, agentId, session.facts, files, head);
+        if (placed === null) {
+          skip("exists");
+          continue;
+        }
+        out.imported.sessions += 1;
+        out.imported.files += placed;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        skip("invalid", `It could not be moved in${code !== undefined ? ` (${code})` : ""}.`);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Moves one staged Session's files into the Agent's Trace directory and indexes them, or
+   * nothing at all: a file already at a target (under any letter case the disk folds) stops it,
+   * answering null; a failure part-way moves the files back out (or removes them) and drops what
+   * was indexed, then throws. Answers how many files moved in.
+   */
+  private async placeStaged(
+    projectId: string,
+    agentId: string,
+    facts: ArchivedSessionFacts,
+    files: ReadonlyArray<{ index: number; date: string; path: string }>,
+    head: AmspRecord[],
+  ): Promise<number | null> {
+    const sessionId = facts.sessionId;
+    const base = tracesDir(this.root, projectId, agentId);
+    const placed: Array<{ index: number; date: string; size: number; from: string; to: string }> =
+      [];
+    const undo = async (): Promise<void> => {
+      for (const file of placed) {
+        await fs.rename(file.to, file.from).catch(() => fs.rm(file.to, { force: true }));
+      }
+      this.index.removeSession(projectId, agentId, sessionId);
+      this.sessions?.deleteById?.(sessionId);
+      this.sources?.delete(sessionId);
+    };
+    try {
       for (const file of files) {
         const dir = path.join(base, file.date);
         await fs.mkdir(dir, { recursive: true });
-        const target = path.join(dir, `${sessionId}_${String(file.index).padStart(3, "0")}.jsonl`);
-        await fs.rename(file.path, target);
-        placed.push({ index: file.index, date: file.date, size: (await fs.stat(target)).size });
+        const to = path.join(dir, `${sessionId}_${String(file.index).padStart(3, "0")}.jsonl`);
+        // A rename replaces what is there: never over a Trace this install already has.
+        if (
+          await fs.lstat(to).then(
+            () => true,
+            () => false,
+          )
+        ) {
+          await undo();
+          return null;
+        }
+        await fs.rename(file.path, to);
+        placed.push({ ...file, from: file.path, to, size: (await fs.stat(to)).size });
       }
       for (const file of placed) {
         this.index.registerImportedFile({
@@ -2311,36 +2370,46 @@ export class TraceService implements Traces {
           ...(file.index === 1 ? { records: head } : {}),
         });
       }
-      this.indexImportedSession(projectId, agentId, sessionId, session.facts);
-      out.imported.sessions += 1;
-      out.imported.files += placed.length;
+      this.indexImportedSession(projectId, agentId, sessionId, facts);
+      return placed.length;
+    } catch (err) {
+      await undo().catch(() => undefined);
+      throw err;
     }
-    return out;
   }
 
   /**
-   * The head records of a staged Session's `_001`, or null when the Session does not hold up:
-   * an id that cannot be a file name, files other than exactly `_001`..`_<count>`, a date
-   * directory that is not a date, or a head that is not this Session's `session_meta`.
+   * The head records of a staged Session's `_001`, or why the Session does not hold up: an id
+   * that cannot be a file name, files other than exactly `_001`..`_<count>`, a date directory
+   * that is not a date, or a head that is not this Session's `session_meta` — read within the
+   * head window only, so a first line longer than it is refused rather than read whole.
    */
   private async stagedHead(
     sessionId: string,
     files: ReadonlyArray<{ index: number; date: string; path: string }>,
     count: number,
-  ): Promise<AmspRecord[] | null> {
-    if (!IMPORT_SESSION_ID_RE.test(sessionId) || files.length === 0 || files.length !== count) {
-      return null;
+  ): Promise<AmspRecord[] | string> {
+    if (!IMPORT_SESSION_ID_RE.test(sessionId)) return "Its id cannot name a Trace file.";
+    if (files.length === 0 || files.length !== count) {
+      return `It lists ${count} files and the archive holds ${files.length}.`;
     }
-    if (files.some((file, i) => file.index !== i + 1 || !DATE_DIR_RE.test(file.date))) return null;
-    let records: AmspRecord[];
+    if (files.some((file, i) => file.index !== i + 1 || !DATE_DIR_RE.test(file.date))) {
+      return "Its files are not _001 to its count, in date directories.";
+    }
+    let records: AmspRecord[] | null;
     try {
-      records = await readTraceHead(files[0]!.path);
+      records = await readTraceHeadWithin(files[0]!.path);
     } catch {
-      return null;
+      records = null;
     }
-    const first = records[0];
-    if (first === undefined || !isSessionMeta(first)) return null;
-    return (first.payload as { session_id?: unknown }).session_id === sessionId ? records : null;
+    const first = records?.[0];
+    if (records === null || first === undefined || !isSessionMeta(first)) {
+      return "Its first file does not open with a session_meta.";
+    }
+    if ((first.payload as { session_id?: unknown }).session_id !== sessionId) {
+      return "Its first file is another Session's.";
+    }
+    return records;
   }
 
   /**
@@ -2384,7 +2453,8 @@ export class TraceService implements Traces {
       agentId,
       provider,
       modelId,
-      workspace: recorded?.workspace || facts.workspace,
+      // The head's own Workspace before the archive's row: the row is the archive's word.
+      workspace: facts.workspace || recorded?.workspace || "",
       approvalMode: APPROVAL_MODES.find((mode) => mode === recorded?.approvalMode) ?? "allow-all",
       title: recorded !== undefined ? (recorded.title ?? facts.title) : facts.title,
       client,

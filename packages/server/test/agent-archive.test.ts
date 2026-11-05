@@ -31,6 +31,21 @@
  * - Given a hand-written zip (a definition, instructions and a skill, no parts), the Agent is
  *   created from the template with its MCP server, model level, instructions and skill; a tool
  *   this install lacks is noted and the vault key it names is to fill.
+ * - Given literal secrets in an MCP entry's args (a URL password, `--api-key=…`, the value after
+ *   `--token`), its URL's query, its OAuth client secret and its headers, the export blanks and
+ *   names each, leaves `${KEY}` references and everything else as written, and an overwrite of
+ *   the same Agent from that zip puts every one of them back.
+ * - Given a part directory that is a link out of the State, the export leaves it out and the
+ *   preview notes it.
+ * - Given a selection past what an import accepts — one file past the per-entry cap, or more
+ *   bytes than an import inflates — the preview says why and the export is refused 413.
+ * - Given a zip with `.git` entries, a vault under any letter case, staging leftovers and a
+ *   workbench's `.build/`, `.harness/`, `node_modules/` and `.plugin.json`, none of them lands;
+ *   given a part the manifest marks false whose entries the zip carries anyway, they do not land.
+ * - Given an overwrite that brings schedules and workbenches without their data, the Agent keeps
+ *   its expired schedules and its workbenches' data; given a hand-written overwrite, the Agent
+ *   keeps its `tools/` and its MCP credential the definition leaves blank.
+ * - Given an Agent whose runtime is cached, an overwrite makes its next use rebuild it.
  * - While an overwrite swaps the State, a request for the Agent's workbenches waits for it.
  * - An export, or an overwrite, of an Agent whose workbenches were never migrated migrates them.
  */
@@ -41,7 +56,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { Zippable } from "fflate";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
-import { agentDir, agentStateDir, agentsDir } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, agentsDir, userText } from "@prismshadow/penguin-core";
 import type {
   AgentApiResponse,
   AgentArchiveImportResponse,
@@ -52,7 +67,15 @@ import type {
   ProjectCreateResponse,
   VaultResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
+import {
+  apiClient,
+  canCreateSymlink,
+  createTestApp,
+  provisionUser,
+  waitFor,
+  writeTraceFile,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const NOW = new Date(2026, 10, 4, 12, 0, 0);
@@ -141,9 +164,20 @@ describe("Agent archive", () => {
   let projectId: string;
   const agentBase = (id: string) => `/api/projects/${projectId}/agents/${id}`;
   const importUrl = (query = "") => `/api/projects/${projectId}/agents/import${query}`;
+  let loads = 0;
 
   beforeAll(async () => {
-    t = await createTestApp({ now: () => NOW });
+    // The loader counts how many times the manager (re)built a runtime; the runtime it builds
+    // answers with nothing, so no case reaches an LLM.
+    t = await createTestApp({
+      now: () => NOW,
+      loader: {
+        load: async (row) => {
+          loads += 1;
+          return fakeSession(row.sessionId);
+        },
+      },
+    });
     owner = apiClient(t.app, (await provisionUser(t.app, "owner_a")).cookie);
     member = apiClient(t.app, (await provisionUser(t.app, "member_b")).cookie);
     const created = (await (
@@ -194,6 +228,8 @@ describe("Agent archive", () => {
       "workbenches/todo/node_modules/dep/index.js": "dep\n",
       "workbenches/todo/notes.penguin-tmpab12cd": "staged\n",
       "schedule/daily.toml": 'prompt = "p"\nenabled = false\nstart_at = "2030-01-01T00:00:00Z"\n',
+      "schedule/expired/old.toml":
+        'prompt = "o"\nenabled = false\nstart_at = "2020-01-01T00:00:00Z"\n',
       "tools/custom.json": "{}\n",
     });
     const config = await owner.put(`${agentBase(id)}/config`, {
@@ -308,12 +344,15 @@ describe("Agent archive", () => {
       schedules: under("agent_state/schedule/"),
     });
     expect(preview.parts.schedules.files).toBe(1);
+    expect(Object.keys(entries).filter((n) => n.includes("schedule/expired"))).toEqual([]);
     expect(Object.keys(entries)).not.toContain("agent_state/workbenches/todo/state.json");
     expect(preview.totalBytes).toBe(
       Object.values(entries).reduce((sum, bytes) => sum + bytes.byteLength, 0),
     );
     expect(preview.vaultKeys).toEqual(["GH_KEY", "OTHER"]);
     expect(preview.traces).toMatchObject({ sessions: 0, files: 0, newest: null });
+    expect(preview.entries).toBe(Object.keys(entries).length);
+    expect(preview.refusal).toBeUndefined();
   });
 
   it.each([
@@ -522,6 +561,25 @@ describe("Agent archive", () => {
       400,
     ],
     [
+      "two names a disk that folds letter case takes for one",
+      () =>
+        crafted({
+          "crafted/agent_state/skills/a/SKILL.md": strToU8("---\nname: a\n---\n"),
+          "crafted/agent_state/skills/A/SKILL.md": strToU8("---\nname: A\n---\n"),
+        }),
+      400,
+    ],
+    [
+      "a device name Windows reserves",
+      () => crafted({ "crafted/agent_state/memory/user/CON.md": strToU8("x") }),
+      400,
+    ],
+    [
+      "a character Windows refuses in a name",
+      () => crafted({ "crafted/agent_state/memory/user/a:b.md": strToU8("x") }),
+      400,
+    ],
+    [
       "a hooks.json naming a script outside its package",
       () =>
         crafted({
@@ -684,5 +742,259 @@ describe("Agent archive", () => {
         "utf8",
       ),
     ).toBe('{"kept":true}');
+  });
+
+  it("literal MCP secrets in args, url, oauth and headers are blanked and named, references travel, and an overwrite puts them back", async () => {
+    const state = await newAgent("mcp_secrets");
+    const servers = [
+      {
+        name: "pg",
+        config: {
+          command: "npx",
+          args: [
+            "-y",
+            "server-postgres",
+            "postgresql://app:hunter2pw@db.example.test/app",
+            "--api-key=sk-inline-123",
+            "--token",
+            "tok-after-flag",
+            "--verbose",
+            "--password=${PG_PASS}",
+          ],
+        },
+      },
+      {
+        name: "remote",
+        config: {
+          url: "https://mcp.example.test/mcp?api_key=sk-live-zzz123&region=eu",
+          headers: { Authorization: "Bearer remote-bearer-1" },
+          oauth: { clientId: "app", clientSecret: "oauth-secret-1" },
+        },
+      },
+    ];
+    const put = await owner.put(`${agentBase("mcp_secrets")}/config`, {
+      config: { mcpServers: servers },
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+
+    const zip = await exported("mcp_secrets");
+
+    const entries = entriesOf(zip);
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
+    expect([...manifest.redacted].sort()).toEqual(
+      [
+        "mcp:pg:args:2:password",
+        "mcp:pg:args:3",
+        "mcp:pg:args:5",
+        "mcp:remote:headers:Authorization",
+        "mcp:remote:oauth:clientSecret",
+        "mcp:remote:url:query:api_key",
+      ].sort(),
+    );
+    const config = strFromU8(entries["agent_state/system_config.yaml"]!);
+    for (const secret of [
+      "hunter2pw",
+      "sk-inline-123",
+      "tok-after-flag",
+      "sk-live-zzz123",
+      "remote-bearer-1",
+      "oauth-secret-1",
+    ]) {
+      expect(config).not.toContain(secret);
+    }
+    for (const kept of [
+      "${PG_PASS}",
+      "region=eu",
+      "clientId: app",
+      "--verbose",
+      "postgresql://app:@db",
+    ]) {
+      expect(config).toContain(kept);
+    }
+
+    const res = await owner.upload(importUrl("?agentId=mcp_secrets&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.toFill.filter((label) => label.startsWith("mcp:"))).toEqual([]);
+    const restored = parseYaml(
+      await fs.readFile(path.join(state, "system_config.yaml"), "utf8"),
+    ) as {
+      tools: { mcpServers: typeof servers };
+    };
+    expect(restored.tools.mcpServers).toEqual(servers);
+  });
+
+  it.skipIf(!canCreateSymlink())(
+    "a part directory that is a link out of the State is left out of the export, and the preview notes it",
+    async () => {
+      const state = await newAgent("linked_memory");
+      const outside = path.join(t.root, "outside-memory");
+      await fs.mkdir(path.join(outside, "user"), { recursive: true });
+      await fs.writeFile(path.join(outside, "user", "secret.md"), "outside the State\n");
+      await fs.rm(path.join(state, "memory"), { recursive: true, force: true });
+      await fs.symlink(outside, path.join(state, "memory"), "dir");
+
+      const names = Object.keys(entriesOf(await exported("linked_memory")));
+      const preview = (await (
+        await member.get(`${agentBase("linked_memory")}/archive/preview`)
+      ).json()) as AgentArchivePreview;
+
+      expect(names.filter((n) => n.startsWith("agent_state/memory/"))).toEqual([]);
+      expect(preview.notes).toEqual([
+        expect.objectContaining({ code: "link_skipped", subject: "memory" }),
+      ]);
+      expect(preview.parts.memory).toEqual({ files: 0, bytes: 0 });
+    },
+  );
+
+  it.each<[string, Record<string, number>, string]>([
+    ["one file past the per-entry cap", { "big.md": 257 * 1024 * 1024 }, "entry"],
+    [
+      "more bytes than an import inflates",
+      Object.fromEntries([1, 2, 3, 4, 5].map((n) => [`part${n}.md`, 250 * 1024 * 1024])),
+      "inflated",
+    ],
+  ])("a selection with %s is refused, and the preview says why", async (_name, sizes, reason) => {
+    const id = `too_big_${reason}`;
+    const state = await newAgent(id);
+    for (const [name, size] of Object.entries(sizes)) {
+      // Sparse: the size is declared, not written.
+      const file = path.join(state, "memory", "user", name);
+      await fs.writeFile(file, "");
+      await fs.truncate(file, size);
+    }
+
+    const preview = (await (
+      await member.get(`${agentBase(id)}/archive/preview`)
+    ).json()) as AgentArchivePreview;
+    const res = await member.get(`${agentBase(id)}/archive`);
+
+    expect(preview.refusal).toMatchObject({ reason });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "archive_too_large",
+    );
+  });
+
+  it("none of the entries that never travel lands, nor a part the manifest marks false", async () => {
+    const zip = crafted(
+      {
+        "crafted/agent_state/skills/s/SKILL.md": strToU8("---\nname: s\n---\n"),
+        "crafted/agent_state/skills/s/.git/config": strToU8("[core]\n"),
+        "crafted/agent_state/.vault.toml": strToU8('PLANTED = "1"\n'),
+        "crafted/agent_state/.VAULT.toml": strToU8('PLANTED = "2"\n'),
+        "crafted/agent_state/notes.penguin-tmp0a1b2c": strToU8("staged\n"),
+        "crafted/agent_state/workbenches/w/package.json": strToU8('{"name":"w"}'),
+        "crafted/agent_state/workbenches/w/.build/out.js": strToU8("built\n"),
+        "crafted/agent_state/workbenches/w/.harness/types.d.ts": strToU8("types\n"),
+        "crafted/agent_state/workbenches/w/node_modules/dep/index.js": strToU8("dep\n"),
+        "crafted/agent_state/workbenches/w/.plugin.json": strToU8("{}"),
+        "crafted/agent_state/memory/user/planted.md": strToU8("not imported\n"),
+      },
+      { manifest: { parts: { ...PARTS_ALL, memory: false } } },
+    );
+
+    const res = await member.upload(importUrl("?agentId=filtered"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const state = agentStateDir(t.root, projectId, "filtered");
+    const landed = (await fs.readdir(state, { recursive: true })).map((n) =>
+      String(n).replaceAll("\\", "/"),
+    );
+    expect(landed).toContain("workbenches/w/package.json");
+    expect(landed).toContain("skills/s/SKILL.md");
+    expect(
+      landed.filter((n) =>
+        /\.git|vault\.toml|penguin-tmp|\.build|\.harness|node_modules|\.plugin\.json|planted/i.test(
+          n,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("an overwrite that brings schedules and workbenches without their data keeps the Agent's expired schedules and workbench data", async () => {
+    await furnishedAgent("schedule_donor");
+    const target = await newAgent("schedule_target");
+    await write(target, {
+      "schedule/expired/kept.toml":
+        'prompt = "k"\nenabled = false\nstart_at = "2020-01-01T00:00:00Z"\n',
+      "workbenches/todo/package.json": '{"name":"todo","penguin":{"modules":["index.ts"]}}',
+      "workbenches/todo/state.json": '{"mine":1}',
+    });
+    const zip = await exported("schedule_donor", "?schedules=1&workbenchData=0");
+
+    const res = await owner.upload(importUrl("?agentId=schedule_target&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(await fs.readFile(path.join(target, "schedule", "daily.toml"), "utf8")).toContain("p");
+    expect(
+      await fs.readFile(path.join(target, "schedule", "expired", "kept.toml"), "utf8"),
+    ).toContain("k");
+    expect(await fs.readFile(path.join(target, "workbenches", "todo", "state.json"), "utf8")).toBe(
+      '{"mine":1}',
+    );
+    expect(await fs.readFile(path.join(target, "workbenches", "todo", "index.ts"), "utf8")).toBe(
+      "export default {};\n",
+    );
+  });
+
+  it("a hand-written overwrite keeps the Agent's tools and the MCP credential its definition leaves blank", async () => {
+    const target = await newAgent("hand_target");
+    await write(target, { "tools/custom.json": "{}\n" });
+    await owner.put(`${agentBase("hand_target")}/config`, {
+      config: {
+        mcpServers: [
+          { name: "github", config: { command: "node", env: { GITHUB_TOKEN: "mine" } } },
+        ],
+      },
+    });
+    const zip = zipSync({
+      "hand/manifest.json": strToU8(
+        JSON.stringify({
+          format: "penguin-agent-zip/1",
+          agentId: "hand",
+          definition: {
+            mcpServers: [
+              { name: "github", config: { command: "node", env: { GITHUB_TOKEN: "" } } },
+            ],
+          },
+        }),
+      ),
+    });
+
+    const res = await owner.upload(importUrl("?agentId=hand_target&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.toFill).not.toContain("mcp:github:env:GITHUB_TOKEN");
+    const config = (await (
+      await owner.get(`${agentBase("hand_target")}/config`)
+    ).json()) as AgentConfigResponse;
+    expect(config.config.mcpServers[0]!.config).toMatchObject({ env: { GITHUB_TOKEN: "mine" } });
+    expect(await fs.readFile(path.join(target, "tools", "custom.json"), "utf8")).toBe("{}\n");
+  });
+
+  it("an overwrite makes the Agent's cached runtime rebuild at its next use", async () => {
+    await newAgent("runtime_agent");
+    const sid = uniqueSessionId();
+    t.deps.sessionsRepo.insert(
+      sessionRow(sid, { projectId, agentId: "runtime_agent", workspace: t.root }),
+    );
+    const idle = () => t.deps.manager.statusOf(sid) === "idle";
+    loads = 0;
+    await t.deps.manager.startTask(sid, [userText("a")]);
+    await waitFor(idle);
+    await t.deps.manager.startTask(sid, [userText("b")]);
+    await waitFor(idle);
+    expect(loads).toBe(1);
+    const zip = await exported("runtime_agent");
+
+    const res = await owner.upload(importUrl("?agentId=runtime_agent&overwrite=1"), zip);
+    expect(res.status, await res.clone().text()).toBe(201);
+    await t.deps.manager.startTask(sid, [userText("c")]);
+    await waitFor(idle);
+
+    expect(loads).toBe(2);
   });
 });

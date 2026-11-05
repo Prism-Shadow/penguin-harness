@@ -77,14 +77,18 @@ export abstract class Snapshots {
   abstract backupBeforeImport(projectId: string, agentId: string): Promise<string>;
   /**
    * Replaces `agent_state/` with `incoming` in one rename swap, the current vault and the
-   * entries at the `carry` paths (relative to `agent_state/`) kept, rolled back on failure.
+   * entries at the `carry` paths (relative to `agent_state/`) kept, rolled back on failure;
+   * `backup` is named by an error that leaves the Agent's parts in its marked staging folder.
    */
   abstract swapAgentState(
     projectId: string,
     agentId: string,
     incoming: string,
     carry?: readonly string[],
+    backup?: string | null,
   ): Promise<void>;
+  /** Puts back what interrupted swaps left (marked staging folders), for one Agent or all. */
+  abstract recoverStrandedSwaps(scope?: { projectId: string; agentId: string }): Promise<void>;
 }
 
 /** Memory: the mechanism MemoryService implements. */

@@ -27,6 +27,7 @@ function startup(pass: () => Promise<void>) {
     errors: { record: (args: ErrorRecordArgs) => void errors.push(args) },
     projectConfig: { migrateStoredConfigs: async () => {} },
     agents: { resumeDeletions: async () => {} },
+    snapshots: { recoverStrandedSwaps: async () => {} },
   });
   return { step, scheduler, orgScheduler, errors };
 }

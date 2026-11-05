@@ -45,6 +45,8 @@ export interface AgentArchiveRouteDeps {
   traceStore: TraceIndexStore;
   traces: Traces;
   sessionsRepo: SessionIndex;
+  /** The cached runtimes an overwrite invalidates. */
+  runtimes: Pick<SessionManager, "invalidateAgentRuntimes">;
   /** How an imported Agent is answered: the same card the Agents list shows. */
   summary: AgentSummaryDeps;
 }
@@ -166,6 +168,7 @@ export class AgentArchiveRoutes {
       traceStore: this.traceStore,
       traces: this.traces,
       sessionsRepo: this.sessionsRepo,
+      runtimes: this.manager as SessionManager,
       summary: {
         agentApi: this.agentApi,
         manager: this.manager as SessionManager,
