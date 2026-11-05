@@ -250,15 +250,6 @@ export function SkillAdamWidget() {
                 : "fill-gray-50/50 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
             }
           />
-          {/* Active Top Accent Pill on Stage 1 */}
-          <rect
-            x="64"
-            y="19"
-            width="124"
-            height="3"
-            rx="1.5"
-            className={isS0 ? "fill-brand-600 dark:fill-brand-400" : "fill-transparent"}
-          />
           <text
             x="20"
             y="42"
@@ -414,14 +405,6 @@ export function SkillAdamWidget() {
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
           />
-          <rect
-            x="294"
-            y="19"
-            width="80"
-            height="3"
-            rx="1.5"
-            className={isS1 ? "fill-brand-600 dark:fill-brand-400" : "fill-transparent"}
-          />
           <text
             x="334"
             y="42"
@@ -504,14 +487,6 @@ export function SkillAdamWidget() {
                 ? "fill-brand-50/40 stroke-brand-600 dark:fill-brand-950/30 dark:stroke-brand-400"
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
-          />
-          <rect
-            x="450"
-            y="19"
-            width="80"
-            height="3"
-            rx="1.5"
-            className={isS2 ? "fill-brand-600 dark:fill-brand-400" : "fill-transparent"}
           />
           <text
             x="490"
@@ -651,14 +626,6 @@ export function SkillAdamWidget() {
                 ? "fill-emerald-50/40 stroke-emerald-600 dark:fill-emerald-950/30 dark:stroke-emerald-400"
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
-          />
-          <rect
-            x="606"
-            y="19"
-            width="80"
-            height="3"
-            rx="1.5"
-            className={isS3 ? "fill-emerald-600 dark:fill-emerald-400" : "fill-transparent"}
           />
           <text
             x="646"
