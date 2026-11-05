@@ -204,7 +204,7 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
               onChange={toggle("workbenches")}
             />
             {/* Indented under its parent, and off with it: the data means nothing without the source. */}
-            <div className="pl-6">
+            <div className="flex pl-6">
               <Checkbox
                 size="sm"
                 label={S.agent.exportWorkbenchData}
