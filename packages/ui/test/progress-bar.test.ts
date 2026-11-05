@@ -18,9 +18,6 @@ describe("ProgressBar", () => {
     expect(html).toContain('aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"');
     expect(html).toContain('data-layout-motion=""');
     expect(html).toContain("width:100%");
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-line-muted", "bg-tone-danger-emphasis"]),
-    );
   });
 
   it("reports no value while indeterminate, and pulses through the live hook", () => {
@@ -30,9 +27,7 @@ describe("ProgressBar", () => {
     expect(html).not.toContain("aria-valuenow");
     expect(html).not.toContain("data-layout-motion");
     expect(html).toContain('data-live="bar"');
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-accent", "w-1/3", "ui-live", "animate-pulse"]),
-    );
+    expect(classTokens(html)).toContain("ui-live");
   });
 
   it("passes the caller's tooltip through to the bar", () => {

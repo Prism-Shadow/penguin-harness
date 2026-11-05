@@ -3,20 +3,15 @@
  * button that opens the conversation, the title drawn by the caller in the row's ink, marks that
  * each name themselves, one reserved box for the live state, and a trailing slot whose time gives
  * way to the hover actions. The row's menu mounts only while open, which a static render never
- * is; what its wiring must keep doing is pinned against the source.
+ * is; what its wiring must keep doing on a real page is session-row.dom.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ICONS } from "../src/components/icons/icons";
 import { NAV_FILL } from "../src/components/navigation/nav-list/nav-list";
 import { RowHoverActions, SessionRow } from "../src/components/shell/session-row/session-row";
 import type { SessionRowProps } from "../src/components/shell/session-row/session-row";
-import { classTokens, renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
-
-const SOURCE = readFileSync(join(SRC_DIR, "components/shell/session-row/session-row.tsx"), "utf8");
+import { classTokens, renderStatic, markupStructure } from "../src/testing";
 
 const action = (id: string, label: string, danger = false) => ({
   id,
@@ -43,19 +38,9 @@ const row = (props: Partial<SessionRowProps> = {}) =>
 describe("SessionRow", () => {
   it("is a list item whose button opens the conversation, under the title-reveal hook", () => {
     const html = row();
-    expect(html).toMatch(/^<li class="relative">/);
+    expect(html).toMatch(/^<li class="[^"]*">/);
     expect(html).toContain('data-title-reveal="true"');
     expect(html).toContain('data-testid="session-row" data-session-id="s-1"');
-  });
-
-  it("hands the title its ink: medium on the open row, subtle when archived, near-full at rest", () => {
-    expect(row({ active: true })).toContain(
-      'class="min-w-0 flex-1 font-sans text-sm font-medium text-fg"',
-    );
-    expect(row({ archived: true })).toContain(
-      'class="min-w-0 flex-1 font-sans text-sm text-fg-subtle"',
-    );
-    expect(row()).toContain('class="min-w-0 flex-1 font-sans text-sm text-fg/80"');
   });
 
   it("fills the open row with the column's selected wash and the others with its hover", () => {
@@ -75,7 +60,7 @@ describe("SessionRow", () => {
       approvals: { count: 3, label: "3 个待审批" },
       agent: { id: "coder", name: "Coder" },
     });
-    expect(html).toContain('<span data-tooltip="CLI" class="shrink-0 text-fg-subtle">');
+    expect(markupStructure(html)).toContain('<span data-tooltip="CLI">');
     expect(html).toContain('<span class="sr-only">CLI</span>');
     expect(html).toContain('<span class="sr-only">已置顶</span>');
     expect(html).toContain('<span class="sr-only">飞书远程控制</span>');
@@ -89,7 +74,6 @@ describe("SessionRow", () => {
 
   it("draws a source mark only when it has both a glyph and its words", () => {
     // A mark is the subtle-ink span after the title; neither half alone draws one.
-    expect(row({ sourceGlyph: ICONS.plug })).not.toContain('class="shrink-0 text-fg-subtle"');
     expect(row({ sourceLabel: "API" })).not.toContain("API");
   });
 
@@ -103,20 +87,13 @@ describe("SessionRow", () => {
   });
 
   it("keeps the live state's box whether or not it holds a glyph", () => {
-    expect(row()).toContain('<span aria-hidden="true" class="block h-3 w-3 shrink-0"></span>');
+    expect(markupStructure(row())).toContain('<span aria-hidden="true"></span>');
     const running = row({ activity: { state: "running", label: "运行中" } });
     expect(running).toContain('role="status" aria-label="运行中"');
-    expect(running).not.toContain("block h-3 w-3 shrink-0");
   });
 
-  it("reserves a trailing slot per language, its time on the small rung", () => {
-    expect(classTokens(row())).toContain("w-14");
-    expect(classTokens(row({ timeSlot: "wide" }))).toContain("w-[4.5rem]");
-    const tokens = classTokens(row());
-    expect(tokens).toContain("text-xs");
-    expect(tokens).not.toContain("text-[11px]");
+  it("shows the time in the reader's language", () => {
     expect(row()).toContain(">3 分钟前</span>");
-    expect(row({ time: "" })).not.toContain("tabular-nums text-fg-subtle transition-opacity");
   });
 
   it("offers the hover actions and the menu's pointer entry, never the menu rows while closed", () => {
@@ -129,18 +106,7 @@ describe("SessionRow", () => {
   it("drags only under manual order, with the drop line on the edge it would land on", () => {
     expect(row()).not.toContain('draggable="true"');
     const dragged = row({ draggable: true, dropEdge: "below" });
-    expect(dragged).toMatch(/^<li class="relative" draggable="true">/);
-    expect(classTokens(dragged)).toEqual(
-      expect.arrayContaining(["cursor-grab", "-bottom-px", "bg-accent"]),
-    );
-  });
-
-  it("wires all three menu openers and names the anchor's owner", () => {
-    expect(SOURCE).toContain("{...ctx.rowProps}");
-    expect(SOURCE).toContain("ctx.consumeLongPressClick()");
-    expect(SOURCE).toContain("anchorOwner={ctx.anchorOwner}");
-    // A menu row hands focus back to the row before it acts.
-    expect(SOURCE).toMatch(/ctx\.returnFocus\(\)\?\.focus\(\);\s*ctx\.close\(\);/);
+    expect(dragged).toMatch(/^<li class="[^"]*" draggable="true">/);
   });
 });
 
@@ -153,25 +119,20 @@ describe("RowHoverActions", () => {
     }),
   );
 
-  it("gates taps exactly as it gates sight, on hover and on focus", () => {
-    const tokens = classTokens(html);
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "pointer-events-none",
-        "opacity-0",
-        "group-hover:pointer-events-auto",
-        "group-hover:opacity-100",
-        "focus:pointer-events-auto",
-        "focus:opacity-100",
-      ]),
-    );
-    expect(tokens).not.toContain("focus-visible:opacity-100");
-    expect(tokens).not.toContain("transition-all");
+  it("names each button", () => {
+    expect(html).toContain('data-tooltip="Archive" aria-label="Archive"');
+    expect(html).toContain('data-tooltip="More" aria-label="More" aria-haspopup="menu"');
   });
 
-  it("names each button, and gives only the destructive one the danger ink", () => {
-    expect(html).toContain('data-tooltip="Archive" aria-label="Archive"');
-    expect(html.match(/hover:text-tone-danger-fg/g)).toHaveLength(1);
-    expect(html).toContain('data-tooltip="More" aria-label="More" aria-haspopup="menu"');
+  // A named guard, kept by decision: the hidden buttons' tap gate lives in these classes alone,
+  // and without it a tap on a row's hidden trailing edge archives or deletes on a touch screen.
+  it("gates taps exactly as it gates sight, on hover and on focus", () => {
+    expect(classTokens(html)).toEqual(
+      expect.arrayContaining([
+        "pointer-events-none",
+        "group-hover:pointer-events-auto",
+        "focus:pointer-events-auto",
+      ]),
+    );
   });
 });

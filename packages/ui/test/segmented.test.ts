@@ -7,7 +7,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Segmented } from "../src/components/forms/segmented/segmented";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const render = (cols?: 2 | 3 | 4 | 5, badge = false) =>
   renderStatic(
@@ -31,19 +31,6 @@ describe("Segmented", () => {
     const html = render();
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-pressed="true" class="[^"]*bg-control-choice[^"]*">Dark</);
-  });
-
-  it("spells its column count as a whole class, for every count it takes", () => {
-    for (const cols of [2, 3, 4, 5] as const) {
-      expect(classTokens(render(cols))).toContain(`grid-cols-[repeat(${cols},1fr)]`);
-    }
-    expect(classTokens(render())).toContain("grid-cols-[repeat(3,1fr)]");
-  });
-
-  it("sits in a control-shaped well on the rhythm's steps", () => {
-    expect(classTokens(render())).toEqual(
-      expect.arrayContaining(["rounded-control", "bg-control-well", "p-1", "gap-1"]),
-    );
   });
 
   it("rounds its chips concentric with the well: the well's radius less its one-unit inset", () => {

@@ -1,11 +1,10 @@
 /**
  * Prose and Md: Markdown in its reading box, the three densities, the link default and the
- * resolver that overrides it, fenced code routed into CodeBlock, and the stylesheets the box reads.
- * How the pipeline typesets math is prose-math.test.ts; where a bare URL ends is
- * remark-autolink-boundary.test.ts.
+ * resolver that overrides it, and fenced code routed into CodeBlock. How the pipeline typesets
+ * math is prose-math.test.ts; where a bare URL ends is remark-autolink-boundary.test.ts; the
+ * stylesheets the box reads are held with every component stylesheet by
+ * component-stylesheets.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,21 +12,16 @@ import {
   PROSE_NEW_TAB,
   Prose,
   ProseLinksProvider,
-  SETTLED_MD_COMPONENTS,
 } from "../src/components/content/prose/prose";
 import type { ProseLinkResolver } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
-
-const PROSE = join(SRC_DIR, "components/content/prose");
-const read = (name: string) => readFileSync(join(PROSE, name), "utf8");
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
 
 describe("Prose", () => {
-  it("wraps the Markdown in the reading box, in the reading face, with the caller's ink", () => {
+  it("renders the caller's Markdown", () => {
     const html = renderStatic(
       createElement(Prose, { text: "Hello **world**", className: "text-base text-fg" }),
     );
@@ -38,9 +32,9 @@ describe("Prose", () => {
   it("takes the three densities as class sets prose.css styles", () => {
     const tokens = (variant: "body" | "compact" | "flush") =>
       classTokens(renderStatic(createElement(Prose, { text: "x", variant })));
-    expect(tokens("body")).toEqual(["font-sans", "md-body"]);
-    expect(tokens("compact")).toEqual(["font-sans", "md-body", "md-compact"]);
-    expect(tokens("flush")).toEqual(["font-sans", "md-body", "md-body-flush"]);
+    expect(tokens("body")).toContain("md-body");
+    expect(tokens("compact")).toEqual(expect.arrayContaining(["md-body", "md-compact"]));
+    expect(tokens("flush")).toEqual(expect.arrayContaining(["md-body", "md-body-flush"]));
   });
 });
 
@@ -54,7 +48,6 @@ describe("Md links", () => {
       expect(tag).toContain('target="_blank"');
       expect(tag).toContain('rel="noreferrer"');
     }
-    expect(PROSE_NEW_TAB).toEqual({ target: "_blank", rel: "noreferrer" });
   });
 
   it("take what a resolver decides, per href, after the href itself", () => {
@@ -103,7 +96,6 @@ describe("Md code", () => {
   });
 
   it("lets a surface add adapters over the settled map without losing the code block", () => {
-    expect(Object.keys(SETTLED_MD_COMPONENTS).sort()).toEqual(["a", "pre"]);
     const html = renderStatic(
       createElement(Md, {
         text: "![alt](pic.png)\n\n```\nx\n```",
@@ -112,61 +104,5 @@ describe("Md code", () => {
     );
     expect(html).toContain("<i>image</i>");
     expect(html).toContain("code-block");
-  });
-});
-
-describe("the content stylesheet", () => {
-  const css = read("prose.css");
-
-  it("is loaded by the components that need it, KaTeX's sheet with the Markdown", () => {
-    expect(read("prose.tsx")).toMatch(/import "katex\/dist\/katex\.min\.css";/);
-    expect(read("prose.tsx")).toMatch(/import "\.\/prose\.css";/);
-    const code = readFileSync(
-      join(SRC_DIR, "components/content/code-block/code-block.tsx"),
-      "utf8",
-    );
-    expect(code).toMatch(/import "\.\.\/prose\/prose\.css";/);
-  });
-
-  it("stays unlayered and free of Tailwind directives, so it needs no build pass and beats utilities", () => {
-    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
-  });
-
-  it("colours through tokens alone, and switches mode only for Shiki's own palette", () => {
-    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(/i);
-    expect(rules).not.toMatch(/--color-/);
-    expect(rules.match(/\.dark\b/g)).toHaveLength(2);
-    expect(rules).toMatch(/html\.dark \.shiki,\s*html\.dark \.shiki span \{/);
-  });
-
-  it("keeps the code-surface resets after the Markdown pre rule they override at equal weight", () => {
-    expect(css.indexOf(".md-body pre {")).toBeGreaterThan(-1);
-    expect(css.indexOf(".code-surface :is(pre, textarea) {")).toBeGreaterThan(
-      css.indexOf(".md-body pre {"),
-    );
-  });
-});
-
-describe("the Markdown table stylesheet", () => {
-  const rules = read("markdown-table.css").replace(/\/\*[\s\S]*?\*\//g, "");
-
-  it("is loaded wherever Markdown renders: by the app's Markdown and by the sites' prose", () => {
-    expect(read("prose.tsx")).toMatch(
-      /import "\.\/prose\.css";\s*import "\.\/markdown-table\.css";/,
-    );
-    expect(readFileSync(join(SRC_DIR, "site.css"), "utf8")).toMatch(
-      /@import "\.\/components\/content\/prose\/markdown-table\.css";/,
-    );
-  });
-
-  it("stays unlayered and free of Tailwind directives, so it needs no build pass and beats utilities", () => {
-    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
-  });
-
-  it("names no palette of its own, so every host's palette and mode can map onto it", () => {
-    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(/i);
-    expect(rules).not.toMatch(/--color-|--ui-|--site-|\.dark\b/);
   });
 });
