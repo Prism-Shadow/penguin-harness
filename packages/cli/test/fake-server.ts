@@ -2,16 +2,18 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch/delete, tasks/steer/compact/switch-model/abort, SSE stream,
- * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
- * organizations and their channels, the plugins installed on the server, and — through
- * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
+ * messages, agents and their public API settings, an agent's archive (the zip export and the raw
+ * import upload), projects, usage, schedules, the admin settings, organizations and their channels,
+ * the plugins installed on the server, and — through the `builtinBrowser` handler a test sets — the
+ * built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
  *
  * Credentials, as the server reads them: a request without one is let through (the token gate
  * above); a Bearer header is the local API token, which the agent API writes and the admin's
  * `agentApiEnabled` refuse with 403 `human_required`; a `penguin_session` cookie is a sign-in,
- * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
+ * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent: a
+ * JSON body parsed, any other body as the raw bytes received, with its content type.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
  * (default-event AmspRecord frames, `event: server_event` control frames, incrementing
@@ -21,6 +23,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 type Json = Record<string, unknown>;
 
@@ -183,6 +186,22 @@ function mentionsOf(text: string): string[] {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
+/**
+ * The Agent id an archive's `manifest.json` suggests — at the zip's root or inside its one
+ * top-level directory, as the server reads it — or null when the body is no zip or names none.
+ */
+function manifestAgentId(bytes: Uint8Array): string | null {
+  try {
+    const files = unzipSync(bytes, { filter: (f) => /^(?:[^/]+\/)?manifest\.json$/.test(f.name) });
+    const manifest = Object.values(files)[0];
+    if (manifest === undefined) return null;
+    const agentId = (JSON.parse(strFromU8(manifest)) as Json).agentId;
+    return isNonEmptyString(agentId) ? agentId : null;
+  } catch {
+    return null;
+  }
+}
+
 export class FakeServer {
   /**
    * Every request, in order: the path without its query, the query on its own, the parsed body,
@@ -193,6 +212,8 @@ export class FakeServer {
     path: string;
     search: string;
     body?: Json;
+    /** A body that is not JSON (an archive upload): the bytes as received and their content type. */
+    raw?: { contentType: string | null; bytes: Uint8Array };
     credential?: { authorization?: string; cookie?: string };
   }> = [];
   /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
@@ -338,6 +359,82 @@ export class FakeServer {
       status: 201,
       body: { installed: { name: "@acme/notes", version: "1.0.0", library: true, modules: false } },
     }),
+  };
+
+  /**
+   * An agent's archive. `exported` answers GET …/agents/:a/archive for its query as sent: the zip's
+   * body — bytes, or a stream a test can break off — and the attachment filename the response names
+   * (none when absent). The default is a small zip of that agent named `<agentId>-20260902.zip`.
+   * `imported` answers POST …/agents/import for the raw body as received and its query. The default
+   * answers as the server does for an empty archive: the id from `agentId`, else from the zip's
+   * manifest; 409 `agent_exists` for a listed agent unless `overwrite=1`; otherwise the agent is
+   * created (listed from then on) or overwritten, with nothing imported.
+   */
+  agentArchive: {
+    exported: (
+      agentId: string,
+      query: URLSearchParams,
+    ) => { body: Uint8Array | ReadableStream<Uint8Array>; fileName?: string };
+    imported: (bytes: Uint8Array, query: URLSearchParams) => { status?: number; body: unknown };
+  } = {
+    exported: (agentId) => ({
+      body: zipSync({
+        [`${agentId}/manifest.json`]: strToU8(
+          JSON.stringify({ format: "penguin-agent-zip/1", agentId }),
+        ),
+      }),
+      fileName: `${agentId}-20260902.zip`,
+    }),
+    imported: (bytes, query) => {
+      const agentId = query.get("agentId") ?? manifestAgentId(bytes);
+      if (agentId === null) {
+        return {
+          status: 400,
+          body: { error: { code: "bad_request", message: "The archive names no Agent id." } },
+        };
+      }
+      const existing = this.agents.find((a) => a.agentId === agentId);
+      if (existing !== undefined && query.get("overwrite") !== "1") {
+        return {
+          status: 409,
+          body: {
+            error: {
+              code: "agent_exists",
+              message: `Agent ${agentId} already exists.`,
+              details: { agentId },
+            },
+          },
+        };
+      }
+      const agent = existing ?? {
+        agentId,
+        name: agentId,
+        description: "",
+        sessionCount: 0,
+        activeSessionCount: 0,
+        sessionActivity: [],
+      };
+      if (existing === undefined) this.agents.push(agent);
+      return {
+        status: 201,
+        body: {
+          agent,
+          mode: existing === undefined ? "created" : "overwritten",
+          version: 1,
+          imported: {
+            skills: 0,
+            hooks: 0,
+            memoryFiles: 0,
+            workbenches: 0,
+            schedules: 0,
+            traces: { sessions: 0, files: 0 },
+          },
+          skippedTraces: [],
+          toFill: [],
+          notes: [],
+        },
+      };
+    },
   };
 
   private nextSessionOrdinal = 1;
@@ -1766,8 +1863,11 @@ export class FakeServer {
     const method = (init?.method ?? "GET").toUpperCase();
     const apiPath = url.pathname;
     let body: Json | undefined;
+    let raw: Uint8Array | undefined;
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
+    } else if (init?.body !== undefined && init.body !== null) {
+      raw = new Uint8Array(await new Response(init.body).arrayBuffer());
     }
     const headers = new Headers(init?.headers);
     const authorization = headers.get("authorization") ?? undefined;
@@ -1777,6 +1877,9 @@ export class FakeServer {
       path: apiPath,
       search: url.search,
       ...(body !== undefined ? { body } : {}),
+      ...(raw !== undefined
+        ? { raw: { contentType: headers.get("content-type"), bytes: raw } }
+        : {}),
       ...(authorization !== undefined || cookie !== undefined
         ? {
             credential: {
@@ -1804,6 +1907,27 @@ export class FakeServer {
       });
       const status = answer.status ?? 200;
       return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
+    }
+
+    const archiveMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive$/.exec(apiPath);
+    if (archiveMatch && method === "GET") {
+      const answer = this.agentArchive.exported(
+        decodeURIComponent(archiveMatch[1]!),
+        url.searchParams,
+      );
+      return new Response(answer.body, {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          ...(answer.fileName !== undefined
+            ? { "content-disposition": `attachment; filename="${answer.fileName}"` }
+            : {}),
+        },
+      });
+    }
+    if (/^\/api\/projects\/[^/]+\/agents\/import$/.test(apiPath) && method === "POST") {
+      const answer = this.agentArchive.imported(raw ?? new Uint8Array(0), url.searchParams);
+      return this.json(answer.body, answer.status ?? 201);
     }
 
     if (apiPath === "/api/plugins" && method === "GET") {
