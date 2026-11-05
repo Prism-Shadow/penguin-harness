@@ -37,7 +37,9 @@
  * an employee (a new Agent with it, when it names one) and a leave removes one; and a delete
  * takes the organization away and, with `deleteAgents=1&agentIds=…`, every listed employee's
  * Agent that is not built in and that no other organization employs, answering the report the
- * real route answers (the flag without the list is a 400).
+ * real route answers (the flag without the list is a 400). An organization can have an
+ * unreadable chart (only its CEO is known, and the Agent list names it), and its delete's answer
+ * can be lost after the delete went through.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -199,6 +201,10 @@ export interface FakeOrganization {
    * one's folder cannot be moved: deleting it with the organization fails.
    */
   employees: Array<{ agentId: string; title: string; busy?: boolean }>;
+  /** Its `org_chart.yaml` cannot be read: only its CEO (the first employee) is known to work there. */
+  chartUnreadable?: boolean;
+  /** Its delete goes through, but the answer is lost on the way (a gateway timeout). */
+  answerLost?: boolean;
 }
 
 /** The Agents the server provisions with every Project and never deletes. */
@@ -248,6 +254,8 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
   setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** Breaks an organization's chart (or mends it): from then on only its CEO is known to work there. */
+  setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
 }
@@ -347,7 +355,7 @@ export function agentServer(
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
     organizations.flatMap((o) =>
-      o.employees
+      (o.chartUnreadable === true ? o.employees.slice(0, 1) : o.employees)
         .filter((e) => e.agentId === agentId)
         .map((e) => ({
           orgId: o.orgId,
@@ -550,6 +558,9 @@ export function agentServer(
       return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
+      const unreadableCharts = organizations
+        .filter((o) => o.chartUnreadable === true)
+        .map((o) => ({ orgId: o.orgId, orgName: o.name }));
       return json({
         agents: localAgentIds.map((id) => {
           const employments = employmentsOf(id);
@@ -559,6 +570,7 @@ export function agentServer(
             ...(employments.length > 0 ? { employments } : {}),
           };
         }),
+        ...(unreadableCharts.length > 0 ? { unreadableCharts } : {}),
       });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
@@ -656,11 +668,17 @@ export function agentServer(
         };
         if (deleteAgents) {
           const confirmed = new Set(listed === "" ? [] : (listed ?? "").split(","));
+          const unreadable = organizations
+            .filter((o) => o.chartUnreadable === true)
+            .map((o) => ({ orgId: o.orgId, orgName: o.name }));
           for (const { agentId, busy } of org.employees) {
             if (BUILTIN_AGENTS.has(agentId)) {
               report.keptAgents.push({ agentId, reason: "builtin" });
             } else if (employmentsOf(agentId).length > 0) {
               report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
+            } else if (unreadable.length > 0) {
+              report.keptAgents.push({ agentId, reason: "employment_unknown" });
+              report.unreadableCharts = unreadable;
             } else if (!confirmed.has(agentId)) {
               report.keptAgents.push({ agentId, reason: "not_confirmed" });
             } else if (busy === true) {
@@ -677,7 +695,7 @@ export function agentServer(
             }
           }
         }
-        return json(report);
+        return org.answerLost === true ? apiError(504, "gateway_timeout") : json(report);
       }
       const employeeItem = (e: { agentId: string; title: string }, i: number) => ({
         agentId: e.agentId,
@@ -948,6 +966,10 @@ export function agentServer(
     setReconnecting: (machineId, reconnecting) => {
       const machine = machines.find((m) => m.machineId === machineId);
       if (machine !== undefined) machine.reconnecting = reconnecting;
+    },
+    setChartUnreadable: (orgId, unreadable) => {
+      const org = organizations.find((o) => o.orgId === orgId);
+      if (org !== undefined) org.chartUnreadable = unreadable;
     },
     messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
   };

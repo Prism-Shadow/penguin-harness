@@ -23,6 +23,7 @@ import type {
   OrgChannelMessageSendRequest,
   OrgChannelMessagesResponse,
   Employment,
+  UnreadableChart,
   OrgChartResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
@@ -160,8 +161,8 @@ export interface Actor {
 export interface EmploymentCensus {
   /** By Agent id, as `employments` answers it. */
   employments: Record<string, Employment[]>;
-  /** The organizations whose `org_chart.yaml` is missing or does not parse. */
-  unreadableCharts: string[];
+  /** The organizations whose `org_chart.yaml` is missing or does not parse, with their names. */
+  unreadableCharts: UnreadableChart[];
 }
 
 const notFound = (orgId: string): HttpError =>
@@ -334,7 +335,7 @@ export class OrganizationService {
    */
   async employmentCensus(projectId: string): Promise<EmploymentCensus> {
     const employments: Record<string, Employment[]> = {};
-    const unreadableCharts: string[] = [];
+    const unreadableCharts: UnreadableChart[] = [];
     const add = (agentId: string, employment: Employment) => {
       if (Object.hasOwn(employments, agentId)) employments[agentId]!.push(employment);
       else employments[agentId] = [employment];
@@ -342,7 +343,7 @@ export class OrganizationService {
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
-      if (org.chartUnreadable === true) unreadableCharts.push(orgId);
+      if (org.chartUnreadable === true) unreadableCharts.push({ orgId, orgName: org.config.name });
       const base = { orgId, orgName: org.config.name, status: org.config.status };
       for (const e of org.chart.employees) add(e.agentId, { ...base, title: e.title });
       const ceo = ceoAgentId(orgId);

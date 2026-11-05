@@ -11,8 +11,10 @@
  * - Given the list read before a hire and a second employment: an employee the caller did not
  *   list is kept as `not_confirmed`, and a listed one another organization has employed since is
  *   kept as `employed_elsewhere`; only the rest are deleted.
- * - Given another organization whose chart does not parse, no employee is deleted: each is kept
- *   as `employment_unknown`.
+ * - Given a listed id that is no employee of this organization — an Agent nobody employs, an
+ *   employee of another organization — it is ignored: still listed, and in no report list.
+ * - Given another organization whose chart does not parse, the Agent list names it, and no
+ *   employee is deleted: each is kept as `employment_unknown`, naming that organization.
  * - Given one employee whose folder cannot be moved, it is reported as failed with
  *   `agent_folder_busy` and still listed, while the others are deleted.
  * - Given `deleteAgents=1` without `agentIds`, the delete is refused with 400 and nothing goes,
@@ -176,6 +178,19 @@ describe("deleting an organization", () => {
     expect(await listedAgents()).toEqual(expect.arrayContaining(["delta_new", "delta_ops"]));
   });
 
+  it("ignores a listed id that is no employee of this organization", async () => {
+    await createAgents("iota_ceo", "loner", "rho_dev");
+    await writeOrg("iota", []);
+    await writeOrg("rho", ["rho_dev"]);
+
+    const report = await deleteOrg("iota", ["iota_ceo", "loner", "rho_dev"]);
+
+    expect(report.deletedAgents.map((d) => d.agentId)).toEqual(["iota_ceo"]);
+    expect(report.keptAgents).toEqual([]);
+    expect(report.failedAgents).toEqual([]);
+    expect(await listedAgents()).toEqual(expect.arrayContaining(["loner", "rho_dev"]));
+  });
+
   it("deletes no employee while another organization's chart cannot be read", async () => {
     await createAgents("omega_ceo", "omega_dev");
     await writeOrg("omega", ["omega_dev"]);
@@ -183,6 +198,9 @@ describe("deleting an organization", () => {
     const brokenChart = orgChartPath(store.dir(PROJECT, "broken"));
     await fs.writeFile(brokenChart, "employees: [\n");
     try {
+      const list = (await (await api.get(agentsPath)).json()) as AgentsResponse;
+      expect(list.unreadableCharts).toEqual([{ orgId: "broken", orgName: "BROKEN" }]);
+
       const report = await deleteOrg("omega", ["omega_ceo", "omega_dev"]);
 
       expect(report.deletedAgents).toEqual([]);
@@ -190,6 +208,7 @@ describe("deleting an organization", () => {
         { agentId: "omega_ceo", reason: "employment_unknown" },
         { agentId: "omega_dev", reason: "employment_unknown" },
       ]);
+      expect(report.unreadableCharts).toEqual([{ orgId: "broken", orgName: "BROKEN" }]);
       expect(await listedAgents()).toEqual(expect.arrayContaining(["omega_ceo", "omega_dev"]));
     } finally {
       // The other scenarios share this Project: an unreadable chart would keep all of theirs.

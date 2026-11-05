@@ -5623,11 +5623,20 @@ Scenarios:
     deleteOrgKeptBuiltin: (name: string) => `${name} (built-in)`,
     deleteOrgKeptElsewhere: (name: string, orgNames: string) =>
       `${name} (also employed by ${orgNames})`,
+    deleteOrgKeptUnknown: (name: string) => `${name} (employment unknown)`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `The chart of ${orgNames} cannot be read, so nobody is known to work only here; no agent is deleted until it is fixed.`,
     deleteOrgAgentsLoadFailed:
       "The organization's agents could not be read. Retry, or delete the organization alone and keep all of its agents.",
     /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
     deleteOrgKeptAfterAll: (names: string) =>
       `; kept ${names}, as they changed after the confirmation was shown`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `; kept ${names} because another organization's chart could not be read: ${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) =>
+      `Organization ${orgId} deleted, though its answer did not arrive; the lists were read again`,
     deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
     deleted: (orgId: string) => `Organization ${orgId} deleted`,
     deletedWithAgents: (orgId: string, count: number) =>

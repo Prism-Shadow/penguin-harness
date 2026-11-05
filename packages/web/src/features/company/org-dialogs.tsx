@@ -18,8 +18,11 @@
  * keeps them all instead. Until that list has arrived nothing is armed; if it cannot be read,
  * the checkbox stays off (the organization alone can still go) and the read can be retried.
  * The request names the Agents the confirmation listed, and the server deletes no other — one
- * hired meanwhile is kept, and the toast names whoever was kept against the list. While the
- * delete runs the confirmation cannot be closed. Afterwards the Agent list is read again, as it
+ * hired meanwhile is kept, and the toast names whoever was kept against the list and why. While
+ * another organization's chart cannot be read, the confirmation says so and keeps everyone, as
+ * the server does. While the delete runs the confirmation cannot be closed; when its answer
+ * fails, the organization is read again, and if it is gone the dialog leaves it as a delete
+ * does. Afterwards the Agent list is read again, as it
  * is after a create, a hire or a leave: every employment mark the shell shows — the Agents
  * page's delete button, the sidebar's grouping, the pickers — comes from that list.
  *
@@ -41,7 +44,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
-  AgentSummary,
+  AgentsResponse,
   ModelRefDto,
   ModelsResponse,
   OrgApprovalMode,
@@ -71,6 +74,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { toneInk } from "../../lib/tone";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -615,10 +619,12 @@ function DeletePlanLines({ plan }: { plan: OrgDeletePlan }) {
     .map(({ agent, reason }) =>
       reason.kind === "builtin"
         ? S.company.deleteOrgKeptBuiltin(agentDisplayName(agent))
-        : S.company.deleteOrgKeptElsewhere(
-            agentDisplayName(agent),
-            reason.orgNames.join(separator),
-          ),
+        : reason.kind === "employment_unknown"
+          ? S.company.deleteOrgKeptUnknown(agentDisplayName(agent))
+          : S.company.deleteOrgKeptElsewhere(
+              agentDisplayName(agent),
+              reason.orgNames.join(separator),
+            ),
     )
     .join(separator);
   return (
@@ -657,8 +663,8 @@ function OrganizationSettingsForm({
   const [typedId, setTypedId] = useState("");
   /** Whether the organization's Agents go with it: the confirmation's checkbox, on by default. */
   const [deleteAgents, setDeleteAgents] = useState(true);
-  /** The Project's Agents as read when the confirmation opened; null while they are read. */
-  const [deleteList, setDeleteList] = useState<AgentSummary[] | null>(null);
+  /** The Project's Agent list as read when the confirmation opened; null while it is read. */
+  const [deleteRead, setDeleteRead] = useState<AgentsResponse | null>(null);
   const [deleteListFailed, setDeleteListFailed] = useState(false);
   /** Reads of that list so far: only the newest one's answer is applied. */
   const deleteListAsked = useRef(0);
@@ -666,24 +672,37 @@ function OrganizationSettingsForm({
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** The organization always has a name, a mission and a timezone: an emptied one holds Save. */
   const valid = name.trim() !== "" && mission.trim() !== "" && timezone.trim() !== "";
+  const deleteList = deleteRead?.agents ?? null;
   const deletePlan: OrgDeletePlan | null =
-    deleteList === null ? null : orgDeletePlan(deleteList, orgId);
+    deleteRead === null
+      ? null
+      : orgDeletePlan(deleteRead.agents, orgId, deleteRead.unreadableCharts ?? []);
   /** The Agents go too: the box is on and the list it names has arrived. */
   const agentsGo = deleteAgents && deletePlan !== null;
 
   /** Reads the Agent list afresh, never the shell's copy, which may predate the last hire. */
   const readDeleteList = () => {
-    setDeleteList(null);
+    setDeleteRead(null);
     setDeleteListFailed(false);
     const ask = ++deleteListAsked.current;
     api
       .listAgents(projectId, null)
       .then((res) => {
-        if (ask === deleteListAsked.current) setDeleteList(res.agents);
+        if (ask === deleteListAsked.current) setDeleteRead(res);
       })
       .catch(() => {
         if (ask === deleteListAsked.current) setDeleteListFailed(true);
       });
+  };
+
+  /** Whether the organization is no longer there: its own read answers 404. */
+  const organizationGone = async () => {
+    try {
+      await api.getOrganization(projectId, orgId);
+      return false;
+    } catch (err) {
+      return err instanceof ApiError && err.status === 404;
+    }
   };
 
   const openDeleteConfirm = () => {
@@ -714,15 +733,32 @@ function OrganizationSettingsForm({
       for (const { agentId, deletion } of report.deletedAgents) {
         void followAgentDeletion({ projectId, machineId: null, name: nameOf(agentId), deletion });
       }
-      // Kept against what the confirmation said: hired since, or employed elsewhere since.
+      // Kept against what the confirmation said: because a chart became unreadable, or hired
+      // or employed elsewhere since — each said for what it is.
+      const separator = S.todo.listSeparator;
       const shownKept = new Set(deletePlan?.kept.map(({ agent }) => agent.agentId) ?? []);
-      const keptAfterAll = report.keptAgents
-        .filter((k) => !shownKept.has(k.agentId))
-        .map((k) => nameOf(k.agentId));
+      const surprises = report.keptAgents.filter((k) => !shownKept.has(k.agentId));
+      const unknown = surprises.filter((k) => k.reason === "employment_unknown");
+      const changed = surprises.filter((k) => k.reason !== "employment_unknown");
+      const unreadableOrgs = (report.unreadableCharts ?? []).map((c) => c.orgName);
       const kept =
-        keptAfterAll.length === 0
+        (unknown.length === 0
           ? ""
-          : S.company.deleteOrgKeptAfterAll(failedList(keptAfterAll, S.todo.listSeparator));
+          : S.company.deleteOrgKeptUnreadableAfterAll(
+              failedList(
+                unknown.map((k) => nameOf(k.agentId)),
+                separator,
+              ),
+              unreadableOrgs.join(separator),
+            )) +
+        (changed.length === 0
+          ? ""
+          : S.company.deleteOrgKeptAfterAll(
+              failedList(
+                changed.map((k) => nameOf(k.agentId)),
+                separator,
+              ),
+            ));
       const [firstFailure] = report.failedAgents;
       if (firstFailure !== undefined) {
         const names = failedList(
@@ -740,7 +776,17 @@ function OrganizationSettingsForm({
       onClose();
       onDeleted?.();
     } catch (e) {
-      toastApiError(e);
+      // The answer may have been lost after the organization went (a dropped connection, a
+      // timeout): whether it is still there decides between the refusal and leaving its pages.
+      if (await organizationGone()) {
+        setConfirmDelete(false);
+        toastSuccess(S.company.deletedAnswerLost(orgId));
+        onClose();
+        onDeleted?.();
+      } else {
+        toastApiError(e);
+        onChanged();
+      }
     } finally {
       setBusy(false);
       // Whatever the answer, even none in time, employments may have changed: the Agent list
@@ -973,6 +1019,13 @@ function OrganizationSettingsForm({
           label={S.company.deleteOrgAgents(deletePlan === null ? null : deletePlan.toDelete.length)}
           hint={agentsGo ? <DeletePlanLines plan={deletePlan} /> : undefined}
         />
+        {agentsGo && deletePlan !== null && deletePlan.unreadable.length > 0 && (
+          <p className={`mt-1.5 text-xs ${toneInk.attention}`}>
+            {S.company.deleteOrgChartUnreadable(
+              deletePlan.unreadable.map((c) => c.orgName).join(S.todo.listSeparator),
+            )}
+          </p>
+        )}
         {deleteListFailed ? (
           <ErrorLine
             className="mt-2"

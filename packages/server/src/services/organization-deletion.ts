@@ -11,8 +11,9 @@
  * - a built-in Agent is kept (`builtin`): it is provisioned with the Project;
  * - an Agent another organization of the Project still employs is kept (`employed_elsewhere`);
  * - while another organization's chart cannot be read, nobody is provably employed only here,
- *   so every other employee is kept (`employment_unknown`) — never a delete on a chart nobody
- *   could read;
+ *   so every other employee is kept (`employment_unknown`; the report names those organizations
+ *   as `unreadableCharts`) — never a delete on a chart nobody could read. The Agent list reports
+ *   the same organizations, so the confirmation says so beforehand;
  * - an employee the caller did not list is kept (`not_confirmed`): the confirmation showed what
  *   it would delete, and an Agent hired since, or one that was kept when it was read, is not
  *   deleted on a list nobody saw;
@@ -101,6 +102,7 @@ export async function deleteOrganizationWithAgents(
       report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
     } else if (after.unreadableCharts.length > 0) {
       report.keptAgents.push({ agentId, reason: "employment_unknown" });
+      report.unreadableCharts = after.unreadableCharts;
     } else if (!confirmed.has(agentId)) {
       report.keptAgents.push({ agentId, reason: "not_confirmed" });
     } else {

@@ -17,7 +17,12 @@
  * - An employee hired after the confirmation read the list is kept, and the toast names it.
  * - Confirmed with the box off, only the organization goes, and the Agents page turns its former
  *   employee's delete button on at once, without a reload.
+ * - While another organization's chart cannot be read, the confirmation says so and lists every
+ *   employee as kept, and nobody is deleted; a chart that breaks after the list was read keeps
+ *   them too, and the toast says it was that organization's chart.
  * - While the delete runs, Esc does not close the confirmation.
+ * - When the delete's answer is lost after the organization went, the dialog still leaves it as
+ *   a delete does, and the Agent list is read again.
  * - An Agent the server could not delete with its organization is named in an error toast.
  * - After a hire of a new Agent, the Agents page lists it at once, as an employee whose delete
  *   is off; after a leave, the former employee's delete button turns on at once; after a
@@ -94,7 +99,7 @@ function deleteButtonOf(name: string): HTMLButtonElement {
 }
 
 /** The Agents page with the organization's settings open beside it, as the switcher opens them. */
-function SettingsBeside() {
+function SettingsBeside({ onDeleted }: { onDeleted: () => void }) {
   const [open, setOpen] = useState(true);
   return h(
     Fragment,
@@ -106,13 +111,17 @@ function SettingsBeside() {
       orgId: "acme",
       onClose: () => setOpen(false),
       onChanged: () => {},
+      onDeleted,
     }),
   );
 }
 
-async function openSettings(organizations: FakeOrganization[] = [ACME, NORTH]) {
+async function openSettings(
+  organizations: FakeOrganization[] = [ACME, NORTH],
+  onDeleted: () => void = () => {},
+) {
   const server = agentServer(undefined, { organizations });
-  await mountAgentApp(h(SettingsBeside), { route: "/list", at: "/list" });
+  await mountAgentApp(h(SettingsBeside, { onDeleted }), { route: "/list", at: "/list" });
   await waitFor(() => cardOf("acme_dev") !== undefined);
   await waitFor(() => field(en.company.displayName).value === "Acme");
   return server;
@@ -231,6 +240,49 @@ describe("deleting an organization beside the Agents page", () => {
     expect(server.localAgents()).toContain("helper");
     // Its card names it by its display name, and its delete is back on.
     expect(deleteButtonOf("Helper").disabled).toBe(false);
+  });
+
+  it("says beforehand that another organization's chart cannot be read, and deletes nobody", async () => {
+    const server = await openSettings([ACME, { ...NORTH, chartUnreadable: true }]);
+    await openDeleteConfirmation(server);
+
+    const text = topDialog().textContent ?? "";
+    expect(text).toContain(en.company.deleteOrgChartUnreadable("North"));
+    expect(text).not.toContain(en.company.deleteOrgWillDelete("acme_ceo, acme_dev"));
+    await confirmDelete();
+
+    await waitFor(() => orgDeletes(server).length === 1);
+    expect(orgDeletes(server)[0]!.query.get("agentIds")).toBe("");
+    await waitFor(() => !deleteButtonOf("acme_dev").disabled);
+    expect(server.localAgents()).toEqual(
+      expect.arrayContaining(["acme_ceo", "acme_dev", "shared_writer"]),
+    );
+  });
+
+  it("names the unreadable chart in the toast when it broke after the list was read", async () => {
+    const server = await openSettings();
+    await openDeleteConfirmation(server);
+    server.setChartUnreadable("north", true);
+    await confirmDelete();
+
+    await waitFor(() => toastStore.getState().items.length > 0);
+    const [toast] = toastStore.getState().items;
+    expect(toast?.text).toContain(
+      en.company.deleteOrgKeptUnreadableAfterAll("acme_ceo, acme_dev", "North"),
+    );
+    expect(server.localAgents()).toEqual(expect.arrayContaining(["acme_ceo", "acme_dev"]));
+  });
+
+  it("leaves the organization when the delete's answer is lost after it went", async () => {
+    const onDeleted = vi.fn();
+    const server = await openSettings([{ ...ACME, answerLost: true }, NORTH], onDeleted);
+    await openDeleteConfirmation(server);
+    await confirmDelete();
+
+    await waitFor(() => onDeleted.mock.calls.length === 1);
+    await waitFor(() => cardOf("acme_dev") === undefined);
+    expect(cardOf("acme_ceo")).toBeUndefined();
+    expect(document.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("does not close the confirmation on Esc while the delete runs", async () => {

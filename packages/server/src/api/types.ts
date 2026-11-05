@@ -1411,6 +1411,19 @@ export interface Employment {
 
 export interface AgentsResponse {
   agents: AgentSummary[];
+  /**
+   * The Project's organizations whose `org_chart.yaml` is missing or does not parse; absent when
+   * none. Beyond its CEO, whom such an organization employs is unknown, so `employments` may miss
+   * it — and deleting another organization with its Agents keeps them all (`employment_unknown`).
+   */
+  unreadableCharts?: UnreadableChart[];
+}
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
 }
 
 export interface AgentCreateRequest {
@@ -6299,14 +6312,16 @@ export interface OrganizationDeleteResponse {
   deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
   /**
    * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
-   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it may
-   * employ it); `not_confirmed` (not in `agentIds`: hired after the confirmation read the list,
-   * or shown as kept there).
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
    */
   keptAgents: Array<{
     agentId: string;
     reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
   }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
   /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
   failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }

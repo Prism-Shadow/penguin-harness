@@ -5865,10 +5865,18 @@ Benchmark：
     deleteOrgWillKeep: (names: string) => `保留：${names}`,
     deleteOrgKeptBuiltin: (name: string) => `${name}（内置）`,
     deleteOrgKeptElsewhere: (name: string, orgNames: string) => `${name}（另受雇于 ${orgNames}）`,
+    deleteOrgKeptUnknown: (name: string) => `${name}（无法确认任职）`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `${orgNames} 的员工树无法读取，无法确认谁只受雇于此；修好之前不会删除任何 Agent。`,
     deleteOrgAgentsLoadFailed:
       "该组织的 Agent 读取失败。请重试；或者只删除组织，它的 Agent 都会保留。",
     /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
     deleteOrgKeptAfterAll: (names: string) => `；保留了 ${names}（确认之后情况有变）`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `；保留了 ${names}，因为另一个组织的员工树无法读取：${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) => `组织 ${orgId} 已删除，但没有收到应答；列表已重新读取`,
     deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
     deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     deletedWithAgents: (orgId: string, count: number) =>

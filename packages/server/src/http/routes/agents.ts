@@ -52,7 +52,7 @@ export interface AgentsRouteDeps {
   errorsRepo: ErrorLog;
   manager: SessionManager;
   access: Access;
-  orgService: Pick<OrgService, "employments" | "employersOf">;
+  orgService: Pick<OrgService, "employmentCensus" | "employersOf">;
   schedulesRepo: Schedules;
   sessionService: SessionService;
   sessionsRepo: SessionIndex;
@@ -75,8 +75,9 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const items = await deps.agentService.listAgents(projectId);
     // One query for the whole list: which Agents have their API switch on (this server's web.db).
     const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
-    // And one read of the Project's organizations for every Agent's employments.
-    const employments = await deps.orgService.employments(projectId);
+    // And one read of the Project's organizations for every Agent's employments, and for the
+    // organizations whose chart cannot be read (who they employ is unknown).
+    const { employments, unreadableCharts } = await deps.orgService.employmentCensus(projectId);
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
         const stats = await deps.sessionService.sessionStats(
@@ -97,7 +98,10 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
         };
       }),
     );
-    return c.json({ agents } satisfies AgentsResponse);
+    return c.json({
+      agents,
+      ...(unreadableCharts.length > 0 ? { unreadableCharts } : {}),
+    } satisfies AgentsResponse);
   });
 
   app.post("/", async (c) => {
