@@ -177,6 +177,13 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
+  /**
+   * Its own switch: false while a `.disabled` marker sits in its folder. It runs only while this
+   * and the Agent-wide switch (`WorkbenchesResponse.enabled`) are both on; a disabled one is not
+   * loaded, serves nothing and shows no tab, but is still listed here. Absent from a server that
+   * predates the switches, which the Web reads as "no switch to show".
+   */
+  enabled?: boolean;
 }
 
 /**
