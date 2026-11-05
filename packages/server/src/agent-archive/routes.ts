@@ -10,8 +10,10 @@
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
-import type { Clock, Paths } from "../hmr/capabilities.js";
+import type { AgentArchiveImportResponse, AgentArchivePreview } from "../api/types.js";
+import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
+import { summarizeAgents } from "../http/routes/agent-summary.js";
 import { requireValidId } from "../http/validate.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
@@ -24,12 +26,16 @@ import { Sessions as ManagerIface, SessionServiceIface } from "../runtime/sessio
 import type { SessionManager } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
 import type { AgentSummaryDeps } from "../http/routes/agent-summary.js";
+import { planArchive, zipStream } from "./export.js";
+import { importAgentArchive } from "./import.js";
+import { archiveTooLarge } from "./limits.js";
 import { partsFromQuery } from "./manifest.js";
 
 /** What this route group reaches — bound by its module (AgentArchiveRoutes below). */
 export interface AgentArchiveRouteDeps {
   root: string;
   now: () => Date;
+  log: (line: string) => void;
   access: Access;
   agentConfigService: AgentConfig;
   agentService: AgentLifecycle;
@@ -43,9 +49,9 @@ export interface AgentArchiveRouteDeps {
   summary: AgentSummaryDeps;
 }
 
-function notYet(): never {
-  throw new HttpError(501, "not_implemented", "The Agent archive is not implemented yet.");
-}
+/** What a zip without zip64 holds at most: 65535 entries, offsets below 4GiB. */
+const ZIP_MAX_ENTRIES = 0xffff;
+const ZIP_MAX_BYTES = 0xffffffff - 64 * 1024 * 1024;
 
 export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -55,8 +61,9 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    partsFromQuery((name) => c.req.query(name));
-    return notYet();
+    const parts = partsFromQuery((name) => c.req.query(name));
+    const { preview } = await planArchive(deps, projectId, agentId, parts);
+    return c.json(preview satisfies AgentArchivePreview);
   });
 
   app.get("/:agentId/archive", async (c) => {
@@ -64,16 +71,41 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    partsFromQuery((name) => c.req.query(name));
-    return notYet();
+    const parts = partsFromQuery((name) => c.req.query(name));
+    const plan = await planArchive(deps, projectId, agentId, parts);
+    if (plan.entries.length > ZIP_MAX_ENTRIES || plan.preview.totalBytes > ZIP_MAX_BYTES) {
+      throw archiveTooLarge("The selection is larger than a zip holds; select fewer Traces.");
+    }
+    return new Response(zipStream(plan.entries, deps.log), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${plan.fileName}"`,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+      },
+    });
   });
 
-  app.post("/import", (c) => {
+  app.post("/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const overwrite = c.req.query("overwrite") === "1";
+    // Replacing an Agent's State is a Project-level management operation: owner only.
     if (overwrite) deps.access.requireProjectOwner(c.var.user.userId, projectId);
     else deps.access.requireProjectAccess(c.var.user.userId, projectId);
-    return notYet();
+    const agentIdQuery = c.req.query("agentId");
+    const outcome = await importAgentArchive(deps, {
+      projectId,
+      ...(agentIdQuery !== undefined && agentIdQuery !== "" ? { agentId: agentIdQuery } : {}),
+      overwrite,
+      body: c.req.raw.body,
+    });
+    const { agentId, ...result } = outcome;
+    const item = (await deps.agentService.listAgents(projectId)).find((a) => a.agentId === agentId);
+    if (item === undefined) {
+      throw new HttpError(500, "internal", "The imported Agent is missing from the list.");
+    }
+    const [agent] = await summarizeAgents(deps.summary, projectId, [item]);
+    return c.json({ agent: agent!, ...result } satisfies AgentArchiveImportResponse, 201);
   });
 
   return app;
@@ -94,6 +126,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
 export class AgentArchiveRoutes {
   @Use() private readonly paths!: Paths;
   @Use() private readonly clock!: Clock;
+  @Use() private readonly log!: Log;
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly agents!: AgentLifecycle;
@@ -114,6 +147,7 @@ export class AgentArchiveRoutes {
     this.routes = agentArchiveRoutes({
       root: this.paths.root,
       now: () => clock.now(),
+      log: (line) => this.log.line(line),
       access: this.access,
       agentConfigService: this.agentConfig,
       agentService: this.agents,

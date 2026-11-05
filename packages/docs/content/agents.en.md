@@ -68,20 +68,15 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 
 Any Project member can create an agent.
 
-### Start from a snapshot
+### Import an agent from a file
 
-A snapshot package is an exported Agent State. You can create an agent from one, for example to copy an agent to another Project or another machine.
+An exported agent is a zip file. You can create an agent from one, for example to copy an agent to another Project or another installation. An Agent State package written by an earlier version (`.tar.gz`) imports the same way until 1.0.
 
-**Before you begin**
+1. On the **Agents** page, select **Import agent**. Under **Import a file**, pick the file. **Agent id** is filled in from the file name.
+2. Optional: change **Agent id**.
+3. Select **Import**. The new agent has the file's configuration, name and version, the parts the file carries, and the conversations the export included.
 
-- A snapshot package (`.tar.gz`) of the agent you want to copy. A package can be up to 14 MB. To create one, see [Export and import a snapshot](#export-and-import-a-snapshot).
-
-1. In the **Create agent** dialog, under **Initialize from a snapshot**, select **Choose a snapshot package** and pick the package. If **Agent id** is empty, it is filled in from the file name.
-2. Leave **Name** and **Description** empty to keep the values in the package, or fill them in to replace them.
-3. Select **Create**.
-
-> [!NOTE]
-> A snapshot package carries its own Skills and hooks. While a package is selected, **Plugins** and **Import Skills from a project directory** are hidden.
+A file can be up to 100 MB. If the id is taken, choose another one, or, as the Project owner, overwrite that agent: see [Export an agent, or replace it from a file](#export-an-agent-or-replace-it-from-a-file). When the import finishes, it names what to set next: the vault keys the agent expects and any MCP credential the export left blank. A conversation that already exists in this installation is not imported twice; the import lists it as skipped.
 
 ## Delete an agent
 
@@ -99,7 +94,7 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 
 | Tab | What you configure |
 | --- | --- |
-| **Overview** | Name and description, Agent State snapshots, kernel updates, and restoring the default configuration |
+| **Overview** | Name and description, exporting the agent and replacing its Agent State from a file, kernel updates, and restoring the default configuration |
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
@@ -127,7 +122,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 
 Any Project member can change most settings. These actions are for the Project owner only:
 
-- deleting the agent and importing a snapshot;
+- deleting the agent and replacing its Agent State from a file;
 - turning **Enable hooks** on or off;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
@@ -140,12 +135,12 @@ Any Project member can change most settings. These actions are for the Project o
 
 Change **Name** or **Description**, then select **Save**.
 
-### Export and import a snapshot
+### Export an agent, or replace it from a file
 
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
-- **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+- **Export…** opens the export dialog, which the export button on the agent's card also opens. Choose what goes into the zip: Skills, hooks, memory, workbenches (with or without their data), schedules, and conversations (none, the most recent ones, or those of a date range). The configuration always goes in. MCP credentials in it are left blank unless they are written as `${KEY}` vault references, and the vault itself never travels, only the names of its keys. Schedules are off by default: an imported schedule runs on the installation it is imported into.
+- **Replace from file…**, for the Project owner, replaces this agent's Agent State with an exported zip or an older `.tar.gz` package, and adopts the version inside it. The agent keeps its identity, conversations, vault, API keys and company employments, and every part the file leaves out keeps the agent's own contents; so does a blanked MCP credential. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every replace and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. The workbench version history sits beside the Agent State, so a replace leaves it as it is.
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 
