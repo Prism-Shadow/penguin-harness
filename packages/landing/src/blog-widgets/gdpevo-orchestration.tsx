@@ -70,6 +70,25 @@ function tickDelayMs(tick: number): number {
   return 800;
 }
 
+/** Crisp inline SVG Docker whale + stacked container blocks mark (15x11px). */
+function DockerWhale({ x, y, active }: { x: number; y: number; active: boolean }) {
+  const fill = active
+    ? "fill-brand-600 dark:fill-brand-400"
+    : "fill-gray-400 dark:fill-gray-500";
+  return (
+    <g transform={`translate(${x}, ${y})`} className={fill}>
+      {/* Stacked container blocks on the whale's back */}
+      <rect x="2" y="2.2" width="2.1" height="2" rx="0.3" />
+      <rect x="4.6" y="2.2" width="2.1" height="2" rx="0.3" />
+      <rect x="7.2" y="2.2" width="2.1" height="2" rx="0.3" />
+      <rect x="4.6" y="0" width="2.1" height="1.8" rx="0.3" />
+      <rect x="7.2" y="0" width="2.1" height="1.8" rx="0.3" />
+      {/* Whale body and tail */}
+      <path d="M0.5,5.1 H11.2 C12.1,5.1 12.9,4.5 13.3,3.6 C13.9,3.9 14.3,4.5 14.2,5.3 C14.9,5.1 15.5,5.3 15.8,5.8 C15.2,6.5 14.4,6.8 13.5,6.7 C12.6,9.1 10.1,10.5 6.4,10.5 C2.8,10.5 0.6,8.7 0.5,5.1 Z" />
+    </g>
+  );
+}
+
 export function GdpevoOrchestrationWidget() {
   const isZh = S === zh;
   const reduced = usePrefersReducedMotion();
@@ -303,8 +322,9 @@ export function GdpevoOrchestrationWidget() {
                 : "fill-gray-50/50 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
             }
           />
+          <DockerWhale x={18} y={103} active={isS0} />
           <text
-            x="20"
+            x="37"
             y="113"
             className={
               isS0
@@ -564,8 +584,9 @@ export function GdpevoOrchestrationWidget() {
             Harbor
           </text>
 
+          <DockerWhale x={378} y={78} active={isS2} />
           <text
-            x="466"
+            x="474"
             y="88"
             textAnchor="middle"
             className={
