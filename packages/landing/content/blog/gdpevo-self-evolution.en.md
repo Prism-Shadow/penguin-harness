@@ -97,7 +97,7 @@ To run the full experiment across all six scenarios, send:
 
 Once the launch prompt is sent in the Web UI, the **Controller Agent** automatically orchestrates the entire four-stage workflow in the background:
 
-<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Multi-Round Train: Controller Agent launches 1 Shared Docker via Harbor, where Target Agent evolves SKILL.md across T1–T5</li><li>Evolved Agent: freezes and exports SKILL.md as a read-only artifact mounted onto Evolved Agent</li><li>Isolated Dockers: Controller Agent dispatches 1-to-5 fan-out via Harbor into Isolated Dockers across Test 1–5 for 3 repetitions (15 fresh containers)</li><li>Scoreboard: 5-to-1 convergence into Offline Verifier to grade per-task and overall mean scores</li></ol><figcaption>Interactive four-stage orchestration pipeline driven by the Controller Agent (step through stages 1–4 to inspect multi-round shared-Docker training, Evolved Agent handoff, isolated-Docker evaluation, and Offline Verifier scoring).</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>Multi-Round Train: Controller Agent launches 1 Shared Docker via Harbor, where Target Agent evolves SKILL.md across T1–T5</li><li>Evolved Agent: freezes and exports SKILL.md as a read-only artifact mounted onto Evolved Agent</li><li>Isolated Testing: Controller Agent dispatches 1-to-5 fan-out via Harbor into Isolated Dockers across Test 1–5 for 3 repetitions (15 fresh containers)</li><li>Scoreboard: 5-to-1 convergence into Offline Verifier to grade per-task and overall mean scores</li></ol><figcaption>Interactive four-stage orchestration pipeline driven by the Controller Agent (step through stages 1–4 to inspect multi-round shared-Docker training, Evolved Agent handoff, isolated testing, and Offline Verifier scoring).</figcaption></figure>
 
 ### 1. Multi-Round Training Loop (1 Shared Docker)
 
@@ -107,7 +107,7 @@ After preparing the task checkout, the **Controller Agent** preserves a clean in
 
 Once the multi-round training loop finishes inside `1 Shared Docker`, the **Controller Agent** exports the last accepted `SKILL.md`, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen **Evolved Agent (`+ SKILL.md`)**.
 
-### 3. Blind Evaluation in Isolated Dockers
+### 3. Multi-Run Isolated Testing (Isolated Dockers)
 
 The **Controller Agent** uses **Harbor** to fan out the frozen **Evolved Agent (`+ SKILL.md`)** (alongside the Baseline state) across the 5 held-out test tasks (`Test 1–5`) for 3 full evaluation repetitions (15 fresh `Isolated Dockers` per scenario). Every single question in every repetition starts in a brand-new Docker container and clean session—no filesystem state, database state, or conversation history is shared across questions or runs, and the online training judge is disabled.
 

@@ -97,7 +97,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 当实验人员在 Web 界面发出启动指令后，**主控 Agent** 便会自动接管实验现场，在后台按以下四个阶段完成从单容器多轮训练、技能冻结到隔离容器盲测与离线出分的全流程编排：
 
-<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>多轮训练循环：主控 Agent 通过 Harbor 拉起 1 Shared Docker，目标 Agent 在 T1–T5 上完成多轮演进</li><li>产出进化 Agent：训练结束后导出并锁定只读 SKILL.md，装配为进化 Agent</li><li>隔离容器盲测：主控 Agent 通过 Harbor 调度一分五并发盲测，在 Isolated Dockers 中对 Test 1–5 各独立运行 3 轮</li><li>离线判分出分：五合一汇入离线评分器，统计各题得分与最终均分</li></ol><figcaption>主控 Agent 在后台自动编排的四阶段实验流程（可点击上方阶段按钮步进查看多轮训练循环、产出进化 Agent、隔离容器盲测与离线判分出分）。</figcaption></figure>
+<figure class="post-figure" data-widget="gdpevo-orchestration"><ol class="fig-steps"><li>多轮训练循环：主控 Agent 通过 Harbor 拉起 1 Shared Docker，目标 Agent 在 T1–T5 上完成多轮演进</li><li>产出进化 Agent：训练结束后导出并锁定只读 SKILL.md，装配为进化 Agent</li><li>多轮隔离测试：主控 Agent 通过 Harbor 调度一分五并发测试，在 Isolated Dockers 中对 Test 1–5 各独立运行 3 轮</li><li>离线判分出分：五合一汇入离线评分器，统计各题得分与最终均分</li></ol><figcaption>主控 Agent 在后台自动编排的四阶段实验流程（可点击上方阶段按钮步进查看多轮训练循环、产出进化 Agent、多轮隔离测试与离线判分出分）。</figcaption></figure>
 
 ### 1. 多轮训练循环（1 Shared Docker）
 
@@ -107,7 +107,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 当共享容器内的多轮训练循环结束后，**主控 Agent** 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的**进化 Agent（`+ SKILL.md`）**。
 
-### 3. 隔离容器盲测（Isolated Dockers）
+### 3. 多轮隔离测试（Isolated Dockers）
 
 **主控 Agent** 通过 **Harbor** 并发队列将**进化 Agent（`+ SKILL.md`）**（以及基线对照状态）投放到同场景的 5 道保留测试题（`Test 1–5`）上，完整重复运行 3 轮评测（单场景共 15 个全新的 `Isolated Dockers`）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭一切在线训练评分通道。
 

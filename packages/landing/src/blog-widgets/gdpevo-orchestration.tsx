@@ -31,7 +31,7 @@ interface StageTab {
 const STAGE_TABS: readonly StageTab[] = [
   { id: "train", labelZh: "1. 多轮训练循环", labelEn: "1. Multi-Round Train", startTick: 0, endTick: 11 },
   { id: "freeze", labelZh: "2. 产出进化 Agent", labelEn: "2. Evolved Agent", startTick: 12, endTick: 13 },
-  { id: "test", labelZh: "3. 隔离容器盲测", labelEn: "3. Isolated Dockers", startTick: 14, endTick: 17 },
+  { id: "test", labelZh: "3. 多轮隔离测试", labelEn: "3. Isolated Testing", startTick: 14, endTick: 17 },
   { id: "result", labelZh: "4. 离线判分出分", labelEn: "4. Scoreboard", startTick: 18, endTick: 21 },
 ];
 
@@ -524,7 +524,7 @@ export function GdpevoOrchestrationWidget() {
               textAnchor="middle"
               className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
             >
-              Isolated Dockers
+              Isolated Test Dockers
             </text>
 
             {/* 1-to-5 Orthogonal Fork Tree (x=356..390, y=106..234, center CY=170) */}
