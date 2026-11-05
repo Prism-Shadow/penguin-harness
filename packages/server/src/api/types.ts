@@ -4774,7 +4774,12 @@ export interface AgentArchiveManifest {
   parts: AgentArchiveParts;
   /** The vault's key names; values never travel. */
   vaultKeys: string[];
-  /** MCP values blanked on export: `mcp:<server>:env:<NAME>` and `mcp:<server>:headers:<NAME>`. */
+  /**
+   * What the export took out: each blanked MCP credential by place (`mcp:<server>:env:<NAME>`,
+   * `…:headers:<NAME>`, `…:oauth:<path>`, `…:url:password`, `…:url:query:<name>`,
+   * `…:args:--<flag>`, `…:args:<scheme>://<host>:password`, `…:args:<scheme>://<host>:query:<name>`),
+   * and, for the Trace files, `traces:vault-values:<n>` and `traces:unscrubbed-lines:<n>`.
+   */
   redacted: string[];
   /** Only when `agent_state/system_config.yaml` is absent: a hand-written Agent (the `agent-porting` Skill writes one). */
   definition?: AgentArchiveDefinition;
@@ -4861,7 +4866,9 @@ export type AgentArchiveNoteCode =
   /** None of the definition's built-in tools exist here; the toolset was kept. */
   | "no_known_tools"
   /** A part's directory (or `tools/`) is a link, so the export leaves it out (`subject`: the directory). */
-  | "link_skipped";
+  | "link_skipped"
+  /** The overwritten Agent's own config did not parse, so no blanked credential was filled from it. */
+  | "current_config_invalid";
 
 /** One note of a preview or an import: a code to localize, what it is about, and an English sentence. */
 export interface AgentArchiveNote {

@@ -11,8 +11,16 @@
  *   and the next import of the Agent puts it all back before it imports.
  * - Given a server that stopped between the swap's renames, its next start puts the previous
  *   State and its kept parts back, and the Agent lists again.
- * - Given a stale staging folder beside the Agents, the next import sweeps it; one marked as
- *   holding an Agent's State is kept.
+ * - Given a stale staging folder beside the Agents, the next import sweeps it.
+ * - Given two overwrites of one Agent at once, the second waits for the first: it comes to the
+ *   Agent only once the first has swapped, both answer 201, the second replaces the first's
+ *   result, and nothing is rolled back.
+ * - Given a committed swap's leftover folder beside an interrupted swap's, recovery puts back the
+ *   interrupted swap's State and parts and removes the committed leftovers without installing them.
+ * - Given a part whose place is taken again by the time recovery runs, the folder's copy is left
+ *   where it is, never put over the newer one, and the log says so.
+ * - Given an Agent whose `system_config.yaml` does not parse, it can still be replaced from a
+ *   file: nothing is refilled from it, and a note says so.
  * - Given a hand-written overwrite whose swap fails, the Agent's live config is as it was.
  * - Given a Session that cannot be moved in after the State was swapped, the import still answers
  *   201 with its report and the backup, the Session is skipped as invalid, and none of its files
@@ -35,6 +43,7 @@ import {
   agentsDir,
   snapshotsDir,
 } from "@prismshadow/penguin-core";
+import { AgentHolds } from "../src/agent-archive/agent-hold.js";
 import type { AgentArchiveImportResponse, AgentsResponse } from "../src/api/types.js";
 import { SWAP_MARK } from "../src/services/state-swap.js";
 import { apiClient, createTestApp, loginAdmin, restartTestApp } from "./helpers.js";
@@ -233,23 +242,174 @@ describe("Agent archive overwrite recovery", () => {
     expect(await stagingOf(agent.id)).toEqual([]);
   });
 
-  it("a stale staging folder beside the Agents is swept by the next import, unless it is marked as holding a State", async () => {
-    const agents = agentsDir(t.root, projectId);
-    const stale = path.join(agents, ".import-0000000000aa");
-    const marked = path.join(agents, ".import-0000000000bb");
-    for (const dir of [stale, marked]) {
-      await fs.mkdir(path.join(dir, "extracted"), { recursive: true });
-      await fs.utimes(dir, new Date(0), new Date(0));
-    }
-    await fs.writeFile(path.join(marked, SWAP_MARK), "{}");
-    await fs.utimes(marked, new Date(0), new Date(0));
+  it("a stale staging folder beside the Agents is swept by the next import", async () => {
+    const stale = path.join(agentsDir(t.root, projectId), ".import-0000000000aa");
+    await fs.mkdir(path.join(stale, "extracted"), { recursive: true });
+    await fs.utimes(stale, new Date(0), new Date(0));
     const agent = await agentWithVault();
 
     expect((await overwrite(agent.id)).status).toBe(201);
 
     await expect(fs.access(stale)).rejects.toThrow();
-    await expect(fs.access(path.join(marked, SWAP_MARK))).resolves.toBeUndefined();
-    await fs.rm(marked, { recursive: true });
+  });
+
+  it("two overwrites of one Agent at once run in turn: both succeed, the second over the first's result", async () => {
+    const agent = await agentWithVault();
+    const second = candidate({
+      "candidate/agent_state/system_config.yaml": strToU8('system_prompt: "second"\nversion: 3\n'),
+    });
+    // The first overwrite stops inside its swap until the second has come for the Agent: at the
+    // Agent's hold, or, were there none, at the second's own recovery of the Agent.
+    const order: string[] = [];
+    let arrive!: () => void;
+    const secondArrived = new Promise<void>((resolve) => (arrive = resolve));
+    const realHold = AgentHolds.prototype.hold;
+    let holds = 0;
+    vi.spyOn(AgentHolds.prototype, "hold").mockImplementation(function (
+      this: AgentHolds,
+      key: string,
+      work: () => Promise<unknown>,
+    ) {
+      holds += 1;
+      if (holds === 2) arrive();
+      return realHold.call(this, key, work);
+    } as typeof realHold);
+    const realRecover = t.deps.snapshots.recoverStrandedSwaps.bind(t.deps.snapshots);
+    let recoveries = 0;
+    vi.spyOn(t.deps.snapshots, "recoverStrandedSwaps").mockImplementation(async (...args) => {
+      recoveries += 1;
+      if (recoveries === 2) {
+        order.push("second at the Agent");
+        arrive();
+      }
+      return realRecover(...args);
+    });
+    const realSwap = t.deps.snapshots.swapAgentState.bind(t.deps.snapshots);
+    let swapping!: () => void;
+    const firstSwapping = new Promise<void>((resolve) => (swapping = resolve));
+    let swaps = 0;
+    vi.spyOn(t.deps.snapshots, "swapAgentState").mockImplementation(async (...args) => {
+      swaps += 1;
+      if (swaps !== 1) return realSwap(...args);
+      swapping();
+      await secondArrived;
+      const swapped = await realSwap(...args);
+      order.push("first swapped");
+      return swapped;
+    });
+
+    const first = overwrite(agent.id);
+    await firstSwapping;
+    const [a, b] = await Promise.all([first, overwrite(agent.id, second)]);
+
+    expect(order).toEqual(["first swapped", "second at the Agent"]);
+    expect([a.status, b.status]).toEqual([201, 201]);
+    const one = (await a.json()) as AgentArchiveImportResponse;
+    const two = (await b.json()) as AgentArchiveImportResponse;
+    expect(one).toMatchObject({ previousVersion: 1, version: 2 });
+    expect(two).toMatchObject({ previousVersion: 2, version: 3 });
+    expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toContain(
+      "second",
+    );
+    expect(await fs.readFile(path.join(agent.state, "memory", "user", "mine.md"), "utf8")).toBe(
+      "my memory\n",
+    );
+    expect(await stagingOf(agent.id)).toEqual([]);
+  });
+
+  /** A swap folder under the Agent as the swap leaves it, written by hand. */
+  async function swapFolder(
+    id: string,
+    name: string,
+    mark: object,
+    files: Record<string, string>,
+  ): Promise<string> {
+    const folder = path.join(agentDir(t.root, projectId, id), name);
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(folder, rel)), { recursive: true });
+      await fs.writeFile(path.join(folder, rel), text);
+    }
+    await fs.writeFile(
+      path.join(folder, SWAP_MARK),
+      JSON.stringify({ backup: null, startedAt: "2026-11-01T00:00:00.000Z", ...mark }),
+    );
+    return folder;
+  }
+
+  it("recovery puts back an interrupted swap and never installs a committed swap's leftovers", async () => {
+    const agent = await agentWithVault();
+    // A committed swap whose folder was never removed: its superseded State is stale.
+    const committed = await swapFolder(
+      agent.id,
+      ".import-000000000000",
+      { phase: "committed", carry: ["memory"] },
+      {
+        "replaced-agent_state/system_config.yaml": 'system_prompt: "stale"\nversion: 1\n',
+        "replaced-agent_state/memory/user/mine.md": "stale memory\n",
+      },
+    );
+    // A swap that stopped with the State aside and its memory carried into incoming/.
+    const interrupted = path.join(agentDir(t.root, projectId, agent.id), ".import-ffffffffffff");
+    await fs.mkdir(path.join(interrupted, "incoming"), { recursive: true });
+    await fs.rename(agent.state, path.join(interrupted, "replaced-agent_state"));
+    await fs.rename(
+      path.join(interrupted, "replaced-agent_state", "memory"),
+      path.join(interrupted, "incoming", "memory"),
+    );
+    await fs.writeFile(
+      path.join(interrupted, SWAP_MARK),
+      JSON.stringify({ phase: "aside", backup: null, carry: ["memory"], startedAt: "" }),
+    );
+
+    expect((await overwrite(agent.id)).status).toBe(201);
+
+    expect(await fs.readFile(path.join(agent.state, "memory", "user", "mine.md"), "utf8")).toBe(
+      "my memory\n",
+    );
+    expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).not.toContain(
+      "stale",
+    );
+    await expect(fs.access(committed)).rejects.toThrow();
+    expect(await stagingOf(agent.id)).toEqual([]);
+  });
+
+  it("a part whose place is taken again by the time recovery runs is not put over the newer one", async () => {
+    const agent = await agentWithVault();
+    const folder = await swapFolder(
+      agent.id,
+      ".import-0000000000cc",
+      { phase: "aside", carry: ["memory"] },
+      { "incoming/memory/user/mine.md": "older memory\n" },
+    );
+
+    expect((await overwrite(agent.id)).status).toBe(201);
+
+    expect(await fs.readFile(path.join(agent.state, "memory", "user", "mine.md"), "utf8")).toBe(
+      "my memory\n",
+    );
+    expect(
+      await fs.readFile(path.join(folder, "incoming", "memory", "user", "mine.md"), "utf8"),
+    ).toBe("older memory\n");
+    expect(logged.some((line) => line.includes("was not moved back"))).toBe(true);
+    await fs.rm(folder, { recursive: true });
+  });
+
+  it("an Agent whose config does not parse can still be replaced from a file, with nothing refilled and a note", async () => {
+    const agent = await agentWithVault();
+    await fs.writeFile(
+      path.join(agent.state, "system_config.yaml"),
+      'system_prompt: "a"\nsystem_prompt: "b"\n',
+    );
+
+    const res = await overwrite(agent.id);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.notes).toEqual([expect.objectContaining({ code: "current_config_invalid" })]);
+    expect(body.backup).toMatch(/^snapshots\/import-backup-v1-/);
+    expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toContain(
+      "candidate",
+    );
   });
 
   it("a hand-written overwrite whose swap fails leaves the Agent's live config as it was", async () => {

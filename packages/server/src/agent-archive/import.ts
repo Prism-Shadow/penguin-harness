@@ -30,11 +30,12 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   agentDir,
   agentStateDir,
   agentsDir,
+  defaultSystemConfig,
   ensureUserMemoryDir,
   loadAgentVault,
 } from "@prismshadow/penguin-core";
@@ -51,7 +52,7 @@ import type { TraceIndex, Traces } from "../mechanisms/traces.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { updatedConfigText } from "../services/agent-config-service.js";
-import { SWAP_MARK } from "../services/state-swap.js";
+import type { AgentHolds } from "./agent-hold.js";
 import { packageStateVersion, VAULT_BASENAME } from "../services/agent-state-layout.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "../services/ids.js";
 import { countMemoryTopics } from "../services/memory-service.js";
@@ -61,7 +62,7 @@ import { ensureWorkbenchLinkTarget } from "../workbenches/migrate-state.js";
 import { isTempName } from "../workbenches/store.js";
 import { MAX_UPLOAD_BYTES, archiveTooLarge } from "./limits.js";
 import { DIR_PARTS, PART_DIRS } from "./manifest.js";
-import { credentialsToFill, restoreCredentials } from "./mcp-credentials.js";
+import { configParses, credentialsToFill, restoreCredentials } from "./mcp-credentials.js";
 import { stageZip } from "./staging.js";
 import type { StagedArchive } from "./staging.js";
 import { checkIncomingState, stateCounts } from "./state-checks.js";
@@ -79,6 +80,8 @@ export interface ImportDeps {
   traceIndex: Pick<TraceIndex, "removeAgent">;
   /** The cached runtimes of an Agent whose State an overwrite replaced. */
   runtimes: Pick<SessionManager, "invalidateAgentRuntimes">;
+  /** One import at a time per Agent (agent-hold.ts). */
+  holds: AgentHolds;
   log: (line: string) => void;
 }
 
@@ -316,14 +319,26 @@ async function apply(
   try {
     await fs.mkdir(incoming, { recursive: true });
     const configFile = path.join(incoming, "system_config.yaml");
-    const currentConfig = await fs.readFile(path.join(current, "system_config.yaml"), "utf8");
+    const currentConfig = await fs
+      .readFile(path.join(current, "system_config.yaml"), "utf8")
+      .catch(() => "");
+    // An Agent whose config does not parse can still be replaced from a file: that is how it
+    // is repaired. Nothing is refilled from it, and a hand-written zip starts from the defaults.
+    const currentParses = configParses(currentConfig) && currentConfig.trim() !== "";
     if (!staged.hasConfig) {
-      await fs.writeFile(configFile, definitionConfig(currentConfig, manifest, notes));
+      const base = currentParses ? currentConfig : stringifyYaml(defaultSystemConfig());
+      await fs.writeFile(configFile, definitionConfig(base, manifest, notes));
     }
-    if (mode === "overwritten") {
-      // A blank credential keeps the Agent's own value at the same place, whichever the zip.
+    if (mode === "overwritten" && currentParses) {
+      // A blank credential keeps the Agent's own value, for the same server and place only.
       const restored = restoreCredentials(await fs.readFile(configFile, "utf8"), currentConfig);
       if (restored !== null) await fs.writeFile(configFile, restored);
+    } else if (mode === "overwritten") {
+      notes.push({
+        code: "current_config_invalid",
+        message:
+          "The Agent's own system_config.yaml did not parse, so no blanked credential was filled from it.",
+      });
     }
     const carry = await carriedPaths(current, incoming, manifest, !staged.hasConfig);
     for (const layout of ["skills", "hooks", "tools"]) {
@@ -424,7 +439,7 @@ export async function importAgentArchive(
   }
   const base = agentsDir(deps.root, projectId);
   await fs.mkdir(base, { recursive: true });
-  await removeLeftovers(base, STAGING_PREFIX, Date.now(), SWAP_MARK);
+  await removeLeftovers(base, STAGING_PREFIX);
   const staging = path.join(base, `${STAGING_PREFIX}${randomBytes(6).toString("hex")}`);
   await fs.mkdir(staging);
   try {
@@ -444,8 +459,6 @@ export async function importAgentArchive(
       );
     }
     const agentId = requireAgentId(req.agentId ?? (staged.manifest.agentId || staged.topDir || ""));
-    // An earlier import of this Agent that was interrupted gives back what it moved aside first.
-    await deps.snapshots.recoverStrandedSwaps({ projectId, agentId });
     if (staged.hasConfig) await packageStateVersion(staged.stateDir);
     else if (staged.manifest.definition === undefined) {
       throw badRequest(
@@ -456,17 +469,15 @@ export async function importAgentArchive(
     // package imports as it always did.
     if (kind === "zip") await checkIncomingState(staged.stateDir);
     const imported = await importedCounts(staged);
-    const isAgent = await deps.agentConfigService.exists(projectId, agentId);
-    if (!isAgent && (await taken(agentId))) throw agentExists(agentId);
-    if (isAgent && !req.overwrite) throw agentExists(agentId);
-    return await apply(
-      deps,
-      projectId,
-      agentId,
-      staged,
-      isAgent ? "overwritten" : "created",
-      imported,
-    );
+    // Everything from here on decides about the Agent and changes it: under its hold.
+    return await deps.holds.hold(`${projectId}/${agentId}`, async () => {
+      // An earlier import of this Agent that was interrupted gives back what it moved aside.
+      await deps.snapshots.recoverStrandedSwaps({ projectId, agentId });
+      const isAgent = await deps.agentConfigService.exists(projectId, agentId);
+      if (!isAgent && (await taken(agentId))) throw agentExists(agentId);
+      if (isAgent && !req.overwrite) throw agentExists(agentId);
+      return apply(deps, projectId, agentId, staged, isAgent ? "overwritten" : "created", imported);
+    });
   } finally {
     await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
   }
