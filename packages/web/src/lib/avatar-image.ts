@@ -22,6 +22,7 @@
  * cap is written in — so "fits" means the same thing on both sides of the request, with no
  * base64-expansion arithmetic in between to get wrong.
  */
+import { AVATAR_MAX_CHARS } from "@prismshadow/penguin-server/api";
 
 /** Edge of the stored square, in pixels. */
 export const AVATAR_EDGE = 128;
@@ -32,8 +33,8 @@ export const AVATAR_EDGE = 128;
  */
 export const AVATAR_PNG_BUDGET = 100 * 1024;
 
-/** The hard cap, in data-URL characters — the same number `PUT /api/me/profile` enforces. */
-export const AVATAR_MAX_CHARS = 128 * 1024;
+/** The hard cap, in data-URL characters: the server's own, which `PUT /api/me/profile` enforces. */
+export { AVATAR_MAX_CHARS };
 
 /** JPEG quality for the re-export: visually clean at 128px, and roughly a third of q=1. */
 export const AVATAR_JPEG_QUALITY = 0.85;

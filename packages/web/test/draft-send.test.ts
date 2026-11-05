@@ -7,6 +7,8 @@
  * - Given a draft on a machine's Workspace, the first send creates the Session on that machine,
  *   starts its task there, lists the row, opens the conversation, clears the draft and hands the
  *   draft's docks to the new Session.
+ * - Given a draft on this server's temporary Workspace that then moves to a machine's temporary
+ *   Workspace (the path is "" both times), the send creates the Session on the machine.
  * - Given the create refused, nothing else is sent, no row is listed, the page stays on the draft
  *   with the text in the composer, and one toast says why.
  * - Given the task refused after the create, the Session just created is deleted, and once the
@@ -88,6 +90,22 @@ describe("a new conversation's first send", () => {
     expect(listedRows()).toContain("session-1");
     expect(loadDraft(DRAFT_KEY).text).toBeUndefined();
     expect(currentDockScope()).toBe("session-1");
+  });
+
+  it("creates the Session on the machine a temporary Workspace moved to, though the path stayed empty", async () => {
+    const world = draftWorld();
+    const router = await mountDraft();
+    await waitFor(() => composer() !== null);
+    await act(async () => {
+      await router.navigate("/chat/new", { state: { workspace: "", machineId: MACHINE } });
+    });
+    await type(composer(), "Look at the build");
+    await waitFor(() => hasButton(S.chat.send) && !send().disabled, 40);
+    await click(send());
+    await waitFor(() => whereIs(router) === "/chat/session-1", 40);
+
+    // The temporary Workspace sends no path; the machine is what the Session is created on.
+    expect(world.creates().map((r) => r.machine)).toEqual([MACHINE]);
   });
 
   it("sends nothing else when the create is refused, lists nothing, and keeps the text", async () => {

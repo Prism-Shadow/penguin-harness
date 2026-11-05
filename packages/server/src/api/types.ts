@@ -500,6 +500,14 @@ export interface BackgroundSettingsDto {
  */
 export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
 
+/**
+ * The avatar cap — a user's own and an employee's — in characters of the data URL as it arrives
+ * (131072 characters of base64 hold roughly 96 KiB of image): the same number the Web App
+ * re-encodes against, so the browser and the server cannot disagree about what "too large"
+ * means.
+ */
+export const AVATAR_MAX_CHARS = 131072;
+
 /** GET /api/me/background-image. */
 export interface BackgroundImageResponse {
   /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */

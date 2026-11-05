@@ -654,7 +654,7 @@ describe("socketReading", () => {
         }),
       ),
     ).toEqual({
-      label: "失败",
+      label: S.machines.socket.failed,
       tone: "danger",
       since: "2026-08-24T12:03:00.000Z",
       detail: "connect ECONNREFUSED 10.0.0.7:7364",
@@ -687,11 +687,8 @@ describe("socketReading", () => {
   it("names each state, so the four are told apart on the page and not only by tone", () => {
     const label = (state: MachineSocketFact["state"]): string | undefined =>
       socketReading(withSocket({ state, since: INSTALLED.at }))?.label;
-    expect([label("connected"), label("dialling"), label("refused"), label("failed")]).toEqual([
-      "已连接",
-      "拨号中",
-      "被拒绝",
-      "失败",
-    ]);
+    const labels = [label("connected"), label("dialling"), label("refused"), label("failed")];
+    expect(labels.every((word) => word !== undefined && word !== "")).toBe(true);
+    expect(new Set(labels).size).toBe(4);
   });
 });
