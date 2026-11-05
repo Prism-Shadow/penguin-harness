@@ -1,5 +1,5 @@
 ---
-title: "同一模型，四种 Harness：50 道任务的三轮横评与复现"
+title: "用 PenguinHarness 组织四种 Harness 的对比实验"
 date: 2026-11-05
 category: practice
 excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
