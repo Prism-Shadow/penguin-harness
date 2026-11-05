@@ -259,13 +259,14 @@ function optStr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
 
-/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on). */
+/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on); `action` only where it departs from `deny`, as it is stored. */
 function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPolicyRuleDto[] {
   return rules.map((r) => ({
     name: r.name,
     pattern: r.pattern,
     ...(r.description !== undefined ? { description: r.description } : {}),
     enabled: r.enabled !== false,
+    ...(r.action === "ask" ? { action: "ask" as const } : {}),
   }));
 }
 
@@ -1135,14 +1136,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * always materializes the full rule list into the file — model-presets style: once
    * written, later factory changes never rewrite it — storing per field only what departs
    * from the defaults (`enabled = false`, a rule's `enabled = false`, a non-empty
-   * description). Read-modify-write like setChatDefaults, preserving every other key.
-   * Returns the block as re-read.
+   * description, a rule's `action = "ask"`). Read-modify-write like setChatDefaults,
+   * preserving every other key. Returns the block as re-read.
    */
   async setCommandPolicy(
     projectId: string,
     req: {
       enabled?: boolean;
-      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+      rules: {
+        name: string;
+        pattern: string;
+        description?: string;
+        enabled?: boolean;
+        action?: "deny" | "ask";
+      }[];
     },
   ): Promise<CommandPolicyDto> {
     const raw = await this.readRaw(projectId);
@@ -1155,6 +1162,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         ? { description: r.description }
         : {}),
       ...(r.enabled === false ? { enabled: false } : {}),
+      ...(r.action === "ask" ? { action: "ask" } : {}),
     }));
     await this.writeRaw(projectId, { ...raw, command_policy: block });
     return this.getCommandPolicy(projectId);

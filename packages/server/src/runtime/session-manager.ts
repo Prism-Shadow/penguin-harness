@@ -52,6 +52,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
+  AskHumanFn,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
   CompactAvailability,
@@ -191,9 +192,10 @@ function assertNotStranded(entry: RuntimeEntry): void {
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
-/** What one run is started with: the approval callback and the interrupt signal. */
+/** What one run is started with: the approval callback, the route to a person for a command-policy `ask` hit (core `RunOptions.askHuman`), and the interrupt signal. */
 export type RunOpts = {
   approve: ApproveFn;
+  askHuman: AskHumanFn;
   signal: AbortSignal;
 };
 
@@ -308,8 +310,8 @@ export interface RuntimeSession {
     messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
-  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
-  setSubagentApprovalFallback?(approve: ApproveFn): void;
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`, which wraps it with the command policy and `askHuman`). Optional. */
+  setSubagentApprovalFallback?(approve: ApproveFn, askHuman?: AskHumanFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
   /** Pins one live child session's thinking level (core `Session.setBackgroundSubagentThinkingLevel`); false when the child is not live. Optional. */
@@ -1060,15 +1062,20 @@ export class SessionManager {
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
-    // session idle included.
+    // session idle included. Its askHuman goes along: core wraps the sink with the command
+    // policy, and a child's `ask` hit routed there must still reach a person.
     const entry = this.entries.get(sessionId);
-    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+    if (entry) {
+      const { approve, askHuman } = this.entryApprove(entry);
+      session.setSubagentApprovalFallback?.(approve, askHuman);
+    }
   }
 
   /**
-   * The entry-lifetime approval callback: the registry, the per-decision approval-mode
-   * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
-   * of the entry and the children's session-lifetime fallback sink alike.
+   * The entry-lifetime approval callbacks — `approve`, and `askHuman` for a call a
+   * command-policy `ask` rule matched: the registry, the per-decision approval-mode re-read,
+   * and the SSE escalation are all entry-scoped, so one pair serves every run of the entry
+   * and the children's session-lifetime fallback sink alike.
    *
    * This is also where the one cross-cutting approval override lives — wrapping the callback
    * handed to `Session.run` rather than teaching the engine anything: an organization's
@@ -1076,9 +1083,10 @@ export class SessionManager {
    * is denied here instead of waiting for an answer that is never coming (see `unattended`
    * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
    * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
-   * stamps later is covered from its next decision on.
+   * stamps later is covered from its next decision on. The same holds for an `ask` hit, so
+   * an organization's Session never gets a `gh pr merge` through: nobody can say yes.
    */
-  private entryApprove(entry: RuntimeEntry): ApproveFn {
+  private entryApprove(entry: RuntimeEntry): { approve: ApproveFn; askHuman: AskHumanFn } {
     return makeApprove({
       // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
       getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
@@ -1090,6 +1098,7 @@ export class SessionManager {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
         }),
     });
   }
@@ -1340,7 +1349,7 @@ export class SessionManager {
       entry.pendingInputs = [...entry.pendingInputs, ...input];
       entry.pendingBootstrap = [];
       this.publishState(entry, "running");
-      const approve = this.entryApprove(entry);
+      const { approve, askHuman } = this.entryApprove(entry);
       this.publishEvent(entry, {
         type: "goal_started",
         sessionId: entry.sessionId,
@@ -1351,6 +1360,7 @@ export class SessionManager {
         input,
         budget: args.budget,
         approve,
+        askHuman,
         signal: ac.signal,
       });
       // The objective doubles as the title material (same role as a task's input text).
@@ -1377,11 +1387,13 @@ export class SessionManager {
       input: AmspRecord[];
       budget: number;
       approve: ApproveFn;
+      askHuman: AskHumanFn;
       signal: AbortSignal;
     },
   ): AsyncGenerator<AmspRecord> {
     const gen = entry.session.run(args.input, {
       approve: args.approve,
+      askHuman: args.askHuman,
       signal: args.signal,
     });
     let round = 0;
@@ -1477,9 +1489,10 @@ export class SessionManager {
     entry.pendingBootstrap = [];
     this.publishState(entry, "running");
 
-    const approve = this.entryApprove(entry);
+    const { approve, askHuman } = this.entryApprove(entry);
     const gen = entry.session.run(input, {
       approve,
+      askHuman,
       signal: ac.signal,
     });
     // This call's input user text is the whole title source: drive persists its first

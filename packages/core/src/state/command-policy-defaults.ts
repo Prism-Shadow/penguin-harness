@@ -5,10 +5,13 @@
  * reads the same constant as its "absent = factory set" fallback. Types only, no
  * behavior — so nothing here can drag the tool chain into the state module.
  *
- * Kept deliberately small — every entry is a command whose verbatim execution is
+ * Kept deliberately small. The `deny` entries are commands whose verbatim execution is
  * destructive with no undo, so a false negative is worse than the occasional false
- * positive. Each pattern assumes the command has been whitespace-normalized (runs
- * collapsed to single spaces) and never crosses a `;`, `|` or `&` separator.
+ * positive. The `ask` entries after them are the commonest commands that act beyond this
+ * machine and are hard to take back (merging a pull request, publishing, a force-push):
+ * they are put to a person rather than refused, so a false positive costs one click. Each
+ * pattern assumes the command has been whitespace-normalized (runs collapsed to single
+ * spaces) and never crosses a `;`, `|` or `&` separator.
  * Descriptions are stored data (project-editable after seeding), so they are plain
  * English like the rest of the config file.
  */
@@ -50,6 +53,15 @@ const QUOTE = "[\"']?";
  * POSIX host, and destroyed the same way by a raw write.
  */
 const WINDOWS_RAW_DISK = "\\\\\\\\\\.\\\\(?i:physicaldrive)[0-9]+";
+
+/**
+ * `git` and its global options up to the subcommand: `git -C <dir>` and `git -c <key=value>`
+ * take a separate value, every other option is one token (`--no-pager`, `--git-dir=…`).
+ */
+const GIT = "git(?:\\s+-[Cc]\\s+[^\\s;&|]+|\\s+-[^\\s;&|]+)*";
+
+/** A package manager and its options up to the subcommand (`pnpm -r`, `pnpm --filter <pkg>`). */
+const PACKAGE_MANAGER = "(?:npm|pnpm|yarn)(?:\\s+(?:--filter|-F)\\s+[^\\s;&|]+|\\s+-[^\\s;&|]+)*";
 
 export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   {
@@ -122,5 +134,46 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // The cmd batch fork bomb: a script that pipes itself into itself.
     pattern: "%0\\s*\\|\\s*%0",
     description: "the cmd fork bomb (%0|%0) — exhausts the process table in seconds",
+  },
+  // The five below ask instead of refusing: each acts beyond this machine and is hard to take
+  // back, but is also routine work a person may well want done. A `deny` hit outranks them
+  // wherever they sit (see internal/command-policy.ts). Text matching only: the same action
+  // through an alias, a script or an API call walks past, and the default prompt's
+  // # Authorization section covers what they cannot see.
+  {
+    name: "gh-pr-merge-close",
+    pattern: `${CMD_START}gh\\s+pr\\s+(?:merge|close)(?![a-zA-Z0-9-])`,
+    description:
+      "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead",
+    action: "ask",
+  },
+  {
+    name: "gh-release",
+    pattern: `${CMD_START}gh\\s+release\\s+(?:create|delete|edit)(?![a-zA-Z0-9-])`,
+    description: "gh release create / delete / edit — publishing faces outward",
+    action: "ask",
+  },
+  {
+    name: "git-push-force",
+    // A force flag anywhere in the push's own segment, `--force-with-lease=<ref>` included.
+    pattern: `${CMD_START}${GIT}\\s+push(?=(?:\\s[^;&|]*)?\\s(?:-f|--force|--force-with-lease(?:=[^\\s;&|]*)?)(?:\\s|$))`,
+    description: "git push with a force flag rewrites shared history",
+    action: "ask",
+  },
+  {
+    name: "git-push-default-branch",
+    // `main` or `master` as a push target, alone or as a refspec's destination
+    // (`HEAD:main`, `x:refs/heads/main`, `:main`). A bare `git push` names no target, so
+    // nothing here can tell where it goes; the prompt covers it.
+    pattern: `${CMD_START}${GIT}\\s+push(?=(?:\\s[^;&|]*)?\\s(?:[^\\s;&|:]*:)?(?:refs/heads/)?(?:main|master)(?:\\s|$))`,
+    description:
+      "git push to main or master (a bare git push cannot be told apart and is left to the prompt)",
+    action: "ask",
+  },
+  {
+    name: "package-publish",
+    pattern: `${CMD_START}${PACKAGE_MANAGER}\\s+publish(?![a-zA-Z0-9-])`,
+    description: "npm / pnpm / yarn publish — a package release faces outward",
+    action: "ask",
   },
 ];

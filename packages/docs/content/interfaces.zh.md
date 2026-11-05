@@ -77,6 +77,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
+  askHuman?: AskHumanFn;   // route to a person for a command-policy `ask` hit; read by the Session, never by the engine
   preToolUse?: PreToolUseFn; // pre-tool-use hook consult; the Session wires it from installed hook packages
   userPrompt?: UserPromptFn; // user-prompt hook consult; the Session wires it from installed hook packages
 }
@@ -200,7 +201,16 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 | 未注入回调 | 引擎拒绝一切（保守默认） |
 | 子 Agent | 子 Agent 继承父级的审批回调，调用时会带上 `origin` 标记，审批策略因此覆盖整棵委托树 |
 
-`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中策略的命令不会问到宿主，直接得到 `"forbidden"`。
+`"forbidden"` 永远不是宿主给出的答案。`Session.run` 会用 [Project 命令策略](/configuration#命令策略)包装注入的回调，命中 `deny` 规则的命令不会问到宿主，直接得到 `"forbidden"`。命中 `ask` 规则的命令则不论审批模式，都交给 `RunOptions.askHuman` 而不是 `approve`。它的类型是 `ApproveFn` 再加上要求确认的规则，所以任何 `ApproveFn` 都可以传入：
+
+```ts
+type AskHumanFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  hit: { rule: string },
+) => Promise<ApprovalDecision>;
+```
+
+不传 `askHuman` 时，`ask` 命中由 `approve` 像对待其他调用一样决定。子 Session 无需额外转发：它继承的回调就是父 Session 的策略包装，会再次匹配该调用并交给父 Session 的 `askHuman`。
 
 两种拒绝都只产生一行固定的 `aborted` 输出：`"deny"` 对应「Tool call denied by user.」，`"forbidden"` 对应「Tool call denied by policy.」。决定值本身随 `approval_decision` 事件传递，Trace 不用额外字段就能记录决策者。已有回调如果只返回 `"allow"` 或 `"deny"`，无需任何改动。
 

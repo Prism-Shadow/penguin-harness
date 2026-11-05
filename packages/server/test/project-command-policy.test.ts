@@ -7,6 +7,9 @@
  * - Any member reads; only the owner writes, and a non-member cannot tell the Project exists.
  * - The rules are plain data: edit, disable, delete and add all round-trip, as do an empty
  *   list and a disabled policy, and a PUT materializes the full list.
+ * - A rule's action round-trips: the seeded `ask` rules are served as `ask`, an `ask` rule is
+ *   stored as `action = "ask"`, and a `deny` rule — the default — is stored and served
+ *   without one.
  * - An uncompilable pattern is refused naming its rule; malformed bodies are refused.
  * - The write is read-modify-write: the models table survives.
  */
@@ -117,6 +120,28 @@ describe("project command policy", () => {
     expect(((await restore.json()) as CommandPolicyDto).rules).toEqual(before.defaultRules);
   });
 
+  it("a rule's action round-trips, stored only when it asks", async () => {
+    const seeded = (await (await owner.get(url)).json()) as CommandPolicyDto;
+    expect(seeded.rules.find((r) => r.name === "gh-pr-merge-close")?.action).toBe("ask");
+    expect(seeded.rules.find((r) => r.name === "rm-recursive-force")?.action).toBeUndefined();
+
+    const rules = [
+      { name: "ask-deploy", pattern: "\\bfly deploy\\b", enabled: true, action: "ask" as const },
+      { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true, action: "deny" as const },
+    ];
+    const put = await owner.put(url, { enabled: true, rules });
+    expect(put.status).toBe(200);
+    const stored = (await put.json()) as CommandPolicyDto;
+    expect(stored.rules).toEqual([
+      rules[0],
+      { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true },
+    ]);
+
+    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml.match(/action = "ask"/g) ?? []).toHaveLength(1);
+    expect(toml).not.toContain('action = "deny"');
+  });
+
   it("an empty rules list and a disabled policy both round-trip", async () => {
     expect((await owner.put(url, { enabled: false, rules: [] })).status).toBe(200);
     const dto = (await (await owner.get(url)).json()) as CommandPolicyDto;
@@ -148,6 +173,7 @@ describe("project command policy", () => {
       [{ name: "n", pattern: "" }],
       [{ name: "n", pattern: "x", enabled: "yes" }],
       [{ name: "n", pattern: "x", description: 42 }],
+      [{ name: "n", pattern: "x", action: "maybe" }],
       ["not-an-object"],
       "not-an-array",
     ]) {

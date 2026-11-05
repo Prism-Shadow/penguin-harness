@@ -1272,9 +1272,15 @@ export interface ChatDefaultsDto {
 // ---------------------------------------------------------------------------
 
 /**
- * One deny rule of the sandbox command policy — plain project-editable data. The factory
- * rules are seeded into new projects and carry no special status thereafter: every rule
- * can be edited, disabled, or deleted.
+ * What a command-policy hit does: `deny` refuses the call outright; `ask` puts it to a person
+ * whatever the approval mode (deny-all still denies).
+ */
+export type CommandPolicyActionDto = "deny" | "ask";
+
+/**
+ * One rule of the sandbox command policy — plain project-editable data. The factory rules
+ * are seeded into new projects and carry no special status thereafter: every rule can be
+ * edited, disabled, or deleted.
  */
 export interface CommandPolicyRuleDto {
   name: string;
@@ -1284,15 +1290,18 @@ export interface CommandPolicyRuleDto {
   description?: string;
   /** Per-rule switch, effective value (defaults on). */
   enabled: boolean;
+  /** What a hit does; absent = `deny` (served only for an `ask` rule, as it is stored). */
+  action?: CommandPolicyActionDto;
 }
 
 /**
- * Per-Project sandbox command policy: deny rules for shell commands, evaluated ahead of
- * the approval mode (a hit is denied even under allow-all). Serves as the GET response and
- * the PUT response. The PUT request body carries `enabled?` plus the full `rules` list
- * (required — a PUT always materializes the list into the config, model-presets style);
- * per-rule `enabled` may be omitted there and defaults to on. Owner-only to write; any
- * member may read.
+ * Per-Project sandbox command policy: rules for shell commands, evaluated ahead of the
+ * approval mode (a `deny` hit is refused and an `ask` hit is put to a person even under
+ * allow-all). Serves as the GET response and the PUT response. The PUT request body carries
+ * `enabled?` plus the full `rules` list (required — a PUT always materializes the list into
+ * the config, model-presets style); per-rule `enabled` may be omitted there and defaults to
+ * on, per-rule `action` likewise and defaults to `deny`. Owner-only to write; any member may
+ * read.
  */
 export interface CommandPolicyDto {
   /** Effective master switch; an absent stored value reads as true (the policy defaults on). */
@@ -1301,6 +1310,13 @@ export interface CommandPolicyDto {
   rules: CommandPolicyRuleDto[];
   /** The factory set, served for the settings UI's "restore defaults". */
   defaultRules: CommandPolicyRuleDto[];
+}
+
+/** Why an `approval_request` asks when its approval mode did not send it: a command-policy `ask` rule matched the call. */
+export interface ApprovalReason {
+  kind: "policy";
+  /** The matched rule's name. */
+  rule: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -3670,9 +3686,16 @@ export interface MessagingAccountHoldersResponse {
 export type ServerEvent =
   /**
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
-   * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
+   * calls under read-only, plus — under every mode but deny-all — a call a command-policy `ask`
+   * rule matched, which carries `reason` (see runtime/approvals.ts); pending approvals are
+   * resent on reconnect.
    */
-  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
+  | {
+      type: "approval_request";
+      toolCall: AmspRecord<ToolCallPayload>;
+      origin?: string[];
+      reason?: ApprovalReason;
+    }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
       type: "task_state";

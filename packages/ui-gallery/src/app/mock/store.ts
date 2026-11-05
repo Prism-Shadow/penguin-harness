@@ -293,7 +293,13 @@ export class DemoStore {
     const row = this.session(sessionId);
     live.channel.event({ type: "task_state", state: row?.status ?? "idle" }, handlers);
     const pending = live.transcript.pendingApproval;
-    if (pending) live.channel.event({ type: "approval_request", toolCall: pending }, handlers);
+    const reason = live.transcript.pendingReason;
+    if (pending) {
+      live.channel.event(
+        { type: "approval_request", toolCall: pending, ...(reason ? { reason } : {}) },
+        handlers,
+      );
+    }
     for (const goal of live.transcript.goalEvents ?? []) live.channel.event(goal, handlers);
     if (sessionId === IDS.sessions.thinking) this.keepThinking(live);
     if (sessionId === IDS.sessions.streaming) this.keepStreaming(sessionId, live);

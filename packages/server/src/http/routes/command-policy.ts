@@ -3,7 +3,8 @@
  * `[command_policy]` block of .project_config.toml). Any member can read (the settings
  * dialog shows the effective policy); only the owner can replace it — it is Project-owned
  * security config, deliberately outside the Agent State an Agent edits for itself. The rules are
- * plain data: the factory set is seeded into new projects (and served to pre-seeding
+ * plain data, each saying what a hit does (`deny`, the default, or `ask`): the factory set is
+ * seeded into new projects (and served to pre-seeding
  * projects that store none), and a PUT always carries the full rule list, materializing it
  * into the file model-presets style.
  */
@@ -34,6 +35,7 @@ interface RuleInput {
   pattern: string;
   description?: string;
   enabled?: boolean;
+  action?: "deny" | "ask";
 }
 
 /**
@@ -54,7 +56,7 @@ function validateRules(value: unknown): RuleInput[] {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new HttpError(400, "invalid_rules", "Each rule must be an object.");
     }
-    const { name, pattern, description, enabled } = entry as Record<string, unknown>;
+    const { name, pattern, description, enabled, action } = entry as Record<string, unknown>;
     if (typeof name !== "string" || name.trim() === "" || name.length > MAX_RULE_NAME_LEN) {
       throw new HttpError(
         400,
@@ -92,11 +94,15 @@ function validateRules(value: unknown): RuleInput[] {
     if (enabled !== undefined && typeof enabled !== "boolean") {
       throw new HttpError(400, "invalid_rules", "A rule's enabled must be a boolean.");
     }
+    if (action !== undefined && action !== "deny" && action !== "ask") {
+      throw new HttpError(400, "invalid_rules", 'A rule\'s action must be "deny" or "ask".');
+    }
     rules.push({
       name: name.trim(),
       pattern,
       ...(desc !== "" ? { description: desc } : {}),
       ...(enabled !== undefined ? { enabled } : {}),
+      ...(action !== undefined ? { action } : {}),
     });
   }
   return rules;

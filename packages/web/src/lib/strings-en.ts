@@ -1547,7 +1547,7 @@ export const en: Strings = {
     deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression; a hit is refused outright whatever the approval mode allows. It is an accident guardrail: a command assembled at run time is not covered.",
+      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression. A hit on a Deny rule is refused outright and a hit on an Ask rule waits for a person's go-ahead, whatever the approval mode allows; a Deny hit wins over an Ask hit. It is an accident guardrail: a command assembled at run time is not covered.",
     commandPolicyEnable: "Enable policy",
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",
@@ -1564,6 +1564,12 @@ export const en: Strings = {
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
     commandPolicyRuleDesc: "Description",
+    commandPolicyRuleAction: "On a match",
+    commandPolicyActionDeny: "Deny",
+    commandPolicyActionAsk: "Ask",
+    commandPolicyAskPill: "Asks first",
+    commandPolicyAskPillHint:
+      "A matching command runs only after a person allows it, whatever the approval mode.",
     commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
@@ -3771,6 +3777,9 @@ Scenarios:
     compact: "Compact context",
     approve: "Allow",
     deny: "Deny",
+    approvalPolicyReason: (rule: string) => `Confirmation required by command-policy rule ${rule}`,
+    approvalPolicyReasonHint:
+      "This rule of the Project's command policy asks a person every time, whatever the approval mode. Change it on the security page of the Project settings.",
     decisionAllow: "Approved",
     decisionDeny: "Denied",
     decisionManual: "manual",
