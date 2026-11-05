@@ -4729,6 +4729,12 @@ export interface ScheduleUpsertRequest {
 // a member's `overwrite=1`, 413 `archive_too_large` past a cap.
 // ---------------------------------------------------------------------------
 
+/** The largest zip or `.tar.gz` the import takes, as uploaded (413 `archive_too_large` past it). */
+export const AGENT_ARCHIVE_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/** The most Sessions `traces=last:<N>` selects. */
+export const AGENT_ARCHIVE_MAX_LAST_SESSIONS = 500;
+
 /** One selectable slice of an Agent; the config (`system_config.yaml`, `AGENTS.md`, `tools/`) always travels. */
 export type AgentArchivePart =
   "skills" | "hooks" | "memory" | "workbenches" | "schedules" | "traces";

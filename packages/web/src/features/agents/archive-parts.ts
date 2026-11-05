@@ -23,15 +23,6 @@ export const DEFAULT_SWITCHES: Readonly<Record<ArchiveSwitch, boolean>> = {
 
 /** How many of the latest Sessions "Latest N" starts at. */
 export const DEFAULT_TRACE_COUNT = 20;
-/** The most Sessions `traces=last:<N>` selects (the server refuses more). */
-export const MAX_TRACE_COUNT = 500;
-
-/**
- * The size an upload may have (the server's `MAX_UPLOAD_BYTES`, agent-archive/limits.ts): the
- * export dialog says when a selection is larger, uncompressed, since the zip of it may not
- * import again.
- */
-export const IMPORT_LIMIT_BYTES = 100 * 1024 * 1024;
 
 /** `traces=` in its text form: `none`, `last:<N>` or `<from>..<to>`. */
 function tracesText(traces: TraceSelection): string {

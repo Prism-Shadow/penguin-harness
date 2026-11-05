@@ -93,12 +93,12 @@ Prompt 要求这个 Agent 用 `agent-porting` 技能：
 
 **开始之前**
 
-- 一个从 PenguinHarness 导出的 zip，制作方法见[导出 Agent](#导出-agent)。1.0 之前，旧版本导出的 Agent State 快照包（`.tar.gz`）也可以导入。
+- 一个从 PenguinHarness 导出的 zip，最大 100 MB，制作方法见[导出 Agent](#导出-agent)。1.0 之前，旧版本导出的 Agent State 快照包（`.tar.gz`）也可以导入。
 
 1. 在**导入文件**下点击**选择文件**，选定文件。**Agent id** 会按文件名自动填入：`<id>-<yyyymmdd>.zip` 和 `<id>-v<n>.tar.gz` 都得到 `<id>`。可以修改；留空时使用文件里记录的 id。
 2. 选择**导入**。
 
-新 Agent 带上文件里的全部内容，包括其中的对话；这台服务端上已有的对话会被略过。随后的提示会列出导入了什么、略过了哪些对话，以及还需要填写的内容：密钥保险柜的键，以及导出时被清空的 MCP Server 取值——密钥的值从不随 zip 流出。
+新 Agent 采用文件里的配置、名称和 Agent State 版本，带上文件所含的各部分，以及导出时选中的对话。本安装中已存在的对话不会重复导入，会列为已略过。随后的提示会列出导入了什么、略过了哪些对话，以及还需要设置的内容：Agent 需要的密钥保险柜键，以及导出时被清空的 MCP 凭据——密钥的值从不随 zip 流出。
 
 如果 id 已被占用，对话框会在 **Agent id** 下方说明。可以选择**改用其他 id** 换一个新的；Project owner 也可以选择**覆盖现有 Agent** 并确认。覆盖会像[从文件替换](#导出和从文件替换)那样替换该 Agent 的 Agent State。
 
@@ -112,7 +112,7 @@ Prompt 要求这个 Agent 用 `agent-porting` 技能：
 
 选项下方的一行会说明 zip 里有多少个文件、大约多大、带上多少个对话。选择的内容未压缩超过 100 MB 时会附注提醒，这样的 zip 可能无法再导入；有对话因单个文件过大而不会导出时，也会列出它们。
 
-zip 从不包含密钥保险柜的值，只带键名；MCP Server 中看起来像凭据的环境变量和请求头会被清空。对话框不记住上次的选择，每次打开都是默认值。
+zip 从不包含密钥保险柜的值，只带键名；MCP Server 中看起来像凭据的环境变量和请求头会被清空，以 `${KEY}` 形式引用保险柜的除外。对话框不记住上次的选择，每次打开都是默认值。
 
 ## 删除 Agent
 
@@ -176,7 +176,7 @@ zip 从不包含密钥保险柜的值，只带键名；MCP Server 中看起来�
 **Agent State** 区块显示 **Agent State 版本**和 **State 路径**（Agent State 在服务端所在的文件夹），点击复制按钮可以复制路径。
 
 - **导出…**：打开**导出 Agent** 对话框，见[导出 Agent](#导出-agent)。
-- **从文件替换…**：用导出的 zip（1.0 之前也可以是旧的 `.tar.gz` 快照包）替换这个 Agent 的 Agent State。选定文件，选择**替换**并确认。文件没带的部分保留现有内容，Agent 的对话、密钥保险柜和 API 密钥也都保留。工作台的版本历史位于 Agent State 之外，替换不会改动它。替换前会先把当前 Agent State 打包成一个单独的备份，放在 Agent 文件夹下的 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`。每次替换都重新打包，从不覆盖已有文件；它不属于 `v<version>.tar.gz` 快照，因此同一版本的旧快照既不会被沿用，也不会被覆盖。只有 Project owner 能替换 Agent State。
+- **从文件替换…**：用导出的 zip（1.0 之前也可以是旧的 `.tar.gz` 快照包）替换这个 Agent 的 Agent State，并采用包内的版本。选定文件，选择**替换**并确认。Agent 保留自己的身份、对话、密钥保险柜、API 密钥和公司任职；文件没带的部分保留 Agent 现有的内容，导出时被清空的 MCP 凭据也一样。工作台的版本历史位于 Agent State 之外，替换不会改动它。替换前会先把当前 Agent State 打包成一个单独的备份，放在 Agent 文件夹下的 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`。每次替换都重新打包，从不覆盖已有文件；它不属于 `v<version>.tar.gz` 快照，因此同一版本的旧快照既不会被沿用，也不会被覆盖。只有 Project owner 能替换 Agent State。
 
 版本和快照的工作机制见[自我进化](/self-improvement#快照与版本)。
 

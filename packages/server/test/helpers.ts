@@ -675,6 +675,13 @@ function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
     put: call("PUT"),
     patch: call("PATCH"),
     delete: call("DELETE"),
+    /** POST of raw bytes (an archive upload), `application/octet-stream` unless told otherwise. */
+    upload: (apiPath: string, body: Uint8Array, contentType = "application/octet-stream") =>
+      app.request(apiPath, {
+        method: "POST",
+        headers: { ...credential, "content-type": contentType },
+        body: Buffer.from(body),
+      }),
   };
 }
 

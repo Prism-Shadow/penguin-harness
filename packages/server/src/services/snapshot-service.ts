@@ -101,15 +101,21 @@ export class SnapshotService implements Snapshots {
 
   /**
    * Replaces the Agent's `agent_state/` with `incoming` (a directory on the same filesystem,
-   * checked and completed by the caller), keeping the current vault: it is merged into
-   * `incoming` first (any vault a package carried was never extracted), so the replacement is
-   * a pure rename swap. The vault never goes into a package: only a *missing* vault means there
-   * is nothing to keep — any other read failure stops the swap, because it would otherwise
-   * discard the only copy. When the new State cannot be moved in, the previous one is moved
-   * back; when that fails too, it stays in the staging folder under the Agent directory and the
-   * error names it.
+   * checked by the caller), keeping the current vault and the current State's entries at the
+   * `carry` paths (relative to `agent_state/`, `/`-separated): each replaces whatever `incoming`
+   * holds there. Both move by rename, so keeping a large part costs nothing. The vault never
+   * goes into a package: only a *missing* vault means there is nothing to keep — any other read
+   * failure stops the swap, because it would otherwise discard the only copy. When the new State
+   * cannot be moved in, the carried entries go back and the previous State is moved back; when
+   * that fails too, it stays in a staging folder under the Agent directory and the error names
+   * it.
    */
-  async swapAgentState(projectId: string, agentId: string, incoming: string): Promise<void> {
+  async swapAgentState(
+    projectId: string,
+    agentId: string,
+    incoming: string,
+    carry: readonly string[] = [],
+  ): Promise<void> {
     const base = agentDir(this.root, projectId, agentId);
     const staging = path.join(base, `.import-${randomBytes(6).toString("hex")}`);
     await fs.mkdir(staging, { recursive: true });
@@ -128,11 +134,27 @@ export class SnapshotService implements Snapshots {
       }
       const trash = path.join(staging, "replaced-agent_state");
       await fs.rename(stateDir, trash);
+      const carried: string[] = [];
       try {
+        for (const rel of carry) {
+          const from = path.join(trash, ...rel.split("/"));
+          const to = path.join(incoming, ...rel.split("/"));
+          await fs.rm(to, { recursive: true, force: true });
+          await fs.mkdir(path.dirname(to), { recursive: true });
+          await fs.rename(from, to);
+          carried.push(rel);
+        }
         await fs.rename(incoming, stateDir);
       } catch (err) {
         try {
-          await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
+          // Rollback: the carried entries go back, then the old directory is restored.
+          for (const rel of carried.reverse()) {
+            await fs.rename(
+              path.join(incoming, ...rel.split("/")),
+              path.join(trash, ...rel.split("/")),
+            );
+          }
+          await fs.rename(trash, stateDir);
         } catch (rollbackErr) {
           keepStaging = true;
           throw new AggregateError(

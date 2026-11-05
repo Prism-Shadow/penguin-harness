@@ -17,6 +17,10 @@
  * defaults, and no choice is remembered.
  */
 import { useEffect, useRef, useState } from "react";
+import {
+  AGENT_ARCHIVE_MAX_LAST_SESSIONS as MAX_TRACE_COUNT,
+  AGENT_ARCHIVE_MAX_UPLOAD_BYTES,
+} from "@prismshadow/penguin-server/api";
 import type { AgentArchivePreview, TraceSelection } from "@prismshadow/penguin-server/api";
 import { Button, Checkbox, FieldLegend, Input, Modal, Segmented } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -26,13 +30,7 @@ import { formatBytes, localYmd } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
-import {
-  DEFAULT_SWITCHES,
-  DEFAULT_TRACE_COUNT,
-  IMPORT_LIMIT_BYTES,
-  MAX_TRACE_COUNT,
-  archivePartsQuery,
-} from "./archive-parts";
+import { DEFAULT_SWITCHES, DEFAULT_TRACE_COUNT, archivePartsQuery } from "./archive-parts";
 import type { ArchiveSwitch } from "./archive-parts";
 
 /** How long the preview waits after the last change before it is asked again. */
@@ -324,9 +322,9 @@ function PreviewLine({
           withTraces ? answer.traces.sessions : null,
         )}
       </p>
-      {answer.totalBytes > IMPORT_LIMIT_BYTES && (
+      {answer.totalBytes > AGENT_ARCHIVE_MAX_UPLOAD_BYTES && (
         <p className={toneInk.attention}>
-          {S.agent.exportOverLimit(formatBytes(IMPORT_LIMIT_BYTES))}
+          {S.agent.exportOverLimit(formatBytes(AGENT_ARCHIVE_MAX_UPLOAD_BYTES))}
         </p>
       )}
       {skipped.length > 0 && (

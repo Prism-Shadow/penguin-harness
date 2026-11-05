@@ -75,8 +75,16 @@ export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
   /** Packs the current State into a new `snapshots/import-backup-v<N>-…tar.gz`; answers `snapshots/<name>`. */
   abstract backupBeforeImport(projectId: string, agentId: string): Promise<string>;
-  /** Replaces `agent_state/` with `incoming` in one rename swap, the current vault kept, rolled back on failure. */
-  abstract swapAgentState(projectId: string, agentId: string, incoming: string): Promise<void>;
+  /**
+   * Replaces `agent_state/` with `incoming` in one rename swap, the current vault and the
+   * entries at the `carry` paths (relative to `agent_state/`) kept, rolled back on failure.
+   */
+  abstract swapAgentState(
+    projectId: string,
+    agentId: string,
+    incoming: string,
+    carry?: readonly string[],
+  ): Promise<void>;
 }
 
 /** Memory: the mechanism MemoryService implements. */

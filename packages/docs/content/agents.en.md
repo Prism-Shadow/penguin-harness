@@ -93,12 +93,12 @@ The prompt tells the agent to use the `agent-porting` Skill and to:
 
 **Before you begin**
 
-- A zip exported from PenguinHarness; to make one, see [Export an agent](#export-an-agent). Until 1.0, an Agent State package (`.tar.gz`) exported by an earlier version is accepted too.
+- A zip exported from PenguinHarness, up to 100 MB; to make one, see [Export an agent](#export-an-agent). Until 1.0, an Agent State package (`.tar.gz`) exported by an earlier version is accepted too.
 
 1. Under **Import a file**, select **Choose a file** and pick the file. **Agent id** is filled in from the file name: `<id>-<yyyymmdd>.zip` and `<id>-v<n>.tar.gz` give `<id>`. You can change it; left empty, the id recorded in the file is used.
 2. Select **Import**.
 
-The new agent gets everything the file carries, its conversations included. A conversation this server already has is skipped. A message then lists what came in, the conversations that were skipped, and what you still have to fill in: the vault keys, and the MCP server values that were blanked on export, since secret values never travel in a zip.
+The new agent has the file's configuration, name and Agent State version, the parts the file carries, and the conversations the export included. A conversation that already exists in this installation is not imported twice: it is listed as skipped. A message then lists what came in, the conversations that were skipped, and what you still have to set: the vault keys the agent expects, and any MCP credential the export left blank, since secret values never travel in a zip.
 
 If the id is taken, the dialog says so under **Agent id**. Select **Use another id** and enter a new one, or, as the Project owner, select **Overwrite the existing agent** and confirm. An overwrite replaces that agent's Agent State as [Replace from a file](#export-and-replace-from-a-file) does.
 
@@ -112,7 +112,7 @@ Select the export button on the agent's card, or **Export…** in the **Agent St
 
 The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, and names the conversations left out because one of their files is too large.
 
-A zip never carries the vault's values, only its key names, and the MCP server environment variables and headers that look like credentials are blanked. The choices are not remembered: the dialog opens with the defaults every time.
+A zip never carries the vault's values, only its key names. MCP server environment variables and headers that look like credentials are left blank, unless they are written as `${KEY}` vault references. The choices are not remembered: the dialog opens with the defaults every time.
 
 ## Delete an agent
 
@@ -176,7 +176,7 @@ Change **Name** or **Description**, then select **Save**.
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
 - **Export…** opens the **Export agent** dialog; see [Export an agent](#export-an-agent).
-- **Replace from file…** replaces the agent's Agent State from an exported zip, or until 1.0 from an older `.tar.gz` package. Choose the file, select **Replace**, and confirm. Whatever the file leaves out keeps its current contents, and the agent's conversations, vault and API keys stay. The workbench version history sits beside the Agent State, so a replace leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every replace and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can replace an agent's Agent State.
+- **Replace from file…** replaces the agent's Agent State from an exported zip, or until 1.0 from an older `.tar.gz` package, and adopts the version inside it. Choose the file, select **Replace**, and confirm. The agent keeps its identity, conversations, vault, API keys and company employments, and every part the file leaves out keeps the agent's own contents; so does an MCP credential the export left blank. The workbench version history sits beside the Agent State, so a replace leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every replace and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can replace an agent's Agent State.
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 
