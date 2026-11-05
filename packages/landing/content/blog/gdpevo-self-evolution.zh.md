@@ -35,7 +35,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 针对这两个痛点，SkillAdam 原论文借鉴了深度学习中 Adam 优化器“一阶动量 + 二阶方差自适应步长”的设计思路。在我们的插件适配中，训练容器内的目标 Agent 按以下四步闭环迭代演进 `SKILL.md`：
 
-<figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>题池试跑诊断：目标 Agent 在 1 Shared Docker 内完成 T1–T5 试跑并收集分差</li><li>问题追踪 (EIT)：将失误原因与历史记录写入演进问题账本，防止重复无效修改</li><li>方差自适应预算：按跨题分差方差计算累计波动率 Vt，动态收缩可编辑槽位 Bt</li><li>均分门控与更新：候选均分严格高于当前最佳时采纳并更新 SKILL.md，否则拦截回滚</li></ol><figcaption>SkillAdam 在单容器连续训练中的四阶段演进闭环（可点击上方阶段按钮依次查看题池试跑诊断、问题追踪 EIT、方差自适应预算与均分门控更新）。</figcaption></figure>
+<figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>五题试跑测分差：目标 Agent 完成 T1–T5 试跑并统计各题分差</li><li>严格均分门控：对比本轮均分与当前最佳，严格提升时采纳晋级</li><li>Adam 状态更新：同步更新一阶 EIT 问题账本与二阶方差编辑预算 Bt</li><li>受限修改 SKILL.md：仅在预算允许的槽位内局部修改并输出下一轮候选 SKILL.md</li></ol><figcaption>SkillAdam 的四阶段演进闭环（可点击上方阶段按钮依次查看五题试跑测分差、严格均分门控、Adam 状态更新与受限修改 SKILL.md）。</figcaption></figure>
 
 - **无技能初测与初版提炼**：训练启动后，Agent 首先在不挂载任何业务技能的状态下完成 5 道训练题的初次尝试，根据执行轨迹与评分反馈提炼出初版 `SKILL.md`。在随后的每一轮迭代中，Agent 均使用当前或候选技能文档在训练题上实测作答，收集各题得分、新旧分差与具体失误原因。
 - **演进问题追踪器（EIT）**：算法在迭代全程维护一份问题账本，持续追踪训练题中暴露的错误模式、历次尝试过的修复方案及其实际效果。即便某一轮提出的候选修改最终因为没有提分而被拒绝，这次失败尝试的记录也会更新回 EIT 中，避免后续轮次重复无效修改。
