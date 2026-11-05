@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `server`, `web`, `plugins`, `docs`, `rfcs`
+- **PR:** [#1488](https://github.com/Prism-Shadow/penguin-harness/pull/1488)
 
 [中文版](2026-11-04-app-center-workbenches.zh.md)
 
