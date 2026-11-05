@@ -79,7 +79,10 @@ function loadImage(url) {
  */
 export async function createWhaleFigure(base = new URL('./', import.meta.url), opts = {}) {
   const createRig = opts.kit?.createRig ?? (await import('../kit/rig.js')).createRig;
-  const model = opts.model || await (await fetch(new URL('model.json', base))).json();
+  // fetch with a *string*, not a URL object: some extensions (e.g. the Inspect extension's
+  // content script) wrap window.fetch and call `url.startsWith(...)` on the argument, which
+  // throws on a URL instance and kills the whole widget.
+  const model = opts.model || await (await fetch(new URL('model.json', base).href)).json();
   const asset = opts.asset || (p => new URL(p, base));
   const load = opts.loadImage || loadImage;
   const { S, X0, FEET } = model.units;
