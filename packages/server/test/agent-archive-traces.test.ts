@@ -17,8 +17,10 @@
  *   one whose files are missing as `invalid`, and the rest land.
  * - Given a subagent child that ran under another Agent, the export does not carry it.
  * - Given a pinned thinking level and a kept mark, the imported Session has both.
- * - Given the Agent's vault values printed in a Trace, the export carries them replaced and counts
- *   them in the manifest; a value too short to replace safely stays.
+ * - Given the Agent's secret vault values printed in a Trace (credential-named, token-shaped, or
+ *   the password or token-like user info of a URL-shaped value under any name), the export
+ *   carries them replaced inside strings and counts them; short, digits-only and ordinary values
+ *   stay.
  * - Given a `sessions.json` row with an unknown thinking level, a time that is no time, or an
  *   unknown client, that Session is skipped as `invalid` with the reason; given a first file whose
  *   first line runs past the head window, the Session is `invalid` too.
@@ -61,6 +63,7 @@ const LONG_TITLE = `${"T".repeat(196)} #12`;
 /** A Session whose model's name holds a vault secret, titled with another one. */
 const IDENTIFIED = "session-2026-09-22-09-00-00-0000aaab";
 const MODEL_SECRET = "model-key-0451";
+const UPSTREAM_URL = "postgres://app:pg-url-secret-9@db.example.test/app";
 /** A Session still running: its last line is not finished yet. */
 const RUNNING = "session-2026-09-25-09-00-00-0000aaac";
 
@@ -149,6 +152,11 @@ describe("Agent archive Traces", () => {
         // Alone on its line: the line holds the value only in its JSON-escaped form.
         rec("model_msg", { type: "text", role: "assistant", text: `pass ${QUOTED_SECRET}` }),
         rec("model_msg", { type: "text", role: "assistant", text: "db hunter2hunter2" }),
+        rec("model_msg", {
+          type: "text",
+          role: "assistant",
+          text: `via ${UPSTREAM_URL} and https://mirror-token-77@mirror.example.test/x, pass pg-url-secret-9`,
+        }),
         rec("event_msg", { type: "usage_note", total: 9123456789012 }),
       ]),
     );
@@ -179,6 +187,9 @@ describe("Agent archive Traces", () => {
             { key: "DB_HOST", value: "localhost.example" },
             { key: "DB_PASS", value: "hunter2hunter2" },
             { key: "MODEL_KEY", value: MODEL_SECRET },
+            // URLs under ordinary names: their user info is what is secret.
+            { key: "UPSTREAM", value: UPSTREAM_URL },
+            { key: "MIRROR", value: "https://mirror-token-77@mirror.example.test/" },
           ],
         })
       ).status,
@@ -438,13 +449,18 @@ describe("Agent archive Traces", () => {
     // A short credential name's value goes as well.
     expect(all).not.toContain("hunter2hunter2");
     expect(all).toContain("db [vault:DB_PASS]");
+    // A URL-shaped value, whatever its key, gives up its password or its token-like user info.
+    for (const secret of ["pg-url-secret-9", "mirror-token-77"]) expect(all).not.toContain(secret);
+    expect(all).toContain(
+      "via postgres://app:[vault:UPSTREAM]@db.example.test/app and https://[vault:MIRROR]@mirror.example.test/x, pass [vault:UPSTREAM]",
+    );
     // A short value, an ordinary setting and digits stay as they were.
     expect(all).toContain("and short");
     expect(all).toContain("localhost.example");
     expect(all).toContain("code 31415926");
     expect(records.find((r) => r.payload.type === "usage_note")?.payload.total).toBe(9123456789012);
     const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as { redacted: string[] };
-    expect(manifest.redacted).toContain("traces:vault-values:5");
+    expect(manifest.redacted).toContain("traces:vault-values:8");
   });
 
   it("a Session's title travels scrubbed, while the session_meta and row that name it travel as they were, and the import takes it", async () => {

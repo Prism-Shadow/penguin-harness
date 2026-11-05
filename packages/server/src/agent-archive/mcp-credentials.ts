@@ -13,7 +13,8 @@
  * - in `args`, the value of a `--<name>=<value>` argument and the argument after a `--<name>`
  *   flag (`args:--<name>`);
  * - whatever its name, in any string of the entry (an `env` value, a header, an argument, a
- *   field of its own): the password of a URL's user info and each query parameter under such a
+ *   field of its own): the password of a URL's user info (all of the user info when it has no
+ *   password: `<place>:userinfo`) and each query parameter under such a
  *   name (`<place>:password`, `<place>:query:<name>`, with `url` and an `env` or header name as
  *   the place, and in `args` the URL's origin: `args:<scheme>://<host>:password`), and the value
  *   of each such pair in a connection string (`Server=db;Password=…;` gives
@@ -38,6 +39,7 @@ import { VAULT_REF_PATTERN } from "@prismshadow/penguin-core";
 import { Document, Scalar, isAlias, isMap, isScalar, isSeq, parseDocument, visit } from "yaml";
 import { HttpError } from "../http/errors.js";
 import { isCredentialName } from "./credential-names.js";
+import { authorityOf, userInfoOf } from "./url-userinfo.js";
 
 /** One secret inside one string of the document: the scalar holding it and where in its text. */
 interface Span {
@@ -50,15 +52,6 @@ interface Span {
 }
 
 const isReference = (text: string): boolean => [...text.matchAll(VAULT_REF_PATTERN)].length > 0;
-
-/** Where a URL's authority (`user:password@host:port`) starts and ends in `text`, from `://`. */
-function authorityOf(text: string): { start: number; end: number } | null {
-  const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(text);
-  if (scheme === null) return null;
-  const start = scheme[0].length;
-  const stop = text.slice(start).search(/[/?#]/);
-  return { start, end: stop < 0 ? text.length : start + stop };
-}
 
 /** `scheme://host[:port]`, lower-cased, of a URL-shaped string; null when it is not one. */
 function originOf(text: string): string | null {
@@ -77,17 +70,19 @@ interface Found {
 
 /**
  * The spans of a URL's secrets, `text` starting with the URL: the password of its user info
- * (`<at>:password`) and each query parameter under a credential's name (`<at>:query:<name>`).
+ * (`<at>:password`) or, when the user info has none, all of it (`<at>:userinfo`: a token goes
+ * there as often as a user name), and each query parameter under a credential's name
+ * (`<at>:query:<name>`).
  */
 function urlSpans(text: string, at: string): Found[] {
   const out: Found[] = [];
   const authority = authorityOf(text);
   if (authority === null) return out;
-  // The host follows the last `@`: a password holding one, unescaped, is still all password.
-  const host = text.lastIndexOf("@", authority.end - 1);
-  const colon = text.indexOf(":", authority.start);
-  if (host >= authority.start && colon >= 0 && colon < host) {
-    out.push({ label: `${at}:password`, start: colon + 1, end: host });
+  const info = userInfoOf(text);
+  if (info !== null && info.password !== null) {
+    out.push({ label: `${at}:password`, start: info.password, end: info.end });
+  } else if (info !== null) {
+    out.push({ label: `${at}:userinfo`, start: info.start, end: info.end });
   }
   const query = text.indexOf("?", authority.end);
   if (query >= 0) {

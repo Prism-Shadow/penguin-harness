@@ -51,8 +51,9 @@
  *   `NGROK_AUTHTOKEN`, `--secretkey`, `?accesstoken=`), their values are blanked; names that only
  *   start with one (`--tokens`, `TOKENIZER`, `AUTHOR`, `KEYBOARD`, `KEYSTORE`) travel as written.
  * - Given short credential names (`DB_PASS`, `SMTP_PW`, `JWT`, `SENTRY_DSN`), a URL with a
- *   password in an `env` value or a header, and a connection string's `Password=`, those values
- *   are blanked whatever the value's own name, and an overwrite from the zip puts them back.
+ *   password in an `env` value or a header, a URL whose user info has no password (a token in
+ *   it), and a connection string's `Password=`, those values are blanked whatever the value's own
+ *   name, and an overwrite from the zip puts them back.
  * - Given an overwrite whose stdio server runs another package under the same command, or an
  *   Agent with two servers of one name, no credential is refilled and the place is to be filled.
  * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
@@ -1110,7 +1111,7 @@ describe("Agent archive", () => {
     }
   });
 
-  it("short credential names, URLs with a password and connection strings in any value are blanked, and an overwrite puts them back", async () => {
+  it("short credential names, URLs with user info and connection strings in any value are blanked, and an overwrite puts them back", async () => {
     const state = await newAgent("value_shapes");
     const servers = [
       {
@@ -1124,6 +1125,7 @@ describe("Agent archive", () => {
             JWT: "jwt-secret-1",
             SENTRY_DSN: "https://abc123publickey@o1.ingest.example.test/1",
             DATABASE_URL: "postgres://app:s3cretpw@db.example.test/app",
+            GIT_REMOTE: "https://ghp_user_token_1@git.example.test/org/repo.git",
             SQL_CONNECTION:
               "Server=db.example.test;Database=app;User Id=app;Password=conn-secret-1;",
             LOG_LEVEL: "debug",
@@ -1154,6 +1156,7 @@ describe("Agent archive", () => {
         "mcp:svc:env:JWT",
         "mcp:svc:env:SENTRY_DSN",
         "mcp:svc:env:DATABASE_URL:password",
+        "mcp:svc:env:GIT_REMOTE:userinfo",
         "mcp:svc:env:SQL_CONNECTION:conn:Password",
         "mcp:relay:headers:X-Upstream:password",
       ].sort(),
@@ -1165,6 +1168,7 @@ describe("Agent archive", () => {
       "jwt-secret-1",
       "abc123publickey",
       "s3cretpw",
+      "ghp_user_token_1",
       "conn-secret-1",
       "relay-secret-1",
     ]) {
@@ -1172,6 +1176,7 @@ describe("Agent archive", () => {
     }
     for (const kept of [
       "postgres://app:@db.example.test/app",
+      "https://@git.example.test/org/repo.git",
       "Server=db.example.test;Database=app;User Id=app;Password=;",
       "https://relay:@up.example.test/feed",
       "debug",

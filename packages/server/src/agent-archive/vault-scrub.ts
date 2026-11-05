@@ -13,12 +13,16 @@
  * (credential-names.ts), at least `MIN_VALUE_LENGTH` characters long, or a value shaped like a
  * token whatever its key's name (`TOKEN_MIN_LENGTH` characters or more, letters and digits, no
  * spaces, high entropy). A value of digits only (an account number, a port) never is; nor is an
- * ordinary setting such as a host name or a region. A Session's identity in its `session_meta`
+ * ordinary setting such as a host name or a region. A value that is a URL with user info gives
+ * up its password, or the user info itself when it has no password, whatever its key is called:
+ * inside the URL wherever the URL is written, and on its own too when it is long enough to be
+ * told from ordinary text. A Session's identity in its `session_meta`
  * (its id, model and provider) is never rewritten, so the import still recognises it.
  *
  * Files are scrubbed line by line as they stream: only the line being read is held.
  */
 import { isCredentialName } from "./credential-names.js";
+import { userInfoOf } from "./url-userinfo.js";
 
 /** A credential-named key's value shorter than this is too likely to be ordinary text. */
 export const MIN_VALUE_LENGTH = 8;
@@ -54,10 +58,30 @@ interface Pattern {
   replacement: string;
 }
 
+/**
+ * The secret of a URL-shaped value: its password, or its user info when it has none, written
+ * as the URL holds it (`//user:<secret>@`, `//<secret>@`) and on its own.
+ */
+function urlSecretPatterns(key: string, value: string): Pattern[] {
+  const info = userInfoOf(value);
+  if (info === null) return [];
+  const from = info.password ?? info.start;
+  const secret = value.slice(from, info.end);
+  if (secret === "") return [];
+  const replacement = `[vault:${key}]`;
+  const prefix = value.slice(info.start - 2, from);
+  const out = [{ value: `${prefix}${secret}@`, replacement: `${prefix}${replacement}@` }];
+  if (secret.length >= MIN_VALUE_LENGTH && !/^\d+$/.test(secret)) {
+    out.push({ value: secret, replacement });
+  }
+  return out;
+}
+
 /** The vault's values an export takes out, longest first; null when there is none. */
 export function vaultPatterns(vault: Readonly<Record<string, string>>): Pattern[] | null {
   const patterns: Pattern[] = [];
   for (const [key, value] of Object.entries(vault)) {
+    patterns.push(...urlSecretPatterns(key, value));
     if (/^\d+$/.test(value)) continue;
     const secret =
       (isCredentialName(key) && value.length >= MIN_VALUE_LENGTH) || isTokenShaped(value);
