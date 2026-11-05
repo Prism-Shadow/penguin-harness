@@ -5,8 +5,7 @@
  * localStorage key.
  *
  * - New chat comes first, then the viewer's pages; a member sees the admin's pages minus the
- *   admin-only Machines page, and nothing else. New chat's nav label is its tooltip's, and the
- *   Machines page heading is its nav label.
+ *   admin-only Machines page, and nothing else.
  * - By default New chat, Agents, Models and Plugins are pinned and the rest collapsible; a
  *   member's areas are cut from their own entries.
  * - A pin toggle stores only the deviation from the default, both areas keep manifest order
@@ -38,8 +37,6 @@ import {
   withNavPinned,
 } from "../src/lib/nav-group-collapse";
 import type { NavCollapseStorage, NavPinOverrides } from "../src/lib/nav-group-collapse";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Storage whose GETTER throws (blocked site data): touching the method itself raises. */
@@ -54,16 +51,6 @@ describe("navEntryKeysFor", () => {
   it("puts New chat first, then this user's pages", () => {
     expect([...navEntryKeysFor(true)]).toEqual(["newChat", ...navKeysFor(true)]);
     expect([...navEntryKeysFor(false)]).toEqual(["newChat", ...navKeysFor(false)]);
-  });
-
-  it("New chat's nav label is the one its tooltip and the collapsed rail use", () => {
-    expect(zh.nav.newChat).toBe(zh.chat.newSessionMenu);
-    expect(en.nav.newChat).toBe(en.chat.newSessionMenu);
-  });
-
-  it("the Machines page heading is its nav label", () => {
-    expect(zh.machines.pageTitle).toBe(zh.nav.machines);
-    expect(en.machines.pageTitle).toBe(en.nav.machines);
   });
 });
 

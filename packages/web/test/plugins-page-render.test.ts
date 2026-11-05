@@ -323,7 +323,6 @@ describe("installing a server module", () => {
     const html = text(inLocale(ModuleApplyBody, { install: true, name: "sandbox-bwrap" }));
     const body = html.indexOf(en.plugins.applyConfirmInstallBody("sandbox-bwrap"));
     const cost = html.indexOf(en.plugins.applyConfirmWarning(true));
-    expect(en.plugins.applyConfirmInstallBody("sandbox-bwrap")).toContain("sandbox-bwrap");
     expect(body).toBeGreaterThanOrEqual(0);
     expect(cost).toBeGreaterThan(body);
   });

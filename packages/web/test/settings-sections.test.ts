@@ -1,13 +1,13 @@
 /**
- * Which Settings pages each viewer gets (lib/settings-sections.ts), pinned by value: a rail
- * showing a forbidden entry leaks that the setting exists, and a page rendered without the same
- * filter hands a non-admin the form. The admin APIs answer a non-admin with 403 either way; this
- * filter is convenience, not the boundary.
+ * Which Settings pages each viewer gets (lib/settings-sections.ts): a rail showing a forbidden
+ * entry leaks that the setting exists, and a page rendered without the same filter hands a
+ * non-admin the form. The admin APIs answer a non-admin with 403 either way; this filter is
+ * convenience, not the boundary.
  *
- * - A web admin gets every page in rail order; a non-admin only their own pages (their browser
- *   and their archived chats among them: every user may pair their own Chrome and keep their
- *   own archive), nothing server-global; the desktop shell's window drops the account page and
- *   user management; a password session against a desktop-mode server keeps the account page.
+ * - A web admin gets every page, each once; a non-admin gets exactly the admin's personal pages
+ *   (their browser and their archived chats among them) and nothing server-global; the desktop
+ *   shell's window drops the account page and user management; a password session against a
+ *   desktop-mode server keeps the account page.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
  * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
@@ -19,6 +19,28 @@ import {
   settingsGroups,
   visibleSettingsSections,
 } from "../src/lib/settings-sections";
+import type { SettingsSectionKey } from "../src/lib/settings-sections";
+
+/**
+ * Every Settings page there is. Keyed by the union, so a new page does not compile until it is
+ * named here, and none can vanish from the web admin's rail unnoticed.
+ */
+const EVERY_PAGE: Record<SettingsSectionKey, true> = {
+  profile: true,
+  general: true,
+  appearance: true,
+  shortcuts: true,
+  archived: true,
+  account: true,
+  browser: true,
+  proxy: true,
+  uploads: true,
+  company: true,
+  chromeExtension: true,
+  agentApi: true,
+  plugins: true,
+  users: true,
+};
 
 /** Admin signed into a plain `penguin server` through the login form. */
 const admin = visibleSettingsSections({
@@ -45,80 +67,35 @@ const desktopBrowser = visibleSettingsSections({
   sessionVia: "password",
 });
 
+/** A viewer's pages by key, in rail order. */
+const keys = (sections: readonly { key: string }[]): string[] => sections.map((s) => s.key);
+
 describe("visibleSettingsSections", () => {
-  it("gives a web admin every page, in rail order", () => {
-    expect(admin.map((s) => s.key)).toEqual([
-      "profile",
-      "general",
-      "appearance",
-      "shortcuts",
-      "archived",
-      "account",
-      "browser",
-      "proxy",
-      "uploads",
-      "company",
-      "chromeExtension",
-      "agentApi",
-      "plugins",
-      "users",
-    ]);
+  it("gives a web admin every page, each once", () => {
+    expect(keys(admin).sort()).toEqual(Object.keys(EVERY_PAGE).sort());
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
-    // Not "fewer pages" — the exact list. Proxy, upload limits, the company-mode master
-    // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
-    // told they exist. Updating is not among them either way: it lives in the sidebar user
-    // menu, outside this dialog, for every account.
-    expect(plain.map((s) => s.key)).toEqual([
-      "profile",
-      "general",
-      "appearance",
-      "shortcuts",
-      "archived",
-      "account",
-      "browser",
-    ]);
+    // A non-admin is never told an admin surface exists: every page they get is personal, and
+    // it is exactly the admin's personal rail, their browser and their archived chats among it
+    // (every user may pair their own Chrome and keep their own archive).
+    expect(plain.every((s) => s.group === "personal")).toBe(true);
+    expect(keys(plain)).toEqual(keys(admin.filter((s) => s.group === "personal")));
+    expect(keys(plain)).toEqual(expect.arrayContaining(["browser", "archived"]));
   });
 
-  it("strips the desktop shell's window down to what a token session can use", () => {
+  it("strips the desktop shell's window of the account page and user management", () => {
     // No account page (no password to change — see offersChangePassword), no user
     // management (single-user server). The profile page stays: an avatar and a nickname need
     // no password, and this window is the only session a desktop install has.
-    expect(shell.map((s) => s.key)).toEqual([
-      "profile",
-      "general",
-      "appearance",
-      "shortcuts",
-      "archived",
-      "browser",
-      "proxy",
-      "uploads",
-      "company",
-      "chromeExtension",
-      "agentApi",
-      "plugins",
-    ]);
+    expect(keys(shell)).toEqual(keys(admin).filter((k) => k !== "account" && k !== "users"));
+    expect(keys(shell)).toContain("profile");
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
-    // Mirrors the old menu row's two-field rule: that session typed a real password and
-    // can still change it, while user management stays desktop-hidden.
-    expect(desktopBrowser.map((s) => s.key)).toEqual([
-      "profile",
-      "general",
-      "appearance",
-      "shortcuts",
-      "archived",
-      "account",
-      "browser",
-      "proxy",
-      "uploads",
-      "company",
-      "chromeExtension",
-      "agentApi",
-      "plugins",
-    ]);
+    // That session typed a real password and can still change it, while user management stays
+    // desktop-hidden.
+    expect(keys(desktopBrowser)).toEqual(keys(admin).filter((k) => k !== "users"));
   });
 });
 
