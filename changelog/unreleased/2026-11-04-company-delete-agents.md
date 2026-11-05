@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#1481](https://github.com/Prism-Shadow/penguin-harness/pull/1481)
 
 [中文版](2026-11-04-company-delete-agents.zh.md)
 
