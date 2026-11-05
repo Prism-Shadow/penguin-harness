@@ -6,10 +6,10 @@
  *
  * On the way in nothing is trusted that has not been checked: the caps are read from the
  * central directory before a byte inflates (as the Skill archive's are), every path is
- * zip-slip-checked, and the package must be a plugin — skills, a hook package or MCP servers
- * (`penguin.mcp_servers`) beside its package.json that the library would read as it is (checked
- * with the library's own reader), or the `ifaces.json` of server modules. Installing it is then
- * npm's (plugin/install.ts).
+ * zip-slip-checked, and the package must be a built plugin: its `ifaces.json` (penguin-gen-ifaces
+ * writes it) contributes Skills, a hook package, MCP servers or workbenches that the library would
+ * read as they are (checked with the library's own reader), or lists server modules with a code
+ * entry (core plugin/kinds.ts). Installing it is then npm's (plugin/install.ts).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -17,8 +17,9 @@ import path from "node:path";
 import { strFromU8, unzipSync, zipSync } from "fflate";
 import {
   PLUGIN_NAME_PATTERN,
-  declaresMcpServers,
+  libraryParts,
   readLibraryPackage,
+  readPluginTable,
 } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { PACKAGE_NAME } from "../plugin/loader.js";
@@ -54,7 +55,7 @@ export interface PluginArchive {
   name: string;
   version: string;
   files: Map<string, Uint8Array>;
-  /** It carries skills, a hook package or MCP servers (the library lists it). */
+  /** It contributes Skills, a hook package, MCP servers or workbenches (the library lists it). */
   library: boolean;
   /** It carries server modules (a Project's plugin list loads it). */
   modules: boolean;
@@ -143,7 +144,7 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
     rel.set(at, data);
   }
 
-  let manifest: { name?: unknown; version?: unknown; penguin?: unknown };
+  let manifest: { name?: unknown; version?: unknown };
   try {
     manifest = JSON.parse(strFromU8(rel.get("package.json")!)) as typeof manifest;
   } catch {
@@ -164,44 +165,61 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
     throw invalid("package.json must carry a release version such as 1.2.0.");
   }
 
-  const has = (dir: string) => [...rel.keys()].some((file) => file.startsWith(`${dir}/`));
-  const library =
-    has("skills") || has("hooks") || has("workbenches") || declaresMcpServers(manifest);
-  const modules = rel.has("ifaces.json");
-  if (!library && !modules) {
-    throw invalid(
-      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (`penguin.mcp_servers`) nor the ifaces.json of server modules.",
-    );
-  }
-  if (library) await checkWithLibrary(rel);
+  const { library, modules } = await checkWithLibrary(rel);
   return { name, version: manifest.version, files: rel, library, modules };
 }
 
 /**
- * Reads a library plugin the way the library will once it is installed (a temp copy, removed
- * after), with the library's own reader. What the reader refuses is refused here, naming the file
- * inside the package; what it reads with a warning, it lists with that field missing.
+ * Reads a package the way the server will once it is installed (a temp copy, removed after): its
+ * table must be there (the package was built), and what kind of plugin it is follows from it; a
+ * library plugin is read with the library's own reader. What the reader refuses is refused here,
+ * naming the file inside the package; what it reads with a warning, it lists with that field
+ * missing.
  */
-async function checkWithLibrary(files: ReadonlyMap<string, Uint8Array>) {
+async function checkWithLibrary(
+  files: ReadonlyMap<string, Uint8Array>,
+): Promise<{ library: boolean; modules: boolean }> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-check-"));
+  const inPackage = (err: unknown) =>
+    invalid(
+      (err instanceof Error ? err.message : String(err))
+        .split(dir + path.sep)
+        .join("")
+        .split(dir)
+        .join("."),
+    );
   try {
     for (const [rel, bytes] of files) {
       const file = path.join(dir, ...rel.split("/"));
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, bytes);
     }
+    let table: ReturnType<typeof readPluginTable>;
     try {
-      readLibraryPackage(dir);
+      table = readPluginTable(dir);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      throw inPackage(err);
+    }
+    if (table === null) {
       throw invalid(
-        message
-          .split(dir + path.sep)
-          .join("")
-          .split(dir)
-          .join("."),
+        "The package has no ifaces.json: build it first (its build runs penguin-gen-ifaces), then zip the built package.",
       );
     }
+    const parts = libraryParts(dir);
+    const library = parts.skills || parts.hooks || parts.mcp || parts.workbenches;
+    if (!library && !parts.modules) {
+      throw invalid(
+        "Not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry.",
+      );
+    }
+    if (library) {
+      try {
+        readLibraryPackage(dir);
+      } catch (err) {
+        throw inPackage(err);
+      }
+    }
+    return { library, modules: parts.modules };
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

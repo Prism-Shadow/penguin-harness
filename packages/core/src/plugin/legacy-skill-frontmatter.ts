@@ -2,7 +2,7 @@
  * The reading used before SKILL.md frontmatter was YAML, kept only as a compatibility layer
  * for installed copies the earlier line-based stamper wrote: every `key: value` line of the
  * first `---` block, split on the first colon, value trimmed and kept verbatim — so a value
- * may hold an unquoted `: `, which YAML rejects. parseSkillFrontmatter (./index.ts) calls it
+ * may hold an unquoted `: `, which YAML rejects. parseSkillFrontmatter (./skill-frontmatter.ts) calls it
  * only when the YAML parser throws; it is not a second parser for new content.
  *
  * TODO(skill-frontmatter-fallback): installed copies written before #964 may hold an unquoted

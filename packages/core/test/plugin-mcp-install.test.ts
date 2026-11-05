@@ -18,11 +18,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument, parse as parseYaml } from "yaml";
 import type { YAMLSeq } from "yaml";
-import {
-  libraryPlugin,
-  useInstalledPluginPrefix,
-  usePushedPluginLibrary,
-} from "../src/plugins/index.js";
+import { libraryPlugin, useInstalledPluginPrefix, usePushedPluginLibrary } from "../src/index.js";
+import { pluginPackage } from "./helpers/plugin-packages.js";
 import {
   McpServerNameTakenError,
   assertPluginMcpServersInstallable,
@@ -57,13 +54,15 @@ async function write(dir: string, files: Record<string, string>): Promise<void> 
 const skill = (name: string) =>
   `---\nname: ${name}\ndescription: Do ${name}.\nversion: 2026.10.01.1\n---\n\nBody.\n`;
 
-/** A plugin package's files: a package.json declaring `servers`, and one skill when `withSkill`. */
-const toolsPackage = (servers: unknown[], withSkill = true): Record<string, string> => ({
-  "package.json": JSON.stringify({
-    name: "@acme/tools",
-    version: "1.0.0",
-    penguin: { mcp_servers: servers },
-  }),
+/** A plugin package's files: a table declaring `servers`, and one skill when `withSkill`. */
+const toolsPackage = (
+  servers: Array<Record<string, unknown>>,
+  withSkill = true,
+): Record<string, string> => ({
+  ...pluginPackage(
+    { name: "@acme/tools" },
+    { mcpServers: servers, ...(withSkill ? { skills: ["tools-guide"] } : {}) },
+  ),
   ...(withSkill ? { "skills/tools-guide/SKILL.md": skill("tools-guide") } : {}),
 });
 
@@ -79,11 +78,14 @@ async function setUp(packages: Record<string, Record<string, string>>): Promise<
       name: "host",
       dependencies: { "@penguinharness/sample": "*" },
     }),
-    "node_modules/@penguinharness/sample/package.json": JSON.stringify({
-      name: "@penguinharness/sample",
-      version: "1.0.0",
-      description: "Sample.",
-    }),
+    ...Object.fromEntries(
+      Object.entries(
+        pluginPackage(
+          { name: "@penguinharness/sample", description: "Sample." },
+          { skills: ["sample"] },
+        ),
+      ).map(([rel, text]) => [`node_modules/@penguinharness/sample/${rel}`, text]),
+    ),
     "node_modules/@penguinharness/sample/skills/sample/SKILL.md": skill("sample"),
   });
   const prefix = path.join(root, "prefix");
@@ -170,13 +172,7 @@ describe("a plugin's MCP servers on an Agent", () => {
   it("refuses a request whose plugins ship the same server name, naming the plugin that holds it", async () => {
     await setUp({
       "@acme/tools": toolsPackage([cloudflare]),
-      "@acme/cf": {
-        "package.json": JSON.stringify({
-          name: "@acme/cf",
-          version: "1.0.0",
-          penguin: { mcp_servers: [cloudflare] },
-        }),
-      },
+      "@acme/cf": pluginPackage({ name: "@acme/cf" }, { mcpServers: [cloudflare] }),
     });
     await expect(
       assertPluginMcpServersInstallable(root!, PROJECT, AGENT, [

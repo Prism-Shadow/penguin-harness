@@ -16,26 +16,16 @@
     "icon.svg",
     "skills",
     "workbenches",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "title": "PenguinHarness Q&A Assistant",
-    "title_zh": "PenguinHarness 问答助手",
-    "description_zh": "PenguinHarness 产品客服：问题列表、对话弹窗，以及依据文档和源码的解答。",
-    "category": "office-productivity",
-    "preinstall": false,
-    "icon": "icon.svg",
-    "short_description": "Product questions, sourced answers and a support workbench.",
-    "short_description_zh": "产品问答、来源引用与客服工作台。",
-    "quick_start": {
-      "prompt": "How do I create an agent and choose its model in PenguinHarness? Cite the official docs.",
-      "prompt_zh": "如何在 PenguinHarness 中新建智能体并选择模型？请引用官方文档。",
-      "skills": [
-        "penguin-support"
-      ]
-    }
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }

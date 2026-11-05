@@ -25,6 +25,7 @@ import type {
   AgentSkillsResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
+import { contentTable } from "./plugin-fixtures.js";
 import type { TestApp } from "./helpers.js";
 
 const AGENT = "/api/projects/default_project/agents/default_agent";
@@ -67,11 +68,11 @@ describe("a plugin's MCP servers on an Agent", () => {
     );
     await fs.writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({
-        name: "@acme/cf",
-        version: "0.1.2",
-        penguin: { mcp_servers: [cloudflare, local] },
-      }),
+      JSON.stringify({ name: "@acme/cf", version: "0.1.2" }),
+    );
+    await fs.writeFile(
+      path.join(dir, "ifaces.json"),
+      contentTable("@acme/cf", { skills: ["cf-guide"], mcpServers: [cloudflare, local] }),
     );
     await fs.writeFile(
       path.join(dir, "skills", "cf-guide", "SKILL.md"),
@@ -150,11 +151,11 @@ describe("a plugin's MCP servers on an Agent", () => {
     );
     await fs.writeFile(
       path.join(twin, "package.json"),
-      JSON.stringify({
-        name: "@acme/cf-twin",
-        version: "0.1.0",
-        penguin: { mcp_servers: [cloudflare] },
-      }),
+      JSON.stringify({ name: "@acme/cf-twin", version: "0.1.0" }),
+    );
+    await fs.writeFile(
+      path.join(twin, "ifaces.json"),
+      contentTable("@acme/cf-twin", { mcpServers: [cloudflare] }),
     );
 
     const res = await admin.post("/api/projects/default_project/agents", {
