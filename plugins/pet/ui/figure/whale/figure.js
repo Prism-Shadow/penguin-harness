@@ -63,7 +63,9 @@ function spring(k, c, lim = Infinity) {
 }
 
 function loadImage(url) {
-  return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = url; });
+  // Assign a *string*: extensions that wrap window.Image (e.g. Inspect) call
+  // url.startsWith(...) inside the src setter, which throws on a URL instance.
+  return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = String(url); });
 }
 
 /**
