@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#1487](https://github.com/Prism-Shadow/penguin-harness/pull/1487)
 - **Breaking:** yes — memory export files are version 2, which servers from before this change refuse
 
 [中文版](2026-11-04-memory-scripts.zh.md)

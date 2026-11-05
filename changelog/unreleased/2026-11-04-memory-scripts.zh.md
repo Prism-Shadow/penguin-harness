@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#1487](https://github.com/Prism-Shadow/penguin-harness/pull/1487)
 - **Breaking:** yes — 记忆导出文件升为 version 2，此次改动之前的服务端会拒绝它
 
 [English](2026-11-04-memory-scripts.md)
