@@ -1,6 +1,8 @@
 /**
  * Data paths as folder capsules: a folder (or file) glyph and the last segment (or the label the
- * writer gave it), the full path on hover, and a click that copies it exactly as written.
+ * writer gave it), the full path on hover, and a click that copies it exactly as written — or,
+ * where the surface can preview the organization's files (a channel, an organization's
+ * conversation), a click on a file that opens it there. A folder still copies.
  * path-capsules.ts decides which stretches of text are paths; this module draws them, in
  * Markdown (`PathMarkdown`) and in plain text (`PathText`). The stored text is never rewritten:
  * the capsule is only how it is drawn.
@@ -18,7 +20,7 @@
  * path from the source (spellAsWritten). A capsule reaches React as `<samp>`: no Markdown syntax
  * and no KaTeX output produces one, so claiming it in the components map collides with nothing.
  */
-import { useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Components, Options } from "react-markdown";
 import {
@@ -35,19 +37,42 @@ import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { codePath, pathKind, pathLabel, spellAsWritten, splitPaths } from "./path-capsules";
 import type { PathScope } from "./path-capsules";
+import type { CitedFile } from "./cited-file-preview";
+
+/** Opens a cited file's preview. */
+export type OpenCitedFile = (file: CitedFile) => void;
+
+const OpenCitedFileContext = createContext<OpenCitedFile | null>(null);
+
+/** Makes every file capsule below open its preview through `open`; null, they copy. */
+export function CitedFileOpenerProvider({
+  open,
+  children,
+}: {
+  open: OpenCitedFile | null;
+  children: ReactNode;
+}) {
+  return <OpenCitedFileContext.Provider value={open}>{children}</OpenCitedFileContext.Provider>;
+}
 
 /** One data path as a capsule, reading `label` when the writer named it. */
 export function PathCapsule({ path, label }: { path: string; label?: string }) {
   const { copied, flash } = useCopied();
-  const glyph = copied ? STAT_ICONS.check : pathKind(path) === "file" ? ICONS.file : ICONS.folder;
+  const open = useContext(OpenCitedFileContext);
+  const file = pathKind(path) === "file";
+  const opens = open !== null && file;
+  const glyph = copied ? STAT_ICONS.check : file ? ICONS.file : ICONS.folder;
+  const hint = opens ? S.company.pathCapsule.openHint(path) : S.company.pathCapsule.hint(path);
   return (
     <>
       <button
         type="button"
-        data-tooltip={copied ? S.common.copied : S.company.pathCapsule.hint(path)}
+        data-tooltip={copied ? S.common.copied : hint}
         data-tooltip-extra
-        aria-label={S.company.pathCapsule.copy(path)}
-        onClick={() => flash(path)}
+        aria-label={opens ? S.company.pathCapsule.open(path) : S.company.pathCapsule.copy(path)}
+        onClick={() =>
+          opens ? open({ path, ...(label !== undefined ? { label } : {}) }) : flash(path)
+        }
         // Baseline-aligned on the label, so the capsule sits on the sentence's line; the glyph
         // centres itself instead of dragging the baseline down to its own bottom edge.
         className="inline-flex max-w-full items-baseline gap-1 rounded bg-gray-100 px-1 text-gray-700 transition-colors duration-150 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/40 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"

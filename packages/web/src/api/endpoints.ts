@@ -2488,6 +2488,18 @@ export const putOrgHandbook = (projectId: string, orgId: string, content: string
 const handbookFileUrl = (projectId: string, orgId: string, path: string) =>
   `${orgBase(projectId, orgId)}/handbook/files/${path.split("/").map(encodeURIComponent).join("/")}`;
 
+/**
+ * A file cited in the organization's messages, by the path as written: the server serves it only
+ * from the organization's handbook and workspaces. An `<img>`, a PDF frame and a fetch can use it.
+ */
+export const orgCitedFileUrl = (
+  projectId: string,
+  orgId: string,
+  path: string,
+  download = false,
+): string =>
+  `${orgBase(projectId, orgId)}/file?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+
 export const listOrgHandbookFiles = (projectId: string, orgId: string) =>
   apiFetch<OrgHandbookFilesResponse>(`${orgBase(projectId, orgId)}/handbook/files`);
 

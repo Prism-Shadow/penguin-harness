@@ -5635,6 +5635,21 @@ Scenarios:
     pathCapsule: {
       hint: (path: string): string => `${path}\nClick to copy the full path`,
       copy: (path: string): string => `Copy path ${path}`,
+      openHint: (path: string): string => `${path}\nClick to preview`,
+      open: (path: string): string => `Preview ${path}`,
+    },
+    /** The preview a cited file opens in, beside a channel or in a conversation's dock. */
+    citedFile: {
+      panel: "File preview",
+      empty: "Click a file cited in a message to preview it here.",
+      copyPath: "Copy full path",
+      download: "Download",
+      close: "Close preview",
+      refused:
+        "This file is not in the organization's handbook or workspaces, so it cannot be opened here.",
+      notFound: "The file is not there. It may have been moved or deleted.",
+      unsupported: "This kind of file has no preview. Download it to read it.",
+      failed: (detail: string): string => `The file did not open: ${detail}`,
     },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,

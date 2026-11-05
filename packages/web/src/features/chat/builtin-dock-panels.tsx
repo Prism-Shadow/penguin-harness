@@ -6,7 +6,9 @@
  * tab's body. The conversation's bodies read the chat page's state through useChatDock (the
  * page provides it around both docks); the browser needs none of it.
  *
- * Importing the module registers the eight — chat-page.tsx does, so they are in the registry
+ * An organization's conversation adds the cited-file preview (company/cited-file-dock.tsx).
+ *
+ * Importing the module registers the nine — chat-page.tsx does, so they are in the registry
  * before any dock renders.
  */
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
@@ -31,6 +33,7 @@ import { useChatDock } from "./chat-dock-context";
 import { ChatMemoryView } from "./memory-view";
 import { SubagentsView } from "./subagents-view";
 import { WorkspaceBrowser } from "./workspace-browser";
+import { CITED_FILE_DOCK_PANEL } from "../company/cited-file-dock";
 
 /**
  * What a conversation's tab shows on the draft page, before the first send creates the
@@ -200,6 +203,7 @@ const BUILTIN_DOCK_PANELS: readonly DockPanelDefinition[] = [
     order: 20,
     Body: WorkspacePanelBody,
   },
+  CITED_FILE_DOCK_PANEL,
   {
     id: "memory",
     label: () => S.chat.memoryViewTitle,
