@@ -159,6 +159,38 @@ export interface WorkbenchTab {
   renderer: WorkbenchTabRenderer;
 }
 
+/**
+ * How a workbench asks to appear in its Project's App Center: `penguin.appCenter` in its own
+ * package.json, beside `penguin.version` and `penguin.modules`. Absent, or `show: false`, the
+ * workbench has no shortcut there.
+ */
+export interface WorkbenchAppCenter {
+  show: boolean;
+  /** At most 60 characters; the first tab's title, else the package name, when absent. */
+  title?: string;
+  /** At most 60 characters; the first tab's `titleZh` when absent. */
+  titleZh?: string;
+  /** A file under `ui/` (`.svg`, `.png` or `.webp`, at most 256 KB); a letter tile when absent. */
+  icon?: string;
+  /** The key of the tab the shortcut opens; the first tab when absent. */
+  tab?: string;
+}
+
+/** One tile of the App Center: a workbench whose manifest asks to be shown. */
+export interface AppCenterShortcut {
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  title: string;
+  titleZh?: string;
+  /** Where the icon is served from: `/api/projects/:p/agents/:a/workbenches/:id/ui/<file>`. */
+  iconUrl?: string;
+  /** The full-page route that opens it: `/app/:p/:a/:id[/:tab]`. */
+  path: string;
+  /** Set when the last load of its current files failed (`.build/status.json`). */
+  broken?: true;
+}
+
 export interface WorkbenchInfo {
   id: string;
   name: string;
@@ -177,6 +209,8 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
+  /** What the current package.json declares for the App Center; absent when nothing, or nothing valid (a hint says why). */
+  appCenter?: WorkbenchAppCenter;
 }
 
 /**
@@ -261,6 +295,22 @@ export abstract class Workbenches {
    * longer listed. The instance goes with it.
    */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  /**
+   * The App Center of a Project: a shortcut for every workbench of its Agents on this server
+   * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
+   * the manifests and each one's last load status only — nothing is loaded or compiled.
+   */
+  abstract appCenter(projectId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
+   * then reloads the workbench — which records the edit as a version like any other.
+   */
+  abstract setAppCenter(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
   /**
    * Lets go of everything held for one Agent before its folder is deleted or its State is
    * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A

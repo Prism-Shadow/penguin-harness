@@ -22,6 +22,7 @@ export const zh = {
     chat: "对话",
     newChat: "新建对话",
     agents: "智能体",
+    apps: "应用中心",
     models: "模型库",
     machines: "机器管理",
     plugins: "插件市场",
@@ -1201,6 +1202,51 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's icon button: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
+    /** The row's switch: whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "显示在应用中心",
+    showInAppCenterHint:
+      "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
+    /** The row's pill while the switch is on. */
+    inAppCenter: "应用中心",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "退出全页模式（回到应用中心）",
+  },
+  appCenter: {
+    title: "应用中心",
+    description: "本 Project 各 Agent 的 Workbench 快捷入口，点开即进入应用。",
+    loading: "加载中…",
+    emptyTitle: "应用中心还是空的",
+    empty:
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench 并打开「显示在应用中心」后，它就会出现在这里。",
+    /** A tile whose current files failed to load: it still opens, and the page says why. */
+    broken: "加载失败，打开查看原因",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    aiCreateTitle: "用 AI 创建应用",
+    aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
+    aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "请把它做成你自己的 Workbench（工作台页面），不要另建独立项目：先按 web-design Skill 定下界面，再按 penguin-plugin Skill 编写并检查加载结果；在它的 package.json 中设置 penguin.appCenter.show 为 true，让它出现在应用中心。完成后告诉我它的名称。",
+    aiCreateExamples: {
+      board: {
+        label: "每日待办看板",
+        description: "按状态分列的卡片，可新增、拖动与删除",
+        prompt:
+          "做一个每日待办看板：按「待办 / 进行中 / 已完成」三列放卡片，可以新增、拖动和删除，数据保存在工作台里。",
+      },
+      digest: {
+        label: "网页摘要",
+        description: "粘贴链接，由 Agent 读完给出要点",
+        prompt:
+          "做一个网页摘要工具：我粘贴一个链接，Agent 读完后给出三行摘要和要点，历史记录按时间倒序列出。",
+      },
+      expenses: {
+        label: "报销登记",
+        description: "表单、按月汇总与导出",
+        prompt: "做一个报销登记工具：填写日期、金额、类别和备注，按月汇总，可以导出 CSV。",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness 历史",

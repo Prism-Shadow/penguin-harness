@@ -3,13 +3,15 @@
 [中文版](PRFC-0020-agent-workbench.zh.md)
 
 > **Source**: `rfcs/PRFC-0020-agent-workbench.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Rev**: v1.1.0 (the App Center, from design PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
 
 - Feature Name: `agent_workbench`
 - Start Date: 2026-10-14
 - PRFC PR: [Prism-Shadow/penguin-harness-design#331](https://github.com/Prism-Shadow/penguin-harness-design/pull/331)
 - Implementation PR: [Prism-Shadow/penguin-harness#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - Status: implementation PR #1133 was merged into main on 2026-10-14.
+- Status note (2026-11-03): app folders moved into the Agent State (`agent_state/workbenches/<id>/`), their versions are commits of the Agent State's git repository, and the settings page imports and exports zips ([#1442](https://github.com/Prism-Shadow/penguin-harness/pull/1442)–[#1445](https://github.com/Prism-Shadow/penguin-harness/pull/1445)). The body below keeps its earlier shape for those parts; the design repository's copy carries the full text.
+- Status note (2026-11-04): an app can declare `penguin.appCenter` in its manifest to have a shortcut in the Project's App Center, and the settings page's switch rewrites its `show`; see "App Center" below. The "Names and boundaries" table gains an "App Center" row and the route table gains `PATCH /:id/app-center`; the rest of the body keeps its earlier shape.
 
 ## Summary
 [summary]: #summary
@@ -46,6 +48,7 @@ After an app starts a round of an Agent task, it needs to read the result out. `
 | Root module / types | `Workbench`, `WorkbenchPackage`, `WorkbenchHost`, `WorkbenchMain` |
 | Platform machinery | `Workbenches`, `WorkbenchService`, `WorkbenchRoutes` |
 | Tab contribution | `WebModule.sessionTabs`; provided by the app manifest with `id`, `key`, `title`, optional `titleZh`, and a renderer |
+| App Center | Manifest `penguin.appCenter`; `WorkbenchInfo.appCenter`, `AppCenterShortcut`; the Project-level `GET /api/projects/:projectId/app-center` (see "App Center") |
 | Styles | `/workbench-ui.css`, `--wb-*` variables and `wb-*` classes; shared styles honor HTML's `[hidden]` |
 | Update / removal events | `workbench_updated { projectId, agentId, workbench }`, `workbench_removed { projectId, agentId, workbenchId }` |
 
@@ -59,6 +62,7 @@ The HTTP prefix is `/api/projects/:projectId/agents/:agentId/workbenches`, autho
 | `POST /:id/reload` | Reload |
 | `GET /:id/history` | Read the revision list |
 | `POST /:id/rollback` | Restore sources per `{ revision }` and reload |
+| `PATCH /:id/app-center` | Rewrite the manifest's `penguin.appCenter.show` per `{ show }` and reload |
 | `DELETE /:id` | Remove the app |
 | `GET /:id/ui/*` | Serve the UI's static files |
 | `ALL /:id/api/*` | Call backend handlers |
@@ -78,6 +82,50 @@ A plugin package carries sources under `workbenches/<name>/`, passing through pl
 Before installation, name conflicts across the entire request are checked: an app of the same name that belongs to another plugin or was hand-written by the user is rejected with `409 workbench_name_taken` (a recovery directory holding only `state.json` allows the installation to resume), rather than erroring only after some Skills or config have already been written. Writes replace files atomically one file at a time; a source path that escapes its bounds or writes out the app directory through a symlinked parent is refused, and a transactional rollback of the whole batch is not promised. Before the first source write, an ownership record with an empty version is noted first, so that after a failure the same plugin can retry and still show as pending update; the final version and the file manifest are written only after everything completes. An update by the same plugin replaces its sources and removes source files that the old manifest listed but are no longer present, keeping `state.json` and the version history; it clears the `.harness/` it generated, which the next load regenerates per the current host. Hand-written apps keep their own interface basis. When uninstalling from an Agent, the removal interface is invoked only for apps whose installation record still belongs to that plugin; removal deletes the whole app directory (including `state.json`) and its history. The guarantee of keeping state and history applies to updates and code rollbacks, not to app removal.
 
 The app metadata in `GET /api/plugins` contains only the name and version; `GET /api/plugins/:plugin/files` serves the manifest and sources. The Agent-level `GET …/agents/:agentId/plugins` and the installing `POST` both return `{ skills, hooks, mcpServers, workbenches? }`, with an app item being `{ name, plugin, version }`; a failed MCP config read does not block returning the installed contents from the files. The installed criterion covers all of the plugin's parts plus app ownership; the update criterion compares each part's date version, and the summary version takes the newest among them. The plugin library page groups by content, and file preview, update confirmation, and uninstallation all include Workbench; deleting a plugin package on the server does not delete the installed copies on each Agent.
+
+### App Center
+
+An app declares in the `penguin` block of its own `package.json` whether it appears in the App Center, beside `version` and `modules` (camelCase, like the tab contribution):
+
+```json
+"penguin": {
+  "version": "2026.11.04.1",
+  "appCenter": { "show": true, "title": "Support", "titleZh": "客服工作台", "icon": "ui/icon.svg", "tab": "support" },
+  "modules": [ … ]
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `show` | Required when the object is present; `false`, or no object, means not shown |
+| `title` / `titleZh` | Optional, at most 60 characters; default to the first tab's `title` / `titleZh`, then to the npm `name` |
+| `icon` | Optional relative path under `ui/` (no `..`; `.svg` / `.png` / `.webp`; at most 256 KB), served by `GET /:id/ui/*`; defaults to a letter tile coloured by id |
+| `tab` | Optional key of the tab to open; defaults to the first tab |
+
+An object that does not hold up (a wrong type, an `icon` out of bounds or over the limit, a `tab` that is not one of the app's tabs) is a load hint (`hints`), not an error: the app loads as usual and only has no App Center shortcut. The parsed result is `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`, absent when nothing is declared.
+
+The Agent writes the key when it writes an app (the `penguin-plugin` Skill's layout conventions, and after the `web-design` Skill has asked "Workbench or a standalone app"). The switch on the app's row in the settings page rewrites it through `PATCH /:id/app-center { show }`: the server changes only `penguin.appCenter.show` (creating `{ show }` when there is no object), rewrites `package.json` with 2-space indentation and a final newline, and leaves every other key as it was; the watcher reloads, the load commits a version as usual, and the answer is `{ workbench }`; the permission is that of reload and removal. A `package.json` that is not a JSON object is answered 409 `workbench_manifest_invalid` and left untouched. When the switch and the Agent rewrite the file at the same time the last writer wins, and the watcher loads whatever landed. A plugin update that replaces the sources overwrites the key along with them.
+
+The Project-level list `GET /api/projects/:projectId/app-center` (Project members) answers `{ shortcuts: AppCenterShortcut[] }`:
+
+```ts
+interface AppCenterShortcut {
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  title: string;
+  titleZh?: string;
+  iconUrl?: string; // /api/projects/:p/agents/:a/workbenches/:id/ui/<icon>
+  path: string;     // /app/:p/:a/:id[/:tab]
+  broken?: true;    // .build/status.json records an error
+}
+```
+
+It reads only each app's manifest and `.build/status.json`, without compiling or loading any source (unlike `GET /`), so opening the App Center starts no build. The order is the Agent list's, then by title within one Agent; there is no manual ordering. Only the Agents of this server are listed: the full-page address of an Agent on a machine cannot name the machine yet, which is left for later. The page reads the list again on `workbench_updated` / `workbench_removed` and when the Agent list changes.
+
+The `penguin-support` Support app declares `appCenter: { show: true, icon: "ui/icon.svg" }` and raises `penguin.version`, so installed copies show one update.
+
+The design of PR [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595) is not adopted: the Project-level registry of external apps (`<project>/apps/<id>.toml`), health probes, the `[app_center]` origin block with restart / stop routed to the owning Session, the `penguin app` CLI and the `app-center` Skill. The App Center holds only Workbench shortcuts: external processes are not among them; the page a shortcut opens is served by the server itself, so there is nothing to probe; reloading already exists as `POST /:id/reload`; and the manifest key plus the Skill's layout conventions suffice, without a Skill of its own. Only the navigation position (after Agents) and the name are kept.
 
 ### PenguinHarness Support
 
@@ -123,3 +171,9 @@ Other reusable Agent apps can be distributed under the same plugin convention; n
 ### v1.0.0
 
 - Added: migrated into the main repository; the body takes the landed version from the design repository's default branch, identical to the source file.
+
+### v1.1.0
+
+- Added: the "App Center" subsection — the manifest's `penguin.appCenter`, `WorkbenchAppCenter` and `AppCenterShortcut`, the switch's manifest rewrite, the Project-level list, the Support default, and the parts of #595 that are not adopted.
+- Added: an "App Center" row in "Names and boundaries" and `PATCH /:id/app-center` in the route table.
+- Added: Status notes for 2026-11-03 (apps in the Agent State) and 2026-11-04 (the App Center).

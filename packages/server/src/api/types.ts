@@ -23,7 +23,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { WorkbenchInfo } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchInfo } from "../mechanisms/workbenches.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -5206,6 +5206,29 @@ export interface WorkbenchArchiveInstallResponse {
   workbench: WorkbenchInfo;
 }
 
+/**
+ * PATCH /api/projects/:p/agents/:a/workbenches/:id/app-center: the App Center switch. Sets
+ * `penguin.appCenter.show` in the workbench's package.json (nothing else of it) and reloads it;
+ * 409 `workbench_manifest_invalid` when the package.json is not a JSON object to edit.
+ */
+export interface WorkbenchAppCenterRequest {
+  show: boolean;
+}
+
+/** The workbench as the reload after the switch left it, `appCenter` read back from the file. */
+export interface WorkbenchAppCenterResponse {
+  workbench: WorkbenchInfo;
+}
+
+/**
+ * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
+ * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
+ * from the manifests and load status only; nothing is compiled.
+ */
+export interface AppCenterResponse {
+  shortcuts: AppCenterShortcut[];
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------
@@ -5321,6 +5344,8 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
+  AppCenterShortcut,
+  WorkbenchAppCenter,
   WorkbenchInfo,
   WorkbenchVersion,
   WorkbenchRequest,

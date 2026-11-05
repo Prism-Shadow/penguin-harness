@@ -7,7 +7,11 @@
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. Its workbenches are the ones a suite gives it: they reload, restore, export
- * as a zip download and are removed, and a zip upload installs the one the suite names. A test
+ * as a zip download and are removed, a zip upload installs the one the suite names, and the App
+ * Center switch sets their `appCenter.show`. The Project's App Center lists the ones shown, the
+ * way the server derives a shortcut (titles from the declaration, else the first tab, else the
+ * name; broken when the files do not load); a suite can add or replace one mid-test
+ * ({@link AgentServer.putWorkbench}). A test
  * can refuse the next write with {@link AgentServer.refuseNext}, or read back what was written
  * with {@link AgentServer.writes}.
  *
@@ -47,6 +51,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
   AgentSummary,
+  AppCenterShortcut,
   ChatDefaultsDto,
   MachineInfo,
   MessagingAccountHoldersResponse,
@@ -223,6 +228,8 @@ export interface AgentServer {
   setReconnecting(machineId: string, reconnecting: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
+  /** Adds a workbench to the Agent, or replaces the one with its id (an edit on disk, say). */
+  putWorkbench(workbench: WorkbenchInfo): void;
 }
 
 export function agentServer(
@@ -559,6 +566,24 @@ export function agentServer(
       return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
+    if (path === `/api/projects/${PROJECT_ID}/app-center` && method === "GET") {
+      const shortcuts: AppCenterShortcut[] = workbenches
+        .filter((w) => w.appCenter?.show === true)
+        .map((w) => {
+          const first = w.tabs[0];
+          const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
+          return {
+            agentId: AGENT_ID,
+            agentName: stored.config.name ?? AGENT_ID,
+            workbenchId: w.id,
+            title: w.appCenter?.title ?? first?.title ?? w.name,
+            ...(titleZh !== undefined ? { titleZh } : {}),
+            path: `/app/${PROJECT_ID}/${AGENT_ID}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
+            ...(w.error !== null ? { broken: true as const } : {}),
+          };
+        });
+      return json({ shortcuts });
+    }
     if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
       const incoming = options.importedWorkbench;
       if (incoming === undefined) return apiError(400, "bad_request", "Not a workbench archive");
@@ -597,6 +622,13 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
+      if (action === "app-center" && method === "PATCH") {
+        const { show } = request.body as { show: boolean };
+        const index = workbenches.indexOf(workbench);
+        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        workbenches = workbenches.map((item, i) => (i === index ? next : item));
+        return json({ workbench: next });
+      }
       if (action === "rollback")
         workbench.revision = (request.body as { revision: string }).revision;
       return json({ workbench });
@@ -794,6 +826,9 @@ export function agentServer(
       if (machine !== undefined) machine.reconnecting = reconnecting;
     },
     messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
+    putWorkbench: (workbench) => {
+      workbenches = [...workbenches.filter((item) => item.id !== workbench.id), workbench];
+    },
   };
 }
 
@@ -828,7 +863,16 @@ const unmatchedQuery = (media: string) => ({
 
 export async function mountAgentApp(
   element: ReactElement,
-  { route = "/agents/:agentId", at }: { route?: string; at: string },
+  {
+    route = "/agents/:agentId",
+    at,
+    extra = [],
+  }: {
+    route?: string;
+    at: string;
+    /** More pages beside the one under test, at their own routes (where it navigates to). */
+    extra?: Array<{ path: string; element: ReactElement }>;
+  },
 ) {
   const router = createMemoryRouter(
     [
@@ -858,6 +902,7 @@ export async function mountAgentApp(
             : [{ path: "/agents/:agentId", element: h("p", null, "Agent settings") }]),
           // After the page's own route, so a page mounted at a conversation's path still wins.
           { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
+          ...extra,
         ],
       },
     ],

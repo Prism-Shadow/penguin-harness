@@ -29,6 +29,7 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterResponse,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -2708,6 +2709,11 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
+    notFound("Workbench"),
+  )
+  // The demo's Agents keep no workbenches, so the App Center shows its empty state.
+  .get("/api/projects/:projectId/app-center", (): AppCenterResponse => ({ shortcuts: [] }))
   .get(
     "/api/projects/:projectId/plugins/installed",
     ({ store }): InstalledPluginsResponse => store.f.installedPlugins,
