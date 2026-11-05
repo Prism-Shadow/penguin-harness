@@ -8,7 +8,7 @@ excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 B
 
 本文介绍如何使用 PenguinHarness 0.2.19 在 [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) 系列 Benchmark 上开展 Agent 自进化实验。实验中基座模型固定为 `DeepSeek-V4.1-Flash-1017`，思考强度设为 `max`，系统对比了 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 和 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种自进化方法。下文将依次说明 GDPEVO Essential 系列 Benchmark 的构成与评测规则、自进化方法的核心机制、Web 界面的实验启动方式、系统内部的执行流程以及最终的实测结果。
 
-## 1. GDPEVO Essential 系列 Benchmark 的构成与评测规则
+## 1. Benchmark 构成与评测规则
 
 GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，是一套面向真实企业任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成。每一个子 Benchmark 都是一个完整的评测单元，内部包含 5 道训练题、5 道保留测试题以及一个配套的交互式训练评测环境，全系列合计包含 30 道训练题与 30 道测试题：
 
@@ -75,7 +75,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 | TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | `trace-rsi-toolkit` | 策展者与执行者双角色协同：执行者解题，策展者从轨迹中提炼模块化技能库，按完整训练批次最高均分选版 |
 | OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | `openskill-rsi-toolkit` | 不使用在线训练评分接口，通过检索领域知识并构造独立虚拟测试来迭代修复技能，导出最后一个有效版本 |
 
-## 3. 在 PenguinHarness Web 界面启动实验
+## 3. 在 Web 界面启动实验
 
 下面介绍如何在 PenguinHarness 的 Web 界面中分四步启动实验。
 
@@ -85,13 +85,13 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="在 Models 页面的 Model settings 弹窗中配置 DeepSeek V4.1 Flash 的 API Key" />
 
-### 第二步：新建主控 Agent 并安装自进化工具包
+### 第二步：新建主控 Agent
 
 进入左侧的 Agents 页面，点击右上角的 Create manually，设置智能体的名称和 ID。接着在下方的插件下拉框中搜索 skill，勾选本次实验使用的 skilladam-rsi-toolkit，也可以同时勾选 skillopt-rsi-toolkit、trace-rsi-toolkit 和 openskill-rsi-toolkit 以便后续对比不同算法，最后点击 Create 完成创建。
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中设置智能体名称与 ID 并搜索勾选自进化工具包插件" />
 
-### 第三步：进入对话界面并选择模型
+### 第三步：进入对话并选择模型
 
 创建完成后，在 Agents 列表中找到刚刚创建的智能体卡片，点击右侧的 New chat 进入它的对话界面。
 
@@ -101,7 +101,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
 
-### 第四步：挂载 RSI 工具包并发送启动指令
+### 第四步：挂载工具包并启动
 
 在聊天输入框中输入 `/` 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
 
@@ -121,7 +121,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 评测其他自进化算法时，只需将挂载的 RSI 工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
-## 4. 实验启动后的内部执行流程
+## 4. 实验内部执行流程
 
 在 Web 界面发送启动指令后，主控 Agent 会在后台自动按以下四个阶段完成训练与测试：
 
@@ -176,26 +176,26 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 在本次实验中，SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种算法本身均来自学术界已发表的工作，而 PenguinHarness 扮演的角色是承载这些算法与 Benchmark 的 **RSI 基础设施**。站在基础设施构建者的视角复盘这数百次容器运行与完整实验记录，我们得到了以下四点核心启发：
 
-### 1. 在结构化 RSI 工具包支持下，DeepSeek-V4.1-Flash-1017 这一级别的模型已能独立编排完整自进化实验
+### 1. 主控 Agent 的模型能力门槛
 
-一场完整的 GDPEVO Essential 实验涉及六个子 Benchmark 的连续训练、状态快照打包、只读技能交接、180 次隔离容器并发盲测以及两级统计指标聚合。过去这类实验需要工程师编写大量定制化调度脚本并全程值守；而在本次实验中，我们将实验协议封装为声明式的 RSI 工具包技能后，采用 `DeepSeek-V4.1-Flash-1017` 并开启 `max` 思考强度作为主控 Agent，它已经能够稳定理解实验规范并自主走完从环境准备到产出最终报告的全流程。这表明在清晰的 Harness 工具包支持下，达到 `DeepSeek-V4.1-Flash-1017` 同等或更高能力水平的模型，均已具备独立组织和执行复杂 RSI 实验的能力。
+在结构化 RSI 工具包的支持下，`DeepSeek-V4.1-Flash-1017` 这一级别的模型已经能够独立编排完整的自进化实验。一场全量 GDPEVO Essential 实验涉及六个子 Benchmark 的连续训练、状态快照打包、只读技能交接、180 次隔离容器并发测试以及两级统计指标聚合。过去这类实验需要工程师编写大量定制化调度脚本并全程值守；而在本次实验中，我们将实验协议封装为声明式的 RSI 工具包技能后，采用 `DeepSeek-V4.1-Flash-1017` 并开启 `max` 思考强度作为主控 Agent，它便能稳定理解实验规范并自主走完从环境准备到产出最终报告的全流程。这表明在清晰的 Harness 工具包支持下，达到 `DeepSeek-V4.1-Flash-1017` 同等或更高能力水平的模型，均已具备独立组织和完成复杂 RSI 实验的能力。
 
-### 2. 元数据内置与数据按需拉取的渐进式加载机制，让 Harness 在承载重型 Benchmark 时保持轻量
+### 2. Benchmark 渐进式加载
 
-企业级自进化 Benchmark 往往包含完整的业务后端服务、数据库文件、Docker 构建上下文与评分器脚本，仅任务仓库打包体积就超过百兆。如果将这些任务数据直接塞进 PenguinHarness 本体，会让框架变得极其臃肿。为此，我们在架构上采用了类似 Skill 渐进式披露的**按需加载机制**：随 Project 内置的 `benchmarks/` 目录只存放极轻量的说明文件，包括 `benchmark_config.toml` 以及各题目的 `statement/README.md` 和 `rubric/README.md`，里面记录了外部 Benchmark 仓库的固定 Git commit、目录入口与运行规则。当实验真正发起时，主控 Agent 先读取本地轻量说明，再自己去外部仓库拉取对应版本的任务数据并拉起容器。这种将“实验规则契约”与“重型任务数据”分离的设计，既让 PenguinHarness 本体保持轻量化，又丝毫不影响全自动实验的完整性。
+通过“元数据内置、任务数据按需拉取”的渐进式加载机制，PenguinHarness 在承载重型 Benchmark 时依然保持了轻量化。企业级自进化 Benchmark 往往包含完整的业务后端服务、数据库文件、Docker 构建上下文与评分器脚本，仅任务仓库打包体积就超过百兆；如果将这些任务数据直接塞进 PenguinHarness 本体，会让整个系统变得十分笨重。为此，我们在架构上采用了类似 Skill 渐进式披露的设计：随 Project 内置的 `benchmarks/` 目录只存放极轻量的说明文件，包括 `benchmark_config.toml` 以及各题目的 `statement/README.md` 和 `rubric/README.md`，里面记录了外部 Benchmark 仓库的固定 Git commit、目录入口与运行规则。当实验真正发起时，主控 Agent 先读取本地轻量说明，再自己去外部仓库拉取对应版本的任务数据并拉起容器。这种将“实验规则契约”与“重型任务数据”分离的设计，既让 PenguinHarness 本体保持轻巧，又丝毫不影响全自动实验的完整性。
 
-### 3. 主控 Agent 的失误分化：显式报错能自主修复，但隐性协议偏差难以自察
+### 3. 显式报错与隐性协议偏差
 
-翻看 `DeepSeek-V4.1-Flash-1017` 在四组实验中的详细运行日志与审计记录，我们发现主控 Agent 犯下的错误呈现出非常明显的分化：
+翻看 `DeepSeek-V4.1-Flash-1017` 在四组实验中的详细运行日志与审计记录，我们发现主控 Agent 犯下的错误呈现出非常明显的分化——显式报错通常能自主修复，但隐性协议偏差难以自察：
 
-- **遇到有明确报错信号的故障时，它通常能自己发现并解决**。例如，当某个测试容器在启动阶段因镜像层锁冲突报错退出、尚未产生任何模型调用时，主控 Agent 能准确识别这是基础设施故障而非解题失败，自动发起重试而不会将其误记为 0 分；又如，当训练容器导出的 `skill/` 目录因 `root` 权限限制导致宿主机普通用户无法直接读取时，主控 Agent 自己想办法拉起了一个断网的只读辅助容器将 `SKILL.md` 提取出来，顺利完成了测试状态的构建。
+- **遇到有明确报错信号的故障时，它基本都能自己发现并修好**。例如，当某个测试容器在启动阶段因镜像层锁冲突报错退出、尚未产生任何模型调用时，主控 Agent 能准确识别这是基础设施故障而非解题失败，自动发起重试而不会将其误记为 0 分；又如，当训练容器导出的 `skill/` 目录因 `root` 权限限制导致宿主机普通用户无法直接读取时，主控 Agent 自己想办法拉起了一个断网的只读辅助容器将 `SKILL.md` 提取出来，顺利完成了测试状态的构建。
 - **但面对没有报错提示的隐性协议偏差，它往往意识不到自己犯了错**：
   - **把连通性冒烟测试当成正式测试数据**：在某组实验正式开跑前，主控 Agent 先跑了一次单题冒烟测试来验证环境连通性；由于这次试跑顺利拿到了分数，它在最后汇总表格时直接把这次冒烟结果当成第一轮正式测试的第 1 题成绩用了进去，没有意识到预检试跑应当与正式重复实验严格分开。
   - **漏算辅助容器导致并发超限与重复拉起**：Harbor 每运行一个任务，除了启动一个业务容器外，还会配套启动一个网络隔离 sidecar 容器。主控 Agent 在控制并发数时只数了任务数量，忘了把 sidecar 容器算进上限，导致测试过程中出现了短暂的容器并发超标，在个别子 Benchmark 的训练阶段还出现了重复启动解题进程的偏差。
   - **未主动清理容器内自带的内置题面目录**：将源码构建的 Penguin 运行包打进容器时，产物目录里默认带有全部内置 Benchmark 的题面说明文件。如果主控 Agent 没有意识到要先把容器内的 `builtin-benchmarks` 说明文件清空，训练容器里的目标 Agent 就有可能读到保留测试题的题面描述，带来潜在的数据泄露隐患。
 
-### 4. 迈向高可信 RSI 基础设施：引入独立的 Critic Agent 监督实验全程
+### 4. 引入 Critic Agent 监督机制
 
 为什么主控 Agent 能修好复杂的权限报错，却会犯下“复用冒烟数据”或“漏算 sidecar 容器”这类简单错误？根本原因在于主控 Agent 同时扮演了“执行者”与“检查者”——当它的首要目标是推进任务队列、集齐所有单元格的分数时，只要命令返回成功、文件里有分数，它就很容易默认流程合规。
 
-这也为我们指明了构建下一代优秀 RSI 平台与基础设施的核心演进方向：**在主控 Agent 与目标 Agent 之外，引入一个独立的 Critic Agent 来全程监督实验**。Critic Agent 不负责推进任务，而是专门在状态打包前、技能冻结交接时以及测试结果汇总前，对照实验协议独立核查容器环境是否干净、并发与轮次是否合规、每个数据点是否来自独立的正式运行。通过“主控 Agent 组织执行 + Critic Agent 独立审计”的机制，能够及时拦截主控 Agent 自己意识不到的隐性偏差，显著提高大规模自进化实验结果的置信度。
+这也为我们指明了构建下一代优秀 RSI 平台与基础设施的核心改进方向：**在主控 Agent 与目标 Agent 之外，引入一个独立的 Critic Agent 来全程监督实验**。Critic Agent 不负责推进任务，而是专门在状态打包前、技能冻结交接时以及测试结果汇总前，对照实验协议独立核查容器环境是否干净、并发与轮次是否合规、每个数据点是否来自独立的正式运行。通过“主控 Agent 组织执行 + Critic Agent 独立审计”的机制，能够及时拦截主控 Agent 自己意识不到的隐性偏差，显著提高整个自进化实验的置信度。

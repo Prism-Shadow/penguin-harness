@@ -8,7 +8,7 @@ excerpt: "Run and evaluate four agent self-evolution methods—SkillAdam, SkillO
 
 This guide explains how to use PenguinHarness 0.2.19 to run agent self-evolution experiments on the [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) benchmark series. With the base model fixed to `DeepSeek-V4.1-Flash-1017` and thinking effort set to `max`, we systematically evaluate four self-evolution methods: [SkillAdam](https://arxiv.org/abs/2609.08944v1), [SkillOpt](https://arxiv.org/abs/2605.23904v1), [TRACE](https://arxiv.org/abs/2608.22793v2), and [OpenSkill](https://arxiv.org/abs/2606.06741v1). The sections below cover the structure and evaluation rules of the GDPEVO Essential benchmark series, the core self-evolution mechanism, the launch flow in the Web UI, the internal execution pipeline, and the empirical results.
 
-## 1. Structure and Rules of the GDPEVO Essential Benchmark Series
+## 1. Benchmark Structure and Rules
 
 Derived from the [GDPevo Benchmark](https://arxiv.org/abs/2608.03764), GDPEVO Essential is a benchmark series designed for evaluating agent self-evolution on real enterprise tasks and consists of six independent sub-benchmarks. Each sub-benchmark is a self-contained evaluation unit comprising 5 training tasks, 5 held-out test tasks, and a dedicated interactive training and evaluation environment, totaling 30 training tasks and 30 held-out test tasks across the series:
 
@@ -75,23 +75,23 @@ Alongside SkillAdam, we evaluated three additional representative self-evolution
 | TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | `trace-rsi-toolkit` | Coordinates Actor and Curator roles to distill a modular skill bank from execution traces, selecting the checkpoint with the highest full-batch training mean |
 | OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | `openskill-rsi-toolkit` | Operates without the online training judge by researching domain rules and constructing independent virtual tests to iteratively repair the skill |
 
-## 3. Launching the Experiment in the PenguinHarness Web UI
+## 3. Launching the Experiment
 
 The steps below show how to launch the experiment in four steps from the PenguinHarness Web UI.
 
-### Step 1: Configure the Model API Key
+### Step 1: Configure API Key
 
 Open the Models page from the left sidebar, find the model used for the experiment, DeepSeek V4.1 Flash, enter its API key, and click Save.
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="Configuring the API key for DeepSeek V4.1 Flash in the Model settings dialog on the Models page" />
 
-### Step 2: Create a Controller Agent and Install the RSI Toolkit
+### Step 2: Create Controller Agent
 
 Open the Agents page from the left sidebar, click Create manually in the top-right corner, and set the agent's name and ID. In the Plugins dropdown below, search for skill and select skilladam-rsi-toolkit—or select skillopt-rsi-toolkit, trace-rsi-toolkit, and openskill-rsi-toolkit as well if you plan to compare multiple methods—then click Create.
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="Setting the agent name and ID and selecting self-evolution toolkit plugins in the Create agent dialog" />
 
-### Step 3: Open the Chat View and Select the Model
+### Step 3: Select Model in Chat
 
 Once the agent is created, find its card in the Agents list and click New chat on the right to open its conversation view.
 
@@ -101,7 +101,7 @@ In the conversation view, select DeepSeek V4.1 Flash in the model picker below t
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="Selecting DeepSeek V4.1 Flash and max thinking effort in the chat view" />
 
-### Step 4: Attach the RSI Toolkit and Send the Launch Prompt
+### Step 4: Attach Toolkit and Launch
 
 Type `/` in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
 
@@ -121,7 +121,7 @@ To evaluate all six sub-benchmarks in the GDPEVO Essential series, send:
 
 To evaluate another self-evolution algorithm, replace the attached RSI toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
 
-## 4. Internal Execution Pipeline After Launch
+## 4. Internal Execution Pipeline
 
 Once the launch prompt is sent in the Web UI, the Controller Agent automatically runs training and testing in the background through four stages:
 
@@ -176,17 +176,17 @@ Per-benchmark test scores (Mean ± SD) across the six sub-benchmarks are as foll
 
 In this study, the four self-evolution algorithms themselves—SkillAdam, SkillOpt, TRACE, and OpenSkill—come from published academic papers, while PenguinHarness serves as the **RSI infrastructure** that hosts and executes them. Reviewing hundreds of container trials and audit logs from an infrastructure builder's perspective yields four key insights:
 
-### 1. With Structured RSI Toolkits, Models at the Level of DeepSeek-V4.1-Flash-1017 Can Autonomously Orchestrate End-to-End RSI Experiments
+### 1. Controller Model Threshold
 
-A full GDPEVO Essential campaign spans continuous training across six sub-benchmarks, state archiving, read-only skill handoff, 180 isolated test container runs, and two-level statistical aggregation. Previously, running such a campaign required engineers to write custom orchestration scripts and babysit long-running jobs. Once we packaged the experimental protocol into declarative RSI toolkit skills, `DeepSeek-V4.1-Flash-1017` with `max` thinking effort was able to serve as the Controller Agent and autonomously carry out the entire workflow from environment preparation to final reporting. This demonstrates that with well-structured Harness toolkits, models at or above the capability level of `DeepSeek-V4.1-Flash-1017` can reliably organize and complete complex RSI experiments end to end.
+With structured RSI toolkits, models at the capability level of `DeepSeek-V4.1-Flash-1017` can already orchestrate full self-evolution experiments end to end. A complete GDPEVO Essential campaign spans continuous training across six sub-benchmarks, state archiving, read-only skill handoff, 180 isolated test container runs, and two-level statistical aggregation. Previously, running such a campaign required engineers to write custom orchestration scripts and monitor long-running jobs. Once we packaged the experimental protocol into declarative RSI toolkit skills, `DeepSeek-V4.1-Flash-1017` with `max` thinking effort was able to serve as the Controller Agent and autonomously carry out the entire workflow from environment preparation to final reporting. This shows that with well-structured Harness toolkits, models at or above the level of `DeepSeek-V4.1-Flash-1017` can reliably organize and complete complex RSI experiments.
 
-### 2. Progressive Benchmark Loading Keeps the Harness Lightweight Without Sacrificing Functionality
+### 2. Progressive Benchmark Loading
 
-Enterprise self-evolution benchmarks carry substantial data—backend services, databases, Docker build contexts, and grading scripts totaling over 100 MB in the task repository alone. Bundling all of that raw payload directly inside PenguinHarness would make the framework bloated and slow to distribute. Instead, PenguinHarness adopts a **progressive loading mechanism** analogous to how Skills are loaded on demand: the built-in `benchmarks/` directory inside a Project stores only lightweight metadata files (`benchmark_config.toml` and each case's `statement/README.md` and `rubric/README.md`) that point to the pinned Git commit, task paths, and launch rules in the external Benchmark repository. When an experiment starts, the Controller Agent reads the local manifest first and fetches the task data and container environments on demand. Decoupling the evaluation contract from heavy task payloads keeps PenguinHarness lightweight while preserving full end-to-end automation.
+By keeping benchmark metadata built in and fetching task payloads on demand, PenguinHarness stays lightweight even when hosting heavy enterprise benchmarks. Enterprise self-evolution benchmarks carry substantial data—backend services, databases, Docker build contexts, and grading scripts totaling over 100 MB in the task repository alone. Bundling all of that raw payload directly inside PenguinHarness would make the framework bloated. Instead, PenguinHarness adopts a **progressive loading mechanism** analogous to how Skills are loaded on demand: the built-in `benchmarks/` directory inside a Project stores only lightweight metadata files (`benchmark_config.toml` and each case's `statement/README.md` and `rubric/README.md`) that point to the pinned Git commit, task paths, and launch rules in the external Benchmark repository. When an experiment starts, the Controller Agent reads the local manifest first and fetches the task data and container environments on demand, keeping PenguinHarness lightweight without sacrificing full automation.
 
-### 3. Controller Agent Failure Modes: Explicit Errors Are Self-Corrected, While Silent Protocol Deviations Go Unnoticed
+### 3. Explicit Errors vs. Silent Drift
 
-Inspecting the execution traces and audit logs of `DeepSeek-V4.1-Flash-1017` across the four experimental campaigns reveals a sharp divide between two types of mistakes:
+Inspecting the execution traces and audit logs of `DeepSeek-V4.1-Flash-1017` across the four experimental campaigns reveals a clear divide—explicit errors are self-corrected, whereas silent protocol deviations often go unnoticed:
 
 - **When a failure produces an explicit error signal, the Controller Agent can usually diagnose and recover on its own.** For example, when a test container exited during image setup due to a Docker layer lock conflict before the agent ever ran, the Controller Agent recognized it as a zero-token infrastructure failure and retried the trial rather than recording a false zero score. Similarly, when the exported `skill/` directory from a training container was owned by `root` with `700` permissions so the host user could not read it directly, the Controller Agent autonomously launched a network-disabled, read-only helper container to extract `SKILL.md` and completed the test state handoff.
 - **However, when a mistake does not trigger an error message, the Controller Agent often fails to realize it has deviated from the protocol:**
@@ -194,8 +194,8 @@ Inspecting the execution traces and audit logs of `DeepSeek-V4.1-Flash-1017` acr
   - **Miscounting sidecar containers and exceeding concurrency caps**: Every Harbor trial launches both a business container and a network-control sidecar container. When enforcing the host Docker limit, the Controller Agent counted only the number of trials and forgot to multiply by two for the sidecars, causing brief concurrency overruns—and in two sub-benchmarks, even launching duplicate solver processes during training.
   - **Leaving built-in benchmark statements inside the in-container runtime bundle**: When staging a source-built Penguin runtime bundle into task containers, the build output included the `builtin-benchmarks` directory containing all train and test task statements. Without stripping those files before packaging the bundle, the in-container Target Agent could potentially read held-out test descriptions during training.
 
-### 4. Toward High-Confidence RSI Infrastructure: Introducing an Independent Critic Agent
+### 4. Adding a Critic Agent
 
 Why does the Controller Agent recover from tricky permission errors yet overlook simple protocol rules like separating smoke tests or counting sidecar containers? Because the Controller Agent is acting as both the **executor** and the **auditor**: when its primary objective is to finish all scheduled jobs and fill the scoreboard, any trial that exits cleanly and produces a score looks like success.
 
-This points directly to a critical architectural upgrade for future RSI platforms and infrastructure: **introducing a dedicated Critic Agent alongside the Controller Agent and Target Agent**. Rather than scheduling jobs or solving tasks, the Critic Agent independently audits the experiment at key checkpoints—verifying that container bundles are sanitized before launch, concurrency and repetition rules are respected during execution, and every reported score originates from a valid formal trial. Pairing an autonomous Controller Agent with an independent Critic Agent can catch silent protocol deviations early and substantially raise the confidence of unattended self-evolution experiments.
+This points directly to a key architectural upgrade for future RSI platforms and infrastructure: **introducing a dedicated Critic Agent alongside the Controller Agent and Target Agent**. Rather than scheduling jobs or solving tasks, the Critic Agent independently audits the experiment at key checkpoints—verifying that container bundles are sanitized before launch, concurrency and repetition rules are respected during execution, and every reported score originates from a valid formal trial. Pairing an autonomous Controller Agent with an independent Critic Agent can catch silent protocol deviations early and substantially raise the confidence of unattended self-evolution experiments.
