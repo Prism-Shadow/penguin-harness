@@ -22,6 +22,12 @@
  * (./repo.ts) as a version the Agent (or the user) can roll back to. A watcher on the Agent
  * State's `workbenches/` folder reloads on change, debounced, and the users of the Project
  * hear `workbench_updated` on their event stream.
+ *
+ * Two switches decide whether a workbench runs, each an empty marker file (./store.ts): its own
+ * (`<id>/.disabled`) and the Agent's (`workbenches/.disabled`). Only with both off-markers absent
+ * is it loaded; otherwise it is listed from its folder, every serving route refuses it, and no
+ * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
+ * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -70,6 +76,7 @@ import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
   isSafeRelPath,
+  isSwitchedOff,
   isTempName,
   isWorkbenchId,
   listFolders,
@@ -81,6 +88,7 @@ import {
   UI_DIR,
   workbenchesDir,
   writeState,
+  writeSwitch,
   type WorkbenchFolder,
 } from "./store.js";
 
@@ -337,15 +345,15 @@ export class WorkbenchService implements Workbenches {
   async list(projectId: string, agentId: string): Promise<WorkbenchInfo[]> {
     await this.migrate(projectId, agentId);
     this.watch(projectId, agentId);
-    const folders = await listFolders(workbenchesDir(this.paths.root, projectId, agentId));
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folders = await listFolders(base);
+    const all = !(await isSwitchedOff(base));
     const out: WorkbenchInfo[] = [];
     for (const folder of folders) {
-      const current = this.loaded.get(key(projectId, agentId, folder.id));
-      const fresh =
-        current && current.folder.revision === folder.revision
-          ? current
-          : await this.load(projectId, agentId, folder);
-      out.push(this.info(folder.id, fresh));
+      const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
+      // A marker written by hand is only seen here: what it unloaded is news to open pages.
+      if (unloaded) this.notify(projectId, agentId, info);
+      out.push(info);
     }
     // Folders that went away drop their instances.
     const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
@@ -357,9 +365,64 @@ export class WorkbenchService implements Workbenches {
     return out;
   }
 
+  async agentEnabled(projectId: string, agentId: string): Promise<boolean> {
+    await this.migrate(projectId, agentId);
+    return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
+  }
+
   async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
     return this.info(workbenchId, await this.load(projectId, agentId, folder));
+  }
+
+  async reloadIfEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    if (await this.runs(projectId, agentId, folder)) {
+      try {
+        return this.info(workbenchId, await this.load(projectId, agentId, folder));
+      } catch (err) {
+        // Switched off while it loaded: answered as it stands, like any other that does not run.
+        if (!(err instanceof WorkbenchDisabled)) throw err;
+      }
+    }
+    return (await this.settle(projectId, agentId, folder, false)).info;
+  }
+
+  async setEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    enabled: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    await writeSwitch(folder.dir, enabled);
+    const all = await this.agentEnabled(projectId, agentId);
+    const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    // A load announces itself; anything else is announced here, so open pages follow the switch.
+    if (!loaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
+  async setAgentEnabled(
+    projectId: string,
+    agentId: string,
+    enabled: boolean,
+  ): Promise<{ workbenches: WorkbenchInfo[]; enabled: boolean }> {
+    await this.migrate(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    await writeSwitch(base, enabled);
+    const workbenches: WorkbenchInfo[] = [];
+    for (const folder of await listFolders(base)) {
+      const { info, loaded } = await this.settle(projectId, agentId, folder, enabled);
+      if (!loaded) this.notify(projectId, agentId, info);
+      workbenches.push(info);
+    }
+    return { workbenches, enabled };
   }
 
   /**
@@ -376,6 +439,7 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
   ): Promise<void> {
     const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!(await this.runs(projectId, agentId, folder))) return;
     const k = key(projectId, agentId, workbenchId);
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
@@ -405,9 +469,10 @@ export class WorkbenchService implements Workbenches {
   ): Promise<WorkbenchUiFile | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    await this.refuseIfOff(projectId, agentId, workbenchId, dir);
     // No default document: which page a tab shows is what its contribution says.
     if (!isSafeRelPath(rel)) return null;
-    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     const onDisk = path.join(dir, UI_DIR, rel);
     if (await isFile(onDisk)) {
       // Only a page needs to know whether it is compiled; every other file is served as it is.
@@ -434,6 +499,7 @@ export class WorkbenchService implements Workbenches {
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     // A folder without package.json is not a workbench (./store.ts).
     if (!(await isFile(path.join(dir, "package.json")))) return null;
+    await this.refuseIfOff(projectId, agentId, workbenchId, dir);
     return (await this.runtime()?.file(rel)) ?? null;
   }
 
@@ -461,9 +527,10 @@ export class WorkbenchService implements Workbenches {
       this.repo(projectId, agentId).filesAt(repoPath(workbenchId), revision),
     );
     if (!files) throw new WorkbenchNotFound("no such version");
-    // The load this triggers records the restored files as the newest version.
+    // The load this triggers records the restored files as the newest version; a workbench
+    // that does not run takes the files only, and records them when it next loads.
     await restoreSource(folder, files);
-    return this.reload(projectId, agentId, workbenchId);
+    return this.reloadIfEnabled(projectId, agentId, workbenchId);
   }
 
   async remove(projectId: string, agentId: string, workbenchId: string): Promise<void> {
@@ -594,12 +661,14 @@ export class WorkbenchService implements Workbenches {
 
   private async current(projectId: string, agentId: string, workbenchId: string): Promise<Loaded> {
     const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
     const k = key(projectId, agentId, workbenchId);
     const existing = this.loaded.get(k);
     if (existing && existing.folder.revision === folder.revision) return existing;
     return this.load(projectId, agentId, folder);
   }
 
+  /** A loaded instance, which runs, so both its switches are on. */
   private info(id: string, l: Loaded): WorkbenchInfo {
     return {
       id,
@@ -611,7 +680,95 @@ export class WorkbenchService implements Workbenches {
       loadedAt: l.loadedAt,
       error: l.error,
       hints: loadHints(l.folder.uiRev, l.tabs, l.error),
+      enabled: true,
     };
+  }
+
+  /** One that does not run, from its folder alone (see WorkbenchInfo). */
+  private idleInfo(folder: WorkbenchFolder, enabled: boolean): WorkbenchInfo {
+    return {
+      id: folder.id,
+      name: folder.pkg.name,
+      version: folder.pkg.version,
+      revision: folder.revision,
+      uiRev: folder.uiRev,
+      tabs: [],
+      loadedAt: null,
+      error: null,
+      hints: [],
+      enabled,
+    };
+  }
+
+  /** Whether the workbench runs: neither its own off-marker nor the Agent's is there. */
+  private async runs(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+  ): Promise<boolean> {
+    return (
+      !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId))) &&
+      !(await isSwitchedOff(folder.dir))
+    );
+  }
+
+  /** A workbench that exists and does not run is refused; a missing one is left to the caller's 404. */
+  private async refuseIfOff(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    dir: string,
+  ): Promise<void> {
+    if (!(await isFile(path.join(dir, "package.json")))) return;
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    if ((await isSwitchedOff(base)) || (await isSwitchedOff(dir))) {
+      throw new WorkbenchDisabled(workbenchId);
+    }
+  }
+
+  /**
+   * Brings one workbench in line with its switches (`all` is the Agent's): when it runs, loaded
+   * unless the loaded instance already has this revision; otherwise unloaded, after any load in
+   * flight has finished, and answered from its folder. `loaded` says a load ran (and announced
+   * itself), `unloaded` that an instance was let go.
+   */
+  private async settle(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    all: boolean,
+  ): Promise<{ info: WorkbenchInfo; loaded: boolean; unloaded: boolean }> {
+    const k = key(projectId, agentId, folder.id);
+    const own = !(await isSwitchedOff(folder.dir));
+    if (own && all) {
+      const current = this.loaded.get(k);
+      if (current && current.folder.revision === folder.revision) {
+        return { info: this.info(folder.id, current), loaded: false, unloaded: false };
+      }
+      try {
+        const fresh = await this.load(projectId, agentId, folder);
+        return { info: this.info(folder.id, fresh), loaded: true, unloaded: false };
+      } catch (err) {
+        if (!(err instanceof WorkbenchDisabled)) throw err;
+      }
+    }
+    // A load that started before the switch went off still lands; it is let go with the rest.
+    await this.loading.get(k)?.catch(() => undefined);
+    const unloaded = this.unload(k);
+    const info = this.idleInfo(folder, !(await isSwitchedOff(folder.dir)));
+    return { info, loaded: false, unloaded };
+  }
+
+  /** Lets go of a loaded instance — its tree, and with it its subscriptions — and a pending reload. */
+  private unload(k: string): boolean {
+    const t = this.pending.get(k);
+    if (t) clearTimeout(t);
+    this.pending.delete(k);
+    const loaded = this.loaded.get(k);
+    if (!loaded) return false;
+    loaded.tree?.dispose();
+    this.loaded.delete(k);
+    return true;
   }
 
   /**
@@ -630,6 +787,9 @@ export class WorkbenchService implements Workbenches {
       .catch(() => undefined)
       .then(async () => {
         const current = (await readFolder(folder.dir, folder.id)) ?? folder;
+        // Checked in the queue, after the loads before it: a switch turned off since this was
+        // asked for is what wins (setEnabled waits for every load queued before its marker).
+        if (!(await this.runs(projectId, agentId, current))) throw new WorkbenchDisabled(folder.id);
         if (this.loading.get(k) === run) this.loadingRevision.set(k, current.revision);
         return this.loadNow(projectId, agentId, current);
       });
@@ -887,12 +1047,7 @@ export class WorkbenchService implements Workbenches {
 
   /** Drops a workbench's instance and tells the Project's users it is gone. */
   private forget(projectId: string, agentId: string, workbenchId: string): void {
-    const k = key(projectId, agentId, workbenchId);
-    const t = this.pending.get(k);
-    if (t) clearTimeout(t);
-    this.pending.delete(k);
-    this.loaded.get(k)?.tree?.dispose();
-    this.loaded.delete(k);
+    this.unload(key(projectId, agentId, workbenchId));
     this.publish(projectId, { type: "workbench_removed", projectId, agentId, workbenchId });
   }
 
@@ -994,6 +1149,8 @@ export class WorkbenchService implements Workbenches {
             this.forget(projectId, agentId, workbenchId);
             return;
           }
+          // Switched off between the check and the load: nothing to do.
+          if (err instanceof WorkbenchDisabled) return;
           this.log.line(`[workbenches] ${k}: ${messageOf(err)}`);
         });
       }, WATCH_SETTLE_MS),
@@ -1002,6 +1159,17 @@ export class WorkbenchService implements Workbenches {
 }
 
 export class WorkbenchNotFound extends Error {}
+
+/** A workbench that exists but does not run: its own switch or the Agent's is off. */
+export class WorkbenchDisabled extends HttpError {
+  constructor(workbenchId: string) {
+    super(
+      409,
+      "workbench_disabled",
+      `The workbench ${workbenchId} is turned off; turn it on in the Agent's settings to use it.`,
+    );
+  }
+}
 
 /** Where a workbench's `ui/` is served from (./routes.ts). */
 function uiBase(projectId: string, agentId: string, workbenchId: string): string {

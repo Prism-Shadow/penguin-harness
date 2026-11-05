@@ -5,7 +5,7 @@
  * and lowered the way its build would lower it, so the fixture exercises the same
  * decorators the host reads.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
@@ -135,4 +135,37 @@ export function contentTable(packageName: string, content: PluginContent): strin
     },
     plugin: { modules: ["Content"], replaces: [] },
   });
+}
+
+/**
+ * Writes `files` (paths relative to the package directory) as package `packageName` in the
+ * data root's plugin prefix and lists it there, as an admin's install leaves it: the library
+ * then carries it. Earlier packages written this way stay listed.
+ */
+export async function writePrefixPackage(
+  root: string,
+  packageName: string,
+  files: Record<string, string>,
+): Promise<string> {
+  const prefix = path.join(root, "plugins");
+  const dir = path.join(prefix, "node_modules", ...packageName.split("/"));
+  for (const [rel, body] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await writeFile(path.join(dir, rel), body, "utf8");
+  }
+  const manifest = path.join(prefix, "package.json");
+  const listed = await readFile(manifest, "utf8").then(
+    (text) => JSON.parse(text) as { dependencies?: Record<string, string> },
+    () => ({ dependencies: {} }),
+  );
+  await writeFile(
+    manifest,
+    JSON.stringify({
+      name: "penguin-plugins",
+      private: true,
+      dependencies: { ...listed.dependencies, [packageName]: "*" },
+    }),
+    "utf8",
+  );
+  return dir;
 }

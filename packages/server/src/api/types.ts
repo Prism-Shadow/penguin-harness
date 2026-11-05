@@ -3857,7 +3857,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  /**
+   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
+   * version was restored — or switched on or off, by its own switch or the Agent's.
+   */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
