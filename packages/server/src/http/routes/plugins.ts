@@ -32,9 +32,7 @@
  * plugin/registry.ts for the three rules.
  */
 import { Hono } from "hono";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
 import {
   agentDir,
   McpServerNameTakenError,
@@ -50,10 +48,11 @@ import {
   libraryPluginPackage,
   libraryPluginReadme,
   loadPluginGroups,
-  parsePluginPackage,
+  libraryParts,
+  readPackageJson,
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
-import type { PluginPackageManifest } from "@prismshadow/penguin-core";
+import type { NpmPackage } from "@prismshadow/penguin-core";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
@@ -348,11 +347,11 @@ export interface PluginRoutesOptions {
 }
 
 /**
- * The server modules an admin installed from a link or a zip: packages of the prefix carrying
- * an `ifaces.json` that no index lists. Their row is their own package.json's npm fields, read
- * by core's manifest reader; the listing then lets the package describe itself further (its
- * `penguin` block and its icon), as it does every package on this machine. A package.json that
- * will not read lists no row.
+ * The server modules an admin installed from a link or a zip: packages of the prefix that no
+ * index lists and that core's kinds rule reads as server modules (a code entry, and modules its
+ * table lists). Their row is their own package.json's npm fields, read by core's reader; the
+ * listing then lets the package describe itself further (its card and its icon), as it does every
+ * package on this machine. A package.json that will not read lists no row.
  */
 async function prefixEntries(
   prefix: string | null,
@@ -363,11 +362,10 @@ async function prefixEntries(
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
-    if (!existsSync(path.join(dir, "ifaces.json"))) continue;
-    const file = path.join(dir, "package.json");
-    let manifest: PluginPackageManifest;
+    if (!libraryParts(dir).modules) continue;
+    let manifest: NpmPackage;
     try {
-      manifest = parsePluginPackage(JSON.parse(await fs.readFile(file, "utf8")), file).manifest;
+      manifest = readPackageJson(dir).manifest;
     } catch {
       continue;
     }
@@ -408,8 +406,8 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
 
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
-    // A package on this machine describes itself: its own package.json `penguin` block and icon
-    // win over what an index row says, so an installed package's card shows its icon and both
+    // A package on this machine describes itself: its own card and icon win over what an index
+    // row says, so an installed package's card shows its icon and both
     // languages even where its index row carries neither.
     const here = bases();
     const plugins = await Promise.all(

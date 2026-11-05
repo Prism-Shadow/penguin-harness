@@ -9,9 +9,9 @@
  *   and drawn with the icon of its own package.json `penguin` block and icon.svg (which it
  *   publishes), and serves each one's own shipped README.md; a listed package not on this
  *   machine, a name it does not list and a remote registry have no readme.
- * - A package on this machine describes itself in the listing over what its row says; one
- *   without a penguin block or an icon, and a row whose package is not here, stay as the index
- *   wrote them; an icon that is not a plain SVG is never sent.
+ * - A package on this machine describes itself in the listing over what its row says (its card
+ *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
+ *   them; an icon that is not a plain SVG is never sent.
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
@@ -51,6 +51,7 @@ import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { contentTable } from "./plugin-fixtures.js";
 
 const VALID_ENTRY: PluginIndexEntry = {
   name: "@example/penguin-plugin-demo",
@@ -649,8 +650,8 @@ describe("the route's own merge", () => {
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
     // A published row that carries only English and no icon, for a package an admin installed
-    // into the data root's prefix with its own penguin block and icon.svg; and one installed
-    // with neither, which keeps its row's text and the puzzle piece.
+    // into the data root's prefix with its own card and icon.svg; and one installed with
+    // neither, which keeps its row's text and the puzzle piece.
     const installedHere: PluginIndexEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
@@ -670,12 +671,17 @@ describe("the route's own merge", () => {
           name: installedHere.name,
           version: "1.0.0",
           description: "A demo plugin.",
-          penguin: {
+        }),
+      );
+      await writeFile(
+        path.join(dir, "ifaces.json"),
+        contentTable(installedHere.name, {
+          card: {
             title: "Local demo",
-            title_zh: "本地示例",
-            description_zh: "一个示例插件。",
-            short_description: "Demo.",
-            short_description_zh: "示例。",
+            titleZh: "本地示例",
+            descriptionZh: "一个示例插件。",
+            shortDescription: "Demo.",
+            shortDescriptionZh: "示例。",
           },
         }),
       );
@@ -718,11 +724,11 @@ describe("the route's own merge", () => {
       await mkdir(dir, { recursive: true });
       await writeFile(
         path.join(dir, "package.json"),
-        JSON.stringify({
-          name: entry.name,
-          version: "1.0.0",
-          penguin: { short_description: "Risky." },
-        }),
+        JSON.stringify({ name: entry.name, version: "1.0.0" }),
+      );
+      await writeFile(
+        path.join(dir, "ifaces.json"),
+        contentTable(entry.name, { card: { shortDescription: "Risky." } }),
       );
       await writeFile(
         path.join(dir, "icon.svg"),

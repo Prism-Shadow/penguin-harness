@@ -23,7 +23,7 @@
  */
 import { hookEvent, userText } from "@prismshadow/amsp/records";
 import type { UserPromptOutcome } from "../interfaces/index.js";
-import type { UserPromptTrigger } from "../plugins/index.js";
+import type { UserPromptTrigger } from "../plugin/library.js";
 import { failedAnswer } from "./answer.js";
 
 export interface UserPromptHookInput {
