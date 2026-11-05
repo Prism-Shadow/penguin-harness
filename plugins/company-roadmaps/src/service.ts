@@ -509,7 +509,9 @@ export class RoadmapService {
    * owner is not told until a person and the moderator have both approved that brief
    * ({@link approve}); the moderator's desk is asked for its approvals. An item already
    * established (a reopened roadmap established again) starts again only when its owner or its
-   * brief changed; a roadmap item that already derived its roadmap is left to it.
+   * brief changed — or when what is there is not a brief at all, a residual delegation of
+   * another kind that the re-establishment rewrites; a roadmap item that already derived its
+   * roadmap is left to it.
    */
   async establish(
     projectId: string,
@@ -570,7 +572,16 @@ export class RoadmapService {
             by: caller.principal,
           });
         } else if (item.kind === "proposal") {
-          if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief)
+          // A prior delegation matches only while it is a brief of the same shape: a residual
+          // delegation left by an establishment of another kind — a derived roadmap the room
+          // reopened into a proposal item — is rewritten here, or the two approvals would read
+          // a delegated row and refuse the brief.
+          if (
+            prior !== undefined &&
+            prior.stage === "brief" &&
+            prior.owner === item.owner &&
+            prior.brief === item.brief
+          )
             continue;
           // A brief, waiting for its two approvals: nothing is created, nobody is told to create.
           store.write({

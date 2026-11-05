@@ -801,6 +801,76 @@ describe("the approvals", () => {
       approvals: {},
     });
   });
+
+  it("rewrites a residual delegation when a reopened roadmap turns its derived roadmap item into a brief — same owner, same brief, the approvals start over", async () => {
+    // The mistaken draft: the item rides as a roadmap and derives its roadmap at the establishment.
+    const n = await openA();
+    await service.draft(P, O, n, { body: BODY, items: [ITEMS[0], ITEMS[2]] }, BOSS);
+    const { roadmap } = await service.establish(P, O, n, BOSS);
+    const child = roadmap.delegations.tests!.child!;
+    expect(roadmap.delegations.tests).toMatchObject({ stage: "delegated", owner: "acme_qa" });
+    // The correction reopens and redrafts the item as the brief it was meant to be: the same
+    // owner, the same brief, only the kind changes.
+    await service.reopen(P, O, n, "It is a brief, not a roadmap.", BOSS);
+    await service.draft(
+      P,
+      O,
+      n,
+      {
+        items: [
+          ITEMS[0],
+          {
+            key: "tests",
+            kind: "proposal",
+            title: "Test plan",
+            brief: "How it is tested.",
+            owner: "acme_qa",
+            cites: ["Why"],
+          },
+        ],
+      },
+      BOSS,
+    );
+    w.gateway.desks = [];
+    const lines = (await eventsOf(w.root)).length;
+    const { roadmap: again } = await service.establish(P, O, n, BOSS);
+    // The residual delegation is rewritten as a brief: no child, nothing delivered, no approvals,
+    // the base recomputed.
+    expect(again.delegations.tests).toMatchObject({
+      stage: "brief",
+      brief: "How it is tested.",
+      base: "ledger",
+      child: null,
+      delivered: false,
+      approvals: {},
+    });
+    expect((await eventsOf(w.root)).slice(lines).map((l) => l.kind)).toEqual([
+      "established",
+      "briefed",
+    ]);
+    // The derived roadmap itself is left standing: the rewrite rewrites the delegation only.
+    expect(await service.get(P, O, child, BOSS)).toMatchObject({
+      parent: n,
+      parentItem: "tests",
+      status: "discussing",
+    });
+    // Only the rewritten brief is asked for; it approves — the residual stage refuses no more.
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev"]);
+    expect(w.gateway.desks[0]!.text).toContain('[tests] "Test plan"');
+    expect(w.gateway.desks[0]!.text).not.toContain("[ledger]");
+    const first = await service.approve(P, O, n, "tests", BOSS);
+    expect(first.roadmap.delegations.tests).toMatchObject({
+      stage: "brief",
+      approvals: { member: { by: "user:boss" } },
+    });
+    const both = await service.approve(P, O, n, "tests", asAgent("acme_dev"));
+    expect(both.roadmap.delegations.tests).toMatchObject({
+      stage: "delegated",
+      proposal: 200,
+      delivered: true,
+      approvals: { member: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
+    });
+  });
 });
 
 describe("the room a roadmap opens itself", () => {
