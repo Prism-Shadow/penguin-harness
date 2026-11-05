@@ -532,8 +532,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
 | GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
 | POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
-| GET | `/agents/:agentId/export` | 导出 Agent State 快照（tar.gz 下载） |
-| POST | `/agents/:agentId/import` | 导入快照：`{dataBase64, confirm?}`；不带 `confirm` 且版本冲突时返回 409 |
+| GET | `/agents/:agentId/archive` | 把 Agent 导出为 zip，包含查询参数选定的部分（流式下载） |
+| GET | `/agents/:agentId/archive/preview` | 该 zip 将包含的内容：各部分的文件数与字节数、Session、密钥保险柜的键名和被清空的值 |
+| POST | `/agents/import` | 导入 zip 或旧的 `.tar.gz` Agent State 包，以原始请求体发送（`application/octet-stream`）：`?agentId=&overwrite=1` → 201 `{agent, mode, version, imported, skippedTraces, toFill, notes, …}` |
 | GET | `/agents/:agentId/skills` | 已安装的 Skill（从插件库安装需通过 `/plugins`） |
 | POST | `/agents/:agentId/skills/template-placeholder` | 在 Prompt 模板中插入 `{{SKILLS}}` 占位符 |
 | POST | `/agents/:agentId/skills/archive` | 从 zip 安装 Skill：`{dataBase64, overwrite?}` → 返回 201 和 Skill 列表 |
@@ -556,11 +557,24 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ### Agent 路由
 
-- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
+- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。要从文件创建 Agent，请使用 `POST /agents/import`。
 - `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。只有当条目与该 Agent 已保存的某个条目完全一致（名称与 `config` 都相同）时，才会像对话连接时一样，从 Agent 的 Vault 填入条目中的 `${KEY}` 引用；Vault 缺键时返回 `{ok: false, error}`，`error` 以 `needs setup:` 开头并列出键名，不会连接任何服务器。新的或改动过、又引用了 Vault 的条目返回 `{ok: false, saveFirst: true, error}`：什么都不填入，也不连接任何服务器，调用方因此无法把 Vault 中的值发往自己指定的地址。先保存条目，再测试。响应从不回显条目内容。
 - `POST …/config/kernel-update` 是 `reset` 的无损版本。它把缺失或仍保持旧默认值的设置标签页升级到当前默认值（记入 `advanced`），完整保留已自定义的标签页（记入 `kept`），并写入新的默认值版本（`kernelVersion`）。
 - `template-placeholder` 路由都是幂等的。Vault 和 Skills 两个路由会在 Prompt 模板中插入 `{{VAULT}}` 或 `{{SKILLS}}`；如果模板里是旧版硬编码的 `# Vault` 或 `# Skills` 小节，则替换成对应的占位符。记忆路由插入 `{{MEMORY}}`，在记忆功能推出之前创建的 Agent 就是通过它接入记忆的。
 - `POST …/skills/archive` 接受最大 14MB 的 zip。不带 `overwrite` 时，同名 Skill 已安装会返回 409 `skill_exists`。`GET …/skills/:name/archive` 导出的文件名为 `<name>.zip`；如果 Skill 的 `SKILL.md` 声明了版本，则为 `<name>-v<version>.zip`。Skill 未安装时，导出和卸载路由都返回 404 `not_found`。
+
+### Agent 归档
+
+Agent 归档是一个 zip，顶层只有一个以 Agent 命名的目录：`manifest.json`（`format: "penguin-agent-zip/1"`）、与磁盘布局一致的 `agent_state/`，以及携带 Session 时的 `traces/<date>/<sessionId>_NNN.jsonl` 和 `traces/sessions.json`（sessions 表中每个 Session 的信息）。
+
+- 两个 `GET` 路由接受相同的查询参数：`skills`、`hooks`、`memory`、`workbenches`、`workbenchData` 和 `schedules` 取 `0` 或 `1`；`traces` 取 `none`、`last:<N>`（1–500）或 `<from>..<to>`（本地日期，`YYYY-MM-DD`）。缺省的键取默认值：除定时任务和 Session 外全部包含。取值不合法时返回 400。任何成员都可以导出。
+- 配置总会随包导出：`system_config.yaml`、`AGENTS.md` 和 `tools/`。配置中名称像凭据的 MCP `env` 或 `headers` 值会被清空，并以 `mcp:<server>:<env|headers>:<NAME>` 的形式列入 `manifest.redacted`；以 `${KEY}` 引用密钥保险柜的值保持原样。密钥保险柜从不随包导出，只有键名写入 `manifest.vaultKeys`。同样不导出的还有工作台的 `.build/`、`.harness/`、`.plugin.json` 和 `node_modules/`、`.git` 路径、已过期的定时任务，以及 `agent_state/` 与所选 Session 之外的一切。`workbenchData=1` 时导出工作台的 `state.json`。只导出普通文件，从不导出链接。
+- `traces=last:<N>` 选取最近活跃的 N 个顶层 Session；日期范围选取 Trace 日期目录落在范围内的 Session。每个 Session 整体导出，并带上同一 Agent 下的子 Agent 的 Session。含有大于 256 MiB 文件的 Session 不导出，预览会在 `traces.skipped` 中列出。
+- 下载的文件为 `application/zip`，命名为 `<agentId>-<yyyymmdd>.zip`。预览中的 `totalBytes` 是未压缩大小；导入接受的上传大小上限为 100 MiB。
+- `POST /agents/import` 依次从 `agentId`、manifest 和 zip 顶层目录名取 Agent id；旧的 `.tar.gz` 包必须提供 `agentId`。id 已被占用时返回 409 `agent_exists`，并带 `details.agentId`，除非 Project owner 发送 `overwrite=1`（成员发送时返回 403）。上限：上传 100 MiB、50,000 个条目、单个条目 256 MiB、解压后共 1 GiB，超出时返回 413 `archive_too_large`；归档格式不合法时返回 400。在改动任何 Agent 之前完成全部检查。
+- 新 id 会先按模板创建 Agent，再用归档中的 State 替换它。不含 `system_config.yaml` 的 zip 在 manifest 中携带 `definition`（MCP Server、模型设置、内置工具名），按与 `PUT …/config` 相同的校验写入；本安装没有的工具记入 `notes`。失败时删除创建了一半的 Agent，id 可以再次使用。
+- 覆盖时保留 Agent 的身份、Session、密钥保险柜、API 密钥和雇佣关系，并先写入备份（`backup`，`snapshots/import-backup-v<N>-…tar.gz`）。manifest 中标为 `false` 的部分保留 Agent 自己的内容，已过期的定时任务、zip 未携带数据时工作台的数据，以及归档格式不认识的 State 内容也都保留。被清空的 MCP 值沿用 Agent 在同一 Server、同一名称下的原值。返回中带有 `previousVersion` 和 `version`。
+- Session 最后导入。id 已存在于本安装的 Session 以 `exists` 跳过，文件与记录不符的以 `invalid` 跳过，两者都列在 `skippedTraces` 中。`toFill` 列出 Agent 缺少的密钥保险柜键名和仍为空的 MCP 值。
 
 ### 记忆
 

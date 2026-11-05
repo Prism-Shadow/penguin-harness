@@ -8,20 +8,21 @@
  * The global request-body cap (http/app.ts, derived from the attachment budget) still applies
  * in front of the upload cap, so a server whose attachment limit was lowered takes less.
  */
+import { AGENT_ARCHIVE_MAX_LAST_SESSIONS, AGENT_ARCHIVE_MAX_UPLOAD_BYTES } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 
 const MiB = 1024 * 1024;
 
-/** The zip or `.tar.gz` as uploaded. */
-export const MAX_UPLOAD_BYTES = 100 * MiB;
+/** The zip or `.tar.gz` as uploaded; part of the wire contract, so clients check it first. */
+export const MAX_UPLOAD_BYTES = AGENT_ARCHIVE_MAX_UPLOAD_BYTES;
 /** Entries one zip may hold, directories included. */
 export const MAX_ENTRIES = 50_000;
 /** One entry, uncompressed; a Session with a larger file is left out of an export. */
 export const MAX_ENTRY_BYTES = 256 * MiB;
 /** Everything an import inflates, counted on the bytes written. */
 export const MAX_INFLATED_BYTES = 1024 * MiB;
-/** The most Sessions `traces=last:<N>` selects. */
-export const MAX_LAST_SESSIONS = 500;
+/** The most Sessions `traces=last:<N>` selects; part of the wire contract. */
+export const MAX_LAST_SESSIONS = AGENT_ARCHIVE_MAX_LAST_SESSIONS;
 
 export function archiveTooLarge(message: string): HttpError {
   return new HttpError(413, "archive_too_large", message);

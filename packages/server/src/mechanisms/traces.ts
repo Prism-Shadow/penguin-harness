@@ -47,6 +47,8 @@ import type {
   HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
+  StagedTraceImport,
+  StagedTraceSession,
 } from "../services/trace-service.js";
 import type { MessageCursor } from "../services/message-window.js";
 
@@ -113,7 +115,8 @@ export abstract class TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: AmspRecord[];
+    /** The earliest file's head records; absent for a Session's later files. */
+    records?: AmspRecord[];
   }): void;
   abstract removeSession(projectId: string, agentId: string, sessionId: string): void;
   abstract removeAgent(projectId: string, agentId: string): void;
@@ -219,4 +222,14 @@ export abstract class Traces {
     agentId: string,
     content: string,
   ): Promise<TraceImportResponse>;
+  /**
+   * Moves whole Sessions staged by an Agent archive import into the Agent's Trace directory and
+   * registers each as a Session with its recorded facts; one whose id the install already knows,
+   * or whose files do not hold up, is skipped and reported instead.
+   */
+  abstract importTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessions: readonly StagedTraceSession[],
+  ): Promise<StagedTraceImport>;
 }
