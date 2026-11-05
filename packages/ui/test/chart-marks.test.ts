@@ -25,6 +25,7 @@ import {
   barPath,
 } from "../src/components/charts/marks/marks";
 import { TimelineBar, timelineRadius } from "../src/components/charts/marks/timeline-bar";
+import { ChartDefs } from "../src/components/charts/chart-defs";
 import { DEFAULT_CHART_STYLE } from "../src/components/charts/chart-style";
 import { renderStatic } from "../src/testing";
 import { SRC_DIR } from "./helpers/paths";
@@ -170,7 +171,7 @@ describe("the chart primitives, in the default theme", () => {
       className: "cursor-pointer",
     });
     expect(html).toContain("left:10%");
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[0]}`);
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
     expect(html).not.toContain("border-radius");
@@ -183,13 +184,57 @@ describe("the chart primitives, in the default theme", () => {
     expect(timelineRadius(3, "both")).toBe(0);
   });
 
-  it("paint a swatch the way its mark is painted", () => {
-    expect(render(ChartSwatch, { paint: { role: "cacheRead" } })).toContain(
-      `background-color:${DEFAULT_CHART_STYLE.cacheRead}`,
+  it("paint a swatch the way its mark is painted, as the series its mark belongs to", () => {
+    const role = render(ChartSwatch, { paint: { role: "cacheRead" } });
+    expect(role).toContain('data-part="swatch"');
+    expect(role).toContain('data-series="cache-read"');
+    expect(role).toContain(`--_paint:${DEFAULT_CHART_STYLE.cacheRead}`);
+    const ink = render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } });
+    expect(ink).toContain("bg-fg-subtle");
+    expect(ink).toContain("--_paint:currentColor");
+    expect(ink).not.toContain("data-series");
+  });
+
+  it("leave a swatch or a timeline bar unpainted when its ink has no background", () => {
+    expect(render(ChartSwatch, { paint: { ink: "text-fg-subtle" } })).toContain(
+      "--_paint:transparent",
     );
     expect(
-      render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } }),
-    ).toContain("bg-fg-subtle");
+      render(TimelineBar, { paint: { ink: "text-fg-subtle" }, place: { left: "0%" } }),
+    ).toContain("--_paint:transparent");
+  });
+
+  it("name a Token kind's mark by its kind, as a slot's mark by its number", () => {
+    const kinds = [
+      ["cacheRead", "cache-read"],
+      ["cacheWrite", "cache-write"],
+      ["output", "output"],
+      ["ref", "ref"],
+    ] as const;
+    for (const [role, series] of kinds) {
+      const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { role } });
+      expect(bar).toContain(`data-series="${series}"`);
+      const span = render(TimelineBar, { paint: { role }, place: { left: "0%" } });
+      expect(span).toContain(`data-series="${series}"`);
+    }
+  });
+
+  it("leave a filled mark's fill to its paint, which an ink's mark takes from its class", () => {
+    const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { series: 1 } });
+    expect(bar).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(bar).not.toContain("fill=");
+    const area = render(ChartArea, {
+      points: [
+        [0, 10],
+        [10, 20],
+      ],
+      baseY: 30,
+      paint: { role: "output" },
+    });
+    expect(area).toContain(`--_paint:${DEFAULT_CHART_STYLE.output}`);
+    const point = render(ChartPoint, { cx: 10, cy: 10, paint: { ink: "text-tone-danger-fg" } });
+    expect(point).toContain("--_paint:currentColor");
+    expect(point).toContain("text-tone-danger-fg");
   });
 
   it("draw the grid, the axis labels and the cursor in the theme's chart inks", () => {
@@ -198,6 +243,42 @@ describe("the chart primitives, in the default theme", () => {
     expect(axis).toContain('class="fill-chart-axis"');
     expect(axis).toContain('data-part="axis"');
     expect(render(ChartCursor, { x: 5, y1: 0, y2: 10 })).toContain('class="stroke-line-emphasis"');
+  });
+});
+
+describe("the chart patterns and filter", () => {
+  const html = renderStatic(createElement(ChartDefs));
+  const hatches = [...html.matchAll(/<pattern id="ui-hatch-([\w-]+)"[^>]*>/g)].map((m) => ({
+    id: m[1]!,
+    width: Number(/width="([\d.]+)"/.exec(m[0])![1]),
+    color: /style="color:var\(--ui-chart-([\w-]+)\)"/.exec(m[0])?.[1],
+  }));
+
+  it("hatch every palette slot and Token kind in its own chart colour, following the theme", () => {
+    expect(hatches.map((h) => h.id)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "cache-read",
+      "cache-write",
+      "output",
+    ]);
+    for (const hatch of hatches) expect(hatch.color).toBe(hatch.id);
+  });
+
+  it("hatch the Token kinds at three densities, so a stacked bar reads without colour", () => {
+    const gap = (id: string) => hatches.find((h) => h.id === id)!.width;
+    expect(gap("cache-read")).toBeGreaterThan(gap("cache-write"));
+    expect(gap("cache-write")).toBeGreaterThan(gap("output"));
+  });
+
+  it("roughen a stroke over the chart's own space, so a flat grid line keeps its region", () => {
+    expect(/<filter id="ui-rough"[^>]*>/.exec(html)![0]).toContain('filterUnits="userSpaceOnUse"');
   });
 });
 

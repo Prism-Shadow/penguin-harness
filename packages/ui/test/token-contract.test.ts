@@ -44,6 +44,7 @@ import {
   matchesPolicyPath,
   modeDeclarations,
   parseCssRules,
+  readThemeSources,
   scanSourceRoots,
   stripCssComments,
   unscannedRoots,
@@ -61,7 +62,7 @@ function themeState(id: ThemeId): ThemeState {
   if (!existsSync(path)) {
     return { id, file, status: "pending", reason: "the file does not exist yet" };
   }
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzeThemeFile(readThemeSources(join(SRC_DIR, "themes"), id), id);
   if (analysis.isStub) {
     return {
       id,

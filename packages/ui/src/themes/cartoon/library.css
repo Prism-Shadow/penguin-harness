@@ -1,0 +1,260 @@
+/**
+ * Doodle's model library (`ui-library`, the Models page) and its badges. A provider group is a
+ * folder on the desk and its models are index cards filed in it; a badge is a sticker.
+ *
+ * - The group's own box draws nothing: its head stands on the desk, and the head's collapse
+ *   button (the provider's logo, name and count) is the folder's tab — the `tab` outline, its
+ *   top corners drawn and its foot open, on the sheet's fill. The folder's top edge is the pen's
+ *   run along the head's foot; the tab stands on it and covers it, so the tab opens into the
+ *   folder. The group's actions stand beside the tab on the desk. Collapsed, a group is its tab
+ *   on that edge: a closed folder. The tab always reaches the head's foot, even when the head's
+ *   actions wrap to a line of their own, because the head clips the tab there rather than the
+ *   tab measuring the head.
+ * - The cards slot is the folder's sheet: its fill, and the pen down its sides and along its
+ *   foot (the surface outline without its top run), meeting the edge the head draws.
+ * - A pinned group's name carries a highlighter swipe (the star stays its mark); the count is in
+ *   pencil.
+ * - The bar that folds the rest of the groups away is a divider: a pencil rule out on either side
+ *   of its words. Add group is a folder not yet filed, in a dashed pencil box.
+ * - A model card is an index card. Its line is pencil at rest and the ink on hover, redrawn in
+ *   the ballpoint blue while it has keyboard focus; nothing about its fill changes. Its name, in
+ *   the bold cut, and its tags each stand on a faint printed blue rule; its price is a note in
+ *   the ballpoint blue with a pencil squiggle under it; a missing key is in pencil.
+ * - A badge is a sticker: its tone's wash (its solid fill, or none for the outlined weight)
+ *   under the ink pill `line.css` draws on every pill. The inset rule the other themes draw a
+ *   badge in its tone's line would double the pen, so it goes.
+ *
+ * Every rule sits in `forced-colors: none`, as the line's do: in forced colours the host's own
+ * box, border and fills return.
+ */
+@layer ui-theme {
+  /* A printed rule, 1px, for an index card's lines: the ballpoint blue at 30 %. An image, because
+     an image cannot read a custom property. */
+  :root[data-theme="cartoon"] {
+    --_library-rule: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='1'%3E%3Cpath d='M0 .5H8' stroke='%232c4f9e' stroke-opacity='.3'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="cartoon"].dark {
+    --_library-rule: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='1'%3E%3Cpath d='M0 .5H8' stroke='%2393b6ee' stroke-opacity='.3'/%3E%3C/svg%3E");
+  }
+
+  @media (forced-colors: none) {
+    /* ---- The folder: the group's box gives way to its head, its tab and its sheet ---- */
+    :root[data-theme="cartoon"] .ui-library [data-slot="group"] {
+      border-color: transparent;
+      border-radius: 0;
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="group"] > [data-slot="head"] {
+      position: relative;
+      overflow-y: clip;
+      background-color: transparent;
+    }
+    /* The folder's top edge: the outline's bottom run, stretched along the head's foot. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="group"] > [data-slot="head"]::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 14px;
+      pointer-events: none;
+      border: 0 solid transparent;
+      border-bottom-width: 1px;
+      border-image: var(--_stroke-surface) 14 / 0 0 14px / 0 stretch;
+    }
+    /* The tab: the head's left cluster and its collapse button span the head's height, and the
+       drawing runs on past the button's foot to where the head clips it. */
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"]
+      > [data-slot="head"]
+      > :first-child {
+      align-self: stretch;
+    }
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"]
+      > [data-slot="head"]
+      > :first-child
+      > button:first-child {
+      position: relative;
+      z-index: 1;
+      isolation: isolate;
+      align-self: stretch;
+    }
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"]
+      > [data-slot="head"]
+      > :first-child
+      > button:first-child::before {
+      content: "";
+      position: absolute;
+      inset: 4px 0 -3rem;
+      z-index: -1;
+      pointer-events: none;
+      border: 1px solid transparent;
+      border-bottom-width: 0;
+      border-radius: 5px 5px 0 0;
+      background-color: var(--wallpaper-panel-fill, var(--ui-surface));
+      background-clip: padding-box;
+      border-image: var(--_stroke-tab) 9 / 9px / 0 stretch;
+    }
+    @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+      :root[data-theme="cartoon"]
+        .ui-library
+        [data-slot="group"]
+        > [data-slot="head"]
+        > :first-child
+        > button:first-child::before {
+        border-radius: 0;
+        background-clip: border-box;
+        clip-path: var(--_clip-tab);
+      }
+    }
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"]
+      > [data-slot="head"]:hover
+      > :first-child
+      > button:first-child::before {
+      background-color: var(--wallpaper-hover-fill, var(--ui-surface-muted));
+    }
+    /* Keyboard focus inside the tab, where the head's clip cannot cut it. */
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"]
+      > [data-slot="head"]
+      > :first-child
+      > button:first-child:focus-visible {
+      outline: var(--ui-focus-ring);
+      outline-offset: -6px;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="head"] [data-slot="count"] {
+      color: var(--ui-fg-subtle);
+    }
+    /* A pinned group's name: the highlighter band behind its lower part. */
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"][data-pinned]
+      > [data-slot="head"]
+      [data-slot="name"] {
+      position: relative;
+      isolation: isolate;
+    }
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="group"][data-pinned]
+      > [data-slot="head"]
+      [data-slot="name"]::before {
+      content: "";
+      position: absolute;
+      inset: 0.25em 0 0.05em;
+      z-index: -1;
+      pointer-events: none;
+      border: 0 solid transparent;
+      border-width: 0 12px;
+      border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+      mix-blend-mode: multiply;
+    }
+    :root[data-theme="cartoon"].dark
+      .ui-library
+      [data-slot="group"][data-pinned]
+      > [data-slot="head"]
+      [data-slot="name"]::before {
+      mix-blend-mode: normal;
+    }
+    /* The sheet: the fill a hair inside the pen, and the pen down the sides and along the foot. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="cards"] {
+      position: relative;
+      isolation: isolate;
+      border-top-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="cards"]::before {
+      content: "";
+      position: absolute;
+      inset: -1px 1px 1px;
+      z-index: -1;
+      pointer-events: none;
+      border-radius: 0 0 calc(var(--_fill-radius-surface) - 1px)
+        calc(var(--_fill-radius-surface) - 1px);
+      background-color: var(--wallpaper-panel-fill, var(--ui-surface));
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="cards"]::after {
+      content: "";
+      position: absolute;
+      inset: -1px 0 0;
+      z-index: 10;
+      pointer-events: none;
+      border: 1px solid transparent;
+      border-top-width: 0;
+      border-image: var(--_stroke-surface) 14 / 0 14px 14px / 0 stretch;
+    }
+
+    /* ---- The index card ---- */
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"]::after {
+      opacity: 0.5;
+      transition: opacity var(--ui-dur-fast) var(--ui-ease-out);
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"]:is(:hover, :focus-within)::after {
+      opacity: 1;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"]:has(> button:focus-visible)::after {
+      border-image-source: var(--_stroke-surface-you);
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"] > button:focus-visible {
+      outline: none;
+    }
+    :root[data-theme="cartoon"]
+      .ui-library
+      [data-slot="card"]
+      > button
+      > :is(:has(> [data-slot="name"]), [data-slot="tags"]) {
+      background: var(--_library-rule) left bottom / 8px 1px repeat-x;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"] [data-slot="name"] {
+      font-weight: 700;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="price"] {
+      color: var(--ui-fg-link);
+      text-decoration-line: underline;
+      text-decoration-style: wavy;
+      text-decoration-color: color-mix(in srgb, var(--ui-fg-subtle) 60%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="state"] {
+      color: var(--ui-fg-subtle);
+    }
+
+    /* ---- The shelf's own controls ---- */
+    /* The bar folding the rest of the groups away: a pencil rule run out on either side of its
+       words, a divider in the stack of folders, in place of the host's wash. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"] {
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]::before,
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]::after {
+      content: "";
+      flex: 1 1 0;
+      min-inline-size: 0;
+      block-size: 4px;
+      margin-inline: 0.5rem;
+      pointer-events: none;
+      opacity: 0.7;
+      background: var(--_rule-pencil-h) left center / 40px 4px repeat-x;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]:hover::before,
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]:hover::after {
+      opacity: 1;
+    }
+    /* Add group: a folder not yet filed, in a dashed pencil box on its own border; its words
+       ink up on hover, as the host's do. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="add"] {
+      border-image: var(--_stroke-surface-dashed) 14 / 14px / 0 round;
+    }
+
+    /* ---- The badge: a sticker ---- */
+    :root[data-theme="cartoon"] span.ui-edge:where([class*="radius-pill"]) {
+      box-shadow: none;
+    }
+  }
+}

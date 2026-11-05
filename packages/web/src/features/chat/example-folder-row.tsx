@@ -14,6 +14,9 @@
  * is placed by grid line rather than by DOM order, so the DOM keeps the panel right after its
  * folder's row, which is the order a phone shows it in — one column, the panel under the row,
  * as an accordion — and the order a screen reader walks.
+ *
+ * Both callers' rows are the start page's `folder` slot (`ui-start`), so a theme dresses the
+ * built-in folders and the shortcuts folder alike.
  */
 import { Chevron, GlyphIcon, ICONS, NAV_FILL, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 
@@ -48,6 +51,7 @@ export function ExampleFolderRow({
   return (
     <button
       type="button"
+      data-slot="folder"
       aria-expanded={open}
       onClick={onOpen}
       className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-2 text-left text-sm transition-colors duration-150 @md:col-start-1 ${
@@ -93,11 +97,15 @@ export function ExampleRowGlyph({ glyph }: { glyph: string }) {
  * The chevron closing a row inside an open folder, at the row's right edge so the rows' marks
  * stand in one column: the row takes the user somewhere — its prompt into the composer — so it
  * says "go" in the muted ink at rest and in the full ink while the row is hovered or focused. It
- * does not move: no hover transforms.
+ * does not move: no hover transforms. It is the row's `go` slot (`ui-start`), so a theme may draw
+ * its own mark there.
  */
 export function ExampleRowGo() {
   return (
-    <span className="shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg group-focus-visible:text-fg">
+    <span
+      data-slot="go"
+      className="shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg group-focus-visible:text-fg"
+    >
       <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.chevron} />
     </span>
   );

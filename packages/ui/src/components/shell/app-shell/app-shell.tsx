@@ -24,8 +24,12 @@
  * fill — the theme's field, or the page canvas where the theme paints none — and the band reads as
  * the app's top edge rather than a bar of the system's. Every column starts below it: a column
  * rule never runs between the traffic lights, whatever width the navigation column is folded to.
+ *
+ * The window also mounts the chart patterns and filter (`ChartDefs`) once, out of flow, so every
+ * chart in the app can reference them by id.
  */
 import type { ReactNode } from "react";
+import { ChartDefs } from "../../charts/chart-defs";
 import { NavigationBackdrop, WallpaperContext, WallpaperLayer } from "./wallpaper";
 import type { WallpaperStyle } from "./wallpaper";
 
@@ -77,6 +81,7 @@ export function AppShell({
           </div>
         )}
         {overlays}
+        <ChartDefs />
       </div>
     </WallpaperContext.Provider>
   );

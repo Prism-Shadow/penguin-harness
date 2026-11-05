@@ -997,8 +997,16 @@
     shape-rendering: crispEdges;
   }
 
-  /* `.ui-edge` is a documented no-op: a button, a text field and a bubble keep the hairline and
-     the square corner the tokens give every box here. */
+  /* `.ui-edge` is a documented no-op: a button, a text field, a bubble or a steer, a badge or an
+     update pill, a checkbox, a radio, a switch and the start page's picker pills keep the hairline
+     and the square corner the tokens give every box here. */
+
+  /* The five section hooks are documented no-ops here, each a door the theme may take later. */
+  /* `.ui-start`: the start page keeps its own layout, the counts in their squared card. */
+  /* `.ui-library`: the model groups keep their boxes and the cards their frames. */
+  /* `.ui-ledger`: a ledger keeps its host's card or tile. */
+  /* `.ui-empty`: an empty state is its words; theme.css hides the art slot. */
+  /* `.ui-run`: the toolbar keeps the hourglass and the word beside the title. */
 }
 
 /*

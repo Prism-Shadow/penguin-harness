@@ -6,6 +6,9 @@
  * The tile is plain elements — a KPI is a reading, not a control, and a whole-tile click would
  * swallow whatever sits inside it. Anything extra rides beside the value as children (a gauge
  * that pictures the number).
+ *
+ * It carries the `ui-ledger` hook: its one reading is a `tile` slot, the label over the figure,
+ * each in its own slot, so a theme may set a ledger of figures apart its own way.
  */
 import type { ReactNode } from "react";
 import type { ToneName } from "../../../tokens";
@@ -42,19 +45,31 @@ export function StatTile({
 }) {
   const ink = tone !== undefined ? INK[tone] : "";
   return (
-    <div data-wallpaper-surface="panel" className="rounded-md border border-line bg-surface p-3">
-      <p className={`mb-1.5 flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
-        {icon !== undefined && <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} className={ink} />}
-        <span className="truncate">{label}</span>
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className={`truncate text-lg font-semibold tabular-nums ${ink}`}>{value}</p>
-          {detail !== undefined && (
-            <p className="mt-0.5 text-xs leading-snug text-fg-muted">{detail}</p>
+    <div
+      data-wallpaper-surface="panel"
+      className="ui-ledger rounded-md border border-line bg-surface p-3"
+    >
+      <div data-slot="tile">
+        <p
+          data-slot="label"
+          className={`mb-1.5 flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}
+        >
+          {icon !== undefined && (
+            <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} className={ink} />
           )}
+          <span className="truncate">{label}</span>
+        </p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p data-slot="figure" className={`truncate text-lg font-semibold tabular-nums ${ink}`}>
+              {value}
+            </p>
+            {detail !== undefined && (
+              <p className="mt-0.5 text-xs leading-snug text-fg-muted">{detail}</p>
+            )}
+          </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>
   );

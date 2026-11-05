@@ -1,6 +1,6 @@
 /**
  * The empty state: the caller's words in the muted inks, an optional action, and the dashed slot
- * form that SettingsEmpty is.
+ * form that SettingsEmpty is; the `ui-empty` anatomy a theme dresses it by.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -29,6 +29,27 @@ describe("EmptyState", () => {
       }),
     );
     expect(html).toContain('<button type="button">Create</button>');
+  });
+
+  it("names its form and its parts, and draws the page form's art in the line set and as a doodle", () => {
+    const page = renderStatic(
+      createElement(EmptyState, {
+        title: "Empty",
+        description: "Nothing yet.",
+        action: createElement("button", { type: "button" }, "Create"),
+      }),
+    );
+    expect(page).toMatch(/^<div data-form="page" class="ui-empty /);
+    // One drawing per style, each a direct child of the slot, so a theme shows its own.
+    expect(page).toMatch(
+      /<div data-slot="art" aria-hidden="true"[^>]*><span data-set="line"[^>]*>.*?<\/span><svg data-set="doodle"[^>]*><path [^>]*><\/path><\/svg><\/div>/,
+    );
+    expect(page).toContain('<p data-slot="title"');
+    expect(page).toContain('<p data-slot="description"');
+    expect(page).toContain('<div data-slot="action"');
+    const slot = renderStatic(createElement(EmptyState, { title: "Empty", dashed: true }));
+    expect(slot).toMatch(/^<div data-form="slot" class="ui-empty /);
+    expect(slot).not.toContain('data-slot="art"');
   });
 
   it("draws the slot form in a dashed frame, its message on the small subtle rung", () => {

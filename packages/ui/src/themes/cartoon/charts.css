@@ -1,0 +1,187 @@
+/**
+ * Doodle's charts (`ui-chart`): what the charts draw stays the chart primitives' — every mark's
+ * place, size, colour and outline weight come from the chart tokens in `cartoon.css` — and this
+ * partial draws them by hand: a pen line where the data runs, pencil under it.
+ *
+ * - Bars are hatched in their own colour over a faint wash of it, outlined in the ink the tokens
+ *   already give them (`--ui-chart-bar-stroke-color`). Each palette slot has its hatch, and the
+ *   three Token kinds their own density — cache reads sparse, cache writes medium, output dense
+ *   — so a stacked Token bar still reads printed in black and white. The patterns are
+ *   `ChartDefs`' (`#ui-hatch-<series>`, the mark's `data-series`), in every document a chart is
+ *   drawn in; where one is missing the bar falls back to its own flat paint. A bar painted with
+ *   an ink (the folded "rest" series) has no slot and stays flat.
+ * - The HTML twins — a Trace timeline's or a horizontal bar chart's bar, and a legend's or a
+ *   bubble's swatch of a series — hatch alike, with a tile of the slip laid over their own paint
+ *   (below). A swatch takes a fine ink outline and a hatch scaled to its eight pixels, keeping the
+ *   Token kinds' three densities; a line's swatch (a dash, a tick) stays a solid stroke.
+ * - The grid is a dashed pencil rule; a point keeps its series' colour inside a ring of the ink.
+ * - The series lines and the axis-break marks take the one filter the theme runs, `#ui-rough`: a
+ *   fixed noise field that moves a stroke by under a pixel, so a line wavers like a pen's. Its
+ *   seed is fixed and its field is the chart's own space, so a redraw of the same data is the
+ *   same picture and a scroll never re-wobbles it. Text never takes it — an axis label, a value
+ *   label and every word around a chart are the hand face as it is — and neither does the grid,
+ *   a ring's arc or a filled shape.
+ *
+ * Measured on the test box: the usage page in the gallery's app frame, every chart swept by the
+ * pointer (a bubble and a fade on each step), Primer and Doodle on the same build, the median of
+ * nine interleaved runs; the gate is the page's paint within 1.3x of Primer's. Paint: Primer
+ * 88 ms, Doodle 103 ms (1.16x), 98 ms without the filter, 86 ms without the filter and the
+ * hatches; the page's first paint is as light with these marks as without them. The filter's
+ * cost is raster instead: 548 ms against 383 ms without it (Primer 134 ms), no frame over 20 ms.
+ * A hatch tile drawn from an SVG put the paint at 1.55x, which is why the tiles are bitmaps.
+ *
+ * In forced colours none of this applies (every rule sits in `forced-colors: none`): the marks
+ * keep their flat paint, the grid its solid rule, the lines their straight path.
+ */
+@layer ui-theme {
+  /* draw-doodle-hatches.mjs: begin generated block, do not edit by hand */
+  :root[data-theme="cartoon"] {
+    --_hatch-bar: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAO0lEQVR42i3IsQ0AIRDEQOsr+ZzuiemALQrtyY6sYaXdnzOzP4SFcBCCMFOYKXQGOgNBCEIQghCEi7AfkMFT8QFAVXwAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-bar-sparse: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAWBAMAAAA2mnEIAAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAASklEQVR42kXIuQ0AIRTEUGsr2ZzuiemAKQr9S+PIeix19+fM7w/zwnwwC/N88Hxwf3J/cn1xfXF+c35z/HD8sDALszALszBfzPsBj+aoA3AlY2oAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-bar-dense: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMBAMAAACkW0HUAAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAALklEQVR42h3HMQ0AIBDAwAYl7O+eGQdUFElvO0Z9m6ueRRnKpUiRIkWKFCmPcj4qIyvV7TQMfQAAAABJRU5ErkJggg==")
+        2x
+    );
+    --_hatch-swatch: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIBAMAAAA2IaO4AAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAKUlEQVR42gXBMQ0AAAwCMIIS/rnnxgGIWotbhczEqsPMoLrBzKBbwcwPRhMQeSHHsZsAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-swatch-sparse: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMBAMAAACkW0HUAAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAALklEQVR42h3HMQ0AIBDAwAYl7O+eGQdUFElvO0Z9m6ueRRnKpUiRIkWKFCmPcj4qIyvV7TQMfQAAAABJRU5ErkJggg==")
+        2x
+    );
+    --_hatch-swatch-dense: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGBAMAAAAS4vJ7AAAAMFBMVEX8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fL8+fIrOyRtAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAIUlEQVR42mPQPq3AsGcTE8NpBW2GTUx7GBS0TzMw7dkEAFjUB5Nn6NaxAAAAAElFTkSuQmCC")
+        2x
+    );
+  }
+  :root[data-theme="cartoon"].dark {
+    --_hatch-bar: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAO0lEQVR42i3IsQ0AIRDEQOsr+ZzuiemALQrtyY6sYaXdnzOzP4SFcBCCMFOYKXQGOgNBCEIQghCEi7AfkMFT8QFAVXwAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-bar-sparse: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAWBAMAAAA2mnEIAAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAASklEQVR42kXIuQ0AIRTEUGsr2ZzuiemAKQr9S+PIeix19+fM7w/zwnwwC/N88Hxwf3J/cn1xfXF+c35z/HD8sDALszALszBfzPsBj+aoA3AlY2oAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-bar-dense: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMBAMAAACkW0HUAAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAALklEQVR42h3HMQ0AIBDAwAYl7O+eGQdUFElvO0Z9m6ueRRnKpUiRIkWKFCmPcj4qIyvV7TQMfQAAAABJRU5ErkJggg==")
+        2x
+    );
+    --_hatch-swatch: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIBAMAAAA2IaO4AAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAKUlEQVR42gXBMQ0AAAwCMIIS/rnnxgGIWotbhczEqsPMoLrBzKBbwcwPRhMQeSHHsZsAAAAASUVORK5CYII=")
+        2x
+    );
+    --_hatch-swatch-sparse: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMBAMAAACkW0HUAAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAALklEQVR42h3HMQ0AIBDAwAYl7O+eGQdUFElvO0Z9m6ueRRnKpUiRIkWKFCmPcj4qIyvV7TQMfQAAAABJRU5ErkJggg==")
+        2x
+    );
+    --_hatch-swatch-dense: image-set(
+      url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGBAMAAAAS4vJ7AAAAMFBMVEUjIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0jIB0xtcWCAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAAIUlEQVR42mPQPq3AsGcTE8NpBW2GTUx7GBS0TzMw7dkEAFjUB5Nn6NaxAAAAAElFTkSuQmCC")
+        2x
+    );
+  }
+  /* draw-doodle-hatches.mjs: end generated block */
+
+  @media (forced-colors: none) {
+    /* Bars: each series' hatch, its flat paint as the fallback. */
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="1"] {
+      fill: url(#ui-hatch-1) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="2"] {
+      fill: url(#ui-hatch-2) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="3"] {
+      fill: url(#ui-hatch-3) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="4"] {
+      fill: url(#ui-hatch-4) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="5"] {
+      fill: url(#ui-hatch-5) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="6"] {
+      fill: url(#ui-hatch-6) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="7"] {
+      fill: url(#ui-hatch-7) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="8"] {
+      fill: url(#ui-hatch-8) var(--_paint);
+    }
+    :root[data-theme="cartoon"]
+      .ui-chart
+      :is(rect, path)[data-part="bar"][data-series="cache-read"] {
+      fill: url(#ui-hatch-cache-read) var(--_paint);
+    }
+    :root[data-theme="cartoon"]
+      .ui-chart
+      :is(rect, path)[data-part="bar"][data-series="cache-write"] {
+      fill: url(#ui-hatch-cache-write) var(--_paint);
+    }
+    :root[data-theme="cartoon"] .ui-chart :is(rect, path)[data-part="bar"][data-series="output"] {
+      fill: url(#ui-hatch-output) var(--_paint);
+    }
+
+    /*
+     * The HTML marks of a series — a timeline bar, a swatch — keep their own paint as their
+     * background (theme.css paints it from `--_paint`) and take a hatch tile over it, the slip at
+     * four fifths of its strength cut by one diagonal line the paint shows through, so the mark
+     * reads as an SVG bar does — its colour's lines over a fifth of it — with no mask or layer of
+     * its own. The tiles are the generated block above (`--_hatch-*`): a palette slot's bar, the
+     * sparse and dense Token kinds', and a swatch's, half as wide on its eight pixels. A swatch
+     * takes a fine ink outline over its tile; a timeline bar's is the tokens' inset ink; a line's
+     * swatch (a dash, a tick) stays a solid stroke.
+     */
+    :root[data-theme="cartoon"] .ui-chart span[data-part="bar"][data-series] {
+      background-image: var(--_hatch-bar);
+    }
+    :root[data-theme="cartoon"] .ui-chart span[data-part="bar"][data-series="cache-read"] {
+      background-image: var(--_hatch-bar-sparse);
+    }
+    :root[data-theme="cartoon"] .ui-chart span[data-part="bar"][data-series="output"] {
+      background-image: var(--_hatch-bar-dense);
+    }
+    :root[data-theme="cartoon"]
+      [data-part="swatch"][data-series]:where(:not([data-shape="dash"], [data-shape="tick"])) {
+      background-image: var(--_hatch-swatch);
+      box-shadow: inset 0 0 0 1px var(--ui-chart-bar-stroke-color);
+    }
+    :root[data-theme="cartoon"]
+      [data-part="swatch"][data-series="cache-read"]:where(
+        :not([data-shape="dash"], [data-shape="tick"])
+      ) {
+      background-image: var(--_hatch-swatch-sparse);
+    }
+    :root[data-theme="cartoon"]
+      [data-part="swatch"][data-series="output"]:where(
+        :not([data-shape="dash"], [data-shape="tick"])
+      ) {
+      background-image: var(--_hatch-swatch-dense);
+    }
+
+    /* The grid: a dashed pencil rule. A ring's track is a grid part too, and stays a ring. */
+    :root[data-theme="cartoon"] .ui-chart line[data-part="grid"] {
+      stroke: var(--ui-line-emphasis);
+      stroke-dasharray: 3 3;
+    }
+
+    /* A point: its series' colour in a ring of the ink. */
+    :root[data-theme="cartoon"] .ui-chart rect[data-part="point"] {
+      stroke: var(--ui-chart-bar-stroke-color);
+      stroke-width: 1px;
+    }
+
+    /* The pen's waver: the data's own strokes — a series line, an axis-break mark. */
+    :root[data-theme="cartoon"] .ui-chart :is(path, polyline)[data-part="series"][fill="none"],
+    :root[data-theme="cartoon"] .ui-chart :is(g, line)[data-part="axis"] {
+      filter: url(#ui-rough);
+    }
+  }
+}

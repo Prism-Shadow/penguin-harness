@@ -7,6 +7,10 @@
  * The line's curve is the theme's (`--ui-chart-curve`), so ChartLine draws in one curve at a
  * time; beside it the three values the token may take are drawn with the same path helper the
  * primitive uses, as a key to what the token chooses.
+ *
+ * Each stage, and the timeline's lanes, is a chart's root (`ui-chart`), so the theme's chart
+ * recipe draws the marks on it as it draws them in the app — Console's dashed grid and square
+ * points, Doodle's hatched bars and pencil grid; the curve key is not a chart and stays plain.
  */
 import type { ReactNode } from "react";
 import {
@@ -52,7 +56,7 @@ const LANES = [
 function Stage({ children, label }: { children: ReactNode; label: string }) {
   return (
     <svg
-      className="lib-stage"
+      className="lib-stage ui-chart"
       viewBox={`0 0 ${W} ${H}`}
       role="img"
       aria-label={label}
@@ -211,7 +215,7 @@ export function ChartPrimitives() {
         </Stage>
       </BoardGroup>
       <BoardGroup title={t.timeline} aside={t.timelineHint}>
-        <div className="lib-stack">
+        <div className="lib-stack ui-chart">
           {LANES.map((lane) => (
             <div key={lane.kind} className="lib-lane">
               <span className="lib-caption lib-lane-label">{t.kinds[lane.kind]}</span>

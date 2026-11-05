@@ -33,7 +33,6 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import {
-  ActivityIcon,
   Button,
   ConfirmModal,
   CopyButton,
@@ -65,11 +64,7 @@ import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import {
-  sessionActivity,
-  sessionActivityLabel,
-  sessionBackgroundTasks,
-} from "../../lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { a2uiDrafts } from "../../lib/a2ui-drafts";
 import {
@@ -89,6 +84,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Truncated } from "../../components/ui/truncated";
 import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
+import { RunStatus } from "./run-status";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import { RequestFailureDialog } from "./request-failure-dialog";
@@ -2378,20 +2374,8 @@ export function ChatPage() {
             <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </Heading>
-            {/* Session-level state: a turning hourglass while the run is active, and nothing at
-                all once it settles — the conversation on screen is by definition read, and the
-                unread dot is a sidebar affordance for the rows you are NOT looking at. The
-                compacting state stays in the stream banner rather than being repeated here.
-                Below sm only the glyph remains so the title keeps its room. */}
-            {headerActivity === "running" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <ActivityIcon
-                  activity={headerActivity}
-                  label={sessionActivityLabel(headerActivity)}
-                />
-                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
-              </span>
-            )}
+            {/* Session-level state: the run indicator (run-status.tsx). */}
+            <RunStatus activity={headerActivity} />
           </div>
 
           {/* Panel switcher (icon-only): pinned triggers + the "create" dropdown with

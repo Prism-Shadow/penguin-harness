@@ -19,14 +19,14 @@
  * The rules §3 leaves to review — two badges per row, spacing steps per kind of child, nesting
  * across components, copy voice — are not here; the frontend skill carries them.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { THEME_IDS, THEME_MODES } from "../src/tokens";
 import {
   DESLOP_CHECKS,
-  DESLOP_RULE_NUMBERS,
   DESLOP_RULES,
+  DESLOP_RULE_NUMBERS,
   LABEL_COMPONENTS,
   PAGE_HEADER_COMPONENTS,
   TABULAR_COMPONENTS,
@@ -38,6 +38,7 @@ import {
   matchesPolicyPath,
   modeDeclarations,
   parseClassToken,
+  readThemeSources,
   scanSourceRoots,
   unscannedRoots,
 } from "../src/testing";
@@ -166,7 +167,7 @@ describe("theme values the rules reach", () => {
     const rel = `themes/${id}.css`;
     const path = join(SRC_DIR, rel);
     const analysis: ThemeFileAnalysis | null = existsSync(path)
-      ? analyzeThemeFile(readFileSync(path, "utf8"), id)
+      ? analyzeThemeFile(readThemeSources(join(SRC_DIR, "themes"), id), id)
       : null;
     return { id, rel, analysis };
   });

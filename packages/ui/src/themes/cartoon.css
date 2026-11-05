@@ -5,21 +5,22 @@
  * warm near-black, a warm white ink), not a neon costume. The idea is looseleaf's ("shadcn/ui,
  * drawn by hand"); nothing of its code, components or font files is used.
  *
- * The drawn line. A box's edge — a boxed button, a text field, the person's own message bubble
- * (`ui-edge`), a card or a code block (`ui-frame`), a dialog, a menu, a popover, a tooltip or the
- * composer (`ui-glass`), a notice (`ui-notice`) and a reply's widget (`ui-widget`) — is a rounded
- * rectangle traced by a pen, drawn once from a fixed seed (`scripts/draw-doodle-edges.mjs`) and
- * laid on the box as a `border-image` 9-slice: the corners keep their drawn shape, the runs
- * between them stretch along the box. Text is never drawn on; nothing is computed per element,
- * so a box shows the same line on every hover, render and scroll. Measured against the other
- * ways to get there (a 500-message transcript scrolled end to end on the test box, raster time):
- * a plain hairline 339 ms, irregular corners with an offset ink shadow 443 ms, this 740 ms, an
- * SVG displacement filter on a pseudo-element 3,095 ms — and the filter cannot reach an
- * `<input>`, which has no pseudo-elements. Main-thread frames held at 16.7 ms in all four. Two
- * sizes (a control's and a surface's) in the light ink and the dark chalk, and the control again
- * in the danger ink for a field that failed validation; an image cannot read a custom property,
- * so the inks are spelled in the images, the theme's line inks. In forced colours the images go
- * and the host's own border returns in the system's colours.
+ * The drawn line (`cartoon/line.css`). Every box — a boxed button, a text field, the person's own
+ * bubble (`ui-edge`), a card, a code block or a tool call (`ui-frame`), a notice (`ui-notice`), a
+ * reply's widget (`ui-widget`) and whatever floats (`ui-glass`) — is edged by one outline traced
+ * by a pen from a fixed seed (`scripts/draw-doodle-edges.mjs`), and its fill ends exactly under
+ * that line: a control's, a bubble's or a notice's own background is clipped to the outline by a
+ * `clip-path: shape()` whose points stretch as the line's 9-slice stretches, a card's or a code
+ * block's takes the CSS corner the script finds stays under the pen, and a floating slip is
+ * painted by one image holding its fill, its line and a soft shadow. Text is never drawn on and nothing is
+ * computed per element, so a box shows the same line on every hover, render, scroll and resize.
+ * Measured on the test box against the other ways to get there (a 500-message transcript scrolled
+ * end to end, raster time): a plain hairline 638 ms, round 1's line over a CSS rounded fill
+ * 1,300 ms, this 1,282 ms, one inline SVG per box 1,663 ms, the fill baked into every box's image
+ * 1,828 ms, a matching mask 2,023 ms. Focus is drawn inside the line, a focused field redrawn in
+ * the ballpoint blue; in forced colours the line goes and the host's own border returns.
+ * `cartoon/marks.css` draws the paper marks the section partials place: a highlighter band, a blue
+ * pencil bracket, a pencil rule.
  *
  * Status of each group:
  * - Surfaces: paper `#f6f1e7`, slip `#fcf9f2`, pad `#f3ede3`; dark `#1c1a17` / `#23201d` /
@@ -38,19 +39,38 @@
  * - Type: Shantell Sans (a marker hand, legible at the 13–14px rungs) for chrome and reading
  *   alike, LXGW WenKai GB Screen for Han, JetBrains Mono for code (`fonts/cartoon.css`). Titles
  *   take the bold cut; the eyebrow is sentence case.
- * - Shape and depth: small corners under the drawn line (the line draws its own), no shadow on
- *   a card, and a soft paper shadow under what floats (a sheet lifted off the desk) — never a
- *   glow. A selected row keeps the host's ink wash, pencil shading on paper.
+ * - Shape and depth: the drawn line makes the corners; no shadow on a boxed thing, and a soft
+ *   paper shadow, drawn into the floating slip's own image, under what floats (a sheet lifted off
+ *   the desk) — never a glow, never a filter. A selected row — the navigation column's, the open
+ *   folder on the start page, a dialog's open page — takes the highlighter band in place of the
+ *   host's ink wash, with a blue pencil bracket in the sidebar's margin; a hovered row keeps the
+ *   ink wash, pencil shading on paper.
  * - What stays plain: code and diffs (their contents and highlighting), the terminal's screen,
- *   charts' data colours (bars only take an ink outline, lines round joins), icons (the line
- *   set), work steps and trees (Primer's), motion (Primer's quick fades: no spring, no wobble).
- *   No paper texture, stickers, stamps or doodles.
+ *   icons (the line set) and motion (Primer's quick fades: no spring, no wobble). A section that
+ *   looks different here says how in its own partial; the paper props it may draw (ruled paper,
+ *   corner ticks, the highlighter band, stamp rings, hatching) are the spec's closed list, under
+ *   this theme only, flat and still. No paper texture, stickers, tape or tilt.
  *
- * Shape of the file, as every theme's: one `@layer ui-theme` block with the base rule (every
- * name in tokens.ts, in its group order, with its light value, after the gray bridge), the dark
- * rule (only what dark changes), then this theme's style-hook recipes; then one `@layer
- * ui-accent` block with the theme's presets.
+ * Shape of the file: the imports of its recipe partials (`cartoon/`: the line and the marks first,
+ * then one partial per section), one `@layer ui-theme` block with the base rule (every name in
+ * tokens.ts, in its group order, with its light value, after the gray bridge) and the dark rule
+ * (only what dark changes), then one `@layer ui-accent` block with the theme's presets. The
+ * partials' own rules sit in `ui-theme` too; the custom properties they declare start with `--_`,
+ * private to the recipes and not tokens.
  */
+@import "./cartoon/line.css";
+@import "./cartoon/marks.css";
+@import "./cartoon/run.css";
+@import "./cartoon/shell.css";
+@import "./cartoon/chat.css";
+@import "./cartoon/empty.css";
+@import "./cartoon/library.css";
+@import "./cartoon/start.css";
+@import "./cartoon/forms.css";
+@import "./cartoon/overlays.css";
+@import "./cartoon/charts.css";
+@import "./cartoon/ledger.css";
+
 @layer ui-theme {
   :root[data-theme="cartoon"] {
     /* ---- Gray bridge: a warm ramp from paper to ink. white = the slip. ---- */
@@ -511,113 +531,6 @@
     --ui-scrollbar-thumb: rgb(230 223 209 / 0.22);
     --ui-scrollbar-thumb-hover: rgb(230 223 209 / 0.38);
   }
-
-  /*
-   * The drawn line, as `scripts/draw-doodle-edges.mjs` prints it: a control's outline (a 9px
-   * corner region) and a surface's (14px), in the light ink and the dark chalk, and the control
-   * in the danger ink for a field that failed validation. A box with a drawn edge keeps a solid
-   * 1px border for the image to paint on (the host's own, or one given here for a host that has
-   * none) and its fill inside the line, so no corner of the fill shows past the pen's. A control
-   * is a button or a text field; a bubble, a card, a dialog, a menu, a popover, a tooltip, the
-   * composer, a notice and a widget are surfaces. A plugin tile and the navigation backdrop are
-   * glass with a job of their own and keep their host's look, and the public site's chrome
-   * (`.site-ui`), which the gallery shows above the app, keeps its own fixed one.
-   *
-   * The rules are ordered by weight, `:where()` keeping each one's at the step it needs: a
-   * surface, then the dark surface, then a control (which beats the dark surface by coming
-   * later), the dark control, the danger control in each mode, and last a frame inside a frame
-   * (a code block in a tool call, a table in a card), which keeps a pencil hairline — one drawn
-   * box per region, as one bordered surface per region elsewhere.
-   */
-  :root[data-theme="cartoon"]
-    :where(.ui-edge, .ui-frame, .ui-glass:not([data-glass]), .ui-notice, .ui-widget):where(
-      :not(.site-ui, .site-ui *)
-    ) {
-    border-style: solid;
-    border-width: 1px;
-    background-clip: padding-box;
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M7.77 0.8L14.27 0.62L20.99 1.31L26.83 1.2L33.24 0.74L40 0.71L43.39 2.14L45.94 4.57L46.86 8L47.02 8.13L46.9 14.38L47.15 20.71L46.66 27.41L47.25 33.18L46.8 40L45.74 43.31L43.54 46.13L40 46.55L39.88 47.38L33.88 47.21L27.62 46.59L20.68 47.25L13.98 46.74L8 47.36L4.66 45.78L2.13 43.39L0.63 40L1.23 40.39L1.2 33.29L0.97 27.28L1.06 20.72L0.78 14.51L1.04 8L2.33 4.73L4.37 1.71L8 1.36ZM5 1.5L11.5 0.8' fill='none' stroke='%23352e29' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      14 / 14px / 0 stretch;
-  }
-  :root[data-theme="cartoon"].dark
-    :where(.ui-edge, .ui-frame, .ui-glass:not([data-glass]), .ui-notice, .ui-widget):where(
-      :not(.site-ui, .site-ui *)
-    ) {
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M7.77 0.8L14.27 0.62L20.99 1.31L26.83 1.2L33.24 0.74L40 0.71L43.39 2.14L45.94 4.57L46.86 8L47.02 8.13L46.9 14.38L47.15 20.71L46.66 27.41L47.25 33.18L46.8 40L45.74 43.31L43.54 46.13L40 46.55L39.88 47.38L33.88 47.21L27.62 46.59L20.68 47.25L13.98 46.74L8 47.36L4.66 45.78L2.13 43.39L0.63 40L1.23 40.39L1.2 33.29L0.97 27.28L1.06 20.72L0.78 14.51L1.04 8L2.33 4.73L4.37 1.71L8 1.36ZM5 1.5L11.5 0.8' fill='none' stroke='%23d9d1c1' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      14 / 14px / 0 stretch;
-  }
-  :root[data-theme="cartoon"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
-  :root[data-theme="cartoon"] .ui-edge:where(:has(> :is(input, textarea))) {
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M5.76 1.21L8.97 1.32L12.59 0.87L15.6 0.75L18.4 1.33L22 1.43L24.33 1.96L26.33 3.5L27.14 6L26.68 6.31L26.98 9.1L27.34 12.02L27.43 15.47L27.23 18.9L27.1 22L26.31 24.49L24.74 26.75L22 26.95L22 26.75L18.6 27.27L15.32 26.92L12.83 26.77L9.55 26.8L6 26.97L3.6 26.15L1.33 24.69L0.97 22L0.9 22.09L0.64 18.49L0.62 15.28L1.26 12.21L0.64 9.16L1.35 6L1.79 3.57L3.75 2.1L6 0.83ZM3 1.5L9.5 0.8' fill='none' stroke='%23352e29' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      9 / 9px / 0 stretch;
-  }
-  :root[data-theme="cartoon"].dark
-    :where(button, input, textarea, select, [role="combobox"]).ui-edge,
-  :root[data-theme="cartoon"].dark .ui-edge:where(:has(> :is(input, textarea))) {
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M5.76 1.21L8.97 1.32L12.59 0.87L15.6 0.75L18.4 1.33L22 1.43L24.33 1.96L26.33 3.5L27.14 6L26.68 6.31L26.98 9.1L27.34 12.02L27.43 15.47L27.23 18.9L27.1 22L26.31 24.49L24.74 26.75L22 26.95L22 26.75L18.6 27.27L15.32 26.92L12.83 26.77L9.55 26.8L6 26.97L3.6 26.15L1.33 24.69L0.97 22L0.9 22.09L0.64 18.49L0.62 15.28L1.26 12.21L0.64 9.16L1.35 6L1.79 3.57L3.75 2.1L6 0.83ZM3 1.5L9.5 0.8' fill='none' stroke='%23d9d1c1' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      9 / 9px / 0 stretch;
-  }
-  :root[data-theme="cartoon"] .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M5.76 1.21L8.97 1.32L12.59 0.87L15.6 0.75L18.4 1.33L22 1.43L24.33 1.96L26.33 3.5L27.14 6L26.68 6.31L26.98 9.1L27.34 12.02L27.43 15.47L27.23 18.9L27.1 22L26.31 24.49L24.74 26.75L22 26.95L22 26.75L18.6 27.27L15.32 26.92L12.83 26.77L9.55 26.8L6 26.97L3.6 26.15L1.33 24.69L0.97 22L0.9 22.09L0.64 18.49L0.62 15.28L1.26 12.21L0.64 9.16L1.35 6L1.79 3.57L3.75 2.1L6 0.83ZM3 1.5L9.5 0.8' fill='none' stroke='%23b3261e' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      9 / 9px / 0 stretch;
-  }
-  :root[data-theme="cartoon"].dark
-    .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
-    border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M5.76 1.21L8.97 1.32L12.59 0.87L15.6 0.75L18.4 1.33L22 1.43L24.33 1.96L26.33 3.5L27.14 6L26.68 6.31L26.98 9.1L27.34 12.02L27.43 15.47L27.23 18.9L27.1 22L26.31 24.49L24.74 26.75L22 26.95L22 26.75L18.6 27.27L15.32 26.92L12.83 26.77L9.55 26.8L6 26.97L3.6 26.15L1.33 24.69L0.97 22L0.9 22.09L0.64 18.49L0.62 15.28L1.26 12.21L0.64 9.16L1.35 6L1.79 3.57L3.75 2.1L6 0.83ZM3 1.5L9.5 0.8' fill='none' stroke='%23ff8f7f' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-      9 / 9px / 0 stretch;
-  }
-  :root[data-theme="cartoon"] .ui-frame .ui-frame {
-    border-color: var(--ui-line);
-    border-image: none;
-  }
-  /* Forced colours: the image goes and the host's border returns in the system's colours. */
-  @media (forced-colors: active) {
-    :root[data-theme="cartoon"] :is(.ui-edge, .ui-frame, .ui-glass, .ui-notice, .ui-widget),
-    :root[data-theme="cartoon"].dark :is(.ui-edge, .ui-frame, .ui-glass, .ui-notice, .ui-widget) {
-      border-image: none;
-    }
-  }
-
-  /* What floats is an opaque slip of paper with a soft shadow: no frost, a small corner. */
-  :root[data-theme="cartoon"] .ui-glass:not([data-glass], .site-ui) {
-    background-color: var(--ui-overlay);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  :root[data-theme="cartoon"] .ui-glass[role="dialog"] {
-    border-radius: var(--ui-radius-lg);
-  }
-
-  /* The app window: the pad beside the paper, ruled off by one pencil line; the selected row
-     keeps the host's ink wash, which reads as pencil shading on paper. */
-  :root[data-theme="cartoon"] .ui-shell {
-    background-color: var(--ui-shell-field);
-  }
-  :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] {
-    background-color: var(--ui-shell-nav-bg);
-    border-color: var(--ui-shell-line);
-  }
-  :root[data-theme="cartoon"] .ui-shell > [data-slot="main"] {
-    background-color: var(--ui-shell-main-bg);
-  }
-
-  /* Tabs: the host's marker, in the accent. */
-  :root[data-theme="cartoon"] .ui-underline-nav [role="tab"][aria-selected="true"] {
-    border-bottom-color: var(--ui-accent);
-  }
-
-  /* Charts: pen strokes end round. */
-  :root[data-theme="cartoon"] .ui-chart :is(path, polyline, line)[data-part="series"] {
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  /*
-   * The other hooks keep the host's look, as in Primer: the eyebrow and the display title take
-   * the shared rules in theme.css on this file's rungs; `ui-live`, `ui-tree`, `ui-field`,
-   * `ui-activity`, `ui-scrim`, `ui-stream` and `ui-icon-decor` are no-ops; `ui-glyph` shows the
-   * line set theme.css shows by default, at this file's stroke.
-   */
 }
 
 /*

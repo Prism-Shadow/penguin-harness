@@ -1,0 +1,32 @@
+/**
+ * Doodle's paper marks, drawn by `scripts/draw-doodle-edges.mjs` (the generated block below) for
+ * the section partials to place. Each is an image in the mode's ink, because an image cannot read
+ * a custom property; none moves, and none is a gradient.
+ *
+ * - `--_mark-highlight`: a highlighter band (40 × 18, ragged ends), translucent yellow — under
+ *   the running label, the selected row, the open folder, a page title. Laid as a 3-slice band
+ *   on a pseudo-element with `border-style: solid; border-width: 0 12px`:
+ *     border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+ *   In light it multiplies into the paper (`mix-blend-mode: multiply`), so the ink stays ink.
+ * - `--_mark-bracket`: a ballpoint-blue pencil `[` (8 × 24) in a selected row's margin, laid
+ *   with `border-style: solid; border-width: 8px 0`:
+ *     border-image: var(--_mark-bracket) 8 0 fill / 8px 0 / 0 stretch;
+ * - `--_rule-pencil-v` / `--_rule-pencil-h`: a pencil rule wobbling over a 40 px tile, to repeat
+ *   down a column's edge (4 × 40, `repeat-y`) or along a row (40 × 4, `repeat-x`).
+ */
+@layer ui-theme {
+  /* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
+  :root[data-theme="cartoon"] {
+    --_mark-highlight: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='18'%3E%3Cpath d='M2.5 4.6L12 3.4L28 3.9L37.2 3.1L38.6 7L37.4 11.2L38.9 14.6L28 14.9L12 14.3L1.4 15.2L2.8 10.6L1.2 7.4Z' fill='%23f2d34f' fill-opacity='0.5'/%3E%3C/svg%3E");
+    --_mark-bracket: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='24'%3E%3Cpath d='M6.6 1.4L3.4 1.9L2.3 4.6L2.4 8L2.4 16L2.2 19.5L3.1 22.2L6.4 22.7' fill='none' stroke='%232c4f9e' stroke-opacity='0.85' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --_rule-pencil-v: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='40'%3E%3Cpath d='M2 0L2.3 5L1.9 10L2.3 15L2 20L1.7 25L1.9 30L2.2 35L2 40' fill='none' stroke='%23a69a87' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+    --_rule-pencil-h: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='4'%3E%3Cpath d='M0 2L5 2.3L10 1.9L15 2.3L20 2L25 1.7L30 1.9L35 2.2L40 2' fill='none' stroke='%23a69a87' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="cartoon"].dark {
+    --_mark-highlight: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='18'%3E%3Cpath d='M2.5 4.6L12 3.4L28 3.9L37.2 3.1L38.6 7L37.4 11.2L38.9 14.6L28 14.9L12 14.3L1.4 15.2L2.8 10.6L1.2 7.4Z' fill='%23f2d34f' fill-opacity='0.28'/%3E%3C/svg%3E");
+    --_mark-bracket: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='24'%3E%3Cpath d='M6.6 1.4L3.4 1.9L2.3 4.6L2.4 8L2.4 16L2.2 19.5L3.1 22.2L6.4 22.7' fill='none' stroke='%2393b6ee' stroke-opacity='0.85' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --_rule-pencil-v: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='40'%3E%3Cpath d='M2 0L2.3 5L1.9 10L2.3 15L2 20L1.7 25L1.9 30L2.2 35L2 40' fill='none' stroke='%236a6257' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+    --_rule-pencil-h: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='4'%3E%3Cpath d='M0 2L5 2.3L10 1.9L15 2.3L20 2L25 1.7L30 1.9L35 2.2L40 2' fill='none' stroke='%236a6257' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  /* draw-doodle-edges.mjs: end generated block */
+}

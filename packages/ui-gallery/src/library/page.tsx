@@ -10,8 +10,13 @@
  * so the app's panels do not take the frame's own growth for a window resize and close; the
  * growth itself is heard back through the guard and measured once more, since a dialog's body
  * opens up to the taller viewport and the panel may then need a little more.
+ *
+ * A board renders the app's components without the app's window, so the page mounts the chart
+ * patterns and filter (`ChartDefs`) that the window would: a theme's chart recipe finds them here
+ * as it does in the app.
  */
 import { useEffect, useRef } from "react";
+import { ChartDefs } from "@prismshadow/penguin-ui";
 import { BOARDS } from "./boards";
 import { LIBRARY_HEIGHT_MESSAGE } from "./frame";
 import { measureFrameHeight } from "./frame-height";
@@ -70,6 +75,7 @@ export function LibraryBoardPage({ topic }: { topic: TopicId }) {
 
   return (
     <main ref={page} className="lib-page" data-topic={topic}>
+      <ChartDefs />
       <Board />
     </main>
   );

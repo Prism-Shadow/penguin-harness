@@ -20,6 +20,13 @@ describe("StatTile", () => {
     expect(html.indexOf("$12")).toBeLessThan(html.indexOf("of $40"));
   });
 
+  it("sets its one reading apart as a ledger tile: the label over the figure", () => {
+    const html = renderStatic(createElement(StatTile, { label: "Spend", value: "$12" }));
+    expect(html).toMatch(/^<div data-wallpaper-surface="panel" class="ui-ledger /);
+    expect(html).toMatch(/<div data-slot="tile"><p data-slot="label"[^>]*>.*Spend/);
+    expect(html).toMatch(/<p data-slot="figure"[^>]*>\$12<\/p>/);
+  });
+
   it("inks the glyph and the value in the tone, and nothing without one", () => {
     const toned = renderStatic(
       createElement(StatTile, { icon: "M4 4h16", label: "Alerts", value: 2, tone: "danger" }),

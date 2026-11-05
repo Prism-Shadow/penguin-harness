@@ -29,10 +29,19 @@
  * theme's own ink for the mode, whose pairing with every preset the contrast suite measures.
  * Primer's presets set all six literally (the app's pixels are pinned), which satisfies this
  * trivially.
+ *
+ * A theme file may split its style-hook recipes into partials it `@import`s by relative path
+ * (Doodle's `themes/cartoon/*.css`). {@link readThemeSources} reads the file and its partials in
+ * cascade order, and the analysis takes them as one theme, so a token a partial declares is seen
+ * and checked like the file's own. A custom property whose name starts with `--_` is private to
+ * the recipes (theme.css's own convention: a tone's resolved ink, a tree row's depth, a drawn
+ * edge's image) and is not a token: the analysis skips it wherever it is declared.
  */
+import { readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { DEFAULT_THEME_ID, THEME_MODES, TOKEN_GROUPS, TOKEN_NAMES } from "../tokens";
 import type { ThemeId, ThemeModeName } from "../tokens";
-import { parseCssRules, selectorList } from "./css";
+import { parseCssRules, selectorList, stripCssComments } from "./css";
 import type { CssDeclaration } from "./css";
 
 /** The layer every theme block lives in, so a user accent preset (`@layer ui-accent`) beats it. */
@@ -55,6 +64,36 @@ export const GRAY_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
 export const STUB_MARKER = "Stub:";
 
 const CONTRACT = new Set<string>(TOKEN_NAMES);
+
+/** A recipe's private custom property, which is not a token. */
+const PRIVATE_PROPERTY = /^--_/;
+
+/** One stylesheet of a theme: where it lives, for the messages, and its text. */
+export interface ThemeSource {
+  readonly file: string;
+  readonly css: string;
+}
+
+/** A relative `@import` (a partial beside the theme file); package imports are not partials. */
+const PARTIAL_IMPORT = /@import\s+["'](\.{1,2}\/[^"']+)["']/g;
+
+/**
+ * The stylesheets of one theme in the order the cascade reads them: each partial the file imports
+ * by relative path — its own partials first — and then the file itself. `file` is the path
+ * relative to `themesDir`.
+ */
+export function readThemeSources(themesDir: string, themeId: ThemeId): ThemeSource[] {
+  const sources: ThemeSource[] = [];
+  const visit = (path: string) => {
+    const css = readFileSync(path, "utf8");
+    for (const match of stripCssComments(css).matchAll(PARTIAL_IMPORT)) {
+      visit(join(dirname(path), match[1]!));
+    }
+    sources.push({ file: relative(themesDir, path).split("\\").join("/"), css });
+  };
+  visit(join(themesDir, `${themeId}.css`));
+  return sources;
+}
 
 /** The canonical selector list of a theme's rule for one mode. */
 export function themeSelectors(themeId: ThemeId, mode: ThemeModeName): string[] {
@@ -109,16 +148,30 @@ function presetOf(selectors: readonly string[]): string | null {
   return id !== undefined && id !== "" && rest.length === 0 ? id : null;
 }
 
-export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalysis {
-  const rules = parseCssRules(css);
+/**
+ * Reads a theme: one file's text, or the file and its partials ({@link readThemeSources}), whose
+ * problems then name the file they are in.
+ */
+export function analyzeThemeFile(
+  input: string | readonly ThemeSource[],
+  themeId: ThemeId,
+): ThemeFileAnalysis {
+  const sources: readonly ThemeSource[] =
+    typeof input === "string" ? [{ file: "", css: input }] : input;
+  const rules = sources.flatMap((source) =>
+    parseCssRules(source.css).map((rule) => ({ rule, file: source.file })),
+  );
   const modes = { light: new Map<string, string>(), dark: new Map<string, string>() };
-  const firstLine = { light: new Map<string, number>(), dark: new Map<string, number>() };
+  const firstLine = { light: new Map<string, string>(), dark: new Map<string, string>() };
   const accents = new Map<string, { light: Map<string, string>; dark: Map<string, string> }>();
   const structure: string[] = [];
   let declaresTokens = false;
 
-  for (const rule of rules) {
-    const custom = rule.declarations.filter((d: CssDeclaration) => d.name.startsWith("--"));
+  for (const { rule, file } of rules) {
+    const at = (line: number) => (file === "" ? `line ${line}` : `${file} line ${line}`);
+    const custom = rule.declarations.filter(
+      (d: CssDeclaration) => d.name.startsWith("--") && !PRIVATE_PROPERTY.test(d.name),
+    );
     if (rule.declarations.some((d) => d.name.startsWith("--ui-"))) declaresTokens = true;
     if (custom.length === 0) continue;
     const selectors = selectorList(rule.selector);
@@ -128,7 +181,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       const mode = THEME_MODES.find((m) => sameSet(selectors, accentSelectors(themeId, preset, m)));
       if (mode === undefined) {
         structure.push(
-          `line ${rule.line}: \`${rule.selector}\` declares ${custom[0]!.name} — a preset's rules are ` +
+          `${at(rule.line)}: \`${rule.selector}\` declares ${custom[0]!.name} — a preset's rules are ` +
             `${THEME_MODES.map((m) => `\`${accentSelectors(themeId, preset, m).join(", ")}\``).join(" / ")}`,
         );
         continue;
@@ -138,7 +191,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       if (!layered) {
         const where = [...rule.atRules, ...rule.parents].join(" › ") || "top level";
         structure.push(
-          `line ${rule.line}: the ${preset} preset's ${mode} rule sits in ${where}; it must sit ` +
+          `${at(rule.line)}: the ${preset} preset's ${mode} rule sits in ${where}; it must sit ` +
             `directly in \`${ACCENT_LAYER}\` so it overrides the theme's dark rule by layer order`,
         );
       }
@@ -146,7 +199,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       for (const declaration of custom) {
         if (entry[mode].has(declaration.name)) {
           structure.push(
-            `line ${declaration.line}: ${declaration.name} is declared again for the ${preset} preset (${mode}); the later one silently wins`,
+            `${at(declaration.line)}: ${declaration.name} is declared again for the ${preset} preset (${mode}); the later one silently wins`,
           );
         }
         entry[mode].set(declaration.name, declaration.value);
@@ -158,7 +211,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
     const mode = THEME_MODES.find((m) => sameSet(selectors, themeSelectors(themeId, m)));
     if (mode === undefined) {
       structure.push(
-        `line ${rule.line}: \`${rule.selector}\` declares ${custom[0]!.name} — tokens belong in the ` +
+        `${at(rule.line)}: \`${rule.selector}\` declares ${custom[0]!.name} — tokens belong in the ` +
           `canonical rules (${THEME_MODES.map((m) => `\`${themeSelectors(themeId, m).join(", ")}\``).join(" / ")})`,
       );
       continue;
@@ -166,7 +219,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
     if (rule.parents.length > 0 || rule.atRules.length !== 1 || rule.atRules[0] !== THEME_LAYER) {
       const where = [...rule.atRules, ...rule.parents].join(" › ") || "top level";
       structure.push(
-        `line ${rule.line}: the ${mode} rule sits in ${where}; it must sit directly in \`${THEME_LAYER}\` ` +
+        `${at(rule.line)}: the ${mode} rule sits in ${where}; it must sit directly in \`${THEME_LAYER}\` ` +
           `so the user's accent presets (\`@layer ui-accent\`) override it`,
       );
     }
@@ -174,9 +227,9 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       const seen = firstLine[mode].get(declaration.name);
       if (seen !== undefined) {
         structure.push(
-          `line ${declaration.line}: ${declaration.name} is declared again for ${mode} (first at line ${seen}); the later one silently wins`,
+          `${at(declaration.line)}: ${declaration.name} is declared again for ${mode} (first at ${seen}); the later one silently wins`,
         );
-      } else firstLine[mode].set(declaration.name, declaration.line);
+      } else firstLine[mode].set(declaration.name, at(declaration.line));
       modes[mode].set(declaration.name, declaration.value);
     }
   }
@@ -186,7 +239,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
     modes,
     accents,
     declaresTokens,
-    isStub: !declaresTokens && css.includes(STUB_MARKER),
+    isStub: !declaresTokens && sources.some((source) => source.css.includes(STUB_MARKER)),
     structure,
   };
 }

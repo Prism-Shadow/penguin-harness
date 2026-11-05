@@ -1,0 +1,72 @@
+/**
+ * Doodle's ledgers (`ui-ledger`): a reading of figures — the usage page's three summary cards,
+ * a company KPI tile, a Benchmark card's score — set down as a receipt slip. Nothing is added to
+ * what the host writes; the slip is how its label and figure are drawn.
+ *
+ * - The slip is the drawn frame: a summary card is a card and has it already; a tile that boxes
+ *   itself (`StatTile`, the host's own bordered box) takes the same pen line, its fill clipped to
+ *   it. A Benchmark card's score sits inside its card and draws no box of its own.
+ * - A row's label is in pencil, its figure in the bold cut, and a dotted pencil leader runs
+ *   between them, as a receipt carries the eye from an item to its price. The last row of a
+ *   summary card is its cost, a sum of money, written in the ballpoint blue.
+ * - A tile's figure, and a Benchmark card's score, take the bold cut too; a label that carries a
+ *   judgement in its colour (a score that moved up or down) keeps that colour.
+ * - A slip's title has a short pencil stroke under it.
+ *
+ * In forced colours the drawn frame and the pencil stroke go (the rules that draw them sit in
+ * `forced-colors: none`); the leader is a dotted border, which the system colours.
+ */
+@layer ui-theme {
+  /* A row: label, leader, figure. The leader is an empty flex item between the two, its dotted
+     edge on the row's baseline (an item with no text sits its bottom edge there). */
+  :root[data-theme="cartoon"] .ui-ledger [data-slot="row"] > [data-slot="label"] {
+    color: var(--ui-fg-muted);
+  }
+  :root[data-theme="cartoon"] .ui-ledger [data-slot="row"]::after {
+    content: "";
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0.75rem;
+    border-bottom: 1px dotted var(--ui-line-emphasis);
+  }
+  :root[data-theme="cartoon"] .ui-ledger [data-slot="row"] > [data-slot="figure"] {
+    order: 2;
+  }
+  :root[data-theme="cartoon"] .ui-ledger [data-slot="figure"] {
+    font-family: var(--ui-font-sans);
+    font-weight: 700;
+  }
+  :root[data-theme="cartoon"] .ui-ledger [data-slot="row"]:last-child > [data-slot="figure"] {
+    color: var(--ui-fg-link);
+  }
+
+  @media (forced-colors: none) {
+    /* A slip's title, with a short pencil stroke under it in the gap below. */
+    :root[data-theme="cartoon"] .ui-ledger :is(h2, h3, h4) {
+      position: relative;
+    }
+    :root[data-theme="cartoon"] .ui-ledger :is(h2, h3, h4)::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -0.3125rem;
+      width: 2.5rem;
+      height: 4px;
+      background: var(--_rule-pencil-h) left center / 2.5rem 4px no-repeat;
+      pointer-events: none;
+    }
+
+    /* A tile that boxes itself: the pen line, as a card's. (A ledger that is a card already has
+       the frame's line.) */
+    :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]):not(.ui-frame) {
+      border-image: var(--_stroke-surface) 14 / 14px / 0 stretch;
+    }
+    @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+      :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]):not(.ui-frame) {
+        border-radius: 0;
+        background-clip: border-box;
+        clip-path: var(--_clip-surface);
+      }
+    }
+  }
+}

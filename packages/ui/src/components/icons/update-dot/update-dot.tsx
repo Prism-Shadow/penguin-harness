@@ -85,14 +85,15 @@ export function UpdateDot({
  * against its own background, which every tone's tint and ink are held to in every theme. The
  * attention tone paints it: being behind is unfinished work waiting on someone, not a failure,
  * and red stays for what failed or destroys. The words on it, not the colour, say what is new.
- * Hover deepens the tint toward the ink.
+ * Hover deepens the tint toward the ink. Like a badge it carries the `ui-edge` hook, so a theme
+ * that draws a badge's edge draws this one's too.
  */
 export function UpdatePill({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-attention-bg px-1.5 py-px text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] text-tone-attention-fg ring-[length:var(--ui-badge-soft-ring)] ring-inset ring-tone-attention-line transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-attention-bg),var(--ui-tone-attention-fg)_12%)]"
+      className="ui-edge inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] bg-tone-attention-bg px-1.5 py-px text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] text-tone-attention-fg ring-[length:var(--ui-badge-soft-ring)] ring-inset ring-tone-attention-line transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--ui-tone-attention-bg),var(--ui-tone-attention-fg)_12%)]"
     >
       {children}
     </button>

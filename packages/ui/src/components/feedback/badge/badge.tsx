@@ -23,7 +23,8 @@
  * md padding (`--ui-badge-pad-md`, which Console sets to the sm padding, one tag size) and the
  * type (`--ui-badge-size` on a fixed `--ui-badge-lh`, a step under the theme's small rung) are
  * the theme's too. No theme draws a tint and a rule on one tag: the ring is 0px wherever the
- * tint is not transparent.
+ * tint is not transparent. A badge, and a count, carries the `ui-edge` hook, so a theme that
+ * draws its boxes' edges by hand draws the capsule's too.
  *
  * `Count` is the numeric form: a neutral soft sm badge holding a number in tabular figures, so a
  * count that ticks up does not jitter its row.
@@ -111,7 +112,7 @@ export function Badge({
       {...(id !== undefined ? { id } : {})}
       // The sentence says what the word cannot, so it shows over the word in full.
       {...(tooltip !== undefined ? { "data-tooltip": tooltip, "data-tooltip-extra": true } : {})}
-      className={badgeClass(tone, variant, size)}
+      className={`ui-edge ${badgeClass(tone, variant, size)}`}
     >
       {children}
     </span>
@@ -127,7 +128,7 @@ export function Count({
   max?: number;
 }) {
   return (
-    <span className={`${badgeClass("neutral", "soft", "sm")} tabular-nums`}>
+    <span className={`ui-edge ${badgeClass("neutral", "soft", "sm")} tabular-nums`}>
       {max !== undefined && n > max ? `${max}+` : n}
     </span>
   );
