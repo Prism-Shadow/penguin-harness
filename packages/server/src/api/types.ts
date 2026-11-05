@@ -4818,7 +4818,11 @@ export interface AgentArchiveSessionRef {
 
 /** What an export with these parts would hold, before it is downloaded. */
 export interface AgentArchivePreview {
-  /** Per selected part (an unselected one reads zero); workbenches counts their data too when it is selected. */
+  /**
+   * The zip entries of each selected part, and their bytes (an unselected one reads zero): every
+   * file the part puts in the zip, memory's indexes and markers included; workbenches count their
+   * data too when it is selected.
+   */
   parts: Record<Exclude<AgentArchivePart, "traces">, { files: number; bytes: number }>;
   traces: {
     sessions: number;
@@ -4847,6 +4851,7 @@ export interface AgentArchiveImportResponse {
   imported: {
     skills: number;
     hooks: number;
+    /** Memories as the Agent card's `memoryCount` counts them: topic files, not indexes or markers. */
     memoryFiles: number;
     workbenches: number;
     schedules: number;

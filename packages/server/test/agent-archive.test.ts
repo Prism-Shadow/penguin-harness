@@ -12,8 +12,9 @@
  * - Given part flags, the preview reports per part the files and bytes the zip then holds.
  * - Given a malformed parts query, the export and the preview answer 400.
  * - Given an export imported under a new id, the new Agent has the same skills, hooks, memory
- *   files, workbench and version, and the import names the vault keys and the blanked token as
- *   what to fill.
+ *   files, workbench and version, the import counts the memories it brought as the Agent card
+ *   does (topic files, not indexes or Workspace markers), and it names the vault keys and the
+ *   blanked token as what to fill.
  * - Given a taken id without overwrite, the import is 409 `agent_exists` naming the id, whether
  *   the id came from the query or the manifest, and the Agent is as it was.
  * - Given a member's overwrite, the answer is 403.
@@ -183,6 +184,9 @@ describe("Agent archive", () => {
       "hooks/guard/hooks.json": HOOKS_JSON,
       "hooks/guard/stop.mjs": "process.exit(0);\n",
       "memory/user/topic.md": "remembered\n",
+      "memory/ws-0123abcd/.workspace": "/tmp/project\n",
+      "memory/ws-0123abcd/MEMORY.md": "- [Build](build.md)\n",
+      "memory/ws-0123abcd/build.md": "how to build\n",
       "workbenches/todo/package.json": '{"name":"todo","penguin":{"modules":["index.ts"]}}',
       "workbenches/todo/index.ts": "export default {};\n",
       "workbenches/todo/state.json": '{"items":1}',
@@ -346,6 +350,8 @@ describe("Agent archive", () => {
     });
     expect(body.toFill.sort()).toEqual(["GH_KEY", "OTHER", "mcp:github:env:GITHUB_TOKEN"]);
     const source = await card("source_agent");
+    // Memories counted as the card counts them: two topic files, not their indexes or marker.
+    expect(body.imported.memoryFiles).toBe(source!.memoryCount);
     expect(body.agent).toMatchObject({
       agentId: "copy_agent",
       name: "Notes Agent",

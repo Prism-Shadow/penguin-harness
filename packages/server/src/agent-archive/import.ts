@@ -45,6 +45,7 @@ import type { TraceIndex, Traces } from "../mechanisms/traces.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import { packageStateVersion, VAULT_BASENAME } from "../services/agent-state-layout.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "../services/ids.js";
+import { countMemoryTopics } from "../services/memory-service.js";
 import { removeLeftovers } from "../workbenches/leftovers.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { ensureWorkbenchLinkTarget } from "../workbenches/migrate-state.js";
@@ -157,12 +158,6 @@ async function sniff(file: string): Promise<"zip" | "tar.gz"> {
   throw badRequest("The file is neither a zip nor a .tar.gz Agent State package.");
 }
 
-/** Files under `dir`, recursively; 0 when there is none. */
-async function countFiles(dir: string): Promise<number> {
-  const entries = await fs.readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isFile()).length;
-}
-
 /** What the archive brings, per part, counted in staging (before the State moves in). */
 async function importedCounts(
   staged: StagedArchive,
@@ -174,7 +169,8 @@ async function importedCounts(
   return {
     skills: parts.skills ? counts.skills : 0,
     hooks: parts.hooks ? counts.hooks : 0,
-    memoryFiles: parts.memory ? await countFiles(path.join(state, "memory")) : 0,
+    // Memories as the Agent card counts them: topic files, not indexes or markers.
+    memoryFiles: parts.memory ? await countMemoryTopics(path.join(state, "memory")) : 0,
     workbenches: parts.workbenches ? counts.workbenches : 0,
     schedules: parts.schedules ? schedules.filter((name) => name.endsWith(".toml")).length : 0,
     traces: { sessions: 0, files: 0 },
