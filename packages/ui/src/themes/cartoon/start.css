@@ -92,8 +92,8 @@
     /*
      * The counts are stamped, not boxed: the card goes (its fill, its line, its dividers and the
      * clip that would cut a ring), each count's figure stands over its label, centred, and the
-     * figure (the count link's last part) wears the stamp ring under it, each turned its own
-     * way. Hover inks the stamp and the label instead of filling the cell.
+     * figure (its `figure` slot) wears the stamp ring under it, each turned its own way. Hover
+     * inks the stamp and the label instead of filling the cell.
      */
     :root[data-theme="cartoon"] .ui-start [data-slot="counts"] {
       overflow: visible;
@@ -112,10 +112,10 @@
       gap: 0.5rem;
       background-color: transparent;
     }
-    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a > :last-child {
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] [data-slot="figure"] {
       position: relative;
     }
-    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a > :last-child::before {
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] [data-slot="figure"]::before {
       content: "";
       position: absolute;
       z-index: -1;
@@ -132,18 +132,20 @@
     :root[data-theme="cartoon"]
       .ui-start
       [data-slot="count"]:nth-child(2)
-      > a
-      > :last-child::before {
+      [data-slot="figure"]::before {
       rotate: 2deg;
     }
     :root[data-theme="cartoon"]
       .ui-start
       [data-slot="count"]:nth-child(3)
-      > a
-      > :last-child::before {
+      [data-slot="figure"]::before {
       rotate: -1deg;
     }
-    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a:hover > :last-child::before {
+    :root[data-theme="cartoon"]
+      .ui-start
+      [data-slot="count"]
+      > a:hover
+      [data-slot="figure"]::before {
       opacity: 1;
     }
     :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a:hover > :first-child {
@@ -270,20 +272,21 @@
 
     /*
      * Each example, a checklist item: an empty pencil box before its glyph, and a pen arrow
-     * after its title in place of the row's chevron (a row that carries one: an example or a
-     * saved shortcut, not the new-shortcut row). The arrow inks up as the chevron did.
+     * after its title in place of the row's chevron, its `go` slot (a row that carries one: an
+     * example or a saved shortcut, not the new-shortcut row). The arrow inks up as the chevron
+     * did.
      */
-    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> :last-child > svg)::before {
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> [data-slot="go"])::before {
       content: "";
       flex: none;
       width: 0.875rem;
       height: 0.875rem;
       background: var(--_paper-box) center / contain no-repeat;
     }
-    :root[data-theme="cartoon"] .ui-start [data-slot="row"] > :last-child:has(> svg) {
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"] > [data-slot="go"] {
       display: none;
     }
-    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> :last-child > svg)::after {
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> [data-slot="go"])::after {
       content: "";
       flex: none;
       width: 1.125rem;

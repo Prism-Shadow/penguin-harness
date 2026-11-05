@@ -56,12 +56,13 @@
       pointer-events: none;
     }
 
-    /* A tile that boxes itself: the pen line, as a card's. */
-    :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]) {
+    /* A tile that boxes itself: the pen line, as a card's. (A ledger that is a card already has
+       the frame's line.) */
+    :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]):not(.ui-frame) {
       border-image: var(--_stroke-surface) 14 / 14px / 0 stretch;
     }
     @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
-      :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]) {
+      :root[data-theme="cartoon"] .ui-ledger:where([class~="border"]):not(.ui-frame) {
         border-radius: 0;
         background-clip: border-box;
         clip-path: var(--_clip-surface);

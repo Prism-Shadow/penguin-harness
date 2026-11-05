@@ -41,8 +41,10 @@
  *   take the bold cut; the eyebrow is sentence case.
  * - Shape and depth: the drawn line makes the corners; no shadow on a boxed thing, and a soft
  *   paper shadow, drawn into the floating slip's own image, under what floats (a sheet lifted off
- *   the desk) — never a glow, never a filter. A selected row keeps the host's ink wash, pencil
- *   shading on paper.
+ *   the desk) — never a glow, never a filter. A selected row — the navigation column's, the open
+ *   folder on the start page, a dialog's open page — takes the highlighter band in place of the
+ *   host's ink wash, with a blue pencil bracket in the sidebar's margin; a hovered row keeps the
+ *   ink wash, pencil shading on paper.
  * - What stays plain: code and diffs (their contents and highlighting), the terminal's screen,
  *   icons (the line set) and motion (Primer's quick fades: no spring, no wobble). A section that
  *   looks different here says how in its own partial; the paper props it may draw (ruled paper,

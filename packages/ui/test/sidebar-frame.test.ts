@@ -53,19 +53,19 @@ const frame = (props: Partial<Parameters<typeof SidebarFrame>[0]> = {}) =>
 describe("SidebarFrame", () => {
   it("stacks the switcher, the scroll area and the account row, only the scroll area shrinking", () => {
     const html = frame();
-    expect(html).toMatch(/^<div class="flex h-full w-full flex-col">/);
+    expect(html).toMatch(/^<div data-slot="sidebar" class="flex h-full w-full flex-col">/);
     expect(html).toContain(
       '<div class="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"><span>List</span></div>',
     );
     expect(html).toContain(
-      '<div class="shrink-0 border-t border-line p-2"><span>Account</span></div>',
+      '<div data-slot="account" class="shrink-0 border-t border-line p-2"><span>Account</span></div>',
     );
   });
 
   it("keeps the gap under the switcher with no pinned entry, and pads the one it has", () => {
     expect(frame()).toContain('<div class="shrink-0 pb-2"></div>');
     expect(frame({ pinned: createElement("span", null, "New chat") })).toContain(
-      '<div class="shrink-0 px-2 pb-2 pt-2"><span>New chat</span></div>',
+      '<div data-slot="pinned" class="shrink-0 px-2 pb-2 pt-2"><span>New chat</span></div>',
     );
   });
 

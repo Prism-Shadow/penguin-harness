@@ -2,12 +2,11 @@
  * Doodle's conversation (`themes/cartoon.css` imports this after the line and the marks).
  *
  * - The person's own words are written in the ballpoint blue: their bubble (`MessageBubble`'s
- *   `user` variant, a `ui-edge` box on the accent's tint) keeps its outline and its clip and
- *   swaps the ink pen for the blue one, `--_stroke-surface-you` — the one place a second ink
- *   says something: who wrote this. A steer sent into a running Task (the `steering` chip, the
- *   same tint at a control's size) takes the blue pen and the outline of a control. The bubbles
- *   are told apart from every other `ui-edge` box by the tint they alone sit on, and from each
- *   other by the chip's smaller corner. The reply has no box, as in every theme.
+ *   `user` variant, a `ui-edge` box on the accent's tint, `data-variant="user"`) keeps its
+ *   outline and its clip and swaps the ink pen for the blue one, `--_stroke-surface-you` — the
+ *   one place a second ink says something: who wrote this. A steer sent into a running Task (the
+ *   `steering` chip, `data-variant="steering"`, the same tint at a control's size) takes the
+ *   blue pen and the outline of a control. The reply has no box, as in every theme.
  * - The composer and its slash list are floating slips drawn by `line.css`, redrawn in blue while
  *   the composer has focus; nothing is added here.
  * - An activity card's steps (`ui-tree`: the rows under the card's head, which carry no depth-0
@@ -26,15 +25,14 @@
  */
 @layer ui-theme {
   @media (forced-colors: none) {
-    :root[data-theme="cartoon"] .ui-edge:where(div[class~="bg-accent-tint"]) {
+    :root[data-theme="cartoon"] .ui-edge:where([data-variant="user"]) {
       border-image-source: var(--_stroke-surface-you);
     }
-    :root[data-theme="cartoon"] .ui-edge:where(div[class~="bg-accent-tint"][class~="rounded-md"]) {
+    :root[data-theme="cartoon"] .ui-edge:where([data-variant="steering"]) {
       border-image: var(--_stroke-control-focus) 9 / 9px / 0 stretch;
     }
     @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
-      :root[data-theme="cartoon"]
-        .ui-edge:where(div[class~="bg-accent-tint"][class~="rounded-md"]) {
+      :root[data-theme="cartoon"] .ui-edge:where([data-variant="steering"]) {
         clip-path: var(--_clip-control);
       }
     }

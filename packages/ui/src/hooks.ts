@@ -34,7 +34,7 @@
  * |                    | code block, `Card`, a framed `Table`                     |                                                       |
  * | `ui-underline-nav` | the selected-tab marker of a tab bar (a page's tabs, a   | items `[role="tab"]`, selected by `aria-selected="true"` |
  * |                    | dock's tab strip)                                        |                                                       |
- * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
+ * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]`; the sidebar (`SidebarFrame`, in the column or the phone's drawer) is `data-slot="sidebar"`, its pinned entry's block `"pinned"` and its account row `"account"` |
  * |                    | host: `AppShell`                                         |                                                       |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
@@ -56,19 +56,20 @@
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
- * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a checkbox's tick or dash is `data-slot="tick"` and a radio's dot `data-slot="dot"`, a child of the drawn box or a sibling after the native one; a switch is `role="switch"` and its knob `data-slot="knob"` |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a checkbox's tick or dash is `data-slot="tick"` and a radio's dot `data-slot="dot"`, a child of the drawn box or a sibling after the native one; a switch is `role="switch"` and its knob `data-slot="knob"`; the person's bubble and a steer write `data-variant="user" \| "steering"` |
  * |                    | a button with a fill or a line, a text field or a select |                                                       |
- * |                    | trigger, the person's own message bubble, a badge, a     |                                                       |
- * |                    | checkbox's box, a radio's disc and a switch's track;     |                                                       |
+ * |                    | trigger, the person's own message bubble, a badge or     |                                                       |
+ * |                    | an update pill, a checkbox's box, a radio's disc and a   |                                                       |
+ * |                    | switch's track;                                          |                                                       |
  * |                    | hosts: `Button`, `Input`, `Textarea`, `Select`,          |                                                       |
  * |                    | `OptionMenu`, `SearchInput`, `FormPickerTrigger`,        |                                                       |
- * |                    | `MessageBubble`, `Badge`, `Count`, `Checkbox`,           |                                                       |
- * |                    | `CheckboxBox`, `Radio`, `RadioDisc`, `Switch`, and the   |                                                       |
- * |                    | start page's pickers, `AgentSelect` and                  |                                                       |
- * |                    | `WorkspaceSelect`                                        |                                                       |
- * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`; the open folder is `aria-expanded="true"` |
+ * |                    | `MessageBubble`, `Badge`, `Count`, `UpdatePill`,         |                                                       |
+ * |                    | `Checkbox`, `CheckboxBox`, `Radio`, `RadioDisc`,         |                                                       |
+ * |                    | `Switch`, and the start page's pickers, `AgentSelect`    |                                                       |
+ * |                    | and `WorkspaceSelect`                                    |                                                       |
+ * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`, a count's number `"figure"` and a row's closing chevron `"go"`; the open folder is `aria-expanded="true"` |
  * |                    | `StartDashboard`                                         |                                                       |
- * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "tags" \| "price" \| "state"`; a pinned group `data-pinned="true"` |
+ * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
  * |                    | `ModelsPage`                                             |                                                       |
  * | `ui-ledger`        | a reading of numbers set apart as a ledger; hosts:       | its readings are `data-slot="row"` (a label beside its figure) or `data-slot="tile"` (the two stacked), each holding a `data-slot="label"` and a `data-slot="figure"` |
  * |                    | `SummaryCard`, `StatTile`, `BenchmarkCard`               |                                                       |
@@ -82,7 +83,12 @@
  * out a step off the opaque near-white main column — the glass takes no backdrop filter, since
  * the field is all that lies behind it and the column must not become a stacking context;
  * Console rules the columns off each other with hairlines, full bleed; Primer changes nothing —
- * the window's look is its own classes.
+ * the window's look is its own classes; Doodle rules the column off in pencil. The sidebar the
+ * column holds names itself wherever it is mounted — `data-slot="sidebar"`, in the column and in
+ * the phone's drawer, which sits outside the column — and two of its blocks, the pinned entry's
+ * (`"pinned"`) and the account row's (`"account"`), so one recipe reaches the sidebar in both
+ * places: Doodle marks its selected row with the highlighter band and a pencil bracket, boxes New
+ * chat in dashed pencil and rules the account row off in pencil; the other three leave them alone.
  *
  * `ui-glass` is a floating layer's frost, and in Frost it also dresses the one glass that does
  * not float: a plugin or skill tile (`SkillTile`, `data-glass="tile"`), a translucent square in
@@ -121,7 +127,10 @@
  *   group's rows) are depth 1, a tree's roots depth 0, and depths past 8 draw
  *   as 8. Console draws `├─` / `└─` connector rules in CSS (no box, no glyphs in the markup) and
  *   takes the box away from a frame whose body is a tree; Frost indents against a soft guide
- *   rule and keeps its card; Primer keeps today's bordered box. A branch is a plain block
+ *   rule and keeps its card; Primer keeps today's bordered box; Doodle hangs the rows off the
+ *   parent on pencil lines — a dashed guide down the parent's mark column, a short tick into each
+ *   row and a solid `└` into the last — in an indent it gives each row, and drops the rules the
+ *   host draws between them. A branch is a plain block
  *   holding one level's rows right after their parent row (`<li data-depth="1">` then
  *   `<div data-branch data-depth="2">`); the recipes continue the parent's rule alongside it.
  *   Rows draw with `::before` / `::after`, so a tree row carries no pseudo-elements of its own.
@@ -185,9 +194,14 @@
  * Primer keeps the host's drawing, Frost draws soft low-chroma series, translucent bars with no
  * outline, round joins, caps and points and a fading area, Console draws thin solid
  * bars outlined in the ink, a dashed grid on crisp pixels, axis labels as tracked mono capitals
- * and 1px stepped lines with square joins. Nearly all of that is tokens the chart primitives
- * read (`--ui-chart-*`); a recipe adds only what a token cannot say — dashes, joins and caps,
- * pixel alignment, a fade. A series keeps the colour its host gave it in every theme.
+ * and 1px stepped lines with square joins, Doodle hatches its bars in `ChartDefs`' patterns over
+ * the ink outline, draws the grid as a dashed pencil rule, rings its points in ink and roughens
+ * its series lines and axis marks — never text, never the grid — with the fixed-seed `#ui-rough`
+ * filter. Nearly all of that is tokens the chart primitives read (`--ui-chart-*`); a recipe adds
+ * only what a token cannot say — dashes, joins and caps, pixel alignment, a fade, a pattern. A
+ * series keeps the colour its host gave it in every theme. Its swatch outside the chart's root
+ * (a legend's, a bubble's) is the `swatch` part, with its `data-shape`, its series and its
+ * `--_paint`, so a recipe that hatches a series' bars hatches its swatches with them.
  *
  * `ui-scrim` (2026-09-30) is the backdrop a dialog, drawer or sheet dims the page with: the host
  * paints its dim from `--ui-overlay-backdrop` and carries the hook, whether the scrim is a
@@ -251,12 +265,14 @@
  * `ui-edge` (2026-11-04) is a box's own edge, for the boxes no other hook names: a button with a
  * fill or a line (a ghost or link button has no box and never takes it), the text fields and
  * select triggers that share the control look (`controlBase`), and the person's own message
- * bubble. The host writes the class and nothing else; a field that failed validation already
- * says so in `aria-invalid`. Primer, Frost and Console leave it alone. Doodle draws every such
- * edge, and the frames, overlays, notices and widgets the other hooks name, as a pen line laid
- * over the host's 1px border (`themes/cartoon.css`). Since 2026-11-05 it also names a badge (a
- * pill a person reads, and its numeric form, `Count`) and a checkbox's box and a radio's disc (a box
- * a person presses), in their native form and as the drawing a pressable option holds
+ * bubble. The host writes the class and nothing else, but for the bubble and a steer, which
+ * write their variant (`data-variant`); a field that failed validation already says so in
+ * `aria-invalid`. Primer, Frost and Console leave it alone. Doodle draws every such edge, and the
+ * frames, overlays, notices and widgets the other hooks name, as a pen line laid over the host's
+ * 1px border (`themes/cartoon.css`), and writes the person's own words in the ballpoint blue.
+ * Since 2026-11-05 it also names a badge (a pill a person reads, its numeric form, `Count`, and
+ * the pill a person presses to reach an update, `UpdatePill`) and a checkbox's box and a radio's
+ * disc (a box a person presses), in their native form and as the drawing a pressable option holds
  * (`CheckboxBox`, `RadioDisc`), so a theme that draws one draws every form of it; and the start
  * page's Agent and Workspace pickers, whose triggers are pills a person presses. A switch's track
  * is one too (a capsule a person flips), and the marks a recipe draws differently from the box
@@ -272,7 +288,8 @@
  * `example-folder-row.tsx`'s and its composer slot is the composer card's own `data-slot`. Primer,
  * Frost and Console leave all five alone. The run indicator is drawn only while a turn runs —
  * a compaction is the stream's banner, and a settled conversation shows nothing — so `running` is
- * the one state it writes.
+ * the one state it writes; Doodle sets the running word over the highlighter band, the hourglass
+ * keeping its motion beside it, as it sets a running step's label (`ui-activity`).
  *
  * A small drawing that carries no data is drawn in every style at once, and the theme's CSS shows
  * its own, as `ui-glyph` draws an icon: the spinner is an arc on a track (`data-set="arc"`) and a

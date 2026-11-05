@@ -1576,13 +1576,14 @@ export function ModelsPage() {
                 />
                 {/* The vendor name is the only thing in this button allowed to take
                     the remaining space, and the only one that truncates. */}
-                <span className="min-w-0 truncate text-sm font-semibold">
+                <span data-slot="name" className="min-w-0 truncate text-sm font-semibold">
                   {group.provider.label}
                 </span>
                 {/* The count as the model picker's rail writes it: a bare number, with
                     the words kept for assistive tech. */}
                 <span
                   aria-hidden
+                  data-slot="count"
                   className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
                 >
                   {group.rows.length}
@@ -1821,7 +1822,8 @@ export function ModelsPage() {
       ) : groups.length === 0 ? (
         <EmptyState title={S.models.noSearchResults} />
       ) : (
-        // ui-library: the model library as a whole — its groups, their heads and their cards.
+        // ui-library: the model library as a whole — its groups, their heads and their cards, the
+        // bar folding the rest of the groups away and Add group.
         <div className="ui-library space-y-3">
           {layout.shown.map(renderGroup)}
           {layout.fold !== null && (
@@ -1832,6 +1834,7 @@ export function ModelsPage() {
               <button
                 ref={foldBarRef}
                 type="button"
+                data-slot="fold"
                 aria-expanded={!layout.fold.folded}
                 aria-controls="models-collapsible-groups"
                 onClick={toggleGroupsFolded}
@@ -1863,6 +1866,7 @@ export function ModelsPage() {
             // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
             <button
               type="button"
+              data-slot="add"
               onClick={() => setAddGroupOpen(true)}
               className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
             >

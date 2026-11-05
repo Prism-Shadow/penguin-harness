@@ -371,13 +371,16 @@
      * border — its corners and the inner half of its runs. So on those the line is the box's
      * `::after`, laid over its border box above everything inside (the sticky rows of an open
      * activity card included): the box becomes `position: relative` and its own stacking context,
-     * and its own border goes clear under the line. A frame's fill is not clipped — a clip on a
-     * tall box with a lot inside it (a code block) is paid for on every repaint — but takes a
-     * corner, `--_fill-radius-surface`, that the script finds keeps a padding-box fill under the
-     * pen at every corner of the drawn outline. A frame inside a frame (a code block in a tool
-     * call, a table in a card) keeps a pencil hairline and the host's own corner — one drawn box
-     * per region. The public site's chrome (`.site-ui`), which the gallery shows
-     * above the app, keeps its own fixed look.
+     * and its own border goes clear under the line — painted by the stroke image laid at no
+     * width, which draws nothing, so no colour the host gives its border (an interactive card
+     * deepens it on hover with an important utility no theme rule outranks) can show its CSS
+     * corner past the pen. A frame's fill is not clipped — a clip on a tall box with a lot inside
+     * it (a code block) is paid for on every repaint — but takes a corner,
+     * `--_fill-radius-surface`, that the script finds keeps a padding-box fill under the pen at
+     * every corner of the drawn outline. A frame inside a frame (a code block in a tool call, a
+     * table in a card) keeps a pencil hairline and the host's own corner — one drawn box per
+     * region. The public site's chrome (`.site-ui`), which the gallery shows above the app, keeps
+     * its own fixed look.
      */
     :root[data-theme="cartoon"]
       :where(.ui-edge, .ui-frame, .ui-notice, .ui-widget):where(:not(.site-ui, .site-ui *)) {
@@ -409,7 +412,7 @@
       position: relative;
       isolation: isolate;
       border-color: transparent;
-      border-image-source: none;
+      border-image-width: 0;
       border-radius: var(--_fill-radius-surface);
     }
     :root[data-theme="cartoon"]
@@ -424,6 +427,7 @@
     }
     :root[data-theme="cartoon"] .ui-frame .ui-frame {
       border-color: var(--ui-line);
+      border-image-source: none;
       border-radius: revert-layer;
     }
     :root[data-theme="cartoon"] .ui-frame .ui-frame::after {
@@ -440,6 +444,7 @@
       position: revert-layer;
       isolation: auto;
       border-color: var(--ui-line-emphasis);
+      border-image-source: none;
       border-radius: revert-layer;
     }
     :root[data-theme="cartoon"] .ui-frame:where(:has(> .ui-activity))::after {

@@ -302,7 +302,7 @@ function StatCount({
           <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
           {label}
         </span>
-        <span className="text-xl font-semibold leading-7 tabular-nums text-fg">
+        <span data-slot="figure" className="text-xl font-semibold leading-7 tabular-nums text-fg">
           {value === null ? "—" : value}
         </span>
       </Link>

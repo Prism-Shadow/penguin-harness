@@ -214,8 +214,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-widget": ["WidgetSurface"],
   // A box's own edge (2026-11-04): a button with a fill or a line, the text fields and select
   // triggers on the shared control look, and the person's own message bubble; and (2026-11-05)
-  // a badge and its numeric form, a checkbox's box and a radio's disc, native and drawn, a
-  // switch's track, and the start page's Agent and Workspace pickers' pills.
+  // a badge and its numeric form, the update pill, a checkbox's box and a radio's disc, native
+  // and drawn, a switch's track, and the start page's Agent and Workspace pickers' pills.
   "ui-edge": [
     "Button",
     "Input",
@@ -227,6 +227,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "MessageBubble",
     "Badge",
     "Count",
+    "UpdatePill",
     "Checkbox",
     "CheckboxBox",
     "Radio",
@@ -266,6 +267,8 @@ const SECTIONS: Readonly<Record<string, { slots: readonly string[]; modules: rea
         "folder",
         "rows",
         "row",
+        "figure",
+        "go",
       ],
       modules: [
         "packages/web/src/features/chat/start-dashboard.tsx",
@@ -275,7 +278,19 @@ const SECTIONS: Readonly<Record<string, { slots: readonly string[]; modules: rea
       ],
     },
     "ui-library": {
-      slots: ["group", "head", "cards", "card", "name", "tags", "price", "state"],
+      slots: [
+        "group",
+        "head",
+        "cards",
+        "card",
+        "name",
+        "count",
+        "tags",
+        "price",
+        "state",
+        "fold",
+        "add",
+      ],
       modules: ["packages/web/src/features/models/models-page.tsx"],
     },
     "ui-ledger": {

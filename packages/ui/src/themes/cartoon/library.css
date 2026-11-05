@@ -14,6 +14,8 @@
  *   foot (the surface outline without its top run), meeting the edge the head draws.
  * - A pinned group's name carries a highlighter swipe (the star stays its mark); the count is in
  *   pencil.
+ * - The bar that folds the rest of the groups away is a divider: a pencil rule out on either side
+ *   of its words. Add group is a folder not yet filed, in a dashed pencil box.
  * - A model card is an index card. Its line is pencil at rest and the ink on hover, redrawn in
  *   the ballpoint blue while it has keyboard focus; nothing about its fill changes. Its name, in
  *   the bold cut, and its tags each stand on a faint printed blue rule; its price is a note in
@@ -126,13 +128,7 @@
       outline: var(--ui-focus-ring);
       outline-offset: -6px;
     }
-    :root[data-theme="cartoon"]
-      .ui-library
-      [data-slot="group"]
-      > [data-slot="head"]
-      > :first-child
-      > button:first-child
-      > span[aria-hidden] {
+    :root[data-theme="cartoon"] .ui-library [data-slot="head"] [data-slot="count"] {
       color: var(--ui-fg-subtle);
     }
     /* A pinned group's name: the highlighter band behind its lower part. */
@@ -140,9 +136,7 @@
       .ui-library
       [data-slot="group"][data-pinned]
       > [data-slot="head"]
-      > :first-child
-      > button:first-child
-      > span:first-of-type {
+      [data-slot="name"] {
       position: relative;
       isolation: isolate;
     }
@@ -150,9 +144,7 @@
       .ui-library
       [data-slot="group"][data-pinned]
       > [data-slot="head"]
-      > :first-child
-      > button:first-child
-      > span:first-of-type::before {
+      [data-slot="name"]::before {
       content: "";
       position: absolute;
       inset: 0.25em 0 0.05em;
@@ -167,9 +159,7 @@
       .ui-library
       [data-slot="group"][data-pinned]
       > [data-slot="head"]
-      > :first-child
-      > button:first-child
-      > span:first-of-type::before {
+      [data-slot="name"]::before {
       mix-blend-mode: normal;
     }
     /* The sheet: the fill a hair inside the pen, and the pen down the sides and along the foot. */
@@ -213,12 +203,6 @@
     :root[data-theme="cartoon"] .ui-library [data-slot="card"] > button:focus-visible {
       outline: none;
     }
-    /* The host deepens a hovered card's own border with an important utility, which no theme
-       rule outranks, and that border would show its CSS corner past the pen. A border image
-       paints in place of a box's border, so one that draws nothing leaves the pen alone. */
-    :root[data-theme="cartoon"] .ui-library [data-slot="card"]:hover {
-      border-image: var(--_stroke-surface) 14 / 0 / 0 stretch;
-    }
     :root[data-theme="cartoon"]
       .ui-library
       [data-slot="card"]
@@ -226,7 +210,7 @@
       > :is(:has(> [data-slot="name"]), [data-slot="tags"]) {
       background: var(--_library-rule) left bottom / 8px 1px repeat-x;
     }
-    :root[data-theme="cartoon"] .ui-library [data-slot="name"] {
+    :root[data-theme="cartoon"] .ui-library [data-slot="card"] [data-slot="name"] {
       font-weight: 700;
     }
     :root[data-theme="cartoon"] .ui-library [data-slot="price"] {
@@ -239,6 +223,33 @@
     }
     :root[data-theme="cartoon"] .ui-library [data-slot="state"] {
       color: var(--ui-fg-subtle);
+    }
+
+    /* ---- The shelf's own controls ---- */
+    /* The bar folding the rest of the groups away: a pencil rule run out on either side of its
+       words, a divider in the stack of folders, in place of the host's wash. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"] {
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]::before,
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]::after {
+      content: "";
+      flex: 1 1 0;
+      min-inline-size: 0;
+      block-size: 4px;
+      margin-inline: 0.5rem;
+      pointer-events: none;
+      opacity: 0.7;
+      background: var(--_rule-pencil-h) left center / 40px 4px repeat-x;
+    }
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]:hover::before,
+    :root[data-theme="cartoon"] .ui-library [data-slot="fold"]:hover::after {
+      opacity: 1;
+    }
+    /* Add group: a folder not yet filed, in a dashed pencil box on its own border; its words
+       ink up on hover, as the host's do. */
+    :root[data-theme="cartoon"] .ui-library [data-slot="add"] {
+      border-image: var(--_stroke-surface-dashed) 14 / 14px / 0 round;
     }
 
     /* ---- The badge: a sticker ---- */

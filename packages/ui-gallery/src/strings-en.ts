@@ -378,7 +378,7 @@ export const en: GalleryStrings = {
       "ui-widget":
         "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
       "ui-edge":
-        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, their own message bubble, a badge, a checkbox, a radio, a switch, a picker's pill",
+        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, their own message bubble, a badge or an update pill, a checkbox, a radio, a switch, a picker's pill",
       "ui-start":
         "the start page (a new conversation) as a whole: the brand, three counts, the composer and the example folders",
       "ui-library": "the model library: a provider's group box and the model cards in it",

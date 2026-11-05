@@ -17,6 +17,11 @@
  * Everything on the column sits on its muted surface, so a hover and a selection are the column's
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
  * it does (`AppShell`'s navigation slot, or the phone's drawer).
+ *
+ * The frame names itself and two of its blocks for the themes (the `ui-shell` hook's anatomy):
+ * `data-slot="sidebar"` on its root, wherever it is mounted — the navigation column or the
+ * phone's drawer, so one recipe reaches both — `"pinned"` on the pinned entry's block and
+ * `"account"` on the account row's.
  */
 import { useState } from "react";
 import type {
@@ -83,7 +88,7 @@ export function SidebarFrame({
   rootRef,
 }: SidebarFrameProps) {
   return (
-    <div ref={rootRef} className="flex h-full w-full flex-col">
+    <div ref={rootRef} data-slot="sidebar" className="flex h-full w-full flex-col">
       {modeSwitch !== undefined && (
         <div className="shrink-0 px-2 pt-2" role="group" aria-label={modeSwitch.label}>
           {modeSwitch.control}
@@ -109,7 +114,9 @@ export function SidebarFrame({
       {pinned === undefined ? (
         <div className="shrink-0 pb-2" />
       ) : (
-        <div className="shrink-0 px-2 pb-2 pt-2">{pinned}</div>
+        <div data-slot="pinned" className="shrink-0 px-2 pb-2 pt-2">
+          {pinned}
+        </div>
       )}
       <div
         {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
@@ -117,7 +124,9 @@ export function SidebarFrame({
       >
         {children}
       </div>
-      <div className="shrink-0 border-t border-line p-2">{account}</div>
+      <div data-slot="account" className="shrink-0 border-t border-line p-2">
+        {account}
+      </div>
       {overlays}
     </div>
   );

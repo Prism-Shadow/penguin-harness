@@ -18,10 +18,11 @@
  * - The streaming caret is a short slanted pen stroke in the caret's pencil ink, a box 0.55em
  *   wide by 1em tall with the host's glyph painted out; it keeps the host's pulse.
  * - The selected row on the navigation column (`[aria-current="page"]`: a page entry or the open
- *   conversation) gives up the host's ink wash for the highlighter band across the row, and a
- *   blue pencil bracket (`--_mark-bracket`) stands in the margin at its start, on `::after`.
- *   (The column's open-conversation row holds its wash on the row around the button that
- *   carries `aria-current`, so that row clears it too.)
+ *   conversation), and on the sidebar in the phone's drawer, gives up the host's ink wash for the
+ *   highlighter band across the row, and in the sidebar a blue pencil bracket (`--_mark-bracket`)
+ *   stands in the margin at its start, on `::after`; the folded rail keeps the band alone.
+ *   (The open-conversation row holds its wash on the row around the button that carries
+ *   `aria-current`, so that row clears it too.)
  *
  * The two marks this partial draws itself, by hand rather than by the script — the caret's stroke
  * (`--_mark-caret`, 11 × 20) and the scribble's tile (`--_mark-scribble`, 24 × 8, its ends at one
@@ -105,16 +106,24 @@
       background-repeat: no-repeat;
     }
 
-    /* The selected navigation row: the highlighter band across it, the bracket in its margin. */
-    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"],
-    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] li > :has(> [aria-current="page"]) {
+    /* The selected navigation row, in the column (the sidebar or the folded rail) and in the
+       phone's drawer (the sidebar again): the highlighter band across it, and in the sidebar the
+       bracket in its margin. The rail's entries stand in a column only as wide as they are, which
+       would cut a bracket off, so there the band alone marks the row. */
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], [data-slot="sidebar"])
+      :is([aria-current="page"], li > :has(> [aria-current="page"])) {
       background-color: transparent;
     }
-    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"] {
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], [data-slot="sidebar"])
+      [aria-current="page"] {
       position: relative;
       isolation: isolate;
     }
-    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"]::before {
+    :root[data-theme="cartoon"]
+      :is(.ui-shell > [data-slot="nav"], [data-slot="sidebar"])
+      [aria-current="page"]::before {
       content: "";
       position: absolute;
       z-index: -1;
@@ -124,7 +133,7 @@
       border-width: 0 12px;
       border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
     }
-    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"]::after {
+    :root[data-theme="cartoon"] [data-slot="sidebar"] [aria-current="page"]::after {
       content: "";
       position: absolute;
       inset-block: 3px;
