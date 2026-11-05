@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `core`, `amsp`, `server`, `web`, `docs`
+- **PR:** [#1491](https://github.com/Prism-Shadow/penguin-harness/pull/1491)
 
 [English](2026-11-04-compaction-handoff-files.md)
 
