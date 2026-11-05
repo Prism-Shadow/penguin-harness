@@ -12,6 +12,9 @@
  *   a name (`url:query:<name>`);
  * - in `args`, the value of a `--<name>=<value>` argument and the argument after a `--<name>`
  *   flag (`args:--<name>`);
+ * - whatever its name, a string of the entry shaped like a token (token-shape.ts) goes whole,
+ *   named by its place (`env:<NAME>`, `headers:<NAME>`, a flag's value as `args:--<name>`, an
+ *   argument of its own as `args:token`); the `command` never does;
  * - whatever its name, in any string of the entry (an `env` value, a header, an argument, a
  *   field of its own): the password of a URL's user info (all of the user info when it has no
  *   password: `<place>:userinfo`) and each query parameter under such a
@@ -28,8 +31,10 @@
  * same arguments once their secrets are taken out (in any order), for http the same URL origin —
  * and the place has the same name there, once on each side. Anything less certain
  * is not filled, and the place stays in `toFill`: a value never goes to another address or into
- * another flag. After an import, what is still blank, and every vault key the entries reference,
- * is what the user must fill.
+ * another flag. A value blanked for its shape (a token) leaves nothing that shows it was one, so
+ * on import such a place is known by the label the manifest's `redacted` gives it. After an
+ * import, what is still blank, and every vault key the entries reference, is what the user must
+ * fill.
  *
  * The YAML is edited as a document, so its comments and layout survive and a config with nothing
  * to blank or restore is left byte for byte. A config using YAML aliases is first expanded, so
@@ -39,6 +44,7 @@ import { VAULT_REF_PATTERN } from "@prismshadow/penguin-core";
 import { Document, Scalar, isAlias, isMap, isScalar, isSeq, parseDocument, visit } from "yaml";
 import { HttpError } from "../http/errors.js";
 import { isCredentialName } from "./credential-names.js";
+import { isTokenShaped } from "./token-shape.js";
 import { authorityOf, userInfoOf } from "./url-userinfo.js";
 
 /** One secret inside one string of the document: the scalar holding it and where in its text. */
@@ -49,6 +55,12 @@ interface Span {
   node: Scalar;
   start: number;
   end: number;
+  /**
+   * An empty value found only by where it is: a place an export may have blanked by the value's
+   * shape (a token), which nothing about the empty value itself still shows. Such a span counts
+   * only for a label the archive's manifest names as blanked.
+   */
+  byPlace?: true;
 }
 
 const isReference = (text: string): boolean => [...text.matchAll(VAULT_REF_PATTERN)].length > 0;
@@ -189,7 +201,7 @@ function placeOf(path: ReadonlyArray<string | number>): string {
   return path.join(".");
 }
 
-/** Every secret span of one MCP entry's config map. */
+/** Every secret span of one MCP entry's config map, and its empty values by place (`byPlace`). */
 function entrySpans(server: string, config: unknown): Span[] {
   if (!isMap(config)) return [];
   const out: Span[] = [];
@@ -256,6 +268,26 @@ function entrySpans(server: string, config: unknown): Span[] {
       if (typeof node.value !== "string" || whole.has(node)) return;
       const text = node.value;
       const inArgs = path[0] === "args" && path.length === 2;
+      // A value shaped like a token goes whole, named by its place (a flag's value by the flag;
+      // an argument of its own as `args:token`). The command is what the server is, never one.
+      const inline = inArgs ? /^(--?)([A-Za-z][A-Za-z0-9_.-]*)=/.exec(text) : null;
+      const from = inline === null ? 0 : inline[0].length;
+      const place = inArgs ? (argBase.get(node) ?? "args:token") : placeOf(path);
+      if (path[0] !== "command" && from === text.length) {
+        out.push({
+          server,
+          label: `mcp:${server}:${place}`,
+          node,
+          start: from,
+          end: from,
+          byPlace: true,
+        });
+        return;
+      }
+      if (path[0] !== "command" && flagName(text) === null && isTokenShaped(text.slice(from))) {
+        add(node, place, from, text.length);
+        return;
+      }
       const found: Found[] = [];
       for (const { start, url } of urlsIn(text)) {
         const at = inArgs ? `args:${originOf(url)}` : placeOf(path);
@@ -336,8 +368,11 @@ function maskedArgs(config: unknown, spans: readonly Span[]): string[] {
     .sort();
 }
 
-/** Every MCP entry of the document with its secret spans. */
-function serversOf(doc: Document): ServerEntry[] {
+/**
+ * Every MCP entry of the document with its secret spans; an empty value found only by its place
+ * is one of them when `named` (the labels an archive says it blanked) holds its label.
+ */
+function serversOf(doc: Document, named: ReadonlySet<string> = new Set()): ServerEntry[] {
   const servers = doc.getIn(["tools", "mcpServers"], true);
   if (!isSeq(servers)) return [];
   return servers.items.flatMap((server) => {
@@ -346,7 +381,9 @@ function serversOf(doc: Document): ServerEntry[] {
     const config = server.get("config", true);
     const command = isMap(config) ? config.get("command") : undefined;
     const url = isMap(config) ? config.get("url") : undefined;
-    const spans = entrySpans(name, config);
+    const spans = entrySpans(name, config).filter(
+      (span) => span.byPlace !== true || named.has(span.label),
+    );
     const identity =
       typeof command === "string"
         ? `command:${command} args:${JSON.stringify(maskedArgs(config, spans))}`
@@ -437,10 +474,14 @@ function uniqueByLabel(server: ServerEntry): Map<string, Span> {
  * identity: see `ServerEntry`) and the place has the same name, once on each side; null when
  * there was nothing to fill.
  */
-export function restoreCredentials(incoming: string, current: string): string | null {
+export function restoreCredentials(
+  incoming: string,
+  current: string,
+  redacted: readonly string[] = [],
+): string | null {
   const theirs = serversOf(editable(current));
   const doc = editable(incoming);
-  const ours = serversOf(doc);
+  const ours = serversOf(doc, new Set(redacted));
   const fills: Array<{ span: Span; value: string }> = [];
   for (const server of ours) {
     const sameName = (list: ServerEntry[]) => list.filter((s) => s.name === server.name);
@@ -465,9 +506,13 @@ export function restoreCredentials(incoming: string, current: string): string | 
 }
 
 /** What the config still needs: blank credentials, and the vault keys its entries reference. */
-export function credentialsToFill(text: string): { blank: string[]; vaultRefs: string[] } {
+export function credentialsToFill(
+  text: string,
+  redacted: readonly string[] = [],
+): { blank: string[]; vaultRefs: string[] } {
   const doc = editable(text);
-  const blank = spansOf(doc)
+  const blank = serversOf(doc, new Set(redacted))
+    .flatMap((server) => server.spans)
     .filter((span) => textOf(span) === "")
     .map((span) => span.label);
   const vaultRefs = new Set<string>();

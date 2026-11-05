@@ -11,7 +11,7 @@
  *
  * Only secrets are looked for: the value of a vault key whose name is a credential's
  * (credential-names.ts), at least `MIN_VALUE_LENGTH` characters long, or a value shaped like a
- * token whatever its key's name (`TOKEN_MIN_LENGTH` characters or more, letters and digits, no
+ * token whatever its key's name (token-shape.ts: 16 characters or more, letters and digits, no
  * spaces, high entropy). A value of digits only (an account number, a port) never is; nor is an
  * ordinary setting such as a host name or a region. A value that is a URL with user info gives
  * up its password, or the user info itself when it has no password, whatever its key is called:
@@ -22,36 +22,11 @@
  * Files are scrubbed line by line as they stream: only the line being read is held.
  */
 import { isCredentialName } from "./credential-names.js";
+import { isTokenShaped } from "./token-shape.js";
 import { userInfoOf } from "./url-userinfo.js";
 
 /** A credential-named key's value shorter than this is too likely to be ordinary text. */
 export const MIN_VALUE_LENGTH = 8;
-/** A value at least this long, high in entropy, is a token whatever its key is called. */
-const TOKEN_MIN_LENGTH = 16;
-const TOKEN_SHAPE = /^[A-Za-z0-9+/=_.~-]+$/;
-const MIN_TOKEN_ENTROPY = 3.5;
-
-/** Shannon entropy of a string, in bits per character. */
-function entropy(text: string): number {
-  const counts = new Map<string, number>();
-  for (const char of text) counts.set(char, (counts.get(char) ?? 0) + 1);
-  let bits = 0;
-  for (const count of counts.values()) {
-    const p = count / text.length;
-    bits -= p * Math.log2(p);
-  }
-  return bits;
-}
-
-function isTokenShaped(value: string): boolean {
-  return (
-    value.length >= TOKEN_MIN_LENGTH &&
-    TOKEN_SHAPE.test(value) &&
-    /[A-Za-z]/.test(value) &&
-    /\d/.test(value) &&
-    entropy(value) >= MIN_TOKEN_ENTROPY
-  );
-}
 
 interface Pattern {
   value: string;

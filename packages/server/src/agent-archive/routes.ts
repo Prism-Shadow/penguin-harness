@@ -65,16 +65,27 @@ function refusalMessage(refusal: NonNullable<AgentArchivePreview["refusal"]>): s
   }
 }
 
+/** Takes the hold of `key` once it is free and keeps it until the returned function is called. */
+function acquire(holds: AgentHolds, key: string): Promise<() => void> {
+  return new Promise((acquired) => {
+    void holds.hold(key, () => new Promise<void>((release) => acquired(release)));
+  });
+}
+
 export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
+  // An export reads the Agent under its hold, as an import or a delete changes it: it never
+  // meets a State moved aside, nor zips files of two States.
   app.get("/:agentId/archive/preview", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     const parts = partsFromQuery((name) => c.req.query(name));
-    const { preview } = await planArchive(deps, projectId, agentId, parts);
+    const { preview } = await deps.holds.hold(`${projectId}/${agentId}`, async () => {
+      await deps.agentConfigService.requireExists(projectId, agentId);
+      return planArchive(deps, projectId, agentId, parts);
+    });
     return c.json(preview satisfies AgentArchivePreview);
   });
 
@@ -82,21 +93,30 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     const parts = partsFromQuery((name) => c.req.query(name));
-    const plan = await planArchive(deps, projectId, agentId, parts);
-    // Every export imports: a selection past what an import accepts is refused here.
-    if (plan.preview.refusal !== undefined) {
-      throw archiveTooLarge(refusalMessage(plan.preview.refusal));
+    // Kept until the zip's last byte has gone (or the download stopped).
+    const release = await acquire(deps.holds, `${projectId}/${agentId}`);
+    let streaming = false;
+    try {
+      await deps.agentConfigService.requireExists(projectId, agentId);
+      const plan = await planArchive(deps, projectId, agentId, parts);
+      // Every export imports: a selection past what an import accepts is refused here.
+      if (plan.preview.refusal !== undefined) {
+        throw archiveTooLarge(refusalMessage(plan.preview.refusal));
+      }
+      const body = zipStream(plan, deps.log, release);
+      streaming = true;
+      return new Response(body, {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${plan.fileName}"`,
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "no-store",
+        },
+      });
+    } finally {
+      if (!streaming) release();
     }
-    return new Response(zipStream(plan, deps.log), {
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${plan.fileName}"`,
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "no-store",
-      },
-    });
   });
 
   app.post("/import", async (c) => {

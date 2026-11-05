@@ -54,6 +54,8 @@
  *   password in an `env` value or a header, a URL whose user info has no password (a token in
  *   it), and a connection string's `Password=`, those values are blanked whatever the value's own
  *   name, and an overwrite from the zip puts them back.
+ * - Given a value shaped like a token under a name that is no credential's (an `env` entry, an
+ *   argument of its own), it is blanked and named by its place, and an overwrite puts it back.
  * - Given an overwrite whose stdio server runs another package under the same command, or an
  *   Agent with two servers of one name, no credential is refilled and the place is to be filled.
  * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
@@ -1075,7 +1077,7 @@ describe("Agent archive", () => {
         "          TOKENIZER: bpe-small",
         "          AUTHOR: ann-example",
         "          KEYBOARD: us-intl",
-        "          KEYSTORE: /etc/penguin/store.p12",
+        "          KEYSTORE: /etc/penguin/store.jks",
         "    - name: feed",
         "      config:",
         '        url: "https://feed.example.test/mcp?accesstoken=at-query-1&keyboard=dvorak"',
@@ -1104,7 +1106,7 @@ describe("Agent archive", () => {
       "bpe-small",
       "ann-example",
       "us-intl",
-      "/etc/penguin/store.p12",
+      "/etc/penguin/store.jks",
       "keyboard=dvorak",
     ]) {
       expect(exportedConfig).toContain(kept);
@@ -1193,6 +1195,53 @@ describe("Agent archive", () => {
       await fs.readFile(path.join(state, "system_config.yaml"), "utf8"),
     ) as { tools: { mcpServers: typeof servers } };
     expect(restored.tools.mcpServers).toEqual(servers);
+  });
+
+  it("a value shaped like a token is blanked and named by its place whatever its name, and an overwrite puts it back", async () => {
+    const state = await newAgent("token_shapes");
+    const servers = [
+      {
+        name: "llm",
+        config: {
+          command: "npx",
+          args: ["-y", "some-mcp-server", "sk-live-Zx9Yw8Vu7Ts6Rq5P", "--model", "gpt-mini"],
+          env: { OPENAI: "sk-proj-Ab12Cd34Ef56Gh78Ij90", MODE: "fast" },
+        },
+      },
+    ];
+    const put = await owner.put(`${agentBase("token_shapes")}/config`, {
+      config: { mcpServers: servers },
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+
+    const zip = await exported("token_shapes");
+
+    const entries = entriesOf(zip);
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
+    expect([...manifest.redacted].sort()).toEqual(["mcp:llm:args:token", "mcp:llm:env:OPENAI"]);
+    const config = strFromU8(entries["agent_state/system_config.yaml"]!);
+    for (const secret of ["sk-live-Zx9Yw8Vu7Ts6Rq5P", "sk-proj-Ab12Cd34Ef56Gh78Ij90"]) {
+      expect(config).not.toContain(secret);
+    }
+    for (const kept of ["some-mcp-server", "--model", "gpt-mini", "fast"]) {
+      expect(config).toContain(kept);
+    }
+
+    const res = await owner.upload(importUrl("?agentId=token_shapes&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.toFill.filter((label) => label.startsWith("mcp:"))).toEqual([]);
+    const restored = parseYaml(
+      await fs.readFile(path.join(state, "system_config.yaml"), "utf8"),
+    ) as { tools: { mcpServers: typeof servers } };
+    expect(restored.tools.mcpServers).toEqual(servers);
+    // As a new Agent nothing can fill the places, and they are named to be filled.
+    const copy = await owner.upload(importUrl("?agentId=token_shapes_copy"), zip);
+    expect(copy.status, await copy.clone().text()).toBe(201);
+    expect(((await copy.json()) as AgentArchiveImportResponse).toFill).toEqual(
+      expect.arrayContaining(["mcp:llm:args:token", "mcp:llm:env:OPENAI"]),
+    );
   });
 
   it("a stdio server that runs another package is another server: its credential is not refilled", async () => {

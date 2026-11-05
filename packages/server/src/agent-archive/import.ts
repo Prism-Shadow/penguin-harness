@@ -330,7 +330,11 @@ async function apply(
     }
     if (mode === "overwritten" && currentParses) {
       // A blank credential keeps the Agent's own value, for the same server and place only.
-      const restored = restoreCredentials(await fs.readFile(configFile, "utf8"), currentConfig);
+      const restored = restoreCredentials(
+        await fs.readFile(configFile, "utf8"),
+        currentConfig,
+        manifest.redacted,
+      );
       if (restored !== null) await fs.writeFile(configFile, restored);
     } else if (mode === "overwritten") {
       notes.push({
@@ -403,7 +407,7 @@ async function report(
   const vault = await loadAgentVault(deps.root, projectId, agentId).catch(() => ({}));
   const fill = await fs
     .readFile(path.join(state, "system_config.yaml"), "utf8")
-    .then(credentialsToFill)
+    .then((text) => credentialsToFill(text, staged.manifest.redacted))
     .catch(() => ({ blank: [] as string[], vaultRefs: [] as string[] }));
   const missingKeys = [...new Set([...staged.manifest.vaultKeys, ...fill.vaultRefs])].filter(
     (key) => !Object.hasOwn(vault, key),

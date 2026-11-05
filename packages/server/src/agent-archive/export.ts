@@ -455,26 +455,41 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
 /**
  * The zip as a response body, pulled entry by entry: a slow reader holds the export at the entry
  * it is on rather than letting it buffer. A failure part-way (a disk error) ends the stream with
- * an error, which the client sees as a cut-off download, and is logged.
+ * an error, which the client sees as a cut-off download, and is logged. `onEnd` runs once when
+ * the stream is over: finished, failed or cancelled by the reader.
  */
 export function zipStream(
   plan: PlannedArchive,
   log: (line: string) => void,
+  onEnd: () => void = () => undefined,
 ): ReadableStream<Uint8Array> {
   const chunks = zipChunks(plan);
+  let ended = false;
+  const end = (): void => {
+    if (ended) return;
+    ended = true;
+    onEnd();
+  };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const next = await chunks.next();
-        if (next.done === true) controller.close();
-        else controller.enqueue(next.value);
+        if (next.done === true) {
+          controller.close();
+          end();
+        } else controller.enqueue(next.value);
       } catch (err) {
         log(`[agent-archive] export failed part-way: ${String(err)}`);
         controller.error(err);
+        end();
       }
     },
     async cancel() {
-      await chunks.return(undefined);
+      try {
+        await chunks.return(undefined);
+      } finally {
+        end();
+      }
     },
   });
 }

@@ -17,6 +17,8 @@
  *   result, and nothing is rolled back.
  * - Given a delete of the Agent while an import into it is swapping, the delete waits for the
  *   import: afterwards no folder, Session row or listing of the Agent is left, and its id is free.
+ * - Given an export of the Agent while an overwrite has its State moved aside, the export waits
+ *   for the overwrite and its zip holds the new State whole.
  * - Given a committed swap's leftover folder beside an interrupted swap's, recovery puts back the
  *   interrupted swap's State and parts and removes the committed leftovers without installing them.
  * - Given a part whose place is taken again by the time recovery runs, the folder's copy is left
@@ -36,7 +38,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { strToU8, zipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   agentDir,
@@ -406,6 +408,50 @@ describe("Agent archive overwrite recovery", () => {
     expect(
       (await admin.post(`/api/projects/${projectId}/agents`, { agentId: agent.id })).status,
     ).toBe(201);
+  });
+
+  it("an export while an overwrite swaps waits for it, and carries the new State whole", async () => {
+    const agent = await agentWithVault();
+    // The overwrite stops with the previous State moved aside and the new one not yet in place,
+    // until the export has come: to the Agent's hold, or, were there none, all the way through.
+    let arrive!: () => void;
+    const exportArrived = new Promise<void>((resolve) => (arrive = resolve));
+    const realHold = AgentHoldQueue.prototype.hold;
+    let holds = 0;
+    vi.spyOn(AgentHoldQueue.prototype, "hold").mockImplementation(function (
+      this: AgentHoldQueue,
+      key: string,
+      work: () => Promise<unknown>,
+    ) {
+      holds += 1;
+      if (holds === 2) arrive();
+      return realHold.call(this, key, work);
+    } as typeof realHold);
+    const realRename = fs.rename.bind(fs);
+    let aside!: () => void;
+    const stateAside = new Promise<void>((resolve) => (aside = resolve));
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (movingIn(agent.state)(String(from), String(to))) {
+        aside();
+        await exportArrived;
+      }
+      return realRename(from, to);
+    });
+
+    const importing = overwrite(agent.id);
+    await stateAside;
+    const exporting = Promise.resolve(admin.get(`${agent.base}/archive`));
+    void exporting.then(() => arrive());
+    const [imported, exported] = await Promise.all([importing, exporting]);
+
+    expect(imported.status, await imported.clone().text()).toBe(201);
+    expect(exported.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await exported.arrayBuffer()));
+    expect(strFromU8(entries[`${agent.id}/agent_state/AGENTS.md`]!)).toBe("# Candidate\n");
+    expect(strFromU8(entries[`${agent.id}/agent_state/system_config.yaml`]!)).toContain(
+      "candidate",
+    );
+    expect(strFromU8(entries[`${agent.id}/agent_state/memory/user/mine.md`]!)).toBe("my memory\n");
   });
 
   /** A swap folder under the Agent as the swap leaves it, written by hand. */
