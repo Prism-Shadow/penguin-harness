@@ -9,16 +9,13 @@
  *   full matrix without offering an optimization; the Optimize tail carries every input the
  *   agent-optimization Skill requires; a note or focus text goes before the tail, a blank one
  *   is left out.
- * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill and the
- *   three inputs every toolkit takes, none of the default loop's Skills or knobs, and pins the
- *   evaluations to the baseline's provider and model only when it is given both.
- * - A Train/Test toolkit's tail names its Skill, the tested agent, this Benchmark as one package
- *   of its pair and the test repetitions, asks for the frozen baseline and final States' Test
- *   matrices and no candidate's, and carries neither runs per case, a smoke budget nor the
- *   default loop's Skills or knobs; it pins the provider and model as the other tail does.
- * - The Evaluate tail, one for every Benchmark (Harbor or not), takes the model under test from
- *   the evaluator's own Session, since an agent stores none: in both dictionaries it names the
- *   Environment lines that carry the provider and the model id in the system prompt core renders.
+ * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill, the tested
+ *   agent, the Benchmark, the test-set repetitions and the tested model, and stays general: none
+ *   of the default loop's Skills or knobs, no runs per case, no smoke budget and no scoreboard
+ *   rule, which are each toolkit's own Skill's to state.
+ * - Every tail that tests the agent names the tested model the dialog picked, in both
+ *   dictionaries, and the Evaluate tail no longer sends the evaluator to its own Environment for
+ *   it: the conversation's model is not the model under test.
  * - The evaluation dialog's Ask AI question carries the facts on screen, every case and the
  *   Session of every run, and names no Skill to run; the case dialog's names both material
  *   paths and the latest runs; each box opens on the default question, which leads its examples.
@@ -71,6 +68,8 @@ describe("evaluateTail / buildEvaluatePrompt", () => {
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
     runs: 2,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
   };
 
   it("carries every input the agent-evaluation Skill requires", () => {
@@ -108,10 +107,12 @@ describe("evaluateTail / buildEvaluatePrompt", () => {
   };
 
   for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: tests on the evaluator's own model, read from the Environment lines core renders`, () => {
+    it(`${locale}: tests on the picked model, not on the evaluator's own`, () => {
       const tail = dict.benchmark.evaluateTail(params);
+      expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+      expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
       for (const placeholder of ["{{PROVIDER}}", "{{MODEL_ID}}"])
-        expect(tail).toContain(`\`${environmentLabel(placeholder)}\``);
+        expect(tail).not.toContain(`\`${environmentLabel(placeholder)}\``);
     });
   }
 
@@ -128,6 +129,8 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
     runs: 2,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
     roundLimit: 3,
     targetScore: 85,
   };
@@ -138,6 +141,8 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     expect(tail).toContain("`report-writer`");
     expect(tail).toContain("`report-writing-v1`");
     expect(tail).toMatch(/runs[：:] ?`2`/);
+    expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+    expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
     expect(tail).toMatch(/desired_score[：:] ?`>=85`/);
     expect(tail).toMatch(/candidate_round_limit[：:] ?`3`/);
     expect(tail).toContain("scoreboard.yaml");
@@ -156,92 +161,40 @@ describe("optimizeTail / buildOptimizePrompt", () => {
 
 describe("rsiOptimizeTail (a toolkit other than the default)", () => {
   const params = {
-    skill: "opro-rsi-toolkit",
+    skill: "skillopt-rsi-toolkit",
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
-    runs: 2,
+    testRepetitions: 3,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
   };
-  // The toolkit measures through its own evaluation reference and runs its paper's budget: the
-  // default loop's Skills and knobs would send it down the other procedure.
-  const DEFAULT_LOOP = [
+  // The toolkit's own Skill says how it trains, tests, budgets and records: the default loop's
+  // Skills and knobs, or a protocol of the tail's own, would contradict it.
+  const NOT_THE_TAILS = [
     "agent-evaluation",
     "agent-optimization",
     "run_subagent",
     "desired_score",
     "candidate_round_limit",
+    "scoreboard.yaml",
   ];
 
   for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: names the toolkit's Skill and the three inputs every toolkit takes`, () => {
+    it(`${locale}: names the Skill, the tested agent, the Benchmark, the repetitions and the tested model`, () => {
       const tail = dict.benchmark.rsiOptimizeTail(params);
-      expect(tail).toContain("`opro-rsi-toolkit`");
-      expect(tail).toContain("`report-writer`");
-      expect(tail).toContain("`report-writing-v1`");
-      expect(tail).toContain("`benchmarks/report-writing-v1/`");
-      expect(tail).toMatch(/runs[：:] ?`2`/);
-      expect(tail).toContain("scoreboard.yaml");
-      for (const marker of DEFAULT_LOOP) expect(tail).not.toContain(marker);
-    });
-
-    it(`${locale}: pins the baseline's provider and model only when given both`, () => {
-      const pinned = dict.benchmark.rsiOptimizeTail({
-        ...params,
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-      });
-      expect(pinned).toMatch(/provider[：:] ?`deepseek`/);
-      expect(pinned).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
-      expect(dict.benchmark.rsiOptimizeTail(params)).not.toMatch(/provider|model_id/);
-      // Half a pair is no pair: the toolkit stops on one rather than guessing the other half.
-      const half = dict.benchmark.rsiOptimizeTail({ ...params, provider: "deepseek" });
-      expect(half).not.toMatch(/provider|model_id/);
-    });
-  }
-});
-
-describe("rsiTrainTestTail (a toolkit that learns on a Train/Test pair)", () => {
-  const params = {
-    skill: "skillopt-rsi-toolkit",
-    targetAgentId: "ticket-agent",
-    benchmarkId: "penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-test",
-    repetitions: 3,
-  };
-  const DEFAULT_LOOP = [
-    "agent-evaluation",
-    "agent-optimization",
-    "run_subagent",
-    "desired_score",
-    "candidate_round_limit",
-  ];
-
-  for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: names the Skill, the tested agent, the Benchmark and the test repetitions`, () => {
-      const tail = dict.benchmark.rsiTrainTestTail(params);
       expect(tail).toContain("`skillopt-rsi-toolkit`");
-      expect(tail).toContain("`ticket-agent`");
-      expect(tail).toContain(`\`benchmarks/${params.benchmarkId}/\``);
+      expect(tail).toContain("`report-writer`");
+      expect(tail).toContain("`benchmarks/report-writing-v1/`");
       expect(tail).toMatch(/test_repetitions[：:] ?`3`/);
-      expect(tail).toContain("Train/Test");
-      expect(tail).toContain("scoreboard.yaml");
-      expect(tail).toContain("final_minus_baseline");
-      // Not the one-Benchmark tail: no runs per case and no smoke budget, which a Train/Test
-      // toolkit does not define, and none of the default loop's Skills or knobs.
+      expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+      expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
+    });
+
+    it(`${locale}: leaves the protocol to the toolkit's Skill`, () => {
+      const tail = dict.benchmark.rsiOptimizeTail(params);
       expect(tail).not.toMatch(/^- runs[：:]/m);
       expect(tail).not.toMatch(/smoke|冒烟/);
-      for (const marker of DEFAULT_LOOP) expect(tail).not.toContain(marker);
-    });
-
-    it(`${locale}: pins the baseline's provider and model only when given both`, () => {
-      const pinned = dict.benchmark.rsiTrainTestTail({
-        ...params,
-        provider: "deepseek",
-        modelId: "deepseek-v4.1-flash",
-      });
-      expect(pinned).toMatch(/provider[：:] ?`deepseek`/);
-      expect(pinned).toMatch(/model_id[：:] ?`deepseek-v4.1-flash`/);
-      expect(dict.benchmark.rsiTrainTestTail(params)).not.toMatch(/provider|model_id/);
-      const half = dict.benchmark.rsiTrainTestTail({ ...params, modelId: "deepseek-v4.1-flash" });
-      expect(half).not.toMatch(/provider|model_id/);
+      for (const marker of NOT_THE_TAILS) expect(tail).not.toContain(marker);
     });
   }
 });

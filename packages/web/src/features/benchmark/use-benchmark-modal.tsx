@@ -6,31 +6,30 @@
  * for their Skill, both preview the assembled prompt, and both leave the same way: the prompt is
  * prefilled into a new conversation with the agent that will carry the work out, and pressing
  * Send stays the user's move. A Benchmark can score several agents, so which one is under test
- * is a choice here; the baseline and the default target follow that choice. The model of the
- * conversation that carries the work out is picked with the Project settings' own model picker
- * (ModelCatalogSelect in its form variant, the one the new-chat defaults and the schedule form use),
- * preset to the Project's default model. The new conversation opens with the Skills its tab
- * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
- * `[use_skills]` block names them on send and the model reads them before it acts; a model
- * left to its own devices sometimes scored the runs itself instead of delegating to
- * agent-evaluation. Evaluate tests on that conversation's own model, at the tested agent's
- * configured thinking level: an agent stores no model of its own. The prompt names no model —
- * the evaluator reads its Session's model from its Environment — so one changed in the composer
- * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
- * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ * is a choice here; the baseline and the default target follow that choice. Two models are
+ * picked apart, each with the Project settings' own model picker (ModelCatalogSelect in its form
+ * variant, the one the new-chat defaults and the schedule form use): the model of the
+ * conversation that carries the work out, preset to the Project's default model, and the model
+ * the tested agent runs on, preset to the one its latest scored evaluation here recorded (else
+ * the Project's default) so a new score joins that series. The tested model follows the tested
+ * agent until it is picked by hand, and every tail names it: an agent stores no model, and the
+ * conversation's own model is no longer the one under test. The thinking level stays the tested
+ * agent's configured one. The new conversation opens with the Skills its tab rests on
+ * preselected — the evaluator on both tabs, the optimizer on its own — so the `[use_skills]`
+ * block names them on send and the model reads them before it acts; a model left to its own
+ * devices sometimes scored the runs itself instead of delegating to agent-evaluation. The default
+ * loop's baseline is the tested agent's newest score on the tested model. Mounted fresh per
+ * Benchmark.
  *
  * Optimize first picks the method: one RSI toolkit per plugin of the library's `rsi` category,
  * read from the library each time the dialog opens (rsi-methods.ts), so a toolkit an admin has
- * just installed is offered. The default toolkit is the form above. Any other toolkit runs its
- * paper's own loop and budget, so it takes no round limit and no target; its one Skill is the
- * only one preselected, and its tail hands it the baseline's provider and model when there is a
- * baseline. A toolkit whose protocol is `train-test` learns on the Train package of this
- * Benchmark's pair and tests its frozen baseline and final States on the Test package: runs per
- * case gives way to how many complete times each is tested, and its tail says so instead of
- * asking for every candidate on this Benchmark's scoreboard.
- * Until the library is read — or when the read fails, or it lists no toolkit — the
- * select is disabled and says why, and the tab is the default loop's form: that loop is the
- * product's own and needs nothing from the list.
+ * just installed is offered. The default toolkit is the form above. Any other toolkit follows its
+ * own Skill for what it trains and tests on, its budget and its records, so it takes no round
+ * limit and no target, and runs per case give way to test-set repetitions: how many complete
+ * times each State it reports is tested. Its one Skill is the only one preselected. Until the
+ * library is read — or when the read fails, or it lists no toolkit — the select is disabled and
+ * says why, and the tab is the default loop's form: that loop is the product's own and needs
+ * nothing from the list.
  *
  * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
  * it starts through `penguin run` (CLI Sessions) are archived, by the listing rule.
@@ -69,14 +68,8 @@ import {
   evaluateTail,
   optimizeTail,
   rsiOptimizeTail,
-  rsiTrainTestTail,
 } from "./benchmark-prompts";
-import type {
-  EvaluateParams,
-  OptimizeParams,
-  RsiOptimizeParams,
-  RsiTrainTestParams,
-} from "./benchmark-prompts";
+import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
 import {
   DEFAULT_TOOLKIT_PLUGIN,
   EVALUATION_SKILL,
@@ -132,20 +125,37 @@ export function UseBenchmarkModal({
   const [testAgentId, setTestAgentId] = useState(
     lastTested ?? currentAgent?.agentId ?? pickDefaultAgent(agents)?.agentId ?? "",
   );
-  const baseline = latestScoreOfAgent(benchmark.evaluations, testAgentId);
-  // The record that baseline is read from — the tested agent's newest scored evaluation, as
-  // latestScoreOfAgent picks it. The default loop keeps the provider and model it was recorded
-  // on; a toolkit other than the default is handed the same pair, so its scores join that series.
-  const baselineRecord =
+  // The tested agent's newest scored evaluation on any model: the model it recorded presets the
+  // tested-model picker, so a new score joins that series unless another model is picked.
+  const lastScored =
     testAgentId === ""
       ? undefined
       : [...benchmark.evaluations]
           .reverse()
           .find((e) => (e.agentId ?? "") === testAgentId && Number.isFinite(e.score));
-  const baselineRuntime =
-    baselineRecord !== undefined
-      ? { provider: baselineRecord.provider, modelId: baselineRecord.modelId }
+  const defaultModel = models?.defaultModel;
+  const listed = (ref: ModelRefDto) =>
+    models?.models.some((m) => m.provider === ref.provider && m.modelId === ref.modelId) ?? false;
+  // A model the Project no longer lists is not offered: the picker would show a value it cannot
+  // select, and a run on it could not start.
+  const lastScoredModel =
+    lastScored !== undefined && listed(lastScored)
+      ? { provider: lastScored.provider, modelId: lastScored.modelId }
       : null;
+  /** The tested model picked by hand; null while it follows the tested agent. */
+  const [testModelPick, setTestModelPick] = useState<ModelRefDto | null>(null);
+  const testModel = testModelPick ?? lastScoredModel ?? defaultModel ?? null;
+  // The default loop compares within one label, so its baseline is the newest score the tested
+  // agent recorded on the tested model.
+  const baseline =
+    testModel === null
+      ? null
+      : latestScoreOfAgent(
+          benchmark.evaluations.filter(
+            (e) => e.provider === testModel.provider && e.modelId === testModel.modelId,
+          ),
+          testAgentId,
+        );
   const defaultTarget = defaultTargetScore(baseline?.score ?? null);
   const [evaluatorId, setEvaluatorId] = useState<string | null>(
     pickDefaultAgent(agents)?.agentId ?? null,
@@ -159,11 +169,10 @@ export function UseBenchmarkModal({
   // Clamped: benchmark_config.toml is hand-editable, and a larger count there would open the
   // dialog on a field its own bound rejects, with Send disabled until the number is retyped.
   const [runs, setRuns] = useState(String(Math.min(benchmark.runs ?? 1, MAX_RUNS)));
+  const [testRepetitions, setTestRepetitions] = useState(String(DEFAULT_TEST_REPETITIONS));
   const [note, setNote] = useState("");
   const [roundLimit, setRoundLimit] = useState("3");
   const [targetScore, setTargetScore] = useState(String(defaultTarget));
-  /** A Train/Test toolkit's complete tests per frozen State, in place of runs per case. */
-  const [repetitions, setRepetitions] = useState(String(DEFAULT_TEST_REPETITIONS));
   /** The target follows the tested agent's baseline until the field is edited by hand. */
   const [targetTouched, setTargetTouched] = useState(false);
   const [focus, setFocus] = useState("");
@@ -173,7 +182,6 @@ export function UseBenchmarkModal({
   // Null while the select has nothing to offer, which leaves the default loop's form.
   const toolkit = pickRsiMethod(methods, methodPlugin);
   const isDefaultMethod = toolkit === null || toolkit.kind === "default";
-  const isTrainTest = !isDefaultMethod && toolkit.protocol === "train-test";
   const optimizerSkill = toolkit?.skill ?? OPTIMIZATION_SKILL;
   const [skillsByAgent, setSkillsByAgent] = useState<Record<string, string[]>>({});
 
@@ -200,7 +208,6 @@ export function UseBenchmarkModal({
 
   // A model list that arrives after the dialog opened seeds the picker the same way the
   // initial state does; a pick already made is never overwritten.
-  const defaultModel = models?.defaultModel;
   useEffect(() => {
     if (defaultModel !== undefined) setModelRef((current) => current ?? defaultModel);
   }, [defaultModel]);
@@ -214,13 +221,20 @@ export function UseBenchmarkModal({
   const optimizerMissingSkill = lacksSkill(optimizerId, optimizerSkill);
 
   const runsValue = intIn(runs, 1, MAX_RUNS);
+  const repetitionsValue = intIn(testRepetitions, 1, MAX_RUNS);
   const roundsValue = intIn(roundLimit, 1, MAX_RUNS);
   const targetValue = intIn(targetScore, 1, 100);
-  const repetitionsValue = intIn(repetitions, 1, MAX_RUNS);
+  // Until a tested model is known (the list has not arrived, or the Project has none) the prompt
+  // shows empty values and the exit stays disabled.
+  const testedRuntime = {
+    provider: testModel?.provider ?? "",
+    modelId: testModel?.modelId ?? "",
+  };
   const evaluateParams: EvaluateParams = {
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
     runs: runsValue ?? benchmark.runs ?? 1,
+    ...testedRuntime,
   };
   const optimizeParams: OptimizeParams = {
     ...evaluateParams,
@@ -228,37 +242,28 @@ export function UseBenchmarkModal({
     targetScore: targetValue ?? defaultTarget,
   };
   const rsiParams: RsiOptimizeParams = {
-    ...evaluateParams,
-    skill: optimizerSkill,
-    ...(baselineRuntime ?? {}),
-  };
-  const trainTestParams: RsiTrainTestParams = {
     skill: optimizerSkill,
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
-    repetitions: repetitionsValue ?? DEFAULT_TEST_REPETITIONS,
-    ...(baselineRuntime ?? {}),
+    testRepetitions: repetitionsValue ?? DEFAULT_TEST_REPETITIONS,
+    ...testedRuntime,
   };
   const text =
     tab === "evaluate"
       ? composeAiPrompt(note, evaluateTail(evaluateParams))
       : isDefaultMethod
         ? composeAiPrompt(focus, optimizeTail(optimizeParams))
-        : isTrainTest
-          ? composeAiPrompt(focus, rsiTrainTestTail(trainTestParams))
-          : composeAiPrompt(focus, rsiOptimizeTail(rsiParams));
+        : composeAiPrompt(focus, rsiOptimizeTail(rsiParams));
   const runnerId = tab === "evaluate" ? evaluatorId : optimizerId;
-  // A toolkit other than the default takes no round limit and no target: its budget is its own.
-  // A Train/Test toolkit takes test repetitions in place of runs per case.
-  const paramsValid =
-    tab === "evaluate"
-      ? runsValue !== null
-      : isDefaultMethod
-        ? runsValue !== null && roundsValue !== null && targetValue !== null
-        : isTrainTest
-          ? repetitionsValue !== null
-          : runsValue !== null;
-  const ready = runnerId !== null && testAgentId !== "" && paramsValid;
+  // A toolkit other than the default takes no round limit and no target, and counts test-set
+  // repetitions instead of runs per case: its budget is its own.
+  const usesRuns = tab === "evaluate" || isDefaultMethod;
+  const ready =
+    runnerId !== null &&
+    testAgentId !== "" &&
+    testModel !== null &&
+    (usesRuns ? runsValue !== null : repetitionsValue !== null) &&
+    (tab === "evaluate" || !isDefaultMethod || (roundsValue !== null && targetValue !== null));
 
   const go = () => {
     if (runnerId === null) return;
@@ -285,7 +290,12 @@ export function UseBenchmarkModal({
   // The Project settings' model picker (provider logo, searchable grouped panel, the default
   // row marked), disabled until the list is known; an empty list reads as the models page's
   // own empty line rather than as a picker with nothing in it.
-  const modelField = (label: string, hint: string) => (
+  const modelField = (
+    label: string,
+    hint: string,
+    value: ModelRefDto | null,
+    onChange: (ref: ModelRefDto) => void,
+  ) => (
     <div>
       <FieldLabel>{label}</FieldLabel>
       {models !== null && models.models.length === 0 ? (
@@ -293,9 +303,9 @@ export function UseBenchmarkModal({
       ) : (
         <ModelCatalogSelect
           models={models?.models ?? []}
-          value={modelRef}
+          value={value}
           {...(defaultModel !== undefined ? { defaultModel } : {})}
-          onChange={setModelRef}
+          onChange={onChange}
           disabled={models === null}
           variant="form"
         />
@@ -319,6 +329,10 @@ export function UseBenchmarkModal({
       {agentOptions}
     </Select>
   );
+  const sessionModelField = (label: string, hint: string) =>
+    modelField(label, hint, modelRef, setModelRef);
+  const testedModelField = () =>
+    modelField(S.benchmark.testedModel, S.benchmark.testedModelHint, testModel, setTestModelPick);
   const runsInput = (hint: string) => (
     <Input
       label={S.benchmark.runsField}
@@ -371,6 +385,7 @@ export function UseBenchmarkModal({
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {testedAgentSelect(S.benchmark.evaluateTestedAgentHint)}
+              {testedModelField()}
               <Select
                 label={S.benchmark.evaluatorAgent}
                 hint={S.benchmark.evaluatorAgentHint}
@@ -379,7 +394,10 @@ export function UseBenchmarkModal({
               >
                 {agentOptions}
               </Select>
-              {modelField(S.benchmark.evaluateSessionModel, S.benchmark.evaluateSessionModelHint)}
+              {sessionModelField(
+                S.benchmark.evaluateSessionModel,
+                S.benchmark.evaluateSessionModelHint,
+              )}
               {runsInput(S.benchmark.evaluateRunsHint)}
             </div>
             {missingSkillStrip(evaluatorMissingSkill, S.benchmark.evaluatorMissingSkill)}
@@ -454,6 +472,7 @@ export function UseBenchmarkModal({
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {testedAgentSelect(S.benchmark.testedAgentHint)}
+              {testedModelField()}
               <Select
                 label={S.benchmark.optimizerAgent}
                 hint={
@@ -466,15 +485,7 @@ export function UseBenchmarkModal({
               >
                 {agentOptions}
               </Select>
-              {/* Evaluations run on the model the baseline was recorded on; a toolkit other than
-                  the default with no baseline to follow measures on this conversation's own
-                  model instead, as the Evaluate tab does. */}
-              {modelField(
-                S.benchmark.sessionModel,
-                isDefaultMethod || baselineRuntime !== null
-                  ? S.benchmark.sessionModelHint
-                  : S.benchmark.evaluateSessionModelHint,
-              )}
+              {sessionModelField(S.benchmark.sessionModel, S.benchmark.sessionModelHint)}
             </div>
             {missingSkillStrip(
               optimizerMissingSkill,
@@ -483,20 +494,9 @@ export function UseBenchmarkModal({
                 : S.benchmark.methodMissingSkill(toolkit?.plugin ?? "", optimizerSkill),
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {isTrainTest ? (
-                <Input
-                  label={S.benchmark.testRepetitionsField}
-                  hint={S.benchmark.testRepetitionsHint}
-                  inputMode="numeric"
-                  value={repetitions}
-                  onChange={(e) => setRepetitions(digits(e.target.value))}
-                  {...errorProp(repetitionsValue === null ? S.benchmark.invalidRuns : undefined)}
-                />
-              ) : (
-                runsInput(S.benchmark.optimizeRunsHint)
-              )}
               {isDefaultMethod ? (
                 <>
+                  {runsInput(S.benchmark.optimizeRunsHint)}
                   <Input
                     label={S.benchmark.roundLimitField}
                     hint={S.benchmark.roundLimitHint}
@@ -518,9 +518,19 @@ export function UseBenchmarkModal({
                   />
                 </>
               ) : (
-                <p className="text-xs text-gray-500 sm:col-span-2 sm:self-center dark:text-gray-400">
-                  {isTrainTest ? S.benchmark.methodTrainTestHint : S.benchmark.methodBudgetHint}
-                </p>
+                <>
+                  <Input
+                    label={S.benchmark.testRepetitionsField}
+                    hint={S.benchmark.testRepetitionsHint}
+                    inputMode="numeric"
+                    value={testRepetitions}
+                    onChange={(e) => setTestRepetitions(digits(e.target.value))}
+                    {...errorProp(repetitionsValue === null ? S.benchmark.invalidRuns : undefined)}
+                  />
+                  <p className="text-xs text-gray-500 sm:col-span-2 sm:self-center dark:text-gray-400">
+                    {S.benchmark.methodBudgetHint}
+                  </p>
+                </>
               )}
             </div>
             <Textarea

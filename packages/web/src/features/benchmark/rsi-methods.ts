@@ -10,8 +10,6 @@
  * Skill of its own: the one named like the plugin, else the first Skill its quick start preselects
  * that it ships, else its only Skill. A plugin none of these settles is not offered. The label and
  * the hint are the plugin's own display name and short description, in the reader's language.
- * Its protocol (`penguin.rsi_protocol`) says what the tab asks for and tells it: one frozen
- * Benchmark, or a Train/Test pair whose frozen States are tested a number of times.
  */
 import type { PluginItem, PluginLibraryResponse } from "@prismshadow/penguin-server/api";
 import { localizedText } from "../chat/skill-use";
@@ -32,13 +30,6 @@ export interface RsiMethod {
   plugin: string;
   /** The default loop's form (round limit, target score), or a paper's loop with its own budget. */
   kind: "default" | "paper";
-  /**
-   * `benchmark`: it optimizes against this one frozen Benchmark, runs per case for every
-   * measurement. `train-test`: it learns on the Train package of this Benchmark's pair and tests
-   * the frozen baseline and final States on the Test package, a number of complete repetitions.
-   * The default loop, and a toolkit that declares nothing, use one Benchmark.
-   */
-  protocol: "benchmark" | "train-test";
   /** The optimizer Skill the conversation preselects and the tail hands the work to. */
   skill: string;
   /** The plugin's display name, else its name. */
@@ -81,7 +72,6 @@ export function rsiMethods(toolkits: readonly PluginItem[], locale: "zh" | "en")
     methods.push({
       plugin: plugin.name,
       kind: isDefault ? "default" : "paper",
-      protocol: isDefault ? "benchmark" : (plugin.rsiProtocol ?? "benchmark"),
       skill,
       label: localizedText(locale, plugin.title || plugin.name, plugin.titleZh),
       hint: hintOf(plugin, locale),
