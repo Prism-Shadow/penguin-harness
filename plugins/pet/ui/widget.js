@@ -11,9 +11,10 @@
  * idle tick lowers the fullness a little and PATCHes it back, so the pet grows hungry
  * however you look at it. Feeding is a double-click: +fullness, PATCHed.
  *
- * The dock mounts this document bare (no card, no title bar, no close button — the dock's
- * tile opens and closes it), so the document also answers where the pointer is over her: the
- * handshake below is what keeps the page beneath this frame clickable.
+ * The dock mounts this document bare and fills the window with it (no card, no title bar, no
+ * close button — the dock's tile opens and closes it), so the page is her stage and the document
+ * also answers where the pointer is over her: the handshake below is what keeps the page beneath
+ * this frame clickable.
  */
 
 import * as kit from "./figure/kit/body.js";
@@ -26,6 +27,11 @@ const HUNGER = 2;
 const FEED = 20;
 /** How long a bubble line stays up. */
 const BUBBLE_MS = 3400;
+/**
+ * How tall her figure is on the page, in CSS pixels — the 256-unit square she is drawn in. Fixed,
+ * not a share of the window: a pet that grew with the window would tower over a maximized app.
+ */
+const PET_PX = 280;
 
 const root = document.getElementById("root");
 const bubbleEl = document.getElementById("bubble");
@@ -35,10 +41,10 @@ let fullness = 0;
 let doing = "idle";
 let bubbleUntil = 0;
 
-/** The stage the body stands on: one logo unit = S pixels, the whale inside a 256-unit square. */
+/** The stage the body stands on: the whole page — one logo unit is S pixels, the whale inside a 256-unit square. */
 function bounds() {
   const r = root.getBoundingClientRect();
-  return { W: r.width, H: r.height, floorY: r.height - 8, S: (r.height - 16) / 256 };
+  return { W: r.width, H: r.height, floorY: r.height - 8, S: Math.min(PET_PX, r.height - 24) / 256 };
 }
 
 function stagePoint(e) {
@@ -231,7 +237,21 @@ async function start() {
   try {
     const answer = await read();
     document.querySelector(".err")?.remove();
-    body = await createWhaleBody(new URL("./figure/whale/", import.meta.url), { kit, host: { root, bounds, emit: onEvent, sound: () => {}, start: {} } });
+    const stage = bounds();
+    body = await createWhaleBody(new URL("./figure/whale/", import.meta.url), {
+      kit,
+      // The dock gives this document the whole window, so the page is her stage: she stands and
+      // walks anywhere on it (`ground: "free"`), and the drop point is wherever you put her.
+      ground: "free",
+      host: {
+        root,
+        bounds,
+        emit: onEvent,
+        sound: () => {},
+        // She starts at the bottom right, just above the dock's tile.
+        start: { x: stage.W - stage.S * 150, y: stage.floorY },
+      },
+    });
     apply(answer.state);
     addEventListener("resize", () => body.resize());
     requestAnimationFrame(frame);

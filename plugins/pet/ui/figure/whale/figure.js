@@ -882,7 +882,12 @@ export async function createWhaleFigure(base = new URL('./', import.meta.url), o
   };
 }
 
-/** The whale pack's entry (figure.json): her body for the figure frame, the kit's body drawn by her figure. */
+/**
+ * The whale pack's entry (figure.json): her body for the figure frame, the kit's body drawn by her
+ * figure. Everything else in `opts` (the kit's own options: `ground`, `roam`, `words`, `moves`,
+ * `css`, `skinCss`) goes on to the kit's body unchanged.
+ */
 export async function createWhaleBody(base, opts) {
-  return opts.kit.createBody(opts.host, { figure: await createWhaleFigure(base, opts) });
+  const { kit, host, ...rest } = opts;
+  return kit.createBody(host, { ...rest, figure: await createWhaleFigure(base, opts) });
 }

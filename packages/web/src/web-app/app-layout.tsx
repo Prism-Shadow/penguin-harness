@@ -48,9 +48,9 @@ function pinnedSidebarOnScreen(): boolean {
  * each, docked at the layout's bottom-right corner. A tile shows the widget's initial (its
  * title's first grapheme) until clicked, then opens its iframe over the dock — a small
  * always-visible surface a page would be too heavy for. A widget that declares `chrome: "bare"`
- * opens as its own document, which then draws everything including how it is closed
- * (BareWidget); any other opens in a titled card with a close button. Only an iframe widget
- * draws today; builtin names are contributed but wait for a registry entry.
+ * opens as its own document filling the window, which then draws everything including how it is
+ * closed (BareWidget); any other opens in a titled card with a close button. Only an iframe
+ * widget draws today; builtin names are contributed but wait for a registry entry.
  */
 function WidgetDock() {
   const widgets = useContributedWidgets();
@@ -101,15 +101,16 @@ function WidgetDock() {
 
 /**
  * A widget that draws itself (`chrome: "bare"`): the iframe alone — no border, no background,
- * no title bar, no close button; the dock's tile above opens and closes it.
+ * no title bar, no close button; the dock's tile opens and closes it. The frame covers the whole
+ * window rather than one dock-sized cell, so what it draws — a companion that walks about — has
+ * the page for a stage instead of a box in the corner.
  *
- * Left alone, a frame that size would swallow every click over its rectangle, so it is
- * `pointer-events: none` and the page beneath keeps working. While the pointer is over the
- * frame — or a finger taps in it — the host relays the position to the document as
- * `{ penguin: "widget-probe", x, y }` in the frame's own pixels; the document answers
- * `{ penguin: "widget-over", over }` when the position is on something it drew, and only then
- * does the frame take pointer events. The document reports the pointer leaving by itself,
- * which hands the page the pointer back.
+ * A frame that size would swallow every click on the page, so it is `pointer-events: none` and
+ * the page beneath keeps working. While the pointer is over the frame — or a finger taps in it —
+ * the host relays the position to the document as `{ penguin: "widget-probe", x, y }` in the
+ * frame's own pixels; the document answers `{ penguin: "widget-over", over }` when the position
+ * is on something it drew, and only then does the frame take pointer events. The document
+ * reports the pointer leaving by itself, which hands the page the pointer back.
  */
 function BareWidget({ src, title }: { src: string; title: string }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -148,7 +149,7 @@ function BareWidget({ src, title }: { src: string; title: string }) {
       ref={frameRef}
       src={src}
       title={title}
-      className="h-64 w-72 border-0 bg-transparent"
+      className="fixed inset-0 h-full w-full border-0 bg-transparent"
       style={{ pointerEvents: over ? "auto" : "none" }}
     />
   );
