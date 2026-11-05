@@ -59,16 +59,19 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Plugins are the exception to the snapshot rule: in a workspace checkout core's loader reads
-the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
-no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
-skill, a changed SKILL.md, a changed `package.json` — is live in `pnpm dev` and in the test
-suites at once. A plugin's own version is its npm version (`package.json`, bumped by the
-release); the date versions (`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent.
-Any change under `skills/<name>/` must raise that skill's `version` in its SKILL.md
-frontmatter, and any change to the hook scripts or the `penguin.hooks` commands must raise
-`penguin.hooks.version` in `package.json`: those versions are how installed copies learn they are
-behind, and CI fails a pull request that changed a part without raising it
+Plugins are the exception to the snapshot rule: in a workspace checkout the library's loader
+reads the repo's `plugins/<name>/` directories directly, not pnpm's injected copies, so an edit
+to a plugin's files — a changed SKILL.md, a changed hook script — is live in `pnpm dev` and in
+the test suites at once. What a plugin declares (its card, its skills, its hook commands, its
+MCP servers) lives in its `src/index.ts` and reaches the loader through the `ifaces.json` the
+plugin's `build` writes: `pnpm -r build` builds every plugin and `pnpm dev` builds the content
+plugins first, and after changing a declaration you run that plugin's `build` again. A plugin's
+own version is its npm version (`package.json`, bumped by the release); the date versions
+(`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent. Any change under
+`skills/<name>/` must raise that skill's `version` in its SKILL.md frontmatter, and any change
+to the hook scripts or to the commands of the hooks contribution in `src/index.ts` must raise
+that contribution's `version`: those versions are how installed copies learn they are behind,
+and CI fails a pull request that changed a part without raising it
 (`scripts/check-plugin-versions.mjs`).
 
 Dev entry points that touch data default to separate data roots, kept apart from the

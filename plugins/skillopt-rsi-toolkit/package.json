@@ -20,28 +20,16 @@
   "files": [
     "icon.svg",
     "skills",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "description_zh": "SkillOpt RSI 工具包：通过有界文本编辑、候选评测和跨轮反思优化可复用 Skill，再比较冻结的 baseline 与 final。",
-    "short_description": "SkillOpt RSI Toolkit: bounded Skill edits with score-based selection.",
-    "short_description_zh": "SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。",
-    "category": "rsi",
-    "icon": "icon.svg",
-    "quick_start": {
-      "prompt": "Read skillopt-rsi-toolkit and run a SkillOpt experiment on the selected Benchmarks with the requested model and budget.",
-      "prompt_zh": "读取 skillopt-rsi-toolkit，按指定模型和预算，在选定的 Benchmark 上完成 SkillOpt 实验。",
-      "skills": [
-        "skillopt-rsi-toolkit"
-      ]
-    },
-    "title": "SkillOpt RSI Toolkit",
-    "title_zh": "SkillOpt 自进化工具包",
-    "references": [
-      "https://arxiv.org/abs/2605.23904"
-    ]
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }

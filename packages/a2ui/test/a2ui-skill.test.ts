@@ -4,7 +4,8 @@
  * numbers the skill quotes are the exported weights; the two data scripts build blocks the
  * catalog accepts — sysinfo.mjs a resources board from a real snapshot and from a fixed one, with
  * and without disks, history and network; and the committed checker bundle was built from the
- * current a2ui sources. Where the plugin sits in the library is the library suite's to check.
+ * current a2ui sources. Where the plugin sits in the library is the library suite's to check
+ * (packages/server/test/plugin-library.test.ts).
  */
 import fs from "node:fs/promises";
 import path from "node:path";

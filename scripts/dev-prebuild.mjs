@@ -11,6 +11,10 @@
  * which that build inlines and the dev server imports; the server's build script also
  * regenerates the interface table (src/ifaces.json) the dev server reads. packages/cli is
  * built as well: its dist is what the shim falls back to when the source cannot run (no tsx).
+ * So are the plugin packages that carry content (every `@penguinharness/*` but the sandbox
+ * backends, which the hot push and the desktop build stage themselves): their `build` writes the
+ * ifaces.json the plugin library reads what a plugin carries from, and a dev server reading the
+ * library without one fails at the first read.
  *
  * packages/a2ui builds with them: the Web App's components and the server's messaging bridge
  * import the A2UI grammar from its dist.
@@ -224,7 +228,7 @@ try {
       exitCode = 0;
     } else {
       console.log(
-        "[dev-prebuild] building core, a2ui, the server modules the CLI imports, and the CLI...",
+        "[dev-prebuild] building core, a2ui, the server modules the CLI imports, the CLI, and the plugins' tables...",
       );
       // One pnpm invocation, so they run in dependency order: the CLI bundle inlines core,
       // and the server build inlines hmr, so each has to be rebuilt before its consumer.
@@ -239,6 +243,7 @@ try {
             `@prismshadow/penguin-${pkg}`,
           ]),
           ...["--filter", "@prismshadow/a2ui"],
+          ...["--filter", "@penguinharness/*", "--filter", "!@penguinharness/sandbox-*"],
           "build",
         ],
         {
