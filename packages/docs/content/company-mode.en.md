@@ -99,7 +99,7 @@ Ticket sessions open on the model the employee's desk runs on at that moment. Ed
 
 An employee is an ordinary agent of the Project, so development mode can still chat with it and change its settings. The **Agents** page lists employees in a section of their own, **Company employees**, each card naming its organization and title; the new-chat agent pickers list them last, and the sidebar groups an employee only once it has a conversation of its own there.
 
-**An employee's agent cannot be deleted.** Its delete button stays off until the employee leaves, and deleting it through the API answers `409 agent_employed`, naming each organization and title. Every organization of the Project counts, paused ones included; for an organization whose `org_chart.yaml` does not parse, only the CEO is protected.
+**An employee's agent cannot be deleted.** Its delete button stays off until the employee leaves, and deleting it through the API answers `409 agent_employed`, naming each organization and title. Every organization of the Project counts, paused ones included; for an organization whose `org_chart.yaml` does not parse, only the CEO is protected. Deleting the organization can take its employees' agents with it; see [Switches and lifecycle](#switches-and-lifecycle).
 
 An entry whose agent is gone anyway, deleted before this rule or removed by hand, is marked **Agent deleted** on the org chart and in the **Desks** group, and its desk cannot be opened. **Leave the organization** removes it; nothing removes it on its own. If the CEO's agent is the one gone, the organization cannot run: create an agent with the id `<org_id>_ceo` again and its next pass opens a new desk.
 
@@ -288,7 +288,7 @@ In company mode, the sidebar lists the organization's pages: **Overview**, **Org
 - **Finance** shows the period in three rows: the KPI panel beside the daily trend, then the spend tree and the ticket table side by side, then the period's warnings and pauses.
 - **Calendar** and **Tickets** each show a single create button while they are empty, under a hint you can dismiss for good.
 
-The organization settings include **Working language**, **Approval mode** and **Pause organization**.
+The organization settings include **Working language**, **Approval mode**, **Pause organization** and **Delete organization**.
 
 ## Switches and lifecycle
 
@@ -298,9 +298,11 @@ The organization settings include **Working language**, **Approval mode** and **
 | Personal | **Settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
 | Organization | **Pause organization** in the organization settings | Stops all of the organization's automatic triggers. People can still open any desk and talk to it. |
 
-**There is no delete.** An organization is either running or paused, and that is its whole lifecycle. Deleting one would throw away the only way back to its conversations, employees, desks and tickets, while a paused organization costs nothing to keep: it fires nothing, and every desk is still there to talk to.
+**Deleting an organization** is the Project owner's: **Delete organization** at the end of the organization settings, confirmed by typing its id. Its directory moves to the Project's trash (`organizations/.trash/`), and moving it back restores it. **Also delete this company's agents** is on by default. The confirmation names the agents that go with it, deleted for good with all their conversations exactly as a delete on the **Agents** page deletes one, and the ones it keeps: built-in agents, and agents another organization also employs. Only the agents it named are deleted: one hired while it was open is kept, and so is every employee while another organization's `org_chart.yaml` cannot be read. Unchecked, every employee stays an agent of the Project, its desk and ticket Sessions included. Those Sessions keep the mark that says they belonged to the organization, so they never reappear in development mode's session list, and with the organization gone no page lists them. While the old CEO's agent exists, a new organization cannot take the same id.
 
-The only way to remove an organization is to delete its directory by hand. The runtime stops seeing it on its next pass, and the Web App says so and offers to create another in its place. Employees are ordinary agents, and their desk and ticket sessions are ordinary Sessions, so both survive. The Sessions keep the mark that says they belonged to the organization, so they never reappear in development mode's session list.
+To stop an organization without losing anything, pause it instead. A paused organization fires nothing, and every desk is still there to talk to.
+
+An organization whose directory is removed by hand is gone as well. The runtime stops seeing it on its next pass, and the Web App says so and offers to create another in its place.
 
 ## How it works
 

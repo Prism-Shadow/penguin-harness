@@ -2,7 +2,7 @@
  * Company-mode routes, nested under a Project:
  *   GET|POST      /api/projects/:p/organizations
  *   GET|PATCH     /api/projects/:p/organizations/:orgId
- *   DELETE        …/:orgId                                  # owner only; to the Project's trash
+ *   DELETE        …/:orgId[?deleteAgents=1&agentIds=a,b]    # owner only; to the Project's trash
  *   GET           …/:orgId/chart
  *   POST          …/:orgId/employees                        # hire
  *   PATCH|DELETE  …/:orgId/employees/:agentId
@@ -21,12 +21,11 @@
  *   GET           …/:orgId/finance ; GET …/:orgId/sessions
  *
  * Authorization is the Project's: any member reads and writes (tickets, channels, calendar, the
- * tree, the handbook) and creates organizations, like creating an Agent. There is no route
- * that deletes an organization: `status` (`active` / `paused`) is its whole lifecycle, so the
- * conversations, employees, desks and tickets of an organization that is switched off stay
- * reachable. Every route answers 404 while the admin master switch is off. A write carries the
- * caller's Agent id and session id when it comes from inside a session (the CLI's control
- * environment), so the file records the employee rather than the token's user — see
+ * tree, the handbook) and creates organizations, like creating an Agent; only the owner deletes
+ * one, like deleting an Agent. Pausing (`status: paused`) is how an organization is switched off
+ * without losing anything. Every route answers 404 while the admin master switch is off. A write
+ * carries the caller's Agent id and session id when it comes from inside a session (the CLI's
+ * control environment), so the file records the employee rather than the token's user — see
  * {@link callerSessionId} for why only the control environment may make that claim.
  */
 import { Hono } from "hono";
@@ -38,6 +37,7 @@ import type {
   OrgStatus,
   OrgTicketPriority,
   OrgTicketStatus,
+  OrganizationDeleteResponse,
   OrganizationsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -45,6 +45,16 @@ import type { SessionVia } from "../../auth/service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
+import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
+import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
+import type { Sessions } from "../../runtime/session-manager.js";
+import { deleteOrganizationWithAgents } from "../../services/organization-deletion.js";
+import type { OrganizationDeletionDeps } from "../../services/organization-deletion.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
@@ -171,6 +181,11 @@ export interface OrgRouteDeps {
   orgService: OrgService;
   projectService: Pick<ProjectLifecycle, "requireProjectAccess" | "requireProjectOwner">;
   serverSettingsRepo: Pick<Settings, "getCompanyMode">;
+  /**
+   * What deleting an employee's Agent reaches, for an organization deleted with its Agents —
+   * the same chain `DELETE …/agents/:agentId` runs (services/agent-deletion.ts).
+   */
+  agentDeletion: Omit<OrganizationDeletionDeps, "orgService">;
 }
 
 export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
@@ -278,14 +293,31 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
   // ---- employees ----
 
   // Deleting is a Project-level management operation, like deleting an Agent: owner only.
-  // The organization itself is what goes (to the Project's trash); its employees' Agents and
-  // its Sessions are left as they are.
+  // The organization goes to the Project's trash; with `?deleteAgents=1` the employees' Agents
+  // named in `agentIds` — the ones the caller's confirmation listed — are then deleted for good,
+  // each as `DELETE …/agents/:agentId` deletes one, unless they no longer qualify. The flag
+  // without the list is refused before anything is touched: deleting Agents nobody listed is
+  // not a default. The answer reports each employee.
   app.delete("/:orgId", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const orgId = requireValidId(c, "orgId");
-    await deps.orgService.delete(projectId, orgId);
-    return c.body(null, 204);
+    let agentIds: string[] | undefined;
+    if (c.req.query("deleteAgents") === "1") {
+      const listed = c.req.query("agentIds");
+      if (listed === undefined) {
+        throw badRequest("deleteAgents=1 needs agentIds: the Agents the confirmation listed.");
+      }
+      agentIds = listed === "" ? [] : listed.split(",");
+      if (agentIds.some((id) => !isValidId(id))) throw badRequest("Invalid agentIds.");
+    }
+    const report: OrganizationDeleteResponse = await deleteOrganizationWithAgents(
+      { ...deps.agentDeletion, orgService: deps.orgService },
+      projectId,
+      orgId,
+      agentIds === undefined ? {} : { agentIds },
+    );
+    return c.json(report);
   });
 
   app.get("/:orgId/chart", async (c) => {
@@ -984,12 +1016,35 @@ export class OrgRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly settings!: Settings;
+  // What deleting an employee's Agent with its organization reaches.
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly agents!: AgentLifecycle;
+  @Use() private readonly manager!: Sessions;
+  @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly drafts!: UserDraftsStore;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly schedulesRepo!: Schedules;
+  @Use() private readonly errorsRepo!: ErrorLog;
+  @Use() private readonly agentApi!: AgentApi;
   @Bind("OrgRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = organizationRoutes({
       orgService: this.orgService,
       projectService: this.projectService,
       serverSettingsRepo: this.settings,
+      agentDeletion: {
+        agentConfigService: this.agentConfig,
+        agentService: this.agents,
+        manager: this.manager,
+        workbenches: this.workbenches,
+        drafts: this.drafts,
+        sessionsRepo: this.sessionsRepo,
+        traceIndex: this.traceIndex,
+        schedulesRepo: this.schedulesRepo,
+        errorsRepo: this.errorsRepo,
+        agentApi: this.agentApi,
+      },
     });
   }
 }

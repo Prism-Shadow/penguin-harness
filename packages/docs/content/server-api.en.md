@@ -694,12 +694,12 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 
 ## Organizations (company mode)
 
-All paths below are under `/api/projects/:projectId/organizations`. While the server's company-mode switch is off, every route answers `404` `company_mode_off` (see [Company mode switch](#company-mode-switch)). Any Project member can read and write. No route deletes an organization: `status` (`active` / `paused`) is the off switch, and a paused organization keeps its conversations, employees, desks and tickets. For the files behind these routes, see [Company Mode](/company-mode).
+All paths below are under `/api/projects/:projectId/organizations`. While the server's company-mode switch is off, every route answers `404` `company_mode_off` (see [Company mode switch](#company-mode-switch)). Any Project member can read and write; only the Project owner deletes an organization. Pausing (`status: paused`) switches one off and keeps its conversations, employees, desks and tickets. For the files behind these routes, see [Company Mode](/company-mode).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | `/` | Lists organizations / creates one |
-| GET / PATCH | `/:orgId` | The organization's overview / changes its settings |
+| GET / PATCH / DELETE | `/:orgId` | The organization's overview / changes its settings / deletes it (owner only) |
 | GET | `/:orgId/chart` | The employee tree, with each employee's live state, desk and spend for the period |
 | POST | `/:orgId/employees` | Hires an employee: an existing agent or a new one |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | Changes an employee / removes the employee from the organization |
@@ -737,6 +737,7 @@ Write bodies may carry `agentId` and `sessionId`, the calling employee and the c
 - `language` is `zh` or `en`, the working language of everything the organization writes. If omitted, it is detected from the mission.
 - `GET /:orgId` returns the overview: settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, `inbox` and alerts. The settings always carry the effective `language`, read from the mission when the file has none.
 - `PATCH /:orgId` changes the name, mission, `status` (`active` / `paused`; pausing stops every automatic trigger), `approvalMode`, `timezone`, `language` and thresholds.
+- `DELETE /:orgId` is owner only (a member gets 403). It moves the organization's directory to the Project's trash, `organizations/.trash/<orgId>-<time>/`, and moving it back restores it. With `?deleteAgents=1&agentIds=a,b`, where `agentIds` are the agents the caller's confirmation listed for deletion, each listed employee's agent, the CEO's included, is then deleted for good, exactly as `DELETE /api/projects/:projectId/agents/:agentId` deletes one. `deleteAgents=1` without `agentIds` is 400 and deletes nothing. The answer is 200 `{orgId, deletedAgents: [{agentId, deletion}], keptAgents: [{agentId, reason}], failedAgents: [{agentId, code, message}]}`. Every employee not deleted is kept with its `reason`: `builtin`; `employed_elsewhere` when another organization of the Project also employs it; `employment_unknown` for every employee while another organization's `org_chart.yaml` cannot be read, with those organizations named in the answer's `unreadableCharts` (`GET /agents` carries the same field beside its list); `not_confirmed` when it is not in `agentIds`, such as one hired after the confirmation was shown. A listed id that is no employee of this organization is ignored. An agent whose delete was refused, because another program holds its folder open or it was hired meanwhile, is listed in `failedAgents` with the error, and the others are still deleted. Without the flag the three lists are empty and every employee stays an agent.
 
 An organization's and a channel's id proposals come from the Project-level route, `POST /api/projects/:projectId/suggest-id` with `kind: org` or `kind: channel`; see [Semantic id proposals](#semantic-id-proposals).
 

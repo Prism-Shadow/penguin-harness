@@ -23,6 +23,7 @@ import type {
   OrgChannelMessageSendRequest,
   OrgChannelMessagesResponse,
   Employment,
+  UnreadableChart,
   OrgChartResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
@@ -154,6 +155,14 @@ export interface Actor {
   userId: string;
   sessionId?: string;
   agentId?: string;
+}
+
+/** Who the Project's organizations employ, and which of them cannot say (see `employmentCensus`). */
+export interface EmploymentCensus {
+  /** By Agent id, as `employments` answers it. */
+  employments: Record<string, Employment[]>;
+  /** The organizations whose `org_chart.yaml` is missing or does not parse, with their names. */
+  unreadableCharts: UnreadableChart[];
 }
 
 const notFound = (orgId: string): HttpError =>
@@ -316,20 +325,31 @@ export class OrganizationService {
    * read it with `Object.hasOwn`, as an Agent id may be any word, `constructor` included.
    */
   async employments(projectId: string): Promise<Record<string, Employment[]>> {
-    const out: Record<string, Employment[]> = {};
+    return (await this.employmentCensus(projectId)).employments;
+  }
+
+  /**
+   * {@link employments}, and the organizations whose `org_chart.yaml` is missing or does not
+   * parse: beyond their CEO, whom they employ is unknown. Deleting an organization with its
+   * Agents reads both, and keeps an employee it cannot prove is employed nowhere else.
+   */
+  async employmentCensus(projectId: string): Promise<EmploymentCensus> {
+    const employments: Record<string, Employment[]> = {};
+    const unreadableCharts: UnreadableChart[] = [];
     const add = (agentId: string, employment: Employment) => {
-      if (Object.hasOwn(out, agentId)) out[agentId]!.push(employment);
-      else out[agentId] = [employment];
+      if (Object.hasOwn(employments, agentId)) employments[agentId]!.push(employment);
+      else employments[agentId] = [employment];
     };
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
+      if (org.chartUnreadable === true) unreadableCharts.push({ orgId, orgName: org.config.name });
       const base = { orgId, orgName: org.config.name, status: org.config.status };
       for (const e of org.chart.employees) add(e.agentId, { ...base, title: e.title });
       const ceo = ceoAgentId(orgId);
       if (!org.byId.has(ceo)) add(ceo, { ...base, title: "CEO" });
     }
-    return out;
+    return { employments, unreadableCharts };
   }
 
   /** The organizations employing one Agent (see `employments`); empty when none does. */
@@ -677,11 +697,12 @@ export class OrganizationService {
    * with it, since a new organization under the same id must not inherit
    * another's read cursors, calendar state or pending notices.
    *
-   * What it had is left exactly as it is. Its employees stay Agents of the Project, with
-   * everything they learned. Its desk and ticket Sessions stay too, still marked as an
-   * organization's (`client = org`), so they do not spill into development mode's list;
-   * with the organization gone no page lists them either, which is the price of not
-   * deleting conversations along with a company.
+   * What it had is left exactly as it is: deleting its employees' Agents too is the route's
+   * choice, made after this (services/organization-deletion.ts). Here its employees stay
+   * Agents of the Project, with everything they learned. Its desk and ticket Sessions stay
+   * too, still marked as an organization's (`client = org`), so they do not spill into
+   * development mode's list; with the organization gone no page lists them either, which is
+   * the price of not deleting conversations along with a company.
    *
    * Under the organization's lock, so a pass in flight finishes first and the next one finds
    * no directory — the same state a hand-removed directory always was.
@@ -2817,6 +2838,7 @@ export abstract class OrgService extends Interface<
   Pick<
     OrganizationService,
     | "employments"
+    | "employmentCensus"
     | "employersOf"
     | "list"
     | "create"
