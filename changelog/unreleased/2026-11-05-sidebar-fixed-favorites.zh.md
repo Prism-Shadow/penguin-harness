@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1498](https://github.com/Prism-Shadow/penguin-harness/pull/1498)
 
 [English](2026-11-05-sidebar-fixed-favorites.md)
 
