@@ -1,12 +1,14 @@
 /**
- * LangChain comparison: the 1x/100x story as two cards with a looping
- * "construction" animation — on a shared cycle, the LangChain side lays one
- * block at a time (still unfinished when the cycle resets) while the
- * PenguinHarness side raises a whole skyline almost instantly and holds it.
- * Reduced-motion users see both skylines complete.
+ * Building on an agent library against PenguinHarness, as two panels with a looping
+ * "construction" animation: on a shared cycle the library side lays one block at a time (still
+ * short of the skyline when the cycle resets) while the PenguinHarness side raises a whole
+ * skyline almost at once and holds it. The panels' text names what each side leaves to you or
+ * already has. Reduced-motion users see both builds complete.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { S } from "../lib/strings";
+import { useVisibleActivity } from "../lib/visible-activity";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { Section } from "../components/section";
 
 /** Shared build cycle (s): both sides reset together so the pace gap is obvious. */
@@ -16,7 +18,7 @@ function Block({
   delay,
   className,
 }: {
-  /** Seconds into the cycle when this block lands (applied as a negative delay). */
+  /** Seconds into the cycle when this block lands. */
   delay: number;
   className: string;
 }) {
@@ -28,7 +30,7 @@ function Block({
   );
 }
 
-/** One slow tower: a block every ~1.15s — the cycle ends before it tops out. */
+/** One slow tower, a block at a time: still one short tower when the cycle resets. */
 function SlowBuild() {
   return (
     <div aria-hidden="true" className="flex h-28 items-end justify-center">
@@ -41,7 +43,7 @@ function SlowBuild() {
   );
 }
 
-/** A skyline of towers raised in a burst: every block lands within ~1.6s. */
+/** A skyline of towers raised in a burst early in the cycle, then held until the reset. */
 function FastBuild() {
   const towers = [7, 9, 6, 8];
   return (
@@ -61,29 +63,22 @@ function FastBuild() {
   );
 }
 
-function CompareCard({
+function ComparePanel({
   name,
-  speed,
   mode,
   note,
   emphasized = false,
   children,
 }: {
   name: string;
-  speed: string;
   mode: string;
   note: string;
+  /** PenguinHarness's panel: its name wears the brand hue, like its skyline. */
   emphasized?: boolean;
   children: ReactNode;
 }) {
   return (
-    <article
-      className={`rounded-xl border p-6 text-center sm:p-8 ${
-        emphasized
-          ? "border-brand-300 bg-brand-25 dark:border-brand-800 dark:bg-brand-950/40"
-          : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-      }`}
-    >
+    <article className="rounded-2xl bg-gray-50 p-6 text-center sm:p-8 dark:bg-gray-900">
       <p
         className={`text-sm font-semibold tracking-tight ${
           emphasized ? "text-brand-700 dark:text-brand-300" : "text-gray-500 dark:text-gray-400"
@@ -91,44 +86,43 @@ function CompareCard({
       >
         {name}
       </p>
-      <p
-        className={`mt-2 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl ${
-          emphasized ? "text-brand-600 dark:text-brand-300" : "text-gray-400 dark:text-gray-600"
-        }`}
-      >
-        {speed}
-      </p>
       <div className="mt-5">{children}</div>
-      <p className="mt-5 text-[15px] font-medium text-gray-900 dark:text-gray-100">{mode}</p>
-      <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{note}</p>
+      <h3 className="mt-6 text-lg font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word] text-gray-900 dark:text-gray-100">
+        {mode}
+      </h3>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-pretty break-keep [overflow-wrap:break-word] text-gray-600 dark:text-gray-400">
+        {note}
+      </p>
     </article>
   );
 }
 
 export function Compare() {
   const [cycle, setCycle] = useState(0);
+  const { ref, active } = useVisibleActivity<HTMLDivElement>();
+  const reduced = usePrefersReducedMotion();
+  const c = S.compare;
 
-  // Remount both skylines together: every child begins hidden, then lands once
-  // at its positive delay. A shared reset keeps the 1x/100x pace comparison aligned.
+  // Remount both builds together: every block begins hidden, then lands once at its delay.
+  // One shared reset keeps the two paces side by side.
   useEffect(() => {
+    if (!active || reduced) return;
     const timer = window.setInterval(() => setCycle((value) => value + 1), CYCLE_S * 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [active, reduced]);
 
   return (
-    <Section
-      id="compare"
-      eyebrow={S.compare.eyebrow}
-      title={S.compare.title}
-      subtitle={S.compare.subtitle}
-    >
-      <div className="mx-auto grid max-w-4xl gap-5 sm:grid-cols-2">
-        <CompareCard {...S.compare.langchain}>
+    <Section id="compare" title={c.title} subtitle={c.subtitle}>
+      <div
+        ref={ref}
+        className={`mx-auto grid max-w-4xl gap-6 sm:grid-cols-2 ${active && !reduced ? "" : "content-motion-paused"}`}
+      >
+        <ComparePanel {...c.library}>
           <SlowBuild key={`slow-${cycle}`} />
-        </CompareCard>
-        <CompareCard {...S.compare.penguin} emphasized>
+        </ComparePanel>
+        <ComparePanel {...c.penguin} emphasized>
           <FastBuild key={`fast-${cycle}`} />
-        </CompareCard>
+        </ComparePanel>
       </div>
     </Section>
   );

@@ -28,8 +28,8 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
+import { partialToolCallOutput, toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundCommandInfo,
@@ -42,13 +42,19 @@ import type {
   SubagentMessageOutcome,
   SubagentRunner,
   ThinkingLevelName,
+  SpawnConfiner,
   ToolConfig,
   ToolDefinition,
+  ToolDetachResult,
   ToolExecutionRequest,
   ToolPermission,
+  VisionDescriberService,
 } from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import { SandboxedFsHost, fsWorkerArgv } from "./tools/fs-worker.js";
+import { lazyToolFs, localFsPort } from "./tools/fs-port.js";
+import type { ToolFs } from "./tools/fs-port.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
@@ -74,7 +80,7 @@ const TOOL_EMPTY_NOTE = "[no output]";
 
 /**
  * Explanation for a failed argument JSON parse. The normal pipeline never reaches this: bad
- * JSON already throws during AgentHub's parsing stage, and the LLM layer finalizes it as
+ * JSON already throws during MMSP's parsing stage, and the LLM layer finalizes it as
  * malformed for the engine to reconnect (see generative-model.ts) — it's never dispatched into
  * Environment as a completed tool_call. This function is only a defensive fallback for the
  * public interface.
@@ -158,6 +164,12 @@ export class Environment implements EnvironmentInterface {
   private readonly subagentRunner: SubagentRunner | null;
   /** The runtime services every tool factory receives — Session-lifetime registries and sinks, so each context's toolset is assembled onto the same ones. */
   private readonly services: EnvironmentServices;
+  /** The Session's scratchpad, writable beside the Workspace under a workspace-write policy. */
+  private readonly sessionScratchpadDir: string | null;
+  /** The Session's confiner getter (see EnvironmentConfig.confineSpawn), for the stdio MCP servers and the file helper this Environment starts; commands take it through their session manager. */
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
+  /** The file tools' sandboxed helper (see tools/fs-worker.ts): started at the first confined file operation, kept for the Session, restarted when the confiner's answer changes. */
+  private readonly fsHost = new SandboxedFsHost();
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -175,7 +187,14 @@ export class Environment implements EnvironmentInterface {
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
       ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
       ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
+      ...(config.confineSpawn !== undefined ? { confineSpawn: config.confineSpawn } : {}),
+      workspaceDir: config.workspaceDir,
+      ...(config.sessionScratchpadDir !== undefined
+        ? { scratchpadDir: config.sessionScratchpadDir }
+        : {}),
     });
+    this.sessionScratchpadDir = config.sessionScratchpadDir ?? null;
+    this.confineSpawn = config.confineSpawn;
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
     // pings: the host's background-state listener hears every change of "what is still
@@ -196,10 +215,10 @@ export class Environment implements EnvironmentInterface {
       // the single consumer via setBackgroundTaskListener (events before that are buffered).
       backgroundDone: (event: BackgroundTaskDoneEvent) => this.emitBackgroundDone(event),
       // Live-forwarded background-subagent messages, same single-consumer pattern.
-      backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
+      backgroundForward: (msg: AmspRecord) => this.emitBackgroundForward(msg),
     };
     this.equip(config.toolConfig);
-    this.mcp = this.newMcpProvider(config.toolConfig.mcpServers);
+    this.mcp = this.newMcpProvider(config.toolConfig.mcpServers, config.vault ?? {});
   }
 
   /**
@@ -220,13 +239,50 @@ export class Environment implements EnvironmentInterface {
   /**
    * The MCP bridge for a server list (null without servers). MCP Servers bridge in lazily —
    * construction only records the config; connecting and tool discovery happen on the first
-   * listTools()/executeTool() (see McpToolProvider). The vault is deliberately not handed to
-   * it: server processes see only the SDK's safe env defaults plus the entry's own env.
+   * listTools()/executeTool() (see McpToolProvider). The vault is handed over only to fill the
+   * entries' explicit `${KEY}` references: server processes still see only the SDK's safe env
+   * defaults plus the entry's own env, never the vault as a whole.
    */
-  private newMcpProvider(servers: ToolConfig["mcpServers"]): McpToolProvider | null {
+  private newMcpProvider(
+    servers: ToolConfig["mcpServers"],
+    vault: Readonly<Record<string, string>>,
+  ): McpToolProvider | null {
     return servers.length > 0
-      ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
+      ? new McpToolProvider(servers, {
+          workspaceDir: this.workspaceDir,
+          vault,
+          // A stdio server is started under the Session's sandbox like a command, with the
+          // same confiner and scope (see McpToolProviderOptions.confineSpawn).
+          ...(this.confineSpawn !== undefined ? { confineSpawn: this.confineSpawn } : {}),
+          ...(this.sessionScratchpadDir !== null
+            ? { scratchpadDir: this.sessionScratchpadDir }
+            : {}),
+        })
       : null;
+  }
+
+  /**
+   * The port the file tools work through: the sandboxed helper's when the Session is
+   * confined, this process's when it is not. The confiner is asked for the helper's argv at
+   * every call that touches a file, like for a command at every spawn: an answer that
+   * leaves the argv alone is the confiner's word for "unconfined" (see SpawnConfiner), and
+   * the tools then work in this process; any other answer names the sandboxed helper to
+   * work through, started from that very answer (see fs-worker.ts).
+   */
+  private fileSystem(): ToolFs {
+    const confiner = this.confineSpawn?.() ?? null;
+    if (confiner === null) return localFsPort;
+    const argv = fsWorkerArgv();
+    const confined = confiner(argv, {
+      cwd: this.workspaceDir,
+      workspaceDir: this.workspaceDir,
+      ...(this.sessionScratchpadDir !== null ? { scratchpadDir: this.sessionScratchpadDir } : {}),
+    });
+    const unchanged =
+      confined.env === undefined &&
+      confined.argv.length === argv.length &&
+      confined.argv.every((arg, i) => arg === argv[i]);
+    return unchanged ? localFsPort : this.fsHost.portFor(confined);
   }
 
   /**
@@ -238,17 +294,32 @@ export class Environment implements EnvironmentInterface {
    * or changed one is closed, and a new or changed one connects lazily on the next
    * listTools() — `pendingMcpServerNames()` names those. The vault reaches every command
    * spawned from now on, while processes already running keep the environment they were
-   * started with. The Session-lifetime parts — background command processes, subagent child
+   * started with, and fills the MCP entries' `${KEY}` references (a changed value reconnects
+   * that server). The Session-lifetime parts — background command processes, subagent child
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
+   *
+   * `visionDescriber` is the new context's answer to "does the session model view images"
+   * (see EnvironmentServices.visionDescriber): a service when that context's model has no
+   * vision, `null` when it views images itself — a model switch can move either way — and
+   * absent leaves the running answer in place. Applied before the toolset is re-equipped, so
+   * the new context's read_file is built on it.
    */
-  reconfigure(config: { toolConfig: ToolConfig; vault: Record<string, string> }): void {
+  reconfigure(config: {
+    toolConfig: ToolConfig;
+    vault: Record<string, string>;
+    visionDescriber?: VisionDescriberService | null;
+  }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
-      this.mcp.reconfigure(servers);
+      this.mcp.reconfigure(servers, config.vault);
     } else {
       this.mcp?.closeQuietly();
-      this.mcp = this.newMcpProvider(servers);
+      this.mcp = this.newMcpProvider(servers, config.vault);
+    }
+    if (config.visionDescriber !== undefined) {
+      if (config.visionDescriber === null) delete this.services.visionDescriber;
+      else this.services.visionDescriber = config.visionDescriber;
     }
     this.equip(config.toolConfig);
     this.commandSessions.setVault(config.vault);
@@ -259,7 +330,7 @@ export class Environment implements EnvironmentInterface {
     return this.mcp?.pendingServerNames() ?? [];
   }
 
-  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */
+  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent), closes MCP clients (stdio server processes included) and stops the file tools' sandboxed helper. Idempotent. */
   dispose(): void {
     // Suppress completion reports first: dispose kills the remaining background sessions, and
     // their exits must not masquerade as task completions after the Session has ended.
@@ -269,6 +340,7 @@ export class Environment implements EnvironmentInterface {
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
+    this.fsHost.dispose();
   }
 
   // Background completion reports: a single listener (the owning Session), with events fired
@@ -302,17 +374,17 @@ export class Environment implements EnvironmentInterface {
 
   // Live-forwarded background-subagent messages: same single-listener + buffer-until-attach
   // pattern as the completion reports above.
-  private bgFwdListener: ((msg: OmniMessage) => void) | null = null;
-  private bgFwdBuffer: OmniMessage[] = [];
+  private bgFwdListener: ((msg: AmspRecord) => void) | null = null;
+  private bgFwdBuffer: AmspRecord[] = [];
 
-  private emitBackgroundForward(msg: OmniMessage): void {
+  private emitBackgroundForward(msg: AmspRecord): void {
     if (this.bgDisposed) return;
     if (this.bgFwdListener) this.bgFwdListener(msg);
     else this.bgFwdBuffer.push(msg);
   }
 
   /** Attaches the single background-message listener, flushing buffered messages (see EnvironmentInterface). */
-  setBackgroundMessageListener(listener: (msg: OmniMessage) => void): void {
+  setBackgroundMessageListener(listener: (msg: AmspRecord) => void): void {
     this.bgFwdListener = listener;
     const buffered = this.bgFwdBuffer;
     this.bgFwdBuffer = [];
@@ -353,7 +425,7 @@ export class Environment implements EnvironmentInterface {
    * Host-initiated message to one child session — a user's input on the child, whatever its
    * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
    * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
-   * on the same managed-session channel input_subagent uses, taking the same OmniMessage list;
+   * on the same managed-session channel input_subagent uses, taking the same AmspRecord list;
    * the caller's messages carry no sender (human origin), unlike the model path's
    * "parent_agent" — and they reach both branches unchanged, so a steered round and a started
    * round record the same author. The child runs every round at its own context's thinking
@@ -361,7 +433,7 @@ export class Environment implements EnvironmentInterface {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const session = this.subagentSessions.bySessionId(childSessionId);
@@ -387,7 +459,7 @@ export class Environment implements EnvironmentInterface {
    */
   private async resumeAndRun(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const agentId = opts?.resume?.agentId;
@@ -456,7 +528,7 @@ export class Environment implements EnvironmentInterface {
    */
   private attachHostTap(session: {
     hasMessageTap: boolean;
-    setMessageTap(tap: (msg: OmniMessage) => void): void;
+    setMessageTap(tap: (msg: AmspRecord) => void): void;
   }): void {
     if (session.hasMessageTap) return;
     session.setMessageTap((msg) => this.emitBackgroundForward(msg));
@@ -465,6 +537,30 @@ export class Environment implements EnvironmentInterface {
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.commandSessions.kill(processId);
+  }
+
+  /**
+   * Detach channels of the calls currently executing, keyed by tool_call_id: the only handle
+   * a host has on one call. An entry lives exactly as long as its call — `executeTool`
+   * registers one on entry and deletes it in its finalization — so an id that is not here is
+   * a call that is not running. `detachable` is the tool's own declaration; a call whose tool
+   * has no background form still gets an entry, so the registry can tell "nothing is running"
+   * apart from "that tool cannot be detached".
+   */
+  private readonly inFlight = new Map<string, { detach: AbortController; detachable: boolean }>();
+
+  /**
+   * Asks one executing call to continue as a background task (see
+   * EnvironmentInterface.detachToolCall). Firing the controller is the whole action: the tool
+   * observes it, registers its work and returns a handle. Idempotent — a second click on a
+   * call still winding down fires an already-aborted controller and changes nothing.
+   */
+  detachToolCall(toolCallId: string): ToolDetachResult {
+    const entry = this.inFlight.get(toolCallId);
+    if (!entry) return "not_running";
+    if (!entry.detachable) return "not_detachable";
+    entry.detach.abort();
+    return "detached";
   }
 
   /**
@@ -516,14 +612,14 @@ export class Environment implements EnvironmentInterface {
    * `tool_call_output`; nested messages carrying origin pass through unchanged. Dispatches by
    * looking up the tool name; any exception collapses into an explanatory output — never throws.
    *
-   * The priority for deciding stop_reason is: user interruption > timeout > tool throw > tool
-   * self-report. Interruption is determined by the `signal` held by Environment, and is
-   * compatible with both a tool self-reporting aborted and an AbortError raised by the
+   * The priority for deciding the result's status is: user interruption > timeout > tool
+   * throw > tool self-report. Interruption is determined by the `signal` held by Environment,
+   * and is compatible with both a tool self-reporting aborted and an AbortError raised by the
    * interruption. An internal abort raised by a timeout does not count as a user interruption —
    * it's finalized as failed, with the timeout reason written into the output.
    * Docs: /docs/tools § "Execution contract".
    */
-  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage> {
+  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord> {
     const payload = request.toolCall.payload;
     // tool_call_id is passed through unchanged, so context_engine and the LLM can associate the
     // request with its result.
@@ -567,6 +663,11 @@ export class Environment implements EnvironmentInterface {
     if (signal?.aborted) ac.abort();
     const onAbort = (): void => ac.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
+    // Per-call detach channel, minted here so something outside the engine can reach ONE call
+    // (see detachToolCall). Kept separate from `ac`: that signal means "stop", this one means
+    // "hand your work back and let the turn close".
+    const detachCtrl = new AbortController();
+    this.inFlight.set(toolCallId, { detach: detachCtrl, detachable: tool.detachable === true });
     let timedOut = false;
     const timer =
       timeoutMs > 0
@@ -595,7 +696,7 @@ export class Environment implements EnvironmentInterface {
     let withheld = ""; // Rolling buffer of text past the head window (<= withheldCapacity)
     let contentLen = 0; // Total length of content produced by the tool (including evicted parts)
     let toolOutput: string | null = null; // Fallback: content basis when the tool produces a full message itself
-    let selfReported: StopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
+    let selfReported: ToolStatus | undefined; // Tool's self-reported status (return value takes priority over the full message)
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
@@ -607,6 +708,10 @@ export class Environment implements EnvironmentInterface {
       workspaceDir: this.workspaceDir,
       toolCallId,
       signal: ac.signal,
+      detachSignal: detachCtrl.signal,
+      // The file system a file tool works through, decided from the Session's confiner
+      // when the tool first touches a file (see fileSystem below).
+      fs: lazyToolFs(() => this.fileSystem()),
       // Pass through the parent's approve callback (run_subagent uses it so the child Session
       // inherits the parent's approval mode; other tools ignore it).
       ...(request.approve ? { approve: request.approve } : {}),
@@ -616,7 +721,7 @@ export class Environment implements EnvironmentInterface {
         const res = await gen.next();
         if (res.done) {
           const result: ToolResult | void = res.value;
-          if (result?.stopReason) selfReported = result.stopReason;
+          if (result?.status) selfReported = result.status;
           if (result?.note) selfNote = result.note;
           if (result?.images && result.images.length > 0) selfImages = result.images;
           break;
@@ -629,7 +734,7 @@ export class Environment implements EnvironmentInterface {
         const p = out.payload as {
           type?: string;
           event_type?: string;
-          stop_reason?: string;
+          status?: string;
           output?: string;
         };
         if (p.type === "partial_tool_call_output") {
@@ -692,7 +797,7 @@ export class Environment implements EnvironmentInterface {
             }
           }
         } else if (p.type === "tool_call_output") {
-          // Fallback: if the tool still produces a full message, use it as the basis for content and stop reason (not needed under the new contract).
+          // Fallback: if the tool still produces a full message, use it as the basis for content and status (not needed under the new contract).
           toolOutput = p.output ?? "";
           if (
             maxOutputLength > 0 &&
@@ -706,8 +811,8 @@ export class Environment implements EnvironmentInterface {
             // also becomes the recovery basis instead of any deltas it happened to emit.
             archiveCapture.replace(toolOutput);
           }
-          if (selfReported === undefined && p.stop_reason) {
-            selfReported = p.stop_reason as StopReason;
+          if (selfReported === undefined && p.status) {
+            selfReported = p.status as ToolStatus;
           }
         } else {
           // Other message types without origin: protocol misuse, ignore and warn (keep the parent stream clean).
@@ -722,6 +827,9 @@ export class Environment implements EnvironmentInterface {
     } finally {
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
+      // The call is over: a detach arriving from here on has nothing to act on and must
+      // answer "not running" rather than firing a controller nobody is listening to.
+      this.inFlight.delete(toolCallId);
     }
 
     // Uniform finalization. Content basis = the tool's self-produced full message (fallback
@@ -764,7 +872,7 @@ export class Environment implements EnvironmentInterface {
       archiveCapture?.cancel();
     }
 
-    let stopReason: StopReason;
+    let status: ToolStatus;
     const notes: string[] = [];
     if (truncated) {
       if (archiveResult?.status === "saved") {
@@ -788,18 +896,18 @@ export class Environment implements EnvironmentInterface {
       notes.push(selfNote);
     }
     if (aborted) {
-      stopReason = "aborted";
+      status = "aborted";
       notes.push(TOOL_ABORTED_NOTE);
     } else if (timedOut) {
       // A tool timeout or error is definitive for this call — nothing in the harness
       // retries a tool, so the result is fed back to the model as fatal.
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool timeout: exceeded ${timeoutMs}ms]`);
     } else if (thrown != null) {
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool error] ${thrown instanceof Error ? thrown.message : String(thrown)}`);
     } else {
-      stopReason = selfReported ?? "completed";
+      status = selfReported ?? "completed";
     }
     // The tool's reply must never be empty: an empty tool_result leaves the model unable to
     // tell "silent success" apart from "call failed", and some Providers outright reject empty
@@ -833,23 +941,23 @@ export class Environment implements EnvironmentInterface {
     // "streamed concatenation == full message" the same way text does (truncation only applies
     // to text, never touches images).
     // Only carried on normal completion; interruption/timeout/error paths carry no images, to keep finalization simple.
-    const images = stopReason === "completed" ? selfImages : undefined;
+    const images = status === "completed" ? selfImages : undefined;
     if (images) {
       yield partialToolCallOutput({ eventType: "delta", toolCallId, images });
     }
-    yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason });
+    yield partialToolCallOutput({ eventType: "stop", toolCallId });
     yield toolCallOutput({
       output: fullOutput,
       toolCallId,
-      stopReason,
+      status,
       ...(images ? { images } : {}),
     });
   }
 }
 
 /** Upfront failure (unknown tool/argument parse failure): delta(explanation) -> stop -> full failed output (start already emitted by the caller). */
-function* emitFailure(toolCallId: string, message: string): Generator<OmniMessage> {
+function* emitFailure(toolCallId: string, message: string): Generator<AmspRecord> {
   yield partialToolCallOutput({ eventType: "delta", output: message, toolCallId });
-  yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "fatal" });
-  yield toolCallOutput({ output: message, toolCallId, stopReason: "fatal" });
+  yield partialToolCallOutput({ eventType: "stop", toolCallId });
+  yield toolCallOutput({ output: message, toolCallId, status: "fatal" });
 }

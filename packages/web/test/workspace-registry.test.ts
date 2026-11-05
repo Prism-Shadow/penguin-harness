@@ -1,14 +1,22 @@
 /**
- * workspace-registry.ts unit tests: manually-added Workspaces (the header's 新建工作区
- * browse pick) persisted per Project and merged into the sidebar's workspace grouping
- * as EMPTY groups — a picked directory shows up immediately, Sessions or not. Entries
- * are `{ path, alias? }`: the alias (重命名工作区) replaces the basename as the group
- * label — for session-backed groups too — and a blank alias reverts to the basename;
- * loads keep accepting the branch's earlier string-only stored shape. 删除工作区
- * unregisters the entry only (sidebar-side; disk and Sessions untouched — a group with
- * Sessions simply persists as session-derived). Paths normalize (trim + trailing
- * separators dropped, root kept) so picker output dedups against server-resolved
- * Session paths; storage is tolerant of junk; temp-shaped paths never form a group.
+ * Workspaces the user added by hand (lib/workspace-registry.ts): kept per Project in
+ * localStorage and merged into the sidebar's Workspace grouping as groups of their own.
+ *
+ * - A picked path is normalized (trimmed, trailing separators dropped, a root or a Windows
+ *   drive root kept whole), so it dedups against the paths Sessions report.
+ * - Registering prepends the pick; an already registered path, a blank one or a temporary
+ *   Workspace changes nothing (the same array comes back). The machine a directory was picked
+ *   on is recorded, and the same path on two machines is two Workspaces.
+ * - Unregistering drops one machine's entry, alias and all, and nothing when absent.
+ * - An alias is trimmed, a blank one reverts to the basename, the input is never mutated, and
+ *   an unchanged alias changes nothing; renaming one machine's entry leaves the other's alone.
+ * - Entries round-trip per Project (alias and machine included); nothing stored or no Project
+ *   is empty and reading writes nothing; the older string-only shape still loads.
+ * - Malformed values, junk elements, junk aliases and empty machine ids are dropped; a storage
+ *   that throws degrades instead of escaping.
+ * - Merged into the groups, empty registered groups follow the session-backed ones, an alias
+ *   relabels a session-backed group too, a temporary path never forms a group, and each
+ *   machine gets its own group.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -24,16 +32,7 @@ import {
 import type { WorkspaceEntry, WorkspaceRegistryStorage } from "../src/lib/workspace-registry";
 import { TEMP_WORKSPACE_GROUP_KEY } from "../src/lib/session-grouping";
 import type { WorkspaceGroup } from "../src/lib/session-grouping";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
-function memStorage(): WorkspaceRegistryStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Minimal session-derived group (only the fields the merge reads matter). */
 function group(key: string, over: Partial<WorkspaceGroup<{ id: string }>> = {}) {
@@ -41,6 +40,7 @@ function group(key: string, over: Partial<WorkspaceGroup<{ id: string }>> = {}) 
     key,
     label: key.split("/").filter(Boolean).pop() ?? "/",
     fullPath: key,
+    machineId: null as string | null,
     temp: false,
     sessions: [] as { id: string }[],
     ...over,
@@ -97,39 +97,46 @@ describe("setWorkspaceAlias", () => {
   const entries: readonly WorkspaceEntry[] = [{ path: "/a" }, { path: "/b" }];
 
   it("sets a trimmed alias, clears it on blank (revert to basename), and never mutates the input", () => {
-    const named = setWorkspaceAlias(entries, "/a", "  My App  ");
+    const named = setWorkspaceAlias(entries, "/a", null, "  My App  ");
     expect(named).toEqual([{ path: "/a", alias: "My App" }, { path: "/b" }]);
     expect(entries[0]).toEqual({ path: "/a" }); // input untouched (React state discipline)
-    expect(setWorkspaceAlias(named, "/a", "   ")).toEqual([{ path: "/a" }, { path: "/b" }]);
+    expect(setWorkspaceAlias(named, "/a", null, "   ")).toEqual([{ path: "/a" }, { path: "/b" }]);
   });
 
   it("same-reference fast exit: unknown path, unchanged alias, or clearing an alias that isn't set", () => {
-    expect(setWorkspaceAlias(entries, "/zzz", "X")).toBe(entries);
-    expect(setWorkspaceAlias(entries, "/a", "")).toBe(entries);
-    const named = setWorkspaceAlias(entries, "/a", "X");
-    expect(setWorkspaceAlias(named, "/a", " X ")).toBe(named);
+    expect(setWorkspaceAlias(entries, "/zzz", null, "X")).toBe(entries);
+    expect(setWorkspaceAlias(entries, "/a", null, "")).toBe(entries);
+    const named = setWorkspaceAlias(entries, "/a", null, "X");
+    expect(setWorkspaceAlias(named, "/a", null, " X ")).toBe(named);
   });
 });
 
 describe("persisted registry (per-Project localStorage)", () => {
-  it("round-trips entries (alias included) per Project; nothing stored / no Project is empty; reading never writes", () => {
-    const s = memStorage();
+  it("round-trips entries (alias and machine included) per Project; nothing stored / no Project is empty; reading never writes", () => {
+    const s = memoryStorage();
     expect(loadWorkspaceRegistry("p1", s)).toEqual([]);
     expect(loadWorkspaceRegistry(null, s)).toEqual([]);
     expect(s.map.size).toBe(0);
     saveWorkspaceRegistry(null, [{ path: "/x" }], s);
     expect(s.map.size).toBe(0);
-    saveWorkspaceRegistry("p1", [{ path: "/srv/beta", alias: "Beta" }, { path: "/srv/app" }], s);
+    saveWorkspaceRegistry(
+      "p1",
+      [
+        { path: "/srv/beta", alias: "Beta" },
+        { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      ],
+      s,
+    );
     saveWorkspaceRegistry("p2", [{ path: "/other" }], s);
     expect(loadWorkspaceRegistry("p1", s)).toEqual([
       { path: "/srv/beta", alias: "Beta" },
-      { path: "/srv/app" },
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
     ]);
     expect(loadWorkspaceRegistry("p2", s)).toEqual([{ path: "/other" }]);
   });
 
   it("still loads the branch's earlier string-only shape, mixed with entry objects", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     s.map.set(
       workspaceRegistryKey("p1"),
       '["/old/one/", {"path": "/new/two", "alias": " Two "}, "/old/one"]',
@@ -141,7 +148,7 @@ describe("persisted registry (per-Project localStorage)", () => {
   });
 
   it("malformed values degrade to empty; junk elements and junk aliases are dropped", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["{not json", '"x"', "42", "null", "{}", ""]) {
       s.map.set(workspaceRegistryKey("p1"), raw);
       expect(loadWorkspaceRegistry("p1", s)).toEqual([]);
@@ -154,14 +161,7 @@ describe("persisted registry (per-Project localStorage)", () => {
   });
 
   it("storage throwing (quota/private mode): save does not throw, load yields empty", () => {
-    const broken: WorkspaceRegistryStorage = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    };
+    const broken = blockedStorage();
     expect(() => saveWorkspaceRegistry("p1", [{ path: "/x" }], broken)).not.toThrow();
     expect(loadWorkspaceRegistry("p1", broken)).toEqual([]);
   });
@@ -214,5 +214,106 @@ describe("mergeRegisteredWorkspaces", () => {
     expect(mergeRegisteredWorkspaces(groups, []).map((g) => g.key)).toEqual([
       TEMP_WORKSPACE_GROUP_KEY,
     ]);
+  });
+});
+
+describe("a workspace's machine", () => {
+  it("records the machine a directory was picked on, and none for this machine (as older entries read)", () => {
+    const entries = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    expect(entries[0]).toEqual({ path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" });
+    expect(registerWorkspace([], "/srv/app")[0]).toEqual({ path: "/srv/app" });
+  });
+
+  it("keeps the same path on two machines as two workspaces", () => {
+    // `/srv/app` on two machines is two different directories; collapsing them would hide
+    // one behind the other with no way to tell which.
+    let entries = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    entries = registerWorkspace(entries, "/srv/app");
+    entries = registerWorkspace(entries, "/srv/app", "OTHERaaaaaaaaaaa");
+    expect(entries).toHaveLength(3);
+    expect(entries.map((e) => e.machineId)).toEqual([
+      "OTHERaaaaaaaaaaa",
+      undefined,
+      "noeSE0FFHhNXl2J5",
+    ]);
+  });
+
+  it("still dedups the same path on the SAME machine", () => {
+    const first = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    expect(registerWorkspace(first, "/srv/app", "noeSE0FFHhNXl2J5")).toBe(first);
+    const local = registerWorkspace([], "/srv/app");
+    expect(registerWorkspace(local, "/srv/app")).toBe(local);
+  });
+
+  it("drops an empty machine id rather than storing a workspace on nothing", () => {
+    const storage = memoryStorage({
+      [workspaceRegistryKey("p")]: JSON.stringify([{ path: "/a", machineId: "" }]),
+    });
+    expect(loadWorkspaceRegistry("p", storage)).toEqual([{ path: "/a" }]);
+  });
+
+  it("loads both machines' entries for one path (a path-only dedup here lost one for good)", () => {
+    const storage = memoryStorage({
+      [workspaceRegistryKey("p")]: JSON.stringify([
+        { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+        { path: "/srv/app" },
+      ]),
+    });
+    expect(loadWorkspaceRegistry("p", storage)).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ]);
+  });
+
+  it("renames one machine's workspace, keeps its machine, and leaves the other machine's alone", () => {
+    const entries: readonly WorkspaceEntry[] = [
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ];
+    expect(setWorkspaceAlias(entries, "/srv/app", "noeSE0FFHhNXl2J5", "Prod")).toEqual([
+      { path: "/srv/app", alias: "Prod", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ]);
+    expect(setWorkspaceAlias(entries, "/srv/app", null, "Here")).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app", alias: "Here" },
+    ]);
+  });
+
+  it("removes one machine's workspace, not every entry sharing the path", () => {
+    const entries: readonly WorkspaceEntry[] = [
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ];
+    expect(unregisterWorkspace(entries, "/srv/app", "noeSE0FFHhNXl2J5")).toEqual([
+      { path: "/srv/app" },
+    ]);
+    expect(unregisterWorkspace(entries, "/srv/app")).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+    ]);
+    expect(unregisterWorkspace(entries, "/srv/app", "UNREGISTEREDaaaa")).toBe(entries);
+  });
+
+  it("merges one group per machine, and an alias relabels only its own", () => {
+    const remote = "noeSE0FFHhNXl2J5";
+    const groups = [
+      group(`${remote}\u0000/srv/app`, {
+        fullPath: "/srv/app",
+        machineId: remote,
+        label: "app",
+        sessions: [{ id: "s1" }],
+      }),
+    ];
+    const merged = mergeRegisteredWorkspaces(groups, [
+      { path: "/srv/app", machineId: remote, alias: "Prod" },
+      { path: "/srv/app" },
+    ]);
+    expect(merged.map((g) => g.key)).toEqual([`${remote}\u0000/srv/app`, "/srv/app"]);
+    // The remote group keeps its Sessions and takes its own alias …
+    expect(merged[0]).toMatchObject({ label: "Prod", machineId: remote });
+    expect(merged[0]!.sessions).toEqual([{ id: "s1" }]);
+    // … and this machine's entry becomes its own empty group, unaliased.
+    expect(merged[1]).toMatchObject({ label: "app", machineId: null, fullPath: "/srv/app" });
+    expect(merged[1]!.sessions).toEqual([]);
   });
 });

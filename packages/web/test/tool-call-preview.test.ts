@@ -1,18 +1,32 @@
 /**
- * tool-call-card.tsx preview helpers: previewArguments keeps the real arguments (what heads
- * the approval row), headerSubtitle surfaces the model-written `description` argument for
- * the command/subagent tools and the shortened file path for the file tools, and
- * pendingFilePayload decodes the file-tool arguments so a pending approval shows the actual
- * rewrite. All must tolerate incomplete mid-stream JSON; headerSubtitle additionally holds a
- * still-streaming field back until its closing quote so the header never jitters (#137).
+ * A tool call card's preview helpers (features/chat/tool-call-card.tsx). All of them tolerate
+ * incomplete mid-stream JSON.
+ *
+ * - The approval row shows the real arguments: `$ <cmd>` for exec_command (its `command` alias
+ *   too, `cmd` winning), the shortened path for file tools and old image tools, and the raw
+ *   single line otherwise; a description argument never replaces the command.
+ * - A path is shortened to at most one parent directory plus the file name.
+ * - The header subtitle shows the model's description for command and subagent tools and the
+ *   file path for file tools, on one line, holding a still-streaming field back until it
+ *   closes (#137) and showing whatever is there once the arguments settle.
+ * - A file path the subtitle shortened keeps its whole form for the hover hint; a description,
+ *   or a path short enough to show whole, has none.
+ * - A pending file-tool approval decodes the rewrite, the content or the read window.
+ * - A call launched with the background flag is marked; one moved to the background later is
+ *   marked from the note its output carries.
+ * - "Move to background" is offered only while exec_command or run_subagent executes on a
+ *   main-session card past the delay, and never for a call already in the background.
  */
 import { describe, expect, it } from "vitest";
 import {
   headerSubtitle,
+  headerSubtitlePath,
   isBackgroundCall,
+  isDetachedCall,
   pendingFilePayload,
   previewArguments,
   shortenPath,
+  showsBackgroundAction,
 } from "../src/features/chat/tool-call-card";
 
 describe("previewArguments", () => {
@@ -20,6 +34,12 @@ describe("previewArguments", () => {
     expect(previewArguments("exec_command", '{"cmd":"ls -la"}')).toBe("$ ls -la");
     // Mid-stream (incomplete JSON) still extracts the cmd prefix.
     expect(previewArguments("exec_command", '{"cmd":"echo h')).toBe("$ echo h");
+  });
+
+  it("previews exec_command's shell text under the `command` alias core also runs", () => {
+    expect(previewArguments("exec_command", '{"command":"ls -la"}')).toBe("$ ls -la");
+    // `cmd` is what runs when both are present, so it is what the approval row shows.
+    expect(previewArguments("exec_command", '{"cmd":"pwd","command":"ls"}')).toBe("$ pwd");
   });
 
   it("renders the file tools by their shortened file_path", () => {
@@ -61,6 +81,25 @@ describe("shortenPath", () => {
     expect(shortenPath("packages/core/src/state/default-config.ts")).toBe(
       "…/state/default-config.ts",
     );
+  });
+});
+
+describe("headerSubtitlePath", () => {
+  it("gives the whole path behind a shortened file-tool subtitle", () => {
+    const args = '{"file_path":"packages/core/src/state/default-config.ts"}';
+    expect(headerSubtitle("read_file", args)).toBe("…/state/default-config.ts");
+    expect(headerSubtitlePath("read_file", args)).toBe("packages/core/src/state/default-config.ts");
+  });
+
+  it("gives nothing for a path shown whole, a description, or a path still streaming", () => {
+    expect(headerSubtitlePath("read_file", '{"file_path":"src/app.py"}')).toBeNull();
+    expect(
+      headerSubtitlePath("read_file", '{"description":"Check the config","file_path":"/a/b/c.ts"}'),
+    ).toBeNull();
+    expect(
+      headerSubtitlePath("exec_command", '{"cmd":"ls","description":"List files"}'),
+    ).toBeNull();
+    expect(headerSubtitlePath("read_file", '{"file_path":"/home/us', false)).toBeNull();
   });
 });
 
@@ -180,5 +219,73 @@ describe("isBackgroundCall", () => {
     expect(isBackgroundCall('{"cmd":"pnpm dev","run_in_background":tr')).toBe(false);
     expect(isBackgroundCall('{"cmd":"grep run_in_background\\": true src"}')).toBe(false);
     expect(isBackgroundCall("")).toBe(false);
+  });
+});
+
+describe("isDetachedCall", () => {
+  it("marks a call whose output carries the note the tool wrote on being moved to the background", () => {
+    expect(
+      isDetachedCall(
+        "building…\n[moved to the background by the user with process_id proc-12ab34cd; leave it " +
+          "running unattended: do not poll it or send it input — its completion will arrive on its " +
+          "own as a [background_task_done] user message.]",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves an ordinary or deadline-promoted call unmarked", () => {
+    expect(isDetachedCall("done\n[exit code: 0]")).toBe(false);
+    // The yield deadline promotes too, but nobody moved that one — it wears no mark today.
+    expect(
+      isDetachedCall("[process running with process_id proc-12ab34cd; use input_command …]"),
+    ).toBe(false);
+    expect(isDetachedCall("")).toBe(false);
+  });
+});
+
+describe("showsBackgroundAction", () => {
+  const EXEC = '{"cmd":"pnpm dev"}';
+  /** The card's elapsed-time gate, already crossed. */
+  const PAST = true;
+
+  it("offers the action while the two detachable tools execute on a main-session card", () => {
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], PAST)).toBe(true);
+    expect(showsBackgroundAction("run_subagent", '{"prompt":"go"}', true, [], PAST)).toBe(true);
+  });
+
+  it("waits for the delay: a call that returns sooner never flashes it", () => {
+    // The delay is measured by useElapsedPast on the card; this function only reads its answer.
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], false)).toBe(false);
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], PAST)).toBe(true);
+  });
+
+  it("hides it once the call is no longer executing", () => {
+    expect(showsBackgroundAction("exec_command", EXEC, false, [], PAST)).toBe(false);
+  });
+
+  it("hides it for tools with no background form", () => {
+    expect(showsBackgroundAction("read_file", '{"file_path":"a.txt"}', true, [], PAST)).toBe(false);
+    expect(showsBackgroundAction("input_command", '{"process_id":"proc-1"}', true, [], PAST)).toBe(
+      false,
+    );
+    expect(showsBackgroundAction("mcp__docs__search", "{}", true, [], PAST)).toBe(false);
+  });
+
+  it("hides it on a subagent-nested card: that call lives in the child Session's environment", () => {
+    expect(
+      showsBackgroundAction("exec_command", EXEC, true, ["session-child-12ab34cd"], PAST),
+    ).toBe(false);
+  });
+
+  it("hides it on a call already launched with run_in_background: nothing left to hand over", () => {
+    expect(
+      showsBackgroundAction(
+        "exec_command",
+        '{"cmd":"pnpm dev","run_in_background":true}',
+        true,
+        [],
+        PAST,
+      ),
+    ).toBe(false);
   });
 });

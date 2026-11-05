@@ -27,9 +27,9 @@
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
+import { partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
+import { DETACHED_TOOL_NOTE_PREFIX, SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
   ThinkingLevelName,
@@ -42,7 +42,8 @@ import {
   resultForSubagentExit,
 } from "./subagent/index.js";
 import { collectWindow } from "./subagent/collect.js";
-import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { clampYield, collectUntil, reportLabel, tailForReport } from "./background/index.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const SUBAGENT_NAME = "run_subagent";
@@ -63,12 +64,13 @@ export function createSubagentTool(
   return {
     name: SUBAGENT_NAME,
     definition,
+    detachable: true,
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
-      const { toolCallId, signal, approve } = ctx;
-      const fail = function* (msg: string): Generator<OmniMessage> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
+      const { toolCallId, signal, approve, detachSignal } = ctx;
+      const fail = function* (msg: string): Generator<AmspRecord> {
         yield partialToolCallOutput({ eventType: "delta", output: msg, toolCallId });
       };
 
@@ -76,16 +78,18 @@ export function createSubagentTool(
       // than throwing (consistent with other tools).
       if (!runner) {
         yield* fail("[run_subagent unavailable: no subagent runner configured]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (!manager || manager.isDisposed) {
         yield* fail("[run_subagent unavailable: no subagent session manager available]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (prompt.trim().length === 0) {
-        yield* fail("[run_subagent error: missing required string argument `prompt`]");
-        return { stopReason: "fatal" };
+        yield* fail(
+          describeArgumentError(definition, args, { argument: "prompt", kind: "missing" }),
+        );
+        return { status: "fatal" };
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;
       const modelId = typeof args.model_id === "string" ? args.model_id : undefined;
@@ -96,7 +100,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to inherit the parent session's model]",
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       // Thinking-level override: an explicit value must be one of the selectable tiers — a typo
       // must fail loudly rather than silently running the child at an inherited level the caller
@@ -110,7 +114,7 @@ export function createSubagentTool(
           `[run_subagent error: invalid \`thinking_level\` ${JSON.stringify(rawThinkingLevel)}; ` +
             `use one of ${SUBAGENT_THINKING_LEVELS.join(" / ")}, or omit it to inherit the parent session's level]`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
       const background = args.run_in_background === true;
@@ -120,7 +124,7 @@ export function createSubagentTool(
         definition.timeoutMs,
       );
 
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       // Concurrency cap (running child Agents are never evicted): reject spawning if there's no
       // room.
@@ -128,7 +132,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: too many background subagents; poll or finish existing ones first]",
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // Spawn the child Session (precheck errors such as exceeding the depth limit or a
@@ -152,7 +156,7 @@ export function createSubagentTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // run_in_background: no collect window — register immediately, arm the completion
@@ -180,7 +184,7 @@ export function createSubagentTool(
         if (meta) yield meta;
         session.startRun([userText(prompt, "parent_agent")]);
         return {
-          stopReason: "completed",
+          status: "completed",
           note:
             `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
             `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run)]`,
@@ -189,26 +193,53 @@ export function createSubagentTool(
 
       // An interruption within the startup window kills the child session (consistent with
       // exec_command); once switched to background, this listener is removed in `finally`.
+      // A detach is not on this listener: it leaves the child running, which is the point.
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
+      const windowSignal = collectUntil(signal, detachSignal);
       try {
         session.startRun([userText(prompt, "parent_agent")]);
         yield* collectWindow(session, {
           yieldMs,
           toolCallId,
-          ...(signal ? { signal } : {}),
+          ...(windowSignal ? { signal: windowSignal } : {}),
           ...(approve ? { approve } : {}),
         });
 
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         if (session.running) {
-          // Still running once the window expires: register as a background session, returning
-          // subagent_id for input_subagent to continue accessing it.
+          // Still running: register as a background session, returning subagent_id for
+          // input_subagent to continue accessing it.
           const id = manager.register(session);
           registered = true;
+          if (detachSignal?.aborted) {
+            // Detached by the user mid-window. The child now outlives this call, so it needs
+            // everything the collect window was giving it: a standing approval sink (without
+            // one its next read-write tool parks at the approval queue forever, since no
+            // window will ever attach another) and a live message tap, so it keeps streaming
+            // to the frontend past this turn's end. Its completion is reported like a
+            // run_in_background launch's — nobody is going to poll for it.
+            armSubagentDoneReport(session, id, prompt, services);
+            if (approve) session.setPersistentApprovalSink(approve);
+            const forward = services?.backgroundForward;
+            if (forward) session.setMessageTap(forward);
+            // No approval hint here, exactly as on a run_in_background launch: the standing
+            // sink just attached carries a queued request to the user itself, so "poll to
+            // review" would send the model after work it is not doing — the deadline
+            // promotion below keeps the hint because it has no such sink.
+            return {
+              status: "completed",
+              note:
+                `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; leave it running unattended: ` +
+                `do not poll it or send it input — its completion will arrive on its own as a ` +
+                `[background_task_done] user message. Move on to other work, or end the turn if ` +
+                `nothing else is pending; input_subagent with abort: true still stops its current ` +
+                `run if the user asks]`,
+            };
+          }
           return {
-            stopReason: "completed",
+            status: "completed",
             note:
               `[subagent running with subagent_id ${id}; use input_subagent to poll for progress ` +
               `or send a follow-up prompt]` +

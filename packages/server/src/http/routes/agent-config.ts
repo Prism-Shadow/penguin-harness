@@ -10,7 +10,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { McpToolProvider, resolveMCPServer } from "@prismshadow/penguin-core";
+import {
+  McpToolProvider,
+  collectVaultRefs,
+  loadAgentVault,
+  resolveMCPServer,
+} from "@prismshadow/penguin-core";
 import type { MCPServerConfig } from "@prismshadow/penguin-core";
 import type {
   AgentConfigResponse,
@@ -19,20 +24,49 @@ import type {
   McpServerTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import type { ServerConfig } from "../../config.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentConfigRouteDeps {
+  agentConfigService: AgentConfig;
+  manager: SessionManager;
+  access: Access;
+  /** The data root, for the Agent's vault the mcp-test probe fills an entry's references from. */
+  config: Pick<ServerConfig, "root">;
+}
 
 /** Ceiling on a single mcp-test probe's connect budget (an entry may configure minutes). */
 const MCP_TEST_TIMEOUT_CAP_MS = 30_000;
 
-export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
+/** The mcp-test answer to an entry that reads the vault and is not saved as it is. */
+const MCP_TEST_SAVE_FIRST =
+  "Save this entry first, then test it: an entry that reads values from the agent's vault is tested only as it is saved.";
+
+/** A JSON value as one string, object keys sorted: two values print alike exactly when they are the same data. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+export function agentConfigRoutes(deps: AgentConfigRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,
@@ -43,7 +77,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: AgentConfigUpdateRequest = {};
     const agentsMd = optionalString(body, "agentsMd", { label: "agentsMd" });
@@ -56,6 +90,13 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     // Fine-grained validation (numeric ranges / enums) is done inside agent-config-service.
     await deps.agentConfigService.updateConfig(projectId, agentId, req);
+    // Agent State normally needs no invalidation — core re-reads it into the next model
+    // context itself, the hook switch included. The switch is still the exception: its
+    // saved feedback promises the next turn, and a conversation that is running would
+    // otherwise keep its hooks until its next compaction.
+    if (req.config?.hooks !== undefined) {
+      deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    }
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,
@@ -68,11 +109,20 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   // this host, exactly where Sessions run them, and browser-origin HTTP probes would
   // stumble over CORS. A malformed entry is a 400 (same resolver as PUT validation); an
   // unreachable server is a normal `{ ok: false }` result carrying the collected warning
-  // (connect error, timeout, stderr tail). Nothing is written to the Agent State.
+  // (connect error, timeout, stderr tail). The response never echoes the config, and nothing
+  // is written to the Agent State.
+  //
+  // Vault values (the user's rule): an entry's `${KEY}` references are filled in from the
+  // Agent's vault only when the entry is one saved on the Agent exactly as tested — same name,
+  // same config. Whoever may call this route can type any address, and a probe must not send a
+  // vault value anywhere a saved entry does not already send it. A new or changed entry that
+  // references the vault is answered `{ ok: false, saveFirst: true }` with nothing filled in and
+  // nothing contacted; a saved one is filled in as a Session would, and a key the vault lacks
+  // answers `{ ok: false }` naming the key, again with nothing contacted.
   app.post("/mcp-test", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     if (typeof body.name !== "string" || body.name.length === 0) {
       throw badRequest("name must be a non-empty string.");
@@ -87,6 +137,17 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     } catch (err) {
       throw badRequest(err instanceof Error ? err.message : String(err));
     }
+    const saved = (await deps.agentConfigService.getConfig(projectId, agentId)).config.mcpServers;
+    const asSaved = saved.some(
+      (s) => s.name === entry.name && canonicalJson(s.config) === canonicalJson(entry.config),
+    );
+    if (!asSaved && collectVaultRefs(entry.config).length > 0) {
+      return c.json({
+        ok: false,
+        saveFirst: true,
+        error: MCP_TEST_SAVE_FIRST,
+      } satisfies McpServerTestResponse);
+    }
     // A probe must not hold a request open arbitrarily long (the bulk test walks every
     // server sequentially): the entry's own connect budget applies, capped for testing.
     if (resolved.connectTimeoutMs > MCP_TEST_TIMEOUT_CAP_MS) {
@@ -99,6 +160,9 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     const workspaceDir = await mkdtemp(join(tmpdir(), "penguin-mcp-test-"));
     const provider = new McpToolProvider([entry], {
       workspaceDir,
+      // Only a saved entry is given the vault (see above); any other reaches here without a
+      // reference, so an empty vault changes nothing for it.
+      vault: asSaved ? await loadAgentVault(deps.config.root, projectId, agentId) : {},
       warn: (m) => warnings.push(m),
     });
     const startedAt = Date.now();
@@ -136,7 +200,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/kernel-update", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const result = await deps.agentConfigService.kernelUpdate(projectId, agentId);
     return c.json(result satisfies AgentKernelUpdateResponse);
   });
@@ -147,8 +211,12 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/reset", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.resetConfig(projectId, agentId);
+    // The defaults carry no `hooks` section, so a reset can switch hooks back on; cached
+    // runtimes are rebuilt for the same reason a switch write rebuilds them (see the PUT
+    // above).
+    deps.manager.invalidateAgentRuntimes(projectId, agentId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,

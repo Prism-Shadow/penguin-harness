@@ -1,23 +1,47 @@
 /**
- * Appearance context: light/dark theme (mode = light / dark / system) + font
- * size + theme color (accent).
- * - Theme: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
- *   live. Dark mode defaults to pure black (styles.css overrides the neutral gray scale).
- * - Font size: scales the root font-size (rem-based text-* utilities scale along with it).
- * - Theme color: html[data-accent] overrides --accent-bg/--accent-fg; defaults to neutral
- *   (gray/white, follows light/dark).
+ * Appearance context: light/dark mode (light / dark / system), theme, text size, font pairing
+ * and accent.
+ * - Mode: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
+ *   live.
+ * - Theme: html[data-theme] selects one of the shared UI package's themes (absent = the
+ *   stylesheet's fallback, Primer). A browser that stores no choice starts in Frost
+ *   (`INITIAL_THEME_ID`). Offered in Settings → Appearance.
+ * - Text size: five steps that set the root font-size, so every rem-based type and density
+ *   token scales with it.
+ * - Font pairing: html[data-font-latin] / [data-font-cjk] override the reading and interface
+ *   sans (Latin) and the CJK face; absent = the theme's own. The theme's mono face is untouched.
+ * - Accent: html[data-accent] overrides the theme's accent tokens; "neutral" (no attribute) is
+ *   the theme's own accent. Each theme lists its own presets, and a stored preset the active
+ *   theme does not list paints nothing until a theme that lists it is active again.
+ * - Tool short names: whether a tool-call card names the built-in tools by a short alias
+ *   instead of the name the model calls them by. Display-only, default on.
  * - Terminal theme: its own light/dark/follow-the-app setting, following the app unless
  *   explicitly pinned — see TerminalThemeMode. It drives no class or variable here; the
  *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
  *   anchored on html.dark and cannot express a light subtree inside a dark app.
- * All preferences persist to localStorage.
+ * - Theme colour: the meta tag follows the canvas the mode and theme paint (lib/theme-color.ts).
+ * All preferences follow the account: each is cached in localStorage for the first frame and
+ * written through lib/account-sync, which carries an edit to the account and, when the account's
+ * copy arrives, has this provider read the cache again. Reading them back, with validation and
+ * the legacy text-size migration, lives in theme-prefs.ts.
+ * The pre-paint script in index.html (the package's BOOT_SCRIPT) applies mode, theme, accent,
+ * text size and font pairing before the first frame; the effects here keep them in sync
+ * afterwards, through the same applyThemeAttributes the package defines.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { ACCENT_PRESETS, THEME_OWN_ACCENTS } from "@prismshadow/penguin-ui";
+import type { ThemeId } from "@prismshadow/penguin-ui";
+import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY, readThemePrefs } from "./theme-prefs";
+import { subscribeAccountApplied, writeCached } from "../lib/account-sync/cache";
+import { syncThemeColor } from "../lib/theme-color";
+import type { FontCjk, FontLatin, TextSize } from "./theme-prefs";
 
+export type { FontCjk, FontLatin, TextSize, ThemeId };
 export type ThemeMode = "light" | "dark" | "system";
-export type FontScale = "sm" | "md" | "lg";
-export type Accent = "neutral" | "blue" | "green" | "violet" | "rose" | "amber";
+export type Accent = AccentChoice;
 /**
  * The terminal's appearance. By default it follows the app ("app"): switching the app
  * between light and dark carries the terminal along. Pinning "light" or "dark" decouples
@@ -31,22 +55,30 @@ export type Currency = "USD" | "CNY";
 /** 1 USD ≈ 7 CNY (fixed conversion rate). */
 export const USD_TO_CNY = 7;
 
-const MODE_KEY = "penguin.theme";
-const FONT_KEY = "penguin.fontScale";
-const ACCENT_KEY = "penguin.accent";
-const CURRENCY_KEY = "penguin.currency";
-const TERMINAL_KEY = "penguin.terminal.theme";
-
-/** Font size tier → root font-size (px): overall slightly larger than the system default for readability. */
-const FONT_PX: Record<FontScale, string> = { sm: "16px", md: "18px", lg: "20px" };
+const MODE_KEY = THEME_STORAGE_KEYS.mode;
+const THEME_ID_KEY = THEME_STORAGE_KEYS.themeId;
+const TEXT_SIZE_KEY = THEME_STORAGE_KEYS.textSize;
+const FONT_LATIN_KEY = THEME_STORAGE_KEYS.fontLatin;
+const FONT_CJK_KEY = THEME_STORAGE_KEYS.fontCjk;
+const ACCENT_KEY = THEME_STORAGE_KEYS.accent;
 
 interface ThemeContextValue {
   mode: ThemeMode;
   /** Resolved effective theme (system mode already resolved against the system preference). */
   dark: boolean;
   setMode: (mode: ThemeMode) => void;
-  fontScale: FontScale;
-  setFontScale: (scale: FontScale) => void;
+  /** Which theme renders the app. */
+  themeId: ThemeId;
+  setThemeId: (themeId: ThemeId) => void;
+  textSize: TextSize;
+  setTextSize: (size: TextSize) => void;
+  /** The Latin sans the theme's own is replaced with ("theme" = keep the theme's). */
+  fontLatin: FontLatin;
+  setFontLatin: (font: FontLatin) => void;
+  /** The CJK face the theme's own is replaced with ("theme" = keep the theme's). */
+  fontCjk: FontCjk;
+  setFontCjk: (font: FontCjk) => void;
+  /** The stored choice, which may name a preset the active theme does not list (see effectiveAccent). */
   accent: Accent;
   setAccent: (accent: Accent) => void;
   /** Display currency for prices (shared by Cost Center and Model Library; always stored as USD). */
@@ -54,6 +86,9 @@ interface ThemeContextValue {
   setCurrency: (currency: Currency) => void;
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
+  /** Whether tool-call cards name the built-in tools by their short alias. */
+  toolAliases: boolean;
+  setToolAliases: (on: boolean) => void;
   /** Resolved terminal appearance ("app" already resolved against the app's own). */
   terminalDark: boolean;
 }
@@ -66,31 +101,15 @@ function initialMode(): ThemeMode {
   return "system";
 }
 
-function initialFontScale(): FontScale {
-  const stored = localStorage.getItem(FONT_KEY);
-  if (stored === "sm" || stored === "md" || stored === "lg") return stored;
-  return "md";
-}
-
-function initialAccent(): Accent {
-  const stored = localStorage.getItem(ACCENT_KEY);
-  if (
-    stored === "neutral" ||
-    stored === "blue" ||
-    stored === "green" ||
-    stored === "violet" ||
-    stored === "rose" ||
-    stored === "amber"
-  ) {
-    return stored;
-  }
-  return "neutral";
-}
-
 function initialTerminalMode(): TerminalThemeMode {
-  const stored = localStorage.getItem(TERMINAL_KEY);
+  const stored = localStorage.getItem(TERMINAL_THEME_KEY);
   if (stored === "light" || stored === "dark" || stored === "app") return stored;
   return "app";
+}
+
+/** Default on, so anything but the explicit off value reads as on (an absent value included). */
+function initialToolAliases(): boolean {
+  return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
 }
 
 function initialCurrency(): Currency {
@@ -104,27 +123,66 @@ function systemDark(): boolean {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(initialMode);
   const [sysDark, setSysDark] = useState(systemDark);
-  const [fontScale, setFontScaleState] = useState<FontScale>(initialFontScale);
-  const [accent, setAccentState] = useState<Accent>(initialAccent);
+  // One read for the lot, which also migrates the legacy text-size key.
+  const [initial] = useState(() => readThemePrefs(localStorage));
+  const [themeId, setThemeIdState] = useState<ThemeId>(initial.themeId);
+  const [textSize, setTextSizeState] = useState<TextSize>(initial.textSize);
+  const [fontLatin, setFontLatinState] = useState<FontLatin>(initial.fontLatin);
+  const [fontCjk, setFontCjkState] = useState<FontCjk>(initial.fontCjk);
+  const [accent, setAccentState] = useState<Accent>(initial.accent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
+  const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
+
+  // The account's preferences replaced the cached ones at sign-in:
+  // read every one again. The attribute effects below then repaint from the new state.
+  useEffect(
+    () =>
+      subscribeAccountApplied(() => {
+        const next = readThemePrefs(localStorage);
+        setModeState(initialMode());
+        setThemeIdState(next.themeId);
+        setTextSizeState(next.textSize);
+        setFontLatinState(next.fontLatin);
+        setFontCjkState(next.fontCjk);
+        setAccentState(next.accent);
+        setCurrencyState(initialCurrency());
+        setTerminalModeState(initialTerminalMode());
+        setToolAliasesState(initialToolAliases());
+      }),
+    [],
+  );
 
   const dark = mode === "system" ? sysDark : mode === "dark";
   const terminalDark = terminalMode === "app" ? dark : terminalMode === "dark";
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
+    applyThemeAttributes(document.documentElement, { dark });
   }, [dark]);
 
   useEffect(() => {
-    document.documentElement.style.fontSize = FONT_PX[fontScale];
-  }, [fontScale]);
+    // Primer, the stylesheet's fallback, sets no data-theme: its selectors match a bare <html>.
+    applyThemeAttributes(document.documentElement, { themeId });
+  }, [themeId]);
 
   useEffect(() => {
-    // neutral relies on the CSS default (follows light/dark) and sets no data-accent.
-    if (accent === "neutral") delete document.documentElement.dataset.accent;
-    else document.documentElement.dataset.accent = accent;
+    applyThemeAttributes(document.documentElement, { textSize });
+  }, [textSize]);
+
+  useEffect(() => {
+    // "theme" removes the attribute: the theme's own face applies.
+    applyThemeAttributes(document.documentElement, { fontLatin, fontCjk });
+  }, [fontLatin, fontCjk]);
+
+  useEffect(() => {
+    // neutral leaves the theme's own accent (follows light/dark) and sets no data-accent.
+    applyThemeAttributes(document.documentElement, { accent });
   }, [accent]);
+
+  // After the attribute effects above, so the canvas read is the one now painted.
+  useEffect(() => {
+    syncThemeColor(document);
+  }, [dark, themeId]);
 
   // system mode: track system preference changes.
   useEffect(() => {
@@ -137,28 +195,48 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode]);
 
   const setMode = useCallback((next: ThemeMode) => {
-    localStorage.setItem(MODE_KEY, next);
+    writeCached(MODE_KEY, next);
     setModeState(next);
   }, []);
 
-  const setFontScale = useCallback((next: FontScale) => {
-    localStorage.setItem(FONT_KEY, next);
-    setFontScaleState(next);
+  const setThemeId = useCallback((next: ThemeId) => {
+    writeCached(THEME_ID_KEY, next);
+    setThemeIdState(next);
+  }, []);
+
+  const setTextSize = useCallback((next: TextSize) => {
+    writeCached(TEXT_SIZE_KEY, next);
+    setTextSizeState(next);
+  }, []);
+
+  const setFontLatin = useCallback((next: FontLatin) => {
+    writeCached(FONT_LATIN_KEY, next);
+    setFontLatinState(next);
+  }, []);
+
+  const setFontCjk = useCallback((next: FontCjk) => {
+    writeCached(FONT_CJK_KEY, next);
+    setFontCjkState(next);
   }, []);
 
   const setAccent = useCallback((next: Accent) => {
-    localStorage.setItem(ACCENT_KEY, next);
+    writeCached(ACCENT_KEY, next);
     setAccentState(next);
   }, []);
 
   const setCurrency = useCallback((next: Currency) => {
-    localStorage.setItem(CURRENCY_KEY, next);
+    writeCached(CURRENCY_KEY, next);
     setCurrencyState(next);
   }, []);
 
   const setTerminalMode = useCallback((next: TerminalThemeMode) => {
-    localStorage.setItem(TERMINAL_KEY, next);
+    writeCached(TERMINAL_THEME_KEY, next);
     setTerminalModeState(next);
+  }, []);
+
+  const setToolAliases = useCallback((next: boolean) => {
+    writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");
+    setToolAliasesState(next);
   }, []);
 
   return (
@@ -167,8 +245,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         mode,
         dark,
         setMode,
-        fontScale,
-        setFontScale,
+        themeId,
+        setThemeId,
+        textSize,
+        setTextSize,
+        fontLatin,
+        setFontLatin,
+        fontCjk,
+        setFontCjk,
         accent,
         setAccent,
         currency,
@@ -176,6 +260,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         terminalMode,
         setTerminalMode,
         terminalDark,
+        toolAliases,
+        setToolAliases,
       }}
     >
       {children}
@@ -189,12 +275,19 @@ export function useTheme(): ThemeContextValue {
   return ctx;
 }
 
-/** Display swatches for theme color presets (neutral uses a neutral gray). */
-export const ACCENT_SWATCHES: ReadonlyArray<{ value: Accent; color: string }> = [
-  { value: "neutral", color: "#6b7280" },
-  { value: "blue", color: "#2563eb" },
-  { value: "green", color: "#15803d" },
-  { value: "violet", color: "#7c3aed" },
-  { value: "rose", color: "#be123c" },
-  { value: "amber", color: "#b45309" },
-];
+/**
+ * The accent swatches a theme offers: "neutral" first (the theme's own accent, the absence of a
+ * choice), then the theme's own presets in its own order, painted in their light values.
+ */
+export function accentSwatches(
+  themeId: ThemeId,
+  dark = false,
+): ReadonlyArray<{ value: Accent; color: string }> {
+  // "Theme's own" paints the accent that choice resolves to — every theme's is black (white in
+  // dark) — rather than a stand-in grey.
+  const own = THEME_OWN_ACCENTS[themeId];
+  return [
+    { value: "neutral", color: dark ? own.dark : own.light },
+    ...ACCENT_PRESETS[themeId].map((preset) => ({ value: preset.id, color: preset.swatch })),
+  ];
+}

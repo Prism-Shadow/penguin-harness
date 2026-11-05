@@ -1,8 +1,0 @@
-{
-  "description": "Run Claude Code on a remote host over SSH — a persistent expect-driven login session, headless claude -p with the stdin fix, the interactive TUI inside a remote tmux driven by send-keys/capture-pane (one keystroke at a time, capture-verified; relayed user messages go through verbatim), and multi-turn continuity via --session-id/--resume or stream-json; hosts and credentials are placeholders resolved at runtime from the user or the vault, never hardcoded.",
-  "short_description": "Run Claude Code on remote hosts over SSH.",
-  "short_description_zh": "在远程主机上通过 SSH 运行 Claude Code（持久会话 / headless / tmux 交互 / 多轮续接）。",
-  "version": "2026-08-18.1",
-  "category": "software-development",
-  "preinstall": false
-}

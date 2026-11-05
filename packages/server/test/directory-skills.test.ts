@@ -1,31 +1,43 @@
 /**
- * Integration tests for importing Skills from a directory the user picked: discovery under
- * `.agents/skills` / `.claude/skills`, the `.claude`-is-a-symlink-to-`.agents` case that would
- * otherwise offer everything twice, which layout wins a name collision, what is passed over rather
- * than offered (no frontmatter, a symlinked Skill directory, an unsafe name), the empty directory
- * being a normal answer, path and authorization rejections, and Agent creation installing the
- * picked names — including a directory Skill shadowing a library Skill of the same name.
+ * Importing Skills from a directory the user picked.
  *
- * It also pins the read discipline the module promises: `SKILL.md` and `icon.svg` are read only
- * when they are regular files the Skill directory owns, so a symlink cannot hand back a file
- * outside it; and one Skill that cannot be read does not take the rest of the directory with it.
+ * - Discovery reads `.agents/skills` and `.claude/skills` and says which layout each Skill came
+ *   from; a `.claude` that is a symlink to `.agents` offers nothing twice; `.agents` wins a
+ *   name both layouts carry.
+ * - Passed over rather than offered: a Skill with no frontmatter, a symlinked Skill directory,
+ *   an unsafe name, one past the size caps. `SKILL.md` and `icon.svg` are read only when they
+ *   are regular files the Skill directory owns, so a symlink cannot hand back a file outside
+ *   it, and one unreadable Skill does not take the rest of the directory with it.
+ * - An empty directory is an empty list; a relative path, a missing directory and an outsider
+ *   are refused.
+ * - Creating an Agent installs the picked names, files and icon included, a directory Skill
+ *   shadowing a library Skill of the same name; a picked Skill that is gone is a 404 with no
+ *   Agent created; a relative skillsDirectory and half of the directory pair are refused.
+ *
+ * One app and one Project for the file; every case works in a scratch directory and Agents of
+ * its own.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir, librarySkill } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
+  AgentsResponse,
   AgentSkillsResponse,
   DirectorySkillsResponse,
   ProjectCreateResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
+
 const skillMd = (name: string, description = `${name} does a thing`) =>
-  `---\nname: ${name}\ndescription: ${description}\nversion: 2026-08-23.3\n---\n\nBody of ${name}.\n`;
+  `---\nname: ${name}\ndescription: ${description}\nversion: 2026.08.23.3\n---\n\nBody of ${name}.\n`;
 
 describe("directory skills api", () => {
   let t: TestApp;
@@ -53,12 +65,20 @@ describe("directory skills api", () => {
     }
   };
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_d");
     const b = await provisionUser(t.app, "outsider_d");
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case picks a directory of its own and installs into the one Project, in Agents that
+  // go with the case (a retry finds their names free).
+  beforeAll(async () => {
     const created = (await (
       await owner.post("/api/projects", {
         projectId: "owner_d-dirskills",
@@ -66,18 +86,22 @@ describe("directory skills api", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+  });
+  beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-dirskills-"));
   });
-
   afterEach(async () => {
-    // The app teardown must run even if the scratch checkout resists removal: a throw here would
-    // skip `t.cleanup()`, leaking the db/hmr host into every later file in this worker — the
-    // ci-windows cascade helpers.ts documents. Same maxRetries discipline, same reason.
-    try {
-      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    } finally {
-      await t.cleanup();
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    for (const { agentId } of listed.agents) {
+      if (agentId !== "default_agent") {
+        await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
+      }
     }
+    // A scratch checkout can resist removal on Windows for a moment; same retry discipline as
+    // helpers.ts.
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("finds Skills in both layouts and says which one each came from", async () => {
@@ -90,11 +114,11 @@ describe("directory skills api", () => {
     ]);
     // Metadata comes from the frontmatter, and content never crosses the wire.
     expect(res.skills[0]!.description).toBe("alpha does a thing");
-    expect(res.skills[0]!.version).toBe("2026-08-23.3");
+    expect(res.skills[0]!.version).toBe("2026.08.23.3");
     expect(res.skills[0]).not.toHaveProperty("content");
   });
 
-  it("offers each Skill once when .claude is a symlink to .agents", async () => {
+  itWithSymlinks("offers each Skill once when .claude is a symlink to .agents", async () => {
     await writeSkill(".agents/skills", "alpha");
     await writeSkill(".agents/skills", "gamma");
     await fs.symlink(path.join(dir, ".agents"), path.join(dir, ".claude"));
@@ -112,60 +136,66 @@ describe("directory skills api", () => {
     expect(res.skills[0]!.source).toBe(".agents/skills");
   });
 
-  it("passes over what is not an installable Skill instead of offering it", async () => {
-    await writeSkill(".agents/skills", "real");
-    // No SKILL.md at all.
-    await fs.mkdir(path.join(dir, ".agents/skills/empty-dir"), { recursive: true });
-    // A SKILL.md with no frontmatter.
-    await fs.mkdir(path.join(dir, ".agents/skills/no-frontmatter"), { recursive: true });
-    await fs.writeFile(path.join(dir, ".agents/skills/no-frontmatter/SKILL.md"), "just prose\n");
-    // A name the installer would reject.
-    await fs.mkdir(path.join(dir, ".agents/skills/bad name"), { recursive: true });
-    await fs.writeFile(path.join(dir, ".agents/skills/bad name/SKILL.md"), skillMd("bad name"));
-    // A symlinked Skill directory: how a tree outside the layout would otherwise be read.
-    const outside = path.join(dir, "outside-skill");
-    await fs.mkdir(outside, { recursive: true });
-    await fs.writeFile(path.join(outside, "SKILL.md"), skillMd("linked"));
-    await fs.symlink(outside, path.join(dir, ".agents/skills/linked"));
+  itWithSymlinks(
+    "passes over what is not an installable Skill instead of offering it",
+    async () => {
+      await writeSkill(".agents/skills", "real");
+      // No SKILL.md at all.
+      await fs.mkdir(path.join(dir, ".agents/skills/empty-dir"), { recursive: true });
+      // A SKILL.md with no frontmatter.
+      await fs.mkdir(path.join(dir, ".agents/skills/no-frontmatter"), { recursive: true });
+      await fs.writeFile(path.join(dir, ".agents/skills/no-frontmatter/SKILL.md"), "just prose\n");
+      // A name the installer would reject.
+      await fs.mkdir(path.join(dir, ".agents/skills/bad name"), { recursive: true });
+      await fs.writeFile(path.join(dir, ".agents/skills/bad name/SKILL.md"), skillMd("bad name"));
+      // A symlinked Skill directory: how a tree outside the layout would otherwise be read.
+      const outside = path.join(dir, "outside-skill");
+      await fs.mkdir(outside, { recursive: true });
+      await fs.writeFile(path.join(outside, "SKILL.md"), skillMd("linked"));
+      await fs.symlink(outside, path.join(dir, ".agents/skills/linked"));
 
-    const res = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
-    expect(res.skills.map((s) => s.name)).toEqual(["real"]);
-  });
+      const res = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
+      expect(res.skills.map((s) => s.name)).toEqual(["real"]);
+    },
+  );
 
-  it("does not follow a symlinked SKILL.md or icon.svg out of the Skill directory", async () => {
-    const secret = path.join(dir, "outside", "id_rsa");
-    await fs.mkdir(path.dirname(secret), { recursive: true });
-    await fs.writeFile(secret, "-----BEGIN PRIVATE KEY-----\nSECRET\n");
+  itWithSymlinks(
+    "does not follow a symlinked SKILL.md or icon.svg out of the Skill directory",
+    async () => {
+      const secret = path.join(dir, "outside", "id_rsa");
+      await fs.mkdir(path.dirname(secret), { recursive: true });
+      await fs.writeFile(secret, "-----BEGIN PRIVATE KEY-----\nSECRET\n");
 
-    // A real Skill whose icon.svg is a link to that file: the Skill is still offered, without an
-    // icon — the link's target never reaches the response, nor the Agent it would be installed on.
-    await writeSkill(".agents/skills", "linked-icon");
-    await fs.rm(path.join(dir, ".agents/skills/linked-icon/icon.svg"), { force: true });
-    await fs.symlink(secret, path.join(dir, ".agents/skills/linked-icon/icon.svg"));
-    // A Skill whose SKILL.md is itself a link is not a Skill at all.
-    const outsideMd = path.join(dir, "outside", "SKILL.md");
-    await fs.writeFile(outsideMd, skillMd("linked-md"));
-    await fs.mkdir(path.join(dir, ".agents/skills/linked-md"), { recursive: true });
-    await fs.symlink(outsideMd, path.join(dir, ".agents/skills/linked-md/SKILL.md"));
+      // A real Skill whose icon.svg is a link to that file: the Skill is still offered, without an
+      // icon — the link's target never reaches the response, nor the Agent it would be installed on.
+      await writeSkill(".agents/skills", "linked-icon");
+      await fs.rm(path.join(dir, ".agents/skills/linked-icon/icon.svg"), { force: true });
+      await fs.symlink(secret, path.join(dir, ".agents/skills/linked-icon/icon.svg"));
+      // A Skill whose SKILL.md is itself a link is not a Skill at all.
+      const outsideMd = path.join(dir, "outside", "SKILL.md");
+      await fs.writeFile(outsideMd, skillMd("linked-md"));
+      await fs.mkdir(path.join(dir, ".agents/skills/linked-md"), { recursive: true });
+      await fs.symlink(outsideMd, path.join(dir, ".agents/skills/linked-md/SKILL.md"));
 
-    const res = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
-    expect(res.skills.map((s) => s.name)).toEqual(["linked-icon"]);
-    expect(res.skills[0]).not.toHaveProperty("icon");
-    expect(JSON.stringify(res)).not.toContain("SECRET");
+      const res = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
+      expect(res.skills.map((s) => s.name)).toEqual(["linked-icon"]);
+      expect(res.skills[0]).not.toHaveProperty("icon");
+      expect(JSON.stringify(res)).not.toContain("SECRET");
 
-    const created = await owner.post(`/api/projects/${projectId}/agents`, {
-      agentId: "no_link_agent",
-      skillsDirectory: dir,
-      directorySkills: ["linked-icon"],
-    });
-    expect(created.status).toBe(201);
-    await expect(
-      fs.readFile(
-        path.join(skillsDir(t.root, projectId, "no_link_agent"), "linked-icon", "icon.svg"),
-        "utf8",
-      ),
-    ).rejects.toThrow();
-  });
+      const created = await owner.post(`/api/projects/${projectId}/agents`, {
+        agentId: "no_link_agent",
+        skillsDirectory: dir,
+        directorySkills: ["linked-icon"],
+      });
+      expect(created.status).toBe(201);
+      await expect(
+        fs.readFile(
+          path.join(skillsDir(t.root, projectId, "no_link_agent"), "linked-icon", "icon.svg"),
+          "utf8",
+        ),
+      ).rejects.toThrow();
+    },
+  );
 
   it("passes over a Skill that busts the size caps instead of hiding the whole directory", async () => {
     await writeSkill(".agents/skills", "small");

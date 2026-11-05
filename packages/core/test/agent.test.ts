@@ -2,6 +2,10 @@
  * Agent.createSession's Workspace handling and vault injection (no network needed; only
  * constructs the Session, never sends a request).
  *
+ * A host recreating a Session that never ran passes its id: the Session keeps it until its
+ * first record lands in a Trace, after which the id refuses a second creation; an id that
+ * could name a path outside the Trace directory is refused before any workspace is created.
+ *
  * Regression: an explicitly given Workspace must be an existing directory. When it
  * does not exist, a clear error must be thrown rather than auto-creating it, and bash must not
  * be started with an invalid cwd after Session creation, which would throw a misleading
@@ -15,23 +19,36 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
-import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
+import type { ModelRef, OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
+import {
+  agentsMdPath,
+  hooksDir,
+  projectConfigPath,
+  skillsDir,
+  systemConfigPath,
+  tracesDir,
+  workspacesDir,
+} from "../src/state/paths.js";
 import {
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  imageUrlMessage,
   installSkill,
   loadProjectConfig,
+  ModelSwitchRefusedError,
   saveProjectConfig,
+  setProviderConnection,
   setVaultEntry,
   userText,
 } from "../src/index.js";
 import { metaMaxTokens } from "../src/agent.js";
+import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 import type {
   EnvironmentConfig,
   EnvironmentServices,
@@ -79,6 +96,8 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-harness-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {
@@ -182,6 +201,39 @@ describe("Agent.createSession workspace handling", () => {
   });
 });
 
+describe("Agent.createSession under a given id (a host recreating a Session that never ran)", () => {
+  const ID = "session-2026-07-06-11-00-00-abcd0001";
+
+  it("keeps the given id until the Session's first record lands, and refuses it from then on", async () => {
+    const agent = await createAgent();
+    const first = await agent.createSession({ sessionId: ID });
+    expect(first.sessionId).toBe(ID);
+    // Never ran: nothing is on disk under the id, so a host that lost the object recreates it.
+    const again = await agent.createSession({ sessionId: ID });
+    expect(again.sessionId).toBe(ID);
+
+    await bootstrapped(again);
+    const located = await findLatestTraceFile(
+      tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      ID,
+    );
+    const head = (await readTrace(located!.path))[0]!;
+    expect((head.payload as { session_id?: string }).session_id).toBe(ID);
+    // A Trace exists now: only a resume may continue it.
+    await expect(agent.createSession({ sessionId: ID })).rejects.toThrow(/already has a Trace/);
+  });
+
+  it("refuses an id that could name a path outside the Trace directory, creating no workspace", async () => {
+    const agent = await createAgent();
+    const workspaces = workspacesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const before = await fs.readdir(workspaces).catch(() => []);
+    await expect(agent.createSession({ sessionId: "../elsewhere" })).rejects.toThrow(
+      /may contain only letters, digits/,
+    );
+    expect(await fs.readdir(workspaces).catch(() => [])).toEqual(before);
+  });
+});
+
 describe("Agent.createSession model reference ((provider, model_id) pair)", () => {
   it("records the pair reference in session_meta (default_model when unspecified)", async () => {
     const agent = await createAgent();
@@ -193,9 +245,9 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       // (same source that Trace writes).
       const meta = session.metaMessage.payload as { provider: string; model_id: string };
       expect(meta.provider).toBe("deepseek");
-      expect(meta.model_id).toBe("deepseek-v4-flash-vision-exp");
+      expect(meta.model_id).toBe("deepseek-flash");
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -208,6 +260,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "myproxy",
       model_id: "claude-sonnet-4-6",
+      api_key: "proxy-key",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-ref-pair");
@@ -241,10 +294,10 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const ws = path.join(tmpRoot, "ws-ref-half");
     await fs.mkdir(ws, { recursive: true });
     // A bare model_id is never resolved against the config, not even when exactly one entry
-    // carries it (deepseek-v4-flash is unique here): the group is the caller's to name.
-    await expect(
-      agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-flash" }),
-    ).rejects.toThrow(/must be given as a \(provider, model_id\) pair/);
+    // carries it (gpt-6-astra is unique here): the group is the caller's to name.
+    await expect(agent.createSession({ workspaceDir: ws, modelId: "gpt-6-astra" })).rejects.toThrow(
+      /must be given as a \(provider, model_id\) pair/,
+    );
     // The mirror case: provider alone is not a reference either.
     await expect(agent.createSession({ workspaceDir: ws, provider: "deepseek" })).rejects.toThrow(
       /must be given as a \(provider, model_id\) pair/,
@@ -253,34 +306,9 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
-    }
-  });
-});
-
-describe("Agent.createSession session source (session_meta origin marker)", () => {
-  it("records the given source in session_meta; a user-created session carries no source key", async () => {
-    const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-source");
-    await fs.mkdir(ws, { recursive: true });
-
-    const scheduled = await agent.createSession({ workspaceDir: ws, source: "schedule" });
-    try {
-      expect((scheduled.metaMessage.payload as { source?: string }).source).toBe("schedule");
-    } finally {
-      scheduled.dispose();
-    }
-
-    // Absent = user-created: the key must not appear at all (Trace consumers treat absence as the default).
-    const plain = await agent.createSession({ workspaceDir: ws });
-    try {
-      expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
-        false,
-      );
-    } finally {
-      plain.dispose();
     }
   });
 });
@@ -408,14 +436,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
-      const msg = first.value as OmniMessage;
+      const msg = first.value as AmspRecord;
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if (((next.value as OmniMessage).payload as { type?: string }).type === "tool_list_ready") {
+        if (((next.value as AmspRecord).payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }
@@ -595,7 +623,29 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
-  it("forwards the run input as an origin-tagged user message, after session_meta and before any model output", async () => {
+  it("inherits the parent's CURRENT model: a child spawned after an in-session switch runs on the switched-to model", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-inherit-switched");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      expect(parent.provider).toBe("deepseek");
+      for await (const _ of parent.switchModel({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+      })) {
+        // a never-run Session switches silently
+      }
+      const child = await spawnedChildMeta(runner, {});
+      expect(child.provider).toBe("anthropic");
+      expect(child.model_id).toBe("claude-sonnet-4-6");
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("forwards the run input as an origin-tagged user message, after session_meta and the child's task_begin, before any model output", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-input-forward");
     await fs.mkdir(ws, { recursive: true });
@@ -614,10 +664,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
-      // The input yield precedes childSession.run: pulling it never issues an LLM request.
-      const second = await gen.next();
-      expect(second.done).toBe(false);
-      const msg = second.value as {
+      // The child's Task opens first, the order its own Trace has: task_begin, then the input.
+      const second = (await gen.next()).value as { origin?: string[]; payload: { type: string } };
+      expect(second.origin).toEqual([handle.sessionId]);
+      expect(second.payload.type).toBe("task_begin");
+      // The input follows before the child's run goes on: pulling it never issues an LLM request.
+      const third = await gen.next();
+      expect(third.done).toBe(false);
+      const msg = third.value as {
         type: string;
         origin?: string[];
         payload: { type: string; role?: string; text?: string };
@@ -650,6 +704,7 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       context_window: 32768,
+      api_key: "sk-local",
       max_tokens: 8000,
     });
     const agent = await createAgent();
@@ -687,11 +742,13 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       max_tokens: 8000,
+      api_key: "sk-local",
     });
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",
       model_id: "tiny-cap",
       client_type: "openai",
+      api_key: "sk-local",
       max_tokens: 128,
     });
     const agent = await createAgent();
@@ -741,6 +798,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-on",
       client_type: "openai",
+      api_key: "sk-local",
       fast_mode: true,
     });
     const agent = await createAgent();
@@ -771,6 +829,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-off",
       client_type: "openai",
+      api_key: "sk-local",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-fast-mode-off");
@@ -843,7 +902,7 @@ describe("Agent.createSession skill metadata injection", () => {
     await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
       name: "demo-skill",
       content:
-        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 2026-07-16.1\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
+        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 2026.07.16.1\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-skills");
@@ -864,10 +923,10 @@ describe("Agent.createSession skill metadata injection", () => {
 });
 
 describe("Agent model contexts are assembled from the Agent State on disk, at every context open", () => {
-  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+  const promptOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
   const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-  const typeOf = (msg: OmniMessage | undefined): string | undefined =>
+  const typeOf = (msg: AmspRecord | undefined): string | undefined =>
     (msg?.payload as { type?: string } | undefined)?.type;
   /** The engine-facing context opener (the Session's wrapper around the Agent's factory), reachable once the first-run bootstrap has resolved the toolset. */
   const openerOf = (session: unknown) =>
@@ -883,8 +942,8 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
   /** Opens the Session's next context through its opener, collecting the records the opener publishes. */
   async function openNext(
     session: unknown,
-  ): Promise<{ opened: OpenedContext; records: OmniMessage[] }> {
-    const records: OmniMessage[] = [];
+  ): Promise<{ opened: OpenedContext; records: AmspRecord[] }> {
+    const records: AmspRecord[] = [];
     const opened = await openerOf(session)({ emit: (msg) => records.push(msg) });
     return { opened, records };
   }
@@ -917,6 +976,36 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       // The Agent object's copies are the load-time snapshot; no Session runs on them.
       expect(agent.state.agentsMd).not.toContain("EDITED AFTER LOAD");
       expect(agent.state.systemConfig.max_turns).not.toBe(7);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the compaction section is re-read from disk on demand, so an edited threshold reaches a running Session", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-live-compaction");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      const readCompaction = (
+        session as unknown as {
+          engineDeps: {
+            readCompaction?: () => Promise<{ maxContextLength: number; mode: string }>;
+          };
+        }
+      ).engineDeps.readCompaction!;
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 40000, mode: "discard" };
+      });
+      // No rotation, no new Session: the reader the engine calls at each checkpoint answers
+      // from the file as it is now.
+      expect(await readCompaction()).toMatchObject({ maxContextLength: 40000, mode: "discard" });
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 199000 };
+      });
+      expect((await readCompaction()).maxContextLength).toBe(199000);
     } finally {
       session.dispose();
     }
@@ -977,11 +1066,72 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
+  it("a Skill and a hook package written during the old context are the next context's", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-authored");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const skillDir = path.join(
+      skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      "clock-reading",
+    );
+    const hookDir = path.join(hooksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "flow");
+    try {
+      await bootstrapped(session);
+
+      // Written as plain files, the way a model working on its own configuration does it:
+      // no installer, and a manifest that lists only the point it uses. The command is
+      // host-triggered so the Session can be asked for it by name.
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: clock-reading\ndescription: Reads analog clocks.\n---\n\nLook at the hands.\n",
+      );
+      await fs.mkdir(hookDir, { recursive: true });
+      await fs.writeFile(
+        path.join(hookDir, "hooks.json"),
+        JSON.stringify({ user_prompt: [{ command: "start.mjs", trigger: "host" }] }),
+      );
+      await fs.writeFile(
+        path.join(hookDir, "start.mjs"),
+        'process.stdout.write(JSON.stringify({ context: "started" }));\n',
+      );
+
+      // Nothing changes in the middle of a context.
+      expect(promptOf(session)).not.toContain("clock-reading");
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      await openNext(session);
+      expect(promptOf(session)).toContain("`clock-reading` — Reads analog clocks.");
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+
+      // The one switch over every package is read on the same schedule…
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: false };
+      });
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      // …and so is a package's removal.
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: true };
+      });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await fs.rm(hookDir, { recursive: true, force: true });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("session_meta records no level; the config default and a null pin shape only the LLM base", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-meta");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
 
     // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
@@ -1043,7 +1193,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
     const engineLevelOf = (session: unknown) =>
       (session as { engine: { thinkingLevel?: string } }).engine.thinkingLevel;
@@ -1130,6 +1280,371 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       await expect(openNext(session)).rejects.toThrow("Invalid Agent State config");
       // Nothing was adopted: the Session still describes the context that is running.
       expect(promptOf(session)).toBe(before);
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Session.switchModel on a real Agent (the composition layer's half)", () => {
+  const TARGET = { provider: "anthropic", modelId: "claude-sonnet-4-6" };
+  /** Runs a switch to its end, keeping what it streamed. */
+  async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+    const all: AmspRecord[] = [];
+    for (;;) {
+      const res = await gen.next();
+      if (res.done) return all;
+      all.push(res.value);
+    }
+  }
+  const lastBuilt = () =>
+    capturedLLMConfigs.list.at(-1) as
+      { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
+  const modelIdOf = (session: { metaMessage: AmspRecord }): string =>
+    (session.metaMessage.payload as { model_id: string }).model_id;
+  /**
+   * The opener the Session's engine calls for its next context, and the Session's way of
+   * telling it which model a switch is moving to: `open()` is a plain rotation, `open(target)`
+   * a switch's — what `Session.switchModel` sets around the engine's rotation.
+   */
+  function openerOf(session: unknown): (target?: ModelRef) => Promise<OpenedContext> {
+    const internals = session as {
+      switchTarget: ModelRef | undefined;
+      engine: { deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> } };
+    };
+    return (target) => {
+      internals.switchTarget = target;
+      return internals.engine.deps
+        .openNextContext({ emit: () => {} })
+        .finally(() => (internals.switchTarget = undefined));
+    };
+  }
+
+  it("a Session that never ran is re-assembled on the target: nothing recorded, and its first run opens on it", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-fresh");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(session.provider).toBe("deepseek");
+      expect(session.modelId).toBe("deepseek-flash");
+
+      const events = await drain(session.switchModel(TARGET));
+
+      expect(events).toEqual([]);
+      expect(session.provider).toBe("anthropic");
+      expect(session.modelId).toBe("claude-sonnet-4-6");
+      // The re-assembled first context's meta names the target, and its prompt was assembled
+      // for it (the Environment section names the model the context runs on).
+      expect(modelIdOf(session)).toBe("claude-sonnet-4-6");
+      expect((session.metaMessage.payload as { system_prompt: string }).system_prompt).toContain(
+        "claude-sonnet-4-6",
+      );
+      // Nothing was recorded: an untouched Session must not look resumable.
+      expect(await agent.latestSessionId()).toBeNull();
+
+      // The first run builds the target's LLM and opens the Trace with the target's meta.
+      await bootstrapped(session);
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+        session.sessionId,
+      );
+      const head = (await readTrace(located!.path))[0]!;
+      expect(head.type).toBe("session_meta");
+      expect((head.payload as { model_id: string }).model_id).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("refuses a target the Project config does not have, before anything happens", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-unknown");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      // A typed refusal, so a host maps it to its own code without reading the message.
+      const refusal = await drain(
+        session.switchModel({ provider: "custom", modelId: "nobody-configured-this" }),
+      ).catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
+      expect(refusal).toMatchObject({
+        reason: "model_not_configured",
+        message: expect.stringMatching(/is not in the Project config/) as unknown,
+      });
+      expect(session.modelId).toBe("deepseek-flash");
+      expect(await agent.latestSessionId()).toBeNull();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("resolves the target against the Project config on disk, not the Agent's load-time snapshot", async () => {
+    const agent = await createAgent();
+    // Configured after the Agent loaded: the snapshot does not know it, the disk does.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "myproxy",
+      model_id: "claude-sonnet-4-6",
+      base_url: "https://proxy.invalid/v1",
+      api_key: "proxy-key",
+    });
+    expect(agent.projectConfig.models.some((m) => m.provider === "myproxy")).toBe(false);
+    const ws = path.join(tmpRoot, "ws-switch-disk");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await drain(session.switchModel({ provider: "myproxy", modelId: "claude-sonnet-4-6" }));
+      expect(session.provider).toBe("myproxy");
+      // The validation constructed the target's bare LLM on the target entry's own credentials.
+      expect(lastBuilt()).toMatchObject({
+        modelId: "claude-sonnet-4-6",
+        apiKey: "proxy-key",
+        baseUrl: "https://proxy.invalid/v1",
+      });
+      // The Agent's own copy of the config followed the read, so a child spawned from here —
+      // which inherits the model just switched to — finds it configured.
+      expect(agent.projectConfig.models.some((m) => m.provider === "myproxy")).toBe(true);
+      const runner = (capturedEnvServices.list.at(-1) as EnvironmentServices).subagentRunner!;
+      const child = await runner.spawn({});
+      try {
+        const gen = child.run({ messages: [userText("noop")] });
+        const first = await gen.next();
+        await gen.return(null);
+        expect((first.value as AmspRecord).payload).toMatchObject({
+          provider: "myproxy",
+          model_id: "claude-sonnet-4-6",
+        });
+      } finally {
+        child.dispose();
+      }
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("explicit creation credentials stay with the creation model: a context on another model runs on that entry's own", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-creds");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      apiKey: "creation-key",
+      baseUrl: "https://creation.invalid/v1",
+    });
+    try {
+      // The creation model's bare LLM (the credential check) carries the override.
+      expect(lastBuilt()).toMatchObject({
+        modelId: "deepseek-flash",
+        apiKey: "creation-key",
+        baseUrl: "https://creation.invalid/v1",
+      });
+      await drain(session.switchModel(TARGET));
+      // The target's validation LLM, and the session LLM the first run builds, do not: the
+      // key was handed in for one vendor and must never be sent to another.
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.apiKey).toBeUndefined();
+      expect(lastBuilt()!.baseUrl).toBeUndefined();
+      await bootstrapped(session);
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.apiKey).toBeUndefined();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a rotation keeps the running model unless the opener is told the switch target", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-rotation");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const open = openerOf(session);
+      // The fold the engine asks for a steering message's images: `null` means the running
+      // context's model takes them as they are.
+      const { foldInputImages } = (
+        session as unknown as {
+          engine: {
+            deps: { foldInputImages: (messages: AmspRecord[]) => Promise<AmspRecord[] | null> };
+          };
+        }
+      ).engine.deps;
+      const picture = [imageUrlMessage("https://images.invalid/pic.png")];
+
+      // A plain rotation: the same model, re-assembled, with the vision answer its entry gives.
+      const kept = await open();
+      expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
+      const deepseek = agent.projectConfig.models.find((m) => m.model_id === "deepseek-flash")!;
+      expect((await foldInputImages(picture)) === null).toBe(deepseek.vision !== false);
+      expect(lastBuilt()!.modelId).toBe("deepseek-flash");
+      expect(session.modelId).toBe("deepseek-flash");
+
+      // A switch's rotation: the target, with its own vision answer and window-derived settings.
+      const switched = await open({ provider: "anthropic", model_id: "claude-sonnet-4-6" });
+      expect((switched.sessionMeta!.payload as { model_id: string }).model_id).toBe(
+        "claude-sonnet-4-6",
+      );
+      expect(await foldInputImages(picture)).toBeNull();
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.systemPrompt).toContain("claude-sonnet-4-6");
+      // The Session's own answer follows the opened context.
+      expect(session.provider).toBe("anthropic");
+      expect(session.modelId).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("an open that fails leaves the running context in place: the Environment is equipped for it again and the next rotation keeps its model", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-open-fails");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const { environment } = session as unknown as {
+        environment: {
+          listTools(): Promise<unknown>;
+          reconfigure(update: { toolConfig: unknown }): void;
+        };
+      };
+      const open = openerOf(session);
+      const reconfigure = vi.spyOn(environment, "reconfigure");
+      const target = { provider: "anthropic", model_id: "claude-sonnet-4-6" };
+
+      // A plain rotation first, so the running context is one this opener equipped.
+      await open();
+      const running = reconfigure.mock.calls[0]![0].toolConfig;
+
+      // The target assembles, the Environment is equipped for it, and then its toolset cannot
+      // be resolved: the open fails.
+      vi.spyOn(environment, "listTools").mockRejectedValueOnce(new Error("toolset unavailable"));
+      await expect(open(target)).rejects.toThrow("toolset unavailable");
+      expect(reconfigure).toHaveBeenCalledTimes(3);
+      expect(reconfigure.mock.calls[1]![0].toolConfig).not.toBe(running);
+      expect(reconfigure.mock.calls[2]![0].toolConfig).toBe(running);
+      expect(session.modelId).toBe("deepseek-flash");
+
+      // The running context is still the one a rotation re-assembles.
+      const kept = await open();
+      expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
+      expect(lastBuilt()!.modelId).toBe("deepseek-flash");
+
+      // A target gone from the config by the time the context opens is a failure of the
+      // switch, not its typed refusal: the refusal is the validation's answer, before any event.
+      const gone = await open({ provider: "custom", model_id: "nobody-configured-this" }).catch(
+        (e: unknown) => e,
+      );
+      expect(gone).toBeInstanceOf(Error);
+      expect(gone).not.toBeInstanceOf(ModelSwitchRefusedError);
+      expect((gone as Error).message).toMatch(/is not in the Project config/);
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Agent.createSession credential rule (a keyless gateway row never borrows a vendor key)", () => {
+  it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
+    // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
+    // MMSP no key and let its generic client read the variable — sending the user's
+    // OpenAI key to the gateway. The row follows its gateway group's endpoint and holds no key.
+    const preset = { provider: "tokendance", modelId: "glm-5.3" };
+    expect(process.env.OPENAI_API_KEY).toBeDefined();
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-gateway-keyless");
+    await fs.mkdir(ws, { recursive: true });
+    await expect(
+      agent.createSession({ workspaceDir: ws, provider: preset.provider, modelId: preset.modelId }),
+    ).rejects.toThrow(/has no API key/);
+    // No Session, so nothing to dispose; the same row with its own key is a normal Session
+    // (an Agent reads the Project config when it is created, so a fresh one sees the key).
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: preset.provider,
+      model_id: preset.modelId,
+      api_key: "sk-gateway-own-key",
+    });
+    const keyed = await createAgent();
+    const session = await keyed.createSession({
+      workspaceDir: ws,
+      provider: preset.provider,
+      modelId: preset.modelId,
+    });
+    try {
+      expect(session.provider).toBe(preset.provider);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a model with no key of its own runs on its group's key, at the endpoint and on the protocol its group's table names", async () => {
+    // What Connect writes: the key once, on the group — beside the endpoint and protocol a new
+    // Project's file already gives TokenDance. The preset row stores none of the three.
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", { api_key: "td-group" });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-group-key");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "tokendance",
+      modelId: "glm-5.3",
+    });
+    try {
+      await bootstrapped(session);
+      const built = (capturedLLMConfigs.list as { modelId?: string }[]).filter(
+        (c) => c.modelId === "glm-5.3",
+      );
+      expect(built.at(-1)).toMatchObject({
+        apiKey: "td-group",
+        baseUrl: "https://tokendance.space/gateway/v1",
+        clientType: "openai-chat",
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a model whose group's table names no endpoint or protocol is built with none: the catalog does not fill them in", async () => {
+    // The user cleared TokenDance's endpoint and protocol and kept its key: the file now says
+    // the row goes wherever MMSP routes its id, and that is what the Session is built with.
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
+      base_url: null,
+      client_type: null,
+      api_key: "td-group",
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-group-cleared");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "tokendance",
+      modelId: "glm-5.3",
+    });
+    try {
+      await bootstrapped(session);
+      const built = (
+        capturedLLMConfigs.list as { modelId?: string; baseUrl?: string; clientType?: string }[]
+      ).filter((c) => c.modelId === "glm-5.3");
+      expect(built.at(-1)).toMatchObject({ apiKey: "td-group" });
+      expect(built.at(-1)?.baseUrl).toBeUndefined();
+      expect(built.at(-1)?.clientType).toBeUndefined();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("still lets a keyless vendor preset lean on the vendor's own variable", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-vendor-keyless");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+    });
+    try {
+      expect(session.modelId).toBe("claude-sonnet-4-6");
     } finally {
       session.dispose();
     }

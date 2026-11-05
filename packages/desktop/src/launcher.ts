@@ -58,6 +58,7 @@ export const LINUX_EXECUTABLE = "penguin-harness";
  * executable at the platform's fixed position relative to the app directory:
  * - macOS: app dir is `<bundle>/Contents/Resources/app` → `../../MacOS/PenguinHarness`
  * - Linux: app dir is `<install>/resources/app` → `../../penguin-harness`
+ * - Windows POSIX shells: app dir is `<install>/resources/app` → `../../PenguinHarness.exe`
  */
 export function posixLauncherScript(): string {
   return `#!/bin/sh
@@ -82,9 +83,15 @@ APP_DIR=$(dirname "$BIN_DIR")
 CLI_ENTRY="$APP_DIR/${CLI_ENTRY_RELPATH}"
 # The Electron executable sits at a fixed location relative to the app directory:
 # macOS <bundle>/Contents/Resources/app -> ../../MacOS/${MAC_EXECUTABLE};
-# Linux <install>/resources/app -> ../../${LINUX_EXECUTABLE}.
-for CANDIDATE in "$APP_DIR/../../MacOS/${MAC_EXECUTABLE}" "$APP_DIR/../../${LINUX_EXECUTABLE}"; do
+# Linux <install>/resources/app -> ../../${LINUX_EXECUTABLE};
+# Windows <install>/resources/app -> ../../${WIN_EXECUTABLE}.
+for CANDIDATE in "$APP_DIR/../../MacOS/${MAC_EXECUTABLE}" "$APP_DIR/../../${LINUX_EXECUTABLE}" "$APP_DIR/../../${WIN_EXECUTABLE}"; do
   if [ -x "$CANDIDATE" ]; then
+    # The shell resolves the executable's POSIX path, but native Windows Node needs
+    # a Windows CLI entry path. cygpath also covers Cygwin, where MSYSTEM is unset.
+    if [ "$CANDIDATE" = "$APP_DIR/../../${WIN_EXECUTABLE}" ] && command -v cygpath >/dev/null 2>&1; then
+      CLI_ENTRY=$(cygpath -w "$CLI_ENTRY") || exit $?
+    fi
     export ELECTRON_RUN_AS_NODE=1
     exec "$CANDIDATE" "$CLI_ENTRY" "$@"
   fi

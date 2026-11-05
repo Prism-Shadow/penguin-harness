@@ -1,14 +1,46 @@
 /**
- * Error-record persistence unit and integration tests: ErrorsRepo's aggregation semantics (including cross-tenant isolation
- * where unattributed errors are **visible only to admins**) and its row-cap eviction
- * (evicts the oldest by id, without misfiring on id gaps left by deleteByProject);
- * ErrorRecorder's expected/unexpected determination (explicit kind takes priority, HTTP
- * infers from HttpError), short-window deduplication (storm protection), and the
- * "never throws itself" guarantee; StreamErrorWatcher picking up LLM / Environment
- * errors from the message stream (attributed to **the Session that actually produced
- * the error**: a child Session's failure is attributed to the child Agent / child
- * Session); HTTP onError actually persisting records; cascading cleanup on Project
- * deletion.
+ * Error records, from where they are caught to the cost center that shows them.
+ *
+ * The log (ErrorsRepo):
+ * - A summary counts every row and the unexpected ones; the top code groups by source, code and
+ *   kind (none in range reads as nothing); dates and an Agent narrow every read.
+ * - The recent list folds a day's repeats of one error into one row with its count and its
+ *   first and last time, the day being the viewer's when the read carries an offset; a page
+ *   and the row count are rows, the summary still counts records.
+ * - A clear follows the caller's read: a member's leaves the unattributed rows, an admin's
+ *   takes them; another Project's rows are out of reach either way.
+ * - Past its cap the log evicts its oldest rows by count, never misled by id gaps.
+ *
+ * The recorder (ErrorRecorder):
+ * - An HttpError is expected; any other failure is unexpected, an explicit kind wins over both,
+ *   and a gateway close is filed by its own verdict.
+ * - A non-Error is stringified and an overlong message truncated; the recorder never throws.
+ * - The same error for the same Project persists once per short window, then resumes; source,
+ *   code and Project each keep their own window; a full dedup table still records every
+ *   distinct error and still collapses a burst.
+ *
+ * The stream watcher (LLM, tool and compaction failures in a Session's messages):
+ * - An LLM failure the retry ladder carried is expected under its own code; an exhausted or
+ *   fatal one is unexpected, worded from the abort reason, the request's own detail or the
+ *   status text in that order; a user's Stop and a completion are not errors.
+ * - A command that ran is not an error, whatever its exit code or signal (it completes); a
+ *   spawn failure, a timeout or a missing session manager are recorded; any other tool failure
+ *   is expected under the tool's name, and a denial is none.
+ * - Parallel and nested (child Session) calls never swap names or reasons, and a child's
+ *   failures are attributed to the child Agent and Session.
+ * - An abandoned compaction is one unexpected row carrying its attempts and error.
+ *
+ * Through HTTP (onError):
+ * - A business error is expected, an internal one unexpected with a 500, each attributed to
+ *   the Project only when the requester has access to it (unauthenticated and non-member
+ *   failures stay unattributed, and a throwing access check degrades to unattributed).
+ * - The usage endpoint shows a Project's own errors; unattributed ones only to the admin.
+ * - The paged error route pages within the caller's tenant, narrows to one kind on request,
+ *   and refuses a page it cannot serve; it and the dashboard fold by the viewer's day, and an
+ *   offset no clock uses is a 400.
+ * - Clearing takes exactly the filter or trailing window on screen, never an unbounded range;
+ *   a member may not clear; an admin's clear takes the unattributed rows it showed.
+ * - Deleting a Project deletes its error records and nobody else's.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -24,7 +56,7 @@ import {
   toolCallOutput,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, StopReason } from "@prismshadow/penguin-core";
+import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -41,6 +73,7 @@ import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.
 import { StreamErrorWatcher } from "../src/runtime/stream-error-watcher.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 function row(date: string, o: Partial<ErrorRecordInsert> = {}): ErrorRecordInsert {
   return {
@@ -64,7 +97,7 @@ describe("errors-repo", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
@@ -73,33 +106,6 @@ describe("errors-repo", () => {
     repo.insert(row("2026-07-06", { kind: "expected", code: "not_found", status: 404 }));
     repo.insert(row("2026-07-06", { kind: "expected", code: "bad_request", status: 400 }));
     expect(repo.summary("p1")).toEqual({ total: 3, unexpected: 1 });
-  });
-
-  it("unattributed errors (login failure / crash) are admin-only, invisible to members", () => {
-    const global = { projectId: null, source: "process", code: "uncaught_exception" };
-    repo.insert(row("2026-07-06", global)); // Unattributed: another tenant's login failure / process crash
-    repo.insert(row("2026-07-06", global));
-    repo.insert(row("2026-07-06", { projectId: "p-other" })); // Another Project: invisible to everyone
-    repo.insert(row("2026-07-06", { kind: "expected", code: "not_found", status: 404 })); // This Project
-
-    // Regular member (default includeGlobal=false): all three queries see only the row for this Project.
-    expect(repo.summary("p1")).toEqual({ total: 1, unexpected: 0 });
-    expect(repo.topCode("p1")).toMatchObject({ code: "not_found", count: 1 });
-    expect(repo.recent("p1").map((r) => r.code)).toEqual(["not_found"]);
-
-    // Admin: this Project + unattributed (still can't see another Project's rows).
-    const admin = { includeGlobal: true };
-    expect(repo.summary("p1", admin)).toEqual({ total: 3, unexpected: 2 });
-    expect(repo.topCode("p1", admin)).toMatchObject({ code: "uncaught_exception", count: 2 });
-    expect(repo.recent("p1", admin).map((r) => r.code)).toEqual([
-      "not_found",
-      "uncaught_exception",
-      "uncaught_exception",
-    ]);
-
-    // A member of another Project likewise only sees their own row: unattributed errors never land in any regular member's view.
-    expect(repo.summary("p-other")).toEqual({ total: 1, unexpected: 1 });
-    expect(repo.recent("p-other").map((r) => r.code)).toEqual(["internal"]);
   });
 
   it("top error code: grouped by source+code+kind, takes the highest count", () => {
@@ -131,67 +137,89 @@ describe("errors-repo", () => {
     expect(repo.recent("p1", { agentId: "a1" })).toHaveLength(1);
   });
 
-  it("a trailing window narrows the dates to instants, both ends inclusive, for reads and the clear alike", () => {
-    const window = {
-      from: "2026-07-06",
-      to: "2026-07-06",
-      fromTs: "2026-07-06T10:00:00.000Z",
-      toTs: "2026-07-06T11:00:00.000Z",
+  it("recent folds a day's repeats into one row, with how many and the first and last time", () => {
+    // A connection that drops and recovers all afternoon files the same record again and again;
+    // the table reads it as one line saying how often. Anything that differs keeps its own row:
+    // another message, another day, another kind (a record filed before a reclassification).
+    const heartbeat = {
+      source: "messaging",
+      code: "messaging_connect_failed",
+      kind: "expected",
+      message: "gateway stopped acknowledging heartbeats",
     };
-    for (const [time, message] of [
-      ["09:59:59.999", "just before"],
-      ["10:00:00.000", "at from"],
-      ["10:30:00.000", "inside"],
-      ["11:00:00.000", "at to"],
-      ["11:00:00.001", "just after"],
-    ] as const) {
-      repo.insert(row("2026-07-06", { ts: `2026-07-06T${time}Z`, message }));
-    }
-    // A row stamped exactly on either bound is inside the window …
-    expect(repo.summary("p1", window)).toEqual({ total: 3, unexpected: 3 });
-    expect(repo.recent("p1", window).map((r) => r.message)).toEqual(["at to", "inside", "at from"]);
-    // … and the clear of the same window takes exactly those, sparing the same day's rows a
-    // millisecond outside it.
-    expect(repo.deleteFiltered("p1", window)).toBe(3);
-    expect(repo.recent("p1").map((r) => r.message)).toEqual(["just after", "just before"]);
-  });
+    const at = (ts: string, o: Partial<ErrorRecordInsert> = {}) =>
+      repo.insert(row(ts.slice(0, 10), { ...heartbeat, ts, ...o }));
+    at("2026-07-06T09:00:00.000Z");
+    at("2026-07-06T12:30:00.000Z");
+    at("2026-07-06T13:00:00.000Z", { message: "gateway connection closed (code 4009)" });
+    at("2026-07-06T17:45:00.000Z");
+    at("2026-07-06T18:00:00.000Z", { kind: "unexpected" });
+    at("2026-07-07T08:00:00.000Z");
 
-  it("recent errors: newest first, top limit rows", () => {
-    repo.insert(row("2026-07-05", { message: "old" }));
-    repo.insert(row("2026-07-06", { message: "new" }));
-    const recent = repo.recent("p1", {}, 1);
-    expect(recent).toHaveLength(1);
-    expect(recent[0]!.message).toBe("new");
-  });
-
-  it("deleteByProject: deletes only that Project's rows, unattributed errors remain", () => {
-    repo.insert(row("2026-07-06"));
-    repo.insert(row("2026-07-06", { projectId: null }));
-    repo.deleteByProject("p1");
-    const rows = db.prepare("SELECT project_id FROM error_records").all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.project_id).toBeNull();
-  });
-
-  it("deleteFiltered: takes exactly the rows the same filter would have read", () => {
-    repo.insert(row("2026-07-05", { message: "before-range" }));
-    repo.insert(row("2026-07-06", { agentId: "a1", message: "in-range-a1" }));
-    repo.insert(row("2026-07-06", { agentId: "a2", message: "in-range-a2" }));
-    repo.insert(row("2026-07-07", { message: "after-range" }));
-
-    // Narrowed to one Agent inside the range: everything the reader could not see survives.
-    expect(repo.deleteFiltered("p1", { from: "2026-07-06", to: "2026-07-06", agentId: "a1" })).toBe(
-      1,
-    );
-    expect(repo.recent("p1").map((r) => r.message)).toEqual([
-      "after-range",
-      "in-range-a2",
-      "before-range",
+    const rows = repo
+      .recent("p1")
+      .map(({ ts, firstTs, count, kind, message }) => ({ ts, firstTs, count, kind, message }));
+    expect(rows).toEqual([
+      {
+        ts: "2026-07-07T08:00:00.000Z",
+        firstTs: "2026-07-07T08:00:00.000Z",
+        count: 1,
+        kind: "expected",
+        message: heartbeat.message,
+      },
+      {
+        ts: "2026-07-06T18:00:00.000Z",
+        firstTs: "2026-07-06T18:00:00.000Z",
+        count: 1,
+        kind: "unexpected",
+        message: heartbeat.message,
+      },
+      // Newest first by the row's latest record, so the fold sits where its last one happened.
+      {
+        ts: "2026-07-06T17:45:00.000Z",
+        firstTs: "2026-07-06T09:00:00.000Z",
+        count: 3,
+        kind: "expected",
+        message: heartbeat.message,
+      },
+      {
+        ts: "2026-07-06T13:00:00.000Z",
+        firstTs: "2026-07-06T13:00:00.000Z",
+        count: 1,
+        kind: "expected",
+        message: "gateway connection closed (code 4009)",
+      },
     ]);
+    // A page is rows, and the pager counts rows; the summary still counts the records.
+    expect(repo.recent("p1", {}, 2, 2).map((r) => r.ts)).toEqual([
+      "2026-07-06T17:45:00.000Z",
+      "2026-07-06T13:00:00.000Z",
+    ]);
+    expect(repo.rowCount("p1")).toBe(4);
+    expect(repo.summary("p1")).toEqual({ total: 6, unexpected: 1 });
+    expect(repo.topCode("p1")).toMatchObject({ code: "messaging_connect_failed", count: 5 });
+    // Filters narrow the records before they fold.
+    expect(repo.rowCount("p1", { kind: "unexpected" })).toBe(1);
+    expect(repo.recent("p1", { from: "2026-07-06", to: "2026-07-06" })).toHaveLength(3);
+  });
 
-    // The range alone still spares the dates outside it.
-    expect(repo.deleteFiltered("p1", { from: "2026-07-06", to: "2026-07-06" })).toBe(1);
-    expect(repo.recent("p1").map((r) => r.message)).toEqual(["after-range", "before-range"]);
+  it("the day a row folds by is the viewer's, from the offset the read carries", () => {
+    // Two records an hour apart, either side of UTC midnight. The `date` column is the server's
+    // day, which is what a read without an offset folds by.
+    const late = { ts: "2026-07-06T23:30:00.000Z", message: "socket hang up" };
+    const early = { ts: "2026-07-07T00:30:00.000Z", message: "socket hang up" };
+    repo.insert(row("2026-07-06", late));
+    repo.insert(row("2026-07-07", early));
+
+    expect(repo.recent("p1").map((r) => r.count)).toEqual([1, 1]);
+    expect(repo.rowCount("p1")).toBe(2);
+    // UTC+8 and UTC-5: both land on one local day, so one row says twice.
+    for (const offset of [480, -300]) {
+      expect(repo.recent("p1", {}, 20, 0, offset).map((r) => r.count)).toEqual([2]);
+      expect(repo.rowCount("p1", {}, offset)).toBe(1);
+    }
+    // UTC itself splits them again.
+    expect(repo.rowCount("p1", {}, 0)).toBe(2);
   });
 
   it("deleteFiltered follows the caller's includeGlobal: a member's clear leaves unattributed rows, an admin's takes them", () => {
@@ -223,14 +251,14 @@ describe("errors-repo", () => {
       .map((r) => r.message as string);
 
   it("row cap: evicts the oldest rows by id (checked every pruneEvery inserts)", () => {
-    const capped = new ErrorsRepo(db, { maxRows: 5, pruneEvery: 2 });
+    const capped = wire(ErrorsRepo, { db: db, maxRows: 5, pruneEvery: 2 });
     for (let i = 0; i < 10; i++) capped.insert(row("2026-07-06", { message: `m${i}` }));
     // The 5 most recent rows within the cap are kept, older ones are evicted.
     expect(messages()).toEqual(["m5", "m6", "m7", "m8", "m9"]);
   });
 
   it("eviction counts rows: id gaps left by deleteByProject never misdelete valid data", () => {
-    const capped = new ErrorsRepo(db, { maxRows: 3, pruneEvery: 1 });
+    const capped = wire(ErrorsRepo, { db: db, maxRows: 3, pruneEvery: 1 });
     capped.insert(row("2026-07-06", { message: "keep-1" })); // id 1
     capped.insert(row("2026-07-06", { message: "keep-2" })); // id 2
     capped.insert(row("2026-07-06", { projectId: "p-gone", message: "gone" })); // id 3
@@ -253,50 +281,30 @@ describe("error-recorder", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
-  it("HttpError → expected (keeps code and status)", () => {
-    new ErrorRecorder(repo, now).record({
-      source: "http",
-      err: new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      ),
-      ctx: { projectId: "p1" },
-    });
-    const r = db.prepare("SELECT * FROM error_records").get()!;
-    expect(r.kind).toBe("expected");
-    expect(r.code).toBe("session_not_found");
-    expect(r.status).toBe(404);
-    expect(r.project_id).toBe("p1");
-    expect(r.date).toBe("2026-07-06");
-  });
-
-  it("non-HttpError → unexpected; HTTP source converges to 500, non-HTTP status is NULL", () => {
-    const rec = new ErrorRecorder(repo, now);
-    rec.record({ source: "http", err: new Error("boom") });
-    rec.record({
+  it("a non-HTTP failure is unexpected, with no status and the attribution it was given", () => {
+    wire(ErrorRecorder, { errors: repo, clock: { now: now } }).record({
       source: "session",
       err: new Error("drive crashed"),
       ctx: { projectId: "p1", agentId: "a1", sessionId: "s1" },
       code: "session_run_failed",
     });
-    const rows = db.prepare("SELECT * FROM error_records ORDER BY id").all();
-    expect(rows[0]!.kind).toBe("unexpected");
-    expect(rows[0]!.code).toBe("internal"); // Matches the same code convention as handleError's external-facing code
-    expect(rows[0]!.status).toBe(500);
-    expect(rows[0]!.project_id).toBeNull();
-    expect(rows[1]!.code).toBe("session_run_failed");
-    expect(rows[1]!.status).toBeNull();
-    expect(rows[1]!.agent_id).toBe("a1");
-    expect(rows[1]!.session_id).toBe("s1");
+    expect(db.prepare("SELECT * FROM error_records").get()).toMatchObject({
+      kind: "unexpected",
+      code: "session_run_failed",
+      status: null,
+      project_id: "p1",
+      agent_id: "a1",
+      session_id: "s1",
+      date: "2026-07-06",
+    });
   });
 
   it("non-Error throwables and overlong messages: stringified and truncated to the cap", () => {
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "process", err: "a string error", code: "unhandled_rejection" });
     rec.record({ source: "usage", err: new Error("x".repeat(MESSAGE_MAX + 100)) });
     const rows = db.prepare("SELECT message FROM error_records ORDER BY id").all();
@@ -311,12 +319,15 @@ describe("error-recorder", () => {
       },
     } as unknown as ErrorsRepo;
     expect(() =>
-      new ErrorRecorder(broken).record({ source: "http", err: new Error("x") }),
+      wire(ErrorRecorder, { errors: broken, clock: { now: () => new Date() } }).record({
+        source: "http",
+        err: new Error("x"),
+      }),
     ).not.toThrow();
   });
 
   it("explicit kind wins over HttpError inference (sources self-report human need)", () => {
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "llm", err: "timed out", code: "llm_timeout", kind: "expected" });
     rec.record({ source: "llm", err: "auth failed", code: "llm_failed", kind: "unexpected" });
     const rows = db.prepare("SELECT kind, source, status FROM error_records ORDER BY id").all();
@@ -329,7 +340,7 @@ describe("error-recorder", () => {
     // close, classified by messagingErrorKind, persisted under `messaging_connect_failed`.
     // Both rows land — the log keeps everything — but only the one a person has to act on
     // reaches the unexpected count the cost center highlights.
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     const closed = (message: string, code: number, recovers: boolean) =>
       new MessagingConnectionClosedError(message, code, recovers);
     for (const err of [
@@ -356,13 +367,10 @@ describe("error-recorder", () => {
 
   const count = () =>
     db.prepare("SELECT COUNT(*) AS n FROM error_records").get()!.n as unknown as number;
-  /** Dedup table (private): asserts the hard requirement that it stays "bounded". */
-  const lastSeen = (rec: ErrorRecorder) =>
-    (rec as unknown as { lastSeen: Map<string, number> }).lastSeen;
 
   it("short-window dedup: same-kind errors persist once per window, then resume", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = new ErrorRecorder(repo, () => new Date(t));
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = () =>
       rec.record({
         source: "http",
@@ -384,7 +392,7 @@ describe("error-recorder", () => {
   });
 
   it("dedup never crosses source / code / Project (kinds don't suppress each other)", () => {
-    const rec = new ErrorRecorder(repo, now); // time frozen: everything lands in the same window
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } }); // time frozen: everything lands in the same window
     const err = new Error("boom");
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" });
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" }); // same kind: discarded
@@ -395,27 +403,29 @@ describe("error-recorder", () => {
     expect(count()).toBe(5);
   });
 
-  it("bounded dedup table: expired entries cleaned first, else wiped; works afterward", () => {
+  it("keeps recording and deduplicating after its table fills, expires and is wiped", () => {
+    // The table is bounded: past DEDUP_KEYS_MAX keys it drops the expired ones, or all of them
+    // when none has expired. Either way no distinct error may be lost and a burst of one error
+    // must still collapse to one row.
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = new ErrorRecorder(repo, () => new Date(t));
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = (code: string) =>
       rec.record({ source: "http", err: "boom", ctx: { projectId: "p1" }, code });
 
-    for (let i = 0; i < DEDUP_KEYS_MAX; i++) boom(`c${i}`); // fill it up (one key per code)
-    expect(lastSeen(rec).size).toBe(DEDUP_KEYS_MAX);
+    for (let i = 0; i < DEDUP_KEYS_MAX; i++) boom(`c${i}`); // one key per code: the table is full
+    expect(count()).toBe(DEDUP_KEYS_MAX);
 
-    t += DEDUP_WINDOW_MS; // all old keys expired: the next entry triggers cleanup, leaving only the newly registered one
+    t += DEDUP_WINDOW_MS; // every key has expired, so the next one cleans them out
     boom("after-window");
-    expect(lastSeen(rec).size).toBe(1);
+    boom("after-window");
+    expect(count()).toBe(DEDUP_KEYS_MAX + 1);
 
-    for (let i = 0; i < DEDUP_KEYS_MAX; i++) boom(`d${i}`); // all within the same window: nothing to clean → wipe the whole table
-    expect(lastSeen(rec).size).toBeLessThanOrEqual(DEDUP_KEYS_MAX);
+    for (let i = 0; i < DEDUP_KEYS_MAX; i++) boom(`d${i}`); // one window, nothing expired: wiped
+    expect(count()).toBe(2 * DEDUP_KEYS_MAX + 1);
 
-    // Works normally after being wiped: new errors are still recorded, and duplicates within the window are still discarded.
-    const before = count();
     boom("tail");
     boom("tail");
-    expect(count()).toBe(before + 1);
+    expect(count()).toBe(2 * DEDUP_KEYS_MAX + 2);
   });
 });
 
@@ -427,16 +437,17 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
-  const watcher = () => new StreamErrorWatcher(new ErrorRecorder(repo, now), CTX);
+  const watcher = () =>
+    new StreamErrorWatcher(wire(ErrorRecorder, { errors: repo, clock: { now: now } }), CTX);
   const rows = () =>
     db.prepare("SELECT * FROM error_records ORDER BY id").all() as Array<Record<string, unknown>>;
 
   /** A legacy stream's abort: prose reason only (cores from before the unified error pair). */
-  function legacyAbort(reason: string): OmniMessage {
+  function legacyAbort(reason: string): AmspRecord {
     const msg = abortEvent();
     delete (msg.payload as { error_code?: string }).error_code;
     (msg.payload as { reason?: string }).reason = reason;
@@ -444,7 +455,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   }
 
   /** Feeds a sequence of messages and finalizes (close: persists any still-pending failure), returning the persisted rows. */
-  function feed(msgs: OmniMessage[]): Array<Record<string, unknown>> {
+  function feed(msgs: AmspRecord[]): Array<Record<string, unknown>> {
     const w = watcher();
     for (const m of msgs) w.observe(m);
     w.close();
@@ -466,6 +477,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         system_prompt: "",
         agent_state: agentState,
         workspace: "/tmp/w",
+        source: "user",
       }),
       sessionId,
     );
@@ -604,39 +616,6 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     ]);
   });
 
-  it("a retried failure keeps its real detail: request_end(retryable).message lands in the record", () => {
-    // The retry path: the engine reconnects (request_begin) and eventually succeeds, so no
-    // abort ever arrives for the staged failure — the request_end's own failure detail
-    // (LLMOutcome.errorMessage, e.g. a rate-limit code) is the message of record, not the
-    // generic status text. This is what the Cost center shows for a retried 429.
-    const got = feed([
-      requestBegin(),
-      requestEnd("retryable", {
-        errorMessage: "429 rate limited (slow down)",
-      }),
-      requestBegin(),
-      requestEnd("completed"),
-    ]);
-    expect(got).toHaveLength(1);
-    expect(got[0]).toMatchObject({
-      source: "llm",
-      kind: "expected",
-      code: "llm_retried",
-      message: "429 rate limited (slow down)",
-    });
-  });
-
-  it("an abort reason still outranks the staged request_end detail (fatal exit path)", () => {
-    const got = feed([
-      requestBegin(),
-      requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
-      legacyAbort("llm request error: 401 invalid x-api-key (invalid_api_key)"),
-    ]);
-    expect(got).toHaveLength(1);
-    // The abort's prose (with core's "llm request error" framing) wins over the raw detail.
-    expect(got[0]!.message).toBe("llm request error: 401 invalid x-api-key (invalid_api_key)");
-  });
-
   it("interrupt during backoff with a staged detail: the detail wins over the status text", () => {
     // The interrupt message is distrusted (not the failure's reason), but the staged
     // request_end detail IS the failure's reason — prefer it over the generic status text.
@@ -711,112 +690,85 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("a command tool's ordinary non-zero exit is not recorded: an exit status is information", () => {
-    // Both command tools end in resultForExit, which maps ANY non-zero exit to `failed`, so
-    // grep finding nothing (exit 1), `test -f` on a missing file, or a diff that differs would
-    // all land in the cost center and bury the real errors. input_command is covered alongside
-    // exec_command because it is how a backgrounded command is polled for its eventual exit —
-    // dropping one but not the other would depend on where the command happened to finish.
-    // Every other tool still records, whatever its output says.
+  it("a command that ran is not recorded, whatever its exit status; a tool that failed is", () => {
+    // Core records a command that ran as completed and puts its exit status in the last note:
+    // grep finding nothing (exit 1) or a process killed by a signal is the command's result,
+    // not the tool's failure. A failed tool still records, whatever its output says.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
         output: "grep: no match\n[exit code: 1]",
         toolCallId: "tc-1",
-        stopReason: "fatal",
+        status: "completed",
       }),
       call("input_command", "tc-2"),
       toolCallOutput({
-        output: "make: *** [build] Error 2\n[exit code: 2]",
+        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
         toolCallId: "tc-2",
-        stopReason: "fatal",
+        status: "completed",
       }),
       call("write_file", "tc-3"),
-      toolCallOutput({
-        output: "EACCES\n[exit code: 1]",
-        toolCallId: "tc-3",
-        stopReason: "fatal",
-      }),
+      toolCallOutput({ output: "EACCES", toolCallId: "tc-3", status: "fatal" }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_fatal:write_file"]);
   });
 
-  it("a command tool killed by a signal, or that never spawned, is still recorded", () => {
-    // `failed` from these tools is not only "exited non-zero": an OOM kill or a segfault
-    // (resultForExit's signal branch) and a spawn failure (nonexistent workdir, EMFILE, an
-    // unresolvable shell) are config/environment faults — the recorder's "needs a human"
-    // category — that no amount of Agent self-correction gets around. Only the exit marker
-    // separates them, which is why the rule reads the note rather than the tool name.
+  it("a failed tool whose call was never seen is filed under tool_fatal:unknown", () => {
+    const got = feed([toolCallOutput({ output: "boom", toolCallId: "tc-9", status: "fatal" })]);
+    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_fatal:unknown", "boom"]]);
+  });
+
+  it("a command tool that never spawned is recorded", () => {
+    // A spawn failure (nonexistent workdir, EMFILE, an unresolvable shell) is a config or
+    // environment fault that no amount of Agent self-correction gets around.
     const got = feed([
-      call("exec_command", "tc-1"),
-      toolCallOutput({
-        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
-        toolCallId: "tc-1",
-        stopReason: "fatal",
-      }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "[spawn error: ENOENT: no such file or directory, posix_spawn '/bin/nope']",
         toolCallId: "tc-2",
-        stopReason: "fatal",
+        status: "fatal",
       }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:input_command"]);
   });
 
   it("a command tool's timeout and a missing session manager are recorded (neither is an exit)", () => {
-    // Environment finalizes a tool timeout as stop_reason `failed` plus its own note — it never
-    // emits stop_reason "timeout" for these tools — so a hung command surfaces as tool_failed
-    // with no exit marker to drop it. A missing command session manager is a server
-    // misconfiguration and produces no exit marker either.
+    // Environment finalizes a tool timeout as status `fatal` plus its own note, so a hung
+    // command surfaces as tool_fatal.
+    // A missing command session manager is a server misconfiguration.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
         output: "still building…\n[tool timeout: exceeded 60000ms]",
         toolCallId: "tc-1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "[input_command unavailable: no command session manager configured]",
         toolCallId: "tc-2",
-        stopReason: "fatal",
+        status: "fatal",
       }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
   });
 
-  it("an exit marker with no cached tool name is dropped, not filed under tool_fatal:unknown", () => {
-    // Only the command tools ever write that marker, so a cache miss (the tool_call evicted, or
-    // never seen) is still that noise — recording it nameless would defeat the exclusion.
-    const got = feed([
-      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "fatal" }),
-      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "fatal" }),
-    ]);
-    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_fatal:unknown", "boom"]]);
-  });
-
-  it("a tool fatal → environment + expected, code carries the tool name; legacy failed/timeout spellings still record", () => {
-    const legacyOutput = (args: { output: string; toolCallId: string; stopReason: string }) =>
-      toolCallOutput(args as Parameters<typeof toolCallOutput>[0]);
+  it("a tool fatal → environment + expected, code carries the tool name; a denial is no error", () => {
     const got = feed([
       call("write_file", "tc-1"),
       toolCallOutput({
         output: "EACCES: permission denied\n[tool error] write failed",
         toolCallId: "tc-1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
-      // Traces written before the stop-reason unification spell tool failures failed/timeout.
       call("read_file", "tc-2"),
-      legacyOutput({
-        output: "[tool timeout: exceeded 30000ms]",
+      toolCallOutput({
+        output: "Tool call denied by user.",
         toolCallId: "tc-2",
-        stopReason: "timeout",
+        status: "aborted",
       }),
-      call("edit_file", "tc-3"),
-      legacyOutput({ output: "[tool error] boom", toolCallId: "tc-3", stopReason: "failed" }),
     ]);
-    expect(got).toHaveLength(3);
+    expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "environment",
       kind: "expected", // error fed back to the model; the Agent adjusts on its own — no human needed
@@ -826,8 +778,6 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       session_id: "s1",
     });
     expect(got[0]!.message).toContain("[tool error] write failed"); // the actual error text
-    expect(got[1]).toMatchObject({ code: "tool_timeout:read_file", kind: "expected" });
-    expect(got[2]).toMatchObject({ code: "tool_failed:edit_file", kind: "expected" });
   });
 
   it("tool aborted (denial / user interrupt) and completed are not recorded", () => {
@@ -837,10 +787,10 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         toolCallOutput({
           output: "Tool call denied by user.",
           toolCallId: "tc-1",
-          stopReason: "aborted",
+          status: "aborted",
         }),
         call("read_file", "tc-2"),
-        toolCallOutput({ output: "ok", toolCallId: "tc-2", stopReason: "completed" }),
+        toolCallOutput({ output: "ok", toolCallId: "tc-2", status: "completed" }),
       ]),
     ).toHaveLength(0);
   });
@@ -850,9 +800,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       call("write_file", "tc-1"),
       call("read_file", "tc-2"),
       call("write_file", "tc-3"),
-      toolCallOutput({ output: "boom-2", toolCallId: "tc-2", stopReason: "fatal" }),
-      toolCallOutput({ output: "ok", toolCallId: "tc-3", stopReason: "completed" }),
-      toolCallOutput({ output: "boom-1", toolCallId: "tc-1", stopReason: "fatal" }),
+      toolCallOutput({ output: "boom-2", toolCallId: "tc-2", status: "fatal" }),
+      toolCallOutput({ output: "ok", toolCallId: "tc-3", status: "completed" }),
+      toolCallOutput({ output: "boom-1", toolCallId: "tc-1", status: "fatal" }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_fatal:read_file", "tool_fatal:write_file"]);
     expect(got.map((r) => r.message)).toEqual(["boom-2", "boom-1"]);
@@ -863,10 +813,10 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       call("read_file", "tc-1"), // parent session
       withOrigin(call("write_file", "tc-1"), "session-child"), // sub-session happens to share the same id
       withOrigin(
-        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "fatal" }),
+        toolCallOutput({ output: "child boom", toolCallId: "tc-1", status: "fatal" }),
         "session-child",
       ),
-      toolCallOutput({ output: "parent boom", toolCallId: "tc-1", stopReason: "fatal" }),
+      toolCallOutput({ output: "parent boom", toolCallId: "tc-1", status: "fatal" }),
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({
@@ -883,7 +833,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({
         output: `${"x".repeat(2000)}\n[tool error] boom`,
         toolCallId: "tc-1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
     ]);
     const message = got[0]!.message as string;
@@ -897,7 +847,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       feed([
         assistantText("normal output"),
         call("write_file", "tc-1"),
-        partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "fatal" }),
+        partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1" }),
       ]),
     ).toHaveLength(0);
   });
@@ -927,7 +877,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(call("write_file", "tc-1"), "session-child"),
       withOrigin(
-        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "fatal" }),
+        toolCallOutput({ output: "child boom", toolCallId: "tc-1", status: "fatal" }),
         "session-child",
       ),
     ]);
@@ -951,11 +901,11 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       withOrigin(legacyAbort("llm request error: 401 dead key"), "session-child"),
       withOrigin(call("write_file", "tc-9"), "session-child"),
       withOrigin(
-        toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
+        toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", status: "fatal" }),
         "session-child",
       ),
       call("read_file", "tc-9"), // parent session happens to share the same id
-      toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
+      toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", status: "fatal" }),
       requestEnd("retryable"), // the parent session's LLM failure only wraps up now
       legacyAbort("llm request error: 500 upstream"),
     ]);
@@ -1167,7 +1117,7 @@ describe("HTTP onError persistence (integration)", () => {
     // the rows a member can reach at offset N are the same set the summary counted, never
     // another tenant's and never the unattributed ones. Seeded directly so the interleaving is
     // exact — going through HTTP would collapse repeats into the recorder's dedup window.
-    const repo = new ErrorsRepo(t.deps.db);
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
     const seed = (owner: string | null, code: string) =>
       repo.insert({
         ts: "2026-07-27T00:00:00.000Z",
@@ -1229,7 +1179,7 @@ describe("HTTP onError persistence (integration)", () => {
   it("the paged error route narrows to one category on request, counting only that one", async () => {
     // What the cost-center badge asks: one row of `unexpected`, for the count and the newest
     // timestamp its dismissal is stamped against. Seeded directly, so the interleaving is exact.
-    const repo = new ErrorsRepo(t.deps.db);
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
     const seed = (kind: string, code: string, ts: string) =>
       repo.insert({
         ts,
@@ -1266,9 +1216,72 @@ describe("HTTP onError persistence (integration)", () => {
     expect(all.total).toBe(4);
   });
 
+  it("the paged error route and the dashboard fold a day's repeats by the viewer's day", async () => {
+    // Three of the same send failure: two on the evening of the 27th in UTC and one just after
+    // UTC midnight — the same evening for a reader five hours behind.
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
+    for (const ts of [
+      "2026-07-27T20:00:00.000Z",
+      "2026-07-27T22:00:00.000Z",
+      "2026-07-28T01:00:00.000Z",
+    ]) {
+      repo.insert({
+        ts,
+        date: ts.slice(0, 10),
+        projectId,
+        agentId: "a1",
+        sessionId: "s1",
+        source: "messaging",
+        kind: "expected",
+        code: "messaging_send_failed",
+        status: null,
+        message: "wechat send failed: prepare failed",
+      });
+    }
+    const pageFor = async (query: string) =>
+      (await (
+        await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20${query}`)
+      ).json()) as UsageErrorsPage;
+
+    const eastern = await pageFor("&utcOffsetMinutes=-300");
+    expect(eastern.items).toHaveLength(1);
+    expect(eastern.items[0]).toMatchObject({
+      count: 3,
+      ts: "2026-07-28T01:00:00.000Z",
+      firstTs: "2026-07-27T20:00:00.000Z",
+    });
+    // Rows are what a pager pages through; the records behind them are still the total.
+    expect(eastern.rows).toBe(1);
+    expect(eastern.total).toBe(3);
+
+    // Without an offset the day is the server's, the `date` column: two days, two rows.
+    const server = await pageFor("");
+    expect(server.items.map((e) => e.count)).toEqual([1, 2]);
+    expect(server.rows).toBe(2);
+
+    // The dashboard's first page folds the same way, and its summary keeps counting records.
+    const dashboard = (await (
+      await api.get(`/api/projects/${projectId}/usage?utcOffsetMinutes=-300`)
+    ).json()) as UsageResponse;
+    expect(dashboard.errors.recent.map((e) => e.count)).toEqual([3]);
+    expect(dashboard.errors.rows).toBe(1);
+    expect(dashboard.errors.total).toBe(3);
+
+    // An offset no clock uses, or one that is not a whole number, is a 400 rather than a
+    // quietly different day.
+    for (const bad of ["900", "-841", "1.5", "east", "+60"]) {
+      expect(
+        (await api.get(`/api/projects/${projectId}/usage/errors?utcOffsetMinutes=${bad}`)).status,
+      ).toBe(400);
+    }
+    expect((await api.get(`/api/projects/${projectId}/usage?utcOffsetMinutes=900`)).status).toBe(
+      400,
+    );
+  });
+
   /** Seeds one row straight into the table, so a batch's dates and Agents are exact. */
   const seedRow = (o: Partial<ErrorRecordInsert> & { date: string; code: string }) =>
-    new ErrorsRepo(t.deps.db).insert({
+    wire(ErrorsRepo, { db: t.deps.db }).insert({
       ts: `${o.date}T00:00:00.000Z`,
       projectId,
       agentId: null,
@@ -1384,7 +1397,7 @@ describe("HTTP onError persistence (integration)", () => {
     // read: the one person who can see them anywhere empties them from the panel that showed
     // them, while a member's clear (whose read never lists them) never reaches them.
     const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    new ErrorsRepo(t.deps.db).insert({
+    wire(ErrorsRepo, { db: t.deps.db }).insert({
       ts: "2026-07-06T00:00:00.000Z",
       date: "2026-07-06",
       projectId: null,
@@ -1409,13 +1422,19 @@ describe("HTTP onError persistence (integration)", () => {
     expect(errorRows().filter((r) => r.project_id === null)).toHaveLength(0);
   });
 
-  it("Project deletion cascade-cleans that Project's error records", async () => {
+  it("deleting a Project deletes its error records and nobody else's", async () => {
     await api.get(`/api/projects/${projectId}/agents/agent-nope/sessions`);
     expect(errorRows().filter((r) => r.project_id === projectId)).toHaveLength(1);
+    // An unattributed row (a failed login) belongs to no Project and must outlive this one.
+    await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId: "err_user", password: "wrong-password" }),
+    });
 
     const del = await api.delete(`/api/projects/${projectId}`);
     expect(del.status).toBe(204);
-    expect(errorRows().filter((r) => r.project_id === projectId)).toHaveLength(0);
+    expect(errorRows().map((r) => r.project_id)).toEqual([null]);
   });
 });
 
@@ -1531,7 +1550,7 @@ describe("HTTP error attribution (only when the requester actually has Project a
   });
 
   it("the attribution check throws: onError survives, error lands unattributed", async () => {
-    t.deps.projectService.canAccess = () => {
+    t.deps.access.canAccess = () => {
       throw new Error("access check blew up");
     };
     const res = await ownerApi.get(`/api/projects/${projectId}/usage?groupBy=bogus`);

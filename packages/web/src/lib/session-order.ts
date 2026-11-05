@@ -23,7 +23,7 @@
  * Storage is injectable (model-group-expansion.ts convention: vitest runs in Node, no
  * localStorage); malformed values degrade to the defaults.
  */
-import { pinnedFirst } from "./session-grouping";
+import { compareActivityDesc, pinnedFirst } from "./session-grouping";
 import type { GroupMode } from "../components/ui/group-list";
 
 export type SessionSortMode = "recent" | "manual";
@@ -174,17 +174,21 @@ export function orderWithinPinPartitions<T>(
  * The full row-ordering pipeline of one group's active list:
  *
  * 1. recency — newest `recencyOf` first (the Session's `lastActiveAt`: 「最近更新」 means
- *    last ACTIVITY, not creation), ties broken by key descending to match the store's
- *    stable tiebreaker. Applied in both modes: it IS the recent mode's order, and in
- *    manual mode it is the order rows not yet in the stored sequence arrive in.
+ *    last ACTIVITY, not creation), ties broken by key descending. Both compare by code
+ *    point (compareActivityDesc), the order the server pages in and the watermark cuts at:
+ *    under a collation, rows sharing a stamp could display in another order than the cut
+ *    reveals them, and a page that reveals a tied row would then insert it above one
+ *    already shown. Applied in both modes: it IS the recent mode's order, and in manual
+ *    mode it is the order rows not yet in the stored sequence arrive in.
  * 2. the pinned cluster first (pinnedFirst), then
  * 3. under manual sort, the stored order within the pinned cluster and within the rest
  *    independently, so a drag can never move a row across the pin boundary.
  *
- * Only rows already FETCHED are ordered. The server still pages by `created_at DESC`
- * (listByAgent — there is no index on last_active_at), so a Session created long ago but
- * active today sits on a later page and cannot climb into the sidebar's first page until
- * "More" pulls that page in; fixing that needs a server-side ordering + index change.
+ * Only rows already FETCHED — and shown: the sidebar cuts each merged list at its watermark
+ * first (session-grouping.ts's cutAtWatermark) — are ordered. The server pages the list in this
+ * same activity order (`order=activity`, sorted in memory per Agent; no index is involved), so
+ * a Session created long ago but active today is on the first page, and "More" only ever adds
+ * rows below the ones on screen.
  */
 export function orderSessionRows<T>(
   rows: readonly T[],
@@ -199,8 +203,11 @@ export function orderSessionRows<T>(
 ): T[] {
   const recencyOf = opts.recencyOf;
   const byRecency = recencyOf
-    ? [...rows].sort(
-        (a, b) => recencyOf(b).localeCompare(recencyOf(a)) || keyOf(b).localeCompare(keyOf(a)),
+    ? [...rows].sort((a, b) =>
+        compareActivityDesc(
+          { lastActiveAt: recencyOf(a), sessionId: keyOf(a) },
+          { lastActiveAt: recencyOf(b), sessionId: keyOf(b) },
+        ),
       )
     : rows;
   // Recent mode passes an empty order, which is orderWithinPinPartitions's identity.

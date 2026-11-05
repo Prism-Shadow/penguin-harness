@@ -1,17 +1,21 @@
 /**
  * Protocol auto-detection for custom model endpoints.
  *
- * Given a base URL (plus an optional API key), probes which of AgentHub 0.4.2's three
- * generic protocol clients the endpoint actually serves, in this fixed order:
+ * Given a base URL (plus an optional API key), probes which of three MMSP compatible
+ * clients (one generic wire protocol each) the endpoint actually serves, in this fixed order:
  *
  *   1. `openai-responses` — OpenAI Responses API,   POST {base}/responses
  *   2. `ant-messages`     — Anthropic Messages API, POST {base}/v1/messages
  *   3. `openai-chat`      — OpenAI Chat Completions, POST {base}/chat/completions
  *
- * Paths and auth headers mirror exactly what the AgentHub clients construct (verified
+ * The two other protocols the dialogs offer, `google-genai` (generateContent) and `mmsp` (an
+ * MMSP server), are picked by hand and never probed: generateContent puts the model id in the
+ * path, and a `{}` probe of an MMSP server's `/stream` answers like any other API's 400.
+ *
+ * Paths and auth headers mirror exactly what the MMSP clients construct (verified
  * against the SDKs they wrap): the OpenAI SDK appends `/responses` / `/chat/completions`
  * to the base URL and authenticates with `Authorization: Bearer`; the Anthropic SDK
- * appends `/v1/messages` and AgentHub's AntMessagesClient sends the credential through
+ * appends `/v1/messages` and MMSP's AntMessagesClient sends the credential through
  * BOTH `x-api-key` and `Authorization: Bearer` (plus `anthropic-version`), which every
  * covered server/gateway accepts. Probing the same URL the client would call means a
  * detected protocol is one that will actually work after saving.
@@ -38,22 +42,30 @@
  * Probes run sequentially in the order above and stop at the first `served` hit. The API
  * key is only ever placed in request headers — never in URLs, results, or logs.
  *
- * Credential resolution is layered: the caller passes the key typed in the dialog or the
- * entry's stored one, and when there is neither, each probe falls back to the environment
- * variable for the protocol IT speaks (`ANTHROPIC_API_KEY` for `ant-messages`,
- * `OPENAI_API_KEY` for the two OpenAI protocols — see envApiKeyForProtocol). Detection
- * still works with no credential at all, but an authenticated probe is far more likely to
- * draw a protocol-shaped error than the generic 401 or gateway HTML an anonymous request
- * often gets, so the fallback materially improves accuracy.
+ * The typed URL is not taken literally: it is normalized and paired with its neighbouring
+ * `/v1` form (see candidateBaseUrls), and every candidate gets the full protocol sequence
+ * before the next one is tried. The candidate that answered is reported back as `baseUrl`
+ * so the caller can correct the field. Worst case a detection is six short probes.
+ *
+ * Credentials: the caller passes the key typed in the dialog or the entry's stored one. With
+ * neither, each probe takes what MMSP's client for the protocol IT speaks would read (PRN-021,
+ * MMSP's rule — see envApiKeyForProtocol): the protocol's variable only when the probed URL is
+ * that client's own default endpoint, so a gateway or a private server gets an anonymous probe.
+ * Detection still works with no credential at all (a protocol-shaped 401 identifies the route),
+ * and the user's vendor key never goes to a URL they typed.
  */
-import { resolveModelEnv } from "@prismshadow/penguin-core";
+import { userAgent } from "@prismshadow/penguin-core";
+import { clientEnvKey } from "../model-catalog/env-keys.js";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
   ProtocolProbeOutcome,
 } from "../api/types.js";
 
-/** AgentHub generic protocol client types, in the required detection order. */
+/**
+ * The MMSP compatible client types detection probes (one generic protocol each), in the
+ * required order.
+ */
 export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
@@ -78,7 +90,7 @@ function bearerHeaders(apiKey?: string): Record<string, string> {
 /**
  * Anthropic Messages auth: the credential through both header conventions —
  * `x-api-key` (Anthropic, DeepSeek) and `Authorization: Bearer` (OpenRouter, Z.AI) —
- * exactly like AgentHub's AntMessagesClient; `anthropic-version` is always sent
+ * exactly like MMSP's AntMessagesClient; `anthropic-version` is always sent
  * (the SDK sends it unconditionally, and some servers 400 without it).
  */
 function anthropicHeaders(apiKey?: string): Record<string, string> {
@@ -97,25 +109,25 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
 ];
 
 /**
- * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL.
- *
- * Which env var backs a request depends on the protocol being spoken, and detection is
- * precisely the case where the protocol is not yet known — so the resolution happens once
- * per probe rather than once per detection: `ant-messages` reads `ANTHROPIC_API_KEY`,
- * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. `resolveModelEnv` is the same
- * mapping the rest of the app uses (an explicit client type wins over the model id there),
- * so this cannot drift from what the saved model will actually read.
+ * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL:
+ * the variable MMSP's client for that protocol reads when handed no key at that URL (the
+ * catalog's clientEnvKey, which asks MMSP's credentials module) — `ANTHROPIC_API_KEY` for
+ * `ant-messages` at Anthropic's default endpoint, `OPENAI_API_KEY` for the two OpenAI protocols
+ * at OpenAI's, and nothing anywhere else. Which variable backs a request depends on the protocol
+ * spoken, and detection is precisely the case where the protocol is not yet known, so it is
+ * resolved once per probe; it is the rule the saved model is held to, so a probe never sends a
+ * key the model would not.
  *
  * Server-side only: the value is placed in a request header and never returned to the
  * browser, echoed in a result, or logged.
  */
 export function envApiKeyForProtocol(
   clientType: ProtocolClientType,
+  baseUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const envKey = resolveModelEnv("", clientType)?.envKey;
-  if (!envKey) return undefined;
-  return env[envKey]?.trim() || undefined;
+  const name = clientEnvKey(clientType, baseUrl);
+  return name !== undefined ? env[name]?.trim() || undefined : undefined;
 }
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
@@ -135,6 +147,50 @@ export function isHttpUrl(value: string): boolean {
  */
 export function probeUrl(baseUrl: string, path: string): string {
   return baseUrl.trim().replace(/\/+$/, "") + path;
+}
+
+/**
+ * Endpoint paths a pasted URL may already carry, longest match first — `/chat/completions`
+ * before `/completions`, `/v1/messages` before `/messages` — so the whole endpoint path is
+ * stripped rather than its tail.
+ */
+const ENDPOINT_PATH_SUFFIXES = [
+  "/chat/completions",
+  "/v1/messages",
+  "/completions",
+  "/responses",
+  "/messages",
+] as const;
+
+/**
+ * The base URLs one detection tries, in order, for a URL as the user typed it.
+ *
+ * What gets pasted is usually a variant of the right thing: one `/v1` too many
+ * (`https://host/v1/v1`), one too few (`https://host` for an API that lives under
+ * `https://host/v1`), or a whole endpoint URL copied out of a provider's documentation
+ * (`https://host/v1/chat/completions`). So the typed value is first normalized — trimmed,
+ * query and fragment dropped, trailing slashes removed, a trailing endpoint path stripped,
+ * runs of repeated `/v1` collapsed to one — and then its neighbouring form is tried as
+ * well: the trailing `/v1` removed when it has one, `/v1` appended when it has not. Those
+ * two forms are the whole list, so a detection costs at most six short probes.
+ *
+ * Pure string work, deliberately: `new URL()` would lowercase the host and re-encode the
+ * path, and a base URL must be probed as it was written apart from the edits above.
+ */
+export function candidateBaseUrls(typed: string): string[] {
+  // Query and fragment are never part of an endpoint base URL, but a URL copied from a
+  // browser carries them.
+  let base = typed.trim().replace(/[?#][\s\S]*$/, "");
+  base = base.replace(/\/+$/, "");
+  for (const suffix of ENDPOINT_PATH_SUFFIXES) {
+    if (base.endsWith(suffix)) {
+      base = base.slice(0, -suffix.length);
+      break;
+    }
+  }
+  base = base.replace(/\/+$/, "").replace(/(?:\/v1){2,}/g, "/v1");
+  // The two forms differ by exactly one `/v1` segment, so they can never coincide.
+  return [base, base.endsWith("/v1") ? base.slice(0, -"/v1".length) : `${base}/v1`];
 }
 
 /** A JSON body that looks like a structured API error (vs an HTML page / junk): see the header doc for why this check is tolerant. */
@@ -249,7 +305,7 @@ async function runProbe(
   try {
     const res = await fetchImpl(url, {
       method: "POST",
-      headers: spec.headers(apiKey),
+      headers: { ...spec.headers(apiKey), "user-agent": userAgent() },
       body: "{}",
       signal: AbortSignal.timeout(timeoutMs),
       // Redirects stay followed (fetch's default). It is tempting to pin `redirect: "manual"`
@@ -279,19 +335,23 @@ async function runProbe(
 }
 
 /**
- * Runs the three probes sequentially in the required order and stops at the first
- * protocol the endpoint serves. Never throws: every failure mode is a probe outcome.
- * The result lists only the probes actually run (their order is the probe order), so
- * callers can render per-protocol outcomes for debugging; no secret ever appears in it.
+ * Runs the protocol probes in the required order against each candidate base URL (see
+ * candidateBaseUrls) and stops at the first protocol an endpoint serves: candidate by
+ * candidate, and within a candidate Responses, then Messages, then Chat Completions.
+ * The candidate that answered comes back as `baseUrl`, so a URL that was typed one `/v1`
+ * off — or pasted as a full endpoint URL — is reported in the form that actually works.
+ * Never throws: every failure mode is a probe outcome. The result lists only the probes
+ * actually run, in the order they ran (each carries the URL it hit, so a reader can tell
+ * the candidates apart); no secret ever appears in it.
  */
 export async function detectModelProtocol(options: {
   baseUrl: string;
   /**
-   * Explicit credential (the key typed in the dialog, or the entry's stored key). When
-   * absent, each probe falls back to the environment variable for the protocol it speaks
-   * — see envApiKeyForProtocol. An authenticated probe is what makes the difference
-   * between a protocol-shaped error (which identifies the route) and the generic 401 or
-   * gateway HTML that an anonymous request often draws instead.
+   * Explicit credential (the key typed in the dialog, or the entry's stored key). When absent,
+   * each probe takes the environment variable MMSP's client for its protocol would read at the
+   * probed URL, if any — see envApiKeyForProtocol. An authenticated probe is what makes the
+   * difference between a protocol-shaped error (which identifies the route) and the generic 401
+   * or gateway HTML that an anonymous request often draws.
    */
   apiKey?: string;
   /** Injection point for tests; defaults to global fetch (which routes through the admin proxy settings, see net/proxy.ts). */
@@ -303,11 +363,13 @@ export async function detectModelProtocol(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
-  for (const spec of PROTOCOL_PROBES) {
-    const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, options.env);
-    const probe = await runProbe(spec, options.baseUrl, apiKey, fetchImpl, timeoutMs);
-    probes.push(probe);
-    if (probe.outcome === "served") return { detected: spec.clientType, probes };
+  for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
+    for (const spec of PROTOCOL_PROBES) {
+      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
+      const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
+      probes.push(probe);
+      if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };
+    }
   }
   return { probes };
 }

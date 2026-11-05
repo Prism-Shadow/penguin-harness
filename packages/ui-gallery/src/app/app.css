@@ -1,0 +1,7 @@
+/*
+ * The framed app's stylesheet: the Web App's own entry, exactly as the app loads it. The app's
+ * sources sit outside this Vite root, so Tailwind is pointed at them explicitly — otherwise
+ * the utilities the app's markup carries would never enter the sheet.
+ */
+@import "../../../web/src/styles.css";
+@source "../../../web/src";

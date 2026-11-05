@@ -1,0 +1,17 @@
+# `penguin chat` 为终端标记提示符
+
+- **Date:** 2026-10-07
+- **Type:** feature
+- **Scope:** `cli`, `docs`
+- **PR:** [#1003](https://github.com/Prism-Shadow/penguin-harness/pull/1003)
+
+[English](2026-10-07-chat-prompt-marks.md)
+
+在终端里，`penguin chat` 会输出 OSC 133 语义提示符序列，也就是 shell 为终端集成输出的那组序列。支持这些序列的终端可以在对话的提示符之间跳转、选中某一轮的输出；在自己的终端里运行对话的程序也能判断对话何时回到提示符、可以接收输入，而无需匹配提示符文本。
+
+## 细节
+
+- `> ` 提示符开始处输出 `A`，其后输入开始处输出 `B`。续行提示符、审批询问与退出确认不做标记。
+- 提交的 Prompt 开始一轮时输出 `C`（`/compact`、`/clear`、`/switch-model` 与 `/goal` 也一样），该轮结束时输出 `D;0`，出错结束时输出 `D;1`。`/thinking`、`/verbose` 等在本地应答的命令不运行一轮，不做包围标记。
+- 只有 stdin 与 stdout 都是终端且 `TERM` 不是 `dumb` 时才输出标记。
+- CLI 页面中英两版都说明了这些标记，并注明它们仅供参考。

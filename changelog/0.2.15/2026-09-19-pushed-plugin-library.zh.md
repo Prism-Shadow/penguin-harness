@@ -1,0 +1,25 @@
+# 热推送带上它构建时所用的插件库
+
+- **Date:** 2026-09-19
+- **Type:** fix
+- **Scope:** `core`, `server`, `deploy`
+- **PR:** [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798), [#835](https://github.com/Prism-Shadow/penguin-harness/pull/835)
+
+[English](2026-09-19-pushed-plugin-library.md)
+
+一台机器装的是早于公司模式的程序，之后经热推送升级到带公司模式的平台，在它上面创建组织每一次都失败，报「This plugin is not in the plugin library」。创建组织要给 CEO 安装 `agent-company`，而 Agent 插件库（Skill 与钩子，即 `@penguinharness/*` 各包）用的是恰好启动平台的那个程序旁边的那一份——12 个插件，没有 `agent-company`——推送的平台再新也没用。现在热推送带上自己的库。
+
+- 部署多产出一件按内容寻址的资产 `archives/library.tgz`：core 的包清单所声明的全部 Agent 插件，排成一个宿主包（`library/package.json` 点名各包，加 `library/node_modules/@penguinharness/<名>/…`）。core 声明了、仓库里却找不到的插件让部署失败，而不是推出一份缺插件的库。当前规模为 13 个插件、约 0.4 MB。
+- core 新增 `usePushedPluginLibrary(dir)`。设置后宿主包的查找顺序为：推送来的库 → loader 自身所在的安装 → 运行中的程序所在的安装；传 `null` 回到后两处。设置即生效，下一次读库按新顺序重新查找。
+- 平台由运行时以热推送方式装载时，在任何代码读插件库之前，用 `pushedLibraryDir` 在已解开的资产里找到这份库并交给 core。
+- 推送里没有这件资产，或平台根本不是推送来的（普通安装、桌面应用、开发模式），行为与之前一致。推送来的库优先于程序旁那一份，即便程序比推送更新：正在运行的是被推送的平台，与它配套的库才对。查找逻辑在推送的 core 里，所以对早于本改动的运行时同样有效。
+- Agent 已装的 Skill 与钩子是副本，不被改写：库变新后，Agent 上对应插件显示「更新」，由用户决定何时更新。
+
+## 在前一个 App 仍占用的目录旁解包
+
+归档在解包目录旁边解出后再改名进去。Windows 上被替换的 App 仍打开着旧目录下的文件（node-pty 的二进制、插件的模块）：
+删除留下了它们，改名到残余目录上被拒绝，凡资产落在这个目录的推送都启动失败——运行时每次都随之重启。现在本次解出的
+完整目录直接从解出的位置提供。
+
+真实 shell 回归夹具在启动失败时释放终端，避免超时的 PowerShell 在清理期间继续写测试目录。
+PowerShell 首次提示符采用有界的 30 秒期限、用例采用 60 秒预算，行为断言全部保留。

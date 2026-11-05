@@ -8,7 +8,8 @@
  * always did — ask the approval boundary, record the decision, feed a denied call its
  * terminal output.
  *
- * Both tools that reach a shell are checked: `exec_command`'s `cmd` (the launch) and
+ * Both tools that reach a shell are checked: `exec_command`'s `cmd` (the launch, read through
+ * the tool's own argument list so its `command` alias is screened the same) and
  * `input_command`'s `chars` (what gets typed into an already-running one). Guarding only the
  * first would have made the guardrail exactly one interpreter launch deep — start `bash`,
  * which matches nothing, then type. The one exemption is a lone `\u0003`, which the tool
@@ -47,8 +48,12 @@
  */
 import type { ApproveFn, CommandPolicyConfig, CommandPolicyRule } from "../interfaces/index.js";
 import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js";
-import { EXEC_COMMAND_NAME } from "../environment/tools/exec-command.js";
+import {
+  EXEC_COMMAND_NAME,
+  EXEC_COMMAND_TEXT_ARGUMENTS,
+} from "../environment/tools/exec-command.js";
 import { INPUT_COMMAND_NAME, INTERRUPT } from "../environment/tools/input-command.js";
+import { stringArgument } from "../environment/tools/tool-arguments.js";
 
 /** A command-policy hit: the matched rule's name. */
 export interface CommandPolicyVeto {
@@ -114,13 +119,15 @@ export function evaluateCommandPolicy(
 }
 
 /**
- * The argument that carries shell text, per tool: `exec_command` launches one (`cmd`) and
- * `input_command` types into one already running (`chars`). Every other tool — MCP included —
- * is not the policy's business.
+ * The arguments that carry shell text, per tool, in the order the tool itself reads them:
+ * `exec_command` launches one (`cmd`, or its alias `command`) and `input_command` types into
+ * one already running (`chars`). Sharing the tool's own list is what keeps the screened text
+ * and the executed text one value. Every other tool — MCP included — is not the policy's
+ * business.
  */
-const SHELL_TEXT_ARGUMENT: Readonly<Record<string, string>> = {
-  [EXEC_COMMAND_NAME]: "cmd",
-  [INPUT_COMMAND_NAME]: "chars",
+const SHELL_TEXT_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
+  [EXEC_COMMAND_NAME]: EXEC_COMMAND_TEXT_ARGUMENTS,
+  [INPUT_COMMAND_NAME]: ["chars"],
 };
 
 /**
@@ -135,8 +142,8 @@ export function vetoForToolCall(
   argsJson: string,
   policy?: CommandPolicyConfig,
 ): CommandPolicyVeto | null {
-  const key = SHELL_TEXT_ARGUMENT[toolName];
-  if (key === undefined) return null;
+  const names = SHELL_TEXT_ARGUMENTS[toolName];
+  if (names === undefined) return null;
   let args: unknown;
   try {
     args = JSON.parse(argsJson) as unknown;
@@ -144,8 +151,8 @@ export function vetoForToolCall(
     return null;
   }
   if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
-  const text = (args as Record<string, unknown>)[key];
-  if (typeof text !== "string") return null;
+  const text = stringArgument(args as Record<string, unknown>, names)?.value;
+  if (text === undefined) return null;
   if (text === INTERRUPT) return null;
   return evaluateCommandPolicy(text, policy);
 }

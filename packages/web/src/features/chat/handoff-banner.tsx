@@ -4,10 +4,13 @@
  * - `HandoffBanner` (`[handoff_from]`, the /agent handoff): "Handed off from <agent>'s chat";
  * - `ModelSwitchBanner` (`[model_switch_from]`, the /model command): "switched model —
  *   continued from the earlier conversation".
- * When there's a source Session, the whole line is clickable and jumps back to it (the
- * source Session's title goes into the title hover tooltip, taking no space in the body).
+ * Each is one harness note (TranscriptNote): a fixed phrase, then the agent or the earlier model
+ * outside it, so no theme recases a name. When there's a source Session, the whole line is a
+ * button that jumps back to it, named by the old one-sentence wording (the source Session's
+ * title goes into the hover tooltip, taking no space in the body).
  */
 import { useNavigate } from "react-router";
+import { TranscriptNote } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { HandoffOrigin, ModelSwitchOrigin } from "./agent-handoff";
 
@@ -23,27 +26,26 @@ function agentLabel(origin: HandoffOrigin): string {
     : origin.agentId;
 }
 
-const bannerFrame =
-  "anim-msg my-2 flex w-fit items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400";
-
 export function HandoffBanner({ origin }: { origin: HandoffOrigin }) {
   const navigate = useNavigate();
-  const text = S.chat.handoffFrom(agentLabel(origin));
+  const agent = agentLabel(origin);
   // A handoff initiated from draft state has no source Session: only the origin is shown, with nowhere to jump to.
-  if (!origin.sessionId) return <p className={bannerFrame}>{text}</p>;
   const sessionId = origin.sessionId;
   return (
-    <button
-      type="button"
-      title={S.chat.handoffBack(origin.sessionTitle)}
-      onClick={() => navigate(`/chat/${sessionId}`)}
-      className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
-    >
-      {text}
-      <span aria-hidden className="text-gray-400 dark:text-gray-500">
-        →
-      </span>
-    </button>
+    <TranscriptNote
+      className="anim-msg my-2"
+      label={S.chat.handoffLabel}
+      subject={agent}
+      {...(sessionId
+        ? {
+            action: {
+              onClick: () => navigate(`/chat/${sessionId}`),
+              hint: S.chat.handoffBack(origin.sessionTitle),
+              name: S.chat.handoffFrom(agent),
+            },
+          }
+        : {})}
+    />
   );
 }
 
@@ -56,16 +58,15 @@ export function ModelSwitchBanner({ origin }: { origin: ModelSwitchOrigin }) {
   const navigate = useNavigate();
   const sessionId = origin.sessionId;
   return (
-    <button
-      type="button"
-      title={S.chat.handoffBack(origin.sessionTitle)}
-      onClick={() => navigate(`/chat/${sessionId}`)}
-      className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
-    >
-      {S.chat.modelSwitchFrom(origin.prevModelId)}
-      <span aria-hidden className="text-gray-400 dark:text-gray-500">
-        →
-      </span>
-    </button>
+    <TranscriptNote
+      className="anim-msg my-2"
+      label={S.chat.modelSwitchLabel}
+      {...(origin.prevModelId ? { subject: S.chat.modelSwitchPrev(origin.prevModelId) } : {})}
+      action={{
+        onClick: () => navigate(`/chat/${sessionId}`),
+        hint: S.chat.handoffBack(origin.sessionTitle),
+        name: S.chat.modelSwitchFrom(origin.prevModelId),
+      }}
+    />
   );
 }

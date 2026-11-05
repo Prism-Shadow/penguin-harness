@@ -12,7 +12,8 @@
  * rendered inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text
  * color).
  */
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { useMemo } from "react";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { BOOK_ICON } from "../chat/skill-use";
 import { sanitizeSkillIcon } from "./skill-icon";
 
@@ -65,13 +66,17 @@ export function SkillIcon({
   className?: string;
 }) {
   const safe = sanitizeSkillIcon(icon);
-  if (!safe) return <GlyphIcon d={fallback} size={size} className={className} />;
+  // Held stable across renders: React compares this prop by object identity and re-sets
+  // `innerHTML` whenever it differs, so a literal in the JSX rebuilds the markup on every render
+  // (see test/inner-html-stability.test.ts).
+  const markup = useMemo(() => (safe ? { __html: safe } : undefined), [safe]);
+  if (markup === undefined) return <GlyphIcon d={fallback} size={size} className={className} />;
   return (
     <span
       aria-hidden
       style={{ width: size, height: size }}
       className={`block shrink-0 [&>svg]:block [&>svg]:h-full [&>svg]:w-full ${className}`}
-      dangerouslySetInnerHTML={{ __html: safe }}
+      dangerouslySetInnerHTML={markup}
     />
   );
 }
@@ -99,10 +104,13 @@ export function SkillTile({
   glyph?: number;
 }) {
   return (
+    // ui-glass with the tile anatomy: a theme may frost the square in its own hue (the palette
+    // colour's ink is the hue); without a recipe the tinted square stays as it is.
     <span
       aria-hidden
+      data-glass="tile"
       style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)}`}
+      className={`ui-glass flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)}`}
     >
       <SkillIcon icon={icon} fallback={fallback} size={glyph} />
     </span>

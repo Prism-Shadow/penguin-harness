@@ -165,7 +165,7 @@ describe("ESM_CJS_BANNER", () => {
 describe("bundling sites", () => {
   // Both emit ESM while absorbing third-party CommonJS, so both need the same declarations.
   // Sharing one constant is what keeps a fix to one of them from missing the other.
-  const sites = ["packages/desktop/tsup.config.ts", "scripts/deploy.mjs"];
+  const sites = ["packages/desktop/tsup.config.ts", "scripts/push-bundle.mjs"];
 
   it.each(sites)("%s takes its banner from scripts/esm-cjs-banner.mjs", (site) => {
     const source = fs.readFileSync(path.join(REPO_ROOT, site), "utf8");

@@ -9,15 +9,32 @@
  * a fresh one, honouring URL parameters — whatever that host's policy is). This component
  * only knows how to attach to whatever `ensure` resolved.
  *
- * To restart with a different terminal, remount it (change the React `key`).
+ * To restart with a different terminal, remount it (change the React `key`). On a touch
+ * device the surface also carries the key bar (terminal-keybar.tsx), so both hosts get the
+ * keys a soft keyboard lacks without either of them knowing about it.
+ *
+ * The socket itself is not managed here: terminal-connection.ts owns attaching, the
+ * heartbeat and reattaching after a link drops, so this file stays about xterm.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 // Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
-import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
+import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
+import { writeClipboard } from "../../lib/clipboard";
+import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
+import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
+import { TouchScroll } from "./terminal-touch";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useTheme } from "../../state/theme";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
+import { terminalClipboardAction } from "../../lib/shortcuts/terminal-clipboard";
+import { terminalKeyAction } from "../../lib/shortcuts/terminal-keys";
+import { useAuth } from "../../state/auth";
+import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -44,16 +61,33 @@ export interface TerminalInfo {
   alive: boolean;
   /** Last OSC window title the shell set (debounced server-side), if any. */
   title?: string | null;
+  /**
+   * The conversation (Session) the shell belongs to; null for one no conversation opened (the
+   * API, the CLI, the /terminal page). Absent when the server that answered predates the field
+   * — a machine on an older build — which says nothing about the owner either way.
+   */
+  sessionId?: string | null;
 }
 
-export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
+/**
+ * How long the container has to hold still before its size is passed on. Long enough to
+ * swallow a soft keyboard's animation, short enough that a deliberate drag lands promptly.
+ */
+const RESIZE_SETTLE_MS = 120;
+
+/**
+ * `reconnecting` is its own word on purpose: it is the state a mobile link spends most of
+ * its bad minutes in, and it means something the other three do not — the pty is fine, this
+ * page's socket is not, and it is being reattached (terminal-connection.ts).
+ */
+export type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "error";
 
 /**
  * The screen's own palette, one per appearance. Two things matter here.
  *
- * The surface colours are the app's, not a terminal's: `#000000`/`#ffffff` are the body
- * tones (styles.css overrides the neutral gray scale to pure black in dark mode), and the
- * selection matches `::selection` there. A panel docked inside the app that brought its
+ * The surface colours are the app's, not a terminal's: `#121212`/`#ffffff` are Primer's canvas
+ * (`themes/github.css` in @prismshadow/penguin-ui) and the inks are its ink, and the selection
+ * matches its `::selection`. A panel docked inside the app that brought its
  * own charcoal along read as a foreign window sitting on top of it.
  *
  * The sixteen ANSI slots are NOT the app's palette and must not be: programs pick them by
@@ -63,10 +97,10 @@ export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
  * VGA-bright and unreadable on white.
  */
 const DARK_THEME = {
-  background: "#000000",
-  foreground: "#f3f4f6",
-  cursor: "#f3f4f6",
-  cursorAccent: "#000000",
+  background: "#121212",
+  foreground: "#f5f5f5",
+  cursor: "#f5f5f5",
+  cursorAccent: "#121212",
   selectionBackground: "rgba(255, 255, 255, 0.18)",
   black: "#000000",
   red: "#cd3131",
@@ -114,8 +148,17 @@ export function terminalTheme(dark: boolean): ITheme {
   return dark ? DARK_THEME : LIGHT_THEME;
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
+/**
+ * Every terminal round-trip goes through here, and so is addressed to the machine that holds
+ * the terminal it names (lib/terminal-machines.ts). `server` is for the one call with no id
+ * to route by: creating a terminal names its machine before the terminal exists.
+ */
+async function request(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<Response> {
+  return fetch(terminalUrl(path, server), {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -150,23 +193,39 @@ function httpError(
 }
 
 /** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await request(path, init);
+export async function fetchJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T> {
+  const res = await request(path, init, server);
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
 /** Existence probe: 404 means "not there" and answers null; every other failure throws. */
-export async function probeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await request(path, init);
+export async function probeJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T | null> {
+  const res = await request(path, init, server);
   if (res.status === 404) return null;
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
-function streamUrl(id: string, cols: number, rows: number): string {
+/**
+ * Always THIS server's stream. A pty on a machine is named in the id instead of the path —
+ * `<terminalId>@<machineId>@<userId>` — and this server's platform relays the socket through
+ * the connection it holds (server: machines/terminal-relay.ts). The user id is what the
+ * runtime's owner check reads; naming anyone else is refused there.
+ */
+function streamUrl(id: string, cols: number, rows: number, userId: string): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/terminals/${id}/stream?cols=${cols}&rows=${rows}`;
+  const machine = machineForTerminal(id);
+  const ref = machine === null ? id : `${id}@${machine}@${userId}`;
+  return `${scheme}//${location.host}/api/terminals/${ref}/stream?cols=${cols}&rows=${rows}`;
 }
 
 export interface TerminalViewProps {
@@ -180,9 +239,9 @@ export interface TerminalViewProps {
   /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
   onTitle?: (title: string) => void;
   /**
-   * Ctrl+W pressed inside this terminal. The host decides what a close is — the dock tab's
-   * confirm-then-kill, the standalone page's kill-then-close-window; with no handler the key
-   * goes to the shell like any other.
+   * The `terminal.close` shortcut (⌃⌥` / Ctrl+Alt+` by default) pressed inside this terminal. The
+   * host decides what a close is — the dock tab's confirm-then-kill, the standalone page's
+   * kill-then-close-window; with no handler the key goes to the shell like any other.
    */
   onCloseRequest?: () => void;
   className?: string;
@@ -203,9 +262,19 @@ export function TerminalView({
   // (the view pool exists to keep exactly those alive). The ref is what lets the
   // once-per-mount effect below read the current appearance without depending on it.
   const { terminalDark } = useTheme();
+  const userId = useAuth().user?.userId ?? "";
   const darkRef = useRef(terminalDark);
   darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
+  // Touch affordances. The bar is the only consumer of all three: the control handle the
+  // effect publishes once a terminal is live, the sticky modifiers it arms (spent on the
+  // data path below), and whether xterm holds focus (which way the keyboard cap points).
+  const coarsePointer = useCoarsePointer();
+  const control = useRef<TerminalControl | null>(null);
+  const [modifiers, setModifiers] = useState<TerminalModifiers>(NO_MODIFIERS);
+  const modifiersRef = useRef(modifiers);
+  modifiersRef.current = modifiers;
+  const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = terminalTheme(terminalDark);
   }, [terminalDark]);
@@ -243,7 +312,6 @@ export function TerminalView({
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
-      let socket: WebSocket | null = null;
       let exited = false;
 
       const report = (status: TerminalStatus, detail = ""): void => {
@@ -292,8 +360,9 @@ export function TerminalView({
       term.loadAddon(
         new ClipboardAddon({
           readText: () => Promise.resolve(""),
-          writeText: (_selection, text) =>
-            navigator.clipboard?.writeText(text).catch(() => {}) ?? Promise.resolve(),
+          writeText: async (_selection, text) => {
+            await writeClipboard(text);
+          },
         }),
       );
       termRef.current = term;
@@ -338,7 +407,7 @@ export function TerminalView({
       const copySelection = (): void => {
         const selection = term.getSelection();
         if (!selection) return;
-        void navigator.clipboard?.writeText(selection).catch(() => {});
+        void writeClipboard(selection);
         term.clearSelection();
       };
       /** Async-clipboard paste (the paths where no native paste event exists). */
@@ -350,47 +419,51 @@ export function TerminalView({
       };
 
       /**
-       * Terminal clipboard keys (the Windows Terminal / VS Code conventions — the single
-       * Ctrl+Shift+C of the first cut was unreliable: Chrome grabs it for DevTools):
-       * - copy: Ctrl+Shift+C, Ctrl+Insert, or plain Ctrl+C while a selection exists
-       *   (SIGINT still goes through when nothing is selected);
-       * - paste: Ctrl+V, Ctrl+Shift+V and Shift+Insert all ride the browser's NATIVE paste
-       *   event into xterm's textarea (no clipboard permission involved) — the browser
-       *   fires `paste` for every one of these, so returning false (skip xterm's own key
-       *   handling, keep the browser default) is the whole implementation; calling the
-       *   async clipboard API here as well double-pastes.
+       * Keys the terminal decides before xterm does. xterm hands this handler its own
+       * textarea's events and nothing else, so everything here is seen only by the terminal
+       * that has focus.
+       *
+       * 1. Clipboard keys, a fixed platform convention (lib/shortcuts/terminal-clipboard.ts):
+       *    a copy writes the selection here; a paste rides the browser's NATIVE paste event
+       *    into xterm's textarea (no clipboard permission involved), so returning false —
+       *    skip xterm's own key handling, keep the browser default — is the whole
+       *    implementation, and calling the async clipboard API as well would double-paste.
+       * 2. The keymap (lib/shortcuts/terminal-keys.ts decides). The terminal-scope command
+       *    (`terminal.close`, ⌃⌥` / Ctrl+Alt+` by default) is consumed here so it never
+       *    reaches the shell. Everything else is xterm's: the shell keeps every key xterm would
+       *    send it, even one an app command is bound to (Ctrl+W, tmux's Ctrl+B, and on Linux
+       *    the Ctrl+Alt chords, which xterm sends as Meta), and the chords xterm sends nothing
+       *    for — Ctrl+`, Ctrl+Shift+`, every ⌘ chord, and on Windows the Ctrl+Alt ones it
+       *    leaves to AltGr — are left un-prevented and bubble to the window dispatcher that
+       *    owns them.
        */
+      const platform = currentPlatform();
       term.attachCustomKeyEventHandler((event) => {
         if (event.type !== "keydown") return true;
-        const key = event.key.toLowerCase();
-        const copyCombo =
-          (event.ctrlKey && event.shiftKey && key === "c") ||
-          (event.ctrlKey && !event.shiftKey && event.key === "Insert") ||
-          (event.ctrlKey && !event.shiftKey && !event.altKey && key === "c" && term.hasSelection());
-        if (copyCombo) {
+        const clipboard = terminalClipboardAction(event, platform, term.hasSelection());
+        if (clipboard === "copy") {
           copySelection();
           return false;
         }
-        const pasteCombo =
-          (event.ctrlKey && !event.altKey && key === "v") ||
-          (!event.ctrlKey && event.shiftKey && event.key === "Insert");
-        if (pasteCombo) {
+        if (clipboard === "paste") {
           return false; // native paste path (see above)
         }
-        // Ctrl+W closes this terminal when the host offers a close (the dock tab's ×, the
-        // standalone page). Consumed here so it never reaches the shell, where it is
-        // readline's delete-word, and seen only by the terminal that has focus — xterm hands
-        // this handler its own textarea's events and nothing else, so no window-level
-        // listener is involved. Browsers keep Ctrl+W for closing the browser tab and may act
-        // first; the desktop shell delivers it here.
-        const closeCombo =
-          event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && key === "w";
-        if (closeCombo && callbacks.current.onCloseRequest) {
-          event.preventDefault();
-          callbacks.current.onCloseRequest();
-          return false;
+        const action = terminalKeyAction(event, keymap(), platform, {
+          canClose: callbacks.current.onCloseRequest !== undefined,
+        });
+        switch (action) {
+          case "shell":
+            return true;
+          case "consume":
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          case "close":
+            event.preventDefault();
+            event.stopPropagation();
+            callbacks.current.onCloseRequest?.();
+            return false;
         }
-        return true;
       });
 
       /**
@@ -400,11 +473,22 @@ export function TerminalView({
        */
       const { signal } = listenerAbort;
       const appOwnsMouse = (): boolean => term.modes.mouseTrackingMode !== "none";
+      // A long press on a touchscreen also raises `contextmenu`, and it is not a right
+      // click: the finger that meant to select text would paste the clipboard into a live
+      // shell instead. Touch gets the key bar's paste cap, which says what it does.
+      let touchPointer = false;
+      container.addEventListener(
+        "pointerdown",
+        (event) => {
+          touchPointer = event.pointerType === "touch" || event.pointerType === "pen";
+        },
+        { signal },
+      );
       container.addEventListener(
         "contextmenu",
         (event) => {
           event.preventDefault(); // a terminal never shows the page's context menu
-          if (appOwnsMouse()) return;
+          if (appOwnsMouse() || touchPointer) return;
           // PuTTY-style right click: copy the selection if there is one, else paste.
           if (term.hasSelection()) copySelection();
           else pasteFromClipboard();
@@ -422,9 +506,78 @@ export function TerminalView({
         },
         { signal },
       );
+      /**
+       * A finger dragging while a program owns the mouse: the wheel it does not have.
+       *
+       * xterm turns its own touch scrolling off for exactly these programs, and they are the
+       * ones that need it most — a TUI on the alternate screen (Claude Code) leaves the
+       * terminal no scrollback to scroll, draws its transcript itself, and pages it only when
+       * a wheel reports. So the travel becomes wheel events (terminal-touch.ts for the
+       * arithmetic), dispatched at xterm's own element so IT encodes them in whatever
+       * protocol the program asked for — hand-rolled SGR here would be a second encoder to
+       * keep in step with the first.
+       *
+       * A tap is left alone: nothing scrolls until the travel passes the slop, so the
+       * browser's tap-to-click still reaches a program that answers clicks. Where the mouse
+       * is free, xterm's own touch handling runs first (on its element, below this one) and
+       * this stays out of the way entirely.
+       */
+      const touchScroll = new TouchScroll();
+      /** The height of one row, in pixels: the screen element is exactly rows cells tall. */
+      const cellHeight = (): number => {
+        const screen = term.element?.querySelector(".xterm-screen");
+        if (!screen || term.rows <= 0) return 0;
+        return screen.getBoundingClientRect().height / term.rows;
+      };
+      const wheelLine = (x: number, y: number, down: boolean): void => {
+        term.element?.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: down ? 1 : -1,
+            // Lines, not pixels: one event is one line, whatever this device's cells measure.
+            deltaMode: 1,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      container.addEventListener(
+        "touchstart",
+        (event) => {
+          if (!appOwnsMouse() || event.touches.length !== 1) {
+            touchScroll.end(); // a second finger (pinch) is not a scroll
+            return;
+          }
+          touchScroll.start(event.touches[0]!.clientY);
+        },
+        { signal, passive: true },
+      );
+      container.addEventListener(
+        "touchmove",
+        (event) => {
+          const touch = event.touches[0];
+          if (!touchScroll.started || event.touches.length !== 1 || touch === undefined) return;
+          const lines = touchScroll.move(touch.clientY, cellHeight());
+          if (!touchScroll.engaged) return;
+          // The host carries `touch-none` on a touch device, so there is normally nothing
+          // left to cancel; this is for the device that reports a fine pointer and is one
+          // anyway, where the page would otherwise scroll out from under the gesture.
+          if (event.cancelable) event.preventDefault();
+          for (let i = Math.abs(lines); i > 0; i--) {
+            wheelLine(touch.clientX, touch.clientY, lines > 0);
+          }
+        },
+        { signal, passive: false },
+      );
+      container.addEventListener("touchend", () => touchScroll.end(), { signal, passive: true });
+      container.addEventListener("touchcancel", () => touchScroll.end(), { signal, passive: true });
+
       // Click-to-focus anywhere in the view, padding included — finishing a selection drag
       // also lands here, which is fine: focusing xterm's textarea keeps the selection.
       container.addEventListener("mouseup", () => term.focus(), { signal });
+      container.addEventListener("focusin", () => setFocused(true), { signal });
+      container.addEventListener("focusout", () => setFocused(false), { signal });
 
       // Size ownership follows the user's attention (see server size-ownership.ts): the pty
       // is laid out for the most recent CLAIMING connection, and `update`s from anyone else
@@ -432,18 +585,25 @@ export function TerminalView({
       // another window attaches this one could never win its geometry back.
       container.addEventListener(
         "focusin",
-        () => {
-          if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(encodeResize(term.cols, term.rows, "claim"));
-          }
-        },
+        () => connection.send(encodeResize(term.cols, term.rows, "claim")),
         { signal },
       );
 
+      const send = (data: string): void => {
+        connection.send(encodeFrame(TerminalOpcode.Input, data));
+      };
+
       term.onData((data) => {
-        if (socket?.readyState === WebSocket.OPEN) {
-          socket.send(encodeFrame(TerminalOpcode.Input, data));
+        // A sticky Ctrl/Alt armed on the touch key bar composes with the next character the
+        // soft keyboard produces, then spends itself. Nothing to do when none is armed,
+        // which is every keystroke on a physical keyboard.
+        const mods = modifiersRef.current;
+        if (!hasModifier(mods)) {
+          send(data);
+          return;
         }
+        send(applyModifiers(data, mods));
+        setModifiers(NO_MODIFIERS);
       });
 
       // Title changes ride the ordinary byte stream (OSC 0/2); this client's xterm parses
@@ -452,70 +612,148 @@ export function TerminalView({
         if (!disposed) callbacks.current.onTitle?.(title);
       });
 
-      void (async () => {
-        try {
+      /**
+       * One connection, however many sockets that takes (terminal-connection.ts): it owns
+       * the first attach, the heartbeat and every reattach. This view only says what a
+       * frame means and what a status looks like.
+       */
+      const connection = new TerminalConnection({
+        first: async () => {
           const terminal = await callbacks.current.ensure(term.cols, term.rows);
-          if (disposed) return;
           callbacks.current.onInfo?.(terminal);
-
-          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows));
-          socket.binaryType = "arraybuffer";
-
-          socket.onopen = () => report("ready");
-          socket.onmessage = (event) => {
-            if (!(event.data instanceof ArrayBuffer)) return;
-            const frame = decodeFrame(event.data);
-            if (!frame) return;
-            switch (frame.opcode) {
-              // The restore stream is self-contained (reset + clear + repaint + cursor), so
-              // it is written like any other output; calling term.reset() here would race
-              // with xterm's parser instead.
-              case TerminalOpcode.Restore:
-              case TerminalOpcode.Output:
-                term.write(frame.text);
-                break;
-              case TerminalOpcode.Exit: {
-                const { exitCode } = JSON.parse(frame.text) as { exitCode: number };
-                exited = true;
-                report("exited", String(exitCode));
-                break;
-              }
-              default:
-                break;
+          return terminal.id;
+        },
+        // A reattach that finds no terminal has nothing to come back to: the shell exited
+        // and was reaped while this page was away.
+        recheck: async (id) =>
+          (await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`)) !== null,
+        open: (id, handlers) => {
+          const ws = new WebSocket(streamUrl(id, term.cols, term.rows, userId));
+          ws.binaryType = "arraybuffer";
+          ws.onopen = () => handlers.onOpen();
+          ws.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) handlers.onMessage(event.data);
+          };
+          // `error` is always followed by `close`; handling both would report twice.
+          ws.onclose = () => handlers.onClose();
+          return {
+            send: (bytes) => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(bytes);
+            },
+            close: () => ws.close(),
+          };
+        },
+        onFrame: (frame) => {
+          switch (frame.opcode) {
+            // The restore stream is self-contained (reset + clear + repaint + cursor), so
+            // it is written like any other output; calling term.reset() here would race
+            // with xterm's parser instead.
+            case TerminalOpcode.Restore:
+            case TerminalOpcode.Output:
+              term.write(frame.text);
+              break;
+            case TerminalOpcode.Exit: {
+              const { exitCode } = JSON.parse(frame.text) as { exitCode: number };
+              exited = true;
+              connection.stop(); // an exited pty is not something to reattach to
+              report("exited", String(exitCode));
+              break;
             }
-          };
-          socket.onerror = () => report("error", "stream error");
-          socket.onclose = () => {
-            if (!exited) report("error", "stream closed");
-          };
-        } catch (err) {
-          report("error", err instanceof Error ? err.message : String(err));
-        }
-      })();
+            default:
+              break;
+          }
+        },
+        onStatus: (status, detail) => {
+          if (exited) return; // the exit already said what happened to this terminal
+          report(status, detail);
+        },
+      });
+      connection.start();
+
+      // A network that comes back, or a tab that does, is a reason to reattach now instead
+      // of sitting out the backoff — on a phone both happen all day. Waking also probes a
+      // socket that merely LOOKS open, which is what a suspended tab usually comes back to.
+      window.addEventListener("online", () => connection.wake(), { signal });
+      document.addEventListener(
+        "visibilitychange",
+        () => {
+          if (!document.hidden) connection.wake();
+        },
+        { signal },
+      );
 
       // Geometry changes are `update`s: this connection claimed the size when it attached
       // (?cols/?rows on the stream URL, and again on focusin above); an update only
       // applies while this connection still holds ownership.
+      // Settled, not per pixel. A phone resizes this container constantly — the address bar
+      // collapses, the soft keyboard opens, the dock is dragged — and each size that reaches
+      // the pty costs a SIGWINCH and a full repaint from whatever is running, which on a slow
+      // link is the most expensive thing the terminal can do. So fit on the trailing edge,
+      // and only tell the server when the GRID actually changed; most pixel changes do not
+      // move it.
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+      let sentCols = term.cols;
+      let sentRows = term.rows;
       const observer = new ResizeObserver(() => {
         if (disposed) return;
-        fit.fit();
-        if (socket?.readyState === WebSocket.OPEN) {
-          socket.send(encodeResize(term.cols, term.rows, "update"));
-        }
+        if (resizeTimer !== null) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          if (disposed) return;
+          fit.fit();
+          if (term.cols === sentCols && term.rows === sentRows) return;
+          sentCols = term.cols;
+          sentRows = term.rows;
+          connection.send(encodeResize(term.cols, term.rows, "update"));
+        }, RESIZE_SETTLE_MS);
       });
       observer.observe(container);
       term.focus();
 
+      // What the touch key bar drives. Published after the terminal is open and dropped on
+      // dispose, so a bar tap between two attaches is a no-op rather than a throw.
+      control.current = {
+        send,
+        paste: pasteFromClipboard,
+        focus: () => term.focus(),
+        blur: () => term.blur(),
+        applicationCursorKeys: () => term.modes.applicationCursorKeysMode,
+      };
+
       return () => {
         disposed = true;
         termRef.current = null;
+        control.current = null;
         listenerAbort.abort();
         observer.disconnect();
-        socket?.close();
+        if (resizeTimer !== null) clearTimeout(resizeTimer);
+        connection.stop();
         term.dispose();
       };
     }
   }, []);
 
-  return <div ref={hostRef} className={className ?? "min-h-0 flex-1 overflow-hidden"} />;
+  // The className lands on the WRAPPER, not on the xterm host: the host has to be the
+  // flex child that takes the leftover height, so that the bar's own height comes off the
+  // terminal's grid instead of pushing the surface past its container.
+  return (
+    <div className={`flex flex-col ${className ?? "min-h-0 flex-1 overflow-hidden"}`}>
+      {/* `touch-none` on a touch device: the drag above is the gesture, and the browser
+          must not take it for its own (a page scroll, a pull-to-refresh) — which also
+          stops mid-gesture cancellation, since a taken-over touch stops being cancelable.
+          xterm's own touch scrolling sets scrollTop itself and is unaffected. */}
+      <div
+        ref={hostRef}
+        className={`min-h-0 flex-1 overflow-hidden ${coarsePointer ? "touch-none" : ""}`}
+      />
+      {coarsePointer && (
+        <TerminalKeyBar
+          control={control}
+          modifiers={modifiers}
+          onModifiers={setModifiers}
+          focused={focused}
+        />
+      )}
+    </div>
+  );
 }

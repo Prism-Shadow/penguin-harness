@@ -11,36 +11,41 @@
  * not there: the far side only has to `cat` two files, which every shell can do.
  */
 
+import type { RemoteLayout } from "./layout.js";
+
 /** Separates the identity line from the manifest text in the probe's output. */
 const SECTION = "---penguin---";
 
 /**
- * POSIX probe. `uname -s -m` names the machine; the manifest is read from the program
- * directory the installer writes (`~/.penguin`), and harness.json from the default data root
- * (core's resolveRoot: `~/.penguin/data`) — a remote's PENGUIN_INSTALL_DIR or PENGUIN_HOME
- * override is not visible over a non-interactive ssh, and the defaults are where an install
- * this page made would land.
+ * POSIX probe. `uname -s -m` names the machine; the manifest is read from the layout's
+ * program directory, and harness.json from its data root — a remote's own
+ * PENGUIN_INSTALL_DIR or PENGUIN_HOME override is not visible over a non-interactive ssh,
+ * and the layout is where an install this page made would land (layout.ts).
  */
-export const POSIX_PROBE = [
-  "uname -s -m",
-  `echo ${SECTION}`,
-  'cat "$HOME/.penguin/lib/package.json" 2>/dev/null || true',
-  `echo ${SECTION}`,
-  'cat "$HOME/.penguin/data/hmr/harness.json" 2>/dev/null || true',
-].join("; ");
+export function posixProbe(layout: RemoteLayout): string {
+  return [
+    "uname -s -m",
+    `echo ${SECTION}`,
+    `cat "${layout.programDir.posix}/lib/package.json" 2>/dev/null || true`,
+    `echo ${SECTION}`,
+    `cat "${layout.dataRoot.posix}/hmr/harness.json" 2>/dev/null || true`,
+  ].join("; ");
+}
 
 /**
  * Windows (cmd.exe) probe. `&` chains commands there, `%…%` expands variables, `2>nul`
  * discards the error from a missing file — none of which sh would do the same way, which is
  * why this is a separate command rather than a portable one.
  */
-export const WINDOWS_PROBE = [
-  "echo %OS% %PROCESSOR_ARCHITECTURE%",
-  `echo ${SECTION}`,
-  'type "%USERPROFILE%\\.penguin\\lib\\package.json" 2>nul',
-  `echo ${SECTION}`,
-  'type "%USERPROFILE%\\.penguin\\data\\hmr\\harness.json" 2>nul',
-].join("&");
+export function windowsProbe(layout: RemoteLayout): string {
+  return [
+    "echo %OS% %PROCESSOR_ARCHITECTURE%",
+    `echo ${SECTION}`,
+    `type "${layout.programDir.win}\\lib\\package.json" 2>nul`,
+    `echo ${SECTION}`,
+    `type "${layout.dataRoot.win}\\hmr\\harness.json" 2>nul`,
+  ].join("&");
+}
 
 /** Node's own names, matching what the release targets are spelled from. */
 export type RemotePlatform = "linux" | "darwin" | "win32";

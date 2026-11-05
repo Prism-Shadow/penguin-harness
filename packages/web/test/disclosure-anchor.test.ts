@@ -1,35 +1,38 @@
 /**
- * The rule that decides which disclosure a site gets (src/components/ui/info-popover.tsx and
- * help-fold.tsx): **the circled "?" may only appear beside a title.**
+ * The rule that decides which disclosure a site gets (the UI package's InfoPopover and
+ * HelpFold): **the circled "?" may only appear beside a title, or right of the reading it
+ * breaks down.**
  *
  * A "?" is an anchored mark — it reads as help because it modifies the title next to it. Standing
  * alone at the top of a panel it modifies nothing, and a reader has to click it to find out what
  * it even refers to. Where there is no title, the disclosure has to name itself, which is what
- * `HelpFold` is for.
+ * `HelpFold` is for. A statistic's breakdown is the other anchor: its "?" (`StatHint`) follows
+ * the total it splits.
  *
  * This is a rule rather than a preference, so it is checked rather than remembered. The check
  * parses the real JSX with the TypeScript parser instead of matching text: whether a title sits
  * beside a "?" is a question about sibling nodes, and a regex cannot see siblings.
+ * Candidate selection must keep unanchored disclosures while ignoring names in comments or text.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
+import type { SourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: the rule follows InfoPopover's call sites wherever they live. */
+const SCAN = scanSources();
 
 /** Components whose whole job is to render a field's or a section's title. */
 const TITLE_ELEMENTS = new Set(["FieldLabel"]);
 
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
+/**
+ * The "?" right of a statistic's total. Its anchor is a reading — a value in an element of its
+ * own, often with the "?" in a slot after it so the values of a column stay aligned — rather than
+ * title text, so it is held to that shape instead: something comes before it in its row. It is
+ * checked where it is placed; its own body, the bare InfoPopover it wraps, is not.
+ */
+const READING_HINT = "StatHint";
+const READING_HINT_HOME = "packages/web/src/components/ui/stat-hint.tsx";
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -65,30 +68,66 @@ function slotIn(node: ts.Node): { host: ts.JsxElement | ts.JsxFragment; slot: ts
   return null;
 }
 
-/** Every `<InfoPopover>` in the tree that has no title among its preceding siblings. */
-function findOrphans(): string[] {
+/** Does this sibling render anything at all? A reading is an element of its own, not bare text. */
+function rendersAnything(node: ts.Node): boolean {
+  if (ts.isJsxText(node)) return node.text.trim() !== "";
+  return !ts.isJsxExpression(node) || node.expression !== undefined;
+}
+
+/**
+ * Is something rendered before a reading's "?" in its row? A slot holding nothing but the "?"
+ * stands in for it, so the search moves out to the row around that slot.
+ */
+function readingAnchored(node: ts.Node): boolean {
+  let here = slotIn(node);
+  while (here !== null) {
+    const { host, slot } = here;
+    if (host.children.slice(0, host.children.indexOf(slot as never)).some(rendersAnything)) {
+      return true;
+    }
+    const alone = host.children.every((child) => child === slot || !rendersAnything(child));
+    if (!alone || !ts.isJsxElement(host)) return false;
+    here = slotIn(host);
+  }
+  return false;
+}
+
+/**
+ * Every `<InfoPopover>` in the tree that has no title among its preceding siblings, and every
+ * reading's "?" with nothing before it in its row.
+ */
+function findOrphans(
+  files: readonly Pick<SourceFile, "id" | "path" | "text">[] = SCAN.files.filter((f) =>
+    f.name.endsWith(".tsx"),
+  ),
+): string[] {
   const orphans: string[] = [];
-  for (const path of tsxFiles()) {
+  for (const file of files) {
+    // The AST compares these tag spellings verbatim; files mentioning neither cannot have a hit.
+    if (!file.text.includes("InfoPopover") && !file.text.includes(READING_HINT)) continue;
     const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
+      file.path,
+      file.text,
       ts.ScriptTarget.Latest,
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
     );
+    const orphan = (node: ts.Node): void => {
+      const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+      orphans.push(`${file.id}:${line}`);
+    };
     const visit = (node: ts.Node): void => {
-      if (jsxTag(node) === "InfoPopover") {
+      const tag = jsxTag(node);
+      if (tag === "InfoPopover" && file.id !== READING_HINT_HOME) {
         const here = slotIn(node);
         const anchored =
           here !== null &&
           here.host.children
             .slice(0, here.host.children.indexOf(here.slot as never))
             .some(rendersTitle);
-        if (!anchored) {
-          const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          orphans.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line}`);
-        }
+        if (!anchored) orphan(node);
       }
+      if (tag === READING_HINT && !readingAnchored(node)) orphan(node);
       ts.forEachChild(node, visit);
     };
     visit(source);
@@ -97,42 +136,26 @@ function findOrphans(): string[] {
 }
 
 describe("disclosure anchoring", () => {
+  it("scans every source root, and finds the two disclosures in one place each", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/info-popover.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/overlays/info-popover/help-fold.tsx");
+  });
+
   it("never leaves an InfoPopover standing without a title beside it", () => {
     expect(
       findOrphans(),
       'A circled "?" must sit after a title. Where the surface has no title — an Agent settings ' +
-        "tab, whose name lives in the tab bar — use HelpFold (components/ui/help-fold.tsx) instead.",
+        "tab, whose name lives in the tab bar — use HelpFold instead.",
     ).toEqual([]);
   });
 
   it("actually looks at siblings — the check itself is exercised on a known-orphan shape", () => {
     // Guards the guard: if `rendersTitle`/`slotIn` ever stopped seeing structure, the assertion
     // above would pass on broken code. These are the four shapes that matter.
-    const parse = (jsx: string) =>
-      ts.createSourceFile(
-        "t.tsx",
-        `const x = ${jsx};`,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-      );
-    const anchoredOf = (jsx: string): boolean => {
-      const source = parse(jsx);
-      let result = false;
-      const visit = (node: ts.Node): void => {
-        if (jsxTag(node) === "InfoPopover") {
-          const here = slotIn(node);
-          result =
-            here !== null &&
-            here.host.children
-              .slice(0, here.host.children.indexOf(here.slot as never))
-              .some(rendersTitle);
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(source);
-      return result;
-    };
+    const scan = (jsx: string): string[] =>
+      findOrphans([{ id: "t.tsx", path: "t.tsx", text: `const x = ${jsx};` }]);
+    const anchoredOf = (jsx: string): boolean => scan(jsx).length === 0;
     // A title beside it, plain and interpolated, and through a conditional wrapper.
     expect(anchoredOf("<h1>Vault<InfoPopover>d</InfoPopover></h1>")).toBe(true);
     expect(anchoredOf("<h1>{title}<InfoPopover>d</InfoPopover></h1>")).toBe(true);
@@ -146,5 +169,15 @@ describe("disclosure anchoring", () => {
     expect(anchoredOf("<div><InfoPopover>d</InfoPopover><Button>Import</Button></div>")).toBe(
       false,
     );
+    // A reading's "?": after the value, in its element or from a slot of its own; never alone.
+    expect(
+      anchoredOf("<div><span>{v}</span><span>{h && <StatHint>d</StatHint>}</span></div>"),
+    ).toBe(true);
+    expect(anchoredOf("<li>{v}{h && <StatHint>d</StatHint>}</li>")).toBe(true);
+    expect(anchoredOf('<div className="space-y-4"><span><StatHint>d</StatHint></span></div>')).toBe(
+      false,
+    );
+    expect(scan("<div>Unrelated content</div>")).toEqual([]);
+    expect(scan("<div>InfoPopover {/* <StatHint /> */}</div>")).toEqual([]);
   });
 });

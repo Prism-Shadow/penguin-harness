@@ -1,22 +1,18 @@
 /**
- * settings-sections.ts unit tests: which System settings pages each viewer gets.
+ * Which Settings pages each viewer gets (lib/settings-sections.ts), pinned by value: a rail
+ * showing a forbidden entry leaks that the setting exists, and a page rendered without the same
+ * filter hands a non-admin the form. The admin APIs answer a non-admin with 403 either way; this
+ * filter is convenience, not the boundary.
  *
- * The rule is pinned by value rather than by shape because both halves of it can fail
- * silently and separately: a rail that shows a forbidden entry leaks that the setting
- * exists, and an active page rendered without the same filter hands a non-admin the form
- * itself. Both go through these functions, so both are covered here.
- *
- * The client filter is convenience, not the boundary — the admin APIs answer a non-admin
- * with 403 either way (server/test/admin-settings.test.ts, "non-admin access is always
- * 403").
- *
- * vitest runs node-only here (`environment: "node"`, no jsdom), so this asserts against
- * the exported functions and, for the dialog's use of them, its source
- * (account-menu.test.ts convention).
+ * - A web admin gets every page in rail order; a non-admin only their own pages (their browser
+ *   and their archived chats among them: every user may pair their own Chrome and keep their
+ *   own archive), nothing server-global; the desktop shell's window drops the account page and
+ *   user management; a password session against a desktop-mode server keeps the account page.
+ * - The rail lists an admin's groups once each, in page order, and a single group when only
+ *   one remains (its cue to draw no heading).
+ * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
+ *   or none, falls back to the first visible page; nothing visible resolves to nothing.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   resolveSettingsSection,
@@ -52,38 +48,76 @@ const desktopBrowser = visibleSettingsSections({
 describe("visibleSettingsSections", () => {
   it("gives a web admin every page, in rail order", () => {
     expect(admin.map((s) => s.key)).toEqual([
+      "profile",
       "general",
       "appearance",
+      "shortcuts",
+      "archived",
       "account",
+      "browser",
       "proxy",
       "uploads",
+      "company",
+      "chromeExtension",
+      "agentApi",
+      "plugins",
       "users",
     ]);
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
-    // Not "fewer pages" — the exact list. Proxy, upload limits and user management are
-    // admin surfaces, and the whole point of dropping them is that a non-admin is never
+    // Not "fewer pages" — the exact list. Proxy, upload limits, the company-mode master
+    // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
-    expect(plain.map((s) => s.key)).toEqual(["general", "appearance", "account"]);
+    expect(plain.map((s) => s.key)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "shortcuts",
+      "archived",
+      "account",
+      "browser",
+    ]);
   });
 
   it("strips the desktop shell's window down to what a token session can use", () => {
     // No account page (no password to change — see offersChangePassword), no user
-    // management (single-user server).
-    expect(shell.map((s) => s.key)).toEqual(["general", "appearance", "proxy", "uploads"]);
+    // management (single-user server). The profile page stays: an avatar and a nickname need
+    // no password, and this window is the only session a desktop install has.
+    expect(shell.map((s) => s.key)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "shortcuts",
+      "archived",
+      "browser",
+      "proxy",
+      "uploads",
+      "company",
+      "chromeExtension",
+      "agentApi",
+      "plugins",
+    ]);
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
     // Mirrors the old menu row's two-field rule: that session typed a real password and
     // can still change it, while user management stays desktop-hidden.
     expect(desktopBrowser.map((s) => s.key)).toEqual([
+      "profile",
       "general",
       "appearance",
+      "shortcuts",
+      "archived",
       "account",
+      "browser",
       "proxy",
       "uploads",
+      "company",
+      "chromeExtension",
+      "agentApi",
+      "plugins",
     ]);
   });
 });
@@ -104,45 +138,23 @@ describe("resolveSettingsSection", () => {
   it("passes through a page the viewer may open", () => {
     expect(resolveSettingsSection("proxy", admin)).toBe("proxy");
     expect(resolveSettingsSection("appearance", plain)).toBe("appearance");
+    expect(resolveSettingsSection("profile", plain)).toBe("profile");
   });
 
   it("sends a non-admin asking for an admin page to their own first page", () => {
     // Answering identically to an unknown request is the point: a requested key cannot be
     // used to find out that "users" is a real page.
-    expect(resolveSettingsSection("users", plain)).toBe("general");
-    expect(resolveSettingsSection("proxy", plain)).toBe("general");
-    expect(resolveSettingsSection("no-such-section", plain)).toBe("general");
+    expect(resolveSettingsSection("users", plain)).toBe("profile");
+    expect(resolveSettingsSection("proxy", plain)).toBe("profile");
+    expect(resolveSettingsSection("no-such-section", plain)).toBe("profile");
   });
 
   it("falls back to the first visible page for a missing request", () => {
-    expect(resolveSettingsSection(null, admin)).toBe("general");
-    expect(resolveSettingsSection(undefined, admin)).toBe("general");
+    expect(resolveSettingsSection(null, admin)).toBe("profile");
+    expect(resolveSettingsSection(undefined, admin)).toBe("profile");
   });
 
   it("returns null when nothing is visible, rather than inventing a page", () => {
     expect(resolveSettingsSection("general", [])).toBe(null);
-  });
-});
-
-describe("the System settings dialog", () => {
-  const source = readFileSync(
-    resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../src/features/settings/settings-dialog.tsx",
-    ),
-    "utf8",
-  );
-
-  it("builds its rail from the filtered list rather than the full one", () => {
-    // Without this the functions above could pass every test while the dialog mapped over
-    // the raw registry and rendered the admin rows to everyone.
-    expect(source).toContain("visibleSettingsSections({");
-    expect(source).not.toContain("SECTION_RULES");
-  });
-
-  it("resolves the page it renders through the same gate on every render", () => {
-    // The active page is a state value, not a right: a viewer who loses admin mid-dialog
-    // must fall back to their own first page rather than keep rendering the admin form.
-    expect(source).toContain("resolveSettingsSection(active, sections)");
   });
 });

@@ -8,7 +8,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { migrate } from "./migrations.js";
+import { migrate } from "./migrations/index.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
@@ -65,6 +65,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "fork_count", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "thinking_level", "TEXT");
+  ensureColumn(db, "sessions", "sandbox", "TEXT");
   // A v0.2.0 web.db has auth_sessions without `via`; CREATE TABLE IF NOT EXISTS never adds a
   // column, so every INSERT would fail "no column named via" until this runs.
   ensureColumn(db, "auth_sessions", "via", "TEXT");
@@ -92,8 +93,8 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // exist, so a downgrade after two Sessions saved the same bot needs those rows removed.
   db.exec("DROP INDEX IF EXISTS idx_messaging_account");
   upgradeLastActiveAt(db);
-  // The runtime's own open is the ONLY place a restart-only migration may be applied: it
-  // owns the process, so there is no boot to roll back out from under it.
+  // The runtime's own open is the ONLY place a contract migration is applied: it owns the
+  // process, so there is no boot to roll back out from under it.
   migrate(db);
   return db;
 }

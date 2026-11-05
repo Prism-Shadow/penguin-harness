@@ -22,10 +22,22 @@ import type {
   ModelOAuthStatusResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface ModelOauthRouteDeps extends ModelsRouteDeps {
+  config: ServerConfig;
+  manager: SessionManager;
+  modelOAuth: ModelOAuth;
+  access: Access;
+}
 import { HttpError } from "../errors.js";
+import { publicOriginOf } from "../public-origin.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
+import type { ModelsRouteDeps } from "./models.js";
+import type { Access, ModelOAuth } from "../../mechanisms/projects.js";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -36,30 +48,6 @@ const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
  * control sequence reaches the exchange body or the page below.
  */
 const CODE_RE = /^[A-Za-z0-9._~-]{1,512}$/;
-
-/**
- * Origin the browser reached this server on, which is the origin the provider must redirect
- * back to. Taken from the request's own URL, so loopback, a LAN address and a custom port
- * all work without configuration.
- *
- * `x-forwarded-proto` / `x-forwarded-host` are caller-supplied and are honoured only when
- * the deployment says a reverse proxy sets them (PENGUIN_TRUST_PROXY=1) — the same opt-in
- * the hot-update network gate requires, and for the same reason: without it anyone who can
- * reach the bind could choose where the authorization lands.
- */
-export function requestOrigin(
-  url: string,
-  headers: { proto?: string; host?: string },
-  trustProxy: boolean,
-): string {
-  const own = new URL(url);
-  if (!trustProxy) return own.origin;
-  // A chain of proxies appends to these headers; the client-facing hop is the first value.
-  const proto = headers.proto?.split(",")[0]?.trim();
-  const host = headers.host?.split(",")[0]?.trim();
-  const scheme = proto === "http" || proto === "https" ? proto : own.protocol.replace(":", "");
-  return `${scheme}://${host !== undefined && host !== "" ? host : own.host}`;
-}
 
 /** Validates the optional `mode` field of a start request. */
 function parseMode(value: unknown): ModelOAuthMode {
@@ -110,7 +98,7 @@ p { margin: 0; color: #4b5563; }
  * key up, open tabs unlock, and the machines this Project uses receive it. One helper for
  * every write path, so a key minted here reaches a machine the same way one pasted does.
  */
-function credentialsChanged(deps: AppDeps, projectId: string): void {
+function credentialsChanged(deps: ModelOauthRouteDeps, projectId: string): void {
   modelConfigChanged(deps, projectId);
 }
 
@@ -149,7 +137,7 @@ function credentialsChanged(deps: AppDeps, projectId: string): void {
  *
  * Answers HTML throughout — a person is looking at this tab, not a client parsing JSON.
  */
-export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
+export function modelOAuthCallbackRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) => {
@@ -195,15 +183,17 @@ export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
   return app;
 }
 
-export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
+export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
-  // such flow and what keeps the authorize/exchange endpoints out of client control.
+  // such flow and what keeps the authorize/exchange endpoints out of client control. The
+  // answer carries the mode the flow actually opened in, since a redirect this origin cannot
+  // receive opens as manual.
   app.post("/start", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
     const mode = parseMode(body.mode);
@@ -212,18 +202,10 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
       userId: c.var.user.userId,
       provider,
       mode,
-      callbackOrigin: requestOrigin(
-        c.req.url,
-        {
-          ...(c.req.header("x-forwarded-proto") !== undefined
-            ? { proto: c.req.header("x-forwarded-proto")! }
-            : {}),
-          ...(c.req.header("x-forwarded-host") !== undefined
-            ? { host: c.req.header("x-forwarded-host")! }
-            : {}),
-        },
-        deps.config.trustProxy,
-      ),
+      // The provider must send the browser back to the address it is on: the public origin.
+      // It redirects only to HTTPS or loopback HTTP, so an origin like a LAN address over
+      // plain HTTP gets a manual flow instead (the service's `openedMode`).
+      callbackOrigin: publicOriginOf(c, deps.config.trustProxy),
     });
     return c.json(started satisfies ModelOAuthStartResponse);
   });
@@ -233,7 +215,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
   // callback this one IS reached by the App's own signed-in tab.
   app.post("/:flowId/code", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const flowId = c.req.param("flowId") ?? "";
     if (!FLOW_ID_RE.test(flowId)) {
       throw new HttpError(
@@ -263,7 +245,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
   // written under the owner's own session (see the service's `deposit` and `poll`).
   app.get("/:flowId", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const flowId = c.req.param("flowId") ?? "";
     if (!FLOW_ID_RE.test(flowId)) {
       throw new HttpError(

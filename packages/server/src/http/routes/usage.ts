@@ -7,7 +7,8 @@
  * together);
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&fromTs&toTs&agentId&kind — one page
  * of the error detail table, for paging back past the first page the dashboard already
- * returns;
+ * returns (both reads also take `utcOffsetMinutes`, the viewer's offset from UTC, whose
+ * calendar day the table folds a day's repeats by);
  * DELETE /api/projects/:p/usage/errors?from&to&fromTs&toTs&agentId — empties that table for
  * the filter the panel is showing (owner only; `from`/`to` are required, unlike on the reads;
  * an admin's clear also takes the unattributed rows an admin's read shows);
@@ -23,7 +24,14 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { UsageQueries } from "../../mechanisms/observability.js";
+import type { Access } from "../../mechanisms/projects.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface UsageRouteDeps {
+  access: Access;
+  usageService: UsageQueries;
+}
 
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
 
@@ -44,6 +52,26 @@ function optionalTsParam(value: string | undefined, label: string): string | und
   return new Date(ms).toISOString();
 }
 
+/** The widest offset from UTC a clock actually uses (UTC+14), which bounds `utcOffsetMinutes`. */
+const UTC_OFFSET_MAX_MINUTES = 14 * 60;
+
+/**
+ * The optional viewer offset east of UTC, in minutes: whose calendar day the error table folds
+ * a day's repeats by (see ErrorsRepo.recent). A signed whole number within the offsets clocks
+ * use, and nothing else — a typo is a 400 rather than a quietly different day.
+ */
+function utcOffsetQuery(c: Context<AppEnv>): number | undefined {
+  const raw = c.req.query("utcOffsetMinutes");
+  if (raw === undefined || raw === "") return undefined;
+  const minutes = /^-?\d{1,4}$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!(Math.abs(minutes) <= UTC_OFFSET_MAX_MINUTES)) {
+    throw badRequest(
+      `utcOffsetMinutes must be a whole number of minutes between -${UTC_OFFSET_MAX_MINUTES} and ${UTC_OFFSET_MAX_MINUTES}.`,
+    );
+  }
+  return minutes;
+}
+
 /**
  * The optional trailing-window pair, normalized: both or neither, and in order. One parser
  * for the dashboard and the two error routes, so a window means the same thing to all three.
@@ -60,13 +88,13 @@ function tsWindowQuery(c: Context<AppEnv>): { fromTs?: string; toTs?: string } {
   return { ...(fromTs !== undefined ? { fromTs } : {}), ...(toTs !== undefined ? { toTs } : {}) };
 }
 
-export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
+export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation.
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const groupByRaw = c.req.query("groupBy") ?? "date";
     if (!(GROUP_BYS as readonly string[]).includes(groupByRaw)) {
       throw badRequest(`groupBy must be one of ${GROUP_BYS.join(" / ")}.`);
@@ -79,6 +107,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     const window = tsWindowQuery(c);
+    const utcOffsetMinutes = utcOffsetQuery(c);
     const agentId = c.req.query("agentId");
     const provider = c.req.query("provider");
     const modelId = c.req.query("modelId");
@@ -87,6 +116,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
         groupBy: groupByRaw as UsageGroupBy,
         granularity,
         ...window,
+        ...(utcOffsetMinutes !== undefined ? { utcOffsetMinutes } : {}),
         // Unattributed errors (login failures, process crashes, etc. with no Project
         // context) are visible only to admins: requireProjectAccess only guarantees
         // "is a member of this Project" — a regular member seeing another tenant's errors
@@ -107,7 +137,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   // than a reason to widen the models response with telemetry.
   app.get("/model-totals", (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(deps.usageService.modelTotals(projectId));
   });
 
@@ -118,11 +148,12 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   // narrowing the summary above does not do.
   app.get("/errors", (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const { offset, limit } = paginationQuery(c);
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     const window = tsWindowQuery(c);
+    const utcOffsetMinutes = utcOffsetQuery(c);
     const agentId = c.req.query("agentId");
     const kindRaw = c.req.query("kind");
     // `kind` narrows to one of the two categories the panel's stats already separate. It is
@@ -145,6 +176,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(from !== undefined ? { from } : {}),
         ...(to !== undefined ? { to } : {}),
         ...window,
+        ...(utcOffsetMinutes !== undefined ? { utcOffsetMinutes } : {}),
         ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
         ...(kindRaw !== undefined && kindRaw !== "" ? { kind: kindRaw } : {}),
       }),
@@ -162,7 +194,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     // Owner only, the rule Agent deletion applies to error rows already (it cascade-deletes
     // them): membership is enough to READ the panel, but these rows are the Project's shared
     // history and one member emptying them takes them from everyone.
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     // Both bounds are required here, unlike on the two reads: a missing bound reads as

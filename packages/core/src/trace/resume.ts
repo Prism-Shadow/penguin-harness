@@ -7,7 +7,7 @@
  * placeholders) is never written to Trace — replay reconstructs from the original messages
  * (unanswered input is resent as-is, pairing placeholders are resynthesized as needed). History is
  * guaranteed to be **structurally valid** (turns complete, tool_call pairs matched), not a
- * byte-for-byte match of what AgentHub actually received; incomplete model output (thinking/text)
+ * byte-for-byte match of what MMSP actually received; incomplete model output (thinking/text)
  * is allowed to be lost.
  *
  * Messages are attributed to a Request by **position**, not by content inspection:
@@ -18,10 +18,13 @@
  *     input.
  *   - Output = assistant messages between this `start` and `stop`.
  *
+ * Task records (`task_begin` / `task_end`) are events and take no part in this attribution.
+ *
  * Determination order: first check file-level compaction closure; then evaluate turn by turn
  * (completed turns go to history, others are dropped wholesale while keeping outputs paired with
- * already-committed tool_calls); finally, the remaining input is the carry-over, with pairing
- * backfill applied.
+ * already-committed tool_calls — a turn whose provider rejected an image gives its input back
+ * with every image replaced by the note the engine resent it with); finally, the remaining
+ * input is the carry-over, with pairing backfill applied.
  * Docs: /docs/sessions-and-traces § "Session recovery".
  */
 import { readdir, readFile } from "node:fs/promises";
@@ -32,24 +35,32 @@ import {
   isCompleteModelMessage,
   isEventMessage,
   isSessionMeta,
+  lastNonTaskRecord,
   toolCallOutput,
   userText,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
   CompactionBeginPayload,
   CompactionEndPayload,
   CompactionMode,
   CompactionReason,
   CompleteModelMessage,
-  OmniMessage,
+  AmspRecord,
   RequestBeginPayload,
   RequestEndPayload,
   SessionMetaMessage,
   TokenCounts,
   TokenUsagePayload,
   ToolCallPayload,
-} from "../omnimessage/index.js";
-import { buildContextSummaryText, extractSummary } from "../omnimessage/markers/index.js";
+} from "@prismshadow/amsp/records";
+import {
+  buildContextSummaryText,
+  extractSummary,
+  MARKER_TAGS,
+  parseInPlaceModelSwitch,
+  startsWithMarker,
+} from "@prismshadow/amsp/markers";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {
@@ -60,11 +71,18 @@ export interface ResumeResult {
    * Already includes pairing-backfill placeholders — placeholders exist only in memory
    * (synthesized carry-over is never written to Trace) and are resynthesized on each resume.
    */
-  carryOver: OmniMessage[];
+  carryOver: AmspRecord[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
   /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
-  pendingSummary?: OmniMessage;
+  pendingSummary?: AmspRecord;
+  /**
+   * The `[context_summary]` this file's context opened with — or the `[model_switch_from]`
+   * handoff a model switch opened it with instead — while no turn has completed on it: its
+   * first pending input (so it is in `carryOver` too). A model switch away from such a context
+   * writes it at the head of the next file (see ContextEngine's `openingSummary`).
+   */
+  openingSummary?: AmspRecord;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
   sessionTokens: TokenCounts;
   /** The request.total from the last token_usage (context usage figure). */
@@ -72,7 +90,7 @@ export interface ResumeResult {
   /** Session cumulative turn count carry-over (count of completed requests). */
   sessionTurns: number;
   /** Rendering view: this context's complete model_msg plus key event_msg entries (including interrupted turns and their markers); empty on compaction closure. */
-  renderMessages: OmniMessage[];
+  renderMessages: AmspRecord[];
   /** The file's first session_meta; null if missing (unresumable — the caller reports the error). */
   meta: SessionMetaMessage | null;
   /**
@@ -115,7 +133,7 @@ export interface ParseTraceLinesOptions {
  * (reported via `onSkip`), keeping every parseable record; pass `onMalformed: "throw"` to
  * make middle corruption a hard error instead.
  */
-export function parseTraceLines(content: string, options?: ParseTraceLinesOptions): OmniMessage[] {
+export function parseTraceLines(content: string, options?: ParseTraceLinesOptions): AmspRecord[] {
   const onMalformed = options?.onMalformed ?? "skip";
   const lines = content.split("\n");
   // Index of the last non-empty line, found with one backward scan up front. The malformed
@@ -129,12 +147,12 @@ export function parseTraceLines(content: string, options?: ParseTraceLinesOption
       break;
     }
   }
-  const out: OmniMessage[] = [];
+  const out: AmspRecord[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
     if (!line) continue;
     try {
-      out.push(JSON.parse(line) as OmniMessage);
+      out.push(JSON.parse(line) as AmspRecord);
     } catch (err) {
       if (i === lastNonEmptyIndex) break; // truncated tail: expected crash artifact, ignore silently
       if (onMalformed === "throw") throw err;
@@ -153,7 +171,7 @@ const SKIPPED_LINES_SHOWN = 20;
  * keeping every parseable record. Skipped lines are diagnosed once per read on stderr, with
  * the spelled-out line-number list capped (a heavily damaged file can skip thousands).
  */
-export async function readTraceTolerant(path: string): Promise<OmniMessage[]> {
+export async function readTraceTolerant(path: string): Promise<AmspRecord[]> {
   const skipped: number[] = [];
   const messages = parseTraceLines(await readFile(path, "utf8"), {
     onSkip: (lineNumber) => skipped.push(lineNumber),
@@ -247,19 +265,37 @@ async function listFiles(dir: string): Promise<string[]> {
   }
 }
 
-function isRequestBegin(msg: OmniMessage): msg is OmniMessage<RequestBeginPayload> {
+function isRequestBegin(msg: AmspRecord): msg is AmspRecord<RequestBeginPayload> {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "request_begin";
 }
 
-function isRequestEnd(msg: OmniMessage): msg is OmniMessage<RequestEndPayload> {
+function isRequestEnd(msg: AmspRecord): msg is AmspRecord<RequestEndPayload> {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "request_end";
 }
 
-function isCompactionEnd(msg: OmniMessage): msg is OmniMessage<CompactionEndPayload> {
+function isCompactionEnd(msg: AmspRecord): msg is AmspRecord<CompactionEndPayload> {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_end";
 }
 
-function toolCallOutputId(msg: OmniMessage): string | null {
+/**
+ * Whether the message is the text a context opened with: a `[context_summary]` user text (the
+ * first input of a context a summarize compaction opened), or a user text that is one whole
+ * `[model_switch_from]` block naming `sessionId`, the file's own Session (the handoff a model
+ * switch opened it with when it could not summarize — a `/model` conversation's first message
+ * names the Session it came from, and is the user's Prompt). Read off the text because no field
+ * marks the record (see the markers module's consumption boundary for why that is safe here).
+ */
+function isOpeningText(msg: AmspRecord, sessionId: string | undefined): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (p.type !== "text" || p.role !== "user") return false;
+  const text = p.text ?? "";
+  return (
+    startsWithMarker(text, MARKER_TAGS.contextSummary) ||
+    parseInPlaceModelSwitch(text, sessionId) !== null
+  );
+}
+
+function toolCallOutputId(msg: AmspRecord): string | null {
   const p = msg.payload as { type?: string; tool_call_id?: string };
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
 }
@@ -268,15 +304,18 @@ function toolCallOutputId(msg: OmniMessage): string | null {
  * Replay a Trace file (the current context), reconstructing history and carry-over input.
  * Input is the message sequence parsed by `readTraceTolerant`.
  */
-export function resumeTrace(messages: OmniMessage[]): ResumeResult {
+export function resumeTrace(messages: AmspRecord[]): ResumeResult {
   const meta = (messages.find(isSessionMeta) as SessionMetaMessage | undefined) ?? null;
   const sessionTokens = lastSessionTokens(messages);
   const lastRequestTotal = lastRequestTotalOf(messages);
 
   // —— First check the file-level case: compaction closure (the file ends with a completed
   // compaction stop and no new file was opened, i.e. it's still the latest index at resume time)
-  // — this file's context is fully closed, so the whole file is not replayed.
-  const last = messages[messages.length - 1];
+  // — this file's context is fully closed, so the whole file is not replayed. Task records
+  // after the compaction_end do not count: they never open the next file, so a Task that ended
+  // on the compaction (and the next one's task_begin) leaves them in this one, and a restart
+  // there must still find the summary (see task-records.ts in @prismshadow/amsp/records).
+  const last = lastNonTaskRecord(messages);
   if (last && isCompactionEnd(last)) {
     const p = last.payload;
     if (p.status === "completed") {
@@ -311,28 +350,28 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
   // —— Turn-by-turn determination + pending-input convergence.
   const history: CompleteModelMessage[] = [];
   /** Pending-input buffer: user-side messages not yet sent with any committed Request. */
-  let pending: OmniMessage[] = [];
+  let pending: AmspRecord[] = [];
   /** The current Request's input snapshot (frozen at begin) and its outputs. */
-  let snapshot: OmniMessage[] = [];
+  let snapshot: AmspRecord[] = [];
   let outputs: CompleteModelMessage[] = [];
   let inRequest = false;
   /** Whether we're between a matched pair of compaction events: the compaction prompt in this
    * span is not conversational input and must not be resent as-is if uncommitted. */
   let inCompaction = false;
   /** The last compaction_begin still waiting for its end (null once matched): a non-null value at the end of the file is a compaction the user quit out of, closed as failed by the resume path (see ResumeResult.danglingCompaction). */
-  let danglingBegin: OmniMessage<CompactionBeginPayload> | null = null;
+  let danglingBegin: AmspRecord<CompactionBeginPayload> | null = null;
   /** Ids of tool_calls that are committed (in history) and ids of outputs that are paired (in
    * history input). */
   const committedCallIds = new Set<string>();
   const answeredIds = new Set<string>();
   let sessionTurns = 0;
-  const renderMessages: OmniMessage[] = [];
+  const renderMessages: AmspRecord[] = [];
 
   const placeholderFor = (id: string): CompleteModelMessage =>
     toolCallOutput({
       output: PROCESS_EXIT_PLACEHOLDER,
       toolCallId: id,
-      stopReason: "aborted",
+      status: "aborted",
     }) as CompleteModelMessage;
 
   const dropUncommittedRound = (): void => {
@@ -387,13 +426,14 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         }
         history.push(...(eligible as CompleteModelMessage[]), ...outputs);
         for (const id of snapshotOutputIds) answeredIds.add(id);
+        // Every complete tool_call of a committed request is a committed call: a call closed
+        // early belongs to a request that did not complete, which never reaches here. A
+        // `stop_reason` on records written by older versions is not read.
         for (const m of outputs) {
           const p = m.payload as Partial<ToolCallPayload>;
-          if (p.type === "tool_call" && p.stop_reason === "completed" && p.tool_call_id) {
-            committedCallIds.add(p.tool_call_id);
-          }
+          if (p.type === "tool_call" && p.tool_call_id) committedCallIds.add(p.tool_call_id);
         }
-        // A committed request inside a compaction span enters history as usual (AgentHub
+        // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
         // but does not count as a Session turn: in-process only runTurn increments the
         // counter, never runCompactionRequest.
@@ -402,6 +442,15 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         outputs = [];
         inRequest = false;
       } else {
+        // The provider refused this turn's input over its images: the engine replaced every
+        // image in it with the fixed note before sending it again, so the input goes back the
+        // same way — otherwise the resumed history would carry the image the provider
+        // refuses, and every request after resume would fail on it. Only the attempt's own
+        // input: what landed during the request was never part of it. The `[request_error]`
+        // line the retry carried is not rebuilt, like the rest of a failed attempt's transcript.
+        if (msg.payload.error_code === "image_rejected") {
+          snapshot = replaceInputImages(snapshot);
+        }
         dropUncommittedRound();
       }
       continue;
@@ -425,13 +474,14 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
       const t = (msg.payload as { type?: string }).type;
       if (t === "compaction_begin") {
         inCompaction = true;
-        danglingBegin = msg as OmniMessage<CompactionBeginPayload>;
+        danglingBegin = msg as AmspRecord<CompactionBeginPayload>;
       } else if (t === "compaction_end") {
         inCompaction = false;
         danglingBegin = null;
       } else if (t === "abort" && (msg.origin?.length ?? 0) === 0) renderMessages.push(msg);
       // Other events (token_usage / approval_decision / tool_list_ready / mcp_connect_*,
-      // etc.) don't participate in turn determination and stay out of the render view —
+      // task_begin / task_end, etc.) don't participate in turn determination and stay out of
+      // the render view —
       // the bootstrap records are re-emitted live by the next run when they matter.
     }
   }
@@ -460,16 +510,21 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
     const id = toolCallOutputId(m);
     if (id !== null) pairedIds.add(id);
   }
-  const pairingBackfill: OmniMessage[] = [];
+  const pairingBackfill: AmspRecord[] = [];
   for (const id of committedCallIds) {
     if (pairedIds.has(id)) continue;
     pairingBackfill.push(placeholderFor(id));
   }
 
+  const opening = sessionTurns === 0 ? pending[0] : undefined;
+
   return {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
+    ...(opening !== undefined && isOpeningText(opening, meta?.payload.session_id)
+      ? { openingSummary: opening }
+      : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,
@@ -487,7 +542,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
 }
 
 /** The session cumulative total from the last token_usage (zero if none). */
-function lastSessionTokens(messages: OmniMessage[]): TokenCounts {
+function lastSessionTokens(messages: AmspRecord[]): TokenCounts {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if (!isEventMessage(msg)) continue;
@@ -498,7 +553,7 @@ function lastSessionTokens(messages: OmniMessage[]): TokenCounts {
 }
 
 /** The request.total from the last token_usage (context usage figure; 0 if none). */
-function lastRequestTotalOf(messages: OmniMessage[]): number {
+function lastRequestTotalOf(messages: AmspRecord[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if (!isEventMessage(msg)) continue;
@@ -509,7 +564,7 @@ function lastRequestTotalOf(messages: OmniMessage[]): number {
 }
 
 /** Concatenated assistant text of the last completed Request (on compaction closure, this is the compaction request's output). */
-function lastCompletedRequestText(messages: OmniMessage[]): string {
+function lastCompletedRequestText(messages: AmspRecord[]): string {
   let text = "";
   let current = "";
   let inRequest = false;

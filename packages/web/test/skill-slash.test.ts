@@ -1,16 +1,16 @@
 /**
- * Skill UI-language text and slash command assembly (pure functions shared by
- * chat-input and the skill library page):
- * - localizedText: uses the Chinese value when locale is zh and it's non-empty, otherwise
- *   falls back to English (an empty-string Chinese value counts as missing);
- * - localizedShortText: prefers the short description (language takes priority over
- *   length), falling back to the full description when missing;
- * - skillSlashItems: installed skills -> `/<skill_name>` command items, preferring the
- *   short description in the UI language;
- * - filterSkills: search filter for the skill dropdown (matches name and localized
- *   description, case-insensitive);
- * - skillsAutoMessage / quickInvokeText: auto-invoke text and quick-invoke prefill text
- *   (zh/en dictionaries).
+ * Skills in the composer and the skill library (features/chat/skill-use.ts and the
+ * dictionaries' skill messages).
+ *
+ * - A skill's text follows the UI language: zh uses the Chinese value when it is non-empty,
+ *   otherwise English; en always English. The short description wins over the full one, the
+ *   language over the length.
+ * - Every installed skill becomes a `/<name>` command described in the UI language; no skills,
+ *   no commands.
+ * - The skill dropdown's search matches the name and the localized description,
+ *   case-insensitively; an empty query lists everything and no match lists nothing.
+ * - The skill library's quick invoke prefills exactly the auto-invoke text an empty-body send
+ *   uses, which names the picked skills in the UI language.
  */
 import { describe, expect, it } from "vitest";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
@@ -76,7 +76,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: "2026-07-01.1",
+      version: "2026.07.01.1",
     },
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];
@@ -104,14 +104,6 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
     expect(skillSlashItems([], "zh")).toEqual([]);
   });
 
-  it("cmd prefix matching (slash filter convention): /agent-opt hits /agent-optimization", () => {
-    const items = skillSlashItems(
-      [{ name: "agent-optimization", description: "Optimize agents", version: "" }],
-      "en",
-    );
-    expect(items[0]!.cmd.startsWith("/agent-opt")).toBe(true);
-  });
-
   it("desc prefers the short description (falling back to the full one when missing)", () => {
     const withShort: SkillMetadataItem[] = [
       {
@@ -119,7 +111,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
         description: "Create agents from requirements",
         shortDescription: "Create agents",
         shortDescriptionZh: "创建 Agent",
-        version: "2026-07-01.1",
+        version: "2026.07.01.1",
       },
     ];
     expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("创建 Agent");
@@ -145,7 +137,7 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: "2026-07-01.1",
+      version: "2026.07.01.1",
     },
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];

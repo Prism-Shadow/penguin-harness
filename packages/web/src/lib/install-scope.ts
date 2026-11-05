@@ -49,7 +49,9 @@ export const INSTALL_ID_KEY = "penguin.installId";
  *   have. Against a new root it is at best inert and at worst a lie, which is the bug.
  * - `browser` — a display or input preference of this browser. It names nothing on the
  *   server, so a new root can honour it exactly as the old one did, and wiping a data root
- *   is not a request to reset someone's theme.
+ *   is not a request to reset someone's theme. The Settings pages' preferences among them are a
+ *   cache of the account's copy (lib/account-sync): kept across a wipe, they are what this
+ *   browser hands the new root's account on its first sign-in there.
  */
 export type KeyScope = "install" | "browser";
 
@@ -84,11 +86,29 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
- *     example URL in a doc comment. It is not a storage key.
+ *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
+  {
+    kind: "exact",
+    key: "penguin.background.image",
+    scope: "browser",
+    why: "Wallpaper image, cached from the account; appearance only, with no reference to a server file.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.background.imageId",
+    scope: "browser",
+    why: "Which of the account's wallpaper images the cached one is: a digest of the image, so a new root holding the same image answers with the same id.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.background.settings",
+    scope: "browser",
+    why: "Wallpaper transparency, display mode and alignment for this browser.",
+  },
   {
     kind: "exact",
     key: "penguin.theme",
@@ -97,9 +117,33 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.themeId",
+    scope: "browser",
+    why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.textSize",
+    scope: "browser",
+    why: "Root text size (five steps) — a readability preference of this display.",
+  },
+  {
+    kind: "exact",
     key: "penguin.fontScale",
     scope: "browser",
-    why: "Root font size — a readability preference of this display.",
+    why: "The three-step text size of earlier releases; read once, migrated to penguin.textSize and removed.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontLatin",
+    scope: "browser",
+    why: "Latin font face chosen over the theme's own; pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontCjk",
+    scope: "browser",
+    why: "CJK font face chosen over the theme's own; pure appearance.",
   },
   {
     kind: "exact",
@@ -112,6 +156,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.currency",
     scope: "browser",
     why: "Display currency for prices; a formatting choice, prices are stored in USD either way.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.toolAliases",
+    scope: "browser",
+    why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
   },
   {
     kind: "exact",
@@ -139,6 +189,36 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.dock.launcherY",
+    scope: "browser",
+    why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.dock.launcherHidden",
+    scope: "browser",
+    why: "Whether the floating dock launcher shows at all; an appearance choice of this browser, and losing it would put a dismissed button back.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.treeVisible",
+    scope: "browser",
+    why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.treeWidth",
+    scope: "browser",
+    why: "How wide that tree pane was dragged, in px; the same layout preference, one axis over.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.editorWrap",
+    scope: "browser",
+    why: "Whether the Files panel's editor soft-wraps long lines; a reading habit, valid against any root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",
@@ -157,9 +237,57 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarNavPinned",
+    scope: "browser",
+    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsGroupsFolded",
+    scope: "browser",
+    why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsPinnedGroups",
+    scope: "browser",
+    why: "Which model groups stay out of the fold, as differences from the built-in default set; a view preference, and a pinned user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsGroupBy",
+    scope: "browser",
+    why: "How the Plugins page groups its cards (category, status, contents or none) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsIncompatibleOnly",
+    scope: "browser",
+    why: "Whether the Plugins page lists only the plugins this build cannot fully run; a view preference that names no plugin, valid against any root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.notifications",
+    scope: "browser",
+    why: "Whether task-completion notifications were asked for; it pairs with an OS permission that belongs to this browser rather than to any data root, and clearing it would silently stop notifications the user opted into.",
   },
 
   // --------------------------------------------------------------- install-scoped state
@@ -177,15 +305,57 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.channelDraft.",
+    scope: "install",
+    why: "A channel composer's unsent text, keyed by user, Project, organization and channel — all four name things that live in one data root.",
+  },
+  {
+    kind: "family",
     key: "penguin.sidebarWorkspaces.",
     scope: "install",
     why: "Manually registered Workspace paths per Project; a new root has no such Project.",
   },
   {
     kind: "family",
+    key: "penguin.finderQuickAccess.",
+    scope: "install",
+    why: "Folders added to and removed from the Workspace finder's Quick access, keyed by machine id and holding paths on the machines of this root — the same kind of state as the registered Workspace paths.",
+  },
+  {
+    kind: "family",
     key: "penguin.pinnedSessions.",
     scope: "install",
     why: "Pinned Session ids.",
+  },
+  {
+    kind: "family",
+    key: "penguin.machineSessions.",
+    scope: "install",
+    why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sandboxBackendPromptDismissed",
+    scope: "install",
+    why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.machineAgents.",
+    scope: "install",
+    why: "The Agents each machine was last seen running, offered by the composer until its connection is held again. Keyed by the same Project and machine a new root would not have.",
+  },
+  {
+    kind: "family",
+    key: "penguin.agentInstalls.",
+    scope: "install",
+    why: "What each Agent — of this server or of a machine — was last seen having installed, shown by the plugin market until it answers again. Project, machine and Agent ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
+    key: "penguin.machineMessaging.",
+    scope: "install",
+    why: "The messaging binding each machine conversation last answered, shown read-only while that machine is out of reach. Project, machine and Session ids in the key — a new root knows none of them.",
   },
   {
     kind: "family",
@@ -213,15 +383,93 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.sidebarExpandedFolderGroups.",
+    scope: "install",
+    why: "Folder-only sidebar groups the user opened, keyed by those same Agent ids and Workspace paths.",
+  },
+  {
+    kind: "family",
     key: "penguin.sidebarPinnedGroups.",
     scope: "install",
     why: "Pinned sidebar groups, same key space.",
+  },
+  {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.prefsImported",
+    scope: "install",
+    why: "That this browser handed its preferences to an account on this root once already; a new root's accounts hold none, so they take them again.",
+  },
+  {
+    kind: "family",
+    key: "penguin.draftsImported.",
+    scope: "install",
+    why: "That this browser handed one user's drafts to their account on this root; keyed by user id, and a new root's account holds none.",
+  },
+  {
+    kind: "family",
+    key: "penguin.syncPending.",
+    scope: "install",
+    why: "One user's edits the account on this root has not acknowledged: draft keys naming Sessions and Projects of this root.",
   },
   {
     kind: "exact",
     key: "penguin.lastProjectId",
     scope: "install",
     why: "The Project id last selected.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.workMode",
+    scope: "browser",
+    why: "Development vs company mode — the MODE, mirrored from ui_prefs; valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.keybindings",
+    scope: "browser",
+    why: "The account's shortcut overrides, mirrored from ui_prefs for the first keystroke and for cross-tab sync; names nothing on the server, and the server copy is the truth.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.companyBetaNoticeShown",
+    scope: "browser",
+    why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.tokenDanceBannerDismissed",
+    scope: "browser",
+    why: "That the models page's TokenDance banner was dismissed in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.lastOrgKey",
+    scope: "install",
+    why: "The organization last opened in company mode, as <projectId>/<orgId> of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.orgCreateDraft.",
+    scope: "install",
+    why: "An unsubmitted create-organization form, keyed by user and Project id and holding a Workspace path and model ref of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.orgPageHint.",
+    scope: "install",
+    why: "A dismissed empty-page note, keyed by user, Project and organization id of this root.",
+  },
+  {
+    kind: "family",
+    key: "penguin.orgTempSessions.",
+    scope: "install",
+    why: "The company sidebar's Temporary group of ticket sessions, keyed by user, Project and organization id and naming Sessions and Agents of this root.",
   },
   {
     kind: "family",

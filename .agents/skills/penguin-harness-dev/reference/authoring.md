@@ -9,6 +9,11 @@ A post is a pair under `packages/landing/content/blog/`: `<slug>.en.md` and `<sl
 with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changelog entries — one
 without the other is unfinished.
 
+**Before drafting or revising a post, read the `penguin-harness-writing` skill**: a gateway model
+writes every reader-facing sentence through its `prose.mjs`, and agents research, prompt, draw,
+check and ship. Docs pages and landing copy go the same way. Posts cite their sources with GFM
+footnotes that the skill generates from its fact markers; a `**Sources**` footer is the older form.
+
 **The images are not in this repo.** Screenshots and demo videos live in the sibling
 `Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published
 post's screenshots are never deleted, so that asset class grows without bound in the number of
@@ -74,8 +79,7 @@ a load-bearing invariant. Correct but tiny belongs in a named `TODO(<smell>)`, n
 
 Seams that are intentional here — collapsing one is a product decision, not cleanup:
 
-- the AgentHub boundary: PenguinHarness pins protocols and env fallback, AgentHub owns clients and
-  routing;
+- the MMSP boundary: PenguinHarness pins protocols and env fallback, MMSP owns clients and routing;
 - `packages/core/src/internal/` versus what the package barrel exports — the public SDK surface is
   a contract;
 - the Trace on-disk format and its tolerant readers;
@@ -92,7 +96,7 @@ There is no `knip` here, and no Agent Note tree — a proposal lives in the PR d
 Imported wholesale from a sibling repo's workflow, these are wrong here:
 
 - **Provider-client development.** No vendor doc syncing, no live API captures, no paired
-  Python/TypeScript clients, no `AVAILABLE_MODELS`. That is agenthub's work; PenguinHarness only
+  Python/TypeScript clients, no `AVAILABLE_MODELS`. That is MMSP's work; PenguinHarness only
   records presets in its catalog.
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such
   convention.

@@ -16,8 +16,8 @@ import { READ_FILE_NAME, createReadFileTool } from "../src/environment/tools/rea
 import { MAX_IMAGE_BYTES } from "../src/environment/tools/image-source.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import { Environment } from "../src/environment/environment.js";
-import { assistantText, partialText, toolCall } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import { assistantText, partialText, toolCall } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type {
   EnvironmentServices,
@@ -83,7 +83,7 @@ async function run(
 ) {
   const tool = createReadFileTool(definition, services);
   const gen = tool.execute(args, { workspaceDir, toolCallId: "c1" });
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   let result: ToolResult | void;
   for (;;) {
     const res = await gen.next();
@@ -112,7 +112,7 @@ describe("read_file on an image — session model views images (no describer)", 
   it("returns the image via ToolResult.images with a one-line mime/size note", async () => {
     await writeFile(path.join(tmp, "img.png"), PNG_1X1);
     const { result, text } = await run({ file_path: "img.png" }, tmp);
-    expect(result?.stopReason).toBeUndefined(); // defaults to completed
+    expect(result?.status).toBeUndefined(); // defaults to completed
     expect(result?.images).toEqual([PNG_DATA_URL]);
     expect(text).toBe(`image/png, ${PNG_1X1.length} B`);
   });
@@ -123,12 +123,18 @@ describe("read_file on an image — session model views images (no describer)", 
     expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("recognizes an image by extension when the bytes carry no known magic number", async () => {
-    // The extension routes the file into the image branch, where it is handed over as its
-    // extension says (the same fallback the URL branch applies to a content-type-less response).
-    await writeFile(path.join(tmp, "plain.png"), Buffer.from("no magic here"));
-    const { result } = await run({ file_path: "plain.png" }, tmp);
-    expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
+  it("refuses a .png path whose bytes are SVG, naming what they are", async () => {
+    // The extension routes the file into the image branch, but only the bytes decide the
+    // format: an SVG handed over as image/png would get the whole request rejected.
+    await writeFile(
+      path.join(tmp, "logo.png"),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
+    );
+    const { result, text } = await run({ file_path: "logo.png" }, tmp);
+    expect(result?.status).toBe("fatal");
+    expect(result?.images).toBeUndefined();
+    expect(text).toContain("SVG");
+    expect(text).toContain("Convert it to PNG or JPEG");
   });
 
   it("ignores offset and limit for an image", async () => {
@@ -149,7 +155,7 @@ describe("read_file on an image — session model views images (no describer)", 
     PNG_1X1.copy(big); // Header carries the PNG magic number, so the failure is size, not type
     await writeFile(path.join(tmp, "big.png"), big);
     const { result, text } = await run({ file_path: "big.png" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(result?.images).toBeUndefined();
     expect(text).toContain("too large");
   });
@@ -157,12 +163,12 @@ describe("read_file on an image — session model views images (no describer)", 
   it("rejects a binary that is no supported image with advice, and a missing image path with the not-found note", async () => {
     await writeFile(path.join(tmp, "img.bmp"), Buffer.from([0x42, 0x4d, 0x00, 0x01, 0x02]));
     const bmp = await run({ file_path: "img.bmp" }, tmp);
-    expect(bmp.result?.stopReason).toBe("fatal");
+    expect(bmp.result?.status).toBe("fatal");
     expect(bmp.text).toContain("binary");
     expect(bmp.text).toContain("png/jpeg/gif/webp");
 
     const missing = await run({ file_path: "missing.png" }, tmp);
-    expect(missing.result?.stopReason).toBe("fatal");
+    expect(missing.result?.status).toBe("fatal");
     expect(missing.text).toContain("File not found");
   });
 });
@@ -195,7 +201,7 @@ describe("read_file on an image — text-only session model (describer injected)
     expect(outputs[0]).toContain("described by vis-1");
     expect(outputs.slice(1).join("")).toBe("The image shows a penguin.");
     expect(result?.images).toBeUndefined();
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
   });
 
   it("asks the default question when no prompt is given", async () => {
@@ -211,7 +217,7 @@ describe("read_file on an image — text-only session model (describer injected)
   it("no vision model configured: fatal, explaining how to configure one, without fetching the image", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const local = await run({ file_path: "a.png" }, tmp, { visionDescriber: { modelId: null } });
-    expect(local.result?.stopReason).toBe("fatal");
+    expect(local.result?.status).toBe("fatal");
     expect(local.text).toContain("No vision model");
     expect(local.text).toContain("vision_model");
     // A URL source is not even downloaded: the missing vision model is what stands between
@@ -221,7 +227,7 @@ describe("read_file on an image — text-only session model (describer injected)
     const remote = await run({ file_path: "https://example.com/a.png" }, tmp, {
       visionDescriber: { modelId: null },
     });
-    expect(remote.result?.stopReason).toBe("fatal");
+    expect(remote.result?.status).toBe("fatal");
     expect(remote.text).toContain("No vision model");
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -232,7 +238,7 @@ describe("read_file on an image — text-only session model (describer injected)
     const { result, text } = await run({ file_path: "a.png" }, tmp, {
       visionDescriber: { modelId: "vis-1", createLLM: () => llm },
     });
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("fatal");
     expect(text).toContain("401 unauthorized");
   });
@@ -245,7 +251,7 @@ describe("read_file on an image — text-only session model (describer injected)
     const { result } = await run({ file_path: "big.png" }, tmp, {
       visionDescriber: { modelId: "vis-1", createLLM: () => llm },
     });
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(calls).toHaveLength(0);
   });
 
@@ -261,7 +267,7 @@ describe("read_file on an image — text-only session model (describer injected)
 });
 
 describe("read_file on an http(s) URL", () => {
-  it("downloads via the global fetch, taking the content-type header as the mime", async () => {
+  it("downloads via the global fetch and returns the image", async () => {
     const fetchMock = vi.fn(
       async (_input: unknown) =>
         new Response(PNG_1X1, { status: 200, headers: { "content-type": "image/png" } }),
@@ -274,13 +280,25 @@ describe("read_file on an http(s) URL", () => {
     expect(text).toContain("image/png");
   });
 
+  it("takes the format from the bytes, not from the content-type header", async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]);
+    const headers = { "content-type": "image/png" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(jpeg, { status: 200, headers })),
+    );
+    const { result, text } = await run({ file_path: "https://example.com/photo.png" }, tmp);
+    expect(result?.images?.[0]).toMatch(/^data:image\/jpeg;base64,/);
+    expect(text).toContain("image/jpeg");
+  });
+
   it("fails with the status code on a non-2xx response", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("nope", { status: 404 })),
     );
     const { result, text } = await run({ file_path: "https://example.com/missing.png" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("404");
   });
 
@@ -293,7 +311,7 @@ describe("read_file on an http(s) URL", () => {
       ),
     );
     const { result, text } = await run({ file_path: "https://example.com/page" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("Unsupported image type");
   });
 });
@@ -304,7 +322,7 @@ describe("read_file image branch — Environment assembly", () => {
     const factory = BUILTIN_TOOL_FACTORIES[READ_FILE_NAME]!;
     const { llm } = fakeLLM("delegated description result");
     const complete = async (env: Environment) => {
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for await (const m of env.executeTool({
         toolCall: toolCall({
           name: READ_FILE_NAME,
@@ -318,7 +336,7 @@ describe("read_file image branch — Environment assembly", () => {
         type?: string;
         output?: string;
         images?: string[];
-        stop_reason?: string;
+        status?: string;
       };
     };
 
@@ -329,7 +347,7 @@ describe("read_file image branch — Environment assembly", () => {
     });
     const described = await complete(textOnly);
     expect(described.type).toBe("tool_call_output");
-    expect(described.stop_reason).toBe("completed");
+    expect(described.status).toBe("completed");
     expect(described.output).toContain("delegated description result");
     expect(described.images).toBeUndefined();
 
@@ -338,7 +356,7 @@ describe("read_file image branch — Environment assembly", () => {
       toolConfig: { customTools: [definition], mcpServers: [] },
     });
     const carried = await complete(vision);
-    expect(carried.stop_reason).toBe("completed");
+    expect(carried.status).toBe("completed");
     expect(carried.images).toEqual([PNG_DATA_URL]);
     // The same factory serves both: no per-model entry, the describer alone decides.
     expect(factory(definition, undefined).name).toBe(READ_FILE_NAME);

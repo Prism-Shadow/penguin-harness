@@ -56,7 +56,7 @@ test("a steered message survives reload as a queued hint with its content — no
   await ta.waitFor();
   await ta.fill("slow stream test");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   await page.getByRole("button", { name: "允许" }).click();
 
   // Steer while the ~8s tool run keeps the Task busy (default mid-run mode is steer).

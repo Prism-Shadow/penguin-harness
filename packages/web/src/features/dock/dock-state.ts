@@ -3,33 +3,55 @@
  *
  * The dock is TWO surfaces — one on the right edge, one at the bottom of the chat page —
  * and every side element is a TAB in one of them: the subagents panel, the Workspace
- * files panel, the Memory panel, the Trace panel, and any number of terminals. A dock
+ * files panel, the Memory panel, the Trace panel, the messaging panel, the scheduled-tasks
+ * panel, the built-in browser and the command-line terminal. A dock
  * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows a
  * picker instead (choose what to open here), which is what the toolbar's two pull-open
  * buttons land on. Both docks can be open at once, and any tab can live in either dock
- * (the panel kinds are singletons — one tab per kind within a conversation — while
- * terminals are one tab per shell).
+ * (the panel kinds are singletons — one tab per kind within a conversation). A panel that
+ * holds several things — the browser's pages, the terminal's shells — draws its own strip of
+ * them inside its body; the store knows only the panel's tab, plus which shell the terminal
+ * panel shows.
  *
  * The arrangement is SCOPED to the conversation it was made in, like each browser window
  * managing its own tabs: switching Sessions switches the whole arrangement, and no
- * conversation's tabs depend on another's. The shells behind terminal tabs are per-user
- * and keep running regardless; a scope only decides which of them are on screen here.
- * The draft page and pages with no Session use placeholder scopes; an arrangement made
- * while drafting is handed to the Session the first send creates (adoptDockScope).
+ * conversation's tabs depend on another's. The shells behind the terminal panel belong to the
+ * Session that created them and keep running while off screen; the panel lists that Session's
+ * own (dock-terminal.ts), so nothing here has to keep another Session's out.
+ * The draft page (scoped per Project) and pages with no Session use placeholder scopes; an
+ * arrangement made while drafting is handed to the Session the first send creates
+ * (adoptDockScope).
  * Everything persists (one localStorage entry, least-recently-used scopes aging out), so
  * a reload restores each conversation's docks. Sizes are the exception: how wide/tall the
  * user likes a dock is one preference, not one per conversation.
  *
  * Closing a TAB removes it (the last tab closing also puts the dock away); a dock's ×
- * hides the surface keeping its tabs for the next open. Below the desktop breakpoint the
- * two docks render as ONE merged bottom surface (a 320px-minimum right panel does not fit
- * a phone); the stored arrangement splits back apart when the window widens.
+ * hides the surface, keeping its tabs — and, through closedDockView, everything their
+ * bodies hold — for the next open. Below the desktop breakpoint the two docks render as ONE
+ * merged bottom surface (a 320px-minimum right panel does not fit a phone); the stored
+ * arrangement splits back apart when the window widens.
+ *
+ * The store knows panels by id alone. What an id names — its label, its mark, its body — is
+ * the panel registry's (panel-registry.ts), so a tab whose panel this build has never heard of
+ * (a plugin's, stored before the plugin loads) is kept as it is and rendered as a placeholder
+ * until its definition arrives; only a key that cannot be a panel id at all is dropped.
+ *
+ * One surface at a time can be FULLSCREEN — the dock grown as far as its own edge goes: the right
+ * dock over its row (the conversation beside it, with the toolbar above and the bottom dock below
+ * still in view), the bottom dock or the narrow merged view up to the toolbar (over the row, and
+ * the right dock in it). Fullscreen is remembered per arrangement in memory, never stored, so
+ * switching away and back restores it; a reload or the breakpoint flipping clears it. It holds
+ * while its surface is open with tabs and no dock it COVERS is brought forward (checked after every
+ * mutation, in commit()): the right dock taking the stage under a fullscreen bottom dock drops
+ * it, so what was asked for is seen rather than opening under the cover.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
- * toolbar toggles the docks, the global hotkey flips the terminal, AppLayout points the
- * scope at the route's conversation, the chat page renders the docks, and the terminal
- * list prunes dead shells' tabs on refresh.
+ * toolbar toggles the docks, the global hotkey flips the terminal panel, AppLayout points the
+ * scope at the route's conversation, and the chat page renders the docks.
  */
+import type { PanelId } from "./panel-registry";
+import { DOCK_RATIO_MAX } from "./bottom-dock-size";
+import { foldLegacyTerminalTabs } from "./legacy-terminal-tabs";
 
 const LAYOUT_KEY = "penguin.dock.layout";
 /** Scopes kept in storage; past that, the least recently touched conversations age out. */
@@ -37,43 +59,45 @@ const MAX_SCOPES = 40;
 
 export type DockPosition = "right" | "bottom";
 
-/** The singleton panel kinds. Terminals are the one multi-instance tab kind. */
-export type PanelKind = "agents" | "workspace" | "memory" | "trace" | "messaging";
+/**
+ * Panels are singletons — one tab per id within a conversation. Which panels exist, and whether
+ * one is offered here (the built-in browser exists only in the desktop app), is the registry's
+ * business; the store only carries their ids.
+ */
+export type { PanelId };
 
-export const PANEL_KINDS: readonly PanelKind[] = [
-  "agents",
-  "workspace",
-  "memory",
-  "trace",
-  "messaging",
-];
+export type DockTab = { kind: "panel"; panel: PanelId };
 
-export type DockTab =
-  { kind: "panel"; panel: PanelKind } | { kind: "terminal"; terminalId: string };
-
-/** Stable identity of a tab ("agents", …, "terminal:<id>") — the stored form. */
+/** Stable identity of a tab ("agents", "terminal", …) — the stored form. */
 export function tabKey(tab: DockTab): string {
-  return tab.kind === "panel" ? tab.panel : `terminal:${tab.terminalId}`;
-}
-
-function parseTabKey(key: string): DockTab | null {
-  if ((PANEL_KINDS as readonly string[]).includes(key))
-    return { kind: "panel", panel: key as PanelKind };
-  if (key.startsWith("terminal:") && key.length > "terminal:".length)
-    return { kind: "terminal", terminalId: key.slice("terminal:".length) };
-  return null;
+  return tab.panel;
 }
 
 /**
- * The bottom dock's HEIGHT is a ratio of the chat page column. The px minimum (and the
- * ratio ceiling, which also leaves the chat room) are enforced both by the dock's CSS and
- * by the resize drag. The right dock's WIDTH is not here: it is the shared side-panel
- * width (use-panel-width.ts), unchanged from the pre-dock panels.
+ * The shape of a panel id: lowercase words joined by hyphens, with dots or slashes between
+ * segments for a namespaced plugin panel ("acme.kanban", "acme/board"); the built-in ids all fit.
+ * The store accepts any key of this shape without asking the registry, so a stored tab survives
+ * its panel being unknown for a while.
+ */
+const PANEL_ID_PATTERN = /^[a-z][a-z0-9-]*(?:[./][a-z0-9-]+)*$/;
+const PANEL_ID_MAX_LENGTH = 100;
+
+export function isPanelId(key: string): boolean {
+  return key.length <= PANEL_ID_MAX_LENGTH && PANEL_ID_PATTERN.test(key);
+}
+
+function parseTabKey(key: string): DockTab | null {
+  return isPanelId(key) ? { kind: "panel", panel: key } : null;
+}
+
+/**
+ * The bottom dock's HEIGHT is stored as a ratio of the chat page column; the height drawn from
+ * it, clamped so the composer stays whole, is bottom-dock-size.ts's. The right dock's WIDTH is
+ * not here: it is the shared side-panel width (use-panel-width.ts), unchanged from the pre-dock
+ * panels.
  */
 export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
 const DOCK_RATIO_MIN = 0.15;
-export const DOCK_RATIO_MAX = 0.85;
-export const DOCK_MIN_HEIGHT_PX = 140;
 
 function clampRatio(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_DOCK_HEIGHT_RATIO;
@@ -98,17 +122,23 @@ interface ScopeLayout {
   bottom: DockAreaState;
   /** The dock touched last: the merged view's active tab follows it, and Ctrl+` targets it. */
   focus: DockPosition;
+  /**
+   * The shell the terminal panel shows, by id; null for its default (the newest). Kept with the
+   * arrangement so a reload shows the same shell; one that has gone falls back to the default.
+   */
+  shell: string | null;
 }
 
 function emptyScope(): ScopeLayout {
-  return { right: emptyArea(), bottom: emptyArea(), focus: "bottom" };
+  return { right: emptyArea(), bottom: emptyArea(), focus: "bottom", shell: null };
 }
 
 /**
  * The scope the dock belongs to before any conversation is open — the login screen, a
  * settings page reached directly by URL. A real Session id never collides with it. The
- * draft page instead scopes to its route id ("new" / a parked draft id), whose
- * arrangement adoptDockScope hands to the Session the first send creates.
+ * draft page instead scopes to its route id ("new" / a parked draft id) qualified by its
+ * Project (`<projectId>:new`), whose arrangement adoptDockScope hands to the Session the first
+ * send creates.
  */
 const NO_SCOPE = "~none";
 
@@ -158,8 +188,8 @@ function sanitizeArea(raw: unknown): DockAreaState {
   return { tabs: unique, active, open: area.open === true };
 }
 
-function sanitizeScope(raw: unknown): ScopeLayout {
-  const scope = (raw ?? {}) as Partial<Record<string, unknown>>;
+function sanitizeScope(key: string, stored: unknown): ScopeLayout {
+  const scope = (foldLegacyTerminalTabs(key, stored) ?? {}) as Partial<Record<string, unknown>>;
   const right = sanitizeArea(scope.right);
   const bottom = sanitizeArea(scope.bottom);
   // A panel key present in both docks keeps the right copy (sanitizeArea dedupes only within a dock).
@@ -167,7 +197,12 @@ function sanitizeScope(raw: unknown): ScopeLayout {
   bottom.tabs = bottom.tabs.filter((tab) => !rightKeys.has(tabKey(tab)));
   if (bottom.active !== null && !bottom.tabs.some((tab) => tabKey(tab) === bottom.active))
     bottom.active = bottom.tabs.length > 0 ? tabKey(bottom.tabs[bottom.tabs.length - 1]!) : null;
-  return { right, bottom, focus: scope.focus === "right" ? "right" : "bottom" };
+  return {
+    right,
+    bottom,
+    focus: scope.focus === "right" ? "right" : "bottom",
+    shell: typeof scope.shell === "string" && scope.shell !== "" ? scope.shell : null,
+  };
 }
 
 interface StoredLayout {
@@ -179,7 +214,7 @@ function loadStored(): { scopes: Record<string, ScopeLayout>; bottomRatio: numbe
   const raw = readJson<Partial<StoredLayout>>(LAYOUT_KEY, {});
   const scopes: Record<string, ScopeLayout> = {};
   if (typeof raw.scopes === "object" && raw.scopes !== null) {
-    for (const [key, value] of Object.entries(raw.scopes)) scopes[key] = sanitizeScope(value);
+    for (const [key, value] of Object.entries(raw.scopes)) scopes[key] = sanitizeScope(key, value);
   }
   return {
     scopes,
@@ -192,6 +227,12 @@ let scope = NO_SCOPE;
 // Unpacked into a local rather than read through `scopes[scope]` everywhere: the reads
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
+/**
+ * Fullscreen follows the arrangement, including a draft handed to its new Session. Weak keys
+ * let evicted scopes go without a second retention list; the storage format stays unchanged.
+ * A reload or breakpoint flip starts every arrangement in the normal layout.
+ */
+let fullscreenByLayout = new WeakMap<ScopeLayout, DockPosition>();
 
 /** Whether a scope's arrangement is worth a storage entry at all. */
 function scopeIsEmpty(s: ScopeLayout): boolean {
@@ -215,6 +256,11 @@ function persist(): void {
   if (keys.length > MAX_SCOPES) {
     scopes = Object.fromEntries(keys.slice(keys.length - MAX_SCOPES).map((k) => [k, scopes[k]!]));
   }
+  writeScopes();
+}
+
+/** The scope map and the size preference, as storage holds them. */
+function writeScopes(): void {
   writeJson(LAYOUT_KEY, {
     scopes: Object.fromEntries(
       Object.entries(scopes).map(([key, s]) => [
@@ -223,6 +269,7 @@ function persist(): void {
           right: { ...s.right, tabs: s.right.tabs.map(tabKey) },
           bottom: { ...s.bottom, tabs: s.bottom.tabs.map(tabKey) },
           focus: s.focus,
+          ...(s.shell !== null ? { shell: s.shell } : {}),
         },
       ]),
     ),
@@ -237,6 +284,17 @@ let instant = 0;
 function notify(): void {
   version += 1;
   for (const listener of [...listeners]) listener();
+}
+
+/**
+ * The tail of every mutation: the layout reaches storage, the fullscreen state is checked
+ * against what the mutation left on screen, and the listeners hear about it. One place, so no
+ * action has to remember the check — a new action that ends in commit() is covered.
+ */
+function commit(): void {
+  persist();
+  reconcileFullscreen();
+  notify();
 }
 
 /** Monotonic change counter — subscribe with this snapshot to re-render on ANY change. */
@@ -264,7 +322,7 @@ export function subscribeDock(listener: () => void): () => void {
 
 /**
  * Points the dock at a conversation (or a placeholder off one). Everything on screen
- * changes with it; the shells behind terminal tabs are untouched, so switching away and
+ * changes with it; the shells behind the terminal panel are untouched, so switching away and
  * back costs nothing. A dock arranged before a conversation was chosen (the `~none`
  * placeholder — /chat resolves to a Session a moment after it loads) is handed to the
  * conversation that is chosen, never clobbering one that has an arrangement of its own.
@@ -274,12 +332,36 @@ export function setDockScope(next: string | null): void {
 }
 
 /**
- * The draft this scope was holding has become a real Session: its arrangement moves to
- * the new id. Called at the points that turn a draft into a Session (its send paths, and
- * a self-heal renaming a session id), not on any navigation away from the draft.
+ * The draft `from` has become a real Session (or a Session's id self-healed into a new one):
+ * its arrangement moves to the new id, never clobbering one the new id already has. Called at
+ * the points that turn a draft into a Session (its send paths, and a self-heal renaming a
+ * session id), not on any navigation away from the draft.
+ *
+ * Those points come after network round trips, and the person may have moved on meanwhile. True
+ * when they are still on `from` — its docks are the ones on screen, and `stillOpen` (the page
+ * that asked is still mounted) says it is the same page, not a new draft of the same Project
+ * reusing the scope: the docks follow to the new id, and the caller takes the route there too.
+ * False otherwise: the person stays where they are, the docks on screen are left alone, and
+ * `from`'s stored arrangement moves to the new id unless the page on screen is using it.
  */
-export function adoptDockScope(sessionId: string): void {
-  switchScope(sessionId, true);
+export function adoptDockScope(from: string, sessionId: string, stillOpen = true): boolean {
+  if (from === scope) {
+    if (!stillOpen) return false;
+    switchScope(sessionId, true);
+    return true;
+  }
+  const staged = scopes[from];
+  if (from === sessionId || staged === undefined || scopes[sessionId] !== undefined) return false;
+  const { [from]: _moved, ...rest } = scopes;
+  scopes = { ...rest, [sessionId]: staged };
+  writeScopes();
+  // Already on the new id, with nothing arranged there yet: what moved is what it shows.
+  if (sessionId === scope) {
+    layout = staged;
+    reconcileFullscreen();
+    notify();
+  }
+  return false;
 }
 
 function switchScope(target: string, mayHandOver: boolean): void {
@@ -295,28 +377,27 @@ function switchScope(target: string, mayHandOver: boolean): void {
     // The move has to reach storage here. persist() above wrote the map under the OLD
     // key; leaving it at that means a reload reads the arrangement back under a key
     // nothing routes to — and, for a draft, hands it to the next draft instead.
-    writeJson(LAYOUT_KEY, {
-      scopes: Object.fromEntries(
-        Object.entries(scopes).map(([key, s]) => [
-          key,
-          {
-            right: { ...s.right, tabs: s.right.tabs.map(tabKey) },
-            bottom: { ...s.bottom, tabs: s.bottom.tabs.map(tabKey) },
-            focus: s.focus,
-          },
-        ]),
-      ),
-      bottomRatio: ratio,
-    });
+    writeScopes();
   }
   scope = target;
   layout = scopes[scope] ?? emptyScope();
+  // The incoming arrangement's fullscreen is checked against what it holds now.
+  reconcileFullscreen();
   notify();
 }
 
 /** The scope on screen (tests and diagnostics; components never need it). */
 export function currentDockScope(): string {
   return scope;
+}
+
+/**
+ * Whether a page with docks is on screen. Pages without them (organization pages, login, the
+ * standalone /terminal page) sit on the `~none` placeholder, where a dock command would act on
+ * nothing visible — or worse, spawn shells into an arrangement the next conversation inherits.
+ */
+export function docksOnScreen(): boolean {
+  return scope !== NO_SCOPE;
 }
 
 // ------------------------------------------------------------------------------- narrow
@@ -332,6 +413,9 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
   narrow = query.matches;
   query.addEventListener("change", (event) => {
     narrow = event.matches;
+    // The surfaces are re-cut at the breakpoint (two docks ↔ one merged view), so the surface
+    // that was fullscreen no longer exists as such; the user re-enters on the new one if wanted.
+    fullscreenByLayout = new WeakMap();
     notify();
   });
 }
@@ -372,15 +456,22 @@ export function dockActiveKey(position: DockPosition): string | null {
   return area(position).active;
 }
 
+/** Whether a dock has anything to show at all — the closed merged view's counterpart to visibility. */
+function hasTabs(position: DockPosition): boolean {
+  return area(position).tabs.length > 0;
+}
+
 /**
- * The merged view's active tab: the focused dock's active when that dock is on screen,
- * else the other visible dock's. What "the shown tab" means below the breakpoint.
+ * The merged view's active tab: the focused dock's active when that dock counts, else the
+ * other's. What "the shown tab" means below the breakpoint. `counts` is what being on
+ * screen means for the view being built — visibility for the merged view the docks render,
+ * having tabs at all for the closed one that only keeps its panels mounted.
  */
-function mergedActiveKey(): string | null {
+function mergedActiveKey(counts: (position: DockPosition) => boolean): string | null {
   const first = layout.focus;
   const second: DockPosition = first === "right" ? "bottom" : "right";
-  if (isDockVisible(first) && area(first).active !== null) return area(first).active;
-  if (isDockVisible(second)) return area(second).active;
+  if (counts(first) && area(first).active !== null) return area(first).active;
+  if (counts(second)) return area(second).active;
   return null;
 }
 
@@ -412,14 +503,32 @@ export function dockViews(): DockView[] {
     ...(isDockVisible("bottom") ? layout.bottom.tabs : []),
     ...(isDockVisible("right") ? layout.right.tabs : []),
   ];
-  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey() }];
+  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(isDockVisible) }];
+}
+
+/**
+ * The view a CLOSED dock would render if it opened. The chat page keeps a collapsed dock's
+ * node mounted on this, so hiding costs no panel state: the file preview, the editor draft
+ * and the shell on screen are all still there on the way back. Null when there is nothing
+ * to keep — the dock is open (dockViews() lists it then), it has no tabs, or it is the
+ * narrow layout's right dock, whose tabs the merged bottom view carries.
+ */
+export function closedDockView(position: DockPosition): DockView | null {
+  if (narrow) {
+    if (position === "right" || isDockVisible("right") || isDockVisible("bottom")) return null;
+    const tabs = [...layout.bottom.tabs, ...layout.right.tabs];
+    if (tabs.length === 0) return null;
+    return { position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(hasTabs) };
+  }
+  if (isDockVisible(position) || !hasTabs(position)) return null;
+  return { position, merged: false, tabs: area(position).tabs, activeKey: area(position).active };
 }
 
 /** Whether a tab is the one actually on screen (narrow-aware — what a toggle closes). */
 export function isTabShown(key: string): boolean {
   const home = tabHome(key);
   if (home === null || !isDockVisible(home)) return false;
-  return narrow ? mergedActiveKey() === key : area(home).active === key;
+  return narrow ? mergedActiveKey(isDockVisible) === key : area(home).active === key;
 }
 
 /** Whether a tab sits in a visible dock at all (shown or behind another tab). */
@@ -442,8 +551,7 @@ export function activateTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
   activate(found.position, key);
-  persist();
-  notify();
+  commit();
 }
 
 function insertTab(tab: DockTab, position: DockPosition): void {
@@ -477,8 +585,7 @@ export function removeTab(key: string): void {
   if (state.active === key)
     state.active = state.tabs.length > 0 ? tabKey(state.tabs[state.tabs.length - 1]!) : null;
   if (state.tabs.length === 0) state.open = false;
-  persist();
-  notify();
+  commit();
 }
 
 /** Moves one tab to the other dock (drag / the dock pickers), activating it there. */
@@ -489,8 +596,7 @@ export function moveTab(key: string, to: DockPosition): void {
   const tab = layout[found.position].tabs[found.index]!;
   insertTab(tab, to);
   if (layout[found.position].tabs.length === 0) layout[found.position].open = false;
-  persist();
-  notify();
+  commit();
 }
 
 /** Moves a whole dock's tabs onto the other edge, after any tabs already there. */
@@ -508,8 +614,7 @@ export function moveDock(from: DockPosition, to: DockPosition): void {
   if (shown !== null) activate(to, shown);
   else layout.focus = to;
   target.open = true;
-  persist();
-  notify();
+  commit();
 }
 
 /** Reorders one dock's strip; `keys` is the full new order of that dock's tabs. */
@@ -520,8 +625,7 @@ export function reorderDock(position: DockPosition, keys: readonly string[]): vo
   if (next.length !== state.tabs.length) return; // a stale drag; keep the strip consistent
   if (next.every((tab, index) => tab === state.tabs[index])) return;
   state.tabs = next;
-  persist();
-  notify();
+  commit();
 }
 
 /**
@@ -532,8 +636,7 @@ export function toggleDock(position: DockPosition): void {
   const state = area(position);
   state.open = !state.open;
   if (state.open) layout.focus = position;
-  persist();
-  notify();
+  commit();
 }
 
 /** The merged view's ×: both docks away (wide views pass their own position instead). */
@@ -544,159 +647,123 @@ export function hideView(view: DockView): void {
   } else {
     area(view.position).open = false;
   }
-  persist();
+  commit();
+}
+
+// --------------------------------------------------------------------------- fullscreen
+
+/** The surface grown to its fullscreen cover ("bottom" for the narrow merged view), or null. */
+export function fullscreenDock(): DockPosition | null {
+  return fullscreenByLayout.get(layout) ?? null;
+}
+
+/** Whether the merged view is on screen with something in its strip (rather than its picker). */
+function mergedViewHasTabs(candidate: ScopeLayout): boolean {
+  return (
+    (candidate.bottom.open && candidate.bottom.tabs.length > 0) ||
+    (candidate.right.open && candidate.right.tabs.length > 0)
+  );
+}
+
+/**
+ * Whether a surface can be fullscreen as the layout stands: on screen with tabs (the picker is
+ * never fullscreen). Wide, the surface is one dock; narrow, it is the merged view, which only
+ * exists at the bottom.
+ */
+function fullscreenEligible(position: DockPosition, candidate: ScopeLayout = layout): boolean {
+  if (narrow) return position === "bottom" && mergedViewHasTabs(candidate);
+  return candidate[position].open && candidate[position].tabs.length > 0;
+}
+
+/**
+ * Drops fullscreen when its surface stopped qualifying — hidden, or its last tab gone — and when a
+ * dock it COVERS takes the stage, which would otherwise happen invisibly under the cover. Only the
+ * bottom dock's cover reaches another dock: it climbs to the toolbar, over the right dock, so the
+ * right dock being touched — activated, opened, or had something moved into it — ends it. The
+ * right dock's cover is its own row, with the bottom dock still in view below it, so the bottom
+ * dock opening, being touched or receiving a tab leaves it alone; so does anything within the
+ * merged view, which is every dock there is. Runs in commit(), after every mutation.
+ */
+function reconcileFullscreen(candidate: ScopeLayout = layout): void {
+  const fullscreen = fullscreenByLayout.get(candidate) ?? null;
+  if (fullscreen === null) return;
+  const coveredTakesStage = !narrow && fullscreen === "bottom" && candidate.focus === "right";
+  if (!fullscreenEligible(fullscreen, candidate) || coveredTakesStage)
+    fullscreenByLayout.delete(candidate);
+}
+
+/**
+ * Enters (a position) or leaves (null). Entering counts as touching that dock — it becomes the
+ * focused one, so the header button works on a dock that was not touched last — and is a no-op
+ * for a surface that is not on screen with tabs.
+ */
+export function setDockFullscreen(position: DockPosition | null): void {
+  if (position !== null && !fullscreenEligible(position)) return;
+  if (position !== null && !narrow && layout.focus !== position) {
+    layout.focus = position;
+    persist();
+  }
+  if (position === fullscreenDock()) return;
+  if (position === null) fullscreenByLayout.delete(layout);
+  else fullscreenByLayout.set(layout, position);
   notify();
 }
 
 // ------------------------------------------------------------------------------- panels
 
 /** The dock a panel's tab lives in (open or not), or null when the panel is closed. */
-export function panelDock(kind: PanelKind): DockPosition | null {
-  return tabHome(kind);
+export function panelDock(id: PanelId): DockPosition | null {
+  return tabHome(id);
 }
 
 /**
- * Puts a panel on screen: adds its tab (to `position`, or where it already lives, or the
- * right dock — the default edge for panels opened from the conversation) and activates
- * it. Idempotent when already shown.
+ * Puts a panel on screen: adds its tab (to `position`, or where it already lives, or `fallback` —
+ * the panel's own default edge, the right dock unless its definition names another) and
+ * activates it. Idempotent when already shown.
  */
-export function openPanel(kind: PanelKind, position?: DockPosition): void {
-  const target = position ?? panelDock(kind) ?? "right";
-  insertTab({ kind: "panel", panel: kind }, target);
-  persist();
-  notify();
+export function openPanel(id: PanelId, position?: DockPosition, fallback?: DockPosition): void {
+  const target = position ?? panelDock(id) ?? fallback ?? "right";
+  insertTab({ kind: "panel", panel: id }, target);
+  commit();
 }
 
-export function closePanel(kind: PanelKind): void {
-  removeTab(kind);
+export function closePanel(id: PanelId): void {
+  removeTab(id);
 }
 
 // ---------------------------------------------------------------------------- terminals
 
-function terminalKey(id: string): string {
-  return `terminal:${id}`;
+/** The shell the terminal panel shows in this conversation; null for its default (the newest). */
+export function shownShell(): string | null {
+  return layout.shell;
 }
 
-/** The dock a terminal's tab lives in within THIS scope, or null when it has no tab here. */
-export function terminalTabDock(id: string): DockPosition | null {
-  return tabHome(terminalKey(id));
-}
-
-/** This scope's terminal tabs, in strip order (bottom dock first). */
-export function terminalTabIds(): string[] {
-  return [...layout.bottom.tabs, ...layout.right.tabs]
-    .filter((tab): tab is Extract<DockTab, { kind: "terminal" }> => tab.kind === "terminal")
-    .map((tab) => tab.terminalId);
+/** Makes `id` the terminal panel's shown shell here (null: back to the newest). */
+export function setShownShell(id: string | null): void {
+  if (layout.shell === id) return;
+  layout.shell = id;
+  commit();
 }
 
 /**
- * Of `ids`, the ones no conversation holds — created through the API or the CLI, or whose
- * tab was closed. A dock picker's terminal row adopts one of these rather than spawning a
- * second shell beside a perfectly good one.
+ * Ctrl+`'s toggle, for whichever panel it targets: a panel shown here goes away with its dock (the
+ * merged view's both, below the breakpoint); one behind another tab, or in a hidden dock, comes
+ * to the front. False when this conversation has no tab of it — the caller then opens it.
  */
-export function unownedTerminals(ids: readonly string[]): string[] {
-  const owned = new Set<string>();
-  for (const s of [layout, ...Object.values(scopes)]) {
-    for (const tab of [...s.right.tabs, ...s.bottom.tabs]) {
-      if (tab.kind === "terminal") owned.add(tab.terminalId);
+export function togglePanelShown(id: PanelId): boolean {
+  const home = tabHome(id);
+  if (home === null) return false;
+  if (isTabShown(id)) {
+    if (narrow) {
+      layout.right.open = false;
+      layout.bottom.open = false;
+    } else {
+      area(home).open = false;
     }
-  }
-  return ids.filter((id) => !owned.has(id));
-}
-
-/** New terminals land at the bottom dock unless a dock asked for them explicitly. */
-export function addTerminalTab(id: string, position?: DockPosition): void {
-  insertTab({ kind: "terminal", terminalId: id }, position ?? terminalTabDock(id) ?? "bottom");
-  persist();
-  notify();
-}
-
-/**
- * Brings a terminal on screen in this conversation: its tab activates where it lives, or
- * a new tab joins the bottom dock.
- */
-export function showTerminal(id: string): void {
-  addTerminalTab(id);
-}
-
-/**
- * Puts a terminal tab back into a NAMED conversation's dock — the detach round trip: the
- * tab left scope X when its shell moved to a window, and closing that window must return
- * it to X even when another conversation is on screen by then. No-op when any scope
- * already holds the shell (the user re-tabbed it meanwhile).
- */
-export function restoreTerminalTab(scopeId: string, id: string, position: DockPosition): void {
-  if (unownedTerminals([id]).length === 0) return;
-  if (scopeId === scope) {
-    addTerminalTab(id, position);
-    return;
-  }
-  const target = scopes[scopeId] ?? emptyScope();
-  const state = target[position];
-  state.tabs = [...state.tabs, { kind: "terminal", terminalId: id }];
-  state.active = terminalKey(id);
-  state.open = true;
-  const { [scopeId]: _previous, ...rest } = scopes;
-  scopes = { ...rest, [scopeId]: target };
-  persist();
-  notify();
-}
-
-/**
- * Drops tabs of terminals that no longer exist — across every scope, not just the one on
- * screen: a dead shell's id would otherwise sit in an inactive conversation's arrangement
- * until that conversation aged out of storage.
- */
-export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
-  let changed = false;
-  const pruneArea = (state: DockAreaState): boolean => {
-    const kept = state.tabs.filter((tab) => tab.kind !== "terminal" || liveIds.has(tab.terminalId));
-    if (kept.length === state.tabs.length) return false;
-    state.tabs = kept;
-    if (state.active !== null && !kept.some((tab) => tabKey(tab) === state.active))
-      state.active = kept.length > 0 ? tabKey(kept[kept.length - 1]!) : null;
-    if (kept.length === 0) state.open = false;
-    return true;
-  };
-  for (const s of Object.values(scopes)) {
-    if (s === layout) continue; // the live scope is pruned below
-    if (pruneArea(s.right)) changed = true;
-    if (pruneArea(s.bottom)) changed = true;
-  }
-  if (pruneArea(layout.right)) changed = true;
-  if (pruneArea(layout.bottom)) changed = true;
-  if (!changed) return;
-  persist();
-  notify();
-}
-
-/**
- * Ctrl+`'s toggle, on the store's synchronous half: hides the docks that hold this
- * conversation's terminal tabs when one is shown; restores/activates the newest terminal
- * tab when there are tabs but none on screen. Returns false when this scope has no
- * terminal tab at all — the caller (dock-terminal.ts) then adopts or creates a shell,
- * which is async.
- */
-export function toggleTerminalDocks(): boolean {
-  const ids = terminalTabIds();
-  if (ids.length === 0) return false;
-  const holders = (["right", "bottom"] as const).filter((position) =>
-    area(position).tabs.some((tab) => tab.kind === "terminal"),
-  );
-  const anyShown = holders.some(
-    (position) =>
-      isDockVisible(position) &&
-      (narrow
-        ? mergedActiveKey()?.startsWith("terminal:") === true
-        : area(position).active?.startsWith("terminal:") === true),
-  );
-  if (anyShown) {
-    for (const position of holders) area(position).open = false;
-    persist();
-    notify();
+    commit();
     return true;
   }
-  showTerminal(ids[ids.length - 1]!);
+  activateTab(id);
   return true;
 }
 
@@ -711,12 +778,10 @@ export function setBottomRatio(next: number): void {
   const clamped = clampRatio(next);
   if (clamped === ratio) return;
   ratio = clamped;
-  persist();
-  notify();
+  commit();
 }
 
 export function resetBottomRatio(): void {
   ratio = DEFAULT_DOCK_HEIGHT_RATIO;
-  persist();
-  notify();
+  commit();
 }

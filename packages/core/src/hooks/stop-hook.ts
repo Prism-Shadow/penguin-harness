@@ -20,8 +20,8 @@
  * directly. The loop that consults them is `Session.run`.
  * Docs: /docs/agent-loop § "Stop hooks".
  */
-import { hookEvent } from "../omnimessage/index.js";
-import type { OmniMessage } from "../omnimessage/index.js";
+import { hookEvent } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../interfaces/index.js";
 import { errorMessage, failedAnswer } from "./answer.js";
 import type { PreToolUseHook } from "./tool-hook.js";
@@ -75,7 +75,7 @@ export interface StopHook {
  */
 export interface HookSubagentSpawned {
   sessionId: string;
-  meta: OmniMessage | null;
+  meta: AmspRecord | null;
 }
 
 /** Spawns the background child Session a hook asked for; `approve` is the run's approval callback, which the child inherits. */
@@ -89,7 +89,7 @@ export interface SessionHooks {
   stop?: StopHook[];
   /** Consulted by the engine before each tool call's approval (see tool-hook.ts). */
   preToolUse?: PreToolUseHook[];
-  /** Run by `Session.runUserPromptHook` when the host accepts a prompt for a package's flow (see prompt-hook.ts). */
+  /** Consulted every time the user submits a Prompt; the ones marked `trigger: "host"` run only through `Session.runUserPromptHook` (see prompt-hook.ts). */
   userPrompt?: UserPromptHook[];
   /** How a `subagent` answer is honored; without it the request is recorded as unhonored. */
   spawnSubagent?: HookSubagentSpawner;
@@ -104,7 +104,7 @@ export interface SessionHooks {
  * parent's nested subagent view; the event's `output.session_id` is its record there.
  */
 export interface StopHooksOutcome {
-  events: OmniMessage[];
+  events: AmspRecord[];
   next: string | null;
 }
 
@@ -121,7 +121,7 @@ export async function runStopHooks(
   input: StopHookInput,
   spawn?: (request: HookSubagentRequest) => Promise<HookSubagentSpawned>,
 ): Promise<StopHooksOutcome> {
-  const events: OmniMessage[] = [];
+  const events: AmspRecord[] = [];
   let next: string | null = null;
   for (const hook of hooks) {
     let result: StopHookResult | void;
@@ -134,7 +134,7 @@ export async function runStopHooks(
     if (result.decision === "continue" && next === null && result.input) next = result.input;
     let output = result.output;
     let reason = result.reason;
-    const childRecords: OmniMessage[] = [];
+    const childRecords: AmspRecord[] = [];
     if (result.subagent) {
       if (!spawn) {
         reason = `${reason ? `${reason} · ` : ""}subagent not spawned: no spawner`;

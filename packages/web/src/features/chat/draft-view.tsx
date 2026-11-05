@@ -1,9 +1,10 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
- * conversation, before any Session exists. The input card sits vertically centered;
- * before sending, this is where Agent / Workspace / approval mode / Model are all
- * chosen in one place — two small dropdown pills sit right below the card (pill
- * buttons, styled after ChatGPT's project picker): Agent selection and Workspace
+ * conversation, before any Session exists. The page around the input card is the start
+ * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
+ * shortcuts below it); this module keeps the draft itself. Before sending,
+ * this is where Agent / Workspace / approval mode / Model are all
+ * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
  * directory selection (the menu browses server-side directories, and the current
  * path can be edited directly); the model picker lives in the input card's bottom
  * toolbar, left of the send button (with a vendor logo). The Session is only
@@ -21,14 +22,14 @@
  * The one thing that does not resume is a prompt a "Create with AI" surface composed
  * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
  * or sending it clears the slot exactly as a send would (see dropAiPrefill).
- * The sidebar group header "+" / menu "New conversation" explicitly specify an
- * Agent via route state (overriding the cached selection); the workspace-mode
- * group header "+" additionally carries a Workspace path pre-filling the
- * Workspace selection ("" = temporary workspace). A direct visit or refresh
- * falls back to the cache. When neither route state nor the mount-time cache claims a
- * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
- * approval mode (precedence: route state > draft cache > project default > built-in
- * fallback); the model default already flows through models.defaultModel.
+ * Every "New chat" entry point first rewrites the slot to the model carry-over and staged
+ * skills, releasing whatever else an earlier visit left in the cache (prepareNewChatDraft,
+ * new-chat.ts), then names in route state only what it is about: an Agent group's "+" or
+ * an Agent card names its Agent, a Workspace group's "+" its path ("" = temporary
+ * workspace), and the plain "New chat" names nothing. A direct visit or refresh keeps the
+ * cache. Precedence per field: route state > draft cache > the Project's new-chat defaults
+ * ([default_chat]) > built-in fallback (for the Agent: default_agent, then the first —
+ * newChatAgentId); the model default already flows through models.defaultModel.
  *
  * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
  * the change up: the project-settings dialog strips the cached pins (next visits reseed
@@ -37,7 +38,10 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { browserState } from "../builtin-browser/browser-store";
+import { adoptBrowserSession } from "../builtin-browser/browser-actions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -47,34 +51,32 @@ import type {
   ModelRefDto,
   ModelsResponse,
   SessionCreateRequest,
-  SkillMetadataItem,
+  SessionSandbox,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+
+import { AgentSelect } from "../agents/agent-select";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { formatMonthDay } from "../../lib/format";
+import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
+import type { PermissionPick } from "../../lib/permission-level";
 import { apiErrorText } from "../../lib/api-error";
+import { rememberSessionMachine } from "../../lib/session-machines";
+import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
+import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
+import type { MachineLink } from "../../lib/machine-link";
+import { useMachines } from "../../state/machines";
 import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
+import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Chevron } from "../../components/ui/chevron";
-import { AGENT_GROUP_ICON } from "../../components/ui/group-list";
-import { Dropdown } from "../../components/ui/dropdown";
-import { PenguinLogo } from "../../components/ui/penguin-logo";
-import { toastError } from "../../components/ui/toast";
-import { useVersionInfo } from "../../lib/use-version-info";
-import { versionBadgeFor } from "../../lib/update-flow";
-import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { adoptDockScope } from "../dock/dock-state";
-import { setDockCwd } from "../dock/dock-terminal";
-import { EXAMPLE_FOLDERS } from "./example-tasks";
-import type { ExampleFolderId, ExampleTask } from "./example-tasks";
-import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
-import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
+import { APPROVAL_MODES } from "./approval-mode";
+import { adoptDockScope, currentDockScope } from "../dock/dock-state";
+import { setDockConversation } from "../dock/dock-terminal";
+import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -88,10 +90,14 @@ import {
   chatDefaultsChangedDetail,
   type ChatDefaultsChangedDetail,
 } from "./chat-defaults-event";
+import { newChatAgentId } from "./new-chat";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "./thinking-level";
-import { WorkspaceSelect, pillClass } from "./workspace-select";
+import { useAgentSkills } from "./use-agent-skills";
+import { WorkspaceSelect } from "./workspace-select";
+import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
-import { ICON_GAP } from "../../lib/icon-scale";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -122,42 +128,46 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
   }
 }
 
-/**
- * One glyph per example folder, 16×16. Icons live on the folder rather than on each example:
- * with the examples reduced to single-line titles, a column of per-row icons was noise
- * competing with the titles, while the folder row is exactly where a glyph earns its place —
- * it is what you scan to pick a category.
- *
- * webapps: a browser window (chrome bar + two dots). agents: AGENT_GROUP_ICON itself — the one
- * glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
- * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
- * the day that glyph is redrawn. (`components/ui/group-list.tsx` pulls in nothing from
- * `features/`, so there is no cycle to avoid here.) schedules: a clock face with hands — the
- * plainest mark for "fires on a timer", and distinct from the hourglass that already means a
- * Session is waiting.
- */
-const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
-  webapps:
-    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
-  agents: AGENT_GROUP_ICON,
-  schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
-};
-
 export function DraftView({
   projectId,
   models,
   draftId,
+  composerRef: pageComposerRef,
+  onWorkspaceChange,
+  onAgentChange,
 }: {
   projectId: string;
-  /** Project model config (already fetched by ChatPage): candidate list and default model. */
+  /**
+   * The model config of the server the draft's workspace is on (ChatPage reads it: this server's,
+   * or the machine's): candidate list and default model. A Session created on a machine can only
+   * name a model that machine has.
+   */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
+  /**
+   * The page's handle on the composer, so what the dock's panels hand the conversation (the
+   * Files panel's references) reaches this draft's composer as it reaches a live Session's.
+   */
+  composerRef?: RefObject<ComposerControl | null>;
+  /** The Workspace picked here ("" = a temporary one) and its machine, for the Files panel. */
+  onWorkspaceChange?: (path: string, machineId: string | null) => void;
+  /** The resolved draft owner, including the machine whose Agent list was used. */
+  onAgentChange?: (agentId: string | null, machineId: string | null) => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents, currentAgent, setCurrentAgentId } = useProject();
-  const { add } = useSessions();
+  const { agents: localAgents, setCurrentAgentId } = useProject();
+  /**
+   * Agents on the machine the workspace is on. They are per-server: a Session created on
+   * another machine can only name an Agent that exists THERE, so offering this machine's
+   * list would offer choices that cannot be made. Empty while loading, which the validation
+   * below already treats as "not ready" rather than "none".
+   */
+  const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
+  /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
+  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
+  const { add, remove } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
   // type allows null), it's better to disable caching entirely than to read/write a
@@ -185,19 +195,45 @@ export function DraftView({
     if (parkedMissing) navigate("/chat/new", { replace: true });
   }, [parkedMissing, navigate]);
 
-  const [agentId, setAgentId] = useState<string | null>(
-    cached.agentId ?? currentAgent?.agentId ?? null,
-  );
+  // Null until something names an Agent: the cache here, otherwise the resolution effect below
+  // once the Agent list and the Project's defaults are in — never a stand-in it would swap out.
+  const [agentId, setAgentId] = useState<string | null>(cached.agentId ?? null);
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
-  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
-  // temporary Workspace, whose directory the server only creates with the Session, so
-  // that case falls back to home (setDockCwd's null).
+  /**
+   * The machine that workspace is on (null = this one). Carried beside the path because a
+   * path alone does not identify a directory: `/srv/app` exists on many machines and means
+   * a different one on each.
+   */
+  const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
+  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
+  const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /**
+   * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
+   * from the one live account of the machines, so this composer and that page never disagree:
+   * the Agents are asked for when the machine is connected, and asked again the moment it is.
+   */
+  const machines = useMachines();
+  const remoteLink: MachineLink | null =
+    workspaceMachine === null
+      ? null
+      : machineLink(machines.state, machines.settled, workspaceMachine);
+  // The draft's docks belong to no Session yet, so they offer no terminal; the Workspace
+  // chosen here is still theirs (the Files panel, the sidebar's "browse files"). "" is the
+  // temporary Workspace, whose directory the server only creates with the Session.
   useEffect(() => {
-    setDockCwd(workspace || null);
-  }, [workspace]);
+    setDockConversation({
+      sessionId: null,
+      workspace: workspace || null,
+      machineId: workspaceMachine,
+    });
+    onWorkspaceChange?.(workspace, workspaceMachine);
+  }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
+  // Only what the person picked: the rest follows the server's sandbox settings, which the
+  // chat-defaults response carries, so the button shows what the Session would start with.
+  const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
   /**
@@ -230,8 +266,10 @@ export function DraftView({
   const defaultsFromEventRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
+    // This server's defaults, the block every machine is synced from; a draft on a machine
+    // takes its models and its Agent's thinking level from that machine (`models`, getAgentConfig).
     api
-      .getChatDefaults(projectId)
+      .getChatDefaults(projectId, null)
       .then((res) => {
         if (!cancelled && !defaultsFromEventRef.current) setChatDefaults(res);
       })
@@ -247,37 +285,56 @@ export function DraftView({
    * Fields the user already touched this mount: the project defaults arrive async (after
    * mount), and an explicit pick made in the meantime must never be clobbered by them.
    * The mount-time cache (`cached`) covers everything picked in PREVIOUS visits; these
-   * refs cover the window between mount and the defaults resolving.
+   * refs cover the window between mount and the defaults resolving. The Agent needs no flag:
+   * the resolution below never replaces a valid selection.
    */
-  const touchedRef = useRef({ agent: false, workspace: false, approval: false });
+  const touchedRef = useRef({ workspace: false, approval: false });
 
   // Unified resolution of the Agent selection (a single effect, single writer):
-  // explicit route state > current valid value (from cache / panel selection) >
-  // default_agent > the first one. Explicit intent (sidebar group header "+" / menu
-  // "New conversation") is applied only once per location.key — clicking "+" again
-  // for the same Agent gets a new key and re-aligns, while the user's subsequent
-  // reselection in the panel won't keep getting overridden. Merging this into one
-  // effect is essential: splitting it into an "apply state" effect and a "fallback
-  // on invalid value" effect would let the former write B in one render while the
-  // latter, still judging by the stale closure's invalid value, writes the default
-  // Agent and clobbers B.
+  // explicit route state > current valid value (from cache / panel selection) > the
+  // new-chat default Agent (newChatAgentId: the Project's `[default_chat].agent_id`, then
+  // default_agent, then the first one), which waits for the Project's defaults to resolve.
+  // Explicit intent (an Agent group's "+", an Agent card) is applied only once per
+  // location.key — clicking "+" again for the same Agent gets a new key and re-aligns, while
+  // the user's subsequent reselection in the panel won't keep getting overridden. Merging
+  // this into one effect is essential: splitting it into an "apply state" effect and a
+  // "fallback on invalid value" effect would let the former write B in one render while the
+  // latter, still judging by the stale closure's invalid value, writes the default Agent and
+  // clobbers B.
   const routeState = location.state as {
     agentId?: string;
     workspace?: string;
+    machineId?: string;
   } | null;
   const stateAgentId = routeState?.agentId;
+  // Read here rather than beside their own effect below: the Agent resolution waits on them
+  // (see `routeMachineSettled`), and a dependency array is evaluated during the render that
+  // declares it.
+  const stateWorkspace = routeState?.workspace;
+  const stateMachineId = routeState?.machineId;
   const appliedStateKey = useRef<string | null>(null);
-  /** One-shot marker for the project-default Agent (seeding precedence, see below). */
-  const appliedDefaultAgent = useRef(false);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
       !!id && agents.some((a) => a.agentId === id);
+    // The route may name an Agent that only exists on the machine it names alongside it (the
+    // Agents page offers a new chat on a machine's own Agent). That machine is applied by the
+    // Workspace effect below, one render later, and its Agents are fetched after that — so
+    // this pass would validate the id against THIS server's list, reject it, and spend the
+    // one-shot key on the fallback Agent, which is then what the Session is created with.
+    // Nothing is decided until the list being validated against is the one the route asked
+    // for. A machine named without a path is never applied at all (the machine travels with
+    // the path), so it cannot hold this up.
+    const routeMachineSettled =
+      stateMachineId === undefined ||
+      stateWorkspace === undefined ||
+      workspaceMachine === stateMachineId;
     if (
       stateAgentId &&
       appliedStateKey.current !== location.key &&
       loadAppliedRouteKey("agentId") !== location.key
     ) {
+      if (!routeMachineSettled) return;
       appliedStateKey.current = location.key;
       saveAppliedRouteKey("agentId", location.key);
       if (valid(stateAgentId)) {
@@ -285,32 +342,26 @@ export function DraftView({
         return;
       }
     }
-    // Project default ([default_chat].agent_id), inserted ahead of the fallback chain:
-    // applied at most once per mount, and only when nothing above it claims the field —
-    // no route override consumed this mount, no mount-time cached selection, no panel pick
-    // since mount (precedence: route state > draft cache > project default > the
-    // currentAgent/default_agent/first fallback the initial state and the line below give).
-    if (chatDefaults?.agentId !== undefined && !appliedDefaultAgent.current) {
-      appliedDefaultAgent.current = true;
-      if (
-        appliedStateKey.current === null &&
-        cached.agentId === undefined &&
-        !touchedRef.current.agent &&
-        valid(chatDefaults.agentId)
-      ) {
-        setAgentId(chatDefaults.agentId);
-        return;
-      }
-    }
     if (valid(agentId)) return;
-    setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
-  }, [agents, agentId, location.key, stateAgentId, chatDefaults, cached.agentId]);
+    // Nothing names a valid Agent (no route override, no cached or picked one, or the one
+    // there was is gone): the new-chat default, once the Project's defaults are known.
+    if (chatDefaults === null) return;
+    setAgentId(newChatAgentId(agents, chatDefaults));
+  }, [
+    agents,
+    agentId,
+    location.key,
+    stateAgentId,
+    stateMachineId,
+    stateWorkspace,
+    workspaceMachine,
+    chatDefaults,
+  ]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
   // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
-  const stateWorkspace = routeState?.workspace;
   const appliedWorkspaceKey = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -323,7 +374,10 @@ export function DraftView({
     appliedWorkspaceKey.current = location.key;
     saveAppliedRouteKey("workspace", location.key);
     setWorkspace(stateWorkspace);
-  }, [location.key, stateWorkspace]);
+    // Set together with the path, and to null when the route names none: a machine left over
+    // from a cached draft would send this Session to a machine the chosen path is not on.
+    setWorkspaceMachine(stateMachineId ?? null);
+  }, [location.key, stateWorkspace, stateMachineId]);
 
   // Project defaults for Workspace / approval mode: the same apply-once discipline as the
   // route-state effects above, deferred until the defaults resolve. A field is only seeded
@@ -343,12 +397,10 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    if (
-      chatDefaults.approvalMode !== undefined &&
-      cached.approvalMode === undefined &&
-      !touchedRef.current.approval
-    ) {
-      setApprovalMode(chatDefaults.approvalMode);
+    // The Project's own default wins; else the Sandbox card's default preset, while it is on.
+    const seeded = chatDefaults.approvalMode ?? chatDefaults.sandbox?.defaultApprovalMode;
+    if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
+      setApprovalMode(seeded);
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
@@ -383,34 +435,42 @@ export function DraftView({
         const d = detail.defaults;
         defaultsFromEventRef.current = true;
         setChatDefaults(d);
-        touchedRef.current = { agent: false, workspace: false, approval: false };
+        touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
-        setApprovalMode(d.approvalMode ?? "allow-all");
-        const valid = (id: string | undefined): id is string =>
-          id !== undefined && agents.some((a) => a.agentId === id);
-        if (valid(d.agentId)) {
-          setAgentId(d.agentId);
-        } else if (agents.length > 0) {
-          // No (valid) default Agent in the new block: the same fallback chain a fresh
-          // mount runs — the global current Agent, then default_agent, then the first.
-          // Skipped while the list is empty (nothing to validate against; keep the pick).
-          setAgentId(
-            currentAgent?.agentId ??
-              (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ??
-              null,
-          );
-        }
+        setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
+        // The Agent a fresh mount would now start on (the new block's default while it names
+        // an Agent, then default_agent, then the first).
+        setAgentId(newChatAgentId(agents, d));
       }
       // New default model: adopt it directly (the event carries the authoritative pair).
       // Setting null and leaning on the fallback effect would race ChatPage's models
       // refetch and re-pin the STALE default from the old models prop.
       if (detail.defaultModel !== undefined) setModelRef(detail.defaultModel);
     },
-    [agents, currentAgent],
+    [agents],
   );
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
   onDefaultsChangedRef.current = onDefaultsChanged;
+  // The Sandbox card was saved (from the composer's More…, say): the permission menu reads the
+  // sandbox view again, and an approval mode nobody picked follows the new default preset.
+  useEffect(
+    () =>
+      onPluginConfigSaved("sandbox", () => {
+        void api.getChatDefaults(projectId, null).then(
+          (res) => {
+            setChatDefaults((prev) => ({
+              ...(prev ?? {}),
+              ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
+            }));
+            const seeded = res.approvalMode ?? res.sandbox?.defaultApprovalMode;
+            if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
+          },
+          () => undefined,
+        );
+      }),
+    [projectId],
+  );
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
@@ -431,14 +491,23 @@ export function DraftView({
   // created on first send reads systemConfig fresh, so it runs with the picked level, which
   // also becomes the Agent's new default — the project default is only a fallback and is
   // never written from here. Refetched whenever the draft's Agent changes; while loading
-  // (or after a failed fetch) the picker stays disabled (null).
+  // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
+  // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
+  /**
+   * The draft's Agent once the list on offer carries it. Nothing is asked about an id the cache
+   * or the route named until then: a cached id may be one this Project does not have (deleted
+   * since, or written while another Project's Agents were on screen), and the request would only
+   * come back "This agent no longer exists."
+   */
+  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     setAgentThinkingLevel(null);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, agentId)
+      .getAgentConfig(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -446,7 +515,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -461,45 +530,30 @@ export function DraftView({
       const rollback = thinkingRef.current;
       setAgentThinkingLevel(level); // Optimistic: the derived display follows immediately.
       api
-        .putAgentConfig(projectId, agentId, {
-          config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
-        })
+        .putAgentConfig(
+          projectId,
+          agentId,
+          {
+            config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
+          },
+          workspaceMachine,
+        )
         .catch((e: unknown) => {
           setAgentThinkingLevel(rollback);
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
-    [projectId, agentId],
+    [projectId, agentId, workspaceMachine],
   );
 
-  // Skills installed on the currently selected Agent (candidates for the input
-  // area's skills dropdown): switching Agents first clears the list (which also
-  // clears the selection in the input area), then refetches; a fetch failure is
-  // silently treated as no skills. Clearing preserves the reference when already
-  // empty (doesn't swap in a new array): swapping the reference on the very first
-  // mount render would trigger ChatInput's pruning effect and wrongly clear the
-  // quick-invoke preselection.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  /** Whether the skills fetch for the current Agent has settled — the example task waits for it so its `[use_skills]` pinning doesn't silently depend on network timing. */
-  const [skillsLoaded, setSkillsLoaded] = useState(false);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    setSkillsLoaded(false);
-    if (!agentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, agentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setSkillsLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, agentId]);
+  // Skills installed on the selected Agent, on the picked folder's machine (candidates for the
+  // input area's skills dropdown). `skillsLoaded` gates the example task, so its `[use_skills]`
+  // pinning does not depend on network timing.
+  const { skills: agentSkills, loaded: skillsLoaded } = useAgentSkills(
+    projectId,
+    resolvedAgentId,
+    workspaceMachine,
+  );
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
@@ -517,6 +571,10 @@ export function DraftView({
     cancelPendingSave();
     if (!userId) return;
     const data: DraftCache = { text: textRef.current, workspace, approvalMode };
+    if (Object.keys(sandboxPick).length > 0) data.sandbox = sandboxPick;
+    // Saved with the path: a draft restored without its machine would create the Session
+    // here, against a path that only exists somewhere else.
+    if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
@@ -526,7 +584,18 @@ export function DraftView({
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
-  }, [cancelPendingSave, userId, projectId, draftId, agentId, workspace, approvalMode, modelRef]);
+  }, [
+    cancelPendingSave,
+    userId,
+    projectId,
+    draftId,
+    agentId,
+    workspace,
+    workspaceMachine,
+    approvalMode,
+    sandboxPick,
+    modelRef,
+  ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -635,20 +704,54 @@ export function DraftView({
   }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
-    touchedRef.current.agent = true; // an explicit pick outranks a late-arriving project default
     setAgentId(a.agentId);
     // Follow through to the global current Agent: keeps the sidebar memory and stats convention consistent.
     setCurrentAgentId(a.agentId);
   };
 
+  // The Agents of the machine the workspace is on. What that machine was last seen running
+  // is offered first, so the picker has something while the machine is asked — and stays on
+  // offer if it cannot be: it is the best account of that machine anyone has. The machine's
+  // own answer replaces it wholesale, including with nothing, so an Agent deleted over there
+  // stops being offered here. Asked only while the machine is connected, and again each time it
+  // becomes so: nothing here connects, and the server keeps an enabled machine connected itself.
+  useEffect(() => {
+    if (workspaceMachine === null) {
+      setRemoteAgents([]);
+      return;
+    }
+    setRemoteAgents(cachedMachineAgents(projectId, workspaceMachine));
+    setRemoteAgentsFailure(null);
+    if (remoteLink !== "connected") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const answered = (await api.listAgents(projectId, workspaceMachine)).agents;
+        rememberMachineAgents(projectId, workspaceMachine, answered);
+        if (!cancelled) setRemoteAgents(answered);
+      } catch (err) {
+        if (!cancelled) setRemoteAgentsFailure(apiErrorText(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceMachine, projectId, remoteLink]);
+
   /** User edits routed through these two so a late-arriving project default cannot clobber them. */
-  const changeWorkspace = useCallback((path: string) => {
+  const changeWorkspace = useCallback((path: string, machineId?: string | null) => {
     touchedRef.current.workspace = true;
     setWorkspace(path);
+    // The machine travels with the path, always — including back to null when the pick moves
+    // home, or the next Session would be created on the machine the previous pick named.
+    setWorkspaceMachine(machineId ?? null);
   }, []);
-  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+  // A preset sets both halves of the draft's level at once, as it does on a Session; an
+  // approval-mode pick (switch off) leaves the sandbox half unpicked, so the settings decide it.
+  const changePermission = useCallback((pick: PermissionPick) => {
     touchedRef.current.approval = true;
-    setApprovalMode(mode);
+    setApprovalMode(pick.approvalMode);
+    setSandboxPick((prev) => draftSandboxAfter(prev, pick));
   }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
@@ -656,6 +759,15 @@ export function DraftView({
   // a racing navigation. A ref rather than state — the composer disables its own send button
   // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
+  // Whether this draft's page is still the one open: the first send's round trips can outlast
+  // it, and a new draft of the same Project would reuse its dock scope.
+  const openRef = useRef(true);
+  useEffect(() => {
+    openRef.current = true;
+    return () => {
+      openRef.current = false;
+    };
+  }, []);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
@@ -664,375 +776,205 @@ export function DraftView({
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
+      const browserScope = browserState().scope;
+      // The draft's own docks, named now: the send takes round trips, and the user may be on
+      // another conversation by the time it has a Session to hand them to.
+      const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
+        if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
         if (modelRef) {
           body.modelId = modelRef.modelId;
           body.provider = modelRef.provider;
         }
         if (workspace.trim()) body.workspace = workspace.trim();
-        const created = await api.createSession(projectId, agentId, body);
+        // Created ON the machine that owns the workspace: that server runs the agent in it.
+        const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
+        // The first task can use the draft's pages as soon as it starts.
+        await adoptBrowserSession(browserScope, createdId);
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        await adoptBrowserSession(createdId, res.sessionId);
+        // postTask answers with the CURRENT id: a Session with no Trace whose process
+        // restarted in between self-heals into a new one. Everything recorded a moment ago
+        // under the id we created is then about a Session that no longer answers to it, and
+        // the routing map is the half that fails silently — a remote Session left mapped
+        // under the old id would be asked of THIS server, which does not have it. Re-recorded
+        // BEFORE the lookup below, which is itself one of those calls.
+        if (res.sessionId !== createdId) rememberSessionMachine(res.sessionId, workspaceMachine);
         // Re-fetch the row before listing it: the server persisted the fallback title at
         // Task start (inside the postTask call), and its session_title push may have gone
         // out before this row existed in the list, where it patched nothing. The fresh row
         // also carries the post-self-heal id, matching where we navigate.
         const fresh = await api.getSession(res.sessionId).catch(() => null);
-        add(fresh?.session ?? created.session);
+        // Listed under the id we are about to navigate to. Falling back to the created row
+        // verbatim would list the OLD id — a stale row, and a route naming a Session the
+        // list does not contain.
+        add(fresh?.session ?? { ...created.session, sessionId: res.sessionId });
         discardDraft();
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
-        // instead (dock-state.ts).
-        adoptDockScope(res.sessionId);
-        navigate(`/chat/${res.sessionId}`, { replace: true });
+        // instead (dock-state.ts). Only someone still on this draft is taken to the new
+        // Session; whoever moved to another conversation stays there, and the Session waits
+        // in the sidebar.
+        if (adoptDockScope(dockScope, res.sessionId, openRef.current))
+          navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
-        // The Session was created but the first message failed to send (postTask failed): delete
-        // this empty Session, otherwise every resend attempt would create another one, piling up
-        // empty sessions with no messages in the sidebar (best-effort cleanup).
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
-        toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
+        // The Session was created but its first Task was refused or failed (postTask failed):
+        // discard it — out of the list first, then off the server (unstarted-session.ts says why
+        // in that order) — or every resend would pile up another empty Session in the sidebar.
+        if (createdId) {
+          await adoptBrowserSession(createdId, browserScope);
+          void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
+        }
+        toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});
         return false;
       } finally {
         sendingRef.current = false;
       }
     },
-    [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
+    [
+      projectId,
+      agentId,
+      approvalMode,
+      sandboxPick,
+      modelRef,
+      workspace,
+      // The machine can change while the path does not: a temporary workspace there after a
+      // temporary one here is "" both times, and a send that kept the old machine would create
+      // the Session on this server.
+      workspaceMachine,
+      add,
+      remove,
+      discardDraft,
+      navigate,
+    ],
   );
 
   /**
-   * Example tasks: a click FILLS the composer — the prompt into the text body, the example's
-   * skills into the skills dropdown — and sends nothing. The user reads what landed, edits it
-   * if they want, and presses Send, which then builds the very message this card used to
-   * submit by itself (the `[use_skills]` block is the send path's job, so the textarea never
-   * shows a marker block). Filling is instant and local: there is no busy state and no
-   * in-flight guard to keep here, and everything else — where the prompt goes when text is
-   * already typed, focus, the caret — is the composer's, reached through this handle.
+   * The start dashboard's examples and shortcuts: a click FILLS the composer —
+   * the prompt into the text body, the Skills it pins into the skills dropdown — and sends
+   * nothing. The user reads what landed, edits it if they want, and presses Send, which then
+   * builds the very message the card used to submit by itself (the `[use_skills]` block is the
+   * send path's job, so the textarea never shows a marker block). A saved shortcut pins no
+   * Skills: its prompt is the user's own text, and an empty pin list leaves the composer's Skill
+   * selection exactly as the user set it (see user-shortcuts.ts). Filling is instant and local:
+   * there is no busy state and no in-flight guard to keep here, and everything else — where the
+   * prompt goes when text is already typed, focus, the caret — is the composer's, reached
+   * through this handle.
    */
-  const composerRef = useRef<ComposerControl | null>(null);
-  const fillExample = useCallback((task: ExampleTask) => {
-    // S is a live binding swapped on locale change: read the prompt at click time, not at render.
-    composerRef.current?.fillExample(S.chat.exampleTasks[task.id].prompt, task.skills);
+  const ownComposerRef = useRef<ComposerControl | null>(null);
+  const composerRef = pageComposerRef ?? ownComposerRef;
+  const fillComposer = useCallback((prompt: string, skills: readonly string[]) => {
+    composerRef.current?.fillPrompt(prompt, skills);
   }, []);
-  /**
-   * A saved shortcut takes the same path with no Skills to pin: its prompt is the user's own text,
-   * not a card authored against the Skill catalog this product ships (see user-shortcuts.ts). An
-   * empty pin list leaves the composer's Skill selection exactly as the user set it.
-   */
-  const fillShortcut = useCallback((prompt: string) => {
-    composerRef.current?.fillExample(prompt, []);
-  }, []);
+  const readComposerText = useCallback(() => textRef.current, []);
 
-  /**
-   * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
-   * the previous, and clicking the open one is a no-op rather than collapsing it. Never
-   * nullable on purpose. With the folders kept within one row of each other, "one open" is
-   * what keeps the block's height near-constant: the examples area can neither collapse to
-   * bare folder rows nor grow to the whole catalog, so switching folders moves what sits
-   * below it by at most one row.
-   */
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
-    EXAMPLE_FOLDERS[0].id,
-  );
-
-  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  useEffect(() => {
+    onAgentChange?.(resolvedAgentId, workspaceMachine);
+    if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
+  }, [resolvedAgentId, workspaceMachine, onAgentChange, setCurrentAgentId]);
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
   const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
+  // Goal mode's plugin check, against the Agent the Session will be created for, on the server
+  // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () => (resolvedAgentId ? goalPluginGate(projectId, resolvedAgentId, workspaceMachine) : null),
+    [projectId, resolvedAgentId, workspaceMachine],
+  );
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
+
+  // The composer and the ownership pills under it, which the dashboard sets between its brand
+  // and its examples.
+  const composer = (
+    <>
+      <ChatInput
+        status="idle"
+        controlRef={composerRef}
+        onSend={onSend}
+        onStop={async () => undefined}
+        modelRef={modelRef}
+        models={models?.models ?? []}
+        onChangeModel={setModelRef}
+        thinkingLevel={thinkingLevel}
+        onChangeThinkingLevel={onChangeThinkingLevel}
+        {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+        {...(contextWindow !== undefined ? { contextWindow } : {})}
+        contextNow={0}
+        vision={vision}
+        approvalMode={approvalMode}
+        // A draft becomes an ordinary conversation, never an organization's: every mode.
+        approvalModes={APPROVAL_MODES}
+        sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
+        onChangePermission={changePermission}
+        modeSaving={false}
+        autoFocus
+        agents={agents}
+        {...(agentId ? { currentAgentId: agentId } : {})}
+        skills={agentSkills}
+        {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+        {...(cached.goal === true ? { initialGoal: true } : {})}
+        goalPlugin={goalPlugin}
+        onSkillsChange={onSkillsChange}
+        initialText={cached.text ?? ""}
+        onTextChange={onTextChange}
+      />
+
+      {/* Agent and Workspace selection below the composer. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <AgentSelect
+          agents={agents}
+          selected={selectedAgent}
+          onSelect={selectAgent}
+          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+        />
+        <WorkspaceSelect
+          projectId={projectId}
+          workspace={workspace}
+          machineId={workspaceMachine}
+          onChange={changeWorkspace}
+          chooseMachine
+          {...(agentId ? { agentId } : {})}
+        />
+        {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
+            none yet (see FilesPanelToggle). */}
+        <FilesPanelToggle available={workspace.trim() !== ""} />
+      </div>
+    </>
+  );
 
   return (
     <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
       {/*
-       * Vertical layout: everything visible — brand, input card, ownership pills, example tasks —
-       * lives in ONE block between two empty flex-1 spacers, so the block is centred and the free
-       * space above and below it is exactly equal. The brand deliberately sits inside that block
-       * rather than in the upper spacer: keeping it in the spacer made the upper gap shorter than
-       * the lower one by the brand's own height, which pushed the card up the viewport and left
-       * the slash menu — it opens upward, `bottom-full` — too little room, so it clipped against
-       * the top of this scroll container. When the viewport is too short the spacers collapse to
-       * nothing, the container's own py-6 keeps the content off the edges, and the page falls back
-       * to natural scrolling.
+       * Vertical layout: everything visible — the dashboard's brand and tiles, the input card,
+       * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
+       * spacers, so the block is centred and the free space above and below it is exactly equal.
+       * The header deliberately sits inside that block rather than in the upper spacer: keeping
+       * the brand in the spacer made the upper gap shorter than the lower one by the brand's own
+       * height, which pushed the card up the viewport. When the viewport is too short the spacers
+       * collapse to nothing, the container's own py-6 keeps the content off the edges, and the
+       * page falls back to natural scrolling; the composer's upward menus measure the room above
+       * the card (chat-input.tsx) rather than assume it.
        */}
       <div className="flex-1" />
 
       <div className="mx-auto w-full max-w-3xl">
-        {/* Large brand logo + brand name + subtitle (e2e tests identify the draft page by this
-            heading). The asset is square-cropped and the graphic already has a bit of built-in
-            padding, so a small margin is enough to sit visually close to the title. */}
-        <div className="mb-10 text-center">
-          <PenguinLogo className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
-          <h1 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-            {S.appName}
-          </h1>
-          <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
-          <VersionLine />
-        </div>
-
-        <ChatInput
-          status="idle"
-          controlRef={composerRef}
-          onSend={onSend}
-          onStop={async () => undefined}
-          onCompact={async () => undefined}
-          modelRef={modelRef}
-          models={models?.models ?? []}
-          onChangeModel={setModelRef}
-          thinkingLevel={thinkingLevel}
-          onChangeThinkingLevel={onChangeThinkingLevel}
-          {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
-          {...(contextWindow !== undefined ? { contextWindow } : {})}
-          contextNow={0}
-          vision={vision}
-          approvalMode={approvalMode}
-          onChangeApprovalMode={changeApprovalMode}
-          modeSaving={false}
-          autoFocus
-          agents={agents}
-          {...(agentId ? { currentAgentId: agentId } : {})}
-          skills={agentSkills}
-          {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
-          onSkillsChange={onSkillsChange}
-          initialText={cached.text ?? ""}
-          onTextChange={onTextChange}
+        <StartDashboard
+          projectId={projectId}
+          composer={composer}
+          skillsLoaded={skillsLoaded}
+          fill={fillComposer}
+          readComposerText={readComposerText}
         />
-
-        {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
-          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
-        </div>
-
-        {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
-            the composer with the prompt and the user sends it (see fillExample). The last folder
-            is the user's own saved prompts (see shortcuts-folder.tsx).
-            Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore four folder
-            rows plus one folder's rows, with every folder kept within one row of the others
-            (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
-            to the same), so switching folders moves what sits below by at most one row and no
-            folder needs a scroll container — a scrollbar inside a short showcase reads as a
-            defect. Each example is a single-line title; its one-sentence description rides in
-            the row tooltip rather than a second line. Rows stay disabled until the Agent's
-            installed skills are known — that is all a fill still waits for, and without it the
-            preselect would silently drop the example's skills (a saved shortcut pins none, so
-            it never waits). */}
-        <div className="mt-6 space-y-1">
-          {EXAMPLE_FOLDERS.map((folder) => {
-            const open = folder.id === openFolder;
-            return (
-              <div key={folder.id}>
-                <ExampleFolderRow
-                  open={open}
-                  glyph={FOLDER_GLYPHS[folder.id]}
-                  label={S.chat.exampleFolders[folder.id]}
-                  count={folder.tasks.length}
-                  onOpen={() => setOpenFolder(folder.id)}
-                />
-
-                {open && (
-                  <ul className="mt-0.5 space-y-0.5 pl-4">
-                    {folder.tasks.map((task) => {
-                      const copy = S.chat.exampleTasks[task.id];
-                      return (
-                        <li key={task.id}>
-                          <button
-                            type="button"
-                            title={`${copy.desc}\n${S.chat.exampleFillHint}`}
-                            disabled={!skillsLoaded}
-                            onClick={() => fillExample(task)}
-                            className={`flex w-full items-center gap-2 ${exampleRowClass}`}
-                          >
-                            <span className="min-w-0 flex-1 truncate">{copy.label}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-          <ShortcutsFolder
-            open={openFolder === SHORTCUTS_FOLDER_ID}
-            onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
-            readComposerText={() => textRef.current}
-            onFill={fillShortcut}
-          />
-        </div>
       </div>
 
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
-  );
-}
-
-/**
- * Superscript "new version" hint on the version line: plain small text raised via
- * align-super, in the version line's own muted color and weight. Deliberately not a pill —
- * user feedback was that the earlier accent-colored pill read as a button; the link case
- * only adds a hover underline. The only remaining copy: the sidebar's version row dropped
- * its badge when the three update rows collapsed into one whose label already names the
- * new version.
- */
-const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
-
-/**
- * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
- * (localized per dictionary). The product name is not repeated here — the brand wordmark
- * sits directly above, and the sidebar's version footer is bare `vX.Y.Z` too. The date is
- * the running version's release
- * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
- * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
- * and show the version alone. When the update flow has something waiting — a release
- * offered, a download in the background, a restart pending — a small superscript badge
- * follows, a button into the update modal (the same modal the sidebar's update row opens).
- * Fetching starts on mount — useVersionInfo caches at module level, so after the first
- * resolution anywhere in the app this renders instantly and never refetches. Nothing
- * renders until the version resolves (no placeholder flicker under the brand).
- */
-function VersionLine() {
-  const { locale } = useLocale();
-  const { version } = useVersionInfo(true);
-  if (version === null) return null;
-  const date = version.buildDate;
-  return (
-    <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-      {`v${version.version}${
-        date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
-      }`}
-      <VersionBadge />
-    </p>
-  );
-}
-
-/**
- * The superscript on the version line: a button into the update modal, worded by where the
- * flow stands. Its title and accessible name carry the update row's own sentence, so the
- * two surfaces say the same thing about the same release.
- */
-function VersionBadge() {
-  const { mode, flow } = useUpdateFlow();
-  const badge = versionBadgeFor(flow);
-  if (mode === "none" || badge === null) return null;
-  const text =
-    badge === "available"
-      ? S.update.newVersionBadge
-      : badge === "downloading"
-        ? S.update.badgeDownloading
-        : S.update.badgeReady;
-  const note =
-    flow.kind === "available"
-      ? S.update.newVersion(flow.version)
-      : flow.kind === "downloading"
-        ? S.update.rowDownloading(flow.version, flow.percent)
-        : flow.kind === "ready"
-          ? S.update.restartToUpdate(flow.version)
-          : text;
-  return (
-    <button
-      type="button"
-      onClick={openUpdateModal}
-      title={note}
-      aria-label={note}
-      className={`${versionBadgeClass} hover:underline`}
-    >
-      {text}
-    </button>
-  );
-}
-
-/** Agent selection (pill dropdown): avatar + name, menu opens downward with an internal scroll cap. */
-function AgentSelect({
-  agents,
-  selected,
-  onSelect,
-}: {
-  agents: AgentSummary[];
-  selected: AgentSummary | null;
-  onSelect: (agent: AgentSummary) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      menuClass="left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] origin-top-left"
-      button={
-        <button
-          type="button"
-          title={S.chat.chooseAgent}
-          aria-label={S.chat.chooseAgent}
-          onClick={() => setOpen(!open)}
-          className={pillClass}
-        >
-          {selected ? (
-            <AgentAvatar
-              id={selected.agentId}
-              name={agentDisplayName(selected)}
-              size={16}
-              className="shrink-0 rounded"
-            />
-          ) : null}
-          <span className="min-w-0 truncate">
-            {selected ? agentDisplayName(selected) : S.common.loading}
-          </span>
-          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
-        </button>
-      }
-    >
-      <div className="max-h-56 overflow-y-auto">
-        {agents.length === 0 && (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.common.loading}</p>
-        )}
-        {agents.map((a) => {
-          const active = a.agentId === selected?.agentId;
-          return (
-            <button
-              key={a.agentId}
-              type="button"
-              aria-pressed={active}
-              onClick={() => {
-                onSelect(a);
-                setOpen(false);
-              }}
-              className={`flex w-full items-center ${ICON_GAP.menu} px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-            >
-              <AgentAvatar
-                id={a.agentId}
-                name={agentDisplayName(a)}
-                size={20}
-                className="shrink-0 rounded"
-              />
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`block truncate text-xs ${
-                    active
-                      ? "font-medium text-gray-900 dark:text-gray-100"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  {agentDisplayName(a)}
-                </span>
-                {a.description && (
-                  <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
-                    {a.description}
-                  </span>
-                )}
-              </span>
-              <span className="w-4 shrink-0 text-center text-xs text-gray-500 dark:text-gray-400">
-                {active ? "✓" : ""}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </Dropdown>
   );
 }

@@ -7,8 +7,9 @@
  * retrieval) only requires implementing this interface and registering it with the registry, with
  * no changes needed to Environment.
  */
-import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
+import type { AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
+import type { ToolFs } from "./fs-port.js";
 
 /**
  * Tool execution context: runtime information needed to execute one tool call.
@@ -21,8 +22,23 @@ export interface ToolExecutionContext {
   toolCallId: string;
   /** Abort signal; the tool should close out and return as soon as possible once it fires. */
   signal?: AbortSignal;
+  /**
+   * Per-call detach request: the host asked for THIS call to continue as a background task so
+   * the conversation can move on. Deliberately a channel of its own rather than a second
+   * meaning for `signal`: Environment classifies any `signal.aborted` as `aborted` and appends
+   * the interruption note, and a detached call is not interrupted — it hands back a registry
+   * handle and its work keeps running. A tool that ignores this field behaves exactly as it
+   * did before; only tools with a background form (exec_command, run_subagent) observe it.
+   */
+  detachSignal?: AbortSignal;
   /** The parent Agent's approval callback; run_subagent passes it through to the child Session so it inherits the parent's approval mode (unused by most tools). */
   approve?: ApproveFn;
+  /**
+   * The file system the file tools work through (see fs-port.ts): the Session's sandboxed
+   * helper for a confined Session, this process for an unconfined one, decided on first
+   * use. Absent = this process.
+   */
+  fs?: ToolFs;
 }
 
 /**
@@ -30,7 +46,8 @@ export interface ToolExecutionContext {
  * Docs: /docs/tools § "Execution contract".
  */
 export interface ToolResult {
-  stopReason?: StopReason;
+  /** What the result is (the `tool_call_output.status` Environment writes); `completed` if omitted. */
+  status?: ToolStatus;
   /**
    * Terminal marker (e.g. `[exit code: 1]`): appended by Environment during its unified
    * close-out, **outside** the maxOutputLength truncation, and streamed to the frontend as an
@@ -50,7 +67,7 @@ export interface ToolResult {
 
 /**
  * Builtin tool interface. `execute` receives the already-parsed tool argument object and the
- * execution context, streaming out OmniMessage as an async generator. Contract (a relaxed
+ * execution context, streaming out AmspRecord as an async generator. Contract (a relaxed
  * version — framing and close-out are handled uniformly by Environment):
  *
  * - **Own output**: yielding the **delta** of `partial_tool_call_output` is enough; `start`/`stop`
@@ -58,12 +75,12 @@ export interface ToolResult {
  *   **no need** to produce a complete `tool_call_output` either (the complete message,
  *   maxOutputLength forward truncation, and close-out are all derived by Environment from the
  *   deltas). If a tool does produce a complete `tool_call_output` anyway, Environment uses it as
- *   the basis for content and stop reason (tolerated for compatibility, not recommended).
+ *   the basis for content and status (tolerated for compatibility, not recommended).
  * - **Nested forwarding**: yielding any message **tagged with origin** is passed through by
  *   Environment unchanged (e.g. run_subagent forwarding all of a child session's messages).
- * - **Stop reason**: reported via the generator's return value (defaults to completed); a throw
- *   is collapsed by Environment into aborted/failed based on interruption/error, never
- *   propagating up as an exception.
+ * - **Status**: reported via the generator's return value (defaults to completed); a throw
+ *   is collapsed by Environment into an interruption or `fatal` based on interruption/error,
+ *   never propagating up as an exception.
  * Docs: /docs/interfaces § "The inner tool contract: BuiltinTool"; /docs/tools § "Execution contract".
  */
 export interface BuiltinTool {
@@ -71,9 +88,16 @@ export interface BuiltinTool {
   name: string;
   /** Tool definition handed to the LLM (including description / parameters / permission / maxOutputLength). */
   definition: ToolDefinitionConfig;
+  /**
+   * Whether this tool can hand a running call back as a background task when
+   * `ctx.detachSignal` fires (it registers the work and returns a handle instead of ending
+   * it). Missing = no background form: the detach channel is never armed for the call, and
+   * `Environment.detachToolCall` answers `not_detachable`.
+   */
+  detachable?: boolean;
   /** Executes one tool call: args is the already-parsed argument object, ctx is the runtime context. */
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }

@@ -1,13 +1,42 @@
 /**
- * Unit tests for usage persistence and statistics: origin→model attribution,
- * summary buckets and group aggregation, cost computed **on the fly** (only
- * Tokens are persisted; cost is priced against current pricing at query time,
- * no pricing → NULL + hasUncosted; a later price update is reflected
- * immediately), and the status → success-rate pipeline that rides on the time
- * series (aborted doesn't count as a model failure).
+ * Usage persistence and statistics behind the cost center. Only Tokens are persisted; cost is
+ * priced against the current pricing at query time.
+ *
+ * Recording:
+ * - A token_usage message is one row of Tokens (never a cost); anything else writes nothing.
+ * - A sub-session's usage is attributed to its own model through its session_meta, and falls
+ *   back to the main Session's model when that mapping is missing or was evicted past its cap.
+ * - A billed request with an abnormal finish counts once; its unbilled retry still counts separately.
+ * - Interleaved main and child sessions cannot suppress each other's failed requests.
+ * - Compaction usage without streamed request boundaries does not hide the next request's failure.
+ *
+ * Querying:
+ * - A scheduled model is priced per record by the tier its request ran in, each seller by its
+ *   own windows, so a finished period's total never moves with the clock.
+ * - The summary cards cover today, the last 7 days and everything; a model without pricing is
+ *   flagged, and a price added later prices past records at once; only the references the
+ *   response prices are looked up.
+ * - Groups aggregate by date (newest first), Agent, model and Session, folded across models and
+ *   narrowed by Agent and range.
+ * - Success counts completed requests over every non-aborted one: a user's Stop is not a model
+ *   failure.
+ * - Model totals sum every record a model ever wrote, per paired reference, per Project.
+ * - Series are zero-filled buckets by minute, hour (local clock), day, ISO week or month, with
+ *   per-Agent and per-model series aligned to them; a minute series needs a timestamp window,
+ *   the range defaults to 30 days, and an oversized series is refused.
+ * - Bucket enumeration stays unique and ascending across DST transitions.
+ * - The error table filters before it pages, so a later page never slides onto excluded rows,
+ *   and pages through rows rather than records once a day's repeats fold (paging itself is
+ *   covered through its route in errors.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
+import {
+  requestBegin,
+  requestEnd,
+  sessionMeta,
+  tokenUsage,
+  withOrigin,
+} from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -16,7 +45,9 @@ import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
+import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const CTX = {
   projectId: "project-x",
@@ -39,6 +70,7 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
     system_prompt: "",
     agent_state: "/tmp/x",
     workspace: "/tmp/w",
+    source: "user",
   };
 }
 
@@ -48,12 +80,12 @@ describe("usage-recorder", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
+    repo = wire(UsageRepo, { db: db });
   });
   afterEach(() => db.close());
 
   it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
     expect(rows).toHaveLength(1);
@@ -65,8 +97,27 @@ describe("usage-recorder", () => {
     expect(row.cache_read).toBe(100);
   });
 
+  it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    await rec.record(CTX, tokenUsage(counts(500), counts(500)));
+    await rec.record(
+      CTX,
+      requestEnd("retryable", {
+        errorCode: "output_truncated",
+        errorMessage: "cut",
+        retryInMs: 2000,
+      }),
+    );
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network", retryInMs: 2000 }));
+    const rows = db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all();
+    expect(rows).toEqual([
+      { status: "completed", total: 500 },
+      { status: "retryable", total: 0 },
+    ]);
+  });
+
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
       "session-child",
@@ -79,21 +130,67 @@ describe("usage-recorder", () => {
     expect(row.model_id).toBe("child-model");
   });
 
+  it("counts a billed abnormal finish once and records its unbilled retry separately", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+    // GenerativeModel reports usage even when an unknown finish reason returns malformed.
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "malformed", retryInMs: 2000 }));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network" }));
+    expect(repo.bucketByModel(CTX.projectId)[0]).toMatchObject({ requests: 2, total: 115 });
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 115 },
+      { status: "retryable", total: 0 },
+    ]);
+  });
+
+  it.each(["another session", "child session"])(
+    "keeps metering separate from an interleaved %s",
+    async (kind) => {
+      const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+      const otherCtx = kind === "another session" ? { ...CTX, sessionId: "session-other" } : CTX;
+      const other = (msg: Parameters<UsageRecorder["record"]>[1]) =>
+        kind === "child session" ? withOrigin(msg, "session-child") : msg;
+      await rec.record(CTX, requestBegin());
+      await rec.record(otherCtx, other(requestBegin()));
+      await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+      await rec.record(otherCtx, other(requestEnd("retryable", { errorCode: "network" })));
+      await rec.record(CTX, requestEnd("retryable", { errorCode: "malformed" }));
+      expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+        { status: "completed", total: 115 },
+        { status: "retryable", total: 0 },
+      ]);
+    },
+  );
+
+  it("keeps a failure after compaction usage without streamed request boundaries", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    // Compaction streams token_usage, but its request_begin/request_end stay in the Trace.
+    await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("fatal", { errorCode: "auth" }));
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 115 },
+      { status: "fatal", total: 0 },
+    ]);
+  });
+
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
   it("non-token_usage messages are a no-op", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
   it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
       await rec.record(CTX, withOrigin(sessionMeta(meta(`sub-${i}`, "sub-model")), `sub-${i}`));
@@ -123,9 +220,10 @@ describe("usage-service (cost computed on the fly)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    const errors = new ErrorsRepo(db);
-    service = (now: Date) => new UsageService(repo, errors, lookup, () => now);
+    repo = wire(UsageRepo, { db: db });
+    const errors = wire(ErrorsRepo, { db: db });
+    service = (now: Date) =>
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -157,10 +255,10 @@ describe("usage-service (cost computed on the fly)", () => {
     // is a fact about when each request ran, so it is decided from that record's own `ts`.
     //
     // 2026-08-31 is a Monday. 01:30Z is 09:30 in Beijing (peak); 12:00Z is 20:00 (off-peak).
-    const REF = { provider: "deepseek", modelId: "deepseek-v4-flash" };
+    const REF = { provider: "deepseek", modelId: "deepseek-flash" };
     insert("2026-08-31", { ...REF, ts: "2026-08-31T01:30:00.000Z" });
     insert("2026-08-31", { ...REF, ts: "2026-08-31T12:00:00.000Z" });
-    pricing["deepseek-v4-flash"] = { cacheRead: 1, cacheWrite: 2, output: 4 };
+    pricing["deepseek-flash"] = { cacheRead: 1, cacheWrite: 2, output: 4 };
     const tiered = async () => ({
       peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
       offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
@@ -170,10 +268,42 @@ describe("usage-service (cost computed on the fly)", () => {
     const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
     const expected = peakCost + peakCost / 2;
     for (const at of ["2026-08-31T01:30:00Z", "2026-08-31T12:00:00Z", "2026-09-06T01:30:00Z"]) {
-      const svc = new UsageService(repo, new ErrorsRepo(db), tiered, () => new Date(at));
+      const svc = wire(UsageService, {
+        usage: repo,
+        errors: wire(ErrorsRepo, { db: db }),
+        lookupPricing: tiered,
+        clock: { now: () => new Date(at) },
+      });
       const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
       expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
     }
+  });
+
+  it("each scheduled reference is priced by its own seller's windows in the same query", async () => {
+    // Two schedules in the catalog: Qwen's DeepSeek rows bill peak 08:00-22:00 Beijing every
+    // day, DeepSeek's own rows only in weekday office hours. 2026-09-05 is a Saturday: 02:00Z
+    // is 10:00 in Beijing (peak for Qwen, off-peak for DeepSeek), 15:00Z is 23:00 (off-peak for
+    // both).
+    const QWEN = { provider: "qwen-pay-as-you-go", modelId: "deepseek-v4.1-flash" };
+    const DEEPSEEK = { provider: "deepseek", modelId: "deepseek-flash" };
+    insert("2026-09-05", { ...QWEN, ts: "2026-09-05T02:00:00.000Z" });
+    insert("2026-09-05", { ...QWEN, ts: "2026-09-05T15:00:00.000Z" });
+    insert("2026-09-05", { ...DEEPSEEK, ts: "2026-09-05T02:00:00.000Z" });
+    const svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: async () => ({
+        peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+        offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
+      }),
+      clock: { now: () => new Date("2026-09-05T12:00:00Z") },
+    });
+    const res = await svc.query("p1", { groupBy: "model", from: "2026-09-05", to: "2026-09-05" });
+    const costOf = (ref: { provider: string; modelId: string }) =>
+      res.groups.find((g) => g.provider === ref.provider && g.key === ref.modelId)?.cost;
+    const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
+    expect(costOf(QWEN)).toBeCloseTo(peakCost + peakCost / 2, 10);
+    expect(costOf(DEEPSEEK)).toBeCloseTo(peakCost / 2, 10);
   });
 
   it("summary cards: today / last 7 days / cumulative; Models without pricing flag hasUncosted", async () => {
@@ -242,15 +372,15 @@ describe("usage-service (cost computed on the fly)", () => {
     // covers it, so it must not be priced — and must not perturb the ones that are.
     insert("2026-06-20", { modelId: "m-old" });
     const asked: string[] = [];
-    const svc = new UsageService(
-      repo,
-      new ErrorsRepo(db),
-      async (p, provider, modelId) => {
+    const svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: async (p: string, provider: string, modelId: string) => {
         asked.push(modelId);
         return lookup(p, provider, modelId);
       },
-      () => now,
-    );
+      clock: { now: () => now },
+    });
     const res = await svc.query("p1", { groupBy: "date", from: "2026-07-06", to: "2026-07-06" });
     expect(asked).toEqual(["m1"]);
     expect(res.summary.total.cost).toBeCloseTo(ROW_COST, 12);
@@ -347,8 +477,12 @@ describe("usage-service model totals (unfiltered, for the models page)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    service = new UsageService(repo, new ErrorsRepo(db), lookup);
+    repo = wire(UsageRepo, { db: db });
+    service = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: lookup,
+    });
   });
   afterEach(() => db.close());
 
@@ -407,9 +541,10 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    const errors = new ErrorsRepo(db);
-    service = (now: Date) => new UsageService(repo, errors, lookup, () => now);
+    repo = wire(UsageRepo, { db: db });
+    const errors = wire(ErrorsRepo, { db: db });
+    service = (now: Date) =>
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -630,14 +765,11 @@ describe("bucket enumeration across a DST transition", () => {
   // The zero-fill skeleton and SQLite's `strftime(..., 'localtime')` must agree key for key.
   // A fall-back replays a whole local hour, so two instants an hour apart share one key;
   // the enumeration has to emit that key once, or one of the two points it feeds stays empty.
-  const realTz = process.env.TZ;
+  let restoreZone: () => void;
   beforeEach(() => {
-    process.env.TZ = "America/New_York";
+    restoreZone = switchTimeZone("America/New_York");
   });
-  afterEach(() => {
-    if (realTz === undefined) delete process.env.TZ;
-    else process.env.TZ = realTz;
-  });
+  afterEach(() => restoreZone());
 
   /** 2026-11-01 01:00 EDT (UTC-4) — the hour after this one is replayed as EST (UTC-5). */
   const foldStart = new Date(Date.UTC(2026, 10, 1, 5, 0));
@@ -677,8 +809,13 @@ describe("usage-service.queryErrors (error table paging)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    errors = new ErrorsRepo(db);
-    service = new UsageService(new UsageRepo(db), errors, async () => undefined);
+    errors = wire(ErrorsRepo, { db: db });
+    service = wire(UsageService, {
+      usage: wire(UsageRepo, { db: db }),
+      errors,
+      lookupPricing: async () => undefined,
+      clock: { now: () => new Date() },
+    });
     // 25 rows, oldest first — so "newest first" ordering is observable across a page boundary.
     for (let i = 0; i < 25; i += 1) {
       errors.insert({
@@ -697,27 +834,27 @@ describe("usage-service.queryErrors (error table paging)", () => {
   });
   afterEach(() => db.close());
 
-  it("pages newest-first and reports the filtered total, so the caller knows where the end is", () => {
+  it("pages through rows, not records, once a day's repeats fold", () => {
+    // Ten more of one error on the same day: one more row, ten more records.
+    for (let i = 0; i < 10; i += 1) {
+      errors.insert({
+        ts: `2026-07-27T01:00:${String(i).padStart(2, "0")}.000Z`,
+        date: "2026-07-27",
+        projectId: "p1",
+        agentId: "a1",
+        sessionId: "s1",
+        source: "messaging",
+        kind: "expected",
+        code: "messaging_connect_failed",
+        status: null,
+        message: "gateway stopped acknowledging heartbeats",
+      });
+    }
     const first = service.queryErrors("p1", { offset: 0, limit: 20 });
-    expect(first.total).toBe(25);
-    expect(first.items).toHaveLength(20);
-    expect(first.items[0]!.code).toBe("code_24"); // newest
-    const second = service.queryErrors("p1", { offset: 20, limit: 20 });
-    expect(second.total).toBe(25);
-    // The tail is the five oldest, still descending, with no overlap against page one.
-    expect(second.items.map((e) => e.code)).toEqual([
-      "code_4",
-      "code_3",
-      "code_2",
-      "code_1",
-      "code_0",
-    ]);
-  });
-
-  it("past the end is empty rather than an error, and total stays the full count", () => {
-    const page = service.queryErrors("p1", { offset: 100, limit: 20 });
-    expect(page.items).toEqual([]);
-    expect(page.total).toBe(25);
+    expect(first.total).toBe(35);
+    expect(first.rows).toBe(26);
+    expect(first.items[0]).toMatchObject({ code: "messaging_connect_failed", count: 10 });
+    expect(service.queryErrors("p1", { offset: 20, limit: 20 }).items).toHaveLength(6);
   });
 
   it("filters before it offsets, so a later page never slides onto rows the summary excluded", () => {

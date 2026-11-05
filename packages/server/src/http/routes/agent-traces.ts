@@ -8,7 +8,8 @@
  *     given), stat-ing only the returned page for fresh sizes, and resolves per group a
  *     display title (sessions DB title, else the registration-time first-prompt
  *     fallback) plus its sidebar category / Workspace and per-category totals. Every
- *     Session is listed whichever client created it.
+ *     Session is listed whichever client created it, but a company Session, which no category
+ *     holds (company mode's own views list it).
  *     The listing consults the sessions table read-only (titles, archived, workspace,
  *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
@@ -33,27 +34,31 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Traces } from "../../mechanisms/traces.js";
+import type { Access } from "../../mechanisms/projects.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentTracesRouteDeps {
+  agentConfigService: AgentConfig;
+  access: Access;
+  traceService: Traces;
+}
 
 /** Import file size cap: aligned with the snapshot import (stays within the 20MB body limit after base64). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 
 /** Accepted `category` query values of the paginated listing (SessionCategory, spelled out for validation — same as the sessions list route). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
-export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     // Both params absent -> null -> the legacy full response, byte-for-byte as before.
     const paging = optionalPagingQuery(c);
     // Optional category filter (paging then applies within the category): only meaningful
@@ -78,7 +83,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     const { offset, limit } = paginationQuery(c);
     return c.json(
@@ -90,7 +95,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     return c.json(await deps.traceService.analyze(projectId, agentId, sessionId, index));
   });
@@ -101,7 +106,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     const bytes = await deps.traceService.readFileRaw(projectId, agentId, sessionId, index);
     const fileName = `${sessionId}_${String(index).padStart(3, "0")}.jsonl`;
@@ -120,7 +125,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });

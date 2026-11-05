@@ -1,9 +1,15 @@
 /**
- * Sessions as rows in auth_sessions (auth/service.ts): the cookie carries a random token, the
- * row stores its sha256. Every property the row model is chosen FOR is pinned here — a session
- * survives a restart (it is on disk), logout deletes the row, an admin reset deletes the
- * user's rows, and sliding renewal tops the expiry up IN PLACE so the cookie value never
- * changes and a short minted token never stretches into a long one.
+ * Sessions as rows in auth_sessions (auth/service.ts): the cookie carries a random token and
+ * the row stores its sha256. Each property the row model is chosen for is pinned here; an
+ * admin's password reset deleting a user's rows is covered with the reset route in
+ * admin-users.test.ts.
+ *
+ * - Given a v0.2.0 database whose auth_sessions lacks `via`, a boot adds it and login works.
+ * - A session survives a restart, because it is a row on disk.
+ * - Logout deletes the row, and it stays deleted across a restart.
+ * - Expired rows are swept on the next login.
+ * - A long session slides in place: the expiry is topped up and the cookie value never changes.
+ * - A short cli token expires at its hour instead of renewing into a long one.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -99,26 +105,6 @@ describe("auth sessions", () => {
       nowMs += TEST_SESSION_TTL_MS + DAY_MS;
       await loginAdmin(t.app);
       expect(rows()).toBe(1);
-    } finally {
-      await t.cleanup();
-    }
-  });
-
-  it("an admin password reset deletes the user's sessions", async () => {
-    const t = await createTestApp();
-    try {
-      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-      await admin.post("/api/admin/users", { userId: "alice", password: "alice-pass-1" });
-      const login = await t.app.request("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId: "alice", password: "alice-pass-1" }),
-      });
-      const aliceCookie = cookieFrom(login);
-      expect((await apiClient(t.app, aliceCookie).get("/api/me")).status).toBe(200);
-
-      await t.deps.adminService.resetPassword("alice", "fresh-pass-1");
-      expect((await apiClient(t.app, aliceCookie).get("/api/me")).status).toBe(401);
     } finally {
       await t.cleanup();
     }

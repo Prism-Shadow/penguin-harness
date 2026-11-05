@@ -1,12 +1,26 @@
 /**
  * User management (admin only): user list + create / reset password / delete. Rendered as
- * a page of the System settings dialog rather than a routed page of its own.
+ * a page of the Settings dialog rather than a routed page of its own.
  * Registration is closed: new users are created here, with the initial password set by the admin and
  * communicated offline; deleting a user also deletes all their Projects (including data directories),
  * with a confirmation dialog.
+ *
+ * The create and reset dialogs are typed forms under the settings commit model: their footer
+ * verb is live only once the fields are valid (an id that breaks the naming rule is named under
+ * the box as it is typed), and closing one with anything typed asks first. Each form is mounted
+ * only while its dialog is open, so every opening starts empty.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  Input,
+  Modal,
+  PasswordInput,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -14,11 +28,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime } from "../../lib/format";
 import { useAuth } from "../../state/auth";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
 
 export function AdminUsersSection() {
   const { user, desktopMode } = useAuth();
@@ -49,7 +58,7 @@ export function AdminUsersSection() {
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
           {S.admin.createUser}
         </Button>
       </div>
@@ -76,12 +85,20 @@ export function AdminUsersSection() {
                     {u.userId}
                     {u.passwordIsInitial && (
                       <span className="ml-2 align-middle">
-                        <Badge tone="gray">{S.admin.initialPasswordFlag}</Badge>
+                        <Badge>{S.admin.initialPasswordFlag}</Badge>
                       </span>
+                    )}
+                    {/* The nickname under the id, not instead of it: every other control on the
+                        row acts on the id, and a list that showed only the chosen name would
+                        leave an admin guessing which account they are resetting. */}
+                    {u.displayName !== undefined && (
+                      <p className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                        {u.displayName}
+                      </p>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    <Badge tone="gray">{u.isAdmin ? S.admin.roleAdmin : S.admin.roleUser}</Badge>
+                    <Badge>{u.isAdmin ? S.admin.roleAdmin : S.admin.roleUser}</Badge>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">
                     {formatDateTime(u.createdAt)}
@@ -134,31 +151,30 @@ function CreateUserDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [userId, setUserId] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ userId?: string; password?: string }>({});
-  const [busy, setBusy] = useState(false);
-  const clearErrors = () => setErrors((p) => (p.userId || p.password ? {} : p));
+  return open ? <CreateUserForm onClose={onClose} onDone={onDone} /> : null;
+}
 
-  useEffect(() => {
-    if (!open) return;
-    setUserId("");
-    setPassword("");
-    setErrors({});
-  }, [open]);
+function CreateUserForm({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const form = useFormDraft({ userId: "", password: "" });
+  /** What the server refused, on the field it is about. Cleared by the next keystroke. */
+  const [refused, setRefused] = useState<{ userId?: string; password?: string }>({});
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  const id = form.draft.userId.trim();
+  const { password } = form.draft;
+  // The naming rule is said under the box as soon as it is broken, so a held Create explains itself.
+  const idBroken = id !== "" && !USERNAME_PATTERN.test(id);
+  const valid = id !== "" && !idBroken && password !== "";
+
+  const edit = (patch: { userId?: string; password?: string }) => {
+    form.patch(patch);
+    setRefused({});
+  };
 
   const submit = async () => {
-    const id = userId.trim();
-    const next: { userId?: string; password?: string } = {};
-    if (!id) next.userId = S.common.requiredField;
-    else if (!USERNAME_PATTERN.test(id)) next.userId = S.auth.usernameHint;
-    if (!password) next.password = S.common.requiredField;
-    if (next.userId || next.password) {
-      setErrors(next);
-      return;
-    }
+    if (!valid || busy) return;
     setBusy(true);
-    setErrors({});
+    setRefused({});
     try {
       await api.adminCreateUser({ userId: id, password });
       onDone();
@@ -166,9 +182,9 @@ function CreateUserDialog({
       // Route by error code: invalid_password is about the password's strength;
       // user_exists (and anything unrecognized) is about the id.
       if (e instanceof ApiError && e.code === "invalid_password") {
-        setErrors({ password: apiErrorText(e) });
+        setRefused({ password: apiErrorText(e) });
       } else {
-        setErrors({ userId: apiErrorText(e) });
+        setRefused({ userId: apiErrorText(e) });
       }
     } finally {
       setBusy(false);
@@ -177,15 +193,20 @@ function CreateUserDialog({
 
   return (
     <Modal
-      open={open}
+      open
       title={S.admin.createUser}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!form.dirty || !valid || busy}
+            onClick={() => void submit()}
+          >
             {S.common.create}
           </Button>
         </>
@@ -196,12 +217,9 @@ function CreateUserDialog({
           label={S.common.username}
           required
           size="sm"
-          value={userId}
-          onChange={(e) => {
-            setUserId(e.target.value);
-            clearErrors();
-          }}
-          error={errors.userId}
+          value={form.draft.userId}
+          onChange={(e) => edit({ userId: e.target.value })}
+          error={refused.userId ?? (idBroken ? S.auth.usernameHint : undefined)}
           hint={S.auth.usernameHint}
           autoFocus
         />
@@ -210,17 +228,14 @@ function CreateUserDialog({
           required
           size="sm"
           value={password}
-          onChange={(e) => {
-            setPassword(e.target.value);
-            clearErrors();
-          }}
-          error={errors.password}
+          onChange={(e) => edit({ password: e.target.value })}
+          error={refused.password}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
         />
-        {USERNAME_PATTERN.test(userId.trim()) && (
+        {USERNAME_PATTERN.test(id) && (
           <p className="text-xs text-gray-400 dark:text-gray-500">
-            {S.admin.defaultProjectNote(`${userId.trim()}-default_project`)}
+            {S.admin.defaultProjectNote(`${id}-default_project`)}
           </p>
         )}
       </div>
@@ -229,29 +244,27 @@ function CreateUserDialog({
 }
 
 function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose: () => void }) {
-  const [password, setPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
+  return user === null ? null : (
+    <ResetPasswordForm key={user.userId} user={user} onClose={onClose} />
+  );
+}
 
-  useEffect(() => {
-    if (!user) return;
-    setPassword("");
-    setPasswordError(undefined);
-  }, [user]);
+function ResetPasswordForm({ user, onClose }: { user: UserInfo; onClose: () => void }) {
+  const form = useFormDraft("");
+  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  const password = form.draft;
 
   const submit = async () => {
-    if (!user) return;
-    if (!password) {
-      setPasswordError(S.common.requiredField);
-      return;
-    }
+    if (password === "" || busy) return;
     setBusy(true);
-    setPasswordError(undefined);
+    setRefused(undefined);
     try {
       await api.adminResetPassword(user.userId, { password });
       onClose();
     } catch (e) {
-      setPasswordError(apiErrorText(e));
+      setRefused(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -259,15 +272,20 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
 
   return (
     <Modal
-      open={user !== null}
-      title={user ? S.admin.resetPasswordTitle(user.userId) : ""}
-      onClose={onClose}
+      open
+      title={S.admin.resetPasswordTitle(user.userId)}
+      onClose={requestClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={password === "" || busy}
+            onClick={() => void submit()}
+          >
             {S.common.save}
           </Button>
         </>
@@ -280,10 +298,10 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
           size="sm"
           value={password}
           onChange={(e) => {
-            setPassword(e.target.value);
-            setPasswordError(undefined);
+            form.setDraft(e.target.value);
+            setRefused(undefined);
           }}
-          error={passwordError}
+          error={refused}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
           autoFocus
@@ -334,15 +352,15 @@ function DeleteUserDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
           {confirmed ? (
-            <Button variant="danger" disabled={busy} onClick={() => void doDelete()}>
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => void doDelete()}>
               {S.common.confirm}
             </Button>
           ) : (
-            <Button variant="danger" onClick={() => setConfirmed(true)}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmed(true)}>
               {S.common.delete}
             </Button>
           )}

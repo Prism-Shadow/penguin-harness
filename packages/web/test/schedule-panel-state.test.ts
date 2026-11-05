@@ -1,0 +1,182 @@
+/**
+ * The scheduled-tasks panel's pure rules (src/features/schedules/schedule-panel-state.ts and
+ * schedule-upsert.ts): which tasks belong to the conversation on screen, how the chips bucket
+ * the display statuses, what the search matches, and the whole-file toggle body.
+ */
+import { describe, expect, it } from "vitest";
+import type { ProjectScheduleItem, ScheduleItem } from "@prismshadow/penguin-server/api";
+import {
+  SCHEDULE_FILTERS,
+  pendingScheduleSessions,
+  filterBucket,
+  filterSchedules,
+  matchesQuery,
+  scheduleGlyph,
+  sessionSchedules,
+} from "../src/features/schedules/schedule-panel-state";
+import { itemModelRef, toggleBody } from "../src/features/schedules/schedule-upsert";
+
+function item(overrides: Partial<ScheduleItem> & { name: string }): ScheduleItem {
+  return {
+    prompt: "Summarize yesterday",
+    enabled: true,
+    startAt: "2026-09-01T00:00:00.000Z",
+    status: "active",
+    queued: false,
+    ...overrides,
+  };
+}
+
+/** A task as the Project-wide listing returns it: stamped with the agent whose directory holds it. */
+function projectItem(
+  overrides: Partial<ProjectScheduleItem> & { name: string; agentId: string },
+): ProjectScheduleItem {
+  return { ...item(overrides), agentId: overrides.agentId };
+}
+
+describe("sessionSchedules", () => {
+  it("keeps only the tasks bound to the given Session — new-Session tasks belong to the agent", () => {
+    const items = [
+      item({ name: "here", sessionId: "s1" }),
+      item({ name: "elsewhere", sessionId: "s2" }),
+      item({ name: "fresh" }),
+    ];
+    expect(sessionSchedules(items, "s1").map((i) => i.name)).toEqual(["here"]);
+  });
+
+  it("keeps the caller's item type, so the panel still knows which agent owns each task", () => {
+    const items = [
+      projectItem({ name: "here", agentId: "writer", sessionId: "s1" }),
+      projectItem({ name: "elsewhere", agentId: "reviewer", sessionId: "s2" }),
+    ];
+    // The annotation is the assertion: the panel writes a task file back to its `agentId`, so a
+    // narrowing that handed back plain ScheduleItems would not compile here.
+    const mine: ProjectScheduleItem[] = sessionSchedules(items, "s1");
+    expect(mine.map((i) => i.agentId)).toEqual(["writer"]);
+  });
+});
+
+describe("pendingScheduleSessions", () => {
+  const due = "2026-09-11T00:00:00.000Z";
+
+  it("marks only the Sessions holding a task with a next fire time", () => {
+    const items = [
+      item({ name: "here", sessionId: "s1", nextFireAt: due }),
+      // Bound but switched off: no next run on the calendar, so the row wears nothing.
+      item({ name: "paused", sessionId: "s2", status: "disabled", enabled: false }),
+      // A one-off that has already run: still enabled, still bound, nothing more to fire.
+      item({
+        name: "ran",
+        sessionId: "s3",
+        status: "done",
+        lastFiredAt: "2026-09-09T00:00:00.000Z",
+      }),
+      // Past its window: the server stops computing a next run.
+      item({ name: "over", sessionId: "s4", status: "expired", endAt: "2026-09-09T00:00:00.000Z" }),
+      // An agent-wide task opens a new Session each run, so it marks no row.
+      item({ name: "fresh", nextFireAt: due }),
+    ];
+    expect([...pendingScheduleSessions(items)]).toEqual(["s1"]);
+    expect(pendingScheduleSessions([]).size).toBe(0);
+  });
+
+  it("marks the Sessions of every Agent, since the list it feeds draws every Agent's rows", () => {
+    const items = [
+      projectItem({ name: "brief", agentId: "writer", sessionId: "s1", nextFireAt: due }),
+      projectItem({ name: "review", agentId: "reviewer", sessionId: "s2", nextFireAt: due }),
+    ];
+    expect([...pendingScheduleSessions(items)]).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("filterBucket / scheduleGlyph", () => {
+  it("puts an armed task under 'active' and a switched-off one under 'paused'; a settled task or an invalid file fits no chip", () => {
+    expect(filterBucket("active")).toBe("active");
+    expect(filterBucket("disabled")).toBe("paused");
+    // The scheduler archives settled tasks; one still listed shows under "all" only.
+    for (const status of ["done", "expired", "missed", "invalid"] as const) {
+      expect(filterBucket(status), status).toBeNull();
+    }
+    // Every non-"all" chip is a bucket some status lands in.
+    const landed = (["active", "disabled"] as const).map((s) => filterBucket(s));
+    for (const chip of SCHEDULE_FILTERS.filter((f) => f !== "all")) {
+      expect(landed).toContain(chip);
+    }
+  });
+
+  it("gives the glyph the same grouping as the chips, plus the alert for an invalid file", () => {
+    expect(scheduleGlyph("active")).toBe("play");
+    expect(scheduleGlyph("disabled")).toBe("pause");
+    expect(scheduleGlyph("done")).toBe("check");
+    expect(scheduleGlyph("missed")).toBe("check");
+    expect(scheduleGlyph("invalid")).toBe("alert");
+  });
+});
+
+describe("matchesQuery / filterSchedules", () => {
+  const items = [
+    item({ name: "daily_brief", prompt: "Morning summary" }),
+    item({ name: "watch_docs", prompt: "Check the docs page", status: "disabled" }),
+    item({ name: "reminder", prompt: "Follow up with Kim", status: "done" }),
+    item({ name: "broken", prompt: "", status: "invalid" }),
+  ];
+
+  it("matches the name or the prompt, case-insensitively; a blank query matches all", () => {
+    expect(matchesQuery(items[0]!, "BRIEF")).toBe(true);
+    expect(matchesQuery(items[1]!, "docs page")).toBe(true);
+    expect(matchesQuery(items[2]!, "docs")).toBe(false);
+    expect(matchesQuery(items[2]!, "  ")).toBe(true);
+  });
+
+  it("combines the chip and the query, and shows a settled task or an invalid file under 'all' only", () => {
+    expect(filterSchedules(items, "all", "").map((i) => i.name)).toEqual([
+      "daily_brief",
+      "watch_docs",
+      "reminder",
+      "broken",
+    ]);
+    expect(filterSchedules(items, "active", "").map((i) => i.name)).toEqual(["daily_brief"]);
+    expect(filterSchedules(items, "paused", "").map((i) => i.name)).toEqual(["watch_docs"]);
+    expect(filterSchedules(items, "all", "kim").map((i) => i.name)).toEqual(["reminder"]);
+    expect(filterSchedules(items, "active", "docs")).toEqual([]);
+  });
+});
+
+describe("toggleBody", () => {
+  it("resends every stored field with only `enabled` flipped, the model as a whole pair", () => {
+    const full = item({
+      name: "nightly",
+      period: "1d",
+      endAt: "2026-12-31T00:00:00.000Z",
+      workspace: "/w",
+      modelId: "gpt-x",
+      provider: "openai",
+    });
+    expect(toggleBody(full, false)).toEqual({
+      prompt: full.prompt,
+      enabled: false,
+      startAt: full.startAt,
+      period: "1d",
+      endAt: "2026-12-31T00:00:00.000Z",
+      workspace: "/w",
+      modelId: "gpt-x",
+      provider: "openai",
+    });
+    // A bound task carries its Session and nothing of the new-Session mode.
+    expect(toggleBody(item({ name: "bound", sessionId: "s1", enabled: false }), true)).toEqual({
+      prompt: "Summarize yesterday",
+      enabled: true,
+      startAt: "2026-09-01T00:00:00.000Z",
+      sessionId: "s1",
+    });
+  });
+
+  it("never assembles half a model reference", () => {
+    expect(itemModelRef({ modelId: "gpt-x" })).toBeNull();
+    expect(itemModelRef({ provider: "openai" })).toBeNull();
+    expect(itemModelRef({ modelId: "gpt-x", provider: "openai" })).toEqual({
+      provider: "openai",
+      modelId: "gpt-x",
+    });
+  });
+});

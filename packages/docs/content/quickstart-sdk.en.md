@@ -1,13 +1,18 @@
 ---
 title: SDK
-description: Create Agents and Sessions from your own TypeScript program with @prismshadow/penguin-core.
+description: Create agents and Sessions from your own TypeScript program with @prismshadow/penguin-core.
 ---
 
-`@prismshadow/penguin-core` is the same engine the CLI and the Server run inside, and it embeds directly into your own program.
+`@prismshadow/penguin-core` is the same engine the CLI and the server run inside, and it embeds directly into your own program. On this page you install the SDK, make a model available to it, and run a first program that creates an agent, starts a Session and prints the model's replies.
 
-## Install
+## Before you begin
 
-Requires Node.js >= 24:
+- Node.js >= 24.
+- An API key for one model provider, unless a model is already configured on this machine.
+
+## Install the SDK
+
+In your project directory, install the package:
 
 ```bash
 npm install @prismshadow/penguin-core
@@ -15,18 +20,22 @@ npm install @prismshadow/penguin-core
 
 ## Configure a model
 
-The SDK reads the same data root as the desktop app and the CLI, `~/.penguin/data`, so a model configured in the [desktop app](/quickstart-desktop) or the [CLI](/quickstart-cli) is immediately usable — there is nothing to configure twice.
+The SDK reads the same data root as the desktop app and the CLI, `~/.penguin/data`. A model configured in the [desktop app](/quickstart-desktop) or the [CLI](/quickstart-cli) is immediately usable, so there is nothing to configure twice.
 
-If this machine has no model configured yet, the shortest path is to install the CLI and do it once:
+If this machine has no model configured yet, the shortest path is to install the CLI and configure one there:
 
 ```bash
 npm install -g @prismshadow/penguin-cli
-penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
-You can also keep credentials off disk entirely: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads environment variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+Replace `sk-...` with your API key. The CLI writes the model to the data root, and the SDK can use it right away.
 
-## Your first program
+You can also keep credentials off disk entirely. When a model has no `api_key` of its own or its group's, and neither it nor its group names a `base_url` other than the vendor's default endpoint, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically. The SDK itself carries no model catalog, so on a data root only the SDK touches, add your models with `addModel` and leave their group's base URL empty; see [Configuration](/configuration#provider-credential-variables).
+
+## Run your first program
+
+Save this program in your project and run it:
 
 ```ts
 import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
@@ -43,13 +52,17 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 }
 ```
 
-- `createAgent` loads an Agent's configuration by id (prompts, tools, runtime parameters); `default_agent` is the one seeded when the data root is initialized.
-- `session.run()` returns an async iterator yielding OmniMessages one by one — the guard above picks out complete model text messages, while tool calls, thinking blocks and the rest arrive on the same stream.
-- `approve` is the approval callback; returning `"allow"` permits everything. How the four approval modes map onto tools is described in [Tools & Approval](/tools).
+The program asks the agent to create `hello.txt`, using the current directory as the Session's Workspace, and prints each complete text reply from the model.
+
+### How the program works
+
+- `createAgent` loads an agent's configuration by id: its prompts, tools and runtime parameters. `default_agent` is the agent seeded when the data root is initialized.
+- `session.run()` returns an async iterator that yields AMSP records one by one. The guard in the loop picks out complete model text messages; tool calls, thinking blocks and everything else arrive on the same stream.
+- `approve` is the approval callback, and returning `"allow"` permits everything. [Tools & Approval](/tools) describes how the four approval modes map onto tools.
 
 ## Next steps
 
 - [Core Interfaces](/interfaces): the contracts behind `createAgent`, `Session`, LLM and Environment.
-- [The OmniMessage Protocol](/omni-message): the shape of what `session.run()` yields.
+- [AMSP Records](/amsp-records): the shape of what `session.run()` yields.
 - [The Agent Loop](/agent-loop): what happens inside a single Task.
 - [Sessions & Traces](/sessions-and-traces): how conversations and execution records are stored.

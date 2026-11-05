@@ -1,12 +1,17 @@
 /**
- * Provisioning of the example Benchmark.
+ * The example Benchmark: its content, and the writer that puts it on disk.
  *
- * When default_agent is initialized, it preprovisions `benchmarks/example-benchmark/`: two
- * sample cases (each with statement/ and rubric/ indexed by a README.md),
- * benchmark_config.toml (runs = 2), and a scoreboard.yaml with three sample evaluations —
- * so the evaluation center has data out of the box. Its description states plainly that this
- * is a built-in example and the whole directory can be deleted or replaced. Only
- * default_agent gets this; ordinary Agents do not.
+ * At the Project level, `benchmarks/example-benchmark/` holds two sample cases (each with
+ * statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs = 2, status =
+ * published — the example is a finished Benchmark, not one a Skill is still writing — and origin
+ * builtin), and a scoreboard.yaml with three sample evaluations, each labelled with default_agent
+ * as the Agent it tested — so the evaluation center has data out of the box. Its description states
+ * plainly that this is a built-in example and the whole directory can be deleted or replaced.
+ *
+ * It is written when the Project is created (project-benchmarks.ts); a deleted example stays
+ * deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or the
+ * retired per-agent location `agents/<agent>/benchmarks/` an older data root may keep, which
+ * this code never reads.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
@@ -16,20 +21,29 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
-import { benchmarksDir } from "./paths.js";
+import { writeBenchmarkManifest, type BenchmarkManifest } from "./benchmark-manifest.js";
+import { DEFAULT_AGENT_ID } from "./paths.js";
 
 /** Directory name of the example Benchmark (the directory name is also its identifier). */
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
 
-/** Contents of benchmark_config.toml (no model reference here — the model is recorded on each evaluation instead). */
-const EXAMPLE_BENCHMARK_CONFIG = {
+/**
+ * The example's benchmark_config.toml (no model reference here — the model is recorded on each
+ * evaluation instead). Its version names the revision of everything this file writes: move it on
+ * whenever any of that changes (scripts/check-plugin-versions.mjs refuses a change without it).
+ */
+const EXAMPLE_BENCHMARK_MANIFEST: BenchmarkManifest = {
+  id: EXAMPLE_BENCHMARK_ID,
   title: "Example Benchmark",
   description:
     "A built-in example benchmark so the evaluation charts have data out of the box. " +
     "Replace it with your own.",
+  descriptionZh: "内置的示例 Benchmark，让评估图表开箱就有数据。换成你自己的吧。",
+  version: "2026.10.12.1",
+  status: "published",
   runs: 2,
+  origin: { kind: "builtin" },
 };
 
 /** Two sample cases: statement and scoring rubric (in English, 3-5 lines each). */
@@ -81,11 +95,13 @@ interface ExampleRun {
 
 /**
  * Raw runs for the three sample evaluations (case-level and evaluation-level metrics are
- * computed from these, keeping the numbers self-consistent). Each carries the model actually
- * used for that round; the examples all use deepseek-v4-pro at medium thinking.
+ * computed from these, keeping the numbers self-consistent). Each carries the Agent it tested
+ * and the model actually used for that round; the examples all evaluate default_agent on
+ * deepseek-v4-pro at medium thinking, so they share one chart series.
  */
 const EXAMPLE_EVALUATIONS: Array<{
   time: string;
+  agent_id: string;
   version: number;
   provider: string;
   model_id: string;
@@ -96,6 +112,7 @@ const EXAMPLE_EVALUATIONS: Array<{
 }> = [
   {
     time: "2026-07-14T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 1,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -144,6 +161,7 @@ const EXAMPLE_EVALUATIONS: Array<{
   },
   {
     time: "2026-07-15T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 2,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -192,6 +210,7 @@ const EXAMPLE_EVALUATIONS: Array<{
   },
   {
     time: "2026-07-16T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 3,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -270,6 +289,7 @@ function averageKnownCost(values: Array<number | null>): number | null {
 export function buildExampleScoreboard(): {
   evaluations: Array<{
     time: string;
+    agent_id: string;
     version: number;
     provider: string;
     model_id: string;
@@ -299,6 +319,7 @@ export function buildExampleScoreboard(): {
       }));
       return {
         time: e.time,
+        agent_id: e.agent_id,
         version: e.version,
         provider: e.provider,
         model_id: e.model_id,
@@ -315,44 +336,26 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark: if `benchmarks/` already exists (the user already has a
- * case library), does nothing; otherwise creates `benchmarks/example-benchmark/` (config, the
- * two sample cases, and the scoreboard). Callers are restricted to the default_agent
- * initialization path (see agent-state.ts).
+ * Writes the example Benchmark — its manifest, the two sample cases, and the scoreboard — into
+ * `benchDir`, an existing empty directory. project-benchmarks.ts calls it on a staging
+ * directory that it renames into place. Every write settles before a failure is reported, so
+ * nothing is still writing into the directory once the caller removes it.
  */
-export async function provisionExampleBenchmark(
-  root: string,
-  projectId: string,
-  agentId: string,
-): Promise<void> {
-  const dir = benchmarksDir(root, projectId, agentId);
-  try {
-    await fs.access(dir);
-    return;
-  } catch {
-    // benchmarks/ does not exist: proceed with provisioning.
-  }
-  const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
-  await Promise.all(
-    EXAMPLE_CASES.flatMap((c) => [
-      fs.mkdir(path.join(benchDir, c.id, "statement"), { recursive: true }),
-      fs.mkdir(path.join(benchDir, c.id, "rubric"), { recursive: true }),
-    ]),
-  );
-  await Promise.all([
-    fs.writeFile(
-      path.join(benchDir, "benchmark_config.toml"),
-      `${stringifyToml(EXAMPLE_BENCHMARK_CONFIG)}\n`,
-      "utf8",
-    ),
+export async function writeExampleBenchmark(benchDir: string): Promise<void> {
+  const results = await Promise.allSettled([
+    writeBenchmarkManifest(benchDir, EXAMPLE_BENCHMARK_MANIFEST),
     fs.writeFile(
       path.join(benchDir, "scoreboard.yaml"),
       stringifyYaml(buildExampleScoreboard()),
       "utf8",
     ),
-    ...EXAMPLE_CASES.flatMap((c) => [
-      fs.writeFile(path.join(benchDir, c.id, "statement", "README.md"), c.statement, "utf8"),
-      fs.writeFile(path.join(benchDir, c.id, "rubric", "README.md"), c.rubric, "utf8"),
-    ]),
+    ...EXAMPLE_CASES.map(async (c) => {
+      await fs.mkdir(path.join(benchDir, c.id, "statement"), { recursive: true });
+      await fs.mkdir(path.join(benchDir, c.id, "rubric"), { recursive: true });
+      await fs.writeFile(path.join(benchDir, c.id, "statement", "README.md"), c.statement, "utf8");
+      await fs.writeFile(path.join(benchDir, c.id, "rubric", "README.md"), c.rubric, "utf8");
+    }),
   ]);
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failed !== undefined) throw failed.reason;
 }

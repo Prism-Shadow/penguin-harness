@@ -1,0 +1,71 @@
+{
+  "name": "@penguinharness/sandbox-bwrap",
+  "version": "0.2.3",
+  "type": "module",
+  "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "sandbox",
+    "linux",
+    "bubblewrap",
+    "network-isolation",
+    "path-masking"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/sandbox-bwrap"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "vendor",
+    "README.md",
+    "icon.svg",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "executableFiles": [
+      "./vendor/linux-x64/bin/bwrap",
+      "./vendor/linux-arm64/bin/bwrap"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "node ../../scripts/vendor-bwrap.mjs && node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^4.1.12"
+  },
+  "penguin": {
+    "description_zh": "PenguinHarness 的 Bubblewrap 沙箱后端：在 Linux 上限制文件写入，并提供网络隔离与路径屏蔽。",
+    "short_description": "Linux: confine file writes, cut the network, mask paths.",
+    "short_description_zh": "Linux：限制文件写入、断开网络、屏蔽路径。",
+    "category": "sandbox",
+    "icon": "icon.svg",
+    "preinstall": false,
+    "title": "Linux Sandbox",
+    "title_zh": "Linux 沙箱"
+  }
+}

@@ -1,37 +1,96 @@
-# CI: one gate (`ci`) over a fan-out of short jobs.
-#
-# The shape is chosen for wall clock. The old workflow ran build -> style -> typecheck ->
-# test -> installer -> e2e as six serial steps inside one job per platform, so every
-# platform paid for every gate in sequence and the slowest job — Windows, at 254s — set
-# the whole run's length. Here each gate is its own job, tests are sharded by package,
-# and every job builds only the packages its shard actually needs (see the shared setup
-# action). Nothing is dropped: every package's tests still run exactly once per platform.
-#
-# `ci` at the bottom is the aggregate gate. It is the one job worth marking required in
-# branch protection — the shard names below are an implementation detail and will change
-# again as the suite grows, whereas `ci` means what it has always meant.
+# CI selects changed packages and their dependents with pnpm.
+# Release calls the same workflow with full=true at the exact release ref.
 name: CI
 
-# Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
-# this repo's PRs often target integration branches rather than main/dev, and a target filter would leave them with no CI).
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Run the complete cross-platform validation"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit or tag to validate before publishing"
+        type: string
+        required: true
+      full:
+        type: boolean
+        default: true
+    secrets:
+      DEEPSEEK_API_KEY:
+        required: false
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      full: ${{ steps.plan.outputs.full }}
+      tests: ${{ steps.plan.outputs.tests }}
+      macos_tests: ${{ steps.plan.outputs.macos_tests }}
+      windows_tests: ${{ steps.plan.outputs.windows_tests }}
+      linux: ${{ steps.plan.outputs.linux }}
+      macos: ${{ steps.plan.outputs.macos }}
+      windows: ${{ steps.plan.outputs.windows }}
+      typecheck: ${{ steps.plan.outputs.typecheck }}
+      typecheck_build: ${{ steps.plan.outputs.typecheck_build }}
+      typecheck_command: ${{ steps.plan.outputs.typecheck_command }}
+      readme: ${{ steps.plan.outputs.readme }}
+      plugins: ${{ steps.plan.outputs.plugins }}
+      packaging: ${{ steps.plan.outputs.packaging }}
+      installer: ${{ steps.plan.outputs.installer }}
+      runtime: ${{ steps.plan.outputs.runtime }}
+      e2e: ${{ steps.plan.outputs.e2e }}
+      runtime_matrix: ${{ steps.plan.outputs.runtime_matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          # Planning installs nothing, and pnpm is not on PATH until the next step.
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+      # A cancelled/failed main run must not become the next run's comparison base.
+      - uses: nrwl/nx-set-shas@v5
+        id: base
+        if: ${{ !inputs.full }}
+        continue-on-error: true
+        with:
+          workflow-id: ci.yml
+          error-on-no-successful-workflow: true
+      - name: Select affected packages and jobs
+        id: plan
+        env:
+          CI_BASE: ${{ steps.base.outcome == 'success' && steps.base.outputs.base || '' }}
+          CI_FULL: ${{ inputs.full || false }}
+        run: node scripts/ci-plan.mjs
+
   # Prettier reads sources, so this needs no build at all — the cheapest job in the run.
   style:
     name: style (prettier)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
+      - name: CI selection and gate regressions
+        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs
       - name: Code style (Prettier)
         run: pnpm format:check
 
@@ -54,60 +113,191 @@ jobs:
           # workflows this change does not touch are a separate conversation.
           ./actionlint -shellcheck=
 
-  # tsc over every package, so this one does need the whole build. Results are
-  # platform-independent, which is why neither macOS nor Windows repeats it.
-  typecheck:
+  # README tables are test inputs, not changes to core or its downstream packages.
+  readme:
+    needs: plan
+    if: needs.plan.outputs.readme == 'true'
+    name: README catalog
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # tsc runs over every package, so every package's dist has to exist -- core's test
-      # files read skills' emitted types, for one.
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: ./.github/actions/setup
+      - name: README plugin tables match the shipped library
+        run: pnpm --filter @prismshadow/penguin-core exec vitest run test/readme-catalog.test.ts
+
+  # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
+  # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
+  # would never learn about the change (the update flag reads the version). Compared against the
+  # pull request's base; a push has no base and the script passes on an empty one.
+  plugin-versions:
+    needs: plan
+    if: needs.plan.outputs.plugins == 'true'
+    name: plugin versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+          fetch-depth: 0
+      - name: Changed plugins carry a new version
+        run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
+
+  # The npm publishing path, walked without publishing. CI used to prove only that the sources
+  # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
+  # packaging break first appeared after the tag, where it costs a version number. This job stamps,
+  # builds and tests the way the release does (scripts/release-npm.sh) and packs what it would upload.
+  npm-packaging:
+    needs: plan
+    if: needs.plan.outputs.packaging == 'true'
+    name: npm packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: ./.github/actions/setup
+      # --registry also asks npm which published names do not exist yet. A new package is
+      # legitimate, so that is a warning rather than a failure -- but it has to be seen before the
+      # tag, because the release's OIDC exchange cannot create a name npm has never seen.
+      - name: A published package depends on nothing private, and names that need a first publish
+        run: node scripts/check-publishable.mjs --registry
+      # The release's npm job stamps the tag's version into every package it publishes (and into the
+      # server's embedded plugin index) before it builds and tests. Stamp the same way here, with
+      # the repo's own version, so a test that only fails on the stamped tree fails on the pull
+      # request: v0.2.14 was lost to exactly that, after a green CI.
+      - name: Stamp the versions as the release's npm job does
+        run: EVENT_NAME=ci GITHUB_SHA="$(git rev-parse HEAD)" bash scripts/release-npm.sh stamp "v$(node -p 'require("./package.json").version')"
+      - name: Build the publishable dependency chain and Web UI
+        run: pnpm --filter '@prismshadow/penguin-cli...' --filter '@prismshadow/penguin-web...' build
+      - name: Stamped version and plugin-registry regressions
+        run: bash scripts/release-npm.sh test-smoke
+      # The release stages two things into the package directories before it publishes: the root
+      # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
+      # npm silently skips a `files` entry that is not on disk -- so packing without them proves the
+      # manifest is well formed and says nothing about what actually ships. Stage them the same way
+      # release.yml does, so the dry run lists the real tarball.
+      - name: Stage what the release stages
+        run: |
+          for p in amsp core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          rm -rf packages/server/web-dist
+          cp -r packages/web/dist packages/server/web-dist
+      - name: Pack the publishable packages
+        run: |
+          for p in amsp core server cli; do
+            echo "--- packages/$p"
+            (cd "packages/$p" && npm pack --dry-run)
+          done
+      # The UI package is packed with pnpm, the only packer that applies its publishConfig (its
+      # exports point at src/ in the repository, at dist/ in the tarball). The check installs that
+      # tarball into a project and compiles and renders against it, and checks the Workbench
+      # runtime the Web UI build copied in.
+      - name: The UI package's tarball and Workbench runtime
+        run: node scripts/check-ui-package.mjs
+      # A tarball that lost web-dist/ serves no Web UI from an npm install, and the failure is a
+      # blank page at runtime rather than anything the pack step reports.
+      - name: The server tarball carries the Web UI and the license
+        run: |
+          listing="$(cd packages/server && npm pack --dry-run 2>&1)"
+          for want in web-dist/ LICENSE; do
+            echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
+          done
+          echo "server tarball carries web-dist/ and LICENSE"
+
+  # Typecheck the affected packages after building what they import: their dependencies, never
+  # the packages themselves nor a site bundle (tsc reads declarations, not a package's own dist).
+  typecheck:
+    needs: plan
+    if: needs.plan.outputs.typecheck == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web..."
+          build: ${{ needs.plan.outputs.typecheck_build }}
       - name: Typecheck (tsc)
-        run: pnpm typecheck
+        run: ${{ needs.plan.outputs.typecheck_command }}
 
-  # The unit suite, split four ways. Shards are drawn so that build cost and test cost
-  # roughly balance: core and server are the two long suites and get one each, the rest
-  # pair up behind them.
+  # Linux runs every affected package. New packages enter the rest shard automatically. The web
+  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and each
+  # uploads the coverage of its half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from
+  # silently skipping.
   test:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    # The server's declarations are most of its build (~25 s of ~26 s) and no test reads a
+    # .d.ts; typecheck and npm packaging still build them (see packages/server/tsup.config.ts).
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - shard: core
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core test
-          - shard: server
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server test
-          - shard: web-cli
-            build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
-            tests: pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-cli test
-          - shard: rest
-            build: "@prismshadow/penguin-desktop..."
-            tests: >-
-              pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
-              --filter @prismshadow/penguin-docs test
+      matrix: ${{ fromJSON(needs.plan.outputs.linux) }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+      # Ubuntu 23.10 and later let only AppArmor-profiled programs create an unprivileged
+      # user namespace, and some tests here need one. Changing it takes root and changes the
+      # whole machine, so it is a host prerequisite the job sets, not something a test can.
+      - name: Allow unprivileged user namespaces
+        if: matrix.shard == 'rest'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
+      - name: Save branch and line coverage
+        if: always() && matrix.coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: |
+            packages/core/coverage/coverage-summary.json
+            packages/core/coverage/lcov.info
+            packages/server/coverage/coverage-summary.json
+            packages/server/coverage/lcov.info
+            packages/web/coverage/coverage-summary.json
+            packages/web/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+      # Layout the component library only shows in a real engine, measured in the gallery: list
+      # rows keep their actions inside the card, attachment tiles keep their image's shape. Run by
+      # the job that tests the gallery (the plan's `gallery`), against its own dev server.
+      - name: Install Chromium (gallery layout checks)
+        if: matrix.gallery
+        run: pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium
+      - name: Component layout checks (ui-gallery)
+        if: matrix.gallery
+        run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
+      - name: Gallery layout failure diagnostics
+        if: failure() && matrix.gallery
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-layout-failure
+          path: packages/ui-gallery/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # The installer bundle and the live-LLM e2e, together because both want a full build and
   # neither is long. The secret is exposed only in its own step (step-level env), so earlier
   # steps and third-party actions cannot see it; the secrets context is not usable in `if`,
   # so the skip happens inside the shell for forks, where it is absent.
   installer-e2e:
+    needs: plan
+    if: needs.plan.outputs.installer == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           build: "@prismshadow/penguin-cli...,@prismshadow/penguin-server..."
@@ -129,87 +319,87 @@ jobs:
   # Electron's own Node (ELECTRON_RUN_AS_NODE), resolved from the built desktop bundle:
   # the same module lookup, on the same runtime, that the packaged app's server performs.
   # A macOS terminal regression that once shipped as a silently empty panel fails here.
-  # No format:check and no typecheck (same files, platform-independent results, gated on
-  # ubuntu); no live-LLM e2e (ubuntu-only budget).
+  # Browser/site suites run here only in full mode; native packages keep platform coverage.
   test-macos:
+    needs: plan
+    if: needs.plan.outputs.macos_tests == 'true'
     name: test-macos (${{ matrix.shard }})
     runs-on: macos-latest
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - shard: core
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core test
-            smoke: false
-          - shard: server
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server test
-            smoke: false
-          - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
-            tests: >-
-              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
-            smoke: true
+      matrix: ${{ fromJSON(needs.plan.outputs.macos) }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
       - name: Terminal smoke (node-pty under Electron's Node)
         if: matrix.smoke
         run: node packages/desktop/scripts/terminal-smoke.mjs
 
   # Windows. The runner is the slowest and the most I/O-variable of the three, so the
-  # server suite — the longest here by a wide margin — is split across two vitest shards
-  # on top of the per-package split. core runs alone rather than beside anything else:
+  # server suite — the longest here by a wide margin — is split across vitest shards (how
+  # many: WINDOWS_SERVER_SHARDS in scripts/ci-plan.mjs), its files dealt by their measured
+  # Windows durations (packages/server/test/shard-weights.json), on top of the per-package
+  # split. core runs alone rather than beside anything else:
   # its exec_command suites spawn real shells and read their output under timeouts, races
-  # they lose when oversubscribed. Every package's tests still run exactly once across the
+  # they lose when oversubscribed. Every selected package runs once across the
   # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
   # the shell resolver's bash pick; genuinely POSIX-only tests skip themselves via
   # process.platform guards rather than CI filters, so a local Windows dev sees the same
-  # behaviour. Every package's tests still run exactly once across the shards. Line
-  # endings come from .gitattributes (LF working tree), keeping build
-  # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
-  # macOS note above.
+  # behaviour. What those guards leave unmeasured on Windows is listed here, and is not
+  # guaranteed there:
+  #   - server test/machines-transport-session.test.ts: its stub `ssh` is a shell script,
+  #     which execFile cannot run without a shell, so the session is measured on POSIX
+  #     only; spawning the real Windows OpenSSH client is not measured.
+  #   - server test/terminal-stream.test.ts: real ptys only. Headless ConPTY loses its
+  #     console ("AttachConsole failed") and node-pty leaks IPC rejections; the pure
+  #     terminal suites in terminal.test.ts run here.
+  #   - plugins/sandbox-dsh test/live.test.ts: what its live suite runs on Windows, and what
+  #     it leaves unmeasured there, is stated at the TODO(win32) in that file.
+  # Full validation includes browser and site packages too, in two halves (each runs half of
+  # every site package's files). Line endings come from .gitattributes (LF working tree),
+  # keeping build outputs and fixtures byte-identical. No format:check, no typecheck, no e2e —
+  # see the macOS note above.
   test-windows:
+    needs: plan
+    if: needs.plan.outputs.windows_tests == 'true'
     name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - shard: core
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core test
-          - shard: server-1
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
-          - shard: server-2
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
-          - shard: server-3
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
-          - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
-            tests: >-
-              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+      matrix: ${{ fromJSON(needs.plan.outputs.windows) }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
 
+      # The server shards call `exec vitest` (the `test` script cannot take `--shard`), which
+      # skips the script's `gen:ifaces`; src/ifaces.json, which src/platform.ts imports at load,
+      # comes from the server's build in the setup step, whose script generates it first.
+
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
-      # failure that has no failing test at all — a tinypool `ERR_IPC_CHANNEL_CLOSED` raised
-      # while the worker pool tears down, after every file has reported green. A real
-      # regression fails both attempts.
+      # failure that has no failing test at all — a worker-pool error raised while the pool
+      # tears down (vitest 3's tinypool: `ERR_IPC_CHANNEL_CLOSED`), after every file has
+      # reported green. A real regression fails both attempts.
       - name: Unit tests (vitest)
         shell: bash
+        env:
+          PENGUIN_MUST_RUN: ${{ matrix.must_run }}
         run: |
           ${{ matrix.tests }} && exit 0
           echo "::warning::vitest failed on Windows; retrying once (see the pool-teardown note in ci.yml)"
@@ -219,9 +409,13 @@ jobs:
   # ~20s and have nothing to do with the suite they were attached to, which happened to be
   # the longest one in the run.
   installer-windows:
+    needs: plan
+    if: needs.plan.outputs.installer == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           build: "@prismshadow/penguin-cli..."
@@ -261,30 +455,49 @@ jobs:
   # through an installer channel — signed installers stay in desktop-build.yml. Unsigned
   # by design.
   runtime:
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: "--linux"
-          - os: macos-latest
-            platform: "--mac"
-          - os: windows-latest
-            platform: "--win"
+      matrix: ${{ fromJSON(needs.plan.outputs.runtime_matrix) }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
         with:
           # The web package is not a dependency of the desktop package (the app carries its
           # build by an electron-builder file mapping, not an import), so `desktop...` alone
-          # leaves it unbuilt — and the mapping then silently packs nothing.
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-web"
+          # leaves it unbuilt — and the mapping then silently packs nothing. The web's build
+          # copies in the UI package's Workbench runtime, so that package builds first.
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-ui,@prismshadow/penguin-web"
 
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs
+
+      # What the packed app installs on other machines, packed the way desktop-build.yml packs
+      # it; verify-packed-cli.mjs below checks the packed tree carries it.
+      - name: Pack the install image
+        run: pnpm --dir packages/desktop run image
+
+      # electron-builder fetches the Electron runtime and the tools it packs with from GitHub's
+      # release downloads on every run, and a 504 there has failed this job on its own. Kept per
+      # OS across runs; a cache from an older Electron is still a valid starting point.
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('packages/desktop/package.json') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Build unpacked runtime
         env:
@@ -300,6 +513,7 @@ jobs:
         run: node packages/desktop/scripts/verify-packed-cli.mjs
 
       - name: Upload runtime artifact
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: penguin-runtime-${{ runner.os }}
@@ -312,23 +526,75 @@ jobs:
             packages/desktop/out/mac-arm64
             packages/desktop/out/mac-x64
 
-  # The aggregate gate: green only when every job above is. Mark THIS one required in
-  # branch protection — it survives the shard list changing, which the individual job
-  # names do not. `if: always()` so it still runs (and fails) when something upstream did.
+  browser-smoke:
+    needs: plan
+    if: needs.plan.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The e2e server runs from its built JavaScript; its declarations are typecheck's to build.
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: ./.github/actions/setup
+      # Chromium downloads while the server and the Web App build: one waits on the network, the
+      # other on the CPU, so neither has to wait for the other.
+      - name: Build, with Chromium installing alongside
+        run: |
+          pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium >"$RUNNER_TEMP/chromium.log" 2>&1 &
+          chromium=$!
+          pnpm --config.verify-deps-before-run=false --filter '@prismshadow/penguin-server...' --filter '@prismshadow/penguin-web...' --if-present build
+          wait "$chromium" || { cat "$RUNNER_TEMP/chromium.log"; exit 1; }
+      # project-switch.spec.mjs holds the Project-isolation line: two Projects with distinct
+      # Agents, switched quickly under a throttled CPU and seeded API latency, must never pair
+      # one Project with the other's Agents. It costs about half a minute. sticky-rows.spec.mjs
+      # holds the transcript's sticky rows: pinning is layout only a real engine computes.
+      # dock.spec.mjs and terminal.spec.mjs are the only tests that run a real shell through the
+      # server: each conversation's own dock tabs (nothing leaks to another), a shell starting in
+      # the conversation's Workspace, a failed create surfacing, and a shell surviving a reload.
+      # Playwright reads each name as a pattern, so dock.spec.mjs runs mobile-dock.spec.mjs too.
+      - name: Browser integration smoke (mock LLM)
+        env:
+          SKIP_BUILD: "1"
+        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs dock.spec.mjs terminal.spec.mjs
+      - name: Browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-failure
+          path: |
+            packages/web/test-results/
+            packages/web/e2e-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Keep this aggregate required in branch protection. Only planned skips are accepted.
   ci:
     if: always()
     needs:
-      [style, typecheck, test, installer-e2e, test-macos, test-windows, installer-windows, runtime]
+      [
+        plan,
+        style,
+        readme,
+        browser-smoke,
+        plugin-versions,
+        npm-packaging,
+        typecheck,
+        test,
+        installer-e2e,
+        test-macos,
+        test-windows,
+        installer-windows,
+        runtime,
+      ]
     runs-on: ubuntu-latest
     steps:
-      - name: Every gate passed
-        run: |
-          results='${{ join(needs.*.result, ' ') }}'
-          echo "upstream results: $results"
-          for r in $results; do
-            if [ "$r" != "success" ]; then
-              echo "::error::a CI job did not succeed ($results)"
-              exit 1
-            fi
-          done
-          echo "all green"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - name: Every selected gate passed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-gate.mjs

@@ -1,24 +1,36 @@
 /**
- * Integration tests for the session background-process endpoints:
- *   - GET  /api/sessions/:id/processes            — list (ISO startedAt, running flag);
- *   - POST /api/sessions/:id/processes/:pid/kill  — stop a running process (drops the row);
- *   - DELETE /api/sessions/:id/processes/:pid     — remove an EXITED entry from the list:
- *       204 removes it, 409 process_running while it still runs (stop is the kill route's
- *       job — removal never signals a live process group), 404 for unknown ids and for
- *       sessions whose runtime is gone (nothing left to remove either way);
- *   - 404 for foreign/unknown sessions (the shared resolveSession semantics).
+ * The Session background-process endpoints the process panel drives.
+ *
+ * - GET lists the runtime's processes with ISO start times (refreshing their service probes);
+ *   an unloaded Session reports none.
+ * - Kill stops a running process and drops its row.
+ * - DELETE removes an EXITED entry (204); a running one is a 409 process_running (removal never
+ *   signals a live process group — stopping is the kill route's job); an unknown id, or a
+ *   Session whose runtime is gone, is a 404.
+ * - Backgrounding hands an executing call back as a background task (204); a call that is not
+ *   running is a 404 tool_call_not_found, a tool with no background form a 409.
+ * - Foreign and unknown Sessions are 404s, as on every Session route.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BackgroundCommandInfo, OmniMessage, ApproveFn } from "@prismshadow/penguin-core";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { BackgroundCommandInfo, ToolDetachResult } from "@prismshadow/penguin-core";
 import type { SessionProcessesResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-18-10-00-00-ccdd0031";
-const SID_UNLOADED = "session-2026-08-18-10-00-00-ccdd0032";
+const PROJECT = "procuser-default_project";
 const STARTED_AT = Date.UTC(2026, 7, 18, 12, 4, 0);
+
+/**
+ * What core's detach answers per tool_call_id in these tests: one executing call the user can
+ * move to the background, one executing call whose tool has no background form. Any other id
+ * is a call that is not running.
+ */
+const DETACH_ANSWERS = new Map<string, ToolDetachResult>([
+  ["call_exec_1", "detached"],
+  ["call_read_1", "not_detachable"],
+]);
 
 /** Fake Session backed by a mutable process array; kill removes the entry like core's registry. */
 function processesFakeSession(
@@ -26,16 +38,9 @@ function processesFakeSession(
   procs: BackgroundCommandInfo[],
   kills: string[],
   probes?: string[],
+  detaches?: string[],
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run(_input: OmniMessage[], _opts: { approve: ApproveFn; signal: AbortSignal }) {},
-    async *compact() {},
+  return fakeSession(sessionId, {
     listBackgroundCommands: () => [...procs],
     probeBackgroundCommandServices: async () => {
       probes?.push(sessionId);
@@ -47,36 +52,36 @@ function processesFakeSession(
       procs.splice(i, 1);
       return true;
     },
-  };
+    detachToolCall: (toolCallId: string) => {
+      const answer = DETACH_ANSWERS.get(toolCallId) ?? "not_running";
+      if (answer === "detached") detaches?.push(toolCallId);
+      return answer;
+    },
+  });
 }
 
 describe("session processes routes", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
+  let SID: string;
+  let SID_UNLOADED: string;
   let procs: BackgroundCommandInfo[];
   let kills: string[];
   let probes: string[];
+  let detaches: string[];
 
-  const sessionRow = (sessionId: string): SessionRow => ({
-    sessionId,
-    projectId: "procuser-default_project",
-    agentId: "default_agent",
-    modelId: "m1",
-    provider: "custom",
-    workspace: "/tmp/w",
-    approvalMode: "always-ask",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  });
-
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "procuser");
-    const other = await provisionUser(t.app, "outsider_p");
-    api = apiClient(t.app, cookie);
-    outsider = apiClient(t.app, other.cookie);
+    api = apiClient(t.app, (await provisionUser(t.app, "procuser")).cookie);
+    outsider = apiClient(t.app, (await provisionUser(t.app, "outsider_p")).cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    SID_UNLOADED = uniqueSessionId();
     procs = [
       {
         processId: "proc-11111111",
@@ -98,13 +103,13 @@ describe("session processes routes", () => {
     ];
     kills = [];
     probes = [];
-    t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(sessionRow(SID), processesFakeSession(SID, procs, kills, probes));
+    detaches = [];
+    adoptSession(t.deps, processesFakeSession(SID, procs, kills, probes, detaches), {
+      projectId: PROJECT,
+      approvalMode: "always-ask",
+    });
     // A second session with no runtime entry: truthfully reports no processes.
-    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
-  });
-  afterEach(async () => {
-    await t.cleanup();
+    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED, { projectId: PROJECT }));
   });
 
   it("GET lists the runtime's processes with ISO start times; an unloaded session reports none", async () => {
@@ -196,12 +201,46 @@ describe("session processes routes", () => {
     expect(body.processes.map((p) => p.processId)).toEqual(["proc-22222222"]);
   });
 
+  it("POST background moves an executing call to the background (204)", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tool-calls/call_exec_1/background`, {});
+    expect(res.status).toBe(204);
+    expect(detaches).toEqual(["call_exec_1"]);
+  });
+
+  it("POST background → 404 tool_call_not_found for a call that is not running, or an unloaded runtime", async () => {
+    const gone = await api.post(`/api/sessions/${SID}/tool-calls/call_ghost/background`, {});
+    expect(gone.status).toBe(404);
+    expect(((await gone.json()) as { error: { code: string } }).error.code).toBe(
+      "tool_call_not_found",
+    );
+
+    const unloaded = await api.post(
+      `/api/sessions/${SID_UNLOADED}/tool-calls/call_exec_1/background`,
+      {},
+    );
+    expect(unloaded.status).toBe(404);
+    expect(detaches).toEqual([]);
+  });
+
+  it("POST background → 409 tool_not_detachable for a tool with no background form", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tool-calls/call_read_1/background`, {});
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "tool_not_detachable",
+    );
+    expect(detaches).toEqual([]);
+  });
+
   it("foreign and unknown sessions → 404 (same auth semantics as the other session routes)", async () => {
     expect((await outsider.get(`/api/sessions/${SID}/processes`)).status).toBe(404);
     expect((await outsider.delete(`/api/sessions/${SID}/processes/proc-22222222`)).status).toBe(
       404,
     );
     expect((await api.delete(`/api/sessions/session-ghost/processes/proc-1`)).status).toBe(404);
+    expect(
+      (await outsider.post(`/api/sessions/${SID}/tool-calls/call_exec_1/background`, {})).status,
+    ).toBe(404);
     expect(kills).toEqual([]);
+    expect(detaches).toEqual([]);
   });
 });

@@ -46,6 +46,7 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { MessagingChannelError } from "./connector.js";
 import { imageMimeOfName } from "./media.js";
 import { telegramHtmlOf } from "./telegram-html.js";
 import type {
@@ -58,7 +59,14 @@ import type {
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
-import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
+import {
+  TELEGRAM_MAX_DOWNLOAD_BYTES,
+  TelegramApiError,
+  createTelegramTransport,
+} from "./telegram-api.js";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { MessagingTuning } from "./bridge.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */
 export interface TelegramBindingConfig extends Record<string, unknown> {
@@ -518,6 +526,8 @@ export class TelegramConnector implements MessagingChannelConnector {
     /** This bot's own account, from the `getMe` the loop already makes; only its own mention needs it. */
     let me: TelegramBotUser | null = null;
     let failures = 0;
+    /** What this outage has already reported (see qq-api's GatewaySession.reported). */
+    let reported: "none" | "routine" | "defect" = "none";
     let offset: number | undefined;
     while (!isClosed()) {
       try {
@@ -555,6 +565,7 @@ export class TelegramConnector implements MessagingChannelConnector {
         });
         if (isClosed()) return;
         failures = 0;
+        reported = "none";
         if (!ready) {
           ready = true;
           handlers.onReady?.();
@@ -571,11 +582,54 @@ export class TelegramConnector implements MessagingChannelConnector {
         // one error record; the retries stay quiet until recovery re-fires onReady. The
         // counter survives the recovery attempt above precisely so a failure that only
         // ever hits `getUpdates` — a 409 conflict — still walks the backoff up to its
-        // ceiling instead of re-polling every second forever.
-        if (failures === 1) handlers.onError?.(err);
+        // ceiling instead of re-polling every second forever. A failure that recovers on
+        // its own is filed `expected`, so it does not get to be the whole story: the first
+        // one after it that does not recover is reported too.
+        const routine = err instanceof MessagingChannelError && err.recovers;
+        if (reported === "none" || (reported === "routine" && !routine)) {
+          reported = routine ? "routine" : "defect";
+          handlers.onError?.(err);
+        }
         ready = false;
         await sleep(this.retryDelayMs(failures), signal);
       }
     }
+  }
+}
+
+/** The telegram connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-telegram.connector",
+        channel: "telegram",
+      },
+    ],
+  },
+})
+export class TelegramMessaging {
+  @Use() private readonly telegram!: TelegramTransportHandle;
+  @Use() private readonly tuning!: MessagingTuning;
+  @Bind("messaging-telegram.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const { retryDelayMs } = this.tuning;
+    this.connector = new TelegramConnector(
+      this.telegram.transport,
+      retryDelayMs !== undefined ? { retryDelayMs } : {},
+    );
+  }
+}
+
+/** The Bot API transport as a node, so a test stands in a fake for the network. */
+@Interface()
+export abstract class TelegramTransportHandle {
+  abstract transport: Opaque<"TelegramTransport", TelegramTransport>;
+}
+@Module()
+export class TelegramTransportProvider {
+  @Provide() telegramTransport!: TelegramTransportHandle;
+  setup() {
+    this.telegramTransport = { transport: createTelegramTransport() };
   }
 }

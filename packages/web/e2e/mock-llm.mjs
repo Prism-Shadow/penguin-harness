@@ -3,6 +3,8 @@
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
+ *  - "files rewrite test <cmd>" -> tool_use(exec_command) running <cmd>, then a short final text
+ *    (files-folders.spec: the Agent rewrites a file the Files panel has open)
  *  - subagent's own turns (its prompt is the only user text) -> tool_use(exec_command) first,
  *    then the report text once the tool_result is back — the tool call gives the child a real
  *    approval point (under always-ask it parks on a NESTED approval, which the subagents-panel
@@ -16,10 +18,17 @@
  *  - "background exit test" -> tool_use(exec_command) whose command outlives the yield
  *    window but exits on its own shortly after (processes.spec: the exited row can be
  *    removed from the process list)
+ *  - "background pair test" -> two tool_use(exec_command) in one turn: one that stays up and
+ *    one with a long command line that exits shortly after its yield window (processes.spec:
+ *    "clear exited" removes only the exited row; hovering the long command shows it whole)
  *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
  *    (reload-midstream.spec reloads while the TEXT streams)
+ *  - "scroll bounce test" -> a three-line paragraph every 50ms for ~4s, for every request of
+ *    that conversation (scroll-follow-bounce.spec wheels up while each reply streams)
+ *  - "sticky rows test" -> thinking + three tool_use(exec_command) printing long runs of numbers
+ *    (sticky-rows.spec scrolls an open output under the pinned group head and tool row)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -27,6 +36,9 @@ import http from "node:http";
 
 /** The run_subagent prompt; also the marker the mock uses to detect "this is the child session's own request". */
 const SUBAGENT_PROMPT = "Count the TODO items in the repository";
+/** The long tail of the "background pair test" exited command (processes.spec hovers the row and expects this whole line in the tooltip). */
+const PAIR_LONG_ECHO =
+  "the-exited-process-whose-command-line-runs-far-past-the-width-of-its-row-in-the-details-card";
 /** Background-subagent FAILURE prompt: the child session's every request is rejected 400, so its run fails after the retry ladder. */
 const SUBAGENT_FAIL_PROMPT = "Fail the TODO count on purpose";
 
@@ -101,7 +113,11 @@ const server = http.createServer((req, res) => {
     } catch {}
     const messages = json.messages || [];
     const flat = JSON.stringify(messages);
-    const isTitle = flat.includes("concise title");
+    // The title request is one out-of-band one-shot whose material is the run's own user text,
+    // so it is identified by the wording of core's title Prompt (buildTitlePrompt), not by the
+    // conversation content — probing for user text would let a title request read as a normal
+    // turn and hand the mock's answer back as the Session's title.
+    const isTitle = flat.includes("You are a title generator.");
     // After compaction the new context has only the summary left, so the message count drops
     // sharply -> reported usage drops along with it, letting compaction converge.
     const msgCount = messages.length;
@@ -110,8 +126,9 @@ const server = http.createServer((req, res) => {
     const isSubagentTurn = flat.includes(SUBAGENT_PROMPT) && !flat.includes("run a subagent");
     const wantsSubagent = flat.includes("run a subagent");
     // "Bad stream" test case: the first request streams half the tool_use arguments then cuts
-    // the connection (no message_stop), so AgentHub reports "stream incomplete" -> GenerativeModel
-    // resolves it as malformed. On reconnect the engine **resends the input verbatim** — in this
+    // the connection (no message_delta / message_stop), so MMSP fails those arguments with a
+    // ToolCallArgumentParseError when the stream ends -> GenerativeModel resolves it as
+    // malformed. On reconnect the engine **resends the input verbatim** — in this
     // scenario the failed attempt only has a half tool_call (never committed to the ledger), so
     // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
@@ -229,6 +246,17 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Find-bar fixture (find.spec): one settled reply whose body repeats a token nobody else in
+    // the app writes, so the hit count is exact without depending on the app's own copy.
+    if (flat.includes("find marker test")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "findmarker one, findmarker two, and findmarker three.\n\n" },
+        { type: "text_delta", text: "A second paragraph also says findmarker.\n" },
+      ]);
+      messageStop(res, "end_turn", 30);
+      return;
+    }
+
     // Files-card test case: the reply carries two backtick paths — demo.html was actually
     // written into the Workspace beforehand by the spec via files/content, while
     // missing-report.pdf doesn't exist; the card should only list the former. This branch
@@ -242,6 +270,29 @@ const server = http.createServer((req, res) => {
         },
       ]);
       messageStop(res, "end_turn", 18);
+      return;
+    }
+
+    // Files-panel rewrite test: the Agent rewrites a Workspace file while the panel has it open.
+    // Keyed on the LAST message, since the history keeps every earlier request of the
+    // conversation: the user's own text names the command, and its tool_result ends the turn.
+    const lastMessage = JSON.stringify(messages[messages.length - 1] ?? {});
+    const rewrite = /files rewrite test ([^"\\]+)/.exec(lastMessage);
+    if (rewrite) {
+      block(
+        res,
+        0,
+        { type: "tool_use", id: "toolu_files_rewrite", name: "exec_command", input: {} },
+        [{ type: "input_json_delta", partial_json: JSON.stringify({ cmd: rewrite[1].trim() }) }],
+      );
+      messageStop(res, "tool_use", 12);
+      return;
+    }
+    if (flat.includes("files rewrite test") && lastMessage.includes("tool_result")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "The file was rewritten." },
+      ]);
+      messageStop(res, "end_turn", 8);
       return;
     }
 
@@ -264,7 +315,7 @@ const server = http.createServer((req, res) => {
           delta: { type: "input_json_delta", partial_json: '{"cmd": "ec' },
         });
         sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
-        res.end(); // ends normally but is missing message_delta/message_stop -> AgentHub reports "stream incomplete"
+        res.end(); // ends normally but is missing message_delta/message_stop -> MMSP cannot parse the half-streamed arguments
         return;
       }
       // Retry (original input resent): return a complete tool_use, then proceed normally.
@@ -425,6 +476,27 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // A running and an exited background process side by side (processes.spec: the list's
+    // "clear exited" action removes the exited row and leaves the running one). Two calls in
+    // one turn, both past their 300ms yield window: a long sleep that stays up, and a short
+    // one that exits ~200ms later — with a command line too long for its row, so the same
+    // spec can hover it and read the whole command in the tooltip.
+    if (flat.includes("background pair test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_bgpair_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "sleep 600",' },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      block(res, 1, { type: "tool_use", id: "toolu_bgpair_2", name: "exec_command", input: {} }, [
+        {
+          type: "input_json_delta",
+          partial_json: `{"cmd": "sleep 0.5 && echo ${PAIR_LONG_ECHO}",`,
+        },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      messageStop(res, "tool_use", 28);
+      return;
+    }
+
     // Slow tool-output test case (reload-midstream.spec): a real exec_command whose output
     // streams one line every 200ms for ~8s — long enough to reload the page mid-stream and
     // watch the output keep growing afterwards.
@@ -434,6 +506,29 @@ const server = http.createServer((req, res) => {
         { type: "input_json_delta", partial_json: ' echo line $i; sleep 0.2; done"}' },
       ]);
       messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Sticky-rows test case (sticky-rows.spec): one work group of a thinking step and three
+    // exec_command calls whose output is one long run of numbers, so every line of an open
+    // output block is full of text, edge to edge, while it scrolls under the pinned rows.
+    if (flat.includes("sticky rows test") && !hasToolResult) {
+      block(
+        res,
+        0,
+        { type: "thinking", thinking: "" },
+        [{ type: "thinking_delta", thinking: "Three commands will print the numbers." }],
+        { type: "signature_delta", signature: "sig_mock_sticky" },
+      );
+      for (let i = 1; i <= 3; i++) {
+        block(
+          res,
+          i,
+          { type: "tool_use", id: `toolu_sticky_${i}`, name: "exec_command", input: {} },
+          [{ type: "input_json_delta", partial_json: `{"cmd": "seq -s ' ' ${i} 4000"}` }],
+        );
+      }
+      messageStop(res, "tool_use", 40);
       return;
     }
 
@@ -459,6 +554,39 @@ const server = http.createServer((req, res) => {
         } else {
           sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
           messageStop(res, "end_turn", 80);
+        }
+      };
+      tick();
+      return;
+    }
+
+    // Scroll-bounce test case (scroll-follow-bounce.spec): a reply that grows by a visible step
+    // on every commit — one three-line paragraph every 50ms for ~4s — so the reader can wheel up
+    // from the bottom while the transcript is still following new text. Every request of that
+    // conversation answers this way, so the spec can stream one reply per gesture.
+    if (flat.includes("scroll bounce test")) {
+      sse(res, "content_block_start", {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      });
+      const filler =
+        "The transcript keeps following this reply while it grows, and a reader who scrolls " +
+        "up from the bottom must stay exactly where the gesture left them, however much text " +
+        "arrives below, until they scroll back down or press the button that returns them.";
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `Paragraph ${n}. ${filler}\n\n` },
+        });
+        if (n < 80) {
+          setTimeout(tick, 50);
+        } else {
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          messageStop(res, "end_turn", 4000);
         }
       };
       tick();

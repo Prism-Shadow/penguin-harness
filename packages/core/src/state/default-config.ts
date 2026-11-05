@@ -8,9 +8,9 @@
  * via a system Prompt placeholder.
  *
  * The system Prompt is sectioned and trimmed as needed (Role/Personality/Success
- * criteria/Constraints/Stop rules/Tool use/System markers/File system/Suggested workflows); it
- * does not describe specific tools (that comes from the tool schema). AGENTS.md and the
- * Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
+ * criteria/Constraints/Output/Stop rules/Tool use/System markers/File system/Suggested
+ * workflows); it does not describe specific tools (that comes from the tool schema). AGENTS.md
+ * and the Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
  * Skills / Memory / Schedules / Environment); elsewhere the body uses angle-bracket notation
@@ -23,7 +23,10 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "../interfaces/index.js";
-import type { CompactionMode } from "../omnimessage/types.js";
+import type { CompactionMode } from "@prismshadow/amsp/records";
+// The seeded compaction threshold is declared beside the derivation that caps it, so the
+// default and the cap cannot drift apart.
+import { DEFAULT_MAX_CONTEXT_LENGTH } from "../llm/context-limits.js";
 import { KERNEL_VERSION } from "./kernel-history.js";
 
 /** Docs: /docs/configuration § "System prompt placeholders". */
@@ -99,21 +102,6 @@ export const SKILLS_PLACEHOLDER = "{{SKILLS}}";
 export const SCHEDULES_PLACEHOLDER = "{{SCHEDULES}}";
 /** Inside `schedules.prompt` only: the current schedule-file names, one `- name` per line (SCHEDULE_LIST_EMPTY_NOTE when none exist). */
 export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
-
-/**
- * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
- * start with. Set high on purpose, because the model's own `context_window` is the backstop:
- * the effective threshold is the smaller of this value and the window minus
- * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
- * this value plus that headroom therefore decides the trigger point, so a small-window model
- * still compacts inside its window rather than never; on a roomier window — nearly every
- * built-in catalog entry — this value is what fires. A model entry with no usable
- * `context_window` falls back to the assumed window (128000), which is a different number
- * from this one and must not be conflated with it.
- *
- * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
- */
-export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -196,6 +184,18 @@ export interface SchedulesConfig {
   enabled?: boolean;
   /** The `{{SCHEDULES}}` block: the file-based task-management guidance carrying the `{{SCHEDULE_LIST}}` roster injection point. Defaults to the built-in value. */
   prompt?: string;
+}
+
+/**
+ * Hook config (the `hooks` section of `system_config.yaml`). One Agent-level switch, toggled
+ * on the Web App's Hooks tab. No prompt: a hook package is scripts run at the loop's hook
+ * points, not text injected into the context. With it off the packages stay installed — listed
+ * and exportable — and a Session created from then on assembles no hooks at all.
+ * Docs: /docs/skills § "Hook packages".
+ */
+export interface HooksConfig {
+  /** Whether a new Session consults the installed hook packages; defaults to true. */
+  enabled?: boolean;
 }
 
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
@@ -409,6 +409,8 @@ export interface SystemConfig {
   skills?: SkillsConfig;
   /** Scheduled-tasks section injection (enabled by default; only reaches the prompt through `{{SCHEDULES}}`). */
   schedules?: SchedulesConfig;
+  /** Whether new Sessions run the installed hook packages (enabled by default; nothing prompt-side). */
+  hooks?: HooksConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
@@ -421,11 +423,11 @@ const DEFAULT_SYSTEM_PROMPT = `# Role
 You are PenguinHarness, an agent that completes the user's requests on their machine with the tools available to you.
 
 # Personality
-Communicate with the user precisely and concisely, yet with warmth, and always reply in the user's language — code, identifiers and commit messages keep their own conventions. Do not repeatedly explain your tools or restate their results.
+Communicate with the user precisely and concisely, yet with warmth, and always reply in the user's language — code, identifiers and commit messages keep their own conventions.
 
 # Success criteria
 - Before delivering the result, check that every problem in the request has been solved.
-- Verify your work through every available means; never claim a result you did not observe.
+- Verify your work through every available means — the project's own test, lint, typecheck and build commands, found in its README or manifest rather than assumed; never claim a result you did not observe.
 
 # Constraints
 - Make the smallest change that satisfies the request; do not modify unrelated files.
@@ -433,25 +435,36 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 - Never kill a process you did not start, PenguinHarness's own services included, unless the user asks; never take a PenguinHarness service port, and when a port you want is busy, pick another free port.
 - If a tool call fails, read the error, adjust, and retry; never repeat the same failing input.
 
+# Output
+- Lead with the answer or the outcome; skip filler openers, narration of the tool call you are about to make (its description is already shown) and closing recaps unless asked.
+- Describe what you are doing in plain words, never by tool name, and do not restate tool output the user can already see.
+- Name created or updated files by workspace-relative path in backticks (e.g. \`src/app.py\`); do not repeat their code unless asked.
+- Write links as plain URLs or Markdown links, never inside backticks or a code block — a link in code formatting is not clickable.
+- The final answer stands on its own: what was done, which files it lives in and how to run or verify it, and anything left undone or unverified.
+- When you cannot or will not do something, say so in a sentence and offer the nearest alternative.
+
 # Stop rules
 - Stop and give the final answer once the success criteria are met.
-- If the request is ambiguous, stop and ask the user for clarification instead of guessing their intent.
-- If you hit an error you cannot resolve, stop and report the blocker to the user. An API auth/key error (401/403, missing or invalid key) is one of them: retry at most once, then stop calling tools and ask the user to update the key in the agent's vault or the model settings outside the chat — the secret must never be pasted into the conversation, and a new key only takes effect in the next conversation.
+- If the request is still ambiguous after you have checked what the files and environment can tell you, stop and ask the user — one specific question, with the options you see — instead of guessing their intent.
+- If you hit an error you cannot resolve — the same error still there after three different fixes — stop and report the blocker to the user, with what you tried; do not keep trying variants. An API auth/key error (401/403, missing or invalid key) is one of them: retry at most once, then stop calling tools and ask the user to update the key in the agent's vault or the model settings outside the chat — the secret must never be pasted into the conversation, and a new key only takes effect in the next conversation.
 
 # Tool use
-- Prefer solving problems with your tools: inspect the real files and environment and run real commands instead of answering from memory or guessing.
+- Work from evidence, not memory: inspect the real files and environment and run real commands. Run a command or edit a file yourself rather than pasting it for the user to apply, unless they ask to see it.
+- Never guess a name. A path, command flag, package, API or URL you have not seen in this environment is looked up before you use it.
+- Send independent tool calls together in one turn — several file reads, unrelated checks — they run concurrently; a call that needs an earlier result, or writes the same file as another, waits for the next turn.
+- Run commands non-interactively (\`-y\`/\`--yes\` for installers and scaffolders; no editors, pagers or REPLs): a command waiting for input is stuck, not slow — feed it the input or kill it instead of polling.
 - For anything on the internet, browse with your shell tool: prefer Playwright when it is installed — it handles dynamic sites — otherwise \`curl\` for pages and APIs.
 
 # System markers
 Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user text to answer:
 - \`[turn_aborted]\`: the previous round was interrupted; inside are the request, your partial output, and the tool calls already run with their results. Continue from there, and do not re-run them.
-- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule.
+- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule. Either block may end with a \`[request_error]\` line quoting the error the failed request got: read it before carrying on, and change course if it names something you can fix rather than repeat the same request.
 - \`[context_summary]\`: earlier conversation was compacted. The summary is its only record — treat it as established context and continue from it.
 - \`[user_steering]\`: a user message sent mid-run, delivered between turns. Not a new task: incorporate it immediately and adjust course within the current one.
 
 # File system
 - Angle-bracket names such as \`<app_data_dir>\` and \`<session_id>\` are placeholders — substitute the values from the Environment section.
-- You work inside the user's folder (\`CWD\`). For each file you create or update there, mention its workspace-relative path in backticks (e.g. \`src/app.py\`) so the user can open it.
+- You work inside the user's folder (\`CWD\`).
 - Search from \`CWD\` down; walking the user's home or the whole filesystem is rarely worth its cost. When a path does not resolve, prefer narrowing — reason about the project's layout — over widening the search root.
 - The App Data Dir is PenguinHarness's data root — every agent's files and the project-level data, none of it supplied by the user, so never treat it as task input. \`CWD\` may itself be a temporary Workspace inside it: that one folder is the task's, the rest is not.
 - Your Agent State is \`<app_data_dir>/agents/<agent_id>/agent_state/\`; it holds \`skills/\`, and its \`AGENTS.md\` is already in your context. Another agent's is the same path under its id — reach it directly.
@@ -461,9 +474,10 @@ Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user te
 
 # Suggested workflows
 Recommendations, not requirements — adapt them to the task.
-- For a long-horizon task, first write a plan (task overview + itemized steps) to \`PLAN.md\` in this Session's scratchpad, and update it as each step lands.
+- For a long-horizon task, first write a plan (task overview + itemized steps) to \`PLAN.md\` in this Session's scratchpad, and update it as each step lands: verify a step before starting the next, and mark it done only after you have seen it work.
 - Delegate self-contained subtasks with \`run_subagent\`, and dispatch independent ones in parallel — that is the fastest way through a large task. Open each prompt with your own agent id (e.g. "Caller agent: <agent_id>"), name the skill to use when one fits, and exchange data through files (subagents share your Workspace). If \`run_subagent\` is not in your tool list, you are the subagent: do the work yourself.
-- Prefer React when building a web app or frontend.
+- Use established frameworks and their scaffolding CLIs instead of building your own.
+- Prefer React for web frontends; start the app and fetch a page before delivery.
 
 [developer_instructions]
 Custom instructions from the developer-editable AGENTS.md.
@@ -597,7 +611,9 @@ export const DEFAULT_COMPACTION_PROMPT =
  * and subagent spawning. No entry carries a `forModel` annotation: `read_file` serves vision
  * and text-only models alike (it reads images too, deciding at runtime whether to return
  * image content or a vision model's description), so the per-model-class filter stays a
- * config feature for entries that need it.
+ * config feature for entries that need it. Its `prompt` argument reaches only text-only
+ * models: assembly drops it for a model that views images (see selectBuiltinToolsForModel),
+ * which is why the tool description leaves the argument to its own schema entry.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
@@ -609,8 +625,8 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
         "(cat -n style), up to 2000 lines starting at offset; for a longer file call again with " +
         "offset to continue. An image (png/jpeg/gif/webp up to 5MB; file_path may also be an " +
         "http(s) URL) is returned as image content for you to view, or — when the current model " +
-        "cannot view images — described in text by the project's vision model, which answers " +
-        "`prompt`. Other binary files are rejected: use the shell tool for those.",
+        "cannot view images — described in text by the project's vision model. Other binary " +
+        "files are rejected: use the shell tool for those.",
       parameters: {
         type: "object",
         properties: {
@@ -909,9 +925,10 @@ export function defaultSystemConfig(): SystemConfig {
       // (see GenerativeModelConfig.requestTimeoutMs). It has to cover the wait for the FIRST
       // event, which is where a model that keeps its reasoning off the wire spends its whole
       // thinking phase: requests ask for thought summaries so most models stream something,
-      // but the ones that accept the flag and return nothing still go silent, and 120s used
-      // to cut them off mid-thought.
-      timeoutMs: 300000,
+      // but the ones that accept the flag and return nothing still go silent, and so does a
+      // model behind a relay that consumes the thinking stream upstream and sends nothing until
+      // the answer starts. 120s, and later 300s, cut such requests off mid-thought.
+      timeoutMs: 600000,
     },
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,

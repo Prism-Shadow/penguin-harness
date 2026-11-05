@@ -1,9 +1,12 @@
 /**
  * Unit tests for the context composition: how a Trace shard's messages are split across the six
- * parts, how tool traffic is attributed to tool names, and which shard the service reads.
+ * parts, how tool traffic is attributed to tool names and file paths, and which shard the
+ * service reads.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   approximateTokens,
   assistantText,
@@ -13,6 +16,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -20,7 +25,7 @@ import {
   toolListReady,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload, ToolDefinition } from "@prismshadow/penguin-core";
 import {
   buildContextBreakdown,
   compactionThresholdFor,
@@ -40,6 +45,7 @@ function metaPayload(systemPrompt: string): SessionMetaPayload {
     system_prompt: systemPrompt,
     agent_state: `/data/${P}/agents/${A}`,
     workspace: "/data/ws",
+    source: "user",
   };
 }
 
@@ -57,7 +63,7 @@ describe("buildContextBreakdown", () => {
       thinkingMessage("the config lives in the workspace root"),
       assistantText("reading it now"),
       toolCall({ name: "read_file", arguments: '{"path":"config.toml"}', toolCallId: "c1" }),
-      toolCallOutput({ output: "port = 8080", toolCallId: "c1" }),
+      toolCallOutput({ output: "port = 8080", toolCallId: "c1", status: "completed" }),
     ]);
 
     expect(b.systemPrompt).toBe(approximateTokens("You are a helpful agent."));
@@ -97,23 +103,23 @@ describe("buildContextBreakdown", () => {
   });
 
   it("ranks tools by their calls plus their results, capped at five", () => {
-    const messages: OmniMessage[] = [];
+    const messages: AmspRecord[] = [];
     // Sizes are engineered so the ranking is unambiguous: exec_command's single result dwarfs
     // everything else, and read_file's three small calls still beat the one-off tools.
     messages.push(
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "e1" }),
-      toolCallOutput({ output: "x".repeat(4000), toolCallId: "e1" }),
+      toolCallOutput({ output: "x".repeat(4000), toolCallId: "e1", status: "completed" }),
     );
     for (let i = 0; i < 3; i++) {
       messages.push(
         toolCall({ name: "read_file", arguments: "{}", toolCallId: `r${i}` }),
-        toolCallOutput({ output: "y".repeat(400), toolCallId: `r${i}` }),
+        toolCallOutput({ output: "y".repeat(400), toolCallId: `r${i}`, status: "completed" }),
       );
     }
     for (const name of ["grep", "write_file", "list_dir", "web_fetch"]) {
       messages.push(
         toolCall({ name, arguments: "{}", toolCallId: `${name}-1` }),
-        toolCallOutput({ output: "z".repeat(40), toolCallId: `${name}-1` }),
+        toolCallOutput({ output: "z".repeat(40), toolCallId: `${name}-1`, status: "completed" }),
       );
     }
 
@@ -125,6 +131,105 @@ describe("buildContextBreakdown", () => {
     expect(b.topTools.reduce((n, t) => n + t.tokens, 0)).toBeLessThanOrEqual(
       b.toolRequests + b.toolResults,
     );
+  });
+
+  it("ranks files by their file-tool calls plus results, merging every spelling of one path", () => {
+    const b = buildContextBreakdown([
+      sessionMeta(metaPayload("prompt")),
+      // Three spellings of one file: relative, explicitly relative, absolute inside the Workspace.
+      toolCall({ name: "read_file", arguments: '{"file_path":"src/a.ts"}', toolCallId: "a1" }),
+      toolCallOutput({ output: "x".repeat(4000), toolCallId: "a1", status: "completed" }),
+      toolCall({
+        name: "edit_file",
+        arguments: '{"file_path":"./src/a.ts","old_string":"1","new_string":"2"}',
+        toolCallId: "a2",
+      }),
+      toolCallOutput({ output: "edited", toolCallId: "a2", status: "completed" }),
+      toolCall({
+        name: "write_file",
+        arguments: '{"file_path":"/data/ws/src/a.ts","content":"3"}',
+        toolCallId: "a3",
+      }),
+      toolCallOutput({ output: "written", toolCallId: "a3", status: "completed" }),
+      toolCall({ name: "read_file", arguments: '{"file_path":"README.md"}', toolCallId: "r1" }),
+      toolCallOutput({ output: "y".repeat(400), toolCallId: "r1", status: "completed" }),
+      toolCall({ name: "read_file", arguments: '{"file_path":"README.md"}', toolCallId: "r2" }),
+      toolCallOutput({ output: "y".repeat(400), toolCallId: "r2", status: "completed" }),
+    ]);
+    expect(b.topFiles.map((f) => f.path)).toEqual([path.join("src", "a.ts"), "README.md"]);
+    expect(b.topFiles[0]!.ops).toEqual({ read: 1, edit: 1, write: 1 });
+    expect(b.topFiles[1]!.ops).toEqual({ read: 2, edit: 0, write: 0 });
+    expect(b.topFiles[0]!.tokens).toBeGreaterThan(b.topFiles[1]!.tokens);
+    // Calls and results both count, and the ranking never exceeds the two tool parts.
+    expect(b.topFiles.reduce((n, f) => n + f.tokens, 0)).toBeLessThanOrEqual(
+      b.toolRequests + b.toolResults,
+    );
+  });
+
+  it("shows a file relative to the Workspace, else absolute with the home directory as ~", () => {
+    const home = os.homedir();
+    const call = (id: string, filePath: string) => [
+      toolCall({
+        name: "read_file",
+        arguments: JSON.stringify({ file_path: filePath }),
+        toolCallId: id,
+      }),
+      toolCallOutput({ output: "1", toolCallId: id, status: "completed" }),
+    ];
+    const b = buildContextBreakdown([
+      sessionMeta(metaPayload("prompt")),
+      ...call("in", "/data/ws/docs/../src/b.ts"),
+      ...call("home", path.join(home, "notes", "todo.md")),
+      ...call("abs", "/etc/hosts"),
+      // A sibling of the Workspace is outside it, however the call spells it.
+      ...call("sibling", "../other/c.ts"),
+    ]);
+    expect(new Set(b.topFiles.map((f) => f.path))).toEqual(
+      new Set([
+        path.join("src", "b.ts"),
+        `~${path.sep}${path.join("notes", "todo.md")}`,
+        path.resolve("/etc/hosts"),
+        path.resolve("/data/other/c.ts"),
+      ]),
+    );
+  });
+
+  it("skips a file-tool call with no usable file_path, and other tools' file_path", () => {
+    const b = buildContextBreakdown([
+      sessionMeta(metaPayload("prompt")),
+      toolCall({ name: "read_file", arguments: "{", toolCallId: "x1" }),
+      toolCallOutput({ output: "…", toolCallId: "x1", status: "completed" }),
+      toolCall({ name: "read_file", arguments: "{}", toolCallId: "x2" }),
+      toolCallOutput({ output: "…", toolCallId: "x2", status: "completed" }),
+      toolCall({ name: "edit_file", arguments: '{"file_path":""}', toolCallId: "x3" }),
+      toolCall({ name: "write_file", arguments: '{"file_path":7}', toolCallId: "x4" }),
+      toolCall({ name: "exec_command", arguments: '{"file_path":"src/a.ts"}', toolCallId: "x5" }),
+      toolCallOutput({ output: "…", toolCallId: "x5", status: "completed" }),
+    ]);
+    expect(b.topFiles).toEqual([]);
+    // The calls still count as tool traffic: only the file attribution is dropped.
+    expect(b.topTools.map((t) => t.name)).toContain("read_file");
+    expect(b.toolRequests).toBeGreaterThan(0);
+  });
+
+  it("names at most five files", () => {
+    const messages: AmspRecord[] = [sessionMeta(metaPayload("prompt"))];
+    for (let i = 0; i < 6; i++) {
+      messages.push(
+        toolCall({
+          name: "read_file",
+          arguments: JSON.stringify({ file_path: `f${i}.ts` }),
+          toolCallId: `f${i}`,
+        }),
+        toolCallOutput({
+          output: "z".repeat(100 * (i + 1)),
+          toolCallId: `f${i}`,
+          status: "completed",
+        }),
+      );
+    }
+    const b = buildContextBreakdown(messages);
+    expect(b.topFiles.map((f) => f.path)).toEqual(["f5.ts", "f4.ts", "f3.ts", "f2.ts", "f1.ts"]);
   });
 
   it("keeps the newest session_meta and tool_list_ready instead of adding a second copy", () => {
@@ -142,8 +247,8 @@ describe("buildContextBreakdown", () => {
   });
 
   it("excludes the compaction request's own messages from the composition", () => {
-    const base: OmniMessage[] = [userText("hi"), assistantText("hello")];
-    const withCompaction: OmniMessage[] = [
+    const base: AmspRecord[] = [userText("hi"), assistantText("hello")];
+    const withCompaction: AmspRecord[] = [
       ...base,
       compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
       requestBegin(),
@@ -167,6 +272,20 @@ describe("buildContextBreakdown", () => {
       userText("hi"),
       compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 4 }),
       compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("keeps the context closed when the Task records written after the compaction follow it", () => {
+    // The Task that ended on the compaction closes, and the next one opens, in this shard:
+    // Task records never open the next file.
+    const b = buildContextBreakdown([
+      taskBegin(),
+      userText("hi"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      taskEnd(),
+      taskBegin(),
     ]);
     expect(b.contextClosed).toBe(true);
   });
@@ -215,6 +334,7 @@ describe("TraceService.contextBreakdown", () => {
       toolResults: 0,
       total: 0,
       topTools: [],
+      topFiles: [],
       contextClosed: false,
     });
   });

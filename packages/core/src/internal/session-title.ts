@@ -15,14 +15,14 @@
  * stripping (`stripConversationMarkers`) lives with the markers module, keeping every tag's
  * producer, parser and stripper in one place.
  */
-import { userText } from "../omnimessage/index.js";
-import { stripConversationMarkers } from "../omnimessage/markers/index.js";
+import { userText } from "@prismshadow/amsp/records";
+import { stripConversationMarkers } from "@prismshadow/amsp/markers";
 import type {
-  OmniMessage,
+  AmspRecord,
   TextPayload,
   TokenCounts,
   TokenUsagePayload,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type { LLMInterface } from "../interfaces/index.js";
 
 /** Cap on conversation text spliced into the title request (user/model each truncated separately, to control cost). */
@@ -222,7 +222,12 @@ export async function generateTitleWithLLM(
   for (;;) {
     const step = await gen.next();
     if (step.done) {
-      if (step.value.status !== "completed") return { title: null, usage };
+      // An answer stopped at its output cap is still the text that arrived: a title cut at the
+      // cap is usable.
+      const outcome = step.value;
+      if (outcome.status !== "completed" && outcome.errorCode !== "output_truncated") {
+        return { title: null, usage };
+      }
       break;
     }
     const msg = step.value;
@@ -258,11 +263,11 @@ function dropRestatedLabel(raw: string): string {
     .replace(/^(?:title|标题)\s*[:：]\s*/i, "");
 }
 
-function isAssistantText(msg: OmniMessage): msg is OmniMessage<TextPayload> {
+function isAssistantText(msg: AmspRecord): msg is AmspRecord<TextPayload> {
   const payload = msg.payload as { type?: string; role?: string };
   return msg.type === "model_msg" && payload.type === "text" && payload.role === "assistant";
 }
 
-function isTokenUsage(msg: OmniMessage): msg is OmniMessage<TokenUsagePayload> {
+function isTokenUsage(msg: AmspRecord): msg is AmspRecord<TokenUsagePayload> {
   return msg.type === "event_msg" && (msg.payload as { type?: string }).type === "token_usage";
 }

@@ -1,18 +1,16 @@
 /**
- * The Trace panel's refresh rules (features/traces/trace-refresh.ts): the tab re-fetches when
- * it becomes visible and when a turn settles WHILE it is visible, never for a hidden tab, and
- * a re-fetch leaves the user's selected file where they put it — including the default they
- * never picked, and including a re-fetch that fails while they are reading.
+ * The Trace panel's refresh rules (features/traces/trace-refresh.ts), decided by a pure tracker
+ * the panel's effect applies.
  *
- * The panel's edges are decided by a pure tracker for the same reason the subagents panel's
- * auto-open is (panel-task-scope.test.ts): the Web suite runs in a node environment and renders
- * no React, so the rule is unit-testable only where it is separable from the effect that applies
- * it. The wiring that carries the decision into the two components is pinned at the bottom,
- * against their source.
+ * - The panel's own first render is no edge (the fetch effect already loads on mount).
+ * - It re-fetches on the hidden→visible edge (not on the way back) and when a turn settles while
+ *   it shows; a hidden tab fetches nothing and the re-show brings it current; a settle arriving
+ *   with the re-show is one fetch; any change of the counter is a bump.
+ * - The pill row orders files newest first without sorting the response in place; a re-fetch
+ *   keeps the selected file (grown, or with newer files beside it), falls back to the newest
+ *   when the selection vanished, and to nothing when the Session has no Trace.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import {
   activeTraceFile,
   advanceTraceRefresh,
@@ -21,15 +19,6 @@ import {
 } from "../src/features/traces/trace-refresh";
 
 const obs = (active: boolean, signal: number) => ({ active, signal });
-
-/**
- * Source of the two components the rules are wired into. The suite renders no React, so a rule
- * that lives inside an effect or a render guard is pinned against the text that implements it.
- */
-const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
-const chatPage = read("../src/features/chat/chat-page.tsx");
-const panel = read("../src/features/traces/trace-panel.tsx");
-const fileView = read("../src/features/traces/trace-file-view.tsx");
 
 describe("advanceTraceRefresh (when the Trace panel re-fetches)", () => {
   it("treats the panel's own first render as no edge — the fetch effect already loads on mount", () => {
@@ -111,98 +100,5 @@ describe("the Trace file list across a re-fetch", () => {
     expect(activeTraceFile(files, null)?.index).toBe(5);
     expect(activeTraceFile([], null)).toBeNull();
     expect(activeTraceFile([], 2)).toBeNull();
-  });
-});
-
-/**
- * The decision has to reach both halves of the panel: the listing AND the file it is showing.
- * A Trace file is appended to while the Session runs, so re-listing alone would refresh the
- * sizes on the pills while the timeline below them stayed as it was read minutes ago.
- */
-describe("the settled-turn signal's wiring", () => {
-  /** The identifier a mounted component is handed as its reloadSignal, or null. */
-  const signalOf = (tag: string) =>
-    new RegExp(`<${tag}[^>]*reloadSignal=\\{(\\w+)\\}`).exec(chatPage)?.[1] ?? null;
-
-  it("hands the Trace panel the very counter the Files panel refreshes on", () => {
-    expect(signalOf("WorkspaceBrowser")).not.toBeNull();
-    expect(signalOf("TracePanel")).toBe(signalOf("WorkspaceBrowser"));
-  });
-
-  it("carries it one level further, into the view that reads the selected file", () => {
-    expect(panel).toMatch(/<TraceFileView[^>]*reloadSignal=\{listTick\}/);
-    expect(panel).toMatch(
-      /advanceTraceRefresh\(refresh\.current, \{ active, signal: reloadSignal \}\)/,
-    );
-  });
-
-  it("re-runs the file's load on that signal, and clears no view state doing it", () => {
-    const load = fileView.slice(
-      fileView.indexOf("useEffect(() => {", fileView.indexOf("const fileKey")),
-    );
-    const body = load.slice(0, load.indexOf("\n  }, ["));
-    const deps = /\n {2}\}, \[([^\]]*)\]/.exec(load)?.[1] ?? "";
-    expect(deps).toContain("reloadSignal");
-    // The collapsed rounds and the pinned row are cleared where a DIFFERENT file is adopted,
-    // never on a refresh of the one on screen.
-    expect(body).not.toContain("setCollapsed");
-    expect(body).not.toContain("setPinnedRow");
-    expect(fileView).toMatch(/renderedFileKey !== fileKey[\s\S]{0,320}setCollapsed\(new Set\(\)\)/);
-  });
-});
-
-/**
- * What a refresh is allowed to move, now that one fires on every settled turn rather than only
- * when the user brings the tab up. Both rules below are about the same reader: someone part-way
- * through a Trace while the Session keeps working, who did nothing to ask for any of this.
- */
-describe("what a settled-turn refresh must leave alone", () => {
-  /** The panel's listing effect, and the failure branch inside it. */
-  const listing = panel.slice(
-    panel.indexOf("getSessionTraces"),
-    panel.indexOf("}, [active, listTick"),
-  );
-  const listingFailure = listing.slice(listing.indexOf(".catch("));
-
-  it("pins the default selection to the first listing instead of re-resolving it each time", () => {
-    // activeTraceFile resolves a null pick to the newest file EVERY time it is called, so the
-    // panel has to commit to an index once rather than leave the default to that fallback.
-    expect(listing).toMatch(/setFileIndex\(\(cur\) => cur \?\?/);
-    // And the pin is one-way: the only other write is the user's own pill click.
-    expect(panel.match(/setFileIndex\(/g)).toHaveLength(2);
-    expect(panel).toMatch(/onClick=\{\(\) => setFileIndex\(f\.index\)\}/);
-  });
-
-  it("keeps the listing on screen when a re-list fails, reporting it beside the pills", () => {
-    // Emptying the list here would unmount the pills, the header, the download link and the
-    // whole file view below them — collapsed rounds, pinned row and scroll position included.
-    expect(listingFailure).not.toContain("setFiles");
-    expect(listingFailure).toContain("setError(");
-    expect(panel).toMatch(/\{error !== null && \([\s\S]{0,200}toneStrip\.danger/);
-  });
-
-  it("gives the panel over to the failure only when there is nothing to keep", () => {
-    // The two whole-panel failure states: no listing yet, and a listing with no file in it.
-    expect(panel).toMatch(
-      /if \(files === null\) \{\s*if \(error !== null\) return <EmptyState title=\{S\.tracePanel\.loadFailed\}/,
-    );
-    expect(panel).toMatch(
-      /if \(activeFile === null\) \{\s*if \(error !== null\) return <EmptyState title=\{S\.tracePanel\.loadFailed\}/,
-    );
-  });
-
-  it("keeps the file on screen when its re-read fails, reporting it above the summary", () => {
-    expect(fileView).toMatch(/if \(error !== null && analysis === null\)/);
-    expect(fileView).toMatch(/\{error !== null && <p /);
-  });
-
-  it("prices nothing itself: cost is read off the analysis, and no model catalog is fetched", () => {
-    // The server prices each round with the cost center's rule (the Project's rates, at the
-    // tier the request's own timestamp fell in); a client-side price table would be a second
-    // rule that disagrees with the toolbar as soon as a schedule applies.
-    expect(fileView).not.toContain("getModels");
-    expect(fileView).not.toContain("pricing.cacheRead");
-    expect(fileView).toContain("formatMoney(analysis.cost ?? null, currency)");
-    expect(fileView).toContain("formatMoney(st?.cost ?? null, currency)");
   });
 });

@@ -29,11 +29,17 @@
  * closes it. Sessions belong to the generation that opened them: a platform generation on its
  * way out closes all of its own (closeAllConnections), and the next re-holds what the record
  * says was held. No session is ever closed by a pid remembered from before.
+ *
+ * CUT. A target built for this server's automatic work carries that work's signal (commands.ts's
+ * RemoteTarget). When the work is cut, its running command ends the session it rode, its requests
+ * are destroyed, and nothing more is started for it — a person's job on that machine then has
+ * the connection to itself at once.
  */
 import http from "node:http";
 import type net from "node:net";
 import { run, runWithInput } from "./exec.js";
 import {
+  STOPPED,
   closeAllShells,
   closeShell,
   holdShell,
@@ -45,6 +51,7 @@ import {
 import type { ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
+import { noteSignIn, signInFor } from "./login.js";
 import { scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
 import type { RemoteTarget } from "../commands.js";
@@ -66,6 +73,24 @@ export interface MachineChannel {
 /** Enough for an installer to download a release, or a store to cross a slow link. */
 const BULK_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * The agents each piece of cut-able work made, destroyed together when it is cut: one abort
+ * listener per signal however many agents the work asks for, which an AbortSignal would
+ * otherwise warn about past ten.
+ */
+const agentsOf = new WeakMap<AbortSignal, Set<http.Agent>>();
+
+function destroyOnCut(signal: AbortSignal, agent: http.Agent): void {
+  let agents = agentsOf.get(signal);
+  if (agents === undefined) {
+    const made = new Set<http.Agent>();
+    signal.addEventListener("abort", () => made.forEach((each) => each.destroy()), { once: true });
+    agentsOf.set(signal, made);
+    agents = made;
+  }
+  agents.add(agent);
+}
+
 export class MachineConnection implements MachineChannel {
   readonly address: string;
 
@@ -73,9 +98,14 @@ export class MachineConnection implements MachineChannel {
     this.address = `ssh:${target.alias}`;
   }
 
+  /** The signal of the work this target was built for, as a shell command's option. */
+  #cut(): { signal?: AbortSignal } {
+    return this.target.signal === undefined ? {} : { signal: this.target.signal };
+  }
+
   /** A command over the session — queued, output merged (ssh-session.ts), in ExecResult shape. */
   async exec(command: string): Promise<ExecResult> {
-    const result = await runOnShell(this.address, this.target, command);
+    const result = await runOnShell(this.address, this.target, command, this.#cut());
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
 
@@ -91,6 +121,7 @@ export class MachineConnection implements MachineChannel {
       input: opts.input,
       ...(opts.onLine === undefined ? {} : { onLine: opts.onLine }),
       timeoutMs: opts.timeoutMs ?? BULK_TIMEOUT_MS,
+      ...this.#cut(),
     });
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
@@ -125,13 +156,28 @@ export class MachineConnection implements MachineChannel {
   /** An http.Agent whose every socket is a dial through the session — for node:http callers. */
   agent(remotePort: number): http.Agent {
     const agent = new http.Agent({ keepAlive: false });
+    // Cut work ends its requests at once: every socket the agent holds is destroyed, and none
+    // is dialled after — a dial that completes after the cut is closed rather than handed over.
+    const signal = this.target.signal;
+    if (signal !== undefined) destroyOnCut(signal, agent);
     // createConnection is documented on Agent (and overridable); the typings omit it.
     (agent as unknown as { createConnection: unknown }).createConnection = (
       _options: unknown,
       callback: (err: Error | null, socket?: net.Socket) => void,
     ) => {
+      if (signal?.aborted === true) {
+        callback(new Error(STOPPED.output));
+        return;
+      }
       this.dial(remotePort).then(
-        (socket) => callback(null, socket),
+        (socket) => {
+          if (signal?.aborted === true) {
+            socket.destroy();
+            callback(new Error(STOPPED.output));
+            return;
+          }
+          callback(null, socket);
+        },
         (err: unknown) => callback(err instanceof Error ? err : new Error(String(err))),
       );
     };
@@ -144,19 +190,46 @@ export class MachineConnection implements MachineChannel {
    */
   oneShot(command: string, opts: { timeoutMs?: number; input?: Buffer } = {}): Promise<ExecResult> {
     const args = sshArgs(this.target, command);
+    const timeout = opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs };
     return inLane(this.address, () =>
-      opts.input !== undefined
-        ? runWithInput("ssh", args, {
-            input: opts.input,
-            ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-          })
-        : run("ssh", args, opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
+      this.#signedIn("ssh", (launch) =>
+        opts.input !== undefined
+          ? runWithInput("ssh", args, { input: opts.input, ...timeout, ...launch })
+          : run("ssh", args, { ...timeout, ...launch }),
+      ),
     );
   }
 
   /** WINDOWS REMOTES ONLY: local files copied into a remote directory over scp. Serialised per machine. */
   copyTo(localFiles: string[], remoteDir: string): Promise<ExecResult> {
-    return inLane(this.address, () => run("scp", scpArgs(this.target, localFiles, remoteDir)));
+    return inLane(this.address, () =>
+      this.#signedIn("scp", (launch) =>
+        run("scp", scpArgs(this.target, localFiles, remoteDir), launch),
+      ),
+    );
+  }
+
+  /**
+   * A one-off ssh or scp, signed in the way this machine signs in (login.ts): refused before it
+   * starts when it may not be, and a refused password remembered when ssh's own exit says so.
+   */
+  async #signedIn(
+    program: "ssh" | "scp",
+    start: (launch: { env?: NodeJS.ProcessEnv; detached?: boolean }) => Promise<ExecResult>,
+  ): Promise<ExecResult> {
+    // Cut work starts nothing more, here as on the session.
+    if (this.target.signal?.aborted === true) {
+      return { code: 255, stdout: "", stderr: `${STOPPED.output}\n`, timedOut: false };
+    }
+    const login = await signInFor(this.target);
+    if (!login.ok) return { code: 255, stdout: "", stderr: `${login.detail}\n`, timedOut: false };
+    const { env, detached } = login.signIn;
+    const result = await start({ ...(env === undefined ? {} : { env }), detached });
+    // 255 is ssh's own failure (scp passes ssh's on as 1, with ssh's words on its stderr).
+    if (result.code === 255 || (program === "scp" && result.code !== 0)) {
+      noteSignIn(this.target, login.signIn, result.stderr);
+    }
+    return result;
   }
 }
 

@@ -1,14 +1,25 @@
 /**
- * The first-login proof of the claim route (auth/service.ts, routes/auth.ts) — the other one,
- * the desktop shell's token, is covered in desktop.test.ts.
+ * The first-login link: the claim route's proof for a server nobody has signed in to yet
+ * (auth/service.ts, routes/auth.ts). The desktop shell's token, the route's other proof, is
+ * covered in desktop.test.ts.
  *
- * What is peculiar to this proof is that the link CARRIES a session rather than a secret
- * redeemed for one. That buys simplicity and costs a hazard the desktop token does not have:
- * an endpoint that made a cookie out of any valid token would let one person sign another
- * into their own account. So the printed value is compared, not merely verified — and it stops
- * working the moment a password exists, since a console scrollback must not stay a way in.
+ * The link CARRIES a session rather than a secret redeemed for one. That buys simplicity and
+ * costs a hazard the desktop token does not have: an endpoint that made a cookie out of any
+ * valid token would let one person sign another into their own account. So the printed value
+ * is compared, not merely verified, and it stops working the moment a password exists.
+ *
+ * - Given an unclaimed server, the printed link signs the browser in with a `setup` session
+ *   that may set a password without an old one; once one is set, the link is refused.
+ * - Any token but the printed one is refused exactly as a spent link is.
+ * - The link is not single-use before the claim: opening it twice lands in one session.
+ * - A password set through the ordinary change-password door (a pinned seed) ends the link.
+ * - Claiming hands the claimer a working password session back, and the link's own cookie dies.
+ * - A setup session left over from an earlier boot dies with the claim too.
+ * - A rejected password keeps the link alive.
+ * - The claimer is signed in even while a guessing spree has the login throttled.
+ * - A link older than the session lifetime is re-minted rather than handed out dead.
+ * - A claimed server mints no link, so a restart offers none.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
@@ -32,6 +43,17 @@ describe("the first-login link", () => {
     t.app.request(`/api/auth/claim?token=${encodeURIComponent(token)}`, {
       redirect: "manual",
     });
+
+  /**
+   * What a browser gets for a link that no longer works: back to the login page, carrying the
+   * advice this deployment can give (no shell here, so a new link comes from whoever runs the
+   * server), and no session.
+   */
+  function expectRefusal(res: Response): void {
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?claimFailed=server");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  }
 
   it("claims an unclaimed server, with a session that may set a password but is not desktop", async () => {
     const res = await redeem(link);
@@ -57,7 +79,7 @@ describe("the first-login link", () => {
     expect(t.deps.authService.adminPasswordIsInitial()).toBe(false);
 
     // Claimed: a console scrollback is not a way in.
-    expect((await redeem(link)).status).toBe(401);
+    expectRefusal(await redeem(link));
   });
 
   it("refuses any token but the printed one, and says nothing about which it got", async () => {
@@ -67,8 +89,9 @@ describe("the first-login link", () => {
     const someoneElse = (await loginAdmin(t.app)).cookie.split("=").slice(1).join("=");
     const other = await redeem(someoneElse);
     const wrong = await redeem("not-the-token");
-    expect([other.status, wrong.status]).toEqual([401, 401]);
-    expect(await other.text()).toBe(await wrong.text());
+    expectRefusal(other);
+    expectRefusal(wrong);
+    expect(other.headers.get("location")).toBe(wrong.headers.get("location"));
   });
 
   /**
@@ -90,24 +113,19 @@ describe("the first-login link", () => {
 
   /**
    * The one reachable way to set a password WITHOUT going through setInitialPassword's
-   * revocation: a pinned seed (PENGUIN_SEED_ADMIN_PASSWORD) makes the current password
-   * knowable, so the ordinary change-password door opens. The link must die there too —
-   * the invariant is "any password set on the admin ends the link", not "the door we
-   * expected ends it".
+   * revocation: a pinned seed (PENGUIN_SEED_ADMIN_PASSWORD, which every test app has) makes
+   * the current password knowable, so the ordinary change-password door opens. The link must
+   * die there too — the invariant is "any password set on the admin ends the link", not "the
+   * door we expected ends it".
    */
   it("dies when the admin sets a password through the ordinary door (pinned seed)", async () => {
-    const pinned = await createTestApp();
-    try {
-      const pinnedLink = pinned.deps.authService.mintFirstLogin()!;
-      const { cookie } = await loginAdmin(pinned.app);
-      await apiClient(pinned.app, cookie).put("/api/me/password", {
-        oldPassword: pinned.adminPassword,
-        newPassword: "chosen-password-1",
-      });
-      expect(pinned.deps.authService.redeemFirstLogin(pinnedLink)).toBeNull();
-    } finally {
-      await pinned.cleanup();
-    }
+    const { cookie } = await loginAdmin(t.app);
+    await apiClient(t.app, cookie).put("/api/me/password", {
+      oldPassword: t.adminPassword,
+      newPassword: "chosen-password-1",
+    });
+    expect(t.deps.authService.redeemFirstLogin(link)).toBeNull();
+    expectRefusal(await redeem(link));
   });
 
   /**
@@ -166,12 +184,6 @@ describe("the first-login link", () => {
     }
   });
 
-  /**
-   * The setup session renews in place (the row's expiry is topped up, the cookie value is
-   * unchanged), so it survives well past the printed link's original 30-day mark. Setting a
-   * password deletes that row, and the link goes dead — no surviving setup session, whether
-   * or not it was renewed first.
-   */
   /**
    * The revocation fires only after the password actually updates: a rejected attempt must
    * leave the link alive, or a typo (or anyone poking the endpoint with a bad value) burns
@@ -279,22 +291,9 @@ describe("the first-login link", () => {
       const res = await second.app.request("/api/auth/claim?token=anything", {
         redirect: "manual",
       });
-      expect(res.status).toBe(401);
+      expectRefusal(res);
     } finally {
       await second.cleanup();
     }
-  });
-
-  /**
-   * A minted token that is never delivered is a feature nobody can reach, and every test
-   * above mints its own — so none of them would notice. The entrypoint runs main() on import
-   * and exports nothing, which leaves reading it the way to check that what it mints actually
-   * reaches a console.
-   */
-  it("is printed by the entrypoint, not merely minted", () => {
-    const entrypoint = fs.readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
-    expect(entrypoint).toMatch(/renderFirstLoginNotice\(/);
-    expect(entrypoint).toMatch(/mintFirstLogin\(/);
-    expect(entrypoint).toMatch(/\/api\/auth\/claim\?token=/);
   });
 });

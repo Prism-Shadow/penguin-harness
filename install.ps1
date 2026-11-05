@@ -12,6 +12,8 @@
 #   $env:PENGUIN_DOWNLOAD_SPEED_PROBE = "0" disable same-version OSS/GitHub probe timing in auto mode
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
 #   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." fallback for PENGUIN_DOWNLOAD_BASE_URL
+#   -NoModifyPath                       do not add <install>\bin to the user Path; for a second installation
+#                                       beside the one the `penguin` command belongs to
 #
 # Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
 # bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
@@ -32,7 +34,8 @@
 param(
   [string]$Version = "",
   [string]$InstallDir = "",
-  [string]$ArchivePath = ""
+  [string]$ArchivePath = "",
+  [switch]$NoModifyPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -672,9 +675,11 @@ try {
 #     (unexpanded) value, append to it, and write it back with its original value kind.
 #     The registry only exists on Windows; skip the block elsewhere (functional test runs
 #     of this script on pwsh/Linux — where the old API was a silent no-op anyway). ---
+#     -NoModifyPath skips it: `penguin` resolves to the first bin directory on the
+#     Path, and a second installation's entry there would answer whenever the first is absent.
 $BinDir = Join-Path $InstallDir "bin"
 $PathUpdateMessage = ""
-if ($env:OS -eq "Windows_NT") {
+if (-not $NoModifyPath -and $env:OS -eq "Windows_NT") {
   $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
   if ($null -eq $EnvKey) { $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment") }
   try {
@@ -714,7 +719,12 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
   }
 }
 # Make `penguin` work in this session too.
-if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
+$PenguinCommand = "penguin"
+if (-not $NoModifyPath) {
+  if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
+} else {
+  $PenguinCommand = "& `"$(Join-Path $BinDir "penguin.cmd")`""
+}
 
 Write-Host ""
 Write-Host "PenguinHarness $InstalledVersion installed to $InstallDir"
@@ -724,6 +734,6 @@ if ($PathUpdateMessage) {
 }
 Write-Host ""
 Write-Host "Get started:"
-Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
-Write-Host "  penguin server    # headless server (PORT / HOST to override)"
+Write-Host "  $PenguinCommand --help    # all commands"
+Write-Host "  $PenguinCommand web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
+Write-Host "  $PenguinCommand server    # headless server (PORT / HOST to override)"

@@ -1,0 +1,24 @@
+/** Cursor policy shared by the app, landing, docs and component gallery. */
+@layer base {
+  /* App controls keep the arrow across their labels, icons and padding. Content links retain
+     the browser's hand; text inputs retain their caret. Utilities can still name a specific
+     operation (a drag, resize, zoom, disabled control or inline link action). */
+  :where(
+    button,
+    label,
+    select,
+    summary,
+    input[type="checkbox"],
+    input[type="radio"],
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [role="option"],
+    [role="treeitem"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"]
+  ) {
+    cursor: default;
+  }
+}

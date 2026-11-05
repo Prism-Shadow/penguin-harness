@@ -3,8 +3,8 @@
  * call through, plus the configuration and runtime services an Environment is built with.
  *
  * Two planes live in this file and must not be confused (see the docs page):
- * - the **message plane** — `executeTool`, which the engine drives: an OmniMessage tool call
- *   in, a stream of OmniMessage out, nothing else;
+ * - the **message plane** — `executeTool`, which the engine drives: a `tool_call` record
+ *   in, a stream of records out, nothing else;
  * - the **management plane** — the tool list, the permission lookup, the background command
  *   and subagent listings, their stop/steer entry points and the listener attachments. These
  *   never pass through `context_engine`: they serve a host's own UI (the Web App's process
@@ -13,7 +13,7 @@
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { OmniMessage, ToolCallPayload, ToolDefinition } from "../omnimessage/types.js";
+import type { AmspRecord, ToolCallPayload, ToolDefinition } from "@prismshadow/amsp/records";
 import type { ApproveFn, RunCutoff, ThinkingLevelName } from "./shared.js";
 import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
@@ -67,12 +67,19 @@ export interface ToolDefinitionConfig {
  * `environment/mcp/config.ts`: `transport: "stdio" | "http" | "sse"` (inferable from
  * `command` / `url`), the per-transport fields (stdio: `command`/`args`/`env`/`cwd`;
  * http/sse: `url`/`headers`), and the shared optional `connectTimeoutMs` / `timeoutMs` /
- * `maxOutputLength`.
+ * `maxOutputLength`. A string value may hold `${KEY}` references to the Agent's vault, filled
+ * in when the server connects.
  * Docs: /docs/tools § "MCP servers".
  */
 export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
+  /**
+   * Provenance: the plugin whose install wrote this entry (its `penguin.mcp_servers`). Absent
+   * on an entry the user added. Uninstalling or reinstalling that plugin touches exactly the
+   * entries carrying its name.
+   */
+  plugin?: string;
 }
 
 /** Set of tool configs required to initialize Environment. */
@@ -102,7 +109,7 @@ export interface SubagentHandle {
    * once taken (or once `run` already sent it). Optional — older embedders' handles simply
    * leave background launches without an upfront meta.
    */
-  takeMeta?(): OmniMessage | null;
+  takeMeta?(): AmspRecord | null;
   /**
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
@@ -113,16 +120,16 @@ export interface SubagentHandle {
    */
   run(input: {
     /**
-     * The round's input, in the shape `Session.run` takes a Prompt in — the same OmniMessage
+     * The round's input, in the shape `Session.run` takes a Prompt in — the same AmspRecord
      * list `steer` carries, so both ways into a child session speak one vocabulary. The
      * caller owns the messages' `sender`: the model's dispatch is `parent_agent`, a human's
      * message from a host panel carries none.
      */
-    messages: OmniMessage[];
+    messages: AmspRecord[];
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>;
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
    * user steering the main session: delivered as a `[user_steering]` user message at the
@@ -130,7 +137,7 @@ export interface SubagentHandle {
    * falls back to a follow-up run. Optional so older embedders' handles keep compiling; a
    * handle without it simply reports "not steerable".
    */
-  steer?(messages: OmniMessage[]): boolean;
+  steer?(messages: AmspRecord[]): boolean;
   /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
   setThinkingLevel?(level: ThinkingLevelName): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
@@ -227,7 +234,7 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Injected when (and only when) the session model doesn't support images: read_file then describes an image through it instead of returning image content. */
+  /** Injected when (and only when) the running context's model doesn't support images: read_file then describes an image through it instead of returning image content. Follows the model across an in-session switch (`Environment.reconfigure` re-injects or removes it as each context opens). */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
@@ -247,7 +254,7 @@ export interface EnvironmentServices {
    * the durable record). Injected internally by Environment; forwarded to the listener the
    * Session attached (see EnvironmentInterface.setBackgroundMessageListener).
    */
-  backgroundForward?: (msg: OmniMessage) => void;
+  backgroundForward?: (msg: AmspRecord) => void;
 }
 
 /**
@@ -324,6 +331,17 @@ export interface EnvironmentConfig {
    * `proxyEnv`. Absent, or a getter returning nothing = PATH is untouched.
    */
   pathPrepend?: () => string[];
+  /**
+   * Sandbox-confinement seam for everything the Environment spawns for the Session: the
+   * exec_command / input_command subprocesses, the stdio MCP Servers, and the helper the
+   * file tools work through when the Session is confined (see {@link SpawnConfiner} and
+   * tools/fs-worker.ts). Like {@link EnvironmentConfig.proxyEnv} it is a getter re-read
+   * at every spawn, so the hosting server can change the active confiner at runtime
+   * (e.g. via a platform hot push) and reach Sessions that are already running. Absent,
+   * or a getter returning null = everything spawns unconfined (the default for SDK/CLI
+   * standalone use).
+   */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 /**
@@ -336,7 +354,9 @@ export interface EnvironmentConfig {
  *   HTTP_PROXY / HTTPS_PROXY (plus their lowercase twins) are set to `url` and
  *   NO_PROXY / no_proxy to `noProxy`, overriding inherited values; an inherited
  *   ALL_PROXY (any casing) is removed for the same reason. The caller supplies `noProxy`
- *   pre-merged (the hosting server includes the loopback names).
+ *   pre-merged: the hosting server includes the loopback names, and the private and
+ *   link-local ranges as CIDR entries plus `.local`, so commands bypass the proxy for the
+ *   same local destinations its own traffic does.
  * - `null` (or no getter at all) — pass through unchanged.
  * The Agent vault still overrides whichever of these the policy produced: a per-Agent
  * explicit variable outranks the host-level policy.
@@ -344,16 +364,77 @@ export interface EnvironmentConfig {
 export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 /**
+ * Rewrites the exact argv a command session is about to spawn so it executes
+ * confined — typically the original invocation wrapped in a sandbox runner
+ * (`[runner, ...profileArgs, "--", ...argv]`). Mechanism only: which confinement
+ * policy applies, and which backend enforces it, is decided by whoever supplies
+ * the confiner (the hosting server's platform layer); this seam never interprets
+ * the argv. Fail-closed by contract: a confiner that cannot enforce its policy
+ * must THROW — the error surfaces as the command's spawn failure instead of the
+ * command running unconfined. Returning the argv unchanged is reserved for
+ * policies that genuinely mean "unconfined".
+ * @param argv - the exact argv about to be spawned (`[shellCommand, ...shellArgs, cmd]`), not a shell string.
+ * @param opts - spawn context: `cwd` is the working directory of THIS command (per-call,
+ *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
+ *   directory a workspace-scoped confinement policy should treat as writable, never
+ *   inferred from `cwd` (a command may run in a workdir outside the Workspace);
+ *   `scratchpadDir` is the Session's scratchpad, writable beside the workspace under
+ *   that policy (absent for a Session without one).
+ * @returns what to spawn instead: the argv, and any environment entries the runner
+ *   itself needs (see {@link ConfinedSpawn}).
+ */
+export type SpawnConfiner = (
+  argv: readonly string[],
+  opts: { cwd: string; workspaceDir: string; scratchpadDir?: string },
+) => ConfinedSpawn;
+
+/**
+ * A confiner's answer. `argv` replaces the spawn's argv wholesale; `env` is laid over
+ * the environment the manager assembled for the command — entries the runner needs to
+ * be a runner at all (an interpreter switch, say), never the command's own settings,
+ * which stay the manager's to decide.
+ */
+export interface ConfinedSpawn {
+  argv: readonly string[];
+  env?: Readonly<Record<string, string>>;
+  /**
+   * Whole lines the runner itself prints at the head of stderr before it execs the command
+   * (a report, not an error — the Landlock launcher's "partial enforcement" on an older
+   * kernel). The spawn drops them from the head of the command's stderr, matched by exact
+   * line, case-insensitively; the command's own output is never examined past its first line.
+   */
+  runnerLines?: readonly string[];
+}
+
+/**
  * An approved tool-call execution request.
  * Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig".
  */
 export interface ToolExecutionRequest {
-  /** The OmniMessage whose payload.type === "tool_call". */
-  toolCall: OmniMessage<ToolCallPayload>;
+  /** The AmspRecord whose payload.type === "tool_call". */
+  toolCall: AmspRecord<ToolCallPayload>;
   signal?: AbortSignal;
   /** The parent Agent's approval callback; forwarded to tools that need to derive a child Session (run_subagent), implementing approval inheritance. */
   approve?: ApproveFn;
 }
+
+/**
+ * Outcome of a detach request (`EnvironmentInterface.detachToolCall`):
+ * - `detached` — the call was asked to hand its work back as a background task;
+ * - `not_running` — no call with that id is executing right now (unknown, or already finished);
+ * - `not_detachable` — the call is running, but its tool has no background form.
+ * The three are separate because a host answers them differently — the last one is a
+ * permanent property of the tool, while the first two describe a moment.
+ */
+export type ToolDetachResult = "detached" | "not_running" | "not_detachable";
+
+/**
+ * The opening phrase of the note a detached call returns. Shared because a render layer has
+ * to recognize a detached call from the stored output alone — the click that detached it is
+ * not in the Trace, and a reloaded page has nothing else to go on — so the sentence the tool
+ * writes and the string that matches it must be one value.
+ */
+export const DETACHED_TOOL_NOTE_PREFIX = "[moved to the background by the user";
 
 /**
  * One background command process owned by the environment (an exec_command promoted past
@@ -424,13 +505,21 @@ export interface SubagentMessageOptions {
  */
 export interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
   /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Asks one EXECUTING tool call to hand its work back as a background task, so the turn can
+   * close and the conversation carry on (the Web App's per-card button). Addressed by
+   * tool_call_id, the only handle a host has on a single call. Not an abort: the call ends
+   * `completed` with a registry handle, nothing is killed, and the work's completion arrives
+   * later as the usual background report. Optional, like listBackgroundCommands.
+   */
+  detachToolCall?(toolCallId: string): ToolDetachResult;
   /**
    * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
    * on it: a `run_in_background` child outlives the call that launched it, and evicting the
@@ -448,11 +537,11 @@ export interface EnvironmentInterface {
    * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
    * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
    * model (`input_subagent`) converge on the managed session's same channel, and both hand
-   * it the same thing — an OmniMessage list, whichever state the child is in. Optional.
+   * it the same thing — an AmspRecord list, whichever state the child is in. Optional.
    */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /**
@@ -511,7 +600,7 @@ export interface EnvironmentInterface {
    * EnvironmentServices.backgroundForward). Same buffering and dispose semantics as
    * setBackgroundTaskListener. Optional.
    */
-  setBackgroundMessageListener?(listener: (msg: OmniMessage) => void): void;
+  setBackgroundMessageListener?(listener: (msg: AmspRecord) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

@@ -1,286 +1,93 @@
 /**
- * catalog-sync.ts unit tests: the "sync presets" merge — union of the local model table and
- * the built-in catalog, catalog winning on differing preset entries, local additions and
- * credentials untouched — plus `catalogDelta`, the same question asked of a saved table so the
- * Models nav badge can answer it before the page has loaded any rows.
+ * What 「同步新增模型」 / "Add new models" would add (catalog-sync.ts's catalogDelta), as the
+ * Models badge, the page notice and the header button all read it off a SAVED table — the same
+ * rule the server's add applies: the catalog's presets minus the pairs already stored.
  *
- * The last block is the one that matters most: the badge and the button must never disagree
- * about whether there is anything to do, so every case above is replayed through both.
+ * - Given a table holding every preset, nothing is new, and no badge is raised.
+ * - Given a table lacking presets — never added, or deleted by the user — exactly those are new,
+ *   in catalog order, and they are what the badge's signature names.
+ * - Given a stored preset whose price, context window, vision flag, name or protocol differs
+ *   from the catalog, it is NOT counted: that may be the user's own edit, and nothing but
+ *   "Restore defaults" rewrites an existing model.
+ * - A retired catalog row is never offered, and the user's own models are invisible.
+ * - The badge and the add agree: the to-do counts and names exactly the presets the add puts in.
  */
 import { describe, expect, it } from "vitest";
-import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import { catalogDelta, syncRowsWithCatalog } from "../src/features/models/catalog-sync";
+import {
+  catalogEntryFor,
+  catalogModelEntries,
+  presetModelEntries,
+} from "@prismshadow/penguin-server/model-catalog";
+import type { ModelInfo } from "@prismshadow/penguin-server/api";
+import { catalogDelta } from "../src/features/models/catalog-sync";
 import { presetUpdateTodo } from "../src/lib/todo-badges";
-import { noticeCounts } from "../src/lib/bulk-update";
-import { toRow } from "../src/features/models/models-page";
-import type { RowState } from "../src/features/models/models-page";
 
-type ModelDto = ModelsResponse["models"][number];
+const PRESETS = presetModelEntries();
+const ref = (p: { provider: string; model_id: string }) => `${p.provider}/${p.model_id}`;
 
-type PresetEntry = Parameters<typeof syncRowsWithCatalog>[1] extends (infer E)[] | undefined
-  ? E
-  : never;
+/** A saved model as GET /models sends it, for one catalog preset. */
+const saved = (p: { provider: string; model_id: string }, patch: Partial<ModelInfo> = {}) =>
+  ({
+    provider: p.provider,
+    modelId: p.model_id,
+    isDefault: false,
+    effective: { baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" },
+    ...patch,
+  }) satisfies ModelInfo;
 
-function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "modelId">): RowState {
-  return {
-    original: { provider: partial.provider, modelId: partial.modelId },
-    vision: true,
-    contextWindow: "",
-    maxTokens: "",
-    fastMode: false,
-    clientType: "",
-    cacheRead: "",
-    cacheWrite: "",
-    output: "",
-    baseUrl: "",
-    originalBaseUrl: "",
-    apiKeyInput: "",
-    clearApiKey: false,
-    ...partial,
-  };
-}
+/** The whole catalog, as a freshly created Project stores it. */
+const FULL = PRESETS.map((p) => saved(p));
 
-const PRESET: PresetEntry[] = [
-  {
-    provider: "deepseek",
-    model_id: "deepseek-v4-pro",
-    context_window: 1000000,
-    pricing: {
-      unit: "usd_per_mtok",
-      cache_read: 0.003571,
-      cache_write: 0.428571,
-      output: 0.857143,
-    },
-    vision: false,
-  },
-  {
-    provider: "qwen-token-plan",
-    model_id: "glm-5.2",
-    context_window: 1048576,
-    client_type: "openai-chat",
-    pricing: { unit: "usd_per_mtok", cache_read: 0.285714, cache_write: 1.142857, output: 4 },
-    vision: false,
-    base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-  },
-  // Preview model without a list price: the catalog carries no pricing.
-  {
-    provider: "qwen-token-plan",
-    model_id: "qwen3.8-max-preview",
-    context_window: 1000000,
-    client_type: "openai-chat",
-    base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-  },
-];
-
-describe("syncRowsWithCatalog", () => {
-  it("adds catalog entries missing locally (gateway base URL preset, original null -> new on PUT)", () => {
-    const { rows, added, updated } = syncRowsWithCatalog([], PRESET);
-    expect(added).toBe(3);
-    expect(updated).toBe(0);
-    const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.2")!;
-    expect(glm.original).toBeNull();
-    expect(glm.clientType).toBe("openai-chat");
-    expect(glm.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
-    expect(glm.originalBaseUrl).toBe(""); // differs from baseUrl -> the PUT submits the preset URL
-    expect(glm.cacheRead).toBe("0.285714");
-    expect(glm.vision).toBe(false);
+describe("catalogDelta", () => {
+  it("finds nothing new in a table that holds every preset", () => {
+    expect(catalogDelta(FULL)).toEqual({ added: 0, refs: [] });
+    expect(presetUpdateTodo(catalogDelta(FULL))).toBeNull();
   });
 
-  it("resets differing preset rows to the catalog's fields, keeping identity and credentials", () => {
-    const local = makeRow({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      vision: true, // user flipped it
-      contextWindow: "500000", // stale
-      cacheRead: "1",
-      cacheWrite: "2",
-      output: "3",
-      baseUrl: "http://my-proxy", // user override -> catalog wins (cleared)
-      originalBaseUrl: "http://my-proxy",
-      credential: { hasApiKey: true } as RowState["credential"],
-    });
-    const { rows, added, updated } = syncRowsWithCatalog([local], PRESET);
-    expect(added).toBe(2);
-    expect(updated).toBe(1);
-    const row = rows[0]!;
-    expect(row.contextWindow).toBe("1000000");
-    expect(row.vision).toBe(false);
-    expect(row.cacheRead).toBe("0.003571");
-    expect(row.baseUrl).toBe(""); // catalog has no base_url; differs from originalBaseUrl -> cleared on PUT
-    expect(row.originalBaseUrl).toBe("http://my-proxy");
-    // Identity and credential state untouched: no rename, no key input, credential kept.
-    expect(row.original).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
-    expect(row.apiKeyInput).toBe("");
-    expect(row.clearApiKey).toBe(false);
-    expect(row.credential).toEqual({ hasApiKey: true });
+  it("names the presets the table lacks, deleted ones included, in catalog order", () => {
+    const [first, , third] = PRESETS;
+    const table = FULL.filter(
+      (m) =>
+        !(m.provider === first!.provider && m.modelId === first!.model_id) &&
+        !(m.provider === third!.provider && m.modelId === third!.model_id),
+    );
+    expect(catalogDelta(table)).toEqual({ added: 2, refs: [ref(first!), ref(third!)] });
+    // An empty table is a Project missing all of them.
+    expect(catalogDelta([]).refs).toEqual(PRESETS.map(ref));
   });
 
-  it("leaves up-to-date rows untouched (same object, updated not counted)", () => {
-    const upToDate = makeRow({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      vision: false,
-      contextWindow: "1000000",
-      cacheRead: "0.003571",
-      cacheWrite: "0.428571",
-      output: "0.857143",
-    });
-    const { rows, updated } = syncRowsWithCatalog([upToDate], PRESET);
-    expect(updated).toBe(0);
-    expect(rows[0]).toBe(upToDate);
+  it("does not count a stored preset that differs from the catalog: that may be the user's edit", () => {
+    const p = PRESETS.find((e) => e.pricing !== undefined && e.context_window !== undefined)!;
+    const edited = FULL.map((m) =>
+      m.provider === p.provider && m.modelId === p.model_id
+        ? saved(p, {
+            displayName: "My own name",
+            contextWindow: 1234,
+            vision: false,
+            clientType: "openai-chat",
+            pricing: { cacheRead: 9, cacheWrite: 9, output: 9 },
+          })
+        : m,
+    );
+    expect(catalogDelta(edited)).toEqual({ added: 0, refs: [] });
   });
 
-  it("preserves a user-set max output tokens through a preset sync (user-owned, not catalog-owned)", () => {
-    const local = makeRow({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      maxTokens: "4096", // user annotation
-      contextWindow: "500000", // stale -> the row does get updated by the sync
-    });
-    const { rows, updated } = syncRowsWithCatalog([local], PRESET);
-    expect(updated).toBe(1);
-    const row = rows[0]!;
-    expect(row.contextWindow).toBe("1000000"); // catalog-owned field reset
-    expect(row.maxTokens).toBe("4096"); // user field survives the {...row, ...fields} merge
-    // Fresh catalog rows default to inherit (no preset output cap exists).
-    expect(rows.find((r) => r.modelId === "glm-5.2")!.maxTokens).toBe("");
-  });
-
-  it("keeps locally added models (including user-defined groups) verbatim and in place", () => {
-    const mine = makeRow({ provider: "my-gateway", modelId: "my-model", baseUrl: "http://x" });
-    const { rows, added } = syncRowsWithCatalog([mine], PRESET);
-    expect(added).toBe(3);
-    expect(rows[0]).toBe(mine); // existing rows keep their list position; catalog entries append
-    expect(rows).toHaveLength(4);
-  });
-
-  it("removes pricing when the catalog entry carries none (preview model, catalog wins)", () => {
-    const local = makeRow({
-      provider: "qwen-token-plan",
-      modelId: "qwen3.8-max-preview",
-      contextWindow: "1000000",
-      clientType: "openai-chat",
-      baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-      cacheRead: "1",
-      cacheWrite: "2",
-      output: "3",
-    });
-    const { rows, updated } = syncRowsWithCatalog([local], PRESET);
-    expect(updated).toBe(1);
-    const row = rows.find((r) => r.modelId === "qwen3.8-max-preview")!;
-    expect([row.cacheRead, row.cacheWrite, row.output]).toEqual(["", "", ""]);
-  });
-
-  it("syncs against the real built-in catalog by default", () => {
-    const { rows, added, updated } = syncRowsWithCatalog([]);
-    expect(added).toBeGreaterThan(30);
-    expect(updated).toBe(0);
-    // No merged row ever carries a key input: credentials are structurally untouched.
-    expect(rows.every((r) => r.apiKeyInput === "" && !r.clearApiKey)).toBe(true);
+  it("never offers a retired catalog row, and does not see the user's own models", () => {
+    const retired = catalogModelEntries().find(
+      (e) => catalogEntryFor(e.provider, e.model_id)?.retired === true,
+    );
+    if (retired !== undefined) expect(catalogDelta([]).refs).not.toContain(ref(retired));
+    const mine = { provider: "custom", model_id: "my-own" };
+    expect(catalogDelta([...FULL, saved(mine)])).toEqual({ added: 0, refs: [] });
   });
 });
 
-/** A saved entry, in the shape the models endpoint sends. */
-function makeDto(partial: Partial<ModelDto> & Pick<ModelDto, "provider" | "modelId">): ModelDto {
-  return { ...partial } as ModelDto;
-}
-
-describe("catalogDelta", () => {
-  it("reports nothing when the saved table already matches the catalog", () => {
-    const saved = PRESET.map((p) =>
-      makeDto({
-        provider: p.provider,
-        modelId: p.model_id,
-        vision: p.vision !== false,
-        ...(p.context_window !== undefined ? { contextWindow: p.context_window } : {}),
-        ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
-        ...(p.pricing
-          ? {
-              pricing: {
-                cacheRead: p.pricing.cache_read,
-                cacheWrite: p.pricing.cache_write,
-                output: p.pricing.output,
-              } as ModelDto["pricing"],
-            }
-          : {}),
-        ...(p.base_url !== undefined
-          ? { credential: { baseUrl: p.base_url } as ModelDto["credential"] }
-          : {}),
-      }),
-    );
-    expect(catalogDelta(saved, PRESET)).toEqual({ added: 0, updated: 0, refs: [] });
-  });
-
-  it("names every entry it would add or rewrite, in catalog order", () => {
-    const stale = makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", vision: true });
-    expect(catalogDelta([stale], PRESET)).toEqual({
-      added: 2,
-      updated: 1,
-      refs: [
-        "deepseek/deepseek-v4-pro",
-        "qwen-token-plan/glm-5.2",
-        "qwen-token-plan/qwen3.8-max-preview",
-      ],
-    });
-  });
-
-  it("ignores locally added models, exactly as the merge does", () => {
-    const local = makeDto({ provider: "custom", modelId: "my-own" });
-    expect(catalogDelta([local], PRESET).refs).not.toContain("custom/my-own");
-  });
-
-  /**
-   * The badge reads a saved table; the button reads row state. They are two conversions of the
-   * same data, so this pins them together: whatever `toRow` does to a DTO, `catalogDelta` must
-   * read the same way, or a dot would lead to a button answering "already up to date".
-   */
-  it("agrees with the sync merge on every table shape, against the real catalog", () => {
-    const tables: ModelDto[][] = [
-      [],
-      [makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro" })],
-      [makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", contextWindow: 1000000 })],
-      [
-        makeDto({
-          provider: "qwen-token-plan",
-          modelId: "glm-5.2",
-          clientType: "openai-chat",
-          credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
-        }),
-      ],
-      [makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 })],
-    ];
-    for (const table of tables) {
-      const merged = syncRowsWithCatalog(table.map(toRow), PRESET);
-      const delta = catalogDelta(table, PRESET);
-      expect([delta.added, delta.updated], JSON.stringify(table)).toEqual([
-        merged.added,
-        merged.updated,
-      ]);
-      expect(delta.refs.length).toBe(merged.added + merged.updated);
-    }
-  });
-
-  it("agrees with the merge on an empty table against the shipped catalog", () => {
-    const merged = syncRowsWithCatalog([]);
-    const delta = catalogDelta([]);
-    expect([delta.added, delta.updated]).toEqual([merged.added, merged.updated]);
-    expect(delta.refs.length).toBeGreaterThan(30);
-  });
-
-  /**
-   * The page notice states "N new, M to upgrade" above a button that runs the merge. Those two
-   * numbers must be the merge's own, carried through the gate — not a third opinion computed for
-   * the block. This walks the same chain the page does: delta -> raised to-do -> notice counts.
-   */
-  it("hands the merge's own two numbers all the way to the page notice", () => {
-    const table = [
-      makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", contextWindow: 1000000 }),
-      makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 }),
-    ];
-    const merged = syncRowsWithCatalog(table.map(toRow), PRESET);
-    const todo = presetUpdateTodo(catalogDelta(table, PRESET))!;
-    expect(noticeCounts(todo)).toEqual({ added: merged.added, updated: merged.updated });
-    // And the dot the notice sits under is raised from the same total.
-    expect((noticeCounts(todo).added ?? 0) + noticeCounts(todo).updated).toBe(todo.count);
+describe("the badge and the add agree", () => {
+  it("counts the same presets the add would put in, under one number", () => {
+    const table = FULL.slice(3);
+    const delta = catalogDelta(table);
+    const todo = presetUpdateTodo(delta)!;
+    expect(todo.count).toBe(delta.added);
+    expect(todo.items).toEqual(PRESETS.slice(0, 3).map(ref));
   });
 });

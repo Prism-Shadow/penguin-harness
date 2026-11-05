@@ -3,6 +3,8 @@
  */
 export { Environment } from "./environment.js";
 export type { BuiltinTool, ToolExecutionContext } from "./tools/types.js";
+export { localFsPort } from "./tools/fs-port.js";
+export type { FsDirent, FsFetchResult, FsPort, FsStat } from "./tools/fs-port.js";
 export { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 export type { BuiltinToolFactory } from "./tools/registry.js";
 export { createReadFileTool, READ_FILE_NAME } from "./tools/read-file.js";
@@ -18,16 +20,26 @@ export { SubagentSessionManager, ManagedSubagentSession } from "./tools/subagent
 export {
   DEFAULT_MCP_CONNECT_TIMEOUT_MS,
   DEFAULT_MCP_PERMISSION,
+  MCP_SERVER_NAME_PATTERN,
   MCP_TOOL_PREFIX,
   McpToolProvider,
+  PLUGIN_ROOT_REF,
+  VAULT_REF_PATTERN,
+  collectVaultRefs,
+  mcpSkipMessage,
   mcpToolName,
+  needsSignIn,
+  readsVaultReferences,
   resolveMCPServer,
   resolveMCPServers,
+  substituteVaultRefs,
 } from "./mcp/index.js";
 export type {
   MCPServerPermissionMode,
+  MCPServerSkip,
   McpToolProviderOptions,
   ResolvedMCPServer,
   ResolvedMCPTransport,
   ResolveMCPServersResult,
+  SkippedMCPServer,
 } from "./mcp/index.js";

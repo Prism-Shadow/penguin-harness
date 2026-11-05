@@ -64,7 +64,7 @@ test("switching conversations closes the old session's HTML preview and shows th
   await ta.fill("files card test");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText(/Report generated/)).toBeVisible();
-  const cardRow = page.locator('button[title="demo.html"]').filter({ hasText: "点击预览" });
+  const cardRow = page.locator('button[data-tooltip="demo.html"]').filter({ hasText: "点击预览" });
   await cardRow.click();
   await expect(page.frameLocator("iframe").getByText("Session A page")).toBeVisible();
 

@@ -30,12 +30,10 @@ import type {
   WeChatBindingInfo,
   WeChatScanPollResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button, Input, toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { QrCode } from "./qq-scan-connect";
 
 /**
@@ -298,7 +296,7 @@ export function WeChatScanConnect({
         <Button
           size="sm"
           disabled={phase.kind === "starting" || enabled}
-          {...(enabled ? { title: S.wechat.scanDisableFirst } : {})}
+          {...(enabled ? { title: S.wechat.scanDisableFirst, "data-tooltip-extra": true } : {})}
           onClick={() => void start(false)}
         >
           {phase.kind === "starting"

@@ -18,13 +18,13 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
 } from "../src/index.js";
 
 /** A fake LLM: yields the given messages and finishes with the outcome; records the prompt received. */
 function fakeLLM(
-  outputs: OmniMessage[],
+  outputs: AmspRecord[],
   outcome: LLMOutcome = { status: "completed" },
   seenPrompts: string[] = [],
 ): LLMInterface {
@@ -55,6 +55,7 @@ const META: SessionMetaPayload = {
   system_prompt: "sp",
   agent_state: "/tmp/state",
   workspace: "/tmp/w",
+  source: "user",
 };
 
 /** Image-fold wiring every Session takes; these tests send no images, so it is never exercised. */

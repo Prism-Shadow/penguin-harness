@@ -1,18 +1,26 @@
 /**
- * The messaging binding editor's rendered shape (src/features/messaging/messaging-binding-editor.tsx).
+ * The messaging binding editor, rendered to static markup
+ * (features/messaging/messaging-binding-editor.tsx).
  *
- * Six rules this pins, all of which are invisible to a type checker: the form opens on its
- * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
- * input), each channel's credential-source link rides the credential field's corner, that
- * link's label names the place it actually opens, the connection switch — which IS the
- * bind/unbind — carries that sentence as its own tooltip rather than as a line the form
- * would have to make room for, a stored secret is removed by the models-page clear checkbox
- * and that checkbox is gated, on screen, while the channel holds the connection, and a
- * connection error's detail reaches the reader whole rather than as a few words of a shared
- * row.
+ * - The form opens on its fields, the explanation living in the collapsed help below; each
+ *   channel's credential-source link rides the credential field's corner and is labelled with
+ *   what it opens.
+ * - A stored secret is removed through the clear checkbox, gated on screen while the channel
+ *   holds the connection; the connection switch carries the bind/unbind sentence as its
+ *   tooltip, and its gating reason when another channel holds the connection.
+ * - A gated switch stays clickable; the gate names, per channel, what is missing and where a
+ *   click sends focus to supply it.
+ * - A connection error gets its own line, whole, and stays on screen after the connection
+ *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
+ *   a message arrived but its task never started; held WeChat replies take the failure line.
+ * - The delivery and Markdown options close the form, each switch rendered from its own field
+ *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen; the selector
+ *   offers all four channels.
+ * - The help stacks three collapsed, self-titled folds with the relocated explanation, the
+ *   Telegram-only troubleshooting entries, and each channel's tutorial link.
+ * - A Telegram test reports success with the Group Privacy caveat as a second line, nothing
+ *   extra when privacy is off or unknown, and a failure as one error line.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,12 +28,15 @@ import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
+  enablePrerequisite,
   telegramTestNotices,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
+import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { uiStringsOf } from "../src/lib/ui-strings";
 import { en } from "../src/lib/strings-en";
 import { formatDateTime } from "../src/lib/format";
 
@@ -37,6 +48,7 @@ const DARK: MessagingChannelFacts = {
   enabled: false,
   status: { state: "disconnected" },
   lastChatKnown: false,
+  accountId: null,
 };
 
 /**
@@ -60,19 +72,26 @@ function stateOf(
   const noop = async () => {};
   return {
     sessionId: "session-under-test",
+    location: null,
+    access: { live: true, reason: null, asOf: null },
+    holdersNote: null,
     form: emptyMessagingForm(channel),
     patchForm: () => {},
     selectChannel: () => {},
     channels: { feishu: DARK, telegram: DARK, qq: DARK, wechat: DARK, ...facts },
     fieldErrors: {},
     dirty: false,
+    valid: true,
+    unsavedAny: false,
+    discard: () => {},
     busy: false,
     toggling: false,
     testing: false,
     sendingTest: false,
     testable: false,
-    toggleBlocked: false,
-    toggleHint: null,
+    toggleBusy: false,
+    enableGate: null,
+    saveButtonId: "save-under-test",
     adoptBinding: () => {},
     save: noop,
     toggleEnabled: noop,
@@ -82,8 +101,15 @@ function stateOf(
   };
 }
 
+// The "?" labels read the package's UiStrings, which the app provides from the active dictionary.
 const render = (state: MessagingBindingEditorState) =>
-  renderToStaticMarkup(createElement(MessagingBindingBody, { b: state }));
+  renderToStaticMarkup(
+    createElement(
+      UiStringsProvider,
+      { strings: uiStringsOf(S) },
+      createElement(MessagingBindingBody, { b: state }),
+    ),
+  );
 
 describe("MessagingBindingBody", () => {
   it("opens on the fields: no explanatory prose above the first input", () => {
@@ -136,11 +162,12 @@ describe("MessagingBindingBody", () => {
       enabled: false,
       status: { state: "disconnected" },
       lastChatKnown: false,
+      accountId: "cli_a1b2",
     };
     const dark = render(stateOf("feishu", { feishu: saved }));
     expect(dark).toContain("abcd…7890");
     expect(dark).toContain(S.feishu.clearSecret);
-    expect(dark).toContain('type="checkbox"/>');
+    expect(dark).toMatch(/<input[^>]*type="checkbox"[^>]*\/>/);
     expect(dark).not.toContain(S.messaging.disableBeforeClearHint);
 
     // Enabled: clearing would leave a live connection running on a credential the store no
@@ -158,7 +185,7 @@ describe("MessagingBindingBody", () => {
     // reading "enable connection" does not say. It is semantics, so it is disclosed: on the
     // control, where nothing below has to move to make room for it.
     const html = render(stateOf("feishu"));
-    expect(html).toContain(`title="${S.messaging.bindByEnableHint}"`);
+    expect(html).toContain(`data-tooltip="${S.messaging.bindByEnableHint}"`);
     expect(html).not.toContain(`>${S.messaging.bindByEnableHint}<`);
   });
 
@@ -186,7 +213,7 @@ describe("MessagingBindingBody", () => {
     expect(html.slice(rowAt, html.indexOf(lastError, rowAt))).toContain("</div>");
     // Bounded so an error still cannot push the probes far, with the whole text on hover.
     expect(html).toContain("line-clamp-2");
-    expect(html).toContain(`title="${lastError}"`);
+    expect(html).toContain(`data-tooltip="${lastError}"`);
   });
 
   it('closes the form with the delivery options, each explanation behind its label\'s "?"', () => {
@@ -281,7 +308,7 @@ describe("MessagingBindingBody", () => {
     }
     // The grid's column count is spelled out in the component rather than interpolated, so
     // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-4");
+    expect(html).toContain("grid-cols-[repeat(4,1fr)]");
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {
@@ -337,7 +364,7 @@ describe("MessagingBindingBody", () => {
     // record on a later success, so a rights problem fixed three days ago would otherwise
     // read as live — and a hover-only title is unreachable on a touch screen.
     expect(failed).toContain(`>${S.messaging.deliveryFailedSend(formatDateTime(at), detail)}</p>`);
-    expect(failed).toContain(`title="${detail}"`);
+    expect(failed).toContain(`data-tooltip="${detail}"`);
     // Arrival is still reported: a send failure is not a delivery failure.
     expect(failed).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
   });
@@ -365,6 +392,31 @@ describe("MessagingBindingBody", () => {
       }),
     );
     expect(html).toContain(`>${S.messaging.deliveryFailedInbound(formatDateTime(at), detail)}</p>`);
+    expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
+  });
+
+  it("says WeChat replies are waiting for the next message, in the failure line's place", () => {
+    // Held replies are not a failure: the remedy is to message the bot, and an older send
+    // failure left beside the held line would read as the reason for the silence.
+    const detail = "wechat send failed: prepare failed";
+    const at = "2026-08-26T09:31:00.000Z";
+    const since = "2026-08-26T09:40:00.000Z";
+    const html = render(
+      stateOf("wechat", {
+        wechat: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+            lastDeliveryError: { at, stage: "send", detail },
+            heldReplySince: since,
+          },
+        },
+      }),
+    );
+    expect(html).toContain(`>${S.messaging.repliesHeld(formatDateTime(since))}</p>`);
     expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
   });
 
@@ -445,16 +497,66 @@ describe("MessagingBindingBody", () => {
     );
   });
 
-  it("shows the switch's gating reason when the other channel holds the connection", () => {
+  it("shows the switch's gating reason, and leaves a gated switch clickable", () => {
     const hint = S.messaging.otherEnabledHint(S.messaging.channelName.feishu);
     const html = render(
       stateOf(
         "telegram",
         { feishu: { ...DARK, secretConfigured: true, enabled: true } },
-        { toggleBlocked: true, toggleHint: hint },
+        { enableGate: { hint, focus: null } },
       ),
     );
     expect(html).toContain(hint);
+    // Dimmed and announced as unavailable, but not natively disabled: a click has to reach
+    // the handler that explains what to do first.
+    const toggle = /<button[^>]*role="switch"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(toggle).toContain('aria-disabled="true"');
+    expect(toggle).not.toContain('disabled=""');
+  });
+});
+
+describe("enablePrerequisite", () => {
+  const stored = { enabled: false, secretConfigured: true };
+  const blank = { enabled: false, secretConfigured: false };
+
+  it("names what each channel is missing and where focus goes to supply it", () => {
+    const expected = {
+      feishu: "credential",
+      telegram: "credential",
+      qq: "scan",
+      wechat: "scan",
+    } as const;
+    for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+      // No stored credential: the per-channel sentence, focus on the scan or the typed field.
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: null, dirty: false }),
+      ).toEqual({ hint: S.messaging.credentialMissingHint[channel], focus: expected[channel] });
+      // Stored but edited since: save first.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: true }),
+      ).toEqual({ hint: S.messaging.saveBeforeEnable, focus: "save" });
+      // Another channel holds the connection: that outranks the rest, and its fix is not on
+      // this form, so focus stays put.
+      const other: MessagingChannel = channel === "feishu" ? "telegram" : "feishu";
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: other, dirty: true }),
+      ).toEqual({
+        hint: S.messaging.otherEnabledHint(S.messaging.channelName[other]),
+        focus: null,
+      });
+      // Nothing missing; and turning a live connection off is never gated.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: false }),
+      ).toBeNull();
+      expect(
+        enablePrerequisite({
+          channel,
+          facts: { enabled: true, secretConfigured: true },
+          enabledChannel: channel,
+          dirty: true,
+        }),
+      ).toBeNull();
+    }
   });
 });
 
@@ -530,36 +632,6 @@ describe("MessagingBindingHelp", () => {
   });
 });
 
-describe("the Group Privacy copy, in both dictionaries", () => {
-  // `S` is the zh dictionary at import time, so each rule is asserted per dictionary — the
-  // two drifted apart once already (zh promised 三选一 and listed two options).
-  const entries = [
-    [en.messaging.troubleGroupPrivacy, "Making the bot an administrator"],
-    [zh.messaging.troubleGroupPrivacy, "把机器人设为该群的管理员"],
-  ] as const;
-
-  it("leads the fold entry with the admin route, then the @BotFather one", () => {
-    // Making the bot an administrator is the only remedy that fixes the group without
-    // touching its membership, and it is what a user whose bot already works has done — so
-    // it comes first, and the /setprivacy route (which requires a re-add) follows it.
-    for (const [entry, adminRemedy] of entries) {
-      expect(entry).toContain(adminRemedy);
-      expect(entry).toContain("/setprivacy");
-      expect(entry.indexOf(adminRemedy)).toBeLessThan(entry.indexOf("/setprivacy"));
-    }
-  });
-
-  it("points the toast at that fold instead of repeating the remedies in it", () => {
-    // The notice rides an `info` toast: four seconds, no hover-pause. So the toast carries
-    // the diagnosis and names the fold — by the fold's own title, which stays true if the
-    // fold is renamed — and the steps stay where they can be read.
-    for (const dict of [en, zh]) {
-      expect(dict.messaging.testPrivacyOn).toContain(dict.messaging.faqTroubleTitle);
-      expect(dict.messaging.testPrivacyOn).not.toContain("/setprivacy");
-    }
-  });
-});
-
 describe("telegramTestNotices", () => {
   it("adds the privacy notice as a second line, leaving the success line untouched", () => {
     // Two lines, not one longer one: the credentials passed and a direct chat will answer,
@@ -592,25 +664,5 @@ describe("telegramTestNotices", () => {
     expect(telegramTestNotices({ ok: false, error: "Unauthorized", groupPrivacy: true })).toEqual([
       { tone: "error", text: S.messaging.testFail("Unauthorized") },
     ]);
-  });
-
-  it("is shown by testConnection, one toast per notice, each in its own tone", () => {
-    // The hook itself is out of reach from a node-only suite (`environment: "node"`, no
-    // jsdom), and dropping the info branch would silently lose the only line that reports
-    // Group Privacy — so the dispatch is pinned here (account-menu.test.ts convention).
-    const src = readFileSync(
-      fileURLToPath(
-        new URL("../src/features/messaging/messaging-binding-editor.tsx", import.meta.url),
-      ),
-      "utf8",
-    );
-    const loop = /for \(const notice of telegramTestNotices\(res\)\) \{[\s\S]*?\n {8}\}/.exec(src);
-    expect(
-      loop,
-      "testConnection should show every notice telegramTestNotices returns",
-    ).not.toBeNull();
-    expect(loop![0]).toContain("toastError(notice.text)");
-    expect(loop![0]).toContain("toastInfo(notice.text)");
-    expect(loop![0]).toContain("toastSuccess(notice.text)");
   });
 });

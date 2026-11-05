@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readHarnessInfo, resolveCliBundlePath } from "../src/hmr/manifest.js";
+import { readHarnessInfo, readPushedCli, resolveCliBundlePath } from "../src/hmr/manifest.js";
 
 async function makeRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-hmr-manifest-test-"));
@@ -19,71 +19,97 @@ async function writeManifest(root: string, manifest: unknown): Promise<void> {
   await fs.writeFile(path.join(hmrDir, "harness.json"), JSON.stringify(manifest));
 }
 
-describe("resolveCliBundlePath", () => {
+describe("readPushedCli: nothing pushed and a record it cannot produce are different answers", () => {
   let root: string | undefined;
   afterEach(async () => {
     if (root) await fs.rm(root, { recursive: true, force: true });
     root = undefined;
   });
 
-  it("returns null (not a throw) for a fresh root with no harness.json at all", async () => {
+  it("is `none` for a fresh root with no harness.json at all", async () => {
     root = await makeRoot();
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+    await expect(readPushedCli(root)).resolves.toEqual({ kind: "none" });
   });
 
-  it("returns null (not a throw) for `cli: {}` — no `bundle` key", async () => {
+  it("is `none` for a record with no `cli` entry — nothing pushed a CLI here", async () => {
     root = await makeRoot();
+    await writeManifest(root, { platform: { bundle: "store/platform/abc.mjs" } });
+    await expect(readPushedCli(root)).resolves.toEqual({ kind: "none" });
+  });
+
+  it("is `broken`, naming the file, for a harness.json that will not parse", async () => {
+    root = await makeRoot();
+    await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+    await fs.writeFile(path.join(root, "hmr", "harness.json"), "{ not json");
+    const cli = await readPushedCli(root);
+    expect(cli.kind).toBe("broken");
+    expect(cli.kind === "broken" && cli.reason).toMatch(/harness\.json is not readable JSON/);
+  });
+
+  it("is `broken` for a `cli` entry with no usable bundle path", async () => {
+    root = await makeRoot();
+    for (const bundle of [42, ""]) {
+      await writeManifest(root, { cli: { bundle } });
+      expect((await readPushedCli(root)).kind).toBe("broken");
+    }
     await writeManifest(root, { cli: {} });
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+    expect((await readPushedCli(root)).kind).toBe("broken");
   });
 
-  it("returns null (not a throw) when `bundle` is not a string", async () => {
+  it("is `broken` for a bundle path that escapes <root>/hmr/, planted file and all", async () => {
     root = await makeRoot();
-    await writeManifest(root, { cli: { bundle: 42 } });
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
-  });
-
-  it("returns null (not a throw) when `bundle` is an empty string", async () => {
-    root = await makeRoot();
-    await writeManifest(root, { cli: { bundle: "" } });
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
-  });
-
-  it("returns null for a bundle path that escapes <root>/hmr/ via `..`", async () => {
-    root = await makeRoot();
-    // Plant a real file the escape would otherwise reach, to prove the guard — not the
-    // file's mere non-existence — is what returns null.
+    // A real file the escape would otherwise reach, to prove the guard — not the file's
+    // mere non-existence — is what refuses it.
     await fs.writeFile(path.join(root, "escaped.mjs"), "export const cli = async () => 0;\n");
     await writeManifest(root, { cli: { bundle: "../escaped.mjs" } });
-    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+    const cli = await readPushedCli(root);
+    expect(cli.kind === "broken" && cli.reason).toMatch(/outside/);
   });
 
-  it("returns null for an absolute bundle path (also an escape attempt)", async () => {
+  it("is `broken` for an absolute bundle path (also an escape attempt)", async () => {
     root = await makeRoot();
     const outside = path.join(os.tmpdir(), "not-under-hmr.mjs");
     await fs.writeFile(outside, "export const cli = async () => 0;\n");
     try {
       await writeManifest(root, { cli: { bundle: outside } });
-      await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+      expect((await readPushedCli(root)).kind).toBe("broken");
     } finally {
       await fs.rm(outside, { force: true });
     }
   });
 
-  it("resolves a legitimate, in-store bundle path", async () => {
+  it("is `broken`, not `none`, when the store lost the file (pruned)", async () => {
+    root = await makeRoot();
+    await writeManifest(root, { cli: { bundle: "store/cli/nonexistent.mjs" } });
+    const cli = await readPushedCli(root);
+    expect(cli.kind).toBe("broken");
+    expect(cli.kind === "broken" && cli.reason).toMatch(/missing from the store/);
+  });
+
+  it("is the bundle for a legitimate, in-store path", async () => {
     root = await makeRoot();
     const storeDir = path.join(root, "hmr", "store", "cli");
     await fs.mkdir(storeDir, { recursive: true });
     await fs.writeFile(path.join(storeDir, "abc123.mjs"), "export const cli = async () => 0;\n");
     await writeManifest(root, { cli: { bundle: "store/cli/abc123.mjs" } });
-    const resolved = await resolveCliBundlePath(root);
-    expect(resolved).toBe(path.join(root, "hmr", "store", "cli", "abc123.mjs"));
+    await expect(readPushedCli(root)).resolves.toEqual({
+      kind: "bundle",
+      file: path.join(root, "hmr", "store", "cli", "abc123.mjs"),
+    });
   });
 
-  it("returns null when the referenced file does not exist (e.g. pruned)", async () => {
+  it("keeps resolveCliBundlePath's shape for the published subpath: the path, or null", async () => {
     root = await makeRoot();
+    await expect(resolveCliBundlePath(root)).resolves.toBeNull();
     await writeManifest(root, { cli: { bundle: "store/cli/nonexistent.mjs" } });
     await expect(resolveCliBundlePath(root)).resolves.toBeNull();
+    const storeDir = path.join(root, "hmr", "store", "cli");
+    await fs.mkdir(storeDir, { recursive: true });
+    await fs.writeFile(path.join(storeDir, "abc123.mjs"), "export const cli = async () => 0;\n");
+    await writeManifest(root, { cli: { bundle: "store/cli/abc123.mjs" } });
+    await expect(resolveCliBundlePath(root)).resolves.toBe(
+      path.join(root, "hmr", "store", "cli", "abc123.mjs"),
+    );
   });
 });
 

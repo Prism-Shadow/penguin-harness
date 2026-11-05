@@ -1,15 +1,27 @@
 /**
- * QQ scan-to-connect tests: the three-call bind protocol, the AES-GCM framing that carries
- * the App Secret out of it, the in-memory task table, and the routes.
+ * QQ scan-to-connect: the three-call bind protocol, the AES-GCM framing that carries the App
+ * Secret out of it, the in-memory task table, and the routes. Throughout, the AES key never
+ * leaves the server: every route case checks the whole response body for it.
  *
- * The framing is what these tests exist for. `bot_encrypt_secret` is base64 with a 12-byte
- * IV in front and a 16-byte auth tag at the end, and nothing in the payload says so — a
- * wrong offset yields an authentication failure rather than a wrong-looking string, so the
- * round-trip here (encrypted by the test with the standard library, decrypted by the
- * module) is the only thing that can prove the layout is the one Tencent actually sends.
- *
- * The second thing pinned throughout: the AES key never leaves the server. Every route
- * assertion checks the whole response body for it.
+ * - `bot_encrypt_secret` round-trips the platform's framing (a 12-byte IV in front, a 16-byte
+ *   tag at the end) and fails loudly on a wrong key, a tampered or a truncated payload — the
+ *   round-trip is the only thing that can prove the layout, since a wrong offset yields an
+ *   authentication failure rather than a wrong-looking string.
+ * - The QR page URL encodes both of its values.
+ * - The transport reads the `{retcode, msg, data}` envelope (a non-zero retcode throws),
+ *   normalizes the completed payload (the App ID arrives as a number), and maps the status
+ *   enum, reading an unknown value as still pending.
+ * - The service keeps the key to itself and consumes a task on the poll that resolves it;
+ *   refuses another Session's task and an id it never issued; expires a task by its own clock
+ *   and by the platform's answer; hands one of two concurrent polls the result; puts a task
+ *   back when the request failed; bounds tasks per Session; sweeps abandoned tasks; forgets
+ *   the key on cancel.
+ * - The routes start a scan with a task, a URL and an interval (never the key); a completed
+ *   poll saves the binding with the App ID as the account and no secret in the answer, and it
+ *   is editable like a typed one; a platform failure is a 502; a cancelled task, or one of
+ *   another Session, cannot be polled; every route is owner-only; a scan is refused while the
+ *   connection is enabled, and one completing onto a connection enabled meanwhile runs the
+ *   account guard.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipheriv, randomBytes } from "node:crypto";
@@ -18,7 +30,6 @@ import type {
   QQScanPollResponse,
   QQScanStartResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import {
   QQ_SCAN_TASK_TTL_MS,
   QQScanService,
@@ -28,6 +39,8 @@ import {
   qqScanQrUrl,
 } from "../src/runtime/messaging/qq-scan.js";
 import type { QQBindPollResult, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
+import { stubFetch } from "./fixtures/fetch.js";
+import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -98,21 +111,6 @@ class FakeScanTransport implements QQScanTransport {
   }
 }
 
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
-}
-
 describe("decryptQQBotSecret", () => {
   it("round-trips the platform's framing: IV in front, tag at the end", () => {
     const key = newQQScanKey();
@@ -155,38 +153,41 @@ describe("qqScanQrUrl", () => {
 });
 
 describe("createQQScanTransport", () => {
-  const originalFetch = globalThis.fetch;
   afterEach(() => {
-    globalThis.fetch = originalFetch;
+    vi.unstubAllGlobals();
   });
 
   it("reads the {retcode, msg, data} envelope and turns a non-zero retcode into a throw", async () => {
-    const calls: Array<{ url: string; body: unknown }> = [];
-    globalThis.fetch = (async (url: string, init: { body: string }) => {
-      calls.push({ url, body: JSON.parse(init.body) as unknown });
-      if (url.endsWith("/lite/create_bind_task")) {
-        return new Response(JSON.stringify({ retcode: 0, data: { task_id: "T1" } }));
-      }
-      return new Response(JSON.stringify({ retcode: 42, msg: "task not found" }));
-    }) as unknown as typeof globalThis.fetch;
+    const { calls } = stubFetch((call) =>
+      call.url.endsWith("/lite/create_bind_task")
+        ? new Response(JSON.stringify({ retcode: 0, data: { task_id: "T1" } }))
+        : new Response(JSON.stringify({ retcode: 42, msg: "task not found" })),
+    );
 
     const transport = createQQScanTransport();
     expect(await transport.createBindTask("KEY")).toBe("T1");
     expect(calls[0]!.url).toBe("https://q.qq.com/lite/create_bind_task");
-    expect(calls[0]!.body).toEqual({ key: "KEY" });
+    expect(JSON.parse(calls[0]!.body)).toEqual({ key: "KEY" });
 
     await expect(transport.pollBindResult("T1")).rejects.toThrow(/task not found \(retcode 42\)/);
-    expect(calls[1]!.body).toEqual({ task_id: "T1" });
+    expect(JSON.parse(calls[1]!.body)).toEqual({ task_id: "T1" });
   });
 
   it("normalizes the completed payload, which arrives as a bare object", async () => {
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          retcode: 0,
-          data: { status: 2, bot_appid: 102000042, bot_encrypt_secret: "AAAA", user_openid: "u1" },
-        }),
-      )) as unknown as typeof globalThis.fetch;
+    stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            retcode: 0,
+            data: {
+              status: 2,
+              bot_appid: 102000042,
+              bot_encrypt_secret: "AAAA",
+              user_openid: "u1",
+            },
+          }),
+        ),
+    );
     const res = await createQQScanTransport().pollBindResult("T1");
     expect(res.status).toBe("completed");
     // The App ID arrives as a NUMBER on the wire and is stored as text everywhere else.
@@ -201,10 +202,7 @@ describe("createQQScanTransport", () => {
       [3, "expired"],
       [99, "pending"],
     ] as const) {
-      globalThis.fetch = (async () =>
-        new Response(
-          JSON.stringify({ retcode: 0, data: { status: wire } }),
-        )) as unknown as typeof globalThis.fetch;
+      stubFetch(() => new Response(JSON.stringify({ retcode: 0, data: { status: wire } })));
       expect((await createQQScanTransport().pollBindResult("T")).status).toBe(expected);
     }
   });
@@ -347,7 +345,7 @@ describe("qq scan routes", () => {
     t = await createTestApp({ qqScanTransport: transport });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID, PROJECT));
+    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId: PROJECT }));
   });
   afterEach(async () => {
     await t.cleanup();
@@ -424,7 +422,7 @@ describe("qq scan routes", () => {
 
     // The task id is not the authorization, and it is not a bearer handle either: the same
     // owner polling their OWN second Session with it gets nothing.
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, PROJECT));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId: PROJECT }));
     const mine = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
     const crossed = await api.post(`${SCAN(SID2)}/poll`, { taskId: mine.taskId });
     expect(crossed.status).toBe(404);
@@ -480,7 +478,7 @@ describe("qq scan routes", () => {
     const start = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
 
     // Another Session holds the very account this scan is about to land on...
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, PROJECT));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId: PROJECT }));
     t.deps.messagingRepo.upsert({
       sessionId: SID2,
       channel: "qq",

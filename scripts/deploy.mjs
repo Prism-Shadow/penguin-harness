@@ -11,10 +11,28 @@
  * secret is readable by everything running as this user, agent shells included, which makes
  * the file itself the vulnerability.
  *
+ * A target refuses a build that cannot run every plugin installed there, naming them. In a
+ * terminal the script then asks whether to push anyway; anywhere else it stops, and
+ * `--force` is how a run that cannot be asked says yes up front. Pushed that way, the target
+ * runs without those plugins and says so on its Plugins page, where they can be repaired.
+ *
+ * `--out <file>` builds the same version and writes the push body to a file instead of
+ * pushing it: the body POST /api/hmr/upgrade takes, every part inline. That is how a server
+ * running from a checkout builds the install image it puts on machines
+ * (packages/server/src/machines/checkout-image.ts), so the packer is this one, not a second
+ * copy of it. It needs no target and no credential, and builds the web dist beside the file
+ * rather than in packages/web/dist, which that server may be serving (see `webDist`).
+ *
  * Usage:
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --skip-web-build
+ *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --force
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs https://box.example.com
+ *   node scripts/deploy.mjs --out /tmp/version.gz
+ *
+ * A target that has already committed this exact build is left alone: the push would only make
+ * it import the same platform as another generation (see deploy-same-build.mjs). `--force`
+ * pushes anyway.
  */
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -24,12 +42,29 @@ import http from "node:http";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
-import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
-import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
+import {
+  LEAVE_OUT,
+  UNSATISFIED_PLUGINS_HEADER,
+  leftOutPlugins,
+  pluginLines,
+  refusalStep,
+  refusedPlugins,
+  saidYes,
+} from "./deploy-unsatisfied-plugins.mjs";
+import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
+import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
+import { typescriptPayload } from "./typescript-payload.mjs";
+import { libraryPayload } from "./library-payload.mjs";
+import { BENCHMARKS_DIR, buildBenchmarks } from "./build-benchmarks.mjs";
+import { createHash } from "node:crypto";
+import { buildPointers, committedBuildMatches } from "./deploy-same-build.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,35 +85,92 @@ const log = (msg) => console.log(`[deploy] ${msg}`);
  * from an uncommitted tree is normal here and the record has to admit it, since the sha
  * alone would name code that never existed. Null when this is not a checkout of this
  * repository, in which case the push carries no `source` rather than a fabricated one.
+ *
+ * A release build is the exception: the release workflow stamps core before building (its
+ * tree is dirty by construction), and the bundles compiled from it report that release —
+ * `v<version>`, channel `release`. That is what its image records, so a machine reporting a
+ * release beside this image reads as running it rather than as a release that fell back from
+ * a pushed build (packages/server/src/machines/install-server.ts's runningBuild).
  */
-function pushSource() {
-  const facts = checkoutFacts();
+async function pushSource() {
   const repo = originUrl();
+  const built = await compiledIdentity();
+  if (built.channel === "release") {
+    return { repo: repo ?? path.basename(ROOT), revision: built.describe };
+  }
+  const facts = checkoutFacts();
   if (facts?.described == null || repo === null) return null;
   return { repo, revision: facts.described };
+}
+
+/**
+ * The identity the bundles compiled here report: core's buildInfo(), from the core build they
+ * inline (the alias in push-bundle.mjs resolves the same package).
+ */
+async function compiledIdentity() {
+  const core = await import("@prismshadow/penguin-core");
+  return core.buildInfo();
 }
 
 function usage(problem) {
   console.error(
     `${problem}\n\n` +
-      "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build]\n" +
+      "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build] [--force]\n" +
+      "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
+      "       node scripts/deploy.mjs --out <file> [--skip-web-build]\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
-      "  <url>   a full origin, when the target is not reached over loopback\n",
+      "  <url>   a full origin, when the target is not reached over loopback\n" +
+      "  <file>  where to write the version instead of pushing it (gzipped upgrade body)\n" +
+      "  --force push even if the target has this build or has plugins it cannot run; unsupported plugins are left out\n",
   );
   process.exit(1);
 }
 
 const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
-const target = args.find((a) => !a.startsWith("--"));
-if (target === undefined) usage("[deploy] no target given.");
+/** Override same-build skipping and allow a push that leaves unsupported plugins out. */
+const force = args.includes("--force");
+const outIndex = args.indexOf("--out");
+const outFile = outIndex === -1 ? null : (args[outIndex + 1] ?? "");
+if (outFile !== null && (outFile === "" || outFile.startsWith("--"))) {
+  usage("[deploy] --out needs a file.");
+}
+const target = args.find((a, i) => !a.startsWith("--") && (outIndex === -1 || i !== outIndex + 1));
+if (outFile === null && target === undefined) usage("[deploy] no target given.");
+if (outFile !== null && target !== undefined) {
+  usage("[deploy] --out writes the version to a file; give it no target.");
+}
+
+/**
+ * Where this run's web dist is built and read back. A push builds it in place, as it always
+ * has. `--out` builds it into a directory of its own beside the out file: a server running
+ * from this checkout builds its install image this way, and that server — `pnpm desktop`, or
+ * the dev server's own static fallback — serves packages/web/dist to the page in use, so a
+ * build in place would take the page's files out from under it. `--skip-web-build` only reads
+ * the dist, so it reads it in place either way.
+ */
+const webDist =
+  outFile !== null && !skipWebBuild ? path.resolve(`${outFile}.${process.pid}.web`) : WEB_DIST;
+
+// Two credentials, either one: the admin password (exchanged for a cookie), or the
+// runtime's own local API token (`<root>/api-token`, admin-equivalent — see
+// server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
-if (!ADMIN_PASSWORD) usage("[deploy] PENGUIN_ADMIN_PASSWORD is not set.");
+const API_TOKEN = process.env.PENGUIN_API_TOKEN;
+if (outFile === null && !ADMIN_PASSWORD && !API_TOKEN)
+  usage(
+    "[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).",
+  );
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
-const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
+const baseUrl =
+  target === undefined
+    ? null
+    : /^\d+$/.test(target)
+      ? `http://127.0.0.1:${target}`
+      : target.replace(/\/+$/, "");
 
-const plaintextProblem = unsafePlaintextTarget(baseUrl);
+const plaintextProblem = baseUrl === null ? null : unsafePlaintextTarget(baseUrl);
 if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
 
 /**
@@ -86,7 +178,8 @@ if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
  * served under the canonical app host. A tunnel lands on 127.0.0.1:<port> at this end,
  * so the request must still be addressed to `localhost` by name.
  */
-const hostOverride = new URL(baseUrl).hostname === "127.0.0.1" ? "localhost" : undefined;
+const hostOverride =
+  baseUrl !== null && new URL(baseUrl).hostname === "127.0.0.1" ? "localhost" : undefined;
 
 /**
  * node:http rather than the global fetch: fetch (undici) silently derives Host from the
@@ -122,6 +215,12 @@ function request(urlStr, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
+/** The request headers that authenticate as admin: a Bearer token, or a cookie from a password login. */
+async function authHeaders() {
+  if (API_TOKEN) return { authorization: `Bearer ${API_TOKEN}` };
+  return { cookie: await login() };
+}
+
 /** Signs in as `admin` and returns the session cookie. */
 async function login() {
   const res = await request(`${baseUrl}/api/auth/login`, {
@@ -138,45 +237,69 @@ async function login() {
 }
 
 /**
- * Compiles one entry to a self-contained ESM file. The banner is load-bearing: bundled CJS
- * deps reference `require`, `__filename` and `__dirname` inside their own wrapper, and an
- * ESM bundle supplies none of the three — see scripts/esm-cjs-banner.mjs.
+ * Whether the target has already committed `build`, from its GET /api/version. Anything short of a
+ * readable report that matches is an answer of "no", with the reason: the push goes ahead
+ * exactly as it did before this check.
+ */
+async function targetRunsThisBuild(auth, build) {
+  let res;
+  try {
+    res = await request(`${baseUrl}/api/version`, { headers: auth });
+  } catch (err) {
+    return {
+      same: false,
+      reason: `GET /api/version failed: ${err instanceof Error ? err.message : err}`,
+    };
+  }
+  if (res.status !== 200) return { same: false, reason: `GET /api/version → ${res.status}` };
+  let report;
+  try {
+    report = JSON.parse(res.body.toString("utf8"));
+  } catch {
+    return { same: false, reason: "GET /api/version answered something that is not JSON" };
+  }
+  return committedBuildMatches(report, buildPointers(build));
+}
+
+/**
+ * Compiles one entry to a self-contained ESM file, every npm dependency inlined (see
+ * push-bundle.mjs, which holds the options).
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
-  const esbuild = await import("esbuild");
-  await esbuild.build({
-    entryPoints: [entry],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    outfile,
-    logLevel: "silent",
-    banner: { js: ESM_CJS_BANNER },
-    alias: {
-      "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
-    },
-    // The pushed bundle lands under `<root>/hmr/store/`, outside any checkout, so its own
-    // revision has to be inlined here or it can never be recovered: `penguin version` from
-    // a hot-loaded CLI would otherwise report the bare version it was compiled from. This is
-    // the same value the push records as `source`, reaching the target by a second route —
-    // in the artifact itself rather than in harness.json.
-    define: buildGitDefine(),
-  });
+  // The platform imports its generated interface table; make sure it is current.
+  const { execFileSync } = await import("node:child_process");
+  execFileSync(
+    process.execPath,
+    [
+      path.join(ROOT, "scripts/gen-ifaces.mjs"),
+      "--project",
+      path.join(ROOT, "packages/server/tsconfig.json"),
+      "--out",
+      path.join(ROOT, "packages/server/src/ifaces.json"),
+    ],
+    { stdio: "inherit" },
+  );
+  await compilePushBundle(pushBundleOptions(entry, outfile));
 }
 
 /** The built web dist as a { relPath: base64 } manifest. */
 async function readWebManifest() {
   const files = {};
-  for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
+  for (const entry of await fsp.readdir(webDist, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = (
-      await fsp.readFile(abs)
-    ).toString("base64");
+    files[path.relative(webDist, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
   }
   return files;
 }
+
+/**
+ * cmd.exe gets a `shell: true` spawn's args joined into one command line, unquoted, so a path
+ * with a space in it (a data root under `C:\Users\Jane Doe`) would split in two. Quoted the way
+ * build-plugins.mjs quotes.
+ */
+const quoteForCmd = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 
 /**
  * Files the pushed platform needs as real files rather than bundled code. A bundle cannot carry one: it is
@@ -207,27 +330,88 @@ async function readNativeAssets() {
       rel.startsWith("lib/") ||
       rel.startsWith("build/Release/") ||
       rel.startsWith("prebuilds/"));
+  const pty = [];
   for (const entry of await fsp.readdir(ptyDir, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
     const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
     if (!wanted(rel)) continue;
-    const target = `node_modules/node-pty/${rel}`;
-    files[target] = (await fsp.readFile(abs)).toString("base64");
-    // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
-    // this list, so push it regardless of how it looks on this machine.
-    if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
-      exec.push(target);
-    }
+    // node-pty ships its prebuilt spawn-helper as 0644; the archive records it executable
+    // regardless of how it looks on this machine.
+    const executable = rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0;
+    pty.push({ rel: `node_modules/node-pty/${rel}`, abs, exec: executable });
   }
+  // Every package travels as ONE archive (scripts/asset-archives.mjs): a push of hundreds of
+  // small files is hundreds of blobs, probes and transfers, and stalls. The platform unpacks
+  // `archives/*.tgz` before resolving anything from its assets (hmr/asset-archives.ts).
+  files[`archives/${archiveName("", "node-pty")}`] = await packArchive(pty);
+  // The compiler plugin interfaces and workflows are checked with: the target's program may
+  // predate it being a dependency (or be a desktop bundle with no node_modules), and a
+  // platform that cannot find it compares no plugin interface and loads no workflow.
+  // Content-addressed like everything here, so it crosses once.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
+    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/typescript/${rel}`,
+      abs,
+      exec: false,
+    })),
+  );
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
   // install a machine at all. Same set the packaged build copies into dist/; see the module.
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
-    files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
+    files[name] = await fsp.readFile(path.join(ROOT, from));
   }
+  // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
+  // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.
+  const built = await buildBuiltinPlugins({ log });
+  const { byPackage, loose } = await prefixPackages(built.dir, built.files, "plugins");
+  files["archives/plugins.tgz"] = await packArchive(loose);
+  for (const [pkg, entries] of byPackage) {
+    files[`archives/${archiveName("plugins.", pkg)}`] = await packArchive(entries);
+  }
+  // The skill/hook plugin LIBRARY this build was made with. Without it the target reads the
+  // library of whatever program booted the platform, so a plugin newer than that program is
+  // never offered there (see scripts/library-payload.mjs).
+  const library = await libraryPayload(ROOT);
+  try {
+    files["archives/library.tgz"] = await packArchive(library.entries);
+  } finally {
+    await library.cleanup();
+  }
+  log(`plugin library: ${library.names.length} plugins packed`);
+  await buildBenchmarks();
+  const benchmarks = [];
+  for (const entry of await fsp.readdir(BENCHMARKS_DIR, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    if (abs === path.join(BENCHMARKS_DIR, "catalog.json")) continue;
+    benchmarks.push({
+      rel: `builtin-benchmarks/${path.relative(BENCHMARKS_DIR, abs).split(path.sep).join("/")}`,
+      abs,
+      exec: false,
+    });
+  }
+  files["archives/benchmarks.tgz"] = await packArchive(benchmarks);
   return { files, exec };
+}
+
+/** One line from the terminal; a closed input (Ctrl-C, Ctrl-D) reads as an empty answer. */
+function ask(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let answered = false;
+    rl.on("close", () => {
+      if (!answered) resolve("");
+    });
+    rl.question(question, (answer) => {
+      answered = true;
+      rl.close();
+      resolve(answer);
+    });
+  });
 }
 
 async function main() {
@@ -238,10 +422,22 @@ async function main() {
     log("reusing the existing web dist");
   } else {
     log("building the web dist…");
-    execFileSync("pnpm", ["--filter", "@prismshadow/penguin-web", "build"], {
-      cwd: ROOT,
-      stdio: "inherit",
-    });
+    // The web build copies in the UI package's Workbench runtime, so that package builds first;
+    // on its own, because the extra args below are the web's.
+    const ui = ["--filter", "@prismshadow/penguin-ui", "build"];
+    // Extra args reach the package's own `vite build`. Outside the package, vite would leave
+    // the directory as it found it and warn; it is this run's own, so it is emptied.
+    const build = ["--filter", "@prismshadow/penguin-web", "build"];
+    if (webDist !== WEB_DIST) build.push("--outDir", webDist, "--emptyOutDir");
+    const windows = process.platform === "win32";
+    for (const args of [ui, build]) {
+      execFileSync("pnpm", windows ? args.map(quoteForCmd) : args, {
+        cwd: ROOT,
+        stdio: "inherit",
+        // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
+        shell: windows,
+      });
+    }
   }
 
   log("compiling platform + cli…");
@@ -250,32 +446,134 @@ async function main() {
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
-  const source = pushSource();
-  const gz = zlib.gzipSync(
-    Buffer.from(
-      JSON.stringify({
-        platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
-        cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
-        web: { files },
-        assets,
-        ...(source === null ? {} : { source }),
-      }),
-    ),
-  );
+  const source = await pushSource();
+
+  const platform = await fsp.readFile(PLATFORM_BUNDLE);
+  const cli = await fsp.readFile(CLI_BUNDLE);
+  const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+  const body = (part) => ({
+    platform: part(platform, "utf8"),
+    cli: part(cli, "utf8"),
+    web: { files: mapValues(files, (b) => part(b, "base64")) },
+    assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
+    ...(source === null ? {} : { source }),
+  });
+
+  if (outFile !== null) {
+    // Every part inline: whoever reads the file has no store to resolve a name from.
+    const gz = zlib.gzipSync(
+      Buffer.from(JSON.stringify(body((bytes, encoding) => bytes.toString(encoding)))),
+    );
+    // Written beside and renamed in, so a reader never takes half a version for a whole one.
+    const tmp = `${outFile}.${process.pid}.tmp`;
+    await fsp.writeFile(tmp, gz);
+    await fsp.rename(tmp, outFile);
+    if (source !== null) log(`provenance: ${source.revision}`);
+    log(
+      `wrote ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${outFile}`,
+    );
+    return;
+  }
+
+  const auth = await authHeaders();
+  if (force) {
+    log("--force: pushing without asking what the target runs");
+  } else {
+    const running = await targetRunsThisBuild(auth, {
+      platform,
+      cli,
+      web: files,
+      assets: assets.files,
+    });
+    if (running.same) {
+      log(
+        `the target already has this build (${source?.revision ?? "no provenance"}); nothing pushed. ` +
+          "--force pushes it again.",
+      );
+      return;
+    }
+    log(`pushing: ${running.reason}`);
+  }
+  // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
+  // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
+  // without the probe (an older runtime) answers 404 and gets every part inline.
+  const blobs = new Map();
+  let payload = body((bytes) => {
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    blobs.set(sha, bytes);
+    return { sha };
+  });
+  const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...auth },
+    body: JSON.stringify({ hashes: [...blobs.keys()] }),
+  });
+  if (probe.status === 200) {
+    let sent = 0;
+    for (const sha of JSON.parse(probe.body.toString("utf8")).missing) {
+      const bytes = blobs.get(sha);
+      if (bytes === undefined) continue;
+      const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream", ...auth },
+        body: bytes,
+      });
+      if (put.status !== 200) {
+        throw new Error(`PUT /api/hmr/blobs/${sha} → ${put.status}: ${put.body.toString("utf8")}`);
+      }
+      sent += bytes.length;
+    }
+    log(`${blobs.size} blobs; ${(sent / 1048576).toFixed(1)} MB were new to the target`);
+  } else {
+    log("target has no probe: pushing everything inline");
+    payload = body((bytes, encoding) => bytes.toString(encoding));
+  }
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify(payload)));
   if (source !== null) log(`provenance: ${source.revision}`);
   log(
-    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
+    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB body) to ${baseUrl}…`,
   );
 
-  const cookie = await login();
-  const started = Date.now();
-  const res = await request(`${baseUrl}/api/hmr/upgrade`, {
-    method: "POST",
-    headers: { "content-type": "application/gzip", cookie },
-    body: gz,
-  });
+  let started = Date.now();
+  const send = (leaveOut) =>
+    request(`${baseUrl}/api/hmr/upgrade`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/gzip",
+        ...(leaveOut ? { [UNSATISFIED_PLUGINS_HEADER]: LEAVE_OUT } : {}),
+        ...auth,
+      },
+      body: gz,
+    });
+  let res = await send(force);
+  let text = res.body.toString("utf8");
+  const refused = refusedPlugins(res.status, text);
+  if (refused !== null) {
+    // Not an error yet: the target kept its version and is asking. Only a person may say
+    // yes — here at the prompt, or beforehand with --force.
+    log(
+      "the target kept its current version: this build cannot fully run plugins installed there.",
+    );
+    for (const line of pluginLines(refused)) console.error(line);
+    if (
+      refusalStep(process.stdin.isTTY === true && process.stdout.isTTY === true) === "needs-force"
+    ) {
+      console.error(
+        "[deploy] not pushed. Run again with --force to push anyway; the target then runs without them.",
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (!saidYes(await ask("[deploy] Push anyway and run without them? [y/N] "))) {
+      log("not pushed.");
+      process.exitCode = 1;
+      return;
+    }
+    started = Date.now();
+    res = await send(true);
+    text = res.body.toString("utf8");
+  }
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  const text = res.body.toString("utf8");
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`/api/hmr/upgrade → ${res.status}: ${text}`);
   }
@@ -291,6 +589,16 @@ async function main() {
   log(
     `ok in ${seconds}s — impl ${outcome.impl}, mode ${outcome.mode}, web rev ${outcome.web?.rev}`,
   );
+  const leftOut = leftOutPlugins(outcome);
+  if (leftOut.length > 0) {
+    console.warn("[deploy] the target runs this build without plugins installed there:");
+    for (const line of pluginLines(leftOut, true)) console.warn(line);
+    console.warn(
+      // The App answers under `localhost` by name (see hostOverride), so that is the link to open.
+      `[deploy] Repair them from ${baseUrl.replace("//127.0.0.1", "//localhost")}/plugins ("Fix with AI" on each plugin's row), or leave ` +
+        "them as they are: they stay installed and run again on a build that has what they need.",
+    );
+  }
   if (outcome.persisted === false) {
     // The live swap took effect, but the server could not write it to disk (see
     // host.ts's persistVersion) — a restart on the target reverts to the previously
@@ -309,4 +617,5 @@ main()
   })
   .finally(() => {
     for (const f of [PLATFORM_BUNDLE, CLI_BUNDLE]) fs.rmSync(f, { force: true });
+    if (webDist !== WEB_DIST) fs.rmSync(webDist, { recursive: true, force: true });
   });

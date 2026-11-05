@@ -11,9 +11,14 @@
  * every connector method validates its own shape and throws a readable error on a
  * malformed one — the bridge treats that like any other channel failure.
  */
+import type { MessagingChannel } from "../../api/types.js";
 
-/** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
+/**
+ * Known messaging channels, declared once with the wire types. The DB stores the discriminator
+ * as text; `isMessagingChannel` (enabled-channel.ts) narrows a stored one, and an unknown value
+ * is skipped defensively.
+ */
+export type { MessagingChannel };
 
 /** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
 export interface MessagingInboundImageData {
@@ -128,13 +133,92 @@ export interface MessagingConnectorHandlers {
   onMessage(msg: MessagingInboundMessage): void | Promise<void>;
   /** The connection completed a handshake (may fire again after an automatic reconnect). */
   onReady?(): void;
-  /** The connection failed and the channel gave up (or the initial connect failed). */
+  /**
+   * The connection failed and the channel gave up (or the initial connect failed). A
+   * {@link MessagingChannelError} says whether the outage clears without anyone acting.
+   */
   onError?(err: unknown): void;
+  /**
+   * The connection's account started or stopped holding replies it could not deliver yet
+   * (see {@link MessagingReplyHeldError}): the ISO time since which it holds some, or null once
+   * it holds none. Fired on every change, and once at connect for a backlog held from before.
+   * Only a channel that holds replies (WeChat) ever calls it.
+   */
+  onHeldChange?(since: string | null): void;
+  /**
+   * A send the connector made on its OWN — a withheld tail flushed after the quiet period, held
+   * replies delivered on the next inbound message — failed for good. No caller is waiting on
+   * those sends, so this is the only way their failure reaches the binding's status and the
+   * error table.
+   */
+  onSendFailed?(err: unknown): void;
 }
 
 /** A live inbound event stream; `close` ends it (idempotent). */
 export interface MessagingConnection {
   close(): void;
+}
+
+/**
+ * A channel failure that carries its connector's verdict on whether anybody has to act.
+ *
+ * `recovers` answers one question: made again with nothing changed, does the same attempt go
+ * through? A connection the connector's own retry brings back — a network drop, a reset TLS
+ * handshake, a deadline, a platform restarting — does, and so does a send the next message
+ * gets past (a 5xx, a rate limit). A credential the platform refused, a permission never
+ * granted or a console setting in the way does not, however eagerly the connector retries.
+ *
+ * The verdict is decided where the failure is understood — the transport that read the
+ * platform's status and its own code, or the connection loop that knows why it gave up on a
+ * socket — and error-kind.ts reads the boolean and nothing else: a wording match would tie
+ * the dashboard's "needs a human" count to how a platform phrases itself.
+ */
+export class MessagingChannelError extends Error {
+  constructor(
+    message: string,
+    /** Whether the same attempt, made again with nothing changed, goes through. */
+    readonly recovers: boolean,
+  ) {
+    super(message);
+    this.name = "MessagingChannelError";
+  }
+}
+
+/**
+ * A send the connector did not deliver NOW but KEPT, to deliver later on its own. Not a failure:
+ * the text is not lost, nothing is broken, and nobody has anything to do — the platform only
+ * lets the bot speak inside a window the user's own messages open, and the user's next message
+ * opens it again (WeChat's context token, see wechat-connector.ts). The bridge therefore files
+ * no error record for it and leaves `lastDeliveryError` alone; the connection reports what it
+ * holds through `onHeldChange` instead.
+ */
+export class MessagingReplyHeldError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingReplyHeldError";
+  }
+}
+
+/**
+ * A PROBE send (see MessagingSendOptions.probe) refused because the platform will not let the
+ * bot speak until the user has messaged it recently. Recovers by itself in the sense that matters:
+ * the user sends the bot a message, and the same test goes through.
+ */
+export class MessagingNeedsRecentMessageError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingNeedsRecentMessageError";
+  }
+}
+
+/**
+ * Whether a request the platform answered with this HTTP status may go through unchanged next
+ * time: 408 and 429 say "not now" and a 5xx is the platform's own fault, while any other 4xx is
+ * a refusal that repeats until someone changes something — the line core draws for an LLM
+ * provider's status.
+ */
+export function httpStatusRecovers(status: number | undefined): boolean {
+  return status === 408 || status === 429 || (status !== undefined && status >= 500);
 }
 
 /**
@@ -196,6 +280,13 @@ export interface MessagingSendOptions {
    * reach the one message a user sends to check whether the binding works at all.
    */
   markdown?: boolean;
+  /**
+   * This send is a probe of the outbound leg ("send test message"), not a reply. A connector
+   * that would HOLD a refused message for later delivery must throw
+   * {@link MessagingNeedsRecentMessageError} instead: a held probe that arrives an hour later
+   * proves nothing, and the person pressing the button needs to hear why it did not arrive now.
+   */
+  probe?: boolean;
 }
 
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */

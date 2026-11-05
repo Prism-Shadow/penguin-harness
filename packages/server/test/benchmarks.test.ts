@@ -1,28 +1,76 @@
 /**
- * Benchmark scoreboard read integration tests (read-only display): benchmark_config.toml title/description and runs
- * pass-through (falls back to directory name if missing), scoreboard.yaml v2's
- * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
- * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
- * unconfigured, permissions (members can read,
- * outsiders get 404).
+ * The Benchmark API.
  *
- * Tested with a plain Agent (no sample Benchmark pre-installed); default_agent's sample
- * Benchmark assertions live in builtin-agents.test.ts.
+ * - The list reads each benchmark_config.toml's title, description, status (only a literal draft
+ *   locks a Benchmark; draft and failed are themselves, anything else is published), version and
+ *   origin, lists a Benchmark that never ran but not a directory without a manifest, and is empty
+ *   when nothing is configured. A staging copy an interrupted seeding left and the Harbor
+ *   checkouts are never listed.
+ * - A Benchmark whose manifest predates `id`, `version` and `origin` lists as its file says,
+ *   unversioned and of unknown origin, and listing it writes nothing.
+ * - A Benchmark whose manifest says something unusable (not TOML, another directory's id, an
+ *   origin ref that is not a commit) is listed under its directory name as failed, with the
+ *   reason and no version, never as usable; a manifest the filesystem cannot read fails the
+ *   request instead.
+ * - scoreboard.yaml v2's evaluations pass through: the summary, the Agent each tested, the
+ *   model-written Case and Evaluation averages and the per-case runs; legacy Scoreboard entries
+ *   are neither migrated nor backfilled; the case count is reported.
+ * - Members read and outsiders get 404; only the owner creates (the server writes the layout
+ *   the Skills read — a manifest with its id, the day's first version and origin manual —
+ *   refusing malformed requests without writing) and deletes a Benchmark whole.
+ *
+ * Benchmarks are Project-level, so a new Project arrives with its Benchmarks (the example and
+ * the built-in ones); setup empties `benchmarks/` (keeping the directory), and
+ * builtin-agents.test.ts owns their assertions. One app for the file; every case works in a
+ * Project of its own.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
+  BenchmarkCreateRequest,
+  BenchmarkCreateResponse,
   BenchmarksResponse,
   ProjectCreateResponse,
   WorkspaceFilesResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const AGENT = "bench_agent";
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
+
+/** A benchmark_config.toml for the Benchmark in `dir`, as benchmark-design writes one now. */
+async function writeManifest(dir: string, over: Record<string, unknown> = {}): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  const manifest = {
+    id: path.basename(dir),
+    title: path.basename(dir),
+    version: "2026.10.09.1",
+    status: "published",
+    runs: 1,
+    origin: { kind: "agent" },
+    ...over,
+  };
+  await fs.writeFile(path.join(dir, "benchmark_config.toml"), stringifyToml(manifest));
+}
+
+/** A benchmark_config.toml written as `text`, the way earlier releases and people wrote them. */
+async function writeRawManifest(dir: string, text: string): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "benchmark_config.toml"), text, "utf8");
+}
+
+/** Today's date as a version's date part, `YYYY.MM.DD`, on the local calendar. */
+function today(): string {
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}.${two(now.getMonth() + 1)}.${two(now.getDate())}`;
+}
 
 describe("benchmarks api", () => {
   let t: TestApp;
@@ -32,7 +80,7 @@ describe("benchmarks api", () => {
   let projectId: string;
   let base: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -40,21 +88,33 @@ describe("benchmarks api", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-bench", name: "Bench project" })
+      await owner.post("/api/projects", {
+        projectId: `owner_a-bench_${projects}`,
+        name: "Bench project",
+      })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    // A plain Agent has no sample Benchmark pre-installed (only default_agent provides one).
-    expect((await owner.post(`/api/projects/${projectId}/agents`, { agentId: AGENT })).status).toBe(
-      201,
-    );
-    base = `/api/projects/${projectId}/agents/${AGENT}/benchmarks`;
+    // Creating the Project wrote its Benchmarks (the example and the built-in ones) at the
+    // Project level; these cases start from an empty benchmarks directory. Only its entries go —
+    // the directory itself stays.
+    const seeded = benchmarksDir(t.root, projectId);
+    for (const name of await fs.readdir(seeded)) {
+      await fs.rm(path.join(seeded, name), { recursive: true, force: true });
+    }
+    base = `/api/projects/${projectId}/benchmarks`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("returns an empty list when unconfigured", async () => {
@@ -63,247 +123,312 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v2");
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
+  it("never lists a staging copy an interrupted seeding left, or the Harbor checkouts under .harbor/", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // A seeding cut short leaves a whole Benchmark, manifest included, under staging.
+    const staged = path.join(dir, ".seeding", "penguinharness-benchmark-sec-e-AbC123");
+    await fs.mkdir(path.join(staged, "CASE-001-music-harmony", "statement"), { recursive: true });
+    await writeManifest(staged, { id: "penguinharness-benchmark-sec-e" });
+    // A Harbor checkout holds the benchmark repository's own benchmarks/ tree.
+    await fs.mkdir(path.join(dir, ".harbor", "penguin-harness-benchmark-0123abc", "benchmarks"), {
       recursive: true,
     });
-    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "rubric"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
-    await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "README.md"),
-      "# Case 001: Excel cleanup\n\nClean the workbook.",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "data.csv"),
-      "id,value\n1,alpha\n",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "assets", "notes.txt"),
-      "public notes",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
-      "x".repeat(300 * 1024),
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "rubric", "README.md"),
-      "# Scoring rubric\n\n- Correct workbook: 100 points",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-001-excel-task", "rubric", "expected.json"),
-      '{"rows": 1}\n',
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-002-web-task", "statement", "README.md"),
-      "# Web task\n\nBuild the page.",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
-      "PRIVATE GOLD: never return this text",
-      "utf8",
-    );
-    await fs.symlink(
-      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
-      path.join(dir, "CASE-001-excel-task", "statement", "private-link.md"),
-    );
-    await fs.writeFile(
-      path.join(dir, "benchmark_config.toml"),
-      `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(dir, "scoreboard.yaml"),
-      [
-        "evaluations:",
-        '  - time: "2026-07-16T10:00:00Z"',
-        "    version: 3",
-        '    provider: "deepseek"',
-        '    model_id: "deepseek-v4-pro"',
-        '    thinking_level: "medium"',
-        '    summary_title: "Added planning steps to the system Prompt"',
-        '    summary: "Each case run twice and averaged; added planning steps."',
-        "    score: 72.35",
-        "    cost: 0.04",
-        "    duration_ms: 42500",
-        "    cases:",
-        // Stored averages are authoritative even when inconsistent with the raw Runs.
-        '      - case: "CASE-001-excel-task"',
-        "        score: 80.2",
-        "        cost: 0.04",
-        "        duration_ms: 50000",
-        "        runs:",
-        "          - score: 80",
-        "            cost: null",
-        "            duration_ms: 48000",
-        '            session_id: "session-run-1"',
-        "          - score: 82",
-        "            cost: 0.04",
-        "            duration_ms: 52000",
-        '            session_id: "session-run-2"',
-        // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
-        '      - case: "CASE-002-web-task"',
-        "        score: 64.5",
-        "        cost: null",
-        "        duration_ms: 35000",
-        "        runs:",
-        "          - score: 60",
-        "            cost: null",
-        "            duration_ms: 30000",
-        '            session_id: "session-run-3"',
-        "          - score: 70",
-        "            cost: null",
-        "            duration_ms: 40000",
-        '            session_id: "session-run-4"',
-      ].join("\n"),
-      "utf8",
-    );
+    await writeManifest(path.join(dir, "report-writing-v1"), { title: "Report writing" });
 
-    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
-    const bench = res.benchmarks[0]!;
-    expect(bench).toMatchObject({
-      id: "swe-bench-v2",
-      title: "SWE Bench v2",
-      description: "Example",
-      runs: 2,
-      caseCount: 2,
-    });
-    // config carries no model reference (the model lives on each evaluation).
-    expect("modelId" in bench).toBe(false);
-    expect("provider" in bench).toBe(false);
-    const evaluation = bench.evaluations[0]!;
-    // The evaluation entry carries this run's model (as a pair) and a summary title (curve series / title-body are displayed separately).
-    expect(evaluation.provider).toBe("deepseek");
-    expect(evaluation.modelId).toBe("deepseek-v4-pro");
-    expect(evaluation.thinkingLevel).toBe("medium");
-    expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
-    expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
-    expect(evaluation.score).toBe(72.35);
-    expect(evaluation.cost).toBe(0.04);
-    expect(evaluation.durationMs).toBe(42500);
-    expect("maxScore" in evaluation).toBe(false);
-    // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
-    const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
-    expect(full.score).toBe(80.2);
-    expect(full.cost).toBe(0.04);
-    expect(full.durationMs).toBe(50000);
-    expect(full.runs).toEqual([
-      { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
-      { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
-    ]);
-    const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
-    expect(partialCost.score).toBe(64.5);
-    expect(partialCost.cost).toBeNull();
-    expect(partialCost.durationMs).toBe(35000);
-    expect(partialCost.runs).toEqual([
-      { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
-      { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
-    ]);
-
-    const caseResponse = (await (
-      await member.get(`${base}/swe-bench-v2/cases`)
-    ).json()) as BenchmarkCasesResponse;
-    expect(caseResponse).toEqual({
-      cases: [
-        {
-          id: "CASE-001-excel-task",
-          title: "Excel cleanup",
-        },
-        {
-          id: "CASE-002-web-task",
-          title: "Web task",
-        },
-      ],
-    });
-    expect(JSON.stringify(caseResponse)).not.toContain("PRIVATE GOLD");
-
-    const filesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/files`;
-    const files = (await (await member.get(filesBase)).json()) as WorkspaceFilesResponse;
-    expect(files.path).toBe("");
-    expect(files.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
-      "dir:assets",
-      "file:data.csv",
-      "file:large.txt",
-      "file:README.md",
-    ]);
-    expect(JSON.stringify(files)).not.toContain("private-link.md");
-    expect(
-      (
-        await member.get(
-          `${filesBase}/content?path=${encodeURIComponent("private-link.md")}&preview=1`,
-        )
-      ).status,
-    ).toBe(400);
-
-    const nested = (await (
-      await member.get(`${filesBase}?path=${encodeURIComponent("assets")}`)
-    ).json()) as WorkspaceFilesResponse;
-    expect(nested.entries.map((entry) => entry.name)).toEqual(["notes.txt"]);
-
-    const statement = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
-    );
-    expect(statement.status).toBe(200);
-    expect(statement.headers.get("content-type")).toContain("markdown");
-    expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
-
-    const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
-    const rubricFiles = (await (
-      await member.get(rubricFilesBase)
-    ).json()) as WorkspaceFilesResponse;
-    expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
-      "file:expected.json",
-      "file:README.md",
-    ]);
-
-    const rubric = await member.get(
-      `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
-    );
-    expect(rubric.status).toBe(200);
-    expect(rubric.headers.get("content-type")).toContain("markdown");
-    expect(await rubric.text()).toContain("Correct workbook: 100 points");
-
-    const large = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
-    );
-    expect(large.status).toBe(200);
-    expect(large.headers.get("x-content-truncated")).toBe("1");
-    expect((await large.text()).length).toBe(256 * 1024);
-
-    const download = await member.get(
-      `${filesBase}/content?path=${encodeURIComponent("data.csv")}&download=1`,
-    );
-    expect(download.headers.get("content-disposition")).toContain("attachment");
-    expect(await download.text()).toBe("id,value\n1,alpha\n");
-
-    expect(
-      (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
-        .status,
-    ).toBe(400);
-    expect(
-      (
-        await member.get(
-          `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
-        )
-      ).status,
-    ).toBe(400);
-    expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
-    expect((await outsider.get(filesBase)).status).toBe(404);
+    const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+    expect(body.benchmarks.map((b) => b.id)).toEqual(["report-writing-v1"]);
   });
 
+  itWithSymlinks(
+    "current scoreboard: model-written averages, runtime, and runs pass through",
+    async () => {
+      const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v2");
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
+        recursive: true,
+      });
+      await fs.mkdir(path.join(dir, "CASE-001-excel-task", "rubric"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
+      await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "README.md"),
+        "# Case 001: Excel cleanup\n\nClean the workbook.",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "data.csv"),
+        "id,value\n1,alpha\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "assets", "notes.txt"),
+        "public notes",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
+        "x".repeat(300 * 1024),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "rubric", "README.md"),
+        "# Scoring rubric\n\n- Correct workbook: 100 points",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-001-excel-task", "rubric", "expected.json"),
+        '{"rows": 1}\n',
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-002-web-task", "statement", "README.md"),
+        "# Web task\n\nBuild the page.",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+        "PRIVATE GOLD: never return this text",
+        "utf8",
+      );
+      await fs.symlink(
+        path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+        path.join(dir, "CASE-001-excel-task", "statement", "private-link.md"),
+      );
+      await writeManifest(dir, { title: "SWE Bench v2", description: "Example", runs: 2 });
+      await fs.writeFile(
+        path.join(dir, "scoreboard.yaml"),
+        [
+          "evaluations:",
+          '  - time: "2026-07-16T10:00:00Z"',
+          '    agent_id: "default_agent"',
+          "    version: 3",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          '    summary_title: "Added planning steps to the system Prompt"',
+          '    summary: "Each case run twice and averaged; added planning steps."',
+          "    score: 72.35",
+          "    cost: 0.04",
+          "    duration_ms: 42500",
+          "    cases:",
+          // Stored averages are authoritative even when inconsistent with the raw Runs.
+          '      - case: "CASE-001-excel-task"',
+          "        score: 80.2",
+          "        cost: 0.04",
+          "        duration_ms: 50000",
+          "        runs:",
+          "          - score: 80",
+          "            cost: null",
+          "            duration_ms: 48000",
+          '            session_id: "session-run-1"',
+          "          - score: 82",
+          "            cost: 0.04",
+          "            duration_ms: 52000",
+          '            session_id: "session-run-2"',
+          // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
+          '      - case: "CASE-002-web-task"',
+          "        score: 64.5",
+          "        cost: null",
+          "        duration_ms: 35000",
+          "        runs:",
+          "          - score: 60",
+          "            cost: null",
+          "            duration_ms: 30000",
+          '            session_id: "session-run-3"',
+          "          - score: 70",
+          "            cost: null",
+          "            duration_ms: 40000",
+          '            session_id: "session-run-4"',
+          // A second Agent evaluated by the same Benchmark: the two are peers, and one
+          // Benchmark measures as many Agents as it is pointed at.
+          '  - time: "2026-07-17T10:00:00Z"',
+          '    agent_id: "report_writer"',
+          "    version: 1",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          "    score: 55",
+          "    cost: null",
+          "    duration_ms: 30000",
+          "    cases:",
+          '      - case: "CASE-001-excel-task"',
+          "        score: 55",
+          "        cost: null",
+          "        duration_ms: 30000",
+          "        runs:",
+          "          - score: 55",
+          "            cost: null",
+          "            duration_ms: 30000",
+          '            session_id: "session-run-5"',
+          // Recorded before evaluations named an Agent: still listed, just unlabelled.
+          '  - time: "2026-07-18T10:00:00Z"',
+          "    version: 1",
+          '    provider: "deepseek"',
+          '    model_id: "deepseek-v4-pro"',
+          '    thinking_level: "medium"',
+          "    score: 60",
+          "    cost: null",
+          "    duration_ms: 31000",
+          "    cases:",
+          '      - case: "CASE-001-excel-task"',
+          "        score: 60",
+          "        cost: null",
+          "        duration_ms: 31000",
+          "        runs:",
+          "          - score: 60",
+          "            cost: null",
+          "            duration_ms: 31000",
+          '            session_id: "session-run-6"',
+        ].join("\n"),
+        "utf8",
+      );
+
+      const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+      const bench = res.benchmarks[0]!;
+      expect(bench).toMatchObject({
+        id: "swe-bench-v2",
+        title: "SWE Bench v2",
+        description: "Example",
+        runs: 2,
+        status: "published",
+        version: "2026.10.09.1",
+        origin: { kind: "agent" },
+        caseCount: 2,
+      });
+      // The manifest carries no model reference (the model lives on each evaluation).
+      expect("modelId" in bench).toBe(false);
+      expect("provider" in bench).toBe(false);
+      // The Agents a Benchmark has evaluated come from its scoreboard, in first-seen order; an
+      // evaluation without an agent_id contributes none.
+      expect(bench.agentIds).toEqual(["default_agent", "report_writer"]);
+      expect(bench.evaluations[2]!.agentId).toBeNull();
+      const evaluation = bench.evaluations[0]!;
+      // The evaluation entry carries the Agent it tested, this run's model (as a pair) and a
+      // summary title (curve series / title-body are displayed separately).
+      expect(evaluation.agentId).toBe("default_agent");
+      expect(evaluation.provider).toBe("deepseek");
+      expect(evaluation.modelId).toBe("deepseek-v4-pro");
+      expect(evaluation.thinkingLevel).toBe("medium");
+      expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
+      expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
+      expect(evaluation.score).toBe(72.35);
+      expect(evaluation.cost).toBe(0.04);
+      expect(evaluation.durationMs).toBe(42500);
+      expect("maxScore" in evaluation).toBe(false);
+      // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
+      const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
+      expect(full.score).toBe(80.2);
+      expect(full.cost).toBe(0.04);
+      expect(full.durationMs).toBe(50000);
+      expect(full.runs).toEqual([
+        { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
+        { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
+      ]);
+      const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
+      expect(partialCost.score).toBe(64.5);
+      expect(partialCost.cost).toBeNull();
+      expect(partialCost.durationMs).toBe(35000);
+      expect(partialCost.runs).toEqual([
+        { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
+        { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
+      ]);
+
+      const caseResponse = (await (
+        await member.get(`${base}/swe-bench-v2/cases`)
+      ).json()) as BenchmarkCasesResponse;
+      expect(caseResponse).toEqual({
+        cases: [
+          {
+            id: "CASE-001-excel-task",
+            title: "Excel cleanup",
+          },
+          {
+            id: "CASE-002-web-task",
+            title: "Web task",
+          },
+        ],
+      });
+      expect(JSON.stringify(caseResponse)).not.toContain("PRIVATE GOLD");
+
+      const filesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/files`;
+      const files = (await (await member.get(filesBase)).json()) as WorkspaceFilesResponse;
+      expect(files.path).toBe("");
+      expect(files.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+        "dir:assets",
+        "file:data.csv",
+        "file:large.txt",
+        "file:README.md",
+      ]);
+      expect(JSON.stringify(files)).not.toContain("private-link.md");
+      expect(
+        (
+          await member.get(
+            `${filesBase}/content?path=${encodeURIComponent("private-link.md")}&preview=1`,
+          )
+        ).status,
+      ).toBe(400);
+
+      const nested = (await (
+        await member.get(`${filesBase}?path=${encodeURIComponent("assets")}`)
+      ).json()) as WorkspaceFilesResponse;
+      expect(nested.entries.map((entry) => entry.name)).toEqual(["notes.txt"]);
+
+      const statement = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+      );
+      expect(statement.status).toBe(200);
+      expect(statement.headers.get("content-type")).toContain("markdown");
+      expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
+
+      const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
+      const rubricFiles = (await (
+        await member.get(rubricFilesBase)
+      ).json()) as WorkspaceFilesResponse;
+      expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+        "file:expected.json",
+        "file:README.md",
+      ]);
+
+      const rubric = await member.get(
+        `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+      );
+      expect(rubric.status).toBe(200);
+      expect(rubric.headers.get("content-type")).toContain("markdown");
+      expect(await rubric.text()).toContain("Correct workbook: 100 points");
+
+      const large = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
+      );
+      expect(large.status).toBe(200);
+      expect(large.headers.get("x-content-truncated")).toBe("1");
+      expect((await large.text()).length).toBe(256 * 1024);
+
+      const download = await member.get(
+        `${filesBase}/content?path=${encodeURIComponent("data.csv")}&download=1`,
+      );
+      expect(download.headers.get("content-disposition")).toContain("attachment");
+      expect(await download.text()).toBe("id,value\n1,alpha\n");
+
+      expect(
+        (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await member.get(
+            `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
+          )
+        ).status,
+      ).toBe(400);
+      expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
+      expect((await outsider.get(filesBase)).status).toBe(404);
+    },
+  );
+
   it("does not migrate or backfill legacy Scoreboard entries", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v1");
+    const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
-    await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "SWE Bench v1"\n`, "utf8");
+    await writeRawManifest(dir, `title = "SWE Bench v1"\n`);
     await fs.writeFile(
       path.join(dir, "scoreboard.yaml"),
       [
@@ -326,23 +451,263 @@ describe("benchmarks api", () => {
       ].join("\n"),
       "utf8",
     );
-    // A benchmark with no config file: title falls back to the directory name, config runs field is absent by default.
-    await fs.mkdir(path.join(benchmarksDir(t.root, projectId, AGENT), "empty-bench"), {
-      recursive: true,
-    });
-
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
-    expect(res.benchmarks.map((b) => b.id)).toEqual(["empty-bench", "swe-bench-v1"]);
-    const bench = res.benchmarks[1]!;
+    expect(res.benchmarks.map((b) => b.id)).toEqual(["swe-bench-v1"]);
+    const bench = res.benchmarks[0]!;
     expect(bench).toMatchObject({ title: "SWE Bench v1", caseCount: 1 });
     expect("runs" in bench).toBe(false);
     expect(bench.evaluations).toEqual([]);
-    expect(res.benchmarks[0]).toMatchObject({
-      title: "empty-bench",
-      caseCount: 0,
-      evaluations: [],
-    });
 
     expect((await outsider.get(base)).status).toBe(404);
+  });
+
+  it("lists a Benchmark that has never run, but not a directory without a manifest", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // Deleted mid-evaluation: the run kept writing, so the directory is back with a case and
+    // a scoreboard but no manifest. Not a Benchmark — it must not reach the Evaluation Center.
+    await fs.mkdir(path.join(dir, "half-deleted", "CASE-001-excel-task", "statement"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(dir, "half-deleted", "CASE-001-excel-task", "statement", "README.md"),
+      "# Case 001: Excel cleanup\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "half-deleted", "scoreboard.yaml"),
+      "evaluations: []\n",
+      "utf8",
+    );
+    // Created and never evaluated: a manifest, cases, and no scoreboard at all. Still a
+    // Benchmark — having no scores yet is not the same as being incomplete.
+    await fs.mkdir(path.join(dir, "never-run", "CASE-001-report", "statement"), {
+      recursive: true,
+    });
+    await writeManifest(path.join(dir, "never-run"), { title: "Report writing", runs: 2 });
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(res.benchmarks.map((b) => b.id)).toEqual(["never-run"]);
+    expect(res.benchmarks[0]).toMatchObject({
+      title: "Report writing",
+      runs: 2,
+      caseCount: 1,
+      evaluations: [],
+    });
+  });
+
+  it("reads status from the manifest: literal draft and failed are themselves, everything else is published", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // Still being written by benchmark-design: the Benchmark is not usable yet.
+    await writeManifest(path.join(dir, "draft-bench"), { status: "draft" });
+    // Calibration never produced a Pilot result to freeze: the Benchmark is unusable.
+    await writeManifest(path.join(dir, "failed-bench"), { status: "failed" });
+    // Written before the key existed: no status at all is not a lock.
+    await writeRawManifest(path.join(dir, "legacy-bench"), 'title = "Legacy"\nruns = 1\n');
+    // Neither is a value nobody defined.
+    await writeRawManifest(
+      path.join(dir, "unknown-bench"),
+      'title = "Unknown"\nruns = 1\nstatus = "someday"\n',
+    );
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(res.benchmarks.map((b) => [b.id, b.status])).toEqual([
+      ["draft-bench", "draft"],
+      ["failed-bench", "failed"],
+      ["legacy-bench", "published"],
+      ["unknown-bench", "published"],
+    ]);
+  });
+
+  it("lists a Benchmark whose manifest predates id, version and origin as its file says, unversioned and of unknown origin, and writes nothing", async () => {
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
+    await fs.mkdir(path.join(dir, "CASE-001-report", "statement"), { recursive: true });
+    // As an earlier release's create form wrote it.
+    const toml =
+      'title = "Report writing"\ndescription = "Old"\nruns = 2\nstatus = "published"\n\n';
+    await writeRawManifest(dir, toml);
+
+    const first = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(first.benchmarks).toEqual([
+      {
+        id: "report-writing-v1",
+        title: "Report writing",
+        description: "Old",
+        runs: 2,
+        status: "published",
+        caseCount: 1,
+        evaluations: [],
+        agentIds: [],
+      },
+    ]);
+    expect(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")).toBe(toml);
+    expect((await fs.readdir(dir)).sort()).toEqual(["CASE-001-report", "benchmark_config.toml"]);
+
+    const second = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(second.benchmarks).toEqual(first.benchmarks);
+  });
+
+  it("lists a Benchmark whose manifest cannot be used as broken, saying why, never as usable", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    await writeRawManifest(path.join(dir, "broken-toml"), 'title = "Broken\n');
+    // Copied from another Benchmark's folder: the manifest names the original.
+    await writeManifest(path.join(dir, "copied-bench"), { id: "report-writing-v1", title: "Copy" });
+    // An import that recorded a branch, which moves, where its commit belongs.
+    await writeManifest(path.join(dir, "moving-bench"), {
+      title: "Moving",
+      origin: { kind: "git", url: "https://github.com/o/r/tree/main/x", ref: "main" },
+    });
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(
+      res.benchmarks.map((b) => [b.id, b.title, b.status, b.version, b.manifestError?.code]),
+    ).toEqual([
+      ["broken-toml", "broken-toml", "failed", undefined, "benchmark_manifest_invalid"],
+      ["copied-bench", "copied-bench", "failed", undefined, "benchmark_id_mismatch"],
+      ["moving-bench", "moving-bench", "failed", undefined, "benchmark_manifest_invalid"],
+    ]);
+    // The reason names what is wrong, for the person who has to fix the file.
+    expect(res.benchmarks[1]!.manifestError?.message).toContain("report-writing-v1");
+    expect(res.benchmarks[2]!.manifestError?.message).toContain("origin.ref");
+  });
+
+  it("fails the request when a manifest cannot be read from disk at all, rather than listing it as healthy", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // A directory where the file should be: no content to judge, only a filesystem error.
+    await fs.mkdir(path.join(dir, "odd-bench", "benchmark_config.toml"), { recursive: true });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await member.get(base)).status).toBe(500);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  /** A well-formed create request; the tests below vary one field at a time. */
+  const createBody: BenchmarkCreateRequest = {
+    id: "report-writing-v1",
+    title: "Report writing",
+    description: "Hard cases for the report writer",
+    runs: 2,
+    cases: [
+      {
+        id: "CASE-001-contradictions",
+        title: "Contradicting sources",
+        statement: "Write a report from the two briefs in this Workspace.\n",
+        rubric: "- 60 pts: names the contradiction.\n- 40 pts: picks the dated source.\n",
+      },
+      {
+        id: "CASE-002-format",
+        title: "Strict format",
+        statement: "Follow the template exactly.",
+        rubric: "- 100 pts: every template section present.",
+      },
+    ],
+  };
+
+  it("owner creates a Benchmark by hand and the server writes the Skill layout", async () => {
+    // Read around the request, so a run that crosses midnight still knows which day it was.
+    const before = today();
+    const res = await owner.post(base, createBody);
+    const after = today();
+    expect(res.status).toBe(201);
+    const { benchmark } = (await res.json()) as BenchmarkCreateResponse;
+    // A Benchmark made today is today's first revision, written by hand.
+    expect([`${before}.1`, `${after}.1`]).toContain(benchmark.version);
+    expect(benchmark).toEqual({
+      id: "report-writing-v1",
+      title: "Report writing",
+      description: "Hard cases for the report writer",
+      runs: 2,
+      status: "published",
+      version: benchmark.version,
+      origin: { kind: "manual" },
+      caseCount: 2,
+      evaluations: [],
+      // A Benchmark names no Agent of its own: it has evaluated none until it is run.
+      agentIds: [],
+    });
+
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
+    expect(parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"))).toEqual({
+      id: "report-writing-v1",
+      title: "Report writing",
+      description: "Hard cases for the report writer",
+      version: benchmark.version,
+      status: "published",
+      runs: 2,
+      origin: { kind: "manual" },
+    });
+    expect(await fs.readFile(path.join(dir, "scoreboard.yaml"), "utf8")).toBe("evaluations: []\n");
+    // The statement README opens with the title as its heading (what the case list reads
+    // back); the rubric is written verbatim, trimmed to one trailing newline.
+    expect(
+      await fs.readFile(
+        path.join(dir, "CASE-001-contradictions", "statement", "README.md"),
+        "utf8",
+      ),
+    ).toBe("# Contradicting sources\n\nWrite a report from the two briefs in this Workspace.\n");
+    expect(
+      await fs.readFile(path.join(dir, "CASE-001-contradictions", "rubric", "README.md"), "utf8"),
+    ).toBe("- 60 pts: names the contradiction.\n- 40 pts: picks the dated source.\n");
+
+    const list = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(list.benchmarks).toEqual([benchmark]);
+    const cases = (await (
+      await member.get(`${base}/report-writing-v1/cases`)
+    ).json()) as BenchmarkCasesResponse;
+    expect(cases.cases).toEqual([
+      { id: "CASE-001-contradictions", title: "Contradicting sources" },
+      { id: "CASE-002-format", title: "Strict format" },
+    ]);
+
+    // The same id again is a conflict, and the first Benchmark is left as it was.
+    const again = await owner.post(base, { ...createBody, title: "Overwrite attempt" });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
+      "benchmark_exists",
+    );
+    expect(
+      parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")),
+    ).toMatchObject({ title: "Report writing" });
+  });
+
+  it("rejects malformed create requests and non-owners without writing anything", async () => {
+    const first = createBody.cases[0]!;
+    const bad: unknown[] = [
+      { ...createBody, id: "../escape" },
+      { ...createBody, id: "" },
+      { ...createBody, title: "   " },
+      { ...createBody, runs: 0 },
+      { ...createBody, runs: 1.5 },
+      { ...createBody, runs: 1001 },
+      { ...createBody, cases: [] },
+      { ...createBody, cases: [{ ...first, id: "excel-task" }] },
+      { ...createBody, cases: [{ ...first, id: "CASE-001/../x" }] },
+      { ...createBody, cases: [first, first] },
+      { ...createBody, cases: [{ ...first, rubric: "" }] },
+    ];
+    for (const body of bad) {
+      expect((await owner.post(base, body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await member.post(base, createBody)).status).toBe(403);
+    expect((await outsider.post(base, createBody)).status).toBe(404);
+    // A missing Project is a 404 before any validation.
+    expect((await owner.post("/api/projects/nobody/benchmarks", createBody)).status).toBe(404);
+    expect(((await (await owner.get(base)).json()) as BenchmarksResponse).benchmarks).toEqual([]);
+  });
+
+  it("owner deletes a Benchmark directory whole; members and outsiders cannot", async () => {
+    expect((await owner.post(base, createBody)).status).toBe(201);
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
+    expect((await member.delete(`${base}/report-writing-v1`)).status).toBe(403);
+    expect((await outsider.delete(`${base}/report-writing-v1`)).status).toBe(404);
+    await expect(fs.access(dir)).resolves.toBeUndefined();
+
+    expect((await owner.delete(`${base}/report-writing-v1`)).status).toBe(204);
+    await expect(fs.access(dir)).rejects.toThrow();
+    expect(((await (await owner.get(base)).json()) as BenchmarksResponse).benchmarks).toEqual([]);
+    // Gone, or never there: both are a plain 404.
+    expect((await owner.delete(`${base}/report-writing-v1`)).status).toBe(404);
+    expect((await owner.delete(`${base}/never-existed`)).status).toBe(404);
   });
 });

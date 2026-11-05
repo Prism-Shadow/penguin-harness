@@ -14,18 +14,43 @@
  *   POST /api/version/restart       -> admin only: restart into the installed release
  *
  * The restart is the supervisor's job: `penguin server|web` runs this process as a child and
- * relaunches it when it exits with core's SERVER_RESTART_EXIT_CODE, which is what the
- * lifecycle capability's trigger does after the graceful shutdown. Without a supervisor the
- * route says so (`no_supervisor`) instead of stopping a service nobody would bring back,
- * and the page shows the manual restart hint.
+ * relaunches it when it exits with core's SERVER_RESTART_EXIT_CODE, which is how the
+ * platform's own restart control leaves after the graceful shutdown
+ * (services/process-restart.ts). Without a supervisor the route says so (`no_supervisor`)
+ * instead of stopping a service nobody would bring back, and the page shows the manual
+ * restart hint.
  */
 import { versionReport } from "../../version-report.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { RestartResponse, UpdateJobStatus, VersionResponse } from "../../api/types.js";
+import type {
+  RestartResponse,
+  UpdateJobStatus,
+  UpdateRunResponse,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  VersionResponse,
+  VersionRollbackResponse,
+} from "../../api/types.js";
+import { diffIfaces } from "@prismshadow/penguin-hmr";
+import type { HarnessHistoryIface } from "../../services/harness-history.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { UpdateCheck } from "../../services/update-check-service.js";
+import type { UpdateJob } from "../../services/update-job.js";
+import type { RestartControl } from "../../services/process-restart.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface VersionRouteDeps {
+  config: ServerConfig;
+  updateCheck: UpdateCheck;
+  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
+  updateJob: UpdateJob;
+  /** The "restart to update" step: whether a supervisor relaunches this process, and the leaving (services/process-restart.ts). */
+  restart: RestartControl;
+  history: HarnessHistoryIface;
+}
 
 // The classifier lives with the job now; re-exported so its unit tests keep their import.
 export { classifyUpdateRun } from "../../services/update-job.js";
@@ -39,11 +64,50 @@ function requireAdmin(c: Context<AppEnv>): void {
   }
 }
 
-export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
+export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     return c.json((await versionReport(deps.config.root)) satisfies VersionResponse);
+  });
+
+  /** The versions that have booted on this root, newest first, with the runtime's current commit. */
+  app.get("/history", async (c) => {
+    return c.json((await deps.history.list()) satisfies VersionHistoryResponse);
+  });
+
+  /** A recorded interface table by hash — what a version was built from. */
+  app.get("/history/ifaces/:hash", async (c) => {
+    const table = await deps.history.table(c.req.param("hash"));
+    if (table === null) throw new HttpError(404, "not_found", "No interface table with that hash.");
+    return c.json(table);
+  });
+
+  /** What changed between two recorded tables (`from` / `to` are hashes; either may be "none"). */
+  app.get("/history/diff", async (c) => {
+    const load = async (q: string | undefined) =>
+      q === undefined || q === "none" ? null : await deps.history.table(q);
+    const [from, to] = await Promise.all([load(c.req.query("from")), load(c.req.query("to"))]);
+    const asTable = (t: unknown) => t as Parameters<typeof diffIfaces>[0];
+    return c.json(diffIfaces(asTable(from), asTable(to)) satisfies VersionHistoryDiffResponse);
+  });
+
+  /**
+   * Pushes a kept version back through the runtime (admin). Answers before the swap: this
+   * platform is what gets replaced. A push the runtime refuses leaves this platform running,
+   * and the next GET /history carries the refusal as `lastRollback`.
+   */
+  app.post("/history/rollback", async (c) => {
+    if (!c.get("user").isAdmin) throw new HttpError(403, "forbidden", "Rollback is admin-only.");
+    const { id } = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id))
+      throw new HttpError(400, "bad_request", "`id` names a recorded version.");
+    const entries = (await deps.history.list()).entries;
+    const target = entries.find((e) => e.id === id);
+    if (target === undefined || !target.rollbackable)
+      throw new HttpError(404, "not_found", "No kept artifacts for that version.");
+    void deps.history.rollback(id).catch(() => undefined);
+    return c.json({ started: true, id } satisfies VersionRollbackResponse, 202);
   });
 
   app.get("/update-check", async (c) => {
@@ -70,15 +134,11 @@ export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/restart", (c) => {
     requireAdmin(c);
-    if (!deps.lifecycle.supervised()) {
+    if (!deps.restart.supervised()) {
       return c.json({ restarting: false, reason: "no_supervisor" } satisfies RestartResponse);
     }
     // Answer first, then leave: the response must be on the wire before the listener closes.
-    setTimeout(() => {
-      if (!deps.lifecycle.requestRestart()) {
-        console.error("[server] restart requested, but no restart trigger is registered");
-      }
-    }, RESTART_DELAY_MS).unref();
+    setTimeout(() => deps.restart.request(), RESTART_DELAY_MS).unref();
     return c.json({ restarting: true } satisfies RestartResponse);
   });
 

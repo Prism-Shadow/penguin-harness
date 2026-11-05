@@ -21,8 +21,8 @@
  * was started independently earlier; interrupting one poll shouldn't kill it as a side effect).
  * Docs: /docs/tools § "Command sessions".
  */
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
@@ -32,6 +32,7 @@ import {
   resultForExit,
 } from "./command/index.js";
 import { clampYield } from "./background/index.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant. */
 export const INPUT_COMMAND_NAME = "input_command";
@@ -50,27 +51,29 @@ export function createInputCommandTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
         yield delta("[input_command unavailable: no command session manager configured]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const processId = args["process_id"];
       if (typeof processId !== "string" || processId.length === 0) {
-        yield delta('Missing required argument "process_id" for input_command.');
-        return { stopReason: "fatal" };
+        yield delta(
+          describeArgumentError(definition, args, { argument: "process_id", kind: "missing" }),
+        );
+        return { status: "fatal" };
       }
       const session = manager.get(processId);
       if (!session) {
         yield delta(
           `[input_command error: unknown process_id ${processId} (the session may have exited and been cleared)]`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // Termination path (kill: true): disarm the report, drain, kill the group, drop the row.
@@ -83,7 +86,7 @@ export function createInputCommandTool(
         manager.kill(processId);
         if (wasRunning) {
           return {
-            stopReason: "completed",
+            status: "completed",
             note: `[process ${processId} killed (SIGTERM to the process group, SIGKILL after a grace period)]`,
           };
         }
@@ -95,7 +98,7 @@ export function createInputCommandTool(
             ? `${isStopSignal(exit.signal) ? "stopped by" : "terminated by signal"} ${exit.signal}`
             : `exit code ${exit?.code ?? "unknown"}`;
         return {
-          stopReason: "completed",
+          status: "completed",
           note: `[process ${processId} had already exited (${status}); session removed]`,
         };
       }
@@ -108,7 +111,7 @@ export function createInputCommandTool(
         definition.timeoutMs,
       );
 
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       // Write / interrupt (empty chars just polls). U+0003 mixed with other content errors out
       // rather than being written silently (same as codex): a pipe has no terminal line
@@ -120,23 +123,23 @@ export function createInputCommandTool(
           yield delta(
             '[input_command error: chars mixes U+0003 (Ctrl-C) with other content; send "\\u0003" alone to interrupt]',
           );
-          return { stopReason: "fatal" };
+          return { status: "fatal" };
         } else session.write(chars);
       }
 
       for await (const chunk of session.collect(yieldMs, signal)) yield delta(chunk);
 
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
       if (session.running) {
         return {
-          stopReason: "completed",
+          status: "completed",
           note: `[process still running with process_id ${processId}]`,
         };
       }
       // Already exited: clean up the registry and report the exit status.
       manager.remove(processId);
       if (session.error) {
-        return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
+        return { status: "fatal", note: `[spawn error: ${session.error.message}]` };
       }
       return resultForExit(session.exit);
     },

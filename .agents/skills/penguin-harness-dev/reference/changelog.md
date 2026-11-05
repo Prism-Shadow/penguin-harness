@@ -22,7 +22,7 @@ pattern-matching a neighbouring entry.
 
 ## Rules that are easy to break
 
-**There is no index file.** Do not add one, and do not port the index step from agenthub's own
+**There is no index file.** Do not add one, and do not port the index step from MMSP's own
 workflow: the index was a single file every PR had to touch, which is precisely why it was deleted.
 
 **Reasoning does not go on disk.** No `## Why`, `## Problem`, `## Decision`, `## Alternatives
@@ -35,7 +35,7 @@ Markdown. Worse, this repository's bug reports and its PRs share one numbering s
 `#102`, `#136`–`#140`, `#150`, `#170`, `#215`, `#218`, `#229`, `#239` are issues. Classify before
 writing — `gh api repos/Prism-Shadow/penguin-harness/issues/N --jq 'if .pull_request then "PR" else
 "ISSUE" end'` — and route them to `Issue`, not `PR`. A cross-repo reference names its repo:
-`agenthub [#162](https://github.com/Prism-Shadow/agenthub/pull/162)`.
+`MMSP [#162](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/162)`.
 
 The PR number exists only once the PR is open: open it, then add the links in a follow-up commit on
 the same branch. `PR` is the field that actually gets forgotten — `grep -L 'PR:'

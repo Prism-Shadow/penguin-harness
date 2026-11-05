@@ -8,7 +8,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HttpError } from "../src/http/errors.js";
 import { assertWorkspaceAllowed } from "../src/services/workspace-guard.js";
-import { makeTempRoot } from "./helpers.js";
+import { canCreateSymlink, makeTempRoot } from "./helpers.js";
+
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
 
 describe("workspace-guard", () => {
   let root: string;
@@ -36,7 +40,7 @@ describe("workspace-guard", () => {
     await expect(guard(outside)).resolves.toBe(await fs.realpath(outside));
   });
 
-  it("symlinks resolve to their realpath before returning", async () => {
+  itWithSymlinks("symlinks resolve to their realpath before returning", async () => {
     const outside = path.join(root, "linked");
     await fs.mkdir(outside, { recursive: true });
     const link = path.join(projectA, "escape");

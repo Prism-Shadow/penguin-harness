@@ -35,13 +35,18 @@
  *
  * ## `context_token`
  *
- * Every inbound message carries one, and it is echoed on every outbound send to the same
- * user. It is a routing hint rather than an authorization anchor — the platform accepts a
- * send without one, which is what a first send after a restart does — so it is threaded
- * through where it is known and omitted where it is not, and never persisted: it is derived
- * from traffic, and traffic is what re-derives it.
+ * Every inbound message carries one, and every outbound send must echo the latest one for that
+ * user. It is REQUIRED, not a routing hint: the platform refuses a send without one, a send
+ * whose token has expired (some time after the user's last message — unpublished, observed
+ * from minutes to about a day), and a send past roughly ten on one token, all with the same
+ * `ret: -2` "prepare failed" (WECHAT_SEND_REFUSED_CODE), which is what the issues filed against
+ * Tencent's own plugin (the repository named above) report. This file only carries the token
+ * where the caller supplies one; keeping it, counting what it funds and holding what it cannot
+ * fund is the connector's business (see wechat-connector.ts).
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
+import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** The platform's fixed entry host: the QR calls, and the default API base before a scan names one. */
@@ -91,8 +96,10 @@ const TRANSFER_TIMEOUT_MS = 60_000;
 /**
  * How long the connection's FIRST poll may take. It is a drain, not a wait: it asks for
  * whatever the platform is already holding, and anything that has not arrived by here is a
- * live message the loop is about to read properly rather than backlog to discard. Parking it
- * for the full long-poll window would drop the first message a user sends after enabling.
+ * live message the loop is about to read properly rather than backlog to discard. Parked for
+ * the full long-poll window it would read the first message a user sends after enabling as
+ * backlog: the connector's age rule (WECHAT_BACKLOG_RELAY_MS) relays that message anyway when
+ * it carries a send time, and this deadline is what keeps one that carries none.
  */
 export const DRAIN_TIMEOUT_MS = 5_000;
 
@@ -187,8 +194,14 @@ export interface WeChatInboundEvent {
   messageId: string;
   /** The message's text, or `""` when it carries none. */
   text: string;
-  /** Echoed on sends to this user while it is known (see the module doc). */
+  /** The token every send to this user must echo until a newer one arrives (see the module doc). */
   contextToken?: string;
+  /**
+   * `create_time_ms`: when the user sent it, in epoch milliseconds. Absent when the wire omits
+   * it or carries something that is not a positive number. What separates a message sent just
+   * before the connection came up from real backlog (see the connector's drain).
+   */
+  createdAtMs?: number;
   images: WeChatMediaRef[];
   files: WeChatInboundFile[];
 }
@@ -271,14 +284,37 @@ export interface WeChatTransport {
  * The code the platform answers with when the bot token is stale or revoked. It arrives with
  * an HTTP 200 and a non-zero envelope, so it is the one business-level code that has to be
  * read as an authentication failure rather than as one of the call behind it.
+ *
+ * What it asks of a client is to wait, though: its errmsg is "session timeout", and Tencent's
+ * own plugin (see the module doc) answers it by pausing the account for an hour and then
+ * resuming, never by asking for a new scan. So it fails the credential probe while it lasts,
+ * and still counts as a failure that recovers (see WeChatApiError).
  */
 export const WECHAT_STALE_TOKEN_CODE = -14;
 
 /**
+ * The code a SEND is refused with — "prepare failed" — for every reason the platform has to
+ * refuse a message it authenticated: no context token, an expired one, one that has already
+ * funded its ~10 sends, and a body the platform will not take (an oversize one among them). The
+ * envelope never says which, so the connector reads it from what it knows: held replies refused
+ * on the very first send under a fresh token are refused for their content, and any other
+ * refusal is the token's (see wechat-connector.ts).
+ */
+export const WECHAT_SEND_REFUSED_CODE = -2;
+
+/**
  * A call the platform answered with a failure of its own, as opposed to one that never
  * arrived. `ret` is the protocol's numeric code where it returned one.
+ *
+ * `recovers` is set where the failure is read (see `post` and checkEnvelope). A request that
+ * never completed, an HTTP 408/429/5xx, and every refusal the envelope carries — the session
+ * pause of WECHAT_STALE_TOKEN_CODE, and whatever the platform declines behind a credential it
+ * accepted, such as a send's "prepare failed" — go through on a later attempt with nothing
+ * changed: this channel has no permission and no console setting a person could fix them
+ * with. An HTTP refusal of the credential (401/403), a wrong host (404) and a body this client
+ * cannot read do not.
  */
-export class WeChatApiError extends Error {
+export class WeChatApiError extends MessagingChannelError {
   /**
    * The request was ACCEPTED — it authenticated, and the failure came from the call behind
    * the credential rather than from the credential.
@@ -295,16 +331,29 @@ export class WeChatApiError extends Error {
    * it for; nothing else here distinguishes it from a network fault.
    */
   readonly timedOut: boolean;
+  /**
+   * The request never completed, for a reason other than a deadline or a cancellation: the
+   * connection was refused or reset, the host did not resolve. The long poll retries one of
+   * these at once instead of opening an outage for it (see the connector's poll loop) — a
+   * single dropped request is the commonest failure there is, and the next one usually lands.
+   */
+  readonly network: boolean;
 
   constructor(
     readonly ret: number | undefined,
     message: string,
-    flags: { authenticated?: boolean; timedOut?: boolean } = {},
+    flags: {
+      authenticated?: boolean;
+      timedOut?: boolean;
+      network?: boolean;
+      recovers?: boolean;
+    } = {},
   ) {
-    super(message);
+    super(message, flags.recovers ?? false);
     this.name = "WeChatApiError";
     this.authenticated = flags.authenticated ?? false;
     this.timedOut = flags.timedOut ?? false;
+    this.network = flags.network ?? false;
   }
 }
 
@@ -340,6 +389,7 @@ function randomUin(): string {
 function headersFor(token: string): Record<string, string> {
   return {
     "content-type": "application/json",
+    "user-agent": userAgent(),
     AuthorizationType: "ilink_bot_token",
     Authorization: `Bearer ${token}`,
     "X-WECHAT-UIN": randomUin(),
@@ -382,6 +432,7 @@ function checkEnvelope(label: string, status: number, raw: string): Record<strin
     // being the one code that says otherwise.
     throw new WeChatApiError(code, `${label} failed: ${env.errmsg ?? `code ${code}`}`, {
       authenticated: code !== WECHAT_STALE_TOKEN_CODE,
+      recovers: true,
     });
   }
   return body;
@@ -447,6 +498,8 @@ interface WireMessage {
   from_user_id?: string;
   message_type?: number;
   context_token?: string;
+  /** When the message was sent, in epoch MILLISECONDS (the protocol's `create_time_ms`). */
+  create_time_ms?: number;
   item_list?: WireItem[];
 }
 
@@ -529,12 +582,16 @@ export function normalizeWeChatMessage(msg: WireMessage): WeChatInboundEvent | n
     }
   }
   const messageId = msg.message_id;
+  const createdAtMs = msg.create_time_ms;
   return {
     userId,
     messageId: messageId === undefined ? "" : String(messageId),
     text: textOf(items),
     ...(typeof msg.context_token === "string" && msg.context_token !== ""
       ? { contextToken: msg.context_token }
+      : {}),
+    ...(typeof createdAtMs === "number" && Number.isFinite(createdAtMs) && createdAtMs > 0
+      ? { createdAtMs }
       : {}),
     images,
     files,
@@ -568,6 +625,8 @@ export function createWeChatTransport(): WeChatTransport {
             `${opts.label} failed: ${wechatFetchErrorText(err)}`,
             {
               timedOut: isAbortLike(err),
+              network: !isAbortLike(err),
+              recovers: true,
             },
           );
         }
@@ -580,6 +639,7 @@ export function createWeChatTransport(): WeChatTransport {
           throw new WeChatApiError(
             undefined,
             `${opts.label} failed: HTTP ${res.status}${raw === "" ? "" : ` ${raw.slice(0, 300)}`}`,
+            { recovers: httpStatusRecovers(res.status) },
           );
         }
         return checkEnvelope(opts.label, res.status, raw);
@@ -654,7 +714,7 @@ export function createWeChatTransport(): WeChatTransport {
         try {
           res = await fetch(uploadUrl.trim(), {
             method: "POST",
-            headers: { "content-type": "application/octet-stream" },
+            headers: { "content-type": "application/octet-stream", "user-agent": userAgent() },
             body: new Uint8Array(encryptEcb(file.data, aesKey)),
             signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
           });
@@ -800,7 +860,10 @@ export function createWeChatTransport(): WeChatTransport {
         async fetchMedia(ref: WeChatMediaRef, maxBytes: number, what: string): Promise<Buffer> {
           let res: Response;
           try {
-            res = await fetch(ref.url, { signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS) });
+            res = await fetch(ref.url, {
+              headers: { "user-agent": userAgent() },
+              signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+            });
           } catch (err) {
             // The URL never reaches this message: it carries the signed parameter that
             // authorizes the read.

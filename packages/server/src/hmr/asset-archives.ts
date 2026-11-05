@@ -1,0 +1,106 @@
+/**
+ * Pushed assets travel as archives. Every file a push carries is one blob, one probe entry
+ * and one transfer, and a native module or an npm prefix is hundreds of small files — so the
+ * deploy packs each package into one deterministic `.tgz` under `archives/` (one per plugin
+ * package, one for node-pty; see scripts/asset-archives.mjs), and the platform unpacks them
+ * here, once per assets directory, before anything resolves from it.
+ *
+ * The output goes to `.unpacked/` inside the assets directory, laid out as the files were
+ * before packing (`plugins/package.json`, `plugins/node_modules/…`, `node_modules/node-pty/…`).
+ * The assets directory is content-addressed, so its archives never change and one extraction
+ * serves every later boot: `.complete`, written last, is what proves it finished — a directory
+ * without it is a crash mid-extraction and is redone. The runtime removes it with the assets
+ * directory; a hand-over forwarding the build to a machine skips it (hmr/pushed-build.ts),
+ * so the machine unpacks its own.
+ *
+ * An assets directory with no `archives/` (a push from before archives, or a packaged
+ * runtime's own) is used as it is.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import * as tar from "tar";
+
+/** Where a push puts its archives, relative to the assets directory. */
+export const ARCHIVES_DIR = "archives";
+/** Where they are unpacked, relative to the assets directory. */
+export const UNPACKED_DIR = ".unpacked";
+const COMPLETE = ".complete";
+
+/**
+ * The directory the assets resolve from: `<dir>/.unpacked` once its archives are extracted
+ * (extracting them first if they are not), or `dir` itself when it holds no archives.
+ * Synchronous, because node-pty is resolved synchronously.
+ */
+export function unpackedAssetsDir(dir: string): string {
+  const archivesDir = path.join(dir, ARCHIVES_DIR);
+  let archives: string[];
+  try {
+    // Not `._*`: macOS's AppleDouble companions of a file with extended attributes, which a
+    // store copied off a Mac with its `tar` carries beside every member — `._node-pty.tgz` is
+    // no archive, and unpacking it would fail the whole directory.
+    archives = fs
+      .readdirSync(archivesDir)
+      .filter((name) => name.endsWith(".tgz") && !name.startsWith("._"))
+      .sort();
+  } catch {
+    return dir;
+  }
+  if (archives.length === 0) return dir;
+  const out = path.join(dir, UNPACKED_DIR);
+  if (fs.existsSync(path.join(out, COMPLETE))) return out;
+  // Extracted beside and renamed in, so a reader never sees half a tree; a leftover from a
+  // crashed attempt is cleared first.
+  const tmp = `${out}.${process.pid}.tmp`;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.mkdirSync(tmp, { recursive: true });
+  for (const name of archives) {
+    tar.x({ sync: true, file: path.join(archivesDir, name), cwd: tmp });
+  }
+  fs.writeFileSync(path.join(tmp, COMPLETE), archives.join("\n"));
+  try {
+    fs.rmSync(out, { recursive: true, force: true });
+  } catch {
+    // `force` forgives a missing tree, not one held open: on Windows the App being replaced
+    // keeps files under it open, and the removal itself is refused with EPERM. Nothing to
+    // do here — the rename below is what says whether the tree could be replaced.
+  }
+  try {
+    fs.renameSync(tmp, out);
+  } catch (err) {
+    // Another process unpacked the same content first: theirs is as good as ours.
+    if (fs.existsSync(path.join(out, COMPLETE))) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return out;
+    }
+    // The old tree could not be cleared — on Windows the App being replaced still holds
+    // files under it open (node-pty's binary, a plugin's modules), so the rm above left
+    // them and the rename onto the remainder is refused (EPERM). Nothing in that remainder
+    // is complete; this attempt's tree is, so it is served from where it was extracted.
+    // Throwing here failed the boot of every push whose assets resolved to this directory.
+    if (fs.existsSync(path.join(tmp, COMPLETE))) return tmp;
+    throw err;
+  }
+  return out;
+}
+
+/** Where a push puts the skill/hook plugin library, relative to the unpacked assets. */
+export const LIBRARY_DIR = "library";
+
+/**
+ * The plugin library a push carried (scripts/deploy.mjs packs it as `archives/library.tgz`):
+ * a directory with a `package.json` naming the plugin packages and their `node_modules`, the
+ * shape core's loader resolves from. Null when there are no assets, or the push predates the
+ * library travelling with it — the loader then reads the running program's, as before.
+ */
+export function pushedLibraryDir(assets: string | null): string | null {
+  if (assets === null) return null;
+  const dir = path.join(unpackedAssetsDir(assets), LIBRARY_DIR);
+  return fs.existsSync(path.join(dir, "package.json")) ? dir : null;
+}
+
+/** Benchmark resources bundled with this platform; an ordinary install uses core's copy. */
+export function pushedBenchmarksDir(assets: string | null): string | null {
+  if (assets === null) return null;
+  const dir = path.join(unpackedAssetsDir(assets), "builtin-benchmarks");
+  return fs.existsSync(dir) ? dir : null;
+}

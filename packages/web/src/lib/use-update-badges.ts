@@ -43,7 +43,7 @@ export type BadgedRoute = "/agents" | "/plugins" | "/models" | "/usage";
 export interface UpdateBadges {
   /** A software update this mode can act on, or null. */
   software: SoftwareUpdate | null;
-  /** What the software anchors (the avatars) say — the update row's own wording; null with no update. */
+  /** What the software anchors (the avatars) say — the App info row's own wording; null with no update. */
   softwareNote: string | null;
   /** What each badged nav entry says; a route absent from the map carries no dot. */
   navNotes: Partial<Record<BadgedRoute, string>>;
@@ -62,7 +62,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   const ownsProject = currentProject?.role === "owner";
   // The eager instance is what fetches the version and the release check on load at all; the
   // flow below reads the same cache. The shell's snapshot is refreshed once on load by the
-  // flow's owner (the update modal), so a release offered or downloaded before this load
+  // flow's owner (the App info dialog), so a release offered or downloaded before this load
   // shows up without the user opening anything.
   useVersionInfo(eager);
   const { flow } = useUpdateFlow();

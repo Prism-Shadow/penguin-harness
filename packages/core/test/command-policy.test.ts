@@ -9,8 +9,8 @@ import {
 } from "../src/internal/command-policy.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { Session } from "../src/session.js";
-import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+import { assistantText, toolCall, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   CommandPolicyConfig,
@@ -267,6 +267,19 @@ describe("vetoForToolCall", () => {
     expect(vetoForToolCall("mcp__server__shell", json({ cmd: "rm -rf /" }))).toBeNull();
   });
 
+  it("screens the shell text under exec_command's `command` alias, reading it as the tool does", () => {
+    // The alias is what the tool runs, so it is what the policy sees — a launch is never
+    // waved through for arriving under the other accepted name.
+    expect(vetoForToolCall("exec_command", json({ command: "rm -rf /" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+    // Both present: `cmd` is the one the tool runs, and the one screened.
+    expect(vetoForToolCall("exec_command", json({ cmd: "ls", command: "rm -rf /" }))).toBeNull();
+    expect(vetoForToolCall("exec_command", json({ cmd: "rm -rf /", command: "ls" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+  });
+
   it("exempts the lone Ctrl-C, which the tool turns into SIGINT rather than typed text", () => {
     const interrupt = String.fromCharCode(3);
     expect(
@@ -295,7 +308,7 @@ describe("factory rule metadata", () => {
 });
 
 describe("withCommandPolicy (the approval-boundary wrapper)", () => {
-  const call = (cmd: string, name = "exec_command"): OmniMessage =>
+  const call = (cmd: string, name = "exec_command"): AmspRecord =>
     toolCall({ name, arguments: JSON.stringify({ cmd }), toolCallId: "c1" });
 
   it("refuses a vetoed call without consulting the wrapped callback", async () => {
@@ -329,7 +342,7 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
       asked += 1;
       return "allow";
     });
-    const typed = (chars: string): OmniMessage =>
+    const typed = (chars: string): AmspRecord =>
       toolCall({
         name: "input_command",
         arguments: JSON.stringify({ process_id: "p1", chars }),
@@ -389,21 +402,21 @@ describe("Session applies the policy at the approval boundary", () => {
     system_prompt: "sp",
     agent_state: tmp,
     workspace: tmp,
+    source: "user",
   });
 
   it("denies a vetoed command under allow-all, and the tool never reaches the Environment", async () => {
     let approveCalls = 0;
     let executed = 0;
-    let secondInput: OmniMessage[] | null = null;
+    let secondInput: AmspRecord[] | null = null;
     let turn = 0;
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         if (turn++ === 0) {
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
             toolCallId: "call_veto",
-            stopReason: "completed",
           });
           return { status: "completed" };
         }
@@ -434,7 +447,7 @@ describe("Session applies the policy at the approval boundary", () => {
       modelHasVision: true,
     });
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of session.run([userText("clean up")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -449,11 +462,11 @@ describe("Session applies the policy at the approval boundary", () => {
     // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
     // change course instead of treating it as a person's cancellation; both read `aborted`.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { status?: string }).status).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
-      (secondInput as OmniMessage[] | null)?.some(
+      (secondInput as AmspRecord[] | null)?.some(
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
       ),
     ).toBe(true);
@@ -464,13 +477,12 @@ describe("Session applies the policy at the approval boundary", () => {
     let executedCmd: string | null = null;
     let turn = 0;
     const llm: LLMInterface = {
-      async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
         if (turn++ === 0) {
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "rm -rf ./build" }),
             toolCallId: "call_ok",
-            stopReason: "completed",
           });
           return { status: "completed" };
         }
@@ -483,7 +495,7 @@ describe("Session applies the policy at the approval boundary", () => {
       async *executeTool(request) {
         const args = JSON.parse(request.toolCall.payload.arguments) as { cmd: string };
         executedCmd = args.cmd;
-        yield { type: "event", payload: { type: "noop" } } as unknown as OmniMessage;
+        yield { type: "event", payload: { type: "noop" } } as unknown as AmspRecord;
       },
       toolPermission: () => undefined,
     };

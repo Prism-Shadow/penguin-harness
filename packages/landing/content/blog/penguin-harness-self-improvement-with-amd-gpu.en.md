@@ -1,37 +1,48 @@
 ---
-title: "Implementing Agent Self-Improvement with PenguinHarness on an AMD GPU"
+title: "Run an agent self-improvement loop with PenguinHarness on an AMD GPU"
 date: 2026-07-22
 category: practice
 author: Yuyang Gao (AMD), Ning Zhang (AMD), Yaowei Zheng (PrismShadow)
-excerpt: "A complete PenguinHarness self-improvement loop—from baseline evaluation and Trace analysis to Agent optimization and rollback—using a local Qwen3:8B model alongside the Fireworks API."
+excerpt: "Run a complete PenguinHarness self-improvement loop, from baseline evaluation and Trace analysis to agent optimization and rollback, with a local Qwen3:8B model on an AMD GPU and a model on the Fireworks API."
 description: "Learn how PenguinHarness combines Benchmarks, Traces, editable Agent State, Snapshots, and rollback in a dual-model experiment with local Qwen3:8B and the Fireworks API."
 ---
 
-
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
 
 *AMD × PrismShadow — Yuyang Gao and Ning Zhang (AMD), Yaowei Zheng (PrismShadow).*
 
-[PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) is an open-source Agent Harness that brings model integrations, Agent configuration, workspace tools, Sessions, Traces, Skills, and Benchmarks into one runtime, with both a CLI and a Web UI. It can use hosted models as well as local models exposed through an OpenAI-compatible endpoint.
+In this tutorial you run a complete self-improvement loop with [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness). You create a small agent, measure it with a Benchmark, let an Optimizer improve it using evidence from real Traces, and keep the new version only if it scores higher. The agent under test runs on Qwen3:8B on an AMD GPU; the agent that creates, measures and optimizes it runs on a model from the Fireworks API.
 
-What makes the project especially interesting is that it represents Agent behavior as a set of readable, editable, and versioned state files rather than as a fixed prompt that only a developer can maintain manually. Role definitions, operating procedures, reusable Skills, and runtime settings all belong to the Agent State, while each task produces a complete Session and Trace. This allows one Agent to evaluate another, update its State using evidence from real executions, and then verify the change against the same evaluation.
+The model is never retrained, and no weights change. The tutorial is for developers who want to make an agent more reliable without preparing training data, especially when the agent runs a local model. The task is intentionally small, because the subject is the loop itself, not a comparison of models on a leaderboard.
 
-This is what PenguinHarness calls “self-improvement.” It does not retrain the model or update its weights. Instead, it improves the Agent Harness around the model and uses repeatable measurements to decide whether a new version should be retained.
+## Prerequisites
 
-## How PenguinHarness Implements Agent Self-Improvement
+- An AMD GPU on which Ollama can already run Qwen3:8B. Installing the AMD driver, ROCm and Ollama is outside the scope of this tutorial; for setup instructions, see the [Ollama Linux documentation](https://docs.ollama.com/linux) and the [GPU support documentation](https://docs.ollama.com/gpu).
+- Fireworks API access. Through the AMD AI Developer Program, AMD and Fireworks AI offer eligible developers USD 50 in complimentary Fireworks credits, and Fireworks provides open-weight models through an OpenAI-compatible endpoint. [Getting Fireworks API Access](https://penguin.ooo/blog/fireworks-credits-amd) explains how to redeem the credits and generate an API key.
 
-The main editable parts of an Agent State include:
+## How self-improvement works in PenguinHarness
 
-- `AGENTS.md`: role, boundaries, and operating procedures;
+PenguinHarness is an open-source agent harness. It brings model integrations, agent configuration, Workspace tools, Sessions, Traces, Skills and Benchmarks into one runtime, with both a CLI and a Web App, and it can use hosted models as well as local models exposed through an OpenAI-compatible endpoint.
+
+PenguinHarness represents an agent's behavior as a set of readable, editable and versioned state files, rather than as a fixed prompt that only a developer can maintain by hand. Role definitions, operating procedures, reusable Skills and runtime settings all belong to the Agent State, and each task produces a complete Session and Trace. So one agent can evaluate another, update its State using evidence from real executions, and then verify the change against the same evaluation.
+
+That is what PenguinHarness calls self-improvement. It does not retrain the model or update its weights. It improves the agent harness around the model, and uses repeatable measurements to decide whether a new version is kept.
+
+### The editable Agent State
+
+The main editable parts of an Agent State are:
+
+- `AGENTS.md`: role, boundaries and operating procedures;
 - `skills/`: reusable capabilities;
 - `system_config.yaml`: version and runtime configuration.
 
-PenguinHarness organizes the self-improvement process around three roles:
+### Three roles
 
-- **Target Agent**: the Agent that performs tasks and is evaluated and improved;
-- **Evaluator**: runs one Benchmark Case in an isolated workspace and scores it against a private Rubric;
+- **Target Agent**: the agent that performs tasks, and is evaluated and improved;
+- **Evaluator**: runs one Benchmark Case in an isolated Workspace and scores it against a private Rubric;
 - **Optimizer**: reads baseline scores and their linked Traces, forms an improvement hypothesis, and modifies the Target Agent State.
 
-The complete loop works as follows:
+### The loop
 
 1. Create a multi-Case Benchmark for the target capability.
 2. Run the Target Agent repeatedly to establish a traceable baseline.
@@ -40,20 +51,29 @@ The complete loop works as follows:
 5. Evaluate the candidate version with the same Benchmark and the same model.
 6. Keep the new version only if its total score is strictly higher; otherwise, restore the previous State.
 
-The loop is orchestrated by built-in Skills:
+Built-in Skills orchestrate the loop:
 
-- `agent-creation`: creates the initial Agent from a set of requirements;
+- `agent-creation`: creates the initial agent from a set of requirements;
 - `benchmark-design`: designs a multi-Case Benchmark and establishes a complete baseline;
 - `agent-evaluation`: runs and scores one isolated Case execution;
-- `agent-optimization`: analyzes the baseline and Traces, edits Agent State, evaluates the candidate, and handles rollback.
+- `agent-optimization`: analyzes the baseline and Traces, edits the Agent State, evaluates the candidate and handles rollback.
 
-The important point is not simply that “one model rewrites another model’s prompt.” Every change is re-evaluated under the same conditions. The Benchmark provides the measurement, the Trace provides the evidence, the Snapshot provides a recovery point, and the State version ties each score to the Agent State that actually produced it. If an optimization does not yield a strict improvement, the candidate change is not treated as a successful evolution.
+The point is not simply that one model rewrites another model's prompt. Every change is re-evaluated under the same conditions. The Benchmark provides the measurement, the Trace provides the evidence, the Snapshot provides a recovery point, and the State version ties each score to the Agent State that actually produced it. If an optimization does not yield a strict improvement, the candidate change does not count as a successful evolution.
 
-To demonstrate the full mechanism, this article uses a dual-model setup. Qwen3:8B runs through Ollama on an AMD GPU and serves as the Target Agent model. A model accessed through the Fireworks API runs `default_agent` and is responsible for creating the Agent, designing the Benchmark, and performing optimization. We first establish a v1 baseline, let the Optimizer improve the Agent using evidence from real Traces, and then use the same Benchmark to decide whether to accept the new version or roll it back. The focus is the self-improvement loop itself, not a model leaderboard comparison.
+### Two models, two jobs
 
-## What We Will Build
+This tutorial splits the work between two models:
 
-We will create a `meeting-summary-agent`. It reads a small collection of text files and generates the following file in its workspace:
+| Purpose | Agent | Model |
+|---|---|---|
+| Create the agent, design the Benchmark, and perform optimization | `default_agent` | Fireworks API model |
+| Undergo evaluation and improvement | `meeting_summary_agent` | Qwen3:8B on an AMD GPU |
+
+Qwen3:8B runs through Ollama on the AMD GPU and serves as the Target Agent model. A model on the Fireworks API runs `default_agent`, which creates the agent, designs the Benchmark and performs the optimization. You first establish a v1 baseline, let the Optimizer improve the agent using evidence from real Traces, and then use the same Benchmark to decide whether to accept the new version or roll it back.
+
+## What you will build
+
+You create `meeting_summary_agent`. It reads a small collection of text files and writes the following file in its Workspace:
 
 ```markdown
 # Summary
@@ -65,7 +85,7 @@ We will create a `meeting-summary-agent`. It reads a small collection of text fi
 ## Unresolved
 ```
 
-The Benchmark contains two Cases:
+You measure it with a Benchmark of two Cases:
 
 | Case | Task |
 |---|---|
@@ -74,37 +94,20 @@ The Benchmark contains two Cases:
 
 Each Case runs independently three times, so one complete evaluation contains six Target Agent runs.
 
-The overall workflow is:
+The steps below follow this workflow:
 
 1. Configure local Qwen3:8B and the Fireworks API model.
-2. Create the v1 Agent.
+2. Create the v1 agent.
 3. Export the v1 Snapshot.
 4. Create and run the Benchmark.
 5. Inspect the baseline and Traces.
-6. Optimize the Agent.
+6. Optimize the agent.
 7. Evaluate the candidate with the same Benchmark.
 8. Accept the new version or roll it back.
 
----
+## Step 1: Install PenguinHarness and register the models
 
-## Step 1: Configure Qwen3:8B on an AMD GPU and the Fireworks API
-
-This experiment uses two models:
-
-| Purpose | Agent | Model |
-|---|---|---|
-| Create the Agent, design the Benchmark, and perform optimization | `default_agent` | Fireworks API model |
-| Undergo evaluation and improvement | `meeting-summary-agent` | Qwen3:8B on an AMD GPU |
-
-### Prepare Local Qwen3:8B
-
-The local model runs through Ollama. Installing the AMD driver, ROCm, and Ollama is outside the scope of this article; you only need to confirm that Ollama can already run Qwen3:8B successfully. For setup instructions, see the [Ollama Linux documentation](https://docs.ollama.com/linux) and [GPU support documentation](https://docs.ollama.com/gpu).
-
-### Get Fireworks API Access
-
-Through the AMD AI Developer Program, AMD and Fireworks AI offer eligible developers USD 50 in complimentary Fireworks credits. Fireworks provides open-weight models through an OpenAI-compatible endpoint. See [Getting Fireworks API Access](https://penguin.ooo/blog/fireworks-credits-amd) for instructions on redeeming the credits and generating an API key.
-
-### Register the Models in the Web UI
+In this step you install PenguinHarness and register both models the experiment uses.
 
 Install and start PenguinHarness:
 
@@ -113,17 +116,15 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-Open the **Models** page in the Web UI and add the local Qwen3:8B model:
+Open the **Models** page in the Web App and add the local Qwen3:8B model:
 
 <img width="491" height="481" alt="PenguinHarness local Qwen3:8B model configuration" src="https://github.com/user-attachments/assets/a0d866e9-21e6-4b89-8ec1-b50710aed0db" />
-
 
 Next, configure the Fireworks API key and set DeepSeek V4 Flash as the default model:
 
 <img width="498" height="479" alt="PenguinHarness Fireworks API model configuration" src="https://github.com/user-attachments/assets/3b392317-615d-46d3-95c9-f9e3b4ad61a5" />
 
-
-New top-level `default_agent` Chats can now use the Project Default—the Fireworks model. When the Benchmark runs `meeting-summary-agent`, it explicitly selects the following local model pair:
+New top-level `default_agent` chats now use the Project default, which is the Fireworks model. When the Benchmark runs `meeting_summary_agent`, it explicitly selects this local model pair:
 
 ```text
 provider: custom
@@ -132,19 +133,21 @@ model_id: qwen3:8b
 
 The baseline and every candidate must use this same `(provider, model_id)` pair. Otherwise, their scores are not directly comparable.
 
----
+## Step 2: Create the v1 agent
 
-## Step 2: Create the v1 Agent
+In this step you create the first version of the Target Agent and save a Snapshot of it as a recovery point.
 
-In the PenguinHarness Web UI, create a new Agent named **meeting-summary-agent**.
+1. In the Web App, create a new agent with the id `meeting_summary_agent`. An agent id takes only lowercase letters, digits and underscores, so a hyphenated id is rejected.
+2. Start a new top-level chat with `default_agent`, and select the Fireworks model you just set as the Project default.
+3. Invoke the `agent-creation` Skill (renamed `agent-initialization` in PenguinHarness 0.2.4) and submit the prompt below.
 
-Start a new top-level Chat with `default_agent`, select the Fireworks model that was just configured as the Project Default, invoke the `agent-creation` Skill, and submit the prompt below. It creates the v1 version of **meeting-summary-agent**. Version 1 defines only the basic responsibilities and safety boundaries; it does not preload a complete summarization workflow. This allows the Benchmark to expose missing operating habits through actual runs.
+The prompt creates v1 of `meeting_summary_agent`. Version 1 defines only the basic responsibilities and safety boundaries. It does not preload a complete summarization workflow, so the Benchmark can expose the operating habits the agent lacks through actual runs.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Creating the v1 Agent</strong></summary>
+<summary><strong>Expand: complete prompt for creating the v1 agent</strong></summary>
 
 ```text
-Use the agent-creation Skill to configure the Agent `meeting-summary-agent`.
+Use the agent-creation Skill to configure the Agent `meeting_summary_agent`.
 
 Goal:
 This is a simple local-file summarization Agent. It reads the task instructions
@@ -180,40 +183,35 @@ State version.
 
 </details>
 
-
-After the operation completes, the new Agent appears in the Agents list:
+When the operation completes, the new agent appears in the Agents list. The screenshot comes from the original run, in which the agent's id was `meeting-summary-agent`:
 
 <img width="1376" height="464" alt="Meeting Summary Agent in the Agents list" src="https://github.com/user-attachments/assets/7e3f70d2-2164-4f90-8507-6c2d1cd9085c" />
 
-
-Open the Agent settings and export the v1 Snapshot. This Snapshot provides the recovery point if a later candidate fails:
+Open the agent's settings and, on the **Overview** tab, click **Export snapshot** to export the v1 Snapshot. The Snapshot is the recovery point if a later candidate fails, and the `agent-optimization` Skill will not change the Agent State until it exists:
 
 <img width="790" height="407" alt="Exporting the v1 Agent State Snapshot" src="https://github.com/user-attachments/assets/6f0c4745-3fd5-4c66-b302-bd58e42ce646" />
 
+## Step 3: Create the Benchmark and measure the baseline
 
----
+In this step you create and calibrate the Benchmark, and run the complete baseline for v1.
 
-## Step 3: Create the Benchmark
-
-Still in the top-level `default_agent` Chat that uses the Fireworks model, invoke the `benchmark-design` Skill and submit the following prompt to create and calibrate the v1 Benchmark.
-
-Use this Benchmark ID:
+In the same top-level `default_agent` chat on the Fireworks model, invoke the `benchmark-design` Skill and submit the prompt below. It creates and calibrates the v1 Benchmark, with this Benchmark ID:
 
 ```text
 simple-file-summary-2case-v1
 ```
 
-The maximum scores of the two Cases total 100 points, and each Case runs three times. The Target Agent can see only the public Statement, never the private Rubric.
+The maximum scores of the two Cases total 100 points, and each Case runs three times. The Target Agent sees only the public Statement, never the private Rubric.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Creating and Calibrating the Benchmark</strong></summary>
+<summary><strong>Expand: complete prompt for creating and calibrating the Benchmark</strong></summary>
 
 ```text
 Use the benchmark-design Skill to create and calibrate a Benchmark for the
 following Test Agent.
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark ID:
 simple-file-summary-2case-v1
@@ -304,34 +302,31 @@ Finally, report:
 
 </details>
 
-After completion, the Benchmark structure looks like this:
+When it completes, the Benchmark has this structure:
 
 <img width="635" height="350" alt="Generated Benchmark structure" src="https://github.com/user-attachments/assets/f44b9bbd-4b38-4c14-aa3a-2d95f44165cf" />
 
-
-Inspect the output in the Web UI and open the Benchmark page to review the total score, each Case mean, and the corresponding Sessions and Traces:
+Check the run's output in the Web App, then open **Evaluation Center** to review the total score, the mean of each Case, and the Sessions and Traces behind them:
 
 <img width="550" height="235" alt="Baseline Benchmark score" src="https://github.com/user-attachments/assets/5dbfb515-198d-4d29-9ff3-01eccd61d630" />
 
+The baseline total is 84. The task is intentionally small, so the baseline already exceeds 80, but there is still room for improvement. This score is the reference the candidate must beat.
 
-The overall baseline score is 84. Because the task is intentionally small, the baseline already exceeds 80, but there is still room for improvement. In the next step, we optimize the Agent to demonstrate the self-improvement process.
+## Step 4: Optimize the agent
 
+In this step the Optimizer analyzes all six runs and their linked Traces, then makes one small, evidence-based change to the Agent State.
 
----
-
-## Step 4: Optimize the Agent
-
-After the baseline has been established, use the top-level `default_agent` Chat running the Fireworks model to invoke the `agent-optimization` Skill. The prompt instructs the Optimizer to analyze all six runs and their linked Traces, form a generalizable behavioral hypothesis, and then update `AGENTS.md` or create a narrowly scoped Skill.
+In the top-level `default_agent` chat on the Fireworks model, invoke the `agent-optimization` Skill and submit the prompt below. It instructs the Optimizer to form one generalizable behavioral hypothesis, and then to update `AGENTS.md` or create a narrowly scoped Skill.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Optimizing the Agent</strong></summary>
+<summary><strong>Expand: complete prompt for optimizing the agent</strong></summary>
 
 ```text
 Use the agent-optimization Skill in Benchmark optimization mode to improve
 the target Agent.
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark:
 simple-file-summary-2case-v1
@@ -372,17 +367,13 @@ Finally, report:
 
 </details>
 
-A likely optimization direction is to add a concise operating procedure or a small set of workflow constraints.
+A likely direction is a concise operating procedure or a small set of workflow constraints. The exact change should come from evidence in the real Traces, not from embedding the Benchmark answers in the Agent State.
 
-The exact change should be driven by evidence in the real Traces, rather than by embedding the Benchmark answers in the Agent State.
+## Step 5: Compare the results and keep the new version
 
----
+In this step the Optimizer evaluates the candidate under identical conditions and applies the acceptance rule.
 
-## Step 5: Compare Results and Retain the New Version
-
-The Optimizer evaluates the candidate with the same two Cases, the same Qwen3:8B model, and the same three repeated runs.
-
-The acceptance rule is simple:
+The candidate runs with the same two Cases, the same Qwen3:8B model and the same three repeated runs. The acceptance rule is simple:
 
 ```text
 candidate total > reference total
@@ -392,27 +383,23 @@ candidate total <= reference total
 → roll back to v1
 ```
 
-The optimized Agent updates `AGENTS.md`, adds an operating procedure, reruns the Cases, and produces the new score:
+In this run, the Optimizer adds an operating procedure to `AGENTS.md`, reruns the Cases and reports the new score:
 
 <img width="857" height="413" alt="Optimization result and updated Agent State" src="https://github.com/user-attachments/assets/f046ca42-e7ef-4063-8c10-babce816eba4" />
 
+If v2 is accepted, export a v2 Snapshot from the agent's **Overview** tab. To keep improving the agent, repeat the same process from the accepted version.
 
-If v2 is accepted, export a v2 Snapshot from the Agent Overview page. To continue improving the Agent, repeat the same process from the accepted version.
-
-Open the Benchmark page and select **MEETING SUMMARY AGENT** to see both evaluation rounds in the improvement history:
+Open **Evaluation Center** and select **MEETING SUMMARY AGENT** to see both evaluation rounds in the improvement history:
 
 <img width="628" height="515" alt="Two rounds in the Benchmark history" src="https://github.com/user-attachments/assets/58be7385-8746-4931-92e6-f563dc26e804" />
 
+Because the task is relatively simple, a single optimization round brings the score close to the maximum. On more complex real-world tasks, the value of the self-improvement loop becomes more apparent.
 
+## What the experiment shows
 
+You measured a baseline of 84, let the Optimizer change the Agent State based on Trace evidence, and applied a rule that keeps a new version only when it scores strictly higher under the same Benchmark, model and run count.
 
-> Because this example uses a relatively simple task, a single optimization round can bring the score close to the maximum. On more complex real-world tasks, the value of the self-improvement loop becomes more apparent.
-
----
-
-## Conclusion
-
-This experiment does not show Qwen3:8B retraining itself during execution. Instead, it shows how PenguinHarness places the Agent’s operating procedure inside a verifiable loop:
+This experiment does not show Qwen3:8B retraining itself during execution. It shows how PenguinHarness places the agent's operating procedure inside a verifiable loop:
 
 ```text
 Behavior is measured by a Benchmark
@@ -422,7 +409,7 @@ Behavior is measured by a Benchmark
 → only measured improvements are retained
 ```
 
-This approach is especially useful for local models. Without preparing training data or fine-tuning model weights, clearer operating procedures can still improve the reliability with which an Agent completes its tasks.
+This approach is especially useful for local models. Without preparing training data or fine-tuning model weights, clearer operating procedures can still make an agent complete its tasks more reliably.
 
 ## References
 

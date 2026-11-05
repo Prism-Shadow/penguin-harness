@@ -1,179 +1,224 @@
 ---
-title: Web App Guide
-description: A page-by-page guide to the Web App — login, chat, Agent management, models, usage, and traces.
+title: Web App
+description: Sign in to the Web App, find your way around, manage Projects and members, and run the app in production.
 ---
 
-PenguinHarness ships with a ready-to-use Web App: multi-user login, streaming chat, Agent configuration, model and usage management all happen in the browser. This guide walks through the app page by page. For installation and first launch, see the [Quickstart](/quickstart).
+PenguinHarness ships with a Web App: multi-user sign-in, streaming chat, agent configuration, and model and usage management all happen in the browser. The desktop app shows the same interface in its own window. This page is the overview; each part of the app has its own guide. For installation and first launch, see the [Quickstart](/quickstart).
 
-## Source layout
+- To sign in for the first time, see [Open the Web App and sign in](#open-the-web-app-and-sign-in).
+- To find your way around, see [The app layout](#the-app-layout).
+- To set up a Project or its members, see [Projects and members](#projects-and-members).
+- To let an agent fill in a form for you, see [Create with AI or manually](#create-with-ai-or-manually).
+- To run the app for a team, see [Production deployment](#production-deployment).
 
-```text
-packages/web/src
-├── api/          # fetch wrapper · one function per API (DTOs type-only from @prismshadow/penguin-server/api) · SSE wrapper
-├── state/        # auth / project / sessions / theme / locale contexts
-├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
-├── components/   # ui primitives (modal / drawer / select …) and the app layout
-└── features/     # chat / agents / skills / models / usage / traces / benchmark / admin pages
-```
+## Open the Web App and sign in
 
-## Startup and Login
+Start the service from a terminal:
 
 ```bash
 penguin web
-# open http://127.0.0.1:7364
+# opens http://localhost:7364
 ```
 
-The initial account is `admin`, and it starts with no password of its own: the server prints a first-login link in a framed notice on every start until one is set, and opening that link signs the browser in to set it. The link stays usable — and identical — until the password exists. There is no self-registration: accounts are created by an admin on the user-management page, and every new user automatically gets an independent initial Project named `<userId>-default_project`. While the initial password is still in use, a banner prompts the user to change it. A forgotten password is reset by the admin on the user-management page; a forgotten **admin** password is reset offline with `penguin server reset-admin-password` (server stopped), which returns the account to the unclaimed state and brings the first-login link back.
+`penguin web` starts the service, waits until it is ready, prints the URL, and opens your browser. Add `--no-open` to skip opening the browser. `penguin server` starts the same service without opening a browser. See [penguin server / penguin web](/cli#penguin-server-penguin-web).
 
-Logins persist for 30 days with sliding renewal; an admin password reset invalidates all of that user's login sessions.
+> [!NOTE]
+> On a local-only server, the app lives at `localhost`. The `127.0.0.1` address is reserved for previews of files the agent writes, and forwards you to `localhost`.
 
-The interface language (中文 / English / system) and theme (light / dark / system) can be switched at any time.
+### Sign in for the first time
 
-## Chat (/chat)
+The initial account is `admin`, and it starts with no password of its own. Until you set one, the server prints a first-login link in a framed notice on every start. Opening the link signs your browser in.
 
-### Creating a Conversation
+1. Start the server with `penguin web`.
+2. Find the framed notice in the server output. It contains the first-login link.
+3. Open the link in your browser. You are signed in as `admin`.
+4. Set a password: select **Change now** on the banner that appears, or go to **Settings** › **Account**. This first session needs no current password.
 
-A new conversation starts as a draft: pick the Agent, the Workspace (via a server-side directory browser), the approval mode, the model, and the thinking level before sending the first message. The Session is created on first send, and from then on its model and Workspace are locked. Switching the thinking level or the model in the draft makes the switched-to value the new default: the level is written back to the selected Agent's `model.thinking_level` immediately, and the picked model carries over as the next conversation's default. Inside an active session the thinking level belongs to the session: the composer's picker starts out showing the Agent config's level and auto-follows it until touched (sends omit the level, so config edits keep taking effect); a pick is **stored on the Session itself**, so it survives a page reload and shows up in another tab, applies to every later run of that conversation — a later Agent-config edit no longer moves it — and is still never written back to the Agent config. Changing the level mid-chat asks first, because switching mid-conversation lowers the prompt-cache hit rate and raises cost — the dialog offers three choices: **Compact, then switch** (recommended — it compacts the context exactly like `/compact` and applies the level once that compaction ends; a compaction that fails or is aborted still applies the level, with a notice that it did not finish), **Switch anyway** (applies immediately), and Cancel (keeps the current level). A compaction can only start on an idle conversation, so while a task is running the first choice is disabled with a note explaining why, and the other two stay available. A conversation with no messages yet, a re-pick of the displayed level, or a switch right after a successful compaction applies directly without asking; the model stays locked per session — the `/model` command switches models the way the `/agent` handoff does: picking a model stages it as a chip in the composer, and **sending** opens a new session for the same Agent on the picked model, keeping the current Workspace, whose first message carries a `[model_switch_from]` source block (source session id, Trace file path, previous model) followed by whatever the composer held (an interface-language auto-line when empty). In the new session that block collapses into a "switched model" banner linking back to the source conversation, and the model reads the source Trace file itself when it needs the earlier history.
+> [!NOTE]
+> The link can be opened again. It lasts 30 days, or until a password is set. A restart prints a new link and the old one stops working. A link that no longer works lands on the login page with an explanation.
 
-There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-only tools pass), and `always-ask`. See [Tools and Approvals](/tools).
+The desktop app does not print the notice. The server also skips it while a password pinned with `PENGUIN_SEED_ADMIN_PASSWORD` still works. For how these mechanisms are secured, see [Security](/security).
 
-Below the composer the draft page files example prompts into folders, exactly one of them open at a time; clicking a row fills the composer with that prompt and sends nothing, so it can be read and edited before Send. The last folder, **My shortcuts**, is your own: **New shortcut** opens an editor already holding whatever is in the composer, with its first line suggested as the name, and saving files it under that folder — a saved shortcut is a name plus a prompt, pins no Skills, and is stored per user on the server, so it follows you to another browser or machine. Rows carry edit and delete, the folder header counts `used/limit`, and the **New shortcut** row disappears once 3 are saved (a name is at most 40 characters, a prompt at most 4000) — the cap is what keeps this folder the same height as a built-in one, with no scrollbar of its own.
+### Accounts
 
-### The Conversation List
+The login page asks for a **Username** and a **Password**, and has language and theme switches in its corner.
 
-The sidebar's conversation list groups by Workspace or by Agent. Grouping and sort order are switched in the **List options** menu (the sliders icon in the section header), where each option carries its own icon: a folder for Workspace grouping, the Agent glyph for Agent grouping, a clock for most-recent order, and up/down arrows for the drag-reordered manual order.
+There is no self-registration. An admin creates accounts on the **Users** page of Settings. Every new user automatically gets an independent initial Project named `<userId>-default_project`.
 
-A row's actions come at two levels:
+While the initial password is still in use, a banner prompts the user to change it, with a **Change now** link. Closing the banner hides it for good.
 
-- **Hovering** a row replaces the trailing last-active time with two icon buttons — archive and delete. They are reachable from the keyboard too: tabbing onto either one reveals it;
-- **Right-clicking** a row opens the full menu at the pointer: pin, rename, remote control, archive, copy Session ID, delete. A **long press** on touch and **Shift+F10** on the keyboard open the same menu, since neither hover nor a secondary click exists there. Escape, a click elsewhere, or scrolling the list dismisses it; the browser's own context menu is taken over on conversation rows only, and stays as usual everywhere else on the page.
+After five failed sign-in attempts, the server makes you wait. The wait starts at one second and doubles, up to a minute.
 
-Beside a row's title sit its status marks: a turning hourglass while the Session runs (a squeezing bar while it compacts), a green dot once a run finished that you have not looked at yet, and a small activity trace while the Session still owns **background tasks** — commands running on past their yield window and background subagents mid-round. Its tooltip counts them ("2 background tasks"). The mark is independent of the others: an idle conversation whose dev server is still up keeps it, and it disappears the moment the last task ends, pushed live without a refresh.
+### Passwords
 
-Pinning is offered only in the active list — the archived, subagent and scheduled folders leave it out — and a pinned conversation sorts to the top of its group. The choice is remembered per Project in the browser.
+A forgotten password is reset by the admin on the **Users** page, with **Reset password**.
 
-### Streaming Rendering
+A forgotten **admin** password is reset offline:
 
-- Model text renders token by token; thinking blocks are collapsible;
-- Tool cards expand to show arguments and output, with a live timer while running; a call made with `run_in_background` carries the same activity trace as the conversation list, right of its duration ("Runs in the background") — the call returns at once, and the mark says its work did not;
-- Subagents leave a full-width row in the stream, styled like the other collapsed step rows (agent avatar, name, short session id, running spinner, and an amber dot while one of their tool calls awaits approval); clicking it opens the agents side panel — a call graph of that row's Task on top (each node shows its elapsed time; click a node to switch) and the selected child's live conversation below — the child's own user prompts included — where nested tool cards and approvals work exactly as in the main chat. Panel visibility is task-scoped: sending a message that starts a new task closes it by default (entering a session starts closed too), and it comes back when you open it yourself or — on desktop — when the current task spawns a subagent (one auto-open per task; a manual close holds until the next task; never over an open files panel). Opening the panel from the toolbar, or switching sessions, shows the latest Task's graph; a row on an older turn brings back that turn's graph. The agents panel and the Workspace files panel never show together — opening one closes the other. Context compaction and the first-run MCP connect show a unified step row (the work-group header shell, sticky title bar included — running/success/failure only swap the icon and the one-line detail, with the wall time on the result; the MCP row leads with the discovered-tool count and names unavailable servers, and expands into one group per server — status, tool count and that server's connect time — each opening into its tool list or the failure detail);
-- After each Task, a stats line shows tokens, TPS, elapsed time, cost, copy, and a **Fork** action to the right of copy. Fork asks for confirmation first — it duplicates the conversation into a new chat — and only then opens a new Session at that completed assistant reply with the same Agent, model, Workspace, approval mode, and retained transcript. Forks from different replies in one source chat share an increasing, language-neutral title sequence (`Source title (1)`, `Source title (2)`). Its Trace and scratchpad are independent snapshots: local images/files keep rendering even after the source chat is deleted;
+**Before you begin**
 
-### Header Stats and the Details Card
+- The server is stopped.
 
-The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. The elapsed line carries its two components in parentheses, `Elapsed 10.3s (API 5s, tools 5.3s)`: time inside model requests with the human approval wait deducted, and tool wall time as the union of the tool executions, so tools running in parallel count once. They are two measurements of that span rather than a split of it — a background tool overlaps the model's decoding, while approval waits and harness overhead belong to neither — so they may exceed or fall short of the total, and neither is derived from it. Below those: Right of the elapsed time, while the conversation still owns background tasks, a small pill shows their count — the same figure the conversation list's mark carries. Below those:
+1. Run `penguin server reset-admin-password`.
+2. Start the server again.
+3. Open the first-login link from the framed notice, and set a new password.
 
-- **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid — plus, on running rows, a link to the service the process serves when one was detected (the last local URL its output printed, else a listen-port probe of its process group). Running rows carry a **Stop** button (kills the whole process group and drops the row) — the conversation is told the process is down, as **stopped** rather than failed, so the model knows the dev server is gone without reading it as a crash to restart; exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list. Removal is immediate and final: the entry leaves the runtime registry together with the output captured from that process, so afterwards the model can no longer be asked to read it — keep the row until you are done with its output.
+The command gives the admin account a new random password that nobody sees, and ends every admin session. The next start prints the first-login link again.
 
-Copy buttons across the app confirm at the button itself: the copy icon flips to a check mark for a moment (no "Copied" text label).
+### Sign-in sessions
 
-### Input and Shortcuts
+Logins persist for 30 days with sliding renewal: using the app renews the full 30 days.
 
-- Enter sends, Shift+Enter inserts a newline, and images can be pasted — an image placed inline in the conversation is capped at 20MB, separately from file attachments and not raised along with them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every session resume, whereas an attachment is only ever read from disk by path;
-- The "+" menu holds the input add-ons: **image upload**, **file attachment** and goal mode. An attachment can be any type (up to 20 at a time, and by default ≤ 100MB each and 120MB in total — an admin can change both sizes under **System settings → Upload limits**, see below; an oversize pick is refused before it is read, so nothing is uploaded to earn the rejection, and the message names the limit actually in force); selected files show as removable chips above the text body in the order they were picked, and a message with attachments and no text is sendable. On send the files are written into the Session's scratchpad — deleted with the Session — and the message gains an `[attached file: <path>]` line per file, which the conversation renders as an "Attached files" notice: the bytes never enter the conversation, the model opens each file by path with its ordinary file tools;
-- Files can also be **dragged onto the chat area** — the conversation and the composer, on the chat page and the draft page alike: while a file drag is over that region a "Drop files to attach" overlay covers it (it hides as soon as the drag moves off; dragging text or anything that isn't a file is ignored), and releasing attaches the whole batch to the composer — images join the pasted-image pipeline, everything else becomes file attachments, with the same type and size validation and the same errors as the "+" menu. Dropping works while a Task is running too (the attachments then send per the mid-run send mode below); goal mode takes dropped images but refuses files with a notice. Only the chat area reacts: dropping a file on the sidebar, the top bar, the docked panels or any page without a composer attaches nothing and shows nothing — it is simply ignored, instead of the browser navigating away to the dropped file;
-- Typing `/` opens the slash menu: trigger context compaction (`/compact`), hand the conversation over to another Agent (`/agent`), switch the model (`/model`) — both switch commands appear in an active session only, since a draft has nothing to switch and picks its Agent and model up front — or toggle installed Skills — chosen Skills are sent along with the message in a `[use_skills]` block;
-- While a Task is running the input stays live and the toolbar keeps a single action button: an empty composer shows **Stop**, and typing turns it into **Send**, whose behavior follows the **mid-run send mode** from the toolbar's More-settings popover (a compact extensible settings panel, also available in draft state; the choice is remembered): **Steer** (default) delivers the text **and any attached images** mid-run as a `[user_steering]` user message with the next turn (an image with no caption sends on its own, and the delivered message renders as a steering chip with its images inside it), **Queue** holds the whole message server-side as a follow-up and auto-sends it as an ordinary new message when the run finishes (an "N queued" hint shows near the input until then; the queue survives page reloads). A draft steering cannot carry — selected skills, file attachments, or a staged `/agent` or `/model` pick, with no text and no image — falls back to the queue for that one send, so the button never sits disabled with Stop displaced. Each queued hint line — an undelivered steering message or a queued follow-up — ends in a **recall** control (a curved-back arrow, "Recall") that withdraws the message back into the input box (attachments included) for editing and resending; a steering message that already reached the model can no longer be recalled. When the run ends before a steering message was delivered — pressing Stop while a tool is still running is the usual way — you do not have to reach for that control: the message returns to the input box on its own, attachments and all, ready to edit and send again, so an interrupt never eats what you had already typed;
-- **Goal mode** (the "+" menu, or `/goal`) turns the draft into an objective the system loops Tasks against. Attached images ride along and are always sent as scratchpad paths (a goal objective is re-injected as text every round — see [Goal mode](/goal-mode)); text is still required, since a picture alone states no objective, and file attachments are refused. Round 1's bubble shows the attachments in full, later rounds collapse them into a chip that expands on click;
-- `/agent` and `/model` stage their pick instead of acting on it: the chosen Agent or model becomes a chip above the text body and nothing is sent yet, so you keep typing — Enter/Send is what hands the conversation over (a new chat for that Agent) or forks it onto the chosen model, carrying the text along; with an empty composer a default message is filled in, and the chip's × cancels. Both chips are cached with the draft, so they survive a reload or a trip to another conversation together with the text. A model fork additionally waits for the Session to be idle — it continues from the Session's Trace, which a running turn or a compaction is still writing — and a line above the composer says so while it waits;
-- When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session;
-- While the engine waits out a reconnect backoff (≥2s), the retry line shows a live countdown to the next attempt with inline **Retry now** (skips the remaining wait) and **Give up** (the ordinary abort) controls;
-- When the model API rejects the Session's credentials (an authentication failure), the composer grays out and disables — recoverably: the Session pins only the model reference, and credentials come from the current Project config. The notice's primary button opens the Models page; saving a new API key there unlocks the composer by itself (open tabs unlock live via a `credentials_updated` event, and after a reload the composer stays unlocked because the credential update is newer than the recorded auth failure). A "Retry" button clears the state manually for another attempt (it re-arms if the key is still bad), a completed request always clears it, and "New Session" remains as the escape to a fresh draft. The disabled composer keeps its draft selectable, so a long message that failed to send can still be copied out.
-- Terminals live in the docks beside the conversation: Ctrl+` shows or hides the terminal tabs (adopting or starting a shell when none is open), and Ctrl+W, with a terminal focused, closes that terminal — the same confirm-then-kill its tab's × runs, in the dock and on the standalone `/terminal` page alike — and never reaches the shell. Browsers reserve Ctrl+W for closing the browser tab and may act on it first; the desktop app delivers it to the terminal.
+An admin password reset invalidates all of that user's login sessions. Changing your own password keeps your current session.
 
-### Files Panel
+**Sign out** is in the account menu and asks for confirmation first. It ends the session in this browser. Conversations that are running keep going on the server.
 
-The files panel browses the Workspace tree, previews files (Markdown / HTML rendered), uploads files (≤ 14MB each), and downloads them.
+> [!NOTE]
+> The desktop app signs its own window in by itself as the admin, with no password. That window has no **Sign out**, no initial-password banner, no **Account** page and no user management.
 
-## Create with AI
+## The app layout
 
-Everything the Web App creates from a form — an agent, a model group, a Benchmark, a scheduled task, a vault secret, a hook import, an app, an agent import — can also be described to an agent instead. Each page offers two buttons side by side: **Create with AI** with the magic wand, and **Create manually** with the hand, so both paths are visible at once. The prompt box comes with clickable examples that fill the draft, and a folded **Full prompt** preview shows the fixed instructions that travel with what you typed, with a copy button. There is one way out, **Edit in a new conversation**: it opens a new conversation with the Project's `default_agent` (the first agent when there is none) and prefills the composer with the prompt — whether to send it is yours to decide. A prefilled prompt is not something the browser holds on to: leave the page without editing or sending it and it is dropped, so it cannot resurface in a later conversation. Type into it and it becomes an ordinary draft, kept like anything else you write.
+The sidebar on the left holds everything that is not a conversation. The rest of the window shows the page you open. Each part of the app has its own guide.
 
-## Agent Management (/agents)
+### The sidebar
 
-The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks). The header's two side-by-side buttons, **Import with AI** and **Import manually**, make a new agent out of a Claude Code, Codex or Pi setup or an exported agent bundle: **Import manually** posts an `<id>-export.zip` or a bare `penguin-agent.json` (the agent id is prefilled from the file name and editable; a taken id is answered in place, so a new id retries), and **Import with AI** hands the source to the Project's default agent through the [Create with AI](#create-with-ai) box with the `agent-porting` skill. Export has two entries too: each card's **Export agent** icon opens the download dialog, whose segmented control picks the shape — **API call examples** downloads the portable bundle (`penguin-agent.json`, skills and hooks, an integration guide and runnable clients), **Docker files** downloads a container that imports the agent on first boot and serves the same API — while the magic wand beside it, **Export with AI**, hands an agent what those two do not cover (an SDK, Kubernetes manifests, a handover document). None of them carry vault values. Both AI entries end at **Edit in a new conversation**: the prompt is prefilled into the composer and sending it is yours to decide. Both stand apart from the Agent State snapshot, which backs up and restores one existing agent. Clicking a card opens the `/agents/:agentId` settings page, organized into tabs:
+From top to bottom, the sidebar holds:
 
-| Tab | Contents |
+- The **Development** / **Company** switch, only when company mode is available: an admin has enabled it for the server, and you have not turned it off for yourself. Company mode swaps the page entries below for an organization's pages, and the conversation list for its channels. See [Company mode](/company-mode).
+- The Project switcher, with the **Collapse sidebar** button beside it. See [Projects and members](#projects-and-members).
+- The nav entries:
+
+| Entry | What it is for | Guide |
+| --- | --- | --- |
+| **New chat** | Open a new conversation draft | [Chat](/chat) |
+| **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
+| **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
+| **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
+| **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
+| **Cost Center** | Token usage, cost and server errors by agent, model and time range | [Cost Center](/usage) |
+| **Evaluation Center** | Benchmarks: evaluate agents and optimize them against a Benchmark | [Evaluation Center](/evaluation-center) |
+
+- The conversation list, with search and grouping by Workspace, agent or time. See [Chat](/chat).
+- Your user row at the bottom. It opens the account menu:
+  - **Settings**. See [Settings](/settings).
+  - **About**, which shows the running version and opens the About dialog: the homepage and GitHub links, the release notes, the credits, and the software update where this session can update. See [Updates](/updates).
+  - **Sign out**.
+
+### Favorite and collapsible entries
+
+**New chat** always shows. **Agents**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+
+To change which entries are favorites:
+
+- Point at an entry and select the star at the end of its row. A filled star means the entry is a favorite; selecting it removes it from favorites and moves it into the collapsible area, and selecting an empty star adds it to favorites. On a touch screen the star is always shown.
+- Or drag an entry into the collapsible area to make it collapsible, or out of it to make it a favorite.
+
+Each area keeps the order of the table above, however its entries got there, and with nothing collapsible the chevron bar is gone. The choices are saved per browser. The collapsed rail shows every entry either way.
+
+### Notification dots
+
+A dot on a page entry means something is waiting there:
+
+| Entry | What the dot means |
 | --- | --- |
-| Overview | Basic info, the portable agent bundle export, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
-| Prompt | AGENTS.md and system_prompt |
-| Memory | The Agent-level switch, then every memory grouped by scope — user memory first, then one group per Workspace, each group collapsible with add, export and import entries — with view / delete / edit-via-chat actions per row |
-| Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
-| Tools | Built-in tool table (incl. per-tool call_description switches) and MCP Server management: a table plus an add/edit form whose fields follow the transport (http by default; changes save immediately; full transport validation server-side; a permission control fixes the approval level of that server's tools at `auto` / `r` / `rw`, and the table shows each server's effective level); connectivity testing mirrors the models page — a standalone button in the form probes the current entry (toast with tool count and latency), and a section-level button tests every server in turn with a result badge on each row |
-| Hooks | Installed hook packages (agent_state/hooks/): name, description, version and the hook points each answers at; uninstall. Installing happens on the plugin library page |
-| Vault | Environment-variable entries with masked values |
-| Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
+| **Agents** | Agents on an outdated kernel |
+| **Models** | Preset models to sync (shown to owners) |
+| **Plugins** | Plugin updates |
+| **Cost Center** | Unexpected errors |
 
-The Memory tab's switch writes immediately rather than joining the tab-level Save, so turning Memory off never drags an unrelated half-finished edit along with it. Turning it off keeps every file and the tab fully usable: it only stops Memory from entering the agent's context and from preparing directories for new Sessions. Scope groups collapse on header click, with the collapse state remembered in the browser per user × Project × Agent; each group header carries an **Add** text entry to its collapse arrow's left (the models page's group convention) — like editing, it goes through a bridge modal (a required content-or-source field plus a live prompt preview) into a new chat, where the agent organizes the content into that scope; the drafts stay deliberately minimal, since the save mechanics live in the Memory prompt. Rows are read-only on purpose, their actions icon-only like the skills tab's — **View** renders the body in a right drawer on desktop and a bottom sheet on narrow screens (the chat page panels' interaction, with half / full snap points), **Delete** confirms and also removes the file's `MEMORY.md` index lines, and **Edit** opens a bridge modal first (what to change plus a prompt preview), then jumps to a new chat with this agent; a Workspace scope's chat also pins that Workspace, so the Session reads the very index it is changing. A whole group also moves in one piece: **Export** downloads it as a JSON document (every memory plus the group's `MEMORY.md`) whose file name carries the export date and time, so repeated exports stay apart, and **Import** — owner only, mirroring the Agent State snapshot's split — reads one back. Import asks what to do with a name the group already has: keep the one that is here (the default, which loses nothing), take the file's version, or replace the whole group; either of the latter two confirms first, naming the memories that would be overwritten or deleted. Below the groups the two memory prompts (`memory.prompt` / `memory.workspace_prompt`) are edited in place, and when the prompt template carries no `{{MEMORY}}` placeholder (an agent created before Memory) it shows a hint with a one-click insert — an explicit, idempotent config write. The agent list cards' stat line also shows the memory count, deep-linking to this tab. For the storage model, see [Configuration](/configuration#memory).
+A dot on your avatar means a software update. Pointing at an entry names what is waiting.
 
-Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while the service is running.
+### The collapsed rail and narrow windows
 
-## Plugin Library (/plugins)
+**Collapse sidebar** shrinks the sidebar to a narrow rail of icons: **Expand sidebar**, **Last conversation**, **New chat**, the page entries, and your avatar, which opens the same account menu. In company mode, **Last conversation** gives way to the organization's **All hands** channel, **New chat** is left out, the page entries are the organization's pages, and the other channels and desks follow them. To switch work mode, expand the sidebar first. Pointing at an icon, or focusing it, shows its name. The choice is remembered in the browser.
 
-Browse the plugin library by category — skills and session hooks alike — install a plugin onto an Agent (its skills and hook package together), update installs the library has moved past, or quick-invoke a skill into a chat draft. Each card carries a semantic metadata line (`v<version> · updated N days ago · used by N agents`) and opens a detail Modal: the plugin's full description and the hook points its hook package answers at, then a file browser over everything it ships — a tree on the left with one collapsible group per skill (its SKILL.md and reference files) and one for the hook scripts, any number open at once, and a preview on the right that renders the selected file without leaving the summary or the tree.
+On a narrow window, the sidebar hides behind a menu button in a top bar and opens as a drawer.
 
-## Model Configuration (/models)
+### Trajectories
 
-A per-Project model table grouped by provider. Models can be added and edited: identity is the `(provider, model_id)` pair, credentials are masked, and context window, max output tokens (a per-model cap overriding the Agent's `model.max_tokens` — lower it for small-context models), pricing, the vision flag, and fast mode (off by default: faster output at the provider's premium tier — the toggle is shown only for models whose AgentHub client can serve it, and switching it on confirms the premium billing first) are configurable. A model with fast mode on is badged in the list. You can set the default model and the vision model (which reads images on behalf of session models without image input), and run a connectivity test on any entry — the test carries the dialog's current fast-mode toggle, so a rejection surfaces before saving. Only Project owners can edit. For concepts, see [Models and Providers](/models).
+**Trajectories** has no sidebar entry: it is a side panel of the chat page, not a page of its own. It shows the open conversation's Trace files, with a summary, per-turn statistics, an execution timeline, and the individual events. **Export** downloads a file. See [Chat](/chat).
 
-## Usage (/usage)
+### Language and theme
 
-- Filters: Agent, model, and date range (trailing last hour / last 24 hours, last 7 / 30 / 90 days, or a custom pair). The range decides the precision the charts are drawn at — per minute for the last hour, hourly for the last 24 hours, daily for the calendar presets, week or month for a long custom range — so there is no separate precision control;
-- Summary cards: today / last 7 days / cumulative;
-- Charts, all time series over the selected range: requests + success rate broken down by Agent and, beside it, the same by Model (a bucket's requests stacked one segment per entity on the left axis, each entity's success rate as its own dashed line on a right 0–100% axis, drawn above the bars; the top few entities are named and the rest fold into a neutral series labelled with how many), Token trend (three-segment stacked bars with a dashed cache-hit-rate line in front), and cost trend (line + points + area). Every chart takes the same hovers: a column for its bubble, one bar segment to single that segment out, a line to single the line out. Lines are straight segments, never smoothed, all at the same stroke width. Charts fit their card and never scroll;
-- Two things a chart cannot draw. A bucket with **no rate** — an entity that made no request in it, or a bucket with no cache traffic — has its line carried across at the top of the axis so the stroke stays continuous; the hover table prints a dash there, never a percentage, and a real 0% (requests were made and all of them failed) still prints 0%. A bucket that recorded **nothing at all** is not plotted: every chart drops it and packs the rest left to right, so all four share one x axis that skips the quiet intervals and carries a break mark at each skip. Emptiness is judged per bucket, never per entity — an interval anything ran in stays, with the entities that were idle in it showing their zeros and dashes;
-- A server error panel: summary stats plus an errors table paged at a fixed page size (no scrolling). Its **Clear** (Project owner only) deletes the rows the current range and Agent filter lists — the trailing window or calendar preset the picker holds, named as such in the confirmation, or a custom range named by its dates; an admin's clear also takes the unattributed rows only admins see.
+The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved with your account, so every browser you sign in from uses them; a choice made on the login page is saved to the account that signs in next.
 
-## Benchmark (/benchmark)
+## Projects and members
 
-Read-only scoreboards per Benchmark: switch the metric (score / cost / duration), drill into each Case's runs, and jump to the linked Session and Trace. Works together with the [Self-Improvement](/self-improvement) workflow.
+A Project holds its agents, models, Benchmarks, and conversations. The Project switcher at the top of the sidebar lists the Projects you own or belong to, each with its role (`owner` or `member`), and switches between them. The same menu has **New Project** and **Project settings**.
 
-## System Settings
+### Create a Project
 
-One dialog for the settings that belong to neither a Project nor an Agent, opened from the sidebar user menu's **System settings** row: a left rail of pages, each page a list of rows — title and a one-line explanation on the left, the control on the right.
+Any signed-in user can create a Project and becomes its owner.
 
-The rail is grouped. **Personal** holds preferences that belong to the signed-in account and apply the moment they are touched — no Save button, nothing to lose by closing the dialog. **Server** holds the server-global surfaces: the settings written through `GET|PUT /api/admin/settings` and user management are admin-only — a non-admin gets neither those entries nor any hint they exist, and the APIs answer a non-admin with 403 whatever the browser rendered. A non-admin is therefore left with the Personal pages alone, and the rail draws no group headings at all. In the desktop app the user-management page is absent (the server runs single-user), and the shell's own window also has no Account page — it signs in through the shell's token and holds no password to change, while a browser signed into the same server with a password keeps it. Checking for updates is not a page here — see [Version and Updates](#version-and-updates).
+1. Open the Project switcher at the top of the sidebar.
+2. Select **New Project**.
+3. In **Display name**, enter an optional display name. If you leave it empty, the id is shown.
+4. In **Project id**, enter an id, or select **Generate with AI** beside the field to derive one from the display name. The current Project's default model writes the proposal, since a Project is not inside a Project.
+5. Select **Create**. You are now the Project's owner.
 
-### General
+The id is 2–64 characters long. It starts with a lowercase letter and uses only lowercase letters, digits, and underscores. For a user other than the admin, it starts with the username and a hyphen, and only the part after that prefix is typed.
 
-Personal. **Language** (Chinese / English / follow the browser) and the **display currency** for prices (USD / CNY; storage is always USD — conversion happens only at the edge of the screen). **Show CLI sessions** (default off): off, the conversation list holds only Sessions created in the Web App and is served straight from the database; on, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Stored per user. **Import Trace**: choose the destination Project and Agent, upload a `.jsonl` Trace exported from another install, and it becomes a conversation of that Agent. Both halves are asked for: the endpoint is per-Agent because a Trace file cannot name a local Agent of its own, and the Project because this dialog does not show which one is open — which also means a Trace can go to a Project other than the open one. Exporting is the other direction of the same road and lives with the file it downloads, in a conversation's Trace panel.
+> [!NOTE]
+> The Project id cannot be changed later.
 
-### Appearance
+### Project settings
 
-Personal. The app **theme** (light / dark / follow the system), the **terminal theme** — the terminal panel keeps its own light/dark and by default follows the app theme; pin it light or dark to decouple the two, for prompts and TUIs tuned to one screen — the interface **font size**, and the **accent color**.
+**Project settings** has four pages:
 
-### Account
+| Page | Contents |
+| --- | --- |
+| **General** | The display name, the **Project ID**, and **Delete Project**, which removes the Project's directory recursively and cannot be undone |
+| **Members** | Who belongs to the Project, and with what role. The owner adds an existing user by username (**Add member**) and removes members (**Remove**). Not in the desktop app. |
+| **Defaults** | **New chat defaults**: the agent, working directory, approval mode, thinking level and default model that every new chat starts with |
+| **Security policy** | Command policy rules. A command matching an enabled rule is refused, whatever the approval mode. See [Command policy](/configuration#command-policy) |
 
-The **Change password** action. The page exists only where a password exists to change: the desktop shell's own window signs in through the shell's one-shot token and never sees one.
+### Roles
 
-### Users
+Members have two roles: `owner` and `member`. A Project has one owner, its creator. There is no role change and no ownership transfer. Being an admin grants no access to other users' Projects.
 
-Admin only, outside the desktop app: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
+The owner alone can:
 
-### Proxy Options
+- Rename or delete the Project, manage its members, and change **Defaults** and **Security policy**. Members see these pages read-only.
+- Change models, Vault, and scheduled tasks.
+- Create and delete Benchmarks, delete agents, clear Cost Center errors, and set up remote control.
+- Import agent snapshots, memory, and Traces.
 
-Admin only, server-global. Two switches — **Application uses the proxy** (the server's own outbound traffic: LLM requests, the update check, image fetches) and **Agent environment uses the proxy** (agent command subprocess environments) — share one optional **proxy address**; empty means follow the proxy environment variables. The address accepts any proxy URL undici's dispatcher takes (`http://`, `https://`, `socks5://`, credentials allowed) or a bare `host[:port]`, which is stored normalized to `http://…`; anything else is refused with the reason under the input. Nothing is written until Save, which applies the whole form in one PUT, so a rejected address writes none of it. A save rebuilds the outbound dispatcher and takes effect on new connections with no restart; loopback always goes direct.
+Members can still create agents and conversations, and delete conversations, Skills, hook packages, and memory files.
 
-### Upload Limits
+> [!NOTE]
+> `default_project` is shared with the CLI and cannot be deleted from the Web App. The last Project of an account cannot be deleted.
 
-Admin only, server-global: two sizes — the **per-file attachment cap** and the **per-message total** — both whole MB, defaulting to 100MB and 120MB. Each may be set between 1 and 200MB, and the total may not sit below the per-file cap (that combination would make a legal single attachment unsendable). A value outside the range — "100GB" typed into a MB field as 102400, say — is refused with the reason shown under the input rather than accepted. Validation precedes every write: one bad field in a PUT leaves the other fields untouched too.
+## Create with AI or manually
 
-Saving takes effect immediately, with no restart: the attachment validators and the request body cap both read the setting per request. The body cap is not configured separately but derived from the total — attachments ride the request as base64 `data:` URLs, which inflates them by 4/3, so it has to rise with them or a request whose every attachment was individually legal would die at the HTTP layer instead.
+Many things the Web App creates from a form can also be described to an agent instead. Those places offer two buttons side by side: **Create with AI**, with the magic wand, and **Create manually**, with the hand.
 
-Two numbers are deliberately not exposed. The per-message file **count** stays at 20: it bounds how usable the composer's chip row is, not what the server can survive — the byte budgets do that. And an inline **image** stays capped at 20MB rather than following the attachment limit up, because an image placed inline enters the conversation and the Trace, where its size is paid again on every history page and every session resume; the model side is lower still (providers commonly cap around 5MB, and `read_file` reads an image of at most 5MB), so raising it to 100MB would only trade a clear refusal for a later, more confusing failure.
+| What you can create | Where |
+| --- | --- |
+| An agent | The Agents page |
+| A model group | The Models page |
+| A Benchmark | The Evaluation Center |
+| A vault secret | An agent's Vault tab |
+| A scheduled task | An agent's Schedules tab, or a conversation's Scheduled tasks panel |
 
-## Version and Updates
+Some of these are for Project owners only:
 
-Updating works the way an app updater does, from one dialog. Two entries open it: the row directly under **System settings** in the sidebar user menu, and the small "New version available" superscript on the new-chat page's version line (`vX.Y.Z · Last updated Jul 26` — the date is stamped into the build by the release workflow and shown without any network access; dev builds and releases predating the stamping, v0.1.2 and earlier, have no date). The row names where things stand — "Check for updates", "Checking…", "New version vX available", "Downloading vX 42%", "Restart to update to vX" — with the running version muted on its right, and every state opens the dialog.
+- The Models page and the Vault tab: both buttons are for owners only.
+- Scheduled tasks: **Create manually** is for owners only.
 
-The dialog walks the update through: opening it with nothing known runs a check (the app also checks GitHub once per load, and the manual check bypasses the cached result); a newer release is offered with its release-notes link and a **Download and update** button, and nothing is fetched until you press it; a progress bar follows the download, and **Continue in background** closes the dialog without cancelling anything — the row keeps showing the percentage, a dot on the user button appears once the release is ready, and a toast announces it; then **Restart and update** finishes the job. On a server the download is `penguin update` running in the background (the data directory is untouched), the bar reads the installer's own progress, and the restart is real when the service runs under `penguin web` or `penguin server`, which supervise it: the service comes back on the new release and the page reloads by itself. A service started some other way is told to restart by hand instead. Non-admins can read the release notes but cannot run the update. A failed download shows the update command's own output and offers a retry; an install that cannot update itself (a source checkout, an unrecognized layout, Windows) says why. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
+The prompt box comes with clickable examples that fill the draft. When the page adds fixed instructions to what you type, a folded **Full prompt** preview shows them, with **Copy prompt**.
 
-**In the desktop app** the same dialog drives the app's own updater — in the shell's own window only, where the server release never appears. The shell checks on its own schedule but never downloads on its own: a found release shows up as the dot and the row, the download starts from the dialog, its percentage is the updater's real progress, and **Restart and update** restarts into the downloaded build (the shell's native "Check for Updates…" menu item offers the same download-then-restart steps in native dialogs). A browser signed into the same desktop-mode server with a password gets no update entry at all: it can neither read that machine's updater state nor restart its window, and it cannot run the CLI self-update on that server either. Forms that cannot replace themselves — a Linux install owned by the system package manager (`.deb`), and a development run — say so in the dialog; the [Desktop app guide](/quickstart-desktop) covers the installers.
+There is one way out: **Edit in a new conversation**. It opens a new conversation with the Project's `default_agent`, or the first agent when there is none, and prefills the composer with the prompt. Whether to send it is yours to decide.
 
-## Projects and Members
+- The prompt survives a reload of that new-chat page.
+- Leave the page without editing or sending it, and the prompt is dropped. It cannot resurface in a later conversation.
+- Type into it, and it becomes an ordinary draft, kept like anything else you write.
 
-The sidebar provides a Project switcher and supports creating new Projects. Members have two roles, owner and member: owners manage membership and exclusively edit models, Vault, and Schedules, as well as perform deletions.
+The Scheduled tasks panel is the exception. Its way out is **Edit in this conversation**, which fills the current conversation's composer. See [Scheduled tasks](/schedules).
 
-## Production Deployment
+## Production deployment
 
-The server hosts the built SPA itself (same origin, SPA fallback), so a single `penguin web` or `penguin server` process is all production needs. The npm package bundles the frontend build; to serve a custom static directory, override it with `PENGUIN_WEB_DIST` — see the [Configuration Reference](/configuration).
+The server hosts the built SPA itself, on the same origin and with SPA fallback. A single `penguin web` or `penguin server` process is all production needs.
+
+The npm package bundles the frontend build. To serve a custom static directory instead, override it with `PENGUIN_WEB_DIST`. See the [Configuration Reference](/configuration).
+
+The server listens on `127.0.0.1` by default, so it answers only on its own machine. Exposing it on a network, with `HOST`, belongs behind a reverse proxy that terminates TLS. See [Security](/security).

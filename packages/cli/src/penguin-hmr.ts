@@ -8,11 +8,16 @@ import "./warnings.js";
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";
-import { resolveCliBundlePath } from "@prismshadow/penguin-server/hmr/manifest";
+import { readPushedCli } from "@prismshadow/penguin-server/hmr/manifest";
 
 export async function loadPushedCli(root: string): Promise<(argv: string[]) => Promise<number>> {
-  const bundlePath = await resolveCliBundlePath(root);
-  if (bundlePath === null) throw new Error(`no CLI pushed to ${root}; use \`penguin\` instead`);
+  const pushed = await readPushedCli(root);
+  // A root that pushed no CLI and a root whose record names one it cannot produce are
+  // different problems, and only one of them is fixed by running `penguin` instead.
+  if (pushed.kind === "none") throw new Error(`no CLI pushed to ${root}; use \`penguin\` instead`);
+  if (pushed.kind === "broken")
+    throw new Error(`the CLI pushed to ${root} is unusable: ${pushed.reason}`);
+  const bundlePath = pushed.file;
   // Cache-busted: a re-push writes a new file, but the same path may be reused.
   const mod = (await import(`${pathToFileURL(bundlePath).href}?v=${Date.now()}`)) as {
     cli?: (argv: string[]) => Promise<number>;

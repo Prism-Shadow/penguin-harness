@@ -8,13 +8,10 @@
 import { useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import { CopyButton, HelpFold, Select, Textarea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
-import { CopyButton } from "../../components/ui/copy-button";
-import { HelpFold } from "../../components/ui/help-fold";
-import { Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
 import { composeAiPrompt } from "./ai-create-prompt";
 
 export interface AiExample {
@@ -40,11 +37,36 @@ export interface AiCreatePanelProps {
   onAgentChange?: (agentId: string) => void;
   /** Offer a picker beside the "done by" line instead of a fixed agent; needs onAgentChange. */
   allowAgentChoice?: boolean;
+  /**
+   * Replaces the "done by <agent> in a new conversation" lead line — for a surface that sends
+   * somewhere else, such as into the conversation on screen; null renders no lead line at all.
+   */
+  byLine?: string | null;
   disabled?: boolean;
 }
 
 /** Minimum height of the prompt box, in rows; it grows with its content beyond that. */
 const MIN_ROWS = 6;
+
+/**
+ * The folded preview of what is actually sent, with a copy button. Shown wherever a surface
+ * appends a fixed tail to the draft — this panel, and the dialogs that collect the tail's
+ * parameters in a form of their own instead.
+ */
+export function PromptFold({ text }: { text: string }) {
+  return (
+    <HelpFold title={S.aiCreate.fullPrompt} flush>
+      <div className="relative">
+        <pre className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 pr-8 font-sans text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+          {text}
+        </pre>
+        <div className="absolute top-1.5 right-1.5">
+          <CopyButton text={text} label={S.aiCreate.copyPrompt} />
+        </div>
+      </div>
+    </HelpFold>
+  );
+}
 
 const exampleClass =
   "min-w-0 rounded-md border px-2.5 py-1.5 text-left transition-colors duration-150 " +
@@ -64,6 +86,7 @@ export function AiCreatePanel({
   agentId,
   onAgentChange,
   allowAgentChoice,
+  byLine,
   disabled,
 }: AiCreatePanelProps) {
   const agent = agents.find((a) => a.agentId === agentId) ?? null;
@@ -87,7 +110,9 @@ export function AiCreatePanel({
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-        {agent !== null ? (
+        {byLine !== undefined ? (
+          byLine !== null && <span>{byLine}</span>
+        ) : agent !== null ? (
           <span>{S.aiCreate.byAgent(agentDisplayName(agent))}</span>
         ) : agents.length === 0 ? (
           <span className={toneInk.attention}>{S.aiCreate.noAgent}</span>
@@ -123,51 +148,51 @@ export function AiCreatePanel({
         onChange={(e) => onChange(e.target.value)}
       />
 
-      {examples.length > 0 && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-            {S.aiCreate.examplesTitle}
-          </div>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {examples.map((ex) => {
-              // Selected while the draft still IS the example; the first edit unselects it.
-              const selected = value === ex.prompt;
-              return (
-                <button
-                  key={ex.key}
-                  type="button"
-                  aria-pressed={selected}
-                  disabled={disabled}
-                  onClick={() => onChange(ex.prompt)}
-                  className={`${exampleClass} ${selected ? exampleSelectedClass : exampleIdleClass}`}
-                >
-                  <div className="truncate text-xs font-medium text-gray-800 dark:text-gray-100">
-                    {ex.label}
-                  </div>
-                  {ex.description !== undefined && (
-                    <div className="truncate text-[11px] text-gray-500 dark:text-gray-400">
-                      {ex.description}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <AiExamples examples={examples} value={value} onChange={onChange} disabled={disabled} />
 
-      {fullPrompt !== null && (
-        <HelpFold title={S.aiCreate.fullPrompt} flush>
-          <div className="relative">
-            <pre className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 pr-8 font-sans text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-              {fullPrompt}
-            </pre>
-            <div className="absolute top-1.5 right-1.5">
-              <CopyButton text={fullPrompt} label={S.aiCreate.copyPrompt} />
-            </div>
-          </div>
-        </HelpFold>
-      )}
+      {fullPrompt !== null && <PromptFold text={fullPrompt} />}
+    </div>
+  );
+}
+
+/** The same source choices in create and import dialogs; a click fills the editable draft. */
+export function AiExamples({
+  examples,
+  value,
+  onChange,
+  disabled,
+}: Pick<AiCreatePanelProps, "examples" | "value" | "onChange" | "disabled">) {
+  if (examples.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+        {S.aiCreate.examplesTitle}
+      </div>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {examples.map((ex) => {
+          // Selected while the draft still IS the example; the first edit unselects it.
+          const selected = value === ex.prompt;
+          return (
+            <button
+              key={ex.key}
+              type="button"
+              aria-pressed={selected}
+              disabled={disabled}
+              onClick={() => onChange(ex.prompt)}
+              className={`${exampleClass} ${selected ? exampleSelectedClass : exampleIdleClass}`}
+            >
+              <div className="truncate text-xs font-medium text-gray-800 dark:text-gray-100">
+                {ex.label}
+              </div>
+              {ex.description !== undefined && (
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {ex.description}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

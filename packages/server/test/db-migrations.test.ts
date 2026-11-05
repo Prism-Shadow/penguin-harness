@@ -1,323 +1,277 @@
 /**
- * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, and
- * the 0.2.9 → 0.2.10 drop that is its first restart-only one.
+ * The migration ledger: which migrations run, in what order, what is recorded, and what an
+ * older build, another PR line, a hot push and an operator's rollback each see. What every
+ * single migration changes is pinned in db-migration-steps.test.ts.
  *
- * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
- * fresh one is created with (so a runtime older than the platform pushed onto it becomes
- * usable), and the version stamp commits with the migration (so an interrupted run is never
- * half-applied). The swapPath suite pins the rule that keeps a hot push honest.
+ * Three properties carry everything else: a database with no ledger — a 0.2.4 one, a root
+ * stamped by any line's numbering, a new one — reaches exactly the shape a fresh one is
+ * created with; every migration is re-runnable, which is what makes that adoption safe; and
+ * a migration commits with its ledger row, so an interrupted run is never half-applied.
  */
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import {
   IrreversibleMigrationError,
-  LATEST_VERSION,
   MIGRATIONS,
-  RestartRequiredError,
+  type Migration,
+  UnknownMigrationError,
+  appliedMigrations,
   migrate,
   rollbackTo,
-  schemaVersion,
-} from "../src/db/migrations.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
+} from "../src/db/migrations/index.js";
+import * as runner from "../src/db/migrations/runner.js";
+import {
+  columns,
+  contents,
+  hasTable,
+  namesAfter,
+  namesThrough,
+  open024,
+  openFresh,
+  record,
+  shape,
+  sqlite,
+} from "./db-migrations-fixtures.js";
 
-const sqlite = process.getBuiltinModule("node:sqlite");
+const userVersion = (db: DatabaseSync): number =>
+  (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
 
-/**
- * The goal_state table as every release from 0.1.3 to 0.2.9 declared it (frozen: the live
- * schema no longer has it, and the migration that drops it must not learn a new shape).
- */
-const GOAL_STATE_DDL = `
-  CREATE TABLE goal_state (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT NOT NULL,
-    project_id  TEXT NOT NULL,
-    agent_id    TEXT NOT NULL,
-    objective   TEXT NOT NULL,
-    status      TEXT NOT NULL,
-    budget      INTEGER NOT NULL,
-    used        INTEGER NOT NULL DEFAULT 0,
-    rounds      INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-  );
-  CREATE INDEX idx_goal_session ON goal_state(session_id);
-`;
-
-/**
- * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
- * lacked, plus the one table it had that today's declaration dropped. Derived from
- * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
- */
-function open024(): DatabaseSync {
-  const db = new sqlite.DatabaseSync(":memory:");
-  db.exec(SCHEMA_SQL);
-  db.exec("DROP TABLE messaging_bindings");
-  db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
-  db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
-  db.exec(GOAL_STATE_DDL);
+/** A current database with a row in the tables a re-run could plausibly disturb. */
+function openWithRows(): DatabaseSync {
+  const db = openFresh();
+  migrate(db);
+  db.exec(`
+    INSERT INTO users (user_id, password_hash, is_admin, created_at, display_name)
+      VALUES ('owner', 'h', 1, '2026-09-20T00:00:00.000Z', 'Owner');
+    INSERT INTO projects (project_id, owner_user_id, created_at)
+      VALUES ('p1', 'owner', '2026-09-20T00:00:00.000Z');
+    INSERT INTO model_promotions (project_id, provider, model_id, discount, updated_at)
+      VALUES ('p1', 'tokendance', 'm1', 0.5, '2026-09-20T00:00:00.000Z');
+    INSERT INTO messaging_bindings (session_id, channel, account_id, config_json, created_at, updated_at, render_markdown)
+      VALUES ('s1', 'telegram', 'a1', '{}', '2026-09-20T00:00:00.000Z', '2026-09-20T00:00:00.000Z', 0);
+    INSERT INTO org_channel_reads (project_id, org_id, channel_id, user_id, last_read_id)
+      VALUES ('p1', 'acme', 'default_channel', 'owner', 'msg-1');
+    INSERT INTO machines (address, machine_id, session_pid, platform)
+      VALUES ('ssh:nas', 'm1', 42, 'linux');
+    INSERT INTO browser_extensions (extension_id, user_id, token_hash, name, version, created_at)
+      VALUES ('e1', 'owner', 'h1', 'Chrome 130 on Linux', '0.2.13', '2026-09-20T00:00:00.000Z');
+  `);
   return db;
 }
 
-/** A 0.2.9 database: everything 0.2.4 had plus what versions 1 and 2 added, and still goal_state. */
-function open029(): DatabaseSync {
-  const db = new sqlite.DatabaseSync(":memory:");
-  db.exec(SCHEMA_SQL);
-  db.exec(GOAL_STATE_DDL);
-  // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
-  // migration 4 is what adds them. Without this the fixture is a database no release made.
-  db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
-  db.exec("PRAGMA user_version = 2");
-  return db;
-}
-
-/** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
-function withoutRestartOnly<T>(fn: () => T): T {
-  const list = MIGRATIONS as unknown as (typeof MIGRATIONS)[number][];
-  const removed = list.splice(2, 1);
-  try {
-    return fn();
-  } finally {
-    list.push(...removed);
-  }
-}
-
-/**
- * Every schema object, in a form two databases can be compared by — columns keyed by NAME,
- * with ordinal position (`cid`) excluded.
- *
- * Column ORDER is deliberately not compared. `ALTER TABLE ADD COLUMN` appends, while a
- * fresh database gets the column wherever SCHEMA_SQL declares it, so a migrated database
- * and a freshly created one hold the same columns in a different order — and always have:
- * openDatabase's own ensureColumn list has appended columns to released databases since
- * long before migrations existed. Making the orders match would mean rebuilding the table,
- * which is not additive and would take the rollback guarantee with it. What order actually
- * costs is the column order of `SELECT *`, and every read here maps rows by name.
- *
- * Index column order IS compared: for a composite index it is the index.
- */
-function shape(db: DatabaseSync): string {
-  const objs = db
-    .prepare(
-      "SELECT type, name, tbl_name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
-    )
-    .all() as { type: string; name: string; tbl_name: string }[];
-  const dropCid = (rows: unknown[]): Record<string, unknown>[] =>
-    rows.map((r) => {
-      const { cid: _cid, ...rest } = r as Record<string, unknown>;
-      return rest;
-    });
-  return JSON.stringify(
-    objs.map((o) => ({
-      ...o,
-      detail:
-        o.type === "table"
-          ? dropCid(db.prepare(`PRAGMA table_info(${o.name})`).all()).sort((a, b) =>
-              String(a.name) < String(b.name) ? -1 : String(a.name) > String(b.name) ? 1 : 0,
-            )
-          : dropCid(db.prepare(`PRAGMA index_info(${o.name})`).all()),
-      unique:
-        o.type === "index"
-          ? (
-              db.prepare(`PRAGMA index_list(${o.tbl_name})`).all() as {
-                name: string;
-                unique: number;
-              }[]
-            ).find((i) => i.name === o.name)?.unique
-          : undefined,
-    })),
-  );
-}
-
-describe("migration mechanism", () => {
-  it("versions are contiguous from 1, so a stamp names an unambiguous state", () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
-    expect(LATEST_VERSION).toBe(MIGRATIONS.length);
+describe("the ledger", () => {
+  it("adopts a database without one: every migration runs once and is recorded in order", () => {
+    const db = open024();
+    const fresh = openFresh();
+    try {
+      const r = migrate(db);
+      expect(r.adopted).toBe(true);
+      expect(r.applied).toEqual(namesAfter(null));
+      expect(appliedMigrations(db)).toEqual(namesAfter(null));
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
   });
 
-  it("stamps the database with how far it has come", () => {
-    const db = open024();
+  it("runs once: an already-current database does no work and writes nothing", () => {
+    const db = openWithRows();
     try {
-      expect(schemaVersion(db)).toBe(0);
-      const r = migrate(db);
-      expect(r.from).toBe(0);
-      expect(r.to).toBe(LATEST_VERSION);
-      expect(r.applied).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-        "drop-goal-state",
-        "machines",
-      ]);
-      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      const before = { shape: shape(db), contents: contents(db), ledger: appliedMigrations(db) };
+      const again = migrate(db);
+      expect(again).toEqual({ adopted: false, applied: [], deferred: [] });
+      expect({ shape: shape(db), contents: contents(db), ledger: appliedMigrations(db) }).toEqual(
+        before,
+      );
     } finally {
       db.close();
     }
   });
 
-  it("runs once: an already-current database does no work", () => {
-    const db = open024();
+  it("neither reads nor writes user_version: a numbered stamp is ignored and left as it was", () => {
+    const db = openFresh();
+    try {
+      // Stamped past every migration by some line's numbering: the ledger still runs them all.
+      db.exec("PRAGMA user_version = 17");
+      expect(migrate(db).applied).toEqual(namesAfter(null));
+      expect(userVersion(db)).toBe(17);
+    } finally {
+      db.close();
+    }
+    const created = openFresh();
+    try {
+      migrate(created);
+      expect(userVersion(created)).toBe(0);
+    } finally {
+      created.close();
+    }
+  });
+
+  it("a failing migration is left out of the ledger, never half-applied", () => {
+    const db = openFresh();
     try {
       migrate(db);
+      const boom: Migration = {
+        name: "explodes",
+        swapSafe: true,
+        up(d) {
+          d.exec("CREATE TABLE scratch_marker (x TEXT)");
+          throw new Error("boom");
+        },
+        down: null,
+      };
       const before = shape(db);
-      const again = migrate(db);
-      expect(again.applied).toEqual([]);
-      expect(again.from).toBe(LATEST_VERSION);
+      expect(() => runner.migrate(db, [...MIGRATIONS, boom])).toThrow(/explodes.*failed/s);
+      expect(appliedMigrations(db)).toEqual(namesAfter(null));
+      // The table its `up` created is gone with the rolled-back transaction.
       expect(shape(db)).toBe(before);
     } finally {
       db.close();
     }
   });
 
-  it("a failing migration leaves the version untouched, never half-applied", () => {
-    const db = open024();
+  it("an older build ignores the names a newer build recorded", () => {
+    const db = openFresh();
     try {
-      const boom = {
-        version: LATEST_VERSION + 1,
-        name: "explodes",
+      record(db, [...namesAfter(null), "from-a-newer-build"]);
+      expect(migrate(db)).toEqual({ adopted: false, applied: [], deferred: [] });
+      expect(appliedMigrations(db)).toContain("from-a-newer-build");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("applies a migration another line's build skipped, when the root meets it", () => {
+    const db = openFresh();
+    try {
+      // A root whose builds never declared 2026-10-04-browser-extensions, though they declared what follows it.
+      db.exec("DROP TABLE browser_extensions");
+      record(
+        db,
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
+      );
+      expect(migrate(db).applied).toEqual(["2026-10-04-browser-extensions"]);
+      expect(hasTable(db, "browser_extensions")).toBe(true);
+      // Recorded where it actually ran: last.
+      expect(appliedMigrations(db).at(-1)).toBe("2026-10-04-browser-extensions");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("an adoption cut short resumes from where it stopped", () => {
+    const db = open024();
+    const fresh = openFresh();
+    try {
+      const boom: Migration = {
+        name: "stops-here",
         swapSafe: true,
-        up(d: DatabaseSync) {
-          d.exec("CREATE TABLE scratch_marker (x TEXT)");
-          throw new Error("boom");
+        up() {
+          throw new Error("power cut");
         },
+        down: null,
       };
-      migrate(db);
-      const at = schemaVersion(db);
-      const shapeBefore = shape(db);
-      (MIGRATIONS as unknown as (typeof boom)[]).push(boom);
-      try {
-        expect(() => migrate(db)).toThrow(/explodes.*failed/s);
-        expect(schemaVersion(db)).toBe(at);
-        // The table its `up` created is gone with the rolled-back transaction.
-        expect(shape(db)).toBe(shapeBefore);
-      } finally {
-        (MIGRATIONS as unknown as (typeof boom)[]).pop();
+      const half = namesThrough("2026-09-14-user-profile").length;
+      const cut = [...MIGRATIONS.slice(0, half), boom, ...MIGRATIONS.slice(half)];
+      expect(() => runner.migrate(db, cut)).toThrow(/stops-here/);
+      expect(appliedMigrations(db)).toEqual(namesThrough("2026-09-14-user-profile"));
+      expect(migrate(db)).toEqual({
+        adopted: false,
+        applied: namesAfter("2026-09-14-user-profile"),
+        deferred: [],
+      });
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+});
+
+describe("every migration is re-runnable", () => {
+  it("running any migration's `up` again changes neither the shape nor a single row", () => {
+    const db = openWithRows();
+    try {
+      const before = { shape: shape(db), contents: contents(db) };
+      for (const m of MIGRATIONS) {
+        m.up(db);
+        expect({ shape: shape(db), contents: contents(db) }, m.name).toEqual(before);
       }
     } finally {
       db.close();
     }
   });
+
+  it("adopting a current root from the numbered era records every name and changes nothing else", () => {
+    const db = openWithRows();
+    try {
+      db.exec("DROP TABLE schema_migrations");
+      db.exec("PRAGMA user_version = 17");
+      const before = { shape: shape(db), contents: contents(db) };
+      const r = migrate(db);
+      expect(r.adopted).toBe(true);
+      expect(appliedMigrations(db)).toEqual(namesAfter(null));
+      expect({ shape: shape(db), contents: contents(db) }).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
 });
 
-describe("the swap path refuses what a rollback could not survive", () => {
-  it("applies swap-safe migrations while a pushed platform boots", () => {
+describe("the swap path applies every expand migration and leaves contracts pending", () => {
+  it("adopts a numbered root while a pushed platform boots, leaving 2026-09-02-drop-goal-state for the runtime", () => {
+    const db = openFresh();
+    const fresh = openFresh();
+    try {
+      // Every numbered root a build since 0.2.10 opened: no goal_state, a stamp, no ledger —
+      // here the one the chain stamped 16 before its restack, without main's two model tables.
+      db.exec(
+        "DROP TABLE model_promotions; DROP TABLE model_provider_auth_tokens; PRAGMA user_version = 16;",
+      );
+      const r = migrate(db, { swapPath: true });
+      expect(r.adopted).toBe(true);
+      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "2026-09-02-drop-goal-state"));
+      expect(r.deferred).toEqual(["2026-09-02-drop-goal-state"]);
+      expect(shape(db)).toBe(shape(fresh));
+      // The runtime's next open records it, as the no-op it is here.
+      expect(migrate(db)).toEqual({
+        adopted: false,
+        applied: ["2026-09-02-drop-goal-state"],
+        deferred: [],
+      });
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("boots on a root whose goal_state is still there, keeping it — a contract never runs on the swap path", () => {
     const db = open024();
     try {
-      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-        "machines",
-      ]);
+      const r = migrate(db, { swapPath: true });
+      expect(r.deferred).toEqual(["2026-09-02-drop-goal-state"]);
+      expect(r.applied).toEqual(namesAfter(null).filter((n) => n !== "2026-09-02-drop-goal-state"));
+      expect(hasTable(db, "goal_state")).toBe(true);
+      // A second push leaves it pending again, and still boots.
+      expect(migrate(db, { swapPath: true })).toEqual({
+        adopted: false,
+        applied: [],
+        deferred: ["2026-09-02-drop-goal-state"],
+      });
+      // The runtime's own open, which owns the process, applies it.
+      expect(migrate(db).applied).toEqual(["2026-09-02-drop-goal-state"]);
+      expect(hasTable(db, "goal_state")).toBe(false);
     } finally {
       db.close();
     }
   });
 
-  it("refuses a restart-only migration whole, applying nothing — drop-goal-state is the first", () => {
-    const db = open024();
-    try {
-      const before = shape(db);
-      expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
-      // Not even the swap-safe migrations ahead of it ran: the push is refused whole.
-      expect(shape(db)).toBe(before);
-      expect(schemaVersion(db)).toBe(0);
-      // The runtime's own open, which owns the process, may apply it.
-      expect(migrate(db).applied).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-        "drop-goal-state",
-        "machines",
-      ]);
-    } finally {
-      db.close();
-    }
-  });
-
-  it("a database already at the latest version boots on the swap path without a word", () => {
-    const db = open024();
+  it("a current database boots on the swap path without a word", () => {
+    const db = openFresh();
     try {
       migrate(db);
       expect(migrate(db, { swapPath: true }).applied).toEqual([]);
-    } finally {
-      db.close();
-    }
-  });
-});
-
-describe("0.2.9 → current: drop-goal-state", () => {
-  it("drops the table and its index, and a database that never had them migrates the same", () => {
-    const db = open029();
-    const fresh = new sqlite.DatabaseSync(":memory:");
-    try {
-      fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines"]);
-      expect(shape(db)).toBe(shape(fresh));
-      // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
-      // goal_state to drop and must not fail on it.
-      fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines"]);
-    } finally {
-      db.close();
-      fresh.close();
-    }
-  });
-
-  it("down recreates the 0.2.9 table empty, with its index", () => {
-    const db = open029();
-    try {
-      db.exec(
-        "INSERT INTO goal_state (session_id, project_id, agent_id, objective, status, budget, created_at, updated_at)" +
-          " VALUES ('s1', 'p1', 'a1', 'ship it', 'complete', -1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
-      );
-      const before = shape(db);
-      migrate(db);
-      rollbackTo(db, 2);
-      expect(shape(db)).toBe(before);
-      expect(db.prepare("SELECT COUNT(*) AS n FROM goal_state").get()).toEqual({ n: 0 });
-    } finally {
-      db.close();
-    }
-  });
-});
-
-describe("0.2.4 → current", () => {
-  /** The whole point: an older runtime's database becomes what a current build creates. */
-  it("brings a 0.2.4 database to the shape a fresh one is created with", () => {
-    const old = open024();
-    const fresh = new sqlite.DatabaseSync(":memory:");
-    try {
-      fresh.exec(SCHEMA_SQL);
-      expect(shape(old)).not.toBe(shape(fresh));
-
-      migrate(old);
-
-      expect(shape(old)).toBe(shape(fresh));
-    } finally {
-      old.close();
-      fresh.close();
-    }
-  });
-
-  it("the messaging table it creates is writable, which is what the boot needed", () => {
-    const db = open024();
-    try {
-      migrate(db);
-      db.exec(
-        "INSERT INTO messaging_bindings (session_id, channel, account_id, config_json, created_at, updated_at)" +
-          " VALUES ('s1', 'telegram', 'a1', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
-      );
-      expect(db.prepare("SELECT COUNT(*) AS n FROM messaging_bindings").get()).toEqual({ n: 1 });
-    } finally {
-      db.close();
-    }
-  });
-
-  it("leaves existing rows alone", () => {
-    const db = open024();
-    try {
-      db.exec(
-        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('admin', 'h', 1, '2026-01-01T00:00:00Z')",
-      );
-      migrate(db);
-      expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "admin" }]);
     } finally {
       db.close();
     }
@@ -333,25 +287,46 @@ describe("rollbackTo", () => {
     }
   });
 
-  it("undoes a migration and moves the stamp back with it", () => {
+  it("names are unique: a name is the identity the ledger records", () => {
+    const names = MIGRATIONS.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) expect(n).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+  });
+
+  it("undoes what was applied after the target, newest first, and forgets it in the ledger", () => {
     const db = open024();
     try {
       migrate(db);
-      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      const r = rollbackTo(db, "2026-08-31-messaging-bindings");
+      expect(r.reverted).toEqual(namesAfter("2026-08-31-messaging-bindings").reverse());
+      expect(appliedMigrations(db)).toEqual(["2026-08-31-messaging-bindings"]);
+      const cols = columns(db, "messaging_bindings");
+      expect(cols).not.toContain("render_markdown");
+      expect(cols).not.toContain("final_reply_only");
+      expect(hasTable(db, "machines")).toBe(false);
+      expect(hasTable(db, "org_channel_reads")).toBe(false);
+      // goal_state, which 2026-09-02-drop-goal-state dropped, is back.
+      expect(hasTable(db, "goal_state")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
 
-      const r = rollbackTo(db, LATEST_VERSION - 2);
-      expect(r.from).toBe(LATEST_VERSION);
-      expect(r.to).toBe(LATEST_VERSION - 2);
-      // Newest first: the machines tables go, then goal_state comes back.
-      expect(r.reverted).toEqual(["machines", "drop-goal-state"]);
-      const tables = (
-        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
-          name: string;
-        }[]
-      ).map((t) => t.name);
-      expect(tables).not.toContain("machines");
-      expect(tables).not.toContain("machine_project");
-      expect(tables).toContain("goal_state");
+  it("follows the order migrations were APPLIED in, not the order they are declared in", () => {
+    const db = openFresh();
+    try {
+      db.exec("DROP TABLE browser_extensions");
+      record(
+        db,
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
+      );
+      migrate(db);
+      // 2026-10-04-browser-extensions ran last, so it is the only one applied after the last other name.
+      const lastOther = namesAfter(null)
+        .filter((n) => n !== "2026-10-04-browser-extensions")
+        .at(-1)!;
+      expect(rollbackTo(db, lastOther).reverted).toEqual(["2026-10-04-browser-extensions"]);
+      expect(hasTable(db, "browser_extensions")).toBe(false);
     } finally {
       db.close();
     }
@@ -363,82 +338,90 @@ describe("rollbackTo", () => {
     try {
       migrate(db);
       const afterUp = shape(db);
-
-      rollbackTo(db, 0);
-      expect(schemaVersion(db)).toBe(0);
+      rollbackTo(db, null);
+      expect(appliedMigrations(db)).toEqual([]);
       expect(shape(db)).not.toBe(afterUp);
-
-      migrate(db);
-      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      expect(hasTable(db, "messaging_bindings")).toBe(false);
+      expect(migrate(db)).toEqual({ adopted: false, applied: namesAfter(null), deferred: [] });
       expect(shape(db)).toBe(afterUp);
     } finally {
       db.close();
     }
   });
 
-  it("reverts newest first, so a multi-step rollback is ordered", () => {
-    const db = open024();
+  it("refuses whole when anything in range has no down, undoing nothing", () => {
+    const db = openFresh();
     try {
-      migrate(db);
-      const r = rollbackTo(db, 0);
-      expect(r.reverted).toEqual([
-        "machines",
-        "drop-goal-state",
-        "messaging-delivery-flags",
-        "messaging-bindings",
-      ]);
-      expect(
-        db
-          .prepare(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messaging_bindings'",
-          )
-          .get(),
-      ).toBeUndefined();
-    } finally {
-      db.close();
-    }
-  });
-
-  it("refuses whole when anything in range has no down, applying nothing", () => {
-    const db = open024();
-    try {
-      migrate(db);
-      const at = schemaVersion(db);
-      const before = shape(db);
-      const oneWay = {
-        version: LATEST_VERSION + 1,
+      const oneWay: Migration = {
         name: "one-way",
         swapSafe: true,
-        up(d: DatabaseSync) {
-          d.exec("CREATE TABLE one_way (x TEXT)");
+        up(d) {
+          d.exec("CREATE TABLE IF NOT EXISTS one_way (x TEXT)");
         },
         down: null,
       };
-      (MIGRATIONS as unknown as (typeof oneWay)[]).push(oneWay);
-      try {
-        migrate(db);
-        // Rolling back past the irreversible one is refused before anything is undone —
-        // including the reversible migrations sitting above it.
-        expect(() => rollbackTo(db, 0)).toThrow(IrreversibleMigrationError);
-        expect(schemaVersion(db)).toBe(at + 1);
-      } finally {
-        (MIGRATIONS as unknown as (typeof oneWay)[]).pop();
-        // Leave the fixture database as the other cases expect it.
-        db.exec("DROP TABLE IF EXISTS one_way");
-        db.exec(`PRAGMA user_version = ${at}`);
-        expect(shape(db)).toBe(before);
-      }
+      const list = [...MIGRATIONS, oneWay];
+      runner.migrate(db, list);
+      const before = shape(db);
+      expect(() => runner.rollbackTo(db, list, null)).toThrow(IrreversibleMigrationError);
+      expect(appliedMigrations(db)).toEqual(list.map((m) => m.name));
+      expect(shape(db)).toBe(before);
     } finally {
       db.close();
     }
   });
 
-  it("will not roll forward, and rejects a negative target", () => {
-    const db = open024();
+  it("refuses whole when a name in range is not one this build declares", () => {
+    const db = openFresh();
+    try {
+      record(db, [...namesAfter(null), "from-a-newer-build"]);
+      const before = shape(db);
+      expect(() => rollbackTo(db, null)).toThrow(UnknownMigrationError);
+      expect(shape(db)).toBe(before);
+      // Below the unknown name, it is out of range and nothing stands in the way.
+      expect(rollbackTo(db, "from-a-newer-build").reverted).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects a target that was never applied", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      expect(() => rollbackTo(db, "2026-09-04-machines")).toThrow(/not applied/);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("2026-10-12-messaging-conversations on a named-migration root", () => {
+  it("creates a unique row per bot and chat on the swap path, and its down drops them", () => {
+    const db = openFresh();
     try {
       migrate(db);
-      expect(() => rollbackTo(db, LATEST_VERSION + 5)).toThrow(/already below/);
-      expect(() => rollbackTo(db, -1)).toThrow(/negative/);
+      db.exec("DROP TABLE messaging_conversations");
+      db.exec("DELETE FROM schema_migrations WHERE name = '2026-10-12-messaging-conversations'");
+      // The migration applied just before the re-applied one on this root: rolling back to it
+      // undoes exactly that one, whatever the later migrations' downs would do.
+      const previous = namesAfter(null)
+        .filter((n) => n !== "2026-10-12-messaging-conversations")
+        .at(-1)!;
+      const before = shape(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-10-12-messaging-conversations",
+      ]);
+      const put = () =>
+        db
+          .prepare(
+            "INSERT INTO messaging_conversations (channel, account_id, chat_id, state_json, updated_at)" +
+              " VALUES ('wechat', 'bot_1', 'user_1', '{}', '2026-10-10T00:00:00.000Z')",
+          )
+          .run();
+      put();
+      expect(put).toThrow(/UNIQUE/);
+      rollbackTo(db, previous);
+      expect(shape(db)).toBe(before);
     } finally {
       db.close();
     }

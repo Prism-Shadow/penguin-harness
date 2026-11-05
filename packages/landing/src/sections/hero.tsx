@@ -1,66 +1,137 @@
-/** Product-first hero with two direct installation paths. */
+/**
+ * Product-first hero: the slogan, the subtitle in grey, two direct installation paths, three stat
+ * tiles (the small label over the big value), three catalogue rows (supported models,
+ * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
+ * before they open (the models row's closing "and more" links to MMSP's model index), and then
+ * the app itself, live: the start page in a frame. What the rows list, and where each entry
+ * links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists' lengths.
+ */
+import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
+import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
-import { DownloadIcon, ModelProviderLogo, TerminalIcon } from "../components/icons";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
+import {
+  DownloadIcon,
+  ExternalLinkIcon,
+  ModelProviderLogo,
+  AirplaneIcon,
+  TerminalIcon,
+} from "../components/icons";
+import { ExternalLink, ExternalLinkScope } from "../components/external-link";
+import { LiveAppFrame } from "../components/live-app-frame";
+import { useVisibleActivity } from "../lib/visible-activity";
 
-const MODEL_PROVIDERS = [
-  "openai",
-  "anthropic",
-  "gemini",
-  "deepseek",
-  "zai",
-  "moonshot",
-  "qwen",
-  "openrouter",
-] as const;
+/**
+ * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
+ * list, read the way the model logos beside it are.
+ */
+const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300";
+
+/** An entry that links out: the same text, underlined on hover, with the outside-link mark. */
+const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
+
+/**
+ * One row of the catalogue, led by its count: the count and label above the items on phones;
+ * from `sm` up, they share the catalogue's two columns (subgrid), the count-and-label column
+ * aligned left so the three counts line up.
+ */
+function CatalogRow({
+  count,
+  label,
+  delay,
+  listClassName,
+  children,
+}: {
+  count: string;
+  label: string;
+  delay: number;
+  listClassName: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <dt className="flex items-baseline gap-2 sm:text-left">
+        <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+          {count}
+        </span>
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</span>
+      </dt>
+      {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
+      <dd className="mt-2.5 sm:mt-0">
+        <ul
+          className={`flex flex-wrap items-center justify-center sm:justify-start ${listClassName}`}
+        >
+          {children}
+        </ul>
+      </dd>
+    </div>
+  );
+}
+
+function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach" }) {
+  return (
+    <span className={`hero-word hero-word-${variant}`}>
+      <span className="hero-word-ink">{text}</span>
+      <span className="hero-word-trace" aria-hidden="true">
+        <span className="hero-word-flight">
+          <span className="hero-word-trail" />
+          <AirplaneIcon className="hero-word-plane" />
+        </span>
+      </span>
+    </span>
+  );
+}
 
 export function Hero() {
+  const { locale } = useSiteLocale();
+  const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
-        <h1 className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5">
+        <h1
+          id="home-top"
+          tabIndex={-1}
+          className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5"
+        >
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
             alt=""
             className="h-12 w-12 sm:h-16 sm:w-16"
           />
-          <span className="text-[1.7rem] font-semibold tracking-tight sm:text-4xl">
-            {S.siteName}
-          </span>
+          <span className="text-2xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance"
+          ref={motion}
+          className={`hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.platformLead}
-          <span className="text-brand-600 dark:text-brand-300">
-            <span className="sr-only">{S.hero.platformActions.join(" / ")}</span>
-            <span className="hero-rotator" aria-hidden="true">
-              {S.hero.platformActions.map((action) => (
-                <span key={action} className="hero-rotator-word">
-                  {action}
-                </span>
-              ))}
-            </span>
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.growthLead}
+            <HeroWord text={S.hero.positioning.growth} variant="growth" />
+            {S.hero.positioning.growthEnd}
           </span>
-          {S.hero.platformTail}
+          {S.hero.positioning.separator}
+          <wbr />
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.reachLead}
+            <HeroWord text={S.hero.positioning.reach} variant="reach" />
+            {S.hero.positioning.reachEnd}
+          </span>
         </p>
 
         <p
-          className="hero-automation anim-rise mt-5 leading-6 text-balance text-gray-600 sm:leading-8 dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.automationLead}
-          {S.hero.automationActions.map((action, index) => (
-            <span key={action}>
-              {index > 0 && <span className="font-normal"> · </span>}
-              <strong className="font-semibold text-gray-900 dark:text-gray-100">{action}</strong>
-            </span>
-          ))}{" "}
-          {S.hero.automationTail}
+          {S.hero.subtitle}
         </p>
 
         <div
@@ -73,7 +144,7 @@ export function Hero() {
           >
             <DownloadIcon className="h-4 w-4" />
             <span>{S.hero.downloadCta}</span>
-            <span className="border-l border-white/25 pl-2 text-xs font-medium text-white/70 tabular-nums dark:border-gray-900/20 dark:text-gray-900/60">
+            <span className="text-xs font-medium text-gray-400 tabular-nums dark:text-gray-600">
               {RELEASE_VERSION}
             </span>
           </Link>
@@ -87,42 +158,93 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-6xl grid-cols-2 gap-x-4 gap-y-7 sm:mt-12 sm:gap-x-6 sm:gap-y-8 xl:grid-cols-4 xl:gap-x-2"
+          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-3 gap-x-3 sm:mt-12 sm:gap-x-6"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="mx-auto mt-1 max-w-56 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 min-h-8 max-w-64 text-xs leading-4 text-gray-500 sm:min-h-0 sm:leading-5 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="hero-stat-value mx-auto mt-0.5 max-w-64 text-[19px] leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-2xl xl:max-w-none dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-xl dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>
           ))}
         </dl>
 
-        <div
-          className="anim-rise mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-x-5 gap-y-4 text-center text-sm sm:gap-x-6"
-          style={{ animationDelay: "300ms" }}
-        >
-          <span className="mr-1 basis-full text-xs font-semibold tracking-wide text-gray-400 uppercase sm:basis-auto dark:text-gray-500">
-            {S.hero.supportedModelsLabel}
-          </span>
-          {MODEL_PROVIDERS.map((provider, index) => (
-            <span
-              key={provider}
-              aria-label={S.hero.supportedModels[index]}
-              title={S.hero.supportedModels[index]}
-              className="inline-flex items-center text-gray-700 dark:text-gray-300"
+        <ExternalLinkScope>
+          <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
+            <CatalogRow
+              count={S.hero.supportedModelsCount}
+              label={S.hero.supportedModelsLabel}
+              delay={300}
+              listClassName="gap-x-2 gap-y-1"
             >
-              <ModelProviderLogo provider={provider} className="h-6 w-6" />
-            </span>
-          ))}
-          <span className="basis-full whitespace-nowrap font-medium text-gray-400 sm:basis-auto dark:text-gray-500">
-            {S.hero.supportedModelsMore}
-          </span>
-        </div>
+              {MODEL_PROVIDERS.map((provider) => (
+                <li key={provider.id}>
+                  <ExternalLink
+                    href={provider.href}
+                    aria-label={provider.name}
+                    title={provider.name}
+                    className="inline-flex rounded-md p-1 text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <ModelProviderLogo provider={provider.id} className="h-6 w-6" />
+                  </ExternalLink>
+                </li>
+              ))}
+              <li className="ml-1">
+                <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
+                  {S.hero.supportedModelsMore}
+                  <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                </ExternalLink>
+              </li>
+            </CatalogRow>
+
+            <CatalogRow
+              count={String(RSI_TOOLKITS.length)}
+              label={S.hero.algorithmsLabel}
+              delay={340}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {RSI_TOOLKITS.map((toolkit) => (
+                <li key={toolkit.plugin}>
+                  {toolkit.href !== null ? (
+                    <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
+                      {toolkit.label}
+                      <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                    </ExternalLink>
+                  ) : (
+                    <span className={ENTRY}>{toolkit.label}</span>
+                  )}
+                </li>
+              ))}
+            </CatalogRow>
+
+            <CatalogRow
+              count={String(BENCHMARKS.length)}
+              label={S.hero.benchmarksLabel}
+              delay={380}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {BENCHMARKS.map((benchmark, index) => (
+                <li key={benchmark.href}>
+                  <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
+                    {S.hero.benchmarkKinds[index]}
+                    <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                  </ExternalLink>
+                </li>
+              ))}
+            </CatalogRow>
+          </dl>
+        </ExternalLinkScope>
+
+        <LiveAppFrame
+          surface="chat-new"
+          autoplay="evolution"
+          title={S.live.evolutionFrame}
+          className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
+        />
       </div>
     </section>
   );

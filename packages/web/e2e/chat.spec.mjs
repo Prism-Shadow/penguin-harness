@@ -55,8 +55,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Tool name is shown on the collapsed tool row + in the pending-approval block.
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  // The tool name is shown on the collapsed tool row + in the pending-approval block, as the
+  // short display name the Appearance switch turns on by default (`exec_command` itself stays
+  // in the tooltip of both, which is not text).
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
 
@@ -65,7 +67,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // event. Scoped to the toolbar's details trigger (the chips now double as the "Session 信息"
   // button at the far right): the per-reply footer reuses the same 用时 ("elapsed") label once
   // the turn's stats line lands.
-  const headerElapsed = page.locator('button[title="Session 信息"] span[title="用时"]');
+  const headerElapsed = page.locator(
+    'button[data-tooltip="Session 信息"] span[data-tooltip="用时"]',
+  );
   const elapsedBefore = await headerElapsed.textContent();
   await expect(headerElapsed).not.toHaveText(elapsedBefore);
 
@@ -75,8 +79,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Keep the status dot and the live stats, but their rendered boxes must remain disjoint.
   await page.setViewportSize({ width: 877, height: 438 });
   await page.waitForTimeout(200);
-  const runningStatus = page.locator('span[title="运行中"]').filter({ hasText: "运行中" }).first();
-  const tokenTotal = page.locator('span[title="Token 累计（Token）"]');
+  // The header's running status: the turning glyph (a live status named 运行中) and its word.
+  const runningStatus = page
+    .locator("span", { has: page.getByRole("status", { name: "运行中", exact: true }) })
+    .filter({ hasText: "运行中" })
+    .first();
+  const tokenTotal = page.locator('span[data-tooltip="Token 累计（Token）"]');
   const [runningBox, tokenBox] = await Promise.all([
     runningStatus.boundingBox(),
     tokenTotal.boundingBox(),
@@ -93,7 +101,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
   //
   // The group deliberately auto-collapses once it is no longer the last segment — but only when the
-  // user has NOT toggled it (WorkGroup keeps that in a ref). A remount wipes both the ref and the
+  // user has NOT toggled it (ActivityGroup keeps that in a ref). A remount wipes both the ref and the
   // open state, so the group would collapse anyway and take the card down with it (the body is
   // conditionally rendered). That is what happens if the turn's `group` container is created only
   // when the stats line lands: the already-rendered work group moves into a new parent, React
@@ -104,10 +112,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await runningGroup.click(); // toggle → marks the group user-toggled (open := false)
   await runningGroup.click(); // toggle back → the user is deliberately keeping it open
 
-  const toolCard = page
-    .locator("button[aria-expanded]")
-    .filter({ hasText: "exec_command" })
-    .first();
+  const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first();
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
@@ -131,8 +136,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.locator('[aria-label="已批准 · 手动"]')).toBeVisible();
   await expect(page.getByText(/已批准/).filter({ visible: true })).toHaveCount(0);
 
-  // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
-  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).
+  // External chat links open in a new tab and never navigate the SPA away — including bare URLs
+  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence). A reply's link
+  // to a Workspace file opens the Files panel instead (md.test.ts, reply-link.test.ts).
   const replyLink = page.locator(".md-body a", { hasText: "example.com" }).first();
   await expect(replyLink).toBeVisible();
   await expect(replyLink).toHaveAttribute("href", /^https:\/\/example\.com\//);
@@ -161,7 +167,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Turn is over and the stats line has landed. The card is still open — which also proves the
   // group did not collapse (a collapsed group unmounts its body, so the card would be gone).
   await expect(
-    page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first(),
+    page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first(),
   ).toHaveAttribute("aria-expanded", "true");
 
   // The stats line IS the AI reply's footer (bottom-left, mirroring the user footer's bottom-right):
@@ -226,8 +232,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await bottomDock.getByTestId("dock-pick-trace").click();
   const main = page.locator("main");
   await expect(main.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
-  // The file pills name the Session's own Trace files, newest first.
-  await expect(main.getByText("Trace 文件").first()).toBeVisible();
+  // The sticky toolbar names the Session's own Trace file: its number, date and size.
+  await expect(main.locator("[data-slot='toolbar']").getByText(/#\d{3} · /)).toBeVisible();
   // Legend shows the 5 fixed categories (tool-exec renamed).
   await expect(main.getByText("工具调用执行").first()).toBeVisible();
   await expect(main.getByText("模型回复").first()).toBeVisible();
@@ -237,7 +243,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // gone — its label said "duration" while it actually rendered a count.
   await expect(main.getByText("全局统计")).toBeVisible();
   await expect(main.getByText("Request 耗时")).toHaveCount(0);
-  for (const label of ["轮次", "工具调用", "压缩次数", "输入 tokens", "输出 TPS"]) {
+  for (const label of ["轮次", "工具调用", "每轮平均工具调用", "输入 tokens", "输出 TPS"]) {
     await expect(main.getByText(label, { exact: true }).first()).toBeVisible();
   }
   // Time-axis zoom: Premiere-style scrubber (role=scrollbar) + −/＋ buttons.
@@ -260,7 +266,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   const overflowY = await timeline.evaluate((el) => getComputedStyle(el).overflowY);
   expect(overflowY).toBe("hidden");
   // Hover a timeline tool-exec segment → the matching event row highlights (cross-link).
-  const seg = main.getByTitle(/exec_command · 工具调用执行/).first();
+  const seg = main.locator('[data-tooltip*="exec_command · 工具调用执行"]').first();
   await expect(seg).toBeVisible();
   await seg.hover();
   await expect(main.locator("button.bg-amber-50").first()).toBeVisible();
@@ -293,15 +299,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Rendered iframe present; the localStorage script ran on the preview origin → #shim-ok appended.
   await expect(page.locator("iframe")).toBeVisible();
   await expect(page.frameLocator("iframe").locator("#shim-ok")).toHaveText("1");
-  // The list and the preview are mutually exclusive: the toolbar only appears after
-  // returning to the list (which also triggers #59's return-refresh).
-  await page.getByRole("button", { name: "返回列表" }).click();
+  // The tree stays beside the open preview, and the toolbar (breadcrumbs, Refresh, Upload)
+  // sits above both — nothing to go back to.
   await expect(page.getByText("demo.html").first()).toBeVisible();
-  // Workspace path is hidden until the 详情 ("Details") toggle is used.
+  // The absolute Workspace path is not on this panel; it belongs to the Session details card.
   const workspaceAbs = sess.session.workspace;
   await expect(page.getByText(workspaceAbs, { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "详情" }).click();
-  await expect(page.getByText(workspaceAbs, { exact: false }).first()).toBeVisible();
 
   // --- message files card: only files that really exist in the workspace make the card ---
   // The mock reply mentions two backtick paths: demo.html was truly uploaded above via
@@ -312,10 +315,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.getByText(/Report generated/)).toBeVisible();
   await expect(page.getByText("1 个文件")).toBeVisible();
   // Card rows carry the 点击预览 ("click to preview") affordance — that distinguishes them from
-  // the Files panel tree rows, which also use title=<name> on their buttons.
-  const cardRow = page.locator('button[title="demo.html"]').filter({ hasText: "点击预览" });
+  // the Files panel tree rows, which also use data-tooltip=<name> on their buttons.
+  const cardRow = page.locator('button[data-tooltip="demo.html"]').filter({ hasText: "点击预览" });
   await expect(cardRow).toBeVisible();
-  await expect(page.locator('button[title="missing-report.pdf"]')).toHaveCount(0);
+  await expect(page.locator('button[data-tooltip="missing-report.pdf"]')).toHaveCount(0);
   // Clicking the row opens the Files panel preview via the normalized relative path.
   await cardRow.click();
   await expect(page.locator("iframe")).toBeVisible();
@@ -350,18 +353,19 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.accent))
     .toBe("blue");
+  // 大 is the old default (18px); the new default, 中, is 16px.
   await page.getByRole("button", { name: "大", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.style.fontSize))
-    .toBe("20px");
+    .toBe("18px");
   await page.keyboard.press("Escape");
 
   // --- session rename (manual title wins over the auto-generated one) ---
-  // Row actions live in the per-row ellipsis menu ("对话选项"); its panel is body-portaled,
+  // Row actions live in the per-row ellipsis menu ("更多操作"); its panel is body-portaled,
   // so the items are page-level, not inside the row locator.
   const renameTarget = sidebar.locator("li", { hasText: "Configure Tailwind theme" }).first();
   await renameTarget.hover();
-  await renameTarget.getByRole("button", { name: "对话选项" }).click();
+  await renameTarget.getByRole("button", { name: "更多操作" }).click();
   await page.getByRole("button", { name: "重命名对话" }).click();
   await page.getByLabel("标题").fill("My renamed title");
   await page.getByRole("button", { name: "保存" }).click();
@@ -370,29 +374,29 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(sidebar.getByText("My renamed title")).toBeVisible();
 
   // --- session archive + delete (throwaway session) ---
-  await page.request.post(`${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`, {
-    data: { provider: "custom", modelId: "claude-4-8" },
-  });
+  const throwawayRes = await page.request.post(
+    `${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`,
+    { data: { provider: "custom", modelId: "claude-4-8" } },
+  );
+  const throwawayId = (await throwawayRes.json()).session.sessionId;
   await page.reload();
   const throwaway = sidebar.locator("li", { hasText: "新对话" }).first();
   await expect(throwaway).toBeVisible();
-  // Archive via the row menu: moves it under the collapsed "已归档" group.
+  // Archive via the row menu: the row leaves the sidebar (the archive page lists it).
   await throwaway.hover();
-  await throwaway.getByRole("button", { name: "对话选项" }).click();
-  await page.getByRole("button", { name: "归档", exact: true }).click();
-  await expect(sidebar.getByText(/已归档（\d+）/).first()).toBeVisible();
-  await sidebar
-    .getByText(/已归档（\d+）/)
-    .first()
-    .click();
-  const archived = sidebar.locator("li", { hasText: "新对话" }).first();
-  await expect(archived).toBeVisible();
-  // Delete from the archived group (delete + archive share the same row menu).
-  await archived.hover();
-  await archived.getByRole("button", { name: "对话选项" }).click();
+  await throwaway.getByRole("button", { name: "更多操作" }).click();
+  // The menu's item carries its word; the row's own hover button only an aria-label.
+  await page.getByRole("button", { name: "归档", exact: true }).filter({ hasText: "归档" }).click();
+  await expect(sidebar.getByText("新对话")).toHaveCount(0);
+  // Its URL shows the archived stub, which deletes it after asking.
+  await page.goto(`${BASE}/chat/${throwawayId}`);
+  await expect(
+    page.getByText("这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "删除对话" }).click();
   await page.getByRole("button", { name: "删除", exact: true }).click();
-  await expect(sidebar.getByText("新对话")).toHaveCount(0);
+  await expect(page).not.toHaveURL(new RegExp(throwawayId));
+  expect((await page.request.get(`${BASE}/api/sessions/${throwawayId}`)).status()).toBe(404);
 
   // --- session expiry: any 401 sends the user back to /login (no stuck error page) ---
   // Clearing the cookie is what a rebuilt web.db looks like to the browser.

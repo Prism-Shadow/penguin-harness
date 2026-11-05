@@ -7,7 +7,7 @@
  * for, a wiped data root, is precisely the case where nobody is. See install-id.ts for why
  * publishing the id discloses nothing.
  *
- * Mounted in the PLATFORM, above its auth gate (app.ts's createApp). A hot push carries
+ * Mounted in the PLATFORM, above its auth gate (http/app.ts's HttpModule). A hot push carries
  * platform + cli + web dist as one version and never the runtime, so putting the route where
  * the platform is puts it where the web bundle that calls it is: the two can never arrive on
  * an installation separately. The data root is still the runtime's — `deps.config.root` comes
@@ -22,10 +22,18 @@
 import { Hono } from "hono";
 import type { InstallResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
-import { ensureInstallId } from "../../install-id.js";
+import type { ServerConfig } from "../../config.js";
 
-export function installRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface InstallRouteDeps {
+  config: ServerConfig;
+}
+import { ensureInstallId } from "../../install-id.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config } from "../../hmr/capabilities.js";
+
+export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) => {
@@ -33,4 +41,29 @@ export function installRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/**
+ * The data root's install identity, public (auth: none): the web app compares it against
+ * localStorage before React mounts, before anyone is signed in. Mounted in the PLATFORM
+ * because a push carries platform + web dist together, so the route and its caller move as one.
+ */
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "InstallRoutes.routes",
+        prefix: "/api/install",
+        auth: "none",
+        order: 5,
+      },
+    ],
+  },
+})
+export class InstallRoutes {
+  @Use() private readonly config!: Config;
+  @Bind("InstallRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = installRoutes({ config: this.config });
+  }
 }

@@ -25,9 +25,19 @@
  * of them is what keeps an entity's history from sliding onto the wrong
  * intervals. Each chart marks the skipped intervals on its own axis.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
+import {
+  Card,
+  CardHeader,
+  Input,
+  PageFrame,
+  PageHeader,
+  Select,
+  Skeleton,
+  TodoNotice,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -35,14 +45,12 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
+import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Input } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
-import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
@@ -95,9 +103,9 @@ function SummaryCard({
   currency: "USD" | "CNY";
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
-      <div className="space-y-0.5">
+    <Card>
+      <CardHeader title={title} />
+      <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
@@ -107,7 +115,7 @@ function SummaryCard({
           sup={bucket.hasUncosted}
         />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -122,13 +130,10 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
-        {extra}
-      </div>
+    <Card>
+      <CardHeader title={title} actions={extra} />
       {children}
-    </div>
+    </Card>
   );
 }
 
@@ -142,6 +147,16 @@ interface LoadedRange {
   to: string;
   fromTs?: string;
   toTs?: string;
+}
+
+/** The `?agentId=` deep link as a filter of the Project the page was opened in; none without either. */
+function linkedAgentFilter(
+  agentId: string | null,
+  projectId: string | null,
+): Scoped<string> | null {
+  return agentId === null || agentId === "" || projectId === null
+    ? null
+    : scoped(projectId, agentId);
 }
 
 export function UsagePage() {
@@ -160,14 +175,28 @@ export function UsagePage() {
   // / date filters likewise don't enter the URL — the effect never overrides a manual selection when the parameter is unchanged).
   const [searchParams] = useSearchParams();
   const paramAgentId = searchParams.get("agentId");
-  const [agentFilter, setAgentFilter] = useState<string>(paramAgentId ?? "");
+  // The filter names an Agent of the Project it was chosen in — the deep link's belongs to the
+  // Project the page was opened in — and is read only under that Project (lib/project-scope.ts):
+  // after a Project switch the page is unfiltered, rather than asking the new Project about an
+  // Agent of the old one.
+  const openedIn = useOpenedInProject(projectId);
+  const [agentFilterRead, setAgentFilterRead] = useState<Scoped<string> | null>(() =>
+    linkedAgentFilter(paramAgentId, openedIn),
+  );
+  // The deep link is applied again when it changes, and once the Project it belongs to is known
+  // — in the render that sees the change, so no read goes out with the filter it replaces.
+  const [linkSeen, setLinkSeen] = useState({ paramAgentId, openedIn });
+  if (linkSeen.paramAgentId !== paramAgentId || linkSeen.openedIn !== openedIn) {
+    setLinkSeen({ paramAgentId, openedIn });
+    setAgentFilterRead(linkedAgentFilter(paramAgentId, openedIn));
+  }
+  const agentFilter = scopedValue(agentFilterRead, projectId) ?? "";
+  const setAgentFilter = (agentId: string) =>
+    setAgentFilterRead(agentId === "" || projectId === null ? null : scoped(projectId, agentId));
   // Model filtering is a **paired reference** (the same model_id can coexist
   // under multiple providers); the dropdown's option value uses the
   // candidate's index rather than a concatenated string — the reference is always passed as a pair, never concatenated into an id.
   const [modelFilter, setModelFilter] = useState<ModelRefDto | null>(null);
-  useEffect(() => {
-    setAgentFilter(paramAgentId ?? "");
-  }, [paramAgentId]);
   // Date range: a trailing window (last hour / last 24 hours), a calendar
   // preset (7/30/90 days), or a custom from/to pair — plus the time-series
   // precision. A range change keeps the precision when the new preset still
@@ -180,7 +209,9 @@ export function UsagePage() {
     setFrom(nextFrom);
     setTo(nextTo);
   };
-  const [data, setData] = useState<UsageResponse | null>(null);
+  /** The dashboard's answer, tagged with the Project it was read for. */
+  const [dataRead, setData] = useState<Scoped<UsageResponse> | null>(null);
+  const data = scopedValue(dataRead, projectId);
   /**
    * The range the dashboard actually READ, which is not always the one the picker holds. A
    * trailing preset computes its window at load time and deliberately leaves `from`/`to` on
@@ -196,8 +227,14 @@ export function UsagePage() {
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
 
+  /** Dashboard reads so far: only the newest one's answer is applied. */
+  const asked = useRef(0);
   const load = useCallback(async () => {
     if (!projectId) return;
+    const ask = ++asked.current;
+    // The notice must acknowledge the errors fetched for this visit, not the timestamp
+    // cached when the app started; otherwise those errors return as unread after a reload.
+    refreshProjectTodos(projectId);
     setError(null);
     try {
       // The trailing presets recompute their window at load time, so a reload
@@ -214,10 +251,12 @@ export function UsagePage() {
         ...(agentFilter ? { agentId: agentFilter } : {}),
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
-      setData(res);
+      // A late answer — for the Project just left, or for filters changed since — is dropped.
+      if (ask !== asked.current) return;
+      setData(scoped(projectId, res));
       setLoaded({ preset, ...range });
     } catch (e) {
-      setError(apiErrorText(e));
+      if (ask === asked.current) setError(apiErrorText(e));
     }
   }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
@@ -278,12 +317,13 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
-        {/* Top filters: controls have no external title (the explanation is written into the "all …" option), so they're baseline-centered with the page title */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">{S.usage.title}</h1>
-          <div className="flex flex-wrap items-center gap-2">
+    <PageFrame contentClassName="space-y-4">
+      {/* The filters are the header's actions: they carry no external title (the explanation is
+          written into the "all …" option), so they sit centred on the title row. */}
+      <PageHeader
+        title={S.usage.title}
+        actions={
+          <>
             <div className="w-32">
               <Select
                 size="sm"
@@ -366,110 +406,107 @@ export function UsagePage() {
                 />
               </div>
             )}
-          </div>
+          </>
+        }
+      />
+
+      {/* Last stop on the Cost Center trail, in the one shape all four dismissible trails
+          use: directly under the title, not down against the errors table. It counts the
+          probe's own trailing window (use-project-todos.ts), which is not the filters above
+          it, so it states what the badge is about rather than what any one panel is showing.
+          "Read", not "done" — nothing is being updated here, the user has simply looked, and
+          this is the one of the four that offers no bulk action: a past error cannot be
+          updated, so the block renders the dismiss control alone. */}
+      {todo && (
+        <TodoNotice
+          text={S.todo.unexpectedErrors(todo.count)}
+          dismissLabel={S.todo.markRead}
+          onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
+        />
+      )}
+
+      {/* Summary cards (today / last 7 days / cumulative) */}
+      {data ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
+          <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
+          <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      )}
 
-        {/* Last stop on the Cost Center trail, in the one shape all four dismissible trails
-            use: directly under the title, not down against the errors table. It counts the
-            probe's own trailing window (use-project-todos.ts), which is not the filters above
-            it, so it states what the badge is about rather than what any one panel is showing.
-            "Read", not "done" — nothing is being updated here, the user has simply looked, and
-            this is the one of the four that offers no bulk action: a past error cannot be
-            updated, so the block renders the dismiss control alone. */}
-        {todo && (
-          <TodoNotice
-            text={S.todo.unexpectedErrors(todo.count)}
-            dismissLabel={S.todo.markRead}
-            onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
-          />
-        )}
-
-        {/* Summary cards (today / last 7 days / cumulative) */}
-        {data ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
-            <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
-            <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-          </div>
-        )}
-
-        {/* Time-series charts, all over the shared range + precision: requests +
-            success rate by Agent and by Model on the first row, Token buckets +
-            cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
-        {data ? (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <ChartCard title={S.usage.chartRequestsByAgent}>
-              <RequestsChart
-                series={plotted.points}
-                entities={agentEntities}
-                granularity={data.granularity}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            <ChartCard title={S.usage.chartRequestsByModel}>
-              <RequestsChart
-                series={plotted.points}
-                entities={modelEntities}
-                granularity={data.granularity}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
-            <ChartCard
-              title={S.usage.chartTokenTrend}
-              extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
-            >
-              <TokenBarChart
-                series={plotted.points}
-                granularity={data.granularity}
-                legend={tokenBucket}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            <ChartCard title={S.usage.chartCostTrend}>
-              <TrendChart
-                series={plotted.points}
-                granularity={data.granularity}
-                currency={currency}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-          </div>
-        ) : (
-          <Skeleton className="h-64" />
-        )}
-
-        {/* Errors (a single full-width panel: stats + a recent-errors table) */}
-        {data && (
-          <ChartCard title={S.usage.errors}>
-            <ErrorsPanel
-              errors={data.errors}
-              projectId={projectId}
-              filters={errorFilters}
-              preset={loaded.preset === "custom" ? undefined : loaded.preset}
-              // Clearing the log is a Project-level management operation, gated on the owner
-              // by the route; a member reads the panel without the action.
-              canClear={currentProject?.role === "owner"}
-              // The badge and the notice above are gated on a probe cached per Project for the
-              // browser session, not on this response — without the re-probe an emptied table
-              // would sit under a dot still pointing at the rows that just went.
-              onCleared={() => {
-                refreshProjectTodos(projectId);
-                void load();
-              }}
+      {/* Time-series charts, all over the shared range + precision: requests +
+          success rate by Agent and by Model on the first row, Token buckets +
+          cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
+      {data ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ChartCard title={S.usage.chartRequestsByAgent}>
+            <RequestsChart
+              series={plotted.points}
+              entities={agentEntities}
+              granularity={data.granularity}
+              breaks={plotted.breaks}
             />
           </ChartCard>
-        )}
+          <ChartCard title={S.usage.chartRequestsByModel}>
+            <RequestsChart
+              series={plotted.points}
+              entities={modelEntities}
+              granularity={data.granularity}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+          {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
+          <ChartCard
+            title={S.usage.chartTokenTrend}
+            extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
+          >
+            <TokenBarChart
+              series={plotted.points}
+              granularity={data.granularity}
+              legend={tokenBucket}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+          <ChartCard title={S.usage.chartCostTrend}>
+            <TrendChart
+              series={plotted.points}
+              granularity={data.granularity}
+              currency={currency}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+        </div>
+      ) : (
+        <Skeleton className="h-64" />
+      )}
 
-        {hasUncostedRows && <p className="text-xs text-gray-400">{S.usage.uncostedNote}</p>}
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      </div>
-    </div>
+      {/* Errors (a single full-width panel: stats + a recent-errors table) */}
+      {data && (
+        <ChartCard title={S.usage.errors}>
+          <ErrorsPanel
+            errors={data.errors}
+            projectId={projectId}
+            filters={errorFilters}
+            preset={loaded.preset === "custom" ? undefined : loaded.preset}
+            // Clearing the log is a Project-level management operation, gated on the owner
+            // by the route; a member reads the panel without the action.
+            canClear={currentProject?.role === "owner"}
+            // Reload both the table and its notice after clearing the log.
+            onCleared={() => {
+              void load();
+            }}
+          />
+        </ChartCard>
+      )}
+
+      {hasUncostedRows && <p className="text-xs text-gray-400">{S.usage.uncostedNote}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </PageFrame>
   );
 }

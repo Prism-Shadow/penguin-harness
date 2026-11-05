@@ -1,72 +1,116 @@
 /**
- * App main layout:
- * - >=md: left single-column sidebar (Project / new chat / nav / Session list / user config) + main content;
- * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
- * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
+ * The app's layout route: the UI package's `AppShell` bound to the app's state.
+ * - >=md: the navigation column holds the pinned sidebar (Project / new chat / nav / Session list /
+ *   user config), or the rail while it is folded, beside the page;
+ * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
+ *   sidebar in a drawer.
+ * The shell owns the wallpaper and navigation's separate glass layer, so the columns make no
+ * stacking context that could trap their menus.
  */
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
+import {
+  AppShell,
+  CrashBoundary,
+  Drawer,
+  ICONS,
+  MobileTopBar,
+  Notice,
+  Rail,
+  RailAccountButton,
+  RailDivider,
+  RailItem,
+  Tooltip,
+  UpdateDot,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { nagsAboutInitialPassword } from "../../lib/account-menu";
 import { S } from "../../lib/strings";
-import { latestConversation } from "../../lib/session-grouping";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
+import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { navKeysFor } from "../../lib/nav-group-collapse";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
-import { Drawer } from "../ui/drawer";
-import { GlyphIcon } from "../ui/glyph-icon";
-import { UpdateDot } from "../ui/update-dot";
-import { CloseIcon, NAV_ICONS } from "../ui/icons";
+import { useTrayLocale } from "../../state/use-tray-locale";
+import { NAV_ICONS } from "../../lib/nav-icons";
+import { useCompany } from "../../state/company";
+import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
+import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
+import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { FindBar } from "../find/find-bar";
+import { UserMenu } from "./user-menu";
+import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
-import { parkActiveDraft } from "../../features/chat/draft-sessions";
+import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { UpdateModal } from "../account/update-modal";
+import { AppInfoDialog } from "../account/app-info-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
+import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
-import { toneStrip } from "../../lib/tone";
+import { AppPalette } from "../../features/palette/app-palette";
 
 /**
- * "Last conversation" glyph, used only by the rail: lucide's history mark — a clock read
- * backwards. Deliberately not the bare clock the session list's "most recent" sort option
- * wears (group-list.tsx): that one means "ordered by time", this one means "the conversation
- * you were last in", and the returning arrow is what says so.
+ * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
+ * `hidden md:block`, and Tailwind's `md` is 768px at the browser's default font size — a media
+ * query ignores the app's 18px root. Below it the drawer's own sidebar answers the commands while
+ * it is open.
  */
-const HISTORY_ICON = "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2";
-
-/** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. `relative` so an entry can anchor an update badge on its corner (no z-index, so it still creates no stacking context). */
-const railItemClass = (active: boolean) =>
-  `relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
-    active
-      ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "text-gray-500 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-  }`;
+function pinnedSidebarOnScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+}
 
 /**
- * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
- * conversation / new chat / Agents / Skills / Models / Costs / Benchmark (every entry
- * carries a localized title + aria-label, so hover tooltips follow the UI language); user
- * avatar at the bottom. No Logo shown.
+ * The folded navigation column: the unfold button on top; below it, in product-specified order,
+ * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
+ * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
+ * sidebar's avatar does. No logo.
+ *
+ * In company mode the top slot is the organization's all-hands channel, the slot after it stays
+ * empty, the organization's pages replace the development ones, and its other channels, desks
+ * and Temporary entries follow. The rail carries no work-mode toggle in either mode: the mode is
+ * switched from the pinned sidebar's Development | Company switch, so a folded sidebar keeps
+ * only entries that lead somewhere.
+ *
+ * Every entry is an icon with no visible label, so each carries a localized name and the same
+ * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
+ * strings as the pinned nav's, so the rail follows the UI language with it.
  */
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { agents, currentProject, setCurrentAgentId } = useProject();
+  const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
   /**
    * Passive: the layout above owns the one fetch per session, so the rail only reads the
    * shared caches — and gets pushed a result that lands while it is mounted. The avatar
-   * mirrors the pinned sidebar's software dot (the user menu behind it holds the update row);
+   * mirrors the pinned sidebar's software dot (the user menu behind it holds the App info row);
    * every other badge here rides on a page entry, which is where its trail continues.
    */
   const badges = useUpdateBadges();
+  const company = useCompany();
+  const location = useLocation();
+  /**
+   * Company mode: the all-hands channel takes the top slot, the organization's pages replace
+   * the development ones, and its other channels follow them as rows.
+   */
+  const inCompany = company.workMode === "company";
+  const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
-  const lastSession = useMemo(() => latestConversation(sessions), [sessions]);
+  /** Newest loaded conversation across the current Project (the user's own only — archived and background rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
+  const lastSession = useMemo(() => latestConversation(withoutOrgSessions(sessions)), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {
@@ -75,133 +119,227 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first (draft-sessions.ts), then a default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
-  const newChat = () => {
-    if (user && currentProject) parkActiveDraft(user.userId, currentProject.projectId);
-    const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
-    if (agentId) setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
+  /** Mirrors the pinned sidebar's "New chat" (use-new-chat.ts): parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults. */
+  const newChat = useNewChat();
+
+  /** Page entries (after the top slot and new chat): the pinned nav's manifest, routes
+      and labels, in its order, and all of them whether pinned or collapsible there — the
+      rail has no fold. Traces is not among them: reading a Trace happens in the chat
+      toolbar's panel switcher, which is the only place it happens. */
+  const pages: ReadonlyArray<{
+    key: string;
+    /** Where the entry leads — null while company mode has no organization, which renders it disabled. */
+    to: string | null;
+    label: string;
+    icon: string;
+    note: string | null;
+  }> = inCompany
+    ? COMPANY_NAV_KEYS.map((key) => ({
+        key,
+        // The six entries keep their places with no organization, disabled: a rail that
+        // empties itself reads as a broken shell rather than as an empty one.
+        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+        label: S.nav.org[key],
+        icon: COMPANY_NAV_ICONS[key],
+        note: null,
+      }))
+    : navKeysFor(user?.isAdmin === true).map((key) => ({
+        key,
+        to: `/${key}`,
+        label: S.nav[key],
+        icon: NAV_ICONS[key],
+        note: navNoteFor(badges, `/${key}`),
+      }));
+
+  /**
+   * The rail's avatar hangs its menu off the rail's OUTER edge rather than over the rail:
+   * measured at click time as a zero-size point at the avatar's bottom and the aside's right,
+   * so a 48px column cannot hold (or clip) a 224px panel. A virtual anchor is a position, not
+   * an element, so `anchorOwner` is what tells the panel which scrolls moved it.
+   */
+  const avatarRef = useRef<HTMLButtonElement>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } | null>(null);
+  const measureMenuAnchor = () => {
+    const button = avatarRef.current;
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    const left = (button.closest("aside")?.getBoundingClientRect().right ?? rect.right) + 4;
+    return { top: rect.bottom, bottom: rect.bottom, left, right: left };
   };
 
-  /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
-      Traces is not among them: reading a Trace happens in the chat toolbar's panel
-      switcher, which is the only place it happens. */
-  const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
-    { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
-    { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-    { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-    { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-  ];
+  /**
+   * The avatar's accessible name names the signed-in account — its nickname once there is one,
+   * since that is the name the account chose to be called. The trigger itself is nothing but an
+   * avatar, so without this the collapsed rail offers a control with no name at all; the visible
+   * tooltip says what the control does instead, because neither an initial in a circle nor a
+   * photograph is a name a reader needs read back. Both carry what the update trail is waiting
+   * on, which from this rail is the only route left to the App info row.
+   */
+  const accountName = user?.displayName ?? user?.userId;
+  const avatarName =
+    badges.softwareNote !== null
+      ? `${accountName ?? ""} · ${badges.softwareNote}`
+      : (accountName ?? S.auth.admin);
+  const avatarTooltip =
+    badges.softwareNote !== null
+      ? `${S.nav.userSettings} · ${badges.softwareNote}`
+      : S.nav.userSettings;
+  const expandTitle = useShortcutTitle(S.nav.expandSidebar, "sidebar.toggle");
 
   return (
-    <div className="flex h-full flex-col items-center gap-1 py-2.5">
-      <button
-        type="button"
-        title={S.nav.expandSidebar}
-        aria-label={S.nav.expandSidebar}
-        onClick={onExpand}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-      >
-        <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
-      </button>
-      {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
-          keeps only the expand control and the account avatar at fixed height, so a window too
-          short for the icons scrolls them here instead of pushing them out of the rail and
-          growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
-          rail's width. */}
-      <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
-        {/* 1. Last conversation: a history mark (a clock read backwards) — the entry goes BACK to
-            where the user was, which the returning arrow says and a bare clock face does not.
-            Lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only once the list
-            has settled with no non-archived Session — while it is still loading the entry keeps
-            its normal look (no flash) and a click is a graceful no-op. */}
-        <button
-          type="button"
-          title={S.nav.lastConversation}
-          aria-label={S.nav.lastConversation}
+    <Rail
+      head={
+        <RailItem
+          label={S.nav.expandSidebar}
+          tooltip={expandTitle}
+          glyph={ICONS.chevronRightPipe}
+          onClick={onExpand}
+          className="shrink-0"
+        />
+      }
+      foot={
+        /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
+           first: appearance and Settings, the App info row and signing out all stay one click
+           away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */
+        <UserMenu
+          className="mt-auto shrink-0"
+          menuClass="w-56 origin-bottom-left"
+          portal={{ direction: "up", align: "left" }}
+          anchorRect={menuAnchor}
+          anchorOwner={() => avatarRef.current}
+          trigger={({ open, toggle }) => (
+            /* The tooltip names the same avatar the open menu hangs off, so it stands down
+               while the menu is up rather than covering it. */
+            <Tooltip label={avatarTooltip} suppressed={open}>
+              <RailAccountButton
+                buttonRef={avatarRef}
+                label={avatarName}
+                expanded={open}
+                onClick={() => {
+                  setMenuAnchor(measureMenuAnchor());
+                  toggle();
+                }}
+              >
+                <UserAvatar
+                  userId={user?.userId ?? "?"}
+                  {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
+                  {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+                >
+                  {/* Update reminder, mirroring the pinned sidebar's avatar: the App info row sits
+                      in the menu this opens, and the label above names what is waiting. */}
+                  {badges.software !== null && <UpdateDot />}
+                </UserAvatar>
+              </RailAccountButton>
+            </Tooltip>
+          )}
+        />
+      }
+    >
+      {/* 1. Last conversation: a history mark (a clock read backwards) — the entry goes BACK to
+          where the user was. Lit on any non-draft conversation. Dimmed/disabled (tooltip kept)
+          only once the list has settled with no non-archived Session — while it is still
+          loading the entry keeps its normal look (no flash) and a click is a graceful no-op.
+          Company mode gives the slot to the organization's all-hands channel instead: an
+          organization's conversations are its channels, and the one everyone is in is where a
+          person goes back to. */}
+      {inCompany ? (
+        <DefaultChannelRailRow org={navOrg} />
+      ) : (
+        <RailItem
+          label={S.nav.lastConversation}
+          glyph={ICONS.history}
+          active={onConversation}
           disabled={!lastSession && !loading}
           onClick={openLastSession}
-          className={
-            lastSession || loading
-              ? railItemClass(onConversation)
-              : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
-          }
-        >
-          <GlyphIcon d={HISTORY_ICON} size={18} />
-        </button>
-        {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
-        <button
-          type="button"
-          title={S.chat.newSessionMenu}
-          aria-label={S.chat.newSessionMenu}
+        />
+      )}
+      {/* 2. New chat: lit while on the draft page (pinned-sidebar convention). Company mode
+          leaves this slot empty — a channel is made rarely, from the channel list's own header,
+          and the rail carries no create control of its own. */}
+      {!inCompany && (
+        <RailItem
+          label={S.chat.newSessionMenu}
+          glyph={NEW_CHAT_ICON}
+          active={activeSessionId === DRAFT_SESSION_ID}
           onClick={newChat}
-          className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
-        >
-          <GlyphIcon d={NEW_CHAT_ICON} size={18} />
-        </button>
-        {/* 3-8. Page entries */}
-        {pages.map((item) => {
-          /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
-             the Cost Center. The dot itself is decorative: the tooltip and the accessible name
-             say what is waiting, and this rail's icons have no visible label, so they carry
-             both the entry's name and that sentence. */
-          const note = navNoteFor(badges, item.to);
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              title={note !== null ? `${item.label} · ${note}` : item.label}
-              aria-label={note !== null ? `${item.label} · ${note}` : item.label}
-              className={({ isActive }) => railItemClass(isActive)}
-            >
-              <GlyphIcon d={item.icon} size={18} />
-              {note !== null && <UpdateDot />}
-            </NavLink>
-          );
-        })}
-      </nav>
-      <button
-        type="button"
-        title={[user?.userId ?? "", S.nav.expandSidebar]
-          .concat(badges.softwareNote !== null ? [badges.softwareNote] : [])
-          .join(" · ")}
-        aria-label={
-          badges.softwareNote !== null
-            ? `${user?.userId ?? ""} · ${badges.softwareNote}`
-            : (user?.userId ?? S.auth.admin)
-        }
-        onClick={onExpand}
-        className="relative mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-      >
-        {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-        {/* Update reminder, mirroring the pinned sidebar's avatar: expanding the rail is the
-            only way to the update row, so the title/aria-label above name what is waiting. */}
-        {badges.software !== null && <UpdateDot />}
-      </button>
-    </div>
+        />
+      )}
+      {/* 3 onward. Page entries. Four sit on a badge trail — Agents (an outdated kernel),
+          Plugins, Models and the Cost Center. The dot is decorative: this rail's icons have no
+          visible label, so the name and the hint carry both the entry and what is waiting. An
+          entry with nowhere to go keeps its place, muted, with nothing to click or tab to. */}
+      {pages.map((item) => {
+        const label = item.note !== null ? `${item.label} · ${item.note}` : item.label;
+        return (
+          <RailItem
+            key={item.key}
+            label={label}
+            glyph={item.icon}
+            href={item.to ?? ""}
+            disabled={item.to === null}
+            active={item.to !== null && isCurrentPath(item.to, location.pathname)}
+            renderLink={renderRouterLink}
+            {...(item.note !== null ? { badge: <UpdateDot /> } : {})}
+          />
+        );
+      })}
+      {/* The organization's other channels, its desks and then its Temporary entries, under the
+          pages the way they sit under the nav in the pinned sidebar. A hairline says where each
+          run ends (the channels and the Temporary entries draw their own, and only when they
+          have rows); a channel row carries its own unread count and a desk or an entry its
+          running dot, since a rail with no labels must still say how much is waiting. */}
+      {inCompany && navOrg !== null && (
+        <>
+          <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          <RailDivider />
+          <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          <TempSessionRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+        </>
+      )}
+    </Rail>
   );
 }
 
 export function AppLayout() {
-  const { user, desktopMode } = useAuth();
+  const { currentProject } = useProject();
+  const { user, desktopMode, sessionVia } = useAuth();
+  const { pathname } = useLocation();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
-  // a parked draft id) is a scope of its own, handed to the Session the first send
-  // creates; pages with no Session scope to a placeholder. Layout effect, not a plain
-  // one: it has to land before the chat page's docks paint, or the outgoing
-  // conversation's docks flash on the incoming one.
+  // a parked draft id), qualified by its Project like the browser's, is a scope of its own,
+  // handed to the Session the first send creates; pages with no Session scope to a
+  // placeholder. Layout effect, not a plain one: it has to land before the chat page's docks
+  // paint, or the outgoing conversation's docks flash on the incoming one.
   const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   useLayoutEffect(() => {
-    setDockScope(dockScope);
-  }, [dockScope]);
+    const projectId = currentProject?.projectId ?? null;
+    const provisional = dockScope === "new" || dockScope?.startsWith("draft-");
+    const draftScope = `${projectId ?? "~none"}:${dockScope}`;
+    const scope = provisional
+      ? draftScope
+      : (dockScope ?? (projectId === null ? null : `~project:${projectId}`));
+    dispatchBrowser({ type: "scope", scope, projectId });
+    setDockScope(provisional ? draftScope : dockScope);
+  }, [dockScope, currentProject?.projectId]);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
+  // Desktop shell only: keeps the tray menu in the language this window is in.
+  useTrayLocale();
   // The single eager owner of the update checks (use-update-badges.ts): one request per
   // browser session, so a dot can be there on a fresh load instead of waiting for someone to
   // open the sidebar menu. Every other anchor reads the same caches passively.
   const badges = useUpdateBadges(true);
+  // The drawer holds the sidebar, so the drawer button is named after what the sidebar lists:
+  // conversations in development mode, channels in company mode.
+  const company = useCompany();
+  const drawerName =
+    company.workMode === "company" ? S.company.channels.drawerLabel : S.chat.sessionList;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
@@ -209,7 +347,8 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  const passwordBannerRelevant =
+    Boolean(user?.passwordIsInitial) && nagsAboutInitialPassword({ desktopMode, sessionVia });
   useEffect(() => {
     if (!passwordBannerRelevant) return;
     let cancelled = false;
@@ -242,112 +381,139 @@ export function AppLayout() {
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  // The commands whose surface is this layout. Each declines (returns false, so the browser's
+  // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
+  // `md` breakpoint up (below it the drawer's own sidebar answers while open), and company mode
+  // has neither a session search nor a development New chat. New chat runs from here rather
+  // than from the sidebar so it works with the sidebar collapsed to its rail. The search field
+  // only exists in the expanded sidebar: with the rail showing, the command expands the sidebar
+  // with the field already open (the pinned Sidebar mounts fresh on every expand and takes the
+  // flag as its initial state); otherwise it declines and the sidebar's own handler takes it.
+  const inCompany = company.workMode === "company";
+  const newChat = useNewChat();
+  const [openSearchOnExpand, setOpenSearchOnExpand] = useState(false);
+  useEffect(() => {
+    const offs = [
+      onCommand("sidebar.toggle", () => {
+        if (!pinnedSidebarOnScreen()) return false;
+        setOpenSearchOnExpand(false);
+        toggleCollapsed();
+      }),
+      onCommand("chat.new", () => {
+        if (inCompany) return false;
+        newChat();
+      }),
+      onCommand("sessions.search", () => {
+        if (inCompany || !pinnedSidebarOnScreen() || !collapsed) return false;
+        setOpenSearchOnExpand(true);
+        toggleCollapsed();
+      }),
+    ];
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [collapsed, inCompany, newChat]);
 
+  const background = useBackground();
   return (
-    <div className="flex h-full">
-      {/* Desktop: single-column sidebar (collapsible to a narrow rail) */}
-      <aside
-        className={`hidden shrink-0 border-r border-gray-200 bg-gray-50 md:block dark:border-gray-800 dark:bg-gray-900 ${
-          collapsed ? "w-12" : "w-64 lg:w-72"
-        }`}
-      >
-        {collapsed ? (
-          <CollapsedRail onExpand={toggleCollapsed} />
+    <AppShell
+      background={
+        background.image === null
+          ? undefined
+          : backgroundStyle(background.image, background.settings)
+      }
+      navCollapsed={collapsed}
+      nav={
+        collapsed ? (
+          <CollapsedRail
+            onExpand={() => {
+              setOpenSearchOnExpand(false);
+              toggleCollapsed();
+            }}
+          />
         ) : (
-          <Sidebar onCollapse={toggleCollapsed} />
-        )}
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile: top thin bar (hamburger + brand) */}
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
-          {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording
-              is the combined one — naming one of two updates would point at the wrong trail.
-              Both trails continue inside the drawer's sidebar (the Agents entry, the user
-              row's update entry). */}
-          <button
-            type="button"
-            aria-label={
-              badges.note !== null ? `${S.chat.sessionList} · ${badges.note}` : S.chat.sessionList
-            }
-            {...(badges.note !== null ? { title: badges.note } : {})}
-            onClick={() => setDrawerOpen(true)}
-            className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          <Sidebar
+            onCollapse={() => {
+              setOpenSearchOnExpand(false);
+              toggleCollapsed();
+            }}
+            initialSearchOpen={openSearchOnExpand}
+          />
+        )
+      }
+      overlays={
+        <>
+          {/* The App info dialog, opened from the account menu's App info row and the draft
+              page's version badge alike; mounted here so it outlives both. */}
+          <AppInfoDialog />
+          <ChangePasswordDialog
+            open={changePasswordOpen}
+            onClose={() => setChangePasswordOpen(false)}
+          />
+          {/* Mobile: the sidebar in a drawer, on the navigation column's own fill. */}
+          <Drawer
+            open={drawerOpen}
+            side="left"
+            title={S.appName}
+            onClose={() => setDrawerOpen(false)}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              aria-hidden
-            >
-              <path d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-            {badges.any && <UpdateDot />}
-          </button>
-          <span className="text-sm font-semibold">{S.appName}</span>
-        </header>
-
-        {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
-            Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.
-            Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
-            hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
-        {passwordBannerRelevant && passwordBannerDismissed === false && (
-          <div
-            className={`relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.attention}`}
-          >
-            <span>{S.account.initialPasswordBanner}</span>
-            <button
-              type="button"
-              className="shrink-0 font-medium underline underline-offset-2 hover:text-amber-950 dark:hover:text-amber-100"
-              onClick={() => setChangePasswordOpen(true)}
-            >
-              {S.account.changeNow}
-            </button>
-            {/* Amber-toned twin of the shared CloseButton (same glyph + aria-label) — its hardcoded
-                gray colors would clash here. Flat: hover feedback is icon-color-only (no background
-                fill), same hover shades as the change-now link. Absolutely positioned at the right
-                edge: near-full-height hit area without growing the banner and without transform (see
-                the stacking-context note in the file header); the banner's symmetric px-8 keeps the
-                centered text clear. */}
-            <button
-              type="button"
-              aria-label={S.common.close}
-              title={S.common.close}
-              onClick={dismissPasswordBanner}
-              className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
-            >
-              <CloseIcon size={12} />
-            </button>
-          </div>
-        )}
-
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-        {/* The docks themselves render inside the chat page (features/dock); the xterm
-            views live in this pool and are adopted into dock tab bodies by DOM handoff,
-            so navigating between pages never reconnects a terminal. */}
-        <TerminalDockRuntime />
-      </div>
-
-      {/* The software-update modal, opened from the sidebar's update row and the draft
-          page's version badge alike; mounted here so it outlives both. */}
-      <UpdateModal />
-      <ChangePasswordDialog
-        open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
+            <div className="h-full bg-surface-muted">
+              <Sidebar onNavigate={() => setDrawerOpen(false)} />
+            </div>
+          </Drawer>
+          {/* The find bar (`find.open` / `find.all`): in the layout, so it serves every route
+              that mounts a [data-find-region] container, not only the chat page. */}
+          <FindBar />
+        </>
+      }
+    >
+      {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording is
+          the combined one — naming one of two updates would point at the wrong trail. Both
+          trails continue inside the drawer's sidebar (the Agents entry, the user row's App info
+          entry). */}
+      <MobileTopBar
+        title={S.appName}
+        menuLabel={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
+        {...(badges.note !== null ? { menuHint: badges.note } : {})}
+        {...(badges.any ? { menuBadge: <UpdateDot /> } : {})}
+        onMenu={() => setDrawerOpen(true)}
       />
 
-      {/* Mobile: sidebar drawer */}
-      <Drawer open={drawerOpen} side="left" title={S.appName} onClose={() => setDrawerOpen(false)}>
-        <div className="h-full bg-gray-50 dark:bg-gray-900">
-          <Sidebar onNavigate={() => setDrawerOpen(false)} />
-        </div>
-      </Drawer>
-    </div>
+      {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
+          Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.
+          The shared notice's banner: the sentence and its "change it now" word centred, the
+          close cross at the far edge. Permanently dismissible (per-user ui_prefs); only rendered
+          once hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on
+          load. */}
+      {passwordBannerRelevant && passwordBannerDismissed === false && (
+        <Notice
+          variant="banner"
+          tone="attention"
+          action={{ label: S.account.changeNow, onClick: () => setChangePasswordOpen(true) }}
+          dismiss={{ ariaLabel: S.common.close, onClick: dismissPasswordBanner }}
+        >
+          {S.account.initialPasswordBanner}
+        </Notice>
+      )}
+
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* A page that crashes says so here, with Reload and Report, and leaves the sidebar
+            working: going to another page gives the body another chance. */}
+        <CrashBoundary resetKey={pathname}>
+          <Outlet />
+        </CrashBoundary>
+      </main>
+      {/* The docks themselves render inside the chat page (features/dock); the xterm
+          views live in this pool and are adopted into dock tab bodies by DOM handoff,
+          so navigating between pages never reconnects a terminal. */}
+      <TerminalDockRuntime />
+      {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
+      <ShortcutRuntime />
+      {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+          and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+          reloads, so navigating the app must never re-parent one. */}
+      <BuiltinBrowserLayer />
+      <AppPalette />
+    </AppShell>
   );
 }

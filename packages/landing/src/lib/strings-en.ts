@@ -1,33 +1,34 @@
 /**
  * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
- * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
+ * locale switching goes through the shared SiteLocaleProvider (app.tsx). Marketing copy uses
+ * lowercase `agent`; preserve the established casing of Workspace, Token, Task, Skill, Trace,
+ * and other terms.
  */
 import type { Strings } from "./strings";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
+  backToTop: "Back to top",
 
   announcement: {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    flashModels: "GLM-5.3 Flash and Qwen 3.8 Flash are now available in PenguinHarness",
-    fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
+    release0217:
+      "PenguinHarness 0.2.17: Agent API record streams, charts and forms — see release notes",
+    penguinGo: "Penguin Go official Token packs are live: 50% off every Gemini model",
   },
 
   nav: {
-    highlights: "Highlights",
-    selfImprove: "Self-evolution",
-    quickstart: "Quick start",
-    cases: "Cases",
-    scenarios: "Scenarios",
-    benchmark: "Benchmark",
-    contract: "CONTRACT.md",
-    features: "Features",
+    home: "Home",
     blog: "Blog",
     download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
+    amsp: "AMSP",
     docs: "Docs",
+    gallery: "Gallery",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
@@ -48,32 +49,45 @@ export const en: Strings = {
   },
 
   hero: {
-    platformLead: "Open-source, local-first multi-agent app ",
-    platformActions: ["auto-dev", "auto-tuning"],
-    platformTail: " platform",
-    automationLead: "Fully automated ",
-    automationActions: ["creation", "optimization", "deployment"],
-    automationTail: "of AI apps",
+    positioning: {
+      growthLead: "Software that ",
+      growth: "keeps growing",
+      growthEnd: ".",
+      separator: " ",
+      reachLead: "Evolution ",
+      reach: "within reach",
+      reachEnd: ".",
+    },
+    subtitle: "Free and Stable RSI Framework",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
-      { value: "1000+ Models", label: "Support for Major Providers" },
-      { value: "Cross-Platform Deployment", label: "Linux · Windows · macOS" },
-      { value: "100% Open Source", label: "Apache 2.0 Licensed" },
-      { value: "First Self-Improving Harness", label: "Native Agent Self-Evolution Engine" },
+      { value: "Cross-platform", label: "Linux, Windows, macOS" },
+      { value: "100% open source", label: "Apache 2.0 licensed" },
+      {
+        value: "First self-improving harness",
+        label: "A native agent self-evolution engine",
+      },
     ],
-    supportedModelsLabel: "Supported models",
-    supportedModels: [
-      "OpenAI",
-      "Anthropic",
-      "Gemini",
-      "DeepSeek",
-      "Zai",
-      "MoonShot",
-      "Qwen",
-      "Openrouter",
+    supportedModelsCount: "1000+",
+    supportedModelsLabel: "Supported Models",
+    supportedModelsMore: "and more",
+    algorithmsLabel: "RSI Algorithms",
+    benchmarksLabel: "Benchmarks",
+    benchmarkKinds: [
+      "Data analysis",
+      "Software engineering",
+      "Business automation",
+      "Scientific research",
+      "Terminal tasks",
+      "Agent self-evolution",
     ],
-    supportedModelsMore: "+992 more",
+    externalLink: {
+      title: "You're about to open an external link",
+      body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
+      cancel: "Cancel",
+      open: "Open link",
+    },
   },
 
   install: {
@@ -96,7 +110,6 @@ export const en: Strings = {
   },
 
   download: {
-    eyebrow: "Download",
     title: "Download the desktop app",
     recommended: "Your system",
     platforms: {
@@ -157,85 +170,43 @@ export const en: Strings = {
     copied: "Copied",
   },
 
-  pillars: {
-    eyebrow: "Three pillars",
-    title: "Built for building — and evolving — agents",
-    subtitle:
-      "PenguinHarness is the first open-source harness to ship “agents building agents” and recursive self-improvement.",
-    root: "PenguinHarness",
-    concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
-    diagramLabel:
-      "PenguinHarness radiates into Penguin Message, Penguin SDK and Penguin Skills, each extending into one pillar",
-    items: [
-      {
-        title: "Simplest Is the Best",
-        tag: "",
-        desc: "A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently.",
-      },
-      {
-        title: "Harness for building agents",
-        tag: "",
-        desc: "With the PenguinHarness SDK, an agent builds complete agent applications for you — autonomously, from scratch.",
-      },
-      {
-        title: "Harness for Recursive Self-Improvement",
-        tag: "",
-        desc: "With PenguinHarness Skills, an agent evaluates and optimizes itself, improving recursively over time.",
-      },
-    ],
-  },
-
-  compare: {
-    eyebrow: "vs. LangChain",
-    title: "Building agents with agents",
-    subtitle: [
-      "With LangChain, you build agents by hand — at 1× speed.",
-      "With PenguinHarness, agents build agents — at 100×.",
-    ],
-    langchain: {
-      name: "LangChain",
-      speed: "1×",
-      mode: "agents built by hand",
-      note: "Chains, tools and prompts written line by line — every app starts from zero.",
-    },
-    penguin: {
-      name: "PenguinHarness",
-      speed: "100×",
-      mode: "agents built by agents",
-      note: "One sentence in — an agent delivers scaffold, code and run instructions end to end.",
-    },
+  live: {
+    open: "Open in the gallery",
+    loading: "Loading the live demo…",
+    evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },
 
   selfImprove: {
-    eyebrow: "The self-improvement loop",
-    title: "Multi-agent collaboration makes evolution automatic",
+    title: "A multi-agent self-evolution framework",
     subtitle:
-      "The Optimizer orchestrates multiple Evaluators to score the target agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the agent from version N to N+1 — with a snapshot before every round.",
-    videoLabel: "Self-improvement demo video",
-    videoCaption:
-      "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
+      "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
-    nodeTarget: "target agent",
-    badgeOld: "vN",
-    badgeNew: "vN+1",
-    edgeSpawn: "spawn parallel evaluations",
-    edgeBench: "run Benchmarks",
-    edgeFeedback: "scores & traces",
-    edgeImprove: "update prompts & Skills",
+    nodeTarget: "Tested agent",
+    edgeSpawn: "dispatch in parallel",
+    edgeFeedback: "scores & Traces",
+    edgeBench: "run & score each case",
+    edgeImprove: "edit AGENTS.md, a Skill or config",
+    noteOld: "snapshot before editing",
+    noteNew: "kept only if the score is higher",
     trends: [
-      { label: "Score", hint: "keeps rising" },
-      { label: "Cost", hint: "keeps falling" },
-      { label: "Time", hint: "keeps shrinking" },
+      { label: "Score", hint: "out of 100" },
+      { label: "Cost", hint: "per run" },
+      { label: "Duration", hint: "per run" },
     ],
+    demo: {
+      caption:
+        "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
+      cost: "Six test-agent runs cost $0.0373, not counting Benchmark creation, scoring or the optimizer.",
+    },
     diagramLabel:
-      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the target agent from vN to vN+1 via scores and traces",
+      "One round of self-evolution: the Optimizer runs agent-optimization and dispatches Evaluator subagents running agent-evaluation. They run the tested agent on each Benchmark case and score it. From the scores and Traces, the Optimizer edits version N into version N+1. Version N+1 is kept only if its score is higher. Version N is saved as a snapshot before it is edited.",
   },
 
   quickstart: {
-    eyebrow: "Quick start",
-    title: "Get started with PenguinHarness in two steps",
-    subtitle: "Choose how to install first. With a CLI install, then choose Web UI or CLI.",
+    title: "Install PenguinHarness, then pick how to start it",
+    subtitle:
+      "The desktop app works as soon as it is installed. After a command-line install, open the Web UI or use it in the terminal.",
     stepOne: "Step one",
     chooseInstall: "Choose an installation method",
     stepTwo: "Step two",
@@ -247,13 +218,13 @@ export const en: Strings = {
       cli: "Start CLI",
     },
     desktop: {
-      title: "Desktop first, ready when it opens",
+      title: "Desktop app: ready when it opens",
       desc: "The local server and full Web UI are built in, with no runtime setup and no terminal process to keep alive.",
       cta: "Choose your system and download",
       steps: [
         "Download the installer for your system",
         "Open PenguinHarness and follow the model setup",
-        "Describe your first agent app in one sentence",
+        "Describe your first AI app in one sentence",
       ],
     },
     install: {
@@ -289,35 +260,66 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    eyebrow: "Cases",
-    title: "One sentence to an AI app that thinks and runs",
+    title: "A2APP: one sentence and $0.10 build a legal agent app",
+    a2app:
+      "A2APP is the agent's own small app, a tab beside the chat; the app calls the agent to do the work. One sentence in chat, and the agent changes it; it reloads at once and keeps earlier versions.",
     subtitle:
-      "Hand the requirement to an agent and get a runnable result end to end — more cases are on the way.",
-    tabs: [
+      "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
+    prompt:
+      "Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.",
+    caption:
+      "The app it built: upload contracts, follow each file's review and download a report of risky clauses with suggested revisions",
+    cost: "Five sample reviews cost $0.0423 in model calls.",
+  },
+
+  pillars: {
+    title: "A minimal, file-centric agent architecture",
+    subtitle: "When an agent improves, its files change and the model does not.",
+    root: "PenguinHarness",
+    diagramLabel:
+      "PenguinHarness branches into AMSP, the Penguin SDK and Agent State, each leading to one card below",
+    items: [
       {
-        label: "RAG app",
-        prompt:
-          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
-        caption:
-          "The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions",
-        cost: "And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.",
+        concept: "AMSP",
+        title: "Simplest is the best",
+        desc: "The engine streams AMSP records, the Trace stores them, the Web App renders them and the Agent API serves them to your programs, with no second format in between. Models are reached over MMSP.",
+        link: "AMSP records",
       },
       {
-        label: "2D penguin sled game",
-        prompt:
-          "Build a cute Antarctic penguin sledding game: Space to jump the rocks, with speed and difficulty ramping up over time.",
-        caption:
-          "The generated mini game: an Antarctic penguin sleds and jumps rocks, with live scoring and rising difficulty",
-        cost: "",
+        concept: "Penguin SDK",
+        title: "Harness for building agents",
+        desc: "Every Task in PenguinHarness runs on @prismshadow/penguin-core. You can install the same package from npm. With the penguin-sdk Skill, an agent builds a standalone app on it, such as a RAG app that cites its sources.",
+        link: "SDK quick start",
+      },
+      {
+        concept: "Agent State",
+        title: "Harness for recursive self-improvement",
+        desc: "Its prompt, Skills and settings are files in its Agent State. Self-evolution edits these files and snapshots each version before changing it.",
+        link: "Configuration reference",
       },
     ],
   },
 
+  compare: {
+    title: "Build enterprise-grade agents fast",
+    subtitle:
+      "An agent library runs the loop that calls the model and its tools. Around that loop you still need an interface, a record of each run, a way to score the agent and an API to call it.",
+    library: {
+      name: "Agent library",
+      mode: "You build each piece",
+      note: "Write each part yourself, or wire in a separate product for it.",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      mode: "Already built",
+      note: "A Web App, Traces, the Evaluation Center with built-in Benchmarks, self-evolution toolkits, a sandbox and the Agent API.",
+    },
+  },
+
   scenarios: {
-    eyebrow: "Scenarios",
     title: "From screening centers to factory floors",
     subtitle:
-      "Production stories of teams using PenguinHarness to build agents automatically and deploy them to production.",
+      "Two companies had PenguinHarness build their agents. Both now run them in production.",
     items: [
       {
         title: "Screening-report QC",
@@ -332,63 +334,10 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     ],
   },
 
-  contract: {
-    eyebrow: "A contract for stable evolution",
-    title: "CONTRACT.md",
-    subtitle:
-      "PenguinHarness treats this contract as the boundary and bedrock of evolution: capability may grow, the boundary never drifts.",
-    intro:
-      "Evolution needs boundaries. The contract is the covenant between harness and agent: capability grows within; the boundary holds without.",
-    items: [
-      {
-        term: "Working boundary",
-        text: "Every agent runs on the same harness: Sessions are created under an agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
-      },
-      {
-        term: "Editable files",
-        text: "An agent's prompts, Skills and configuration live as editable files on disk, never as constants baked into code. What you can see, the agent can improve; what you can edit, it can learn.",
-      },
-      {
-        term: "Full tracing",
-        text: "Every model request and every tool call is written to the Trace in full: how many Tokens it spent, how long it took, why it failed — all replayable line by line afterwards.",
-      },
-      {
-        term: "Approvals & audit",
-        text: "Every tool call passes approval before it runs, and every decision leaves an audit record — what the agent did is never a mystery.",
-      },
-      {
-        term: "Version control",
-        text: "Before each optimization, the agent state is snapshotted. If a round fails or regresses, restore any historical version in one step.",
-      },
-      {
-        term: "Progressive loading",
-        text: "Content for the model is indexed first and read on demand — never dumped wholesale into context. The cleaner the context, the steadier the behavior.",
-      },
-      {
-        term: "Error handling",
-        text: "Errors split into retryable and fatal: retryable ones retry automatically, fatal ones converge into messages the model can see and react to. No task dies of a single failure.",
-      },
-      {
-        term: "Credential isolation",
-        text: "API keys and other credentials live in hidden files and move only through system interfaces — never entering model context, never shown in plain text.",
-      },
-      {
-        term: "Model decoupling",
-        text: "Models are not bound to agents: switch to a stronger or cheaper model at any time without rewriting the agent.",
-      },
-      {
-        term: "Recoverable trajectories",
-        text: "Any Session can be fully restored from its Trace: restart the process or move machines without losing context.",
-      },
-    ],
-    outro: "The contract does not cap what an agent can become — only how it gets there.",
-  },
-
   benchmark: {
-    eyebrow: "Benchmark",
-    title: "Outstanding results at tens of times less cost",
+    title: "Accuracy on par with Claude Code and Codex, at a fraction of the cost",
     subtitle:
-      "Every product runs the model it is normally paired with, head-to-head against Claude Code and OpenAI Codex on two suites: comparable accuracy, tens of times the difference in spend.",
+      "Each product runs on the model it is usually paired with, on two task suites. We compare accuracy, Tokens used and cost.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",
@@ -398,12 +347,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     dataDesc:
       "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
-      "15 complex data-analysis tasks · single run · Tokens and cost are suite totals · estimated at official pricing.",
+      "15 complex data-analysis tasks, one run each. Tokens and cost are suite totals, estimated at official pricing.",
     codeTitle: "Coding tasks",
     codeDesc:
       "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
     codeFootnote:
-      "40 coding tasks × 2 runs (accuracy over all 80 outcomes) · Tokens and cost are suite totals · estimated at official pricing.",
+      "40 coding tasks, two runs each, with accuracy over all 80 outcomes. Tokens and cost are suite totals, estimated at official pricing.",
     colFramework: "Framework",
     colModel: "Model",
     colAccuracy: "Accuracy (%)",
@@ -411,144 +360,239 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     colCost: "Cost ($)",
   },
 
-  features: {
-    eyebrow: "Features",
-    title: "The full capability set, one desktop-grade UI",
-    subtitle: "Every one of them lives in the web interface itself — installed means ready.",
-    more: "and more…",
-    items: [
-      {
-        title: "Multi-session chat",
-        desc: "Any number of sessions per agent — streaming output, tool approvals and image paste out of the box.",
-      },
-      {
-        title: "agent hub",
-        desc: "Create and manage agents in one click; names, descriptions and prompts stay editable.",
-      },
-      {
-        title: "Skill library",
-        desc: "Browse, install and quick-invoke Skills — agents can write and optimize their own.",
-      },
-      {
-        title: "Scheduled tasks",
-        desc: "Cron-style schedules run agents on time, fully traced, unattended.",
-      },
-      {
-        title: "Subagents",
-        desc: "Delegate work to parallel Subagents — independent and isolated from each other.",
-      },
-      {
-        title: "Cost center",
-        desc: "Daily trends for Tokens, requests and cost, with per-model success rates and anomalies.",
-      },
-      {
-        title: "Trace view",
-        desc: "Replay every request and tool call round by round, with Token breakdown and timing.",
-      },
-      {
-        title: "agent evaluation",
-        desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as agents evolve.",
-      },
-      {
-        title: "Multi-user management",
-        desc: "Admins provision users; each gets an independent Project with isolated data.",
-      },
-    ],
-  },
-
-  skills: {
-    eyebrow: "Built-in Skills",
-    title: "The built-in Skill library at a glance",
-    subtitle: "Three Skill groups out of the box — agents can write and optimize their own, too.",
-    groups: [
-      {
-        title: "Office Productivity",
-        skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
-      },
-      {
-        title: "Software Development",
-        skills: ["web-design", "software-engineering", "remote-claude-code"],
-      },
-      {
-        title: "AI App Development",
-        skills: [
-          "penguin-sdk",
-          "penguin-config",
-          "penguin-orchestration",
-          "agent-porting",
-          "unified-llm-api",
-          "vllm",
-          "ollama",
-          "llamafactory",
-          "skill-porting",
-          "agent-initialization",
-          "benchmark-design",
-          "agent-evaluation",
-          "agent-optimization",
-        ],
-      },
-    ],
-  },
-
-  security: {
-    eyebrow: "Security",
-    title: "Evolution within bounds, data within walls",
-    subtitle: "A runtime boundary designed for enterprise data security.",
-    items: [
-      {
-        title: "Open source, local deployment",
-        desc: "A fully auditable open-source kernel; data lives in local directories and never passes through third-party services.",
-      },
-      {
-        title: "Bounded evolution",
-        desc: "Self-improvement is strictly confined to Workspace and Skills — the harness core security boundary is never modified.",
-      },
-      {
-        title: "Approvals & audit",
-        desc: "Tool calls require user approval first, and every decision is written to the Trace as an audit event.",
-      },
-      {
-        title: "Credential isolation",
-        desc: "Credentials land as hidden 0600 files, are barred from the system prompt, and stay masked throughout the UI.",
-      },
-    ],
+  updates: {
+    title: "Latest updates",
+    all: "All posts",
   },
 
   community: {
-    eyebrow: "Community",
-    title: "Join the community and build with us",
-    subtitle: "Discuss, ask, contribute — your first Issue is the best way to start.",
+    title: "Join the community",
+    subtitle:
+      "Ask questions on Discord or in the WeChat group, or open an Issue or a PR on GitHub.",
     items: {
-      discord: { name: "Discord", desc: "Chat with us and other developers in real time." },
-      x: { name: "X (Twitter)", desc: "Follow the latest product and team updates." },
-      wechat: { name: "WeChat group", desc: "Chinese community discussions and support." },
-      github: { name: "GitHub", desc: "Stars, Issues, and PRs all welcome." },
+      discord: { name: "Discord", desc: "Talk with the team and other developers." },
+      x: { name: "X (Twitter)", desc: "Product updates and releases." },
+      wechat: { name: "WeChat group", desc: "The Chinese-language group." },
+      github: { name: "GitHub", desc: "Source code, Issues and PRs." },
     },
   },
 
   cta: {
-    title: "Complex AI development, made ever simpler",
-    subtitle:
-      "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost agent productivity engine.",
+    title: "Download PenguinHarness and run your first self-evolution round",
+    subtitle: "Every version is scored and snapshotted, so a worse one rolls back in one step.",
     download: "Download the desktop app",
     quickstart: "Get started",
     docs: "Read the docs",
   },
 
   footer: {
-    tagline: "Efficient Self-Improving Harness for Everyone.",
+    tagline: "Free and Stable RSI Framework.",
     product: "Product",
     resources: "Resources",
     quickstart: "Quick start",
-    features: "Features",
-    selfImprove: "Self-evolution engine",
     cases: "Cases",
     blog: "Blog",
     repo: "GitHub repository",
     docs: "Documentation",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
+  },
+
+  hub: {
+    source: "Source",
+    searchPlaceholder: "Search by name, summary or author",
+    clearSearch: "Clear search",
+    all: "All",
+    sortLabel: "Sort",
+    sortLatest: "Recently updated",
+    sortName: "Name",
+    empty: "Nothing matches. Clear the search or the filters to see more.",
+    clearFilters: "Clear filters",
+    count: (n: number) => `${n}`,
+    listSeparator: ", ",
+    viewSource: "View on GitHub",
+    details: "Details",
+    pageTitle: (name: string) => `${name} | PenguinHarness`,
+    notFound: "Nothing here. It may have been renamed or removed.",
+    backToList: "Back to the list",
+    meta: {
+      author: "Author",
+      version: "Version",
+      license: "License",
+      category: "Category",
+      package: "npm package",
+      preinstall: "Preinstalled on new agents",
+      yes: "Yes",
+      no: "No",
+      status: "Status",
+      updated: "Updated",
+      tasks: "Tasks",
+    },
+    status: { published: "Published", draft: "Draft" } as Record<string, string>,
+    references: "References",
+    plugins: {
+      title: "Plugins",
+      description:
+        "The PenguinHarness plugin library: self-evolution toolkits, Skills, Hooks and workbenches.",
+      facetCategory: "Category",
+      facetContents: "Contents",
+      facetAuthor: "Author",
+      categories: {
+        rsi: "Agent Self-Evolution",
+        "office-productivity": "Office Productivity",
+        "software-development": "Software Development",
+        "ai-app-development": "AI App Development",
+        sandbox: "Agent Sandbox",
+        other: "Other",
+      } as Record<string, string>,
+      contents: { skills: "Skills", hooks: "Hooks", workbenches: "Workbenches" },
+      about: "About",
+      quickStart: "Quick start",
+      quickStartSkills: "Skills it selects",
+      skills: "Skills",
+      hooks: "Hooks",
+      workbenches: "Workbenches",
+      extensions: "Hooks and workbenches",
+      skillCount: (n: number) => (n === 1 ? "1 Skill" : `${n} Skills`),
+      preinstalled: "Preinstalled",
+    },
+    benchmarks: {
+      title: "Benchmarks",
+      description: "PenguinHarness benchmarks: the tasks and rubrics agents are measured on.",
+      facetTimeout: "Time limit per task",
+      timeout: {
+        short: "Up to 15 minutes",
+        hour: "Up to 1 hour",
+        long: "Over 1 hour",
+        none: "No limit",
+      } as Record<string, string>,
+      facetLeaderboard: "Leaderboards",
+      onLeaderboard: "On a leaderboard",
+      facetStatus: "Status",
+      facetAuthor: "Author",
+      taskCount: (n: number) => (n === 1 ? "1 task" : `${n} tasks`),
+      about: "About",
+      tasks: "Tasks",
+      budget: { timeout: "Time", cpus: "CPU", ram: "Memory", disk: "Disk", gpus: "GPU" },
+      minutes: (n: number) => `${n} min`,
+      hours: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
+      cores: (n: number) => (n === 1 ? "1 core" : `${n} cores`),
+      gigabytes: (n: number) => `${n} GB`,
+      cards: (n: number) => (n === 1 ? "1 card" : `${n} cards`),
+      unlimited: "No limit",
+      leaderboards: "Leaderboards that use it",
+      taskParts: "Task contents",
+      statement: "Statement",
+      rubric: "Rubric",
+      data: "Data",
+      instruction: "Instruction given to the agent",
+      files: (n: number) => (n === 1 ? "Files (1)" : `Files (${n})`),
+      allFiles: (n: number) =>
+        n === 1 ? "View the file on GitHub" : `View all ${n} files on GitHub`,
+      dataFolder: "View the data folder on GitHub",
+      showAll: "Show all",
+      showLess: "Show less",
+      fileCount: (n: number) => (n === 1 ? "1 file" : `${n} files`),
+      upTo: (time: string) => `Up to ${time} a task`,
+      withData: "Includes data",
+    },
+    leaderboards: {
+      title: "Leaderboards",
+      description:
+        "PenguinHarness leaderboards: agents compared by score and cost on the benchmarks.",
+      facetAuthor: "Author",
+      entryCount: (n: number) => (n === 1 ? "1 entry" : `${n} entries`),
+      benchmarkCount: (n: number) => (n === 1 ? "1 benchmark" : `${n} benchmarks`),
+      charts: { table: "Ranking", pareto: "Score and cost", waffle: "Per task" },
+      chartsLabel: "Views",
+      results: "Results",
+      entries: "Entries",
+      baseline: "Baseline",
+      rank: "Rank",
+      model: "Model",
+      score: "Score",
+      modelThinking: (model: string, level: string) => `${model} (${level})`,
+      columnNames: {
+        harness: "Harness",
+        algorithm: "Algorithm",
+        released: "Released",
+        cost: "Cost",
+      } as Record<"harness" | "algorithm" | "released" | "cost", string>,
+      columns: "Columns",
+      filter: "Filter",
+      sortBy: (name: string) => `Sort by ${name.toLowerCase()}`,
+      filters: {
+        model: "Model",
+        harness: "Harness",
+        algorithm: "Algorithm",
+        thinking: "Thinking level",
+      } as Record<"model" | "harness" | "algorithm" | "thinking", string>,
+      filterLabel: (name: string) => `Filter by ${name.toLowerCase()}`,
+      noMatch: "No entry matches these filters.",
+      rawData: "Show the raw data",
+      raw: {
+        harness: "Harness",
+        provider: "Model provider",
+        thinking: "Thinking level",
+        phase: "Phase",
+        std: "Standard deviation",
+        stdAttempts: (n: number) => `Across ${n} attempts`,
+        stdExperiments: "From each experiment's score_std",
+        experiments: "Experiments",
+        benchmark: "Benchmark and experiment",
+        value: "Score",
+        attempts: "Attempts",
+        tokens: "Tokens in / cache / out",
+        finished: "Finished",
+        harnessSetting: "Harness setting",
+        notRecorded: "Not recorded",
+      },
+      cost: "Cost",
+      duration: "Time",
+      tokens: "Tokens",
+      axisLabel: "Horizontal axis",
+      frontier: "Pareto frontier",
+      hoursShort: (value: string) => `${value} h`,
+      minutesShort: (value: string) => `${value} min`,
+      scale: "Score",
+      noScore: "Not scored",
+      task: "Task",
+      attemptsPerCell: (n: number) =>
+        n === 1 ? "One square per task" : `${n} squares per cell, one per attempt`,
+      cellScores: (scores: string[]) => `Attempts: ${scores.join(", ")}`,
+      methodOnModel: (method: string, model: string) => `${method} (${model})`,
+      paretoPoint: (method: string, score: string, axis: string, value: string) =>
+        `${method}: score ${score}, ${axis.toLowerCase()} ${value}`,
+      paretoSummary: (axis: string, points: string[], frontier: string[]) =>
+        `Horizontal axis: ${axis}. ${points.join("; ")}. Pareto frontier: ${frontier.join(", ")}.`,
+      benchmarks: "Benchmarks",
+      method: {
+        title: "Method and sources",
+        matrixLead: (metric: string, phase: string) =>
+          `Each cell is one experiment's \`${metric}\` from its \`${phase}\` summary; the rows under the line are what each column comes to.`,
+        listLead:
+          "Each entry's expression, argument by argument: the experiment it reads, the phase and metric, and the value there.",
+        stdAttempts: (n: number | null) =>
+          `± is the sample standard deviation across ${n === null ? "the" : `the ${n}`} attempts, each attempt's task scores combined the same way as the score.`,
+        stdExperiments:
+          "± is composed from each experiment's own `score_std`, taken as independent.",
+        stdExperimentsSome:
+          "± is taken across attempts; where an entry's experiments ran different numbers of attempts, it is composed from each experiment's `score_std` instead.",
+        benchmark: "Benchmark",
+        experiment: "Experiment",
+        phase: "Phase",
+        metric: "Metric",
+        value: "Value",
+        opName: (op: string | null) => (op === null ? "the value" : op),
+        opRow: (op: string | null) => (op === null ? "Score" : `Score (${op})`),
+        stdRow: "± std",
+        costRow: "Cost (one run, summed)",
+        timeRow: "Time (one run, summed)",
+        config: "Configuration",
+        experiments: "Experiments",
+      },
+    },
   },
 
   blog: {
@@ -567,5 +611,354 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     notFound: "Post not found",
     backHome: "Back to home",
     toc: "On this page",
+    references: "References",
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
+  },
+
+  amsp: {
+    title: "AMSP: Agent Message Stream Protocol",
+    description:
+      "Stream, parse and store agent messages with one protocol: AMSP, the Session stream of a PenguinHarness agent.",
+    headline: "One protocol for agent communication",
+    subline: "Stream, parse and store agent messages with one protocol",
+    lineage: " streams one model call; AMSP streams an agent's Session.",
+    reference: "Protocol reference",
+    copyPrompt: "Copy prompt for a coding agent",
+    copied: "Copied",
+    agentPrompt: (docsUrl: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call an agent.\n\nBase URL and Agent ID: from the agent's API tab in PenguinHarness.\n\nUse the @prismshadow/amsp SDK: stream() for the records as they arrive and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+
+    player: {
+      label: "Example runs",
+      scenarios: { first: "First request", continue: "Continue", interrupt: "Interrupt" },
+      pause: "Pause",
+      play: "Play",
+      input: "Just one codebase",
+      events: "Streamed events",
+      stored: "Stored in the Trace",
+      besideStream: "beside the stream",
+      assembled: "Parsed message",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `thinking ${level}`,
+      streaming: "streaming",
+      result: "Result",
+      requests: (n: number) => (n === 1 ? "1 Request" : `${n} Requests`),
+      tokens: (n: string) => `${n} tokens`,
+    },
+
+    structure: {
+      title: "Message structure",
+      subtitle:
+        "A run nests three spans, longest first: the Task, each Request to the model, and the messages that fill each Request, each one ending in its complete record.",
+      figureLabel:
+        "A run with two tool rounds on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, three Requests each run from request_begin to request_end. Under them, the messages fill each Request, each ending in its complete record: the thinking and a tool call in the first, a second tool call in the second, the answer in the third. Between two Requests a tool runs, and its tool_call_output completes where the next Request begins.",
+      levels: { task: "Task", request: "Request", message: "Message" },
+      steps: [
+        "task_begin opens a Task and task_end closes it; a task_begin still open at [DONE] means the run did not reach its end.",
+        "Each Request opens with request_begin, which carries the thinking level, and closes with request_end.",
+        "A message streams as partial_* fragments (start, delta, stop), then its complete record follows, an interrupted message's included.",
+        "A tool runs once its call is complete; its tool_call_output completes after request_end, and the next Request starts from it.",
+      ],
+      boundaries: "event_msg: a Task or a Request, from its begin record to its end record",
+      /** What each colour is, in the terms of the Web App Trace view's legend. */
+      kinds: {
+        thinking: "thinking",
+        text: "text, the reply",
+        tool_call: "tool_call, the call being written",
+        tool_call_output: "tool_call_output, the tool running",
+      },
+      complete:
+        "model_msg: a message streams as partial_* fragments (live only) and ends in its complete record, stored in the Trace",
+    },
+
+    records: {
+      title: "Every record, field by field",
+      subtitle:
+        "Each record is a line of the Trace, byte for byte; only the partial_* fragments are live only. Pick one to see an example and all of its fields. A client ignores a type or a field it does not know.",
+      choose: "Choose a record",
+      families: {
+        envelope: "Envelope",
+        session: "Session",
+        complete: "Complete messages",
+        partial: "Fragments",
+        boundaries: "Task and Request",
+        interventions: "Aborts, approvals, hooks",
+        context: "Context and tools",
+        control: "Control frames",
+      },
+      stored: "stored in the Trace",
+      live: "live only",
+      firstMessage: "sent with a Session's first message",
+      frame: "control frame, not a record",
+      example: "Example",
+      wire: "On the wire",
+      envelopeFields: "Envelope fields",
+      payloadFields: "Payload fields",
+      head: {
+        field: "Field",
+        type: "Type",
+        required: "Required",
+        meaning: "Meaning",
+        example: "Example",
+      },
+      required: "required",
+      optional: "optional",
+      frameNote:
+        "A control frame carries no id: it moves no resume position and is never replayed.",
+      frames: {
+        ping: "Sent as soon as a stream opens, so a run stream's first line, then every 20 seconds.",
+        done: "A run stream's last line.",
+      },
+      common: {
+        type: "Which payload this is.",
+        role: "Who the message is from.",
+        event_type: "The fragment's phase: start, delta or stop.",
+        tool_call_id: "The id of the call it belongs to; pairs a call with its output.",
+        fidelity: "Data the provider needs back on replay, kept as it came.",
+        error_code:
+          "The machine-readable cause, stable across versions; what a client localizes from.",
+        error_message: "The raw failure text, shown as it came.",
+      },
+      items: {
+        envelope: {
+          summary: "Every record has the same envelope; only the payload varies.",
+          fields: {
+            timestamp: "When the record was made, ISO 8601 in UTC.",
+            type: "session_meta, model_msg or event_msg.",
+            payload: "The record itself, told apart by its own type.",
+            origin:
+              "The chain of child Sessions a subagent's record came through, outer to inner; absent on the main Session's own records.",
+          },
+        },
+        session_meta: {
+          summary:
+            "A model context opened: the model, the system prompt, the paths and the source. It is the first record on a Session's first message, and the first line of every Trace file.",
+          fields: {
+            session_id: "The Session's id; a later request sends it to continue.",
+            provider: "The provider group of the model.",
+            model_id: "The model id sent to the provider.",
+            model_context_window:
+              'The model\'s context window in tokens, or "unknown" when none is set.',
+            system_prompt: "The assembled system prompt this context runs with.",
+            agent_state: "The Agent State's absolute path.",
+            workspace: "The Workspace's absolute path.",
+            source:
+              "What opened the Session: user, api, schedule, subagent, cli, company or workbench.",
+          },
+        },
+        text: {
+          summary: "A complete text: the user's input or the model's reply.",
+          fields: {
+            text: "The text.",
+            sender:
+              "Who wrote a user-role text: the user, a parent agent, the harness or the server. Absent means the user.",
+          },
+        },
+        thinking: {
+          summary: "The model's complete thinking.",
+          fields: { thinking: "The thinking text." },
+        },
+        tool_call: {
+          summary:
+            "A complete tool call the model made. One whose Request was cut short holds the raw arguments, which may not parse, and never runs.",
+          fields: { name: "The tool's name.", arguments: "The arguments, as a JSON string." },
+        },
+        tool_call_output: {
+          summary: "A tool's result, fed back to the model.",
+          fields: {
+            output: "What the tool returned, as text.",
+            images: "Images the tool returned, as data URLs.",
+            status:
+              "What the result is: completed (the tool ran to its end), fatal (the call failed) or aborted (it never ran, denied by the user, the policy or a hook, or it was interrupted while running).",
+          },
+        },
+        image_url: {
+          summary: "An image the user sent by URL.",
+          fields: { image_url: "A web URL or a base64 data URL." },
+        },
+        inline_data: {
+          summary: "Inline bytes, such as an image or audio, from the user or the model.",
+          fields: { data: "The bytes, base64-encoded.", mime_type: "The bytes' media type." },
+        },
+        inline_thinking: {
+          summary: "Thinking as inline bytes, such as an image an image model thinks with.",
+          fields: { data: "The bytes, base64-encoded.", mime_type: "The bytes' media type." },
+        },
+        partial_text: {
+          summary: "A piece of a reply as it streams.",
+          fields: { text: "The text this fragment adds." },
+        },
+        partial_thinking: {
+          summary: "A piece of thinking as it streams.",
+          fields: { thinking: "The thinking this fragment adds." },
+        },
+        partial_tool_call: {
+          summary: "A piece of a tool call as it streams.",
+          fields: {
+            name: "The tool's name, on the start fragment.",
+            arguments: "The piece of the arguments' JSON this fragment adds.",
+          },
+        },
+        partial_tool_call_output: {
+          summary: "A piece of a tool's output as it streams.",
+          fields: {
+            output: "The output this fragment adds.",
+            images: "Images the tool returned, carried whole by one fragment.",
+          },
+        },
+        task_begin: {
+          summary: "Opens a Task, one input's whole run; every record of the Task comes after it.",
+          fields: {},
+        },
+        task_end: {
+          summary:
+            "Closes the Task. A task_begin with no task_end means the run did not reach its end.",
+          fields: {},
+        },
+        request_begin: {
+          summary: "Opens one request to the model.",
+          fields: {
+            thinking_level:
+              "The thinking level the request went out at; absent when none was sent.",
+          },
+        },
+        request_end: {
+          summary: "Closes the request and says how it ended.",
+          fields: {
+            status:
+              "completed, aborted (the turn was not committed), retryable (retried while attempts remain; output cut at its cap reads error_code output_truncated) or fatal; the one record of why the request ended.",
+            attempt: "The attempt's number among its retries; absent on a clean first try.",
+            retry_in_ms:
+              "The wait before the next attempt, present only when the engine will retry.",
+          },
+        },
+        token_usage: {
+          summary: "The tokens counted for the latest request and for the Session so far.",
+          fields: {
+            session: "The Session's running totals.",
+            "session.cache_read": "Input tokens read from the provider's cache.",
+            "session.cache_write": "Input tokens written to the cache.",
+            "session.output": "Output tokens, thinking included.",
+            "session.total": "Every token counted.",
+            request: "This request's counts.",
+            "request.cache_read": "Input tokens this request read from the cache.",
+            "request.cache_write": "Input tokens this request wrote to the cache.",
+            "request.output": "This request's output tokens, thinking included.",
+            "request.total": "Every token this request counted.",
+          },
+        },
+        abort: {
+          summary:
+            "The run was stopped: the caller interrupted it, or the Task reached its turn cap.",
+          fields: {
+            error_code: "user_abort for an interruption, max_turns for the turn cap.",
+            error_message: "The detail, such as the cap that was reached.",
+            reason: "The prose cause in older Traces; read only when there is no error_code.",
+          },
+        },
+        approval_decision: {
+          summary: "The answer to a tool call that needed approval.",
+          fields: {
+            decision: "allow, deny, or forbidden (the project's command policy refused it).",
+          },
+        },
+        hook: {
+          summary: "What a hook answered at a hook point.",
+          fields: {
+            hook: "The hook point: stop, pre_tool_use or user_prompt.",
+            name: "The hook's registered name.",
+            decision: "continue or stop at the stop point; allow or deny before a tool call.",
+            reason: "One line from the hook, for people.",
+            output: "The hook's own record, scalars only.",
+          },
+        },
+        compaction_begin: {
+          summary: "The context starts being compacted.",
+          fields: {
+            reason: "Why: context, turns or manual.",
+            mode: "summarize or discard.",
+            context: "The context's tokens when it began.",
+            turns: "The Session's turn count when it began.",
+          },
+        },
+        compaction_end: {
+          summary: "The compaction ended.",
+          fields: {
+            reason: "Why: context, turns or manual.",
+            mode: "summarize or discard.",
+            status:
+              "completed, or how it was given up: aborted, retryable or fatal; unless completed, the original context is kept.",
+            attempt: "The last attempt's number.",
+          },
+        },
+        tool_list_ready: {
+          summary: "The Session's tools as sent to the model, once its MCP servers have connected.",
+          fields: {
+            tools: "Every tool definition.",
+            "tools[].name": "The tool's name.",
+            "tools[].description": "What the tool does.",
+            "tools[].parameters": "Its arguments, as a JSON Schema.",
+          },
+        },
+        mcp_connect_begin: {
+          summary: "MCP servers start connecting.",
+          fields: { servers: "The servers being contacted." },
+        },
+        mcp_connect_end: {
+          summary: "The MCP servers have connected, or some failed.",
+          fields: {
+            status: "completed, fatal (a server failed and was skipped) or aborted.",
+            results: "One result per server.",
+            "results[].server": "The server's name.",
+            "results[].transport": "stdio, http or sse.",
+            "results[].status": "completed, fatal or aborted.",
+            "results[].duration_ms": "How long its connect and tool discovery took.",
+            "results[].tools": "The tools discovered, on completed.",
+            "results[].error_code":
+              "Why it failed: connect_failed, mcp_needs_setup or mcp_sign_in_required.",
+            "results[].error_message": "The raw failure text.",
+          },
+        },
+        subagent: {
+          summary:
+            "Points the parent Session's Trace at a child Session it started; written to the Trace, not streamed.",
+          fields: { session_id: "The child Session's id." },
+        },
+      },
+    },
+
+    quickstart: {
+      title: "From zero to the first run",
+      enable: {
+        title: "Turn the agent's API on",
+        text: "In PenguinHarness, open Agents, pick an agent, go to its API tab, switch on Enable API access, then click New key.",
+        link: "Agent API guide",
+      },
+      run: {
+        title: "Run it",
+        label: "How to run it",
+        typescript: "TypeScript",
+        curl: "curl",
+      },
+      curl: {
+        response: "response",
+        elided: "one event per record",
+      },
+    },
+
+    links: {
+      title: "Read on",
+      items: {
+        reference: {
+          name: "AMSP reference",
+          text: "Every record and control frame, field by field",
+        },
+        records: { name: "AMSP records", text: "The payload fields of every record kind" },
+        guide: { name: "Agent API guide", text: "Keys, approval modes, routes and errors" },
+        npm: { name: "@prismshadow/amsp", text: "The SDK on npm, for Node 24 and browsers" },
+        source: { name: "Source", text: "packages/amsp, Apache-2.0" },
+      },
+    },
   },
 };

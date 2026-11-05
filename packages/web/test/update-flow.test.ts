@@ -1,11 +1,13 @@
 /**
- * update-flow.ts unit tests: the one state machine behind the update modal, the account-menu
- * row and the version-line badge, fed by the two backends.
+ * update-flow.ts unit tests: the one state machine behind the App info dialog's update section,
+ * the account-menu row and the version-line badge, fed by the two backends.
  *
  * The rules pinned here are the ones a user sees: nothing is fetched until they confirm (a
- * check ends in `available`, never `downloading`), a download sent to the background still
+ * check ends in `available`, never `downloading`), a download that outlives the dialog still
  * reports through the row, an installed release waits for an explicit restart — and where the
- * process cannot be restarted from the page, the modal says so instead of pretending.
+ * process cannot be restarted from the page, the dialog says so instead of pretending. A
+ * restart the shell was asked for and did not make ends the wait: the restart step comes back
+ * as the user's. The row speaks under its label only while something moves or waits.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -16,14 +18,13 @@ import type {
 import {
   NO_LOCAL,
   clientFlow,
-  opensWithCheck,
   releaseFlow,
   releaseUrlFor,
   updateModeFor,
   updateRowModel,
   versionBadgeFor,
 } from "../src/lib/update-flow";
-import type { FlowLocal } from "../src/lib/update-flow";
+import type { FlowLocal, UpdateFlow } from "../src/lib/update-flow";
 
 const check = (over: Partial<UpdateCheckResponse> = {}): UpdateCheckResponse => ({
   currentVersion: "0.2.9",
@@ -219,6 +220,15 @@ describe("clientFlow (the desktop shell's own window)", () => {
     ).toEqual({ kind: "restarting", version: "0.3.0" });
   });
 
+  it("a restart the shell did not make leaves the spinner for the restart step, as the user's", () => {
+    expect(
+      clientFlow(shell({ state: "downloaded", version: "0.3.0" }), {
+        ...NO_LOCAL,
+        restart: "manual",
+      }),
+    ).toEqual({ kind: "ready", version: "0.3.0", restart: "manual" });
+  });
+
   it("carries the shell's own failure text, and names why a form cannot update itself", () => {
     expect(clientFlow(shell({ state: "error", message: "sha512 mismatch" }), NO_LOCAL)).toEqual({
       kind: "error",
@@ -233,29 +243,6 @@ describe("clientFlow (the desktop shell's own window)", () => {
       kind: "unsupported",
       reason: { code: "dev" },
     });
-  });
-});
-
-describe("opensWithCheck", () => {
-  it("checks on opening when nothing is known, the answer is 'current', or the last check failed", () => {
-    expect(opensWithCheck({ kind: "unknown" })).toBe(true);
-    expect(opensWithCheck({ kind: "up-to-date", version: "0.2.9" })).toBe(true);
-    expect(opensWithCheck({ kind: "error", message: null, detail: null, retry: "check" })).toBe(
-      true,
-    );
-  });
-
-  it("does not disturb an offer, a download, a ready build, or a failed download", () => {
-    expect(
-      opensWithCheck({ kind: "available", version: "0.3.0", releaseUrl: null, canInstall: true }),
-    ).toBe(false);
-    expect(
-      opensWithCheck({ kind: "downloading", version: "0.3.0", percent: 10, phase: null }),
-    ).toBe(false);
-    expect(opensWithCheck({ kind: "ready", version: "0.3.0", restart: "auto" })).toBe(false);
-    expect(opensWithCheck({ kind: "error", message: null, detail: "x", retry: "download" })).toBe(
-      false,
-    );
   });
 });
 
@@ -286,6 +273,24 @@ describe("updateRowModel and versionBadgeFor", () => {
       busy: false,
       dot: false,
     });
+  });
+
+  it("the entry speaks only while something moves or waits — idle and unsupported flows put nothing under it", () => {
+    const quiet: UpdateFlow[] = [
+      { kind: "unknown" },
+      { kind: "up-to-date", version: "0.2.9" },
+      { kind: "disabled" },
+      { kind: "unsupported", reason: { code: "dev" } },
+    ];
+    for (const flow of quiet) expect(updateRowModel(flow).announces, flow.kind).toBe(false);
+    const speaking: UpdateFlow[] = [
+      { kind: "checking" },
+      { kind: "available", version: "0.3.0", releaseUrl: null, canInstall: false },
+      { kind: "downloading", version: "0.3.0", percent: 42, phase: null },
+      { kind: "ready", version: "0.3.0", restart: "auto" },
+      { kind: "restarting", version: null },
+    ];
+    for (const flow of speaking) expect(updateRowModel(flow).announces, flow.kind).toBe(true);
   });
 
   it("badges the version line for an offer, a background download and a pending restart only", () => {

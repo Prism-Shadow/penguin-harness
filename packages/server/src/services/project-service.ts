@@ -11,17 +11,17 @@
  * Project provisioning at signup.
  */
 import fs from "node:fs/promises";
-import { DEFAULT_PROJECT_ID, projectDir, provisionProjectAgents } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_PROJECT_ID,
+  projectDir,
+  provisionProjectAgents,
+  provisionProjectBenchmarks,
+  type BuiltinBenchmark,
+} from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { AgentsRepo } from "../db/repos/agents.js";
-import type { ErrorsRepo } from "../db/repos/errors.js";
-import type { MembersRepo } from "../db/repos/members.js";
-import type { ProjectRow, ProjectsRepo } from "../db/repos/projects.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
-import type { SchedulesRepo } from "../db/repos/schedules.js";
-import type { UsageRepo } from "../db/repos/usage.js";
-import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { ProjectRow } from "../db/repos/projects.js";
+import type { UserRow } from "../db/repos/users.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -29,8 +29,23 @@ import {
   SEMANTIC_ID_PATTERN,
   SEMANTIC_ID_RULE,
 } from "./ids.js";
-import type { ProjectConfigService } from "./project-config-service.js";
-import type { TraceIndexService } from "./trace-index.js";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type {
+  Access,
+  AgentIndex,
+  Members,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  Projects,
+} from "../mechanisms/projects.js";
+import type { Users } from "../mechanisms/identity.js";
+import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
+import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
+import type { TraceIndex } from "../mechanisms/traces.js";
+import type { OrgCache } from "../mechanisms/organization.js";
+import type { AgentApi } from "../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../mechanisms/account-data.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -44,110 +59,61 @@ async function dirExists(path: string): Promise<boolean> {
   }
 }
 
-export interface ProjectServiceDeps {
-  root: string;
-  users: UsersRepo;
-  projects: ProjectsRepo;
-  members: MembersRepo;
-  agents: AgentsRepo;
-  sessions: SessionsRepo;
-  usage: UsageRepo;
-  errors: ErrorsRepo;
-  schedules: SchedulesRepo;
-  projectConfig: ProjectConfigService;
-  manager: SessionManager;
+@Component()
+export class ProjectService implements ProjectLifecycle {
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
+  @Use() private readonly access!: Access;
+  @Use() private readonly users!: Users;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly members!: Members;
+  @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly schedules!: Schedules;
+  /** Company-mode caches: a destroyed Project takes its organization projections with it. */
+  @Use() private readonly orgCache!: OrgCache;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  /** What destroying a Project needs of the session runtime — declared at the consumer. */
+  @Use() private readonly manager!: ProjectRuns;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
-  traceIndex: TraceIndexService;
-}
+  @Use() private readonly traceIndex!: TraceIndex;
+  /** The Project's Agents' API settings and keys (web.db): a destroyed Project exposes nothing. */
+  @Use() private readonly agentApi!: AgentApi;
+  /** Users' unsent drafts of the Project and of its Sessions: nowhere left to send them. */
+  @Use() private readonly drafts!: UserDraftsStore;
+  @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
 
-export class ProjectService {
-  constructor(private readonly deps: ProjectServiceDeps) {}
-
-  // —— Authorization rules (single implementation point) ——
-
-  /**
-   * The **sole** implementation of the owner / member check: returns the row with
-   * a role if accessible, otherwise null. `requireProjectAccess` below (throws 404)
-   * and `canAccess` (returns boolean) are both just wrappers around it — there's
-   * only one copy of the decision rule, since writing it twice would eventually
-   * drift out of sync.
-   */
-  private resolveAccess(
-    userId: string,
-    projectId: string,
-  ): (ProjectRow & { role: ProjectRole }) | null {
-    const row = this.deps.projects.findById(projectId);
-    if (!row) return null;
-    if (row.ownerUserId === userId) return { ...row, role: "owner" };
-    if (this.deps.members.isMember(projectId, userId)) return { ...row, role: "member" };
-    return null;
-  }
-
-  /** Accessible by owner or member; otherwise 404 (does not leak Project existence). */
+  // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
+  // in-package callers keep one entry point.
   requireProjectAccess(userId: string, projectId: string): ProjectRow & { role: ProjectRole } {
-    const row = this.resolveAccess(userId, projectId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "project_not_found",
-        "Project does not exist or you do not have access.",
-      );
-    }
-    return row;
+    return this.access.requireProjectAccess(userId, projectId);
   }
 
-  /**
-   * The non-throwing version of the same check: used for **error attribution**
-   * (app.onError) — that runs on the error-handling path, where throwing another
-   * 404 would only break error handling; whether access is granted shouldn't be
-   * expressed as an exception there anyway.
-   */
   canAccess(userId: string, projectId: string): boolean {
-    return this.resolveAccess(userId, projectId) !== null;
+    return this.access.canAccess(userId, projectId);
   }
 
-  /** Owner only: 403 when known accessible as a member; 404 when not accessible. */
   requireProjectOwner(userId: string, projectId: string): ProjectRow {
-    const row = this.requireProjectAccess(userId, projectId);
-    if (row.role !== "owner") {
-      throw new HttpError(
-        403,
-        "owner_required",
-        "Only the Project owner can perform this operation.",
-      );
-    }
-    return row;
+    return this.access.requireProjectOwner(userId, projectId);
   }
 
-  /** List of project_ids accessible to the current user (owned + granted access) (used by workspace-guard). */
   accessibleProjectIds(userId: string): string[] {
-    return this.deps.projects.listAccessible(userId).map((p) => p.projectId);
+    return this.access.accessibleProjectIds(userId);
   }
 
-  // —— Project lifecycle ——
-
-  /** List of owned + granted-access Projects; display names are read from each project_config.toml. */
-  async listProjects(userId: string): Promise<ProjectSummary[]> {
-    const rows = this.deps.projects.listAccessible(userId);
-    return Promise.all(
-      rows.map(async (row) => {
-        const name = await this.deps.projectConfig.getName(row.projectId);
-        return {
-          projectId: row.projectId,
-          ...(name !== undefined ? { name } : {}),
-          role: row.role,
-          ownerUserId: row.ownerUserId,
-          createdAt: row.createdAt,
-        };
-      }),
-    );
+  listProjects(userId: string): Promise<ProjectSummary[]> {
+    return this.access.listProjects(userId);
   }
 
   /**
    * Create a Project: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory — 409 if taken), the initial
-   * config is written (display name defaults to the id), and the built-in Agent is
-   * initialized.
+   * config is written (display name defaults to the id), the built-in Agent is
+   * initialized, and the Project's Benchmarks are written (the only time they are).
    * A non-admin's id is forced to be "<username>-<suffix>", where the suffix is
    * lowercase letters, digits, and underscores only — the hyphen is a reserved
    * separator, usernames never contain a hyphen, so the first hyphen is the
@@ -175,8 +141,8 @@ export class ProjectService {
       }
     }
     if (
-      this.deps.projects.findById(projectId) !== null ||
-      (await dirExists(projectDir(this.deps.root, projectId)))
+      this.projects.findById(projectId) !== null ||
+      (await dirExists(projectDir(this.root, projectId)))
     ) {
       throw new HttpError(409, "project_exists", `Project id is already taken: ${projectId}.`);
     }
@@ -187,7 +153,7 @@ export class ProjectService {
     // conflict is mapped to 409 with **no cleanup** — the directory belongs to the
     // winner, and cleaning up here would wrongly delete the other side's data.
     try {
-      this.deps.projects.insert({ projectId, ownerUserId: owner.userId, createdAt });
+      this.projects.insert({ projectId, ownerUserId: owner.userId, createdAt });
     } catch (err) {
       if (err instanceof Error && err.message.includes("UNIQUE")) {
         throw new HttpError(409, "project_exists", `Project id is already taken: ${projectId}.`);
@@ -199,13 +165,16 @@ export class ProjectService {
     // (a typical scenario: signup failure rolled back the user row, but the
     // <username>-default_project directory was left behind).
     try {
-      await fs.mkdir(projectDir(this.deps.root, projectId), { recursive: true });
-      await this.deps.projectConfig.writeInitialConfig(projectId, displayName);
-      await this.provisionBuiltinAgents(projectId);
+      await fs.mkdir(projectDir(this.root, projectId), { recursive: true });
+      await this.projectConfig.writeInitialConfig(projectId, displayName);
+      // The presets' promotions live in web.db, keyed to the row inserted above (and removed
+      // with it by the rollback below).
+      await this.projectConfig.seedPresetPromotions(projectId);
+      await this.provisionProjectDefaults(projectId);
     } catch (err) {
-      this.deps.projects.delete(projectId);
+      this.projects.delete(projectId);
       await fs
-        .rm(projectDir(this.deps.root, projectId), { recursive: true, force: true })
+        .rm(projectDir(this.root, projectId), { recursive: true, force: true })
         .catch(() => {});
       throw err;
     }
@@ -216,6 +185,21 @@ export class ProjectService {
       ownerUserId: owner.userId,
       createdAt,
     };
+  }
+
+  /**
+   * Every id `createProject` refuses as taken, as names only: every row, and every name already
+   * under the data root, where the Project's directory would go — a directory with no row
+   * included, which no Project list shows.
+   */
+  async takenProjectIds(): Promise<string[]> {
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(this.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return [...new Set([...this.projects.listAll().map((p) => p.projectId), ...entries])];
   }
 
   /**
@@ -231,18 +215,22 @@ export class ProjectService {
       return;
     }
     const projectId = DEFAULT_PROJECT_ID;
-    // Initialize the built-in Agent (loaded without overwriting if it already exists); this also ensures the directory exists.
-    await this.provisionBuiltinAgents(projectId);
+    // Initialize the built-in Agent (loaded without overwriting if it already exists) and write
+    // the Benchmarks the directory lacks; this also ensures the directory exists.
+    await this.provisionProjectDefaults(projectId);
     // Adopting an existing directory doesn't go through writeInitialConfig: preset
     // models and the default model are backfilled instead (only when there are no
     // models at all; a default_project already configured via the CLI is left
     // as-is).
-    await this.deps.projectConfig.ensurePresetModels(projectId);
-    this.deps.projects.insert({
+    const seeded = await this.projectConfig.ensurePresetModels(projectId);
+    this.projects.insert({
       projectId,
       ownerUserId: user.userId,
       createdAt: new Date().toISOString(),
     });
+    // Presets written just now bring their promotions, once the row they reference exists; a
+    // Project that kept its own models keeps its own pricing.
+    if (seeded) await this.projectConfig.seedPresetPromotions(projectId);
   }
 
   /**
@@ -253,7 +241,7 @@ export class ProjectService {
    */
   async renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary> {
     const row = this.requireProjectOwner(userId, projectId);
-    await this.deps.projectConfig.setName(projectId, name);
+    await this.projectConfig.setName(projectId, name);
     // requireProjectOwner already established the role; it returns the plain row.
     return {
       projectId,
@@ -281,7 +269,7 @@ export class ProjectService {
         "default_project is shared with the CLI and cannot be deleted from the web.",
       );
     }
-    if (this.deps.projects.listAccessible(userId).length <= 1) {
+    if (this.projects.listAccessible(userId).length <= 1) {
       throw new HttpError(
         409,
         "cannot_delete_last_project",
@@ -299,21 +287,27 @@ export class ProjectService {
    * directory, to avoid the Trace writer recreating the directory after deletion.
    */
   async destroyProject(projectId: string): Promise<void> {
-    const runnings = this.deps.manager.abortProject(projectId);
+    const runnings = this.manager.abortProject(projectId);
     if (runnings.length > 0) {
       await Promise.race([
         Promise.allSettled(runnings).then(() => undefined),
         new Promise<void>((resolve) => setTimeout(resolve, ABORT_SETTLE_TIMEOUT_MS).unref?.()),
       ]);
     }
-    this.deps.projects.delete(projectId); // project_members and machine_project cascade-deleted
-    this.deps.agents.deleteByProject(projectId);
-    this.deps.sessions.deleteByProject(projectId);
-    this.deps.usage.deleteByProject(projectId);
-    this.deps.errors.deleteByProject(projectId);
-    this.deps.schedules.deleteByProject(projectId);
-    this.deps.traceIndex.removeProject(projectId);
-    await fs.rm(projectDir(this.deps.root, projectId), { recursive: true, force: true });
+    this.projects.delete(projectId); // project_members, machine_project and model_promotions cascade-deleted
+    this.agents.deleteByProject(projectId);
+    // Reads the Session index to find the Sessions' drafts, so before its rows go.
+    this.drafts.deleteByProject(projectId);
+    this.sessions.deleteByProject(projectId);
+    this.usage.deleteByProject(projectId);
+    this.errors.deleteByProject(projectId);
+    this.schedules.deleteByProject(projectId);
+    // Before the owner's user row can go (deleteUser destroys their Projects first): a key
+    // names its creator.
+    this.agentApi.deleteByProject(projectId);
+    this.orgCache.deleteProject(projectId);
+    this.traceIndex.removeProject(projectId);
+    await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
   }
 
   // —— Member authorization ——
@@ -321,7 +315,7 @@ export class ProjectService {
   /** Member list: owner (role=owner) + members. */
   listMembers(userId: string, projectId: string): MemberInfo[] {
     const project = this.requireProjectAccess(userId, projectId);
-    const members = this.deps.members.list(projectId);
+    const members = this.members.list(projectId);
     return [
       { userId: project.ownerUserId, role: "owner", createdAt: project.createdAt },
       ...members.map((m) => ({
@@ -335,7 +329,7 @@ export class ProjectService {
   /** Grant member access (owner): invites by username; 404 if the user doesn't exist, 409 for the owner themself or an existing member. */
   addMember(userId: string, projectId: string, targetUserId: string): MemberInfo {
     const project = this.requireProjectOwner(userId, projectId);
-    const target = this.deps.users.findById(targetUserId);
+    const target = this.users.findById(targetUserId);
     if (!target) {
       throw new HttpError(404, "user_not_found", `User does not exist: ${targetUserId}.`);
     }
@@ -346,7 +340,7 @@ export class ProjectService {
         "The owner does not need to grant access to themselves.",
       );
     }
-    if (this.deps.members.isMember(projectId, target.userId)) {
+    if (this.members.isMember(projectId, target.userId)) {
       throw new HttpError(
         409,
         "already_member",
@@ -354,36 +348,56 @@ export class ProjectService {
       );
     }
     const createdAt = new Date().toISOString();
-    this.deps.members.insert({ projectId, userId: target.userId, createdAt });
+    this.members.insert({ projectId, userId: target.userId, createdAt });
     return { userId: target.userId, role: "member", createdAt };
   }
 
   /** Revoke member access (owner). */
   removeMember(userId: string, projectId: string, targetUserId: string): void {
     this.requireProjectOwner(userId, projectId);
-    if (!this.deps.members.isMember(projectId, targetUserId)) {
+    if (!this.members.isMember(projectId, targetUserId)) {
       throw new HttpError(404, "member_not_found", `This Project has no member: ${targetUserId}.`);
     }
-    this.deps.members.delete(projectId, targetUserId);
+    this.members.delete(projectId, targetUserId);
   }
 
   /**
-   * Ensures the Project's built-in Agent exists (the sole built-in Agent
-   * default_agent; initialized if the directory is empty, otherwise loaded without
-   * overwriting) and indexes it. createdAt increments by 1ms in preset order, so
-   * built-in Agents stably sort first; other Agents backfilled by directory
-   * scanning are sorted by their own createdAt and are outside the scope of this
-   * guarantee.
+   * The Project's built-in Agent and its Benchmarks; existing directories are adopted, never
+   * overwritten. The built-in Agent (the sole one, default_agent) is initialized if its
+   * directory is empty, otherwise loaded, and indexed: createdAt increments by 1ms in preset
+   * order, so built-in Agents stably sort first; other Agents backfilled by directory scanning
+   * are sorted by their own createdAt and are outside the scope of this guarantee. Then the
+   * example and the built-in Benchmarks are written, each only where its directory is missing
+   * — the one time they are written; a failure reaches the caller.
    */
-  private async provisionBuiltinAgents(projectId: string): Promise<void> {
-    const agentIds = await provisionProjectAgents({ root: this.deps.root, projectId });
+  private async provisionProjectDefaults(projectId: string): Promise<void> {
+    const agentIds = await provisionProjectAgents({ root: this.root, projectId });
     const base = Date.now();
     agentIds.forEach((agentId, i) => {
-      this.deps.agents.insertOrIgnore({
+      this.agents.insertOrIgnore({
         projectId,
         agentId,
         createdAt: new Date(base + i).toISOString(),
       });
     });
+    await provisionProjectBenchmarks(this.root, projectId, this.benchmarkSeeds.benchmarks);
   }
+}
+
+/**
+ * The built-in Benchmarks a new Project is written with, beside the example. Absent is the
+ * shipped catalog. A test stands in none: they are most of the files a Project is created with
+ * (several hundred), and only the scenarios about them read them.
+ */
+@Interface()
+export abstract class BuiltinBenchmarkSeeds {
+  abstract benchmarks?: readonly BuiltinBenchmark[];
+}
+@Component()
+export class ShippedBuiltinBenchmarkSeeds implements BuiltinBenchmarkSeeds {}
+
+/** What destroying a Project needs of the session runtime — declared at the consumer. */
+@Interface()
+export abstract class ProjectRuns {
+  abstract abortProject(projectId: string): Promise<void>[];
 }

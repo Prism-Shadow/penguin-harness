@@ -6,6 +6,14 @@ import {
 } from "../src/tool-render.js";
 
 describe("renderPartialToolCall — exec_command", () => {
+  it("previews the shell text under the `command` alias core also runs", () => {
+    expect(renderPartialToolCall("exec_command", '{"command":"ls"}')).toBe("exec_command <- $ ls");
+    // `cmd` is what runs when both are present, so it is what previews.
+    expect(renderPartialToolCall("exec_command", '{"cmd":"pwd","command":"ls"}')).toBe(
+      "exec_command <- $ pwd",
+    );
+  });
+
   it("streams `exec_command <- $ {cmd}` when the schema has no description argument", () => {
     // The default path: the switch is off (or the tool is unknown), so nothing can supersede
     // the plain form and it streams character by character.

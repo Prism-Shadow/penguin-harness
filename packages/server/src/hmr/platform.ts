@@ -13,7 +13,7 @@
  * instead of a rebuild. Worth remembering when something looks like it must
  * live in the shell: this code runs INSIDE the server process, so in-process
  * effects (e.g. extending process.env for the shells agents spawn) are
- * deliverable from boot() with no runtime change. See ../hmr/README.md.
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
  *
  * This packaged platform carries the WHOLE business surface (see app.ts):
  * every business service and route is assembled inside create() over the runtime's
@@ -23,27 +23,93 @@
  * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
-import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "../hmr/host.js";
+import type {
+  Impl,
+  Json,
+  Park,
+  IfaceTable,
+  Instance,
+  ManifestTable,
+  ModuleDef,
+  ModuleTree,
+} from "@prismshadow/penguin-core/kernel";
+import {
+  closedShape,
+  defineIface,
+  schema,
+  type,
+  boot,
+  bootModules,
+  initialDoc,
+  moduleDefOf,
+  upgrade,
+} from "@prismshadow/penguin-core/kernel";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
+import {
+  MACHINE_SESSION_IFACE,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+} from "../machines/transport/index.js";
+import type { HeldSession } from "../machines/transport/index.js";
+import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
-import { seamHttp } from "./hono-seam.js";
+import { isApiSocketRef } from "../socket/ref.js";
+import type { AttachedStream } from "../socket/ref.js";
+import { serveApiSocket } from "../socket/serve.js";
+import { carryStreamAnswer } from "../socket/stream-answer.js";
+import { Hono } from "hono";
+import type { AppEnv } from "../auth/middleware.js";
+import { AgentStateStore } from "../runtime/agent-state.js";
+import type { SessionManager } from "../runtime/session-manager.js";
+import { terminalRoutes } from "../terminal/routes.js";
+import type { Identity } from "../terminal/identity.js";
+import { platformDef } from "../platform.js";
+import { SandboxModule } from "../sandbox/service.js";
+import ifaceTable from "../ifaces.json" with { type: "json" };
+import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
-  claimRuntimeCapabilities,
+  HMR_TEST_PLUGINS_RESOURCE_ID,
+  claimHmrCapabilities,
+  Log,
 } from "./capabilities.js";
-import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "../extension/index.js";
-import { extensionHostFrom } from "../extension/host.js";
-import { instantiateWorkflows, WorkflowFactories } from "../extension/workflow.js";
+import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js";
+import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
+import type { PluginHost } from "../plugin/host.js";
+import { loadPluginHost } from "../plugin/loader.js";
+import {
+  useInstalledPluginPrefix,
+  usePushedPluginLibrary,
+  usePushedBenchmarkDirectory,
+  userText,
+} from "@prismshadow/penguin-core";
+import { pluginsPrefix } from "../plugin/install.js";
+import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
+import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
+import type { PluginSelection } from "../plugin/unsatisfied.js";
+import { takePushSlip } from "./push-plugins.js";
+import type { PushSlip } from "./push-plugins.js";
+import type { Errors } from "../mechanisms/observability.js";
+import type { UnsatisfiedPlugin } from "../api/types.js";
+import { migrate } from "../db/migrations/index.js";
+import { MachinesRepo } from "../db/repos/machines.js";
+import type { Auth } from "../mechanisms/identity.js";
+
+/**
+ * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
+ * expose. The mechanism is generic on purpose — it cannot name a route or a service — so the
+ * product supplies the type here, once, and everything that holds a host uses this alias.
+ */
+export type ServerHmrHost = HmrHost<PlatformApi>;
 
 export interface PlatformApi extends Park {
   info(): Json;
+  /** The platform's log. The layer writes its request lines through it while there is one. */
+  log(line: string): void;
   /**
    * The HTTP seam (hmr/http-seam.ts): every request is offered here first, and null
    * declines it to the runtime's own routes. This is how a business API ships by push
@@ -52,18 +118,20 @@ export interface PlatformApi extends Park {
   http(request: Request): Promise<Response | null>;
   /**
    * In-process accessors for the one thing the seam cannot carry: a live socket. The
-   * runtime's ws transport authenticates an upgrade, then asks for the session and hands
-   * the socket back for the platform's protocol to drive.
+   * runtime's ws transport authenticates an upgrade, then hands the socket over with the
+   * reference it authenticated — a pty's session, or the API socket's user — for the
+   * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
+   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
    */
   terminals(): TerminalManager;
-  attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
   /**
-   * The business deps this App built (null on a declared bare kernel). In-process member,
+   * The module tree this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
    * "current App" pointer in the registry would be a duplicate channel.
    */
-  business(): AppDeps | null;
-  /** Process-exit graceful drain (manager ≤5s wrap-up, workflow park); no-op without business. */
+  business(): ModuleTree | null;
+  /** Process-exit graceful drain (manager ≤5s wrap-up, workbench park); no-op without business. */
   shutdown(): Promise<void>;
   /**
    * The asynchronous tail of this App's dispose — set by the dispose effect, awaited by
@@ -78,14 +146,72 @@ export interface PlatformApi extends Park {
  * in the runtime's resource registry (they must — a swap disposes this tree), and the
  * document carries only their handle ids so the next instance can claim them back.
  */
-export type PlatformCtx = { motd: string; terminals?: string[] };
+/**
+ * The platform node's parked document. It has ONE version and only grows: a field, once
+ * written, keeps its meaning and stays written, so any platform ever pushed to a data
+ * root can read the document the newest one parks — the rollback a hot update must never
+ * lose. `terminals` and `sandbox` are what the first platforms parked and still read;
+ * `modules` is what the module tree parks, one document per node. This platform writes
+ * all three and reads `modules` first.
+ */
+export type PlatformCtx = {
+  motd: string;
+  /** pty handle ids (the terminal module's parked state, also written here for older readers). */
+  terminals?: string[];
+  /** Sandbox settings (the sandbox module's parked state, also written here for older readers). */
+  sandbox?: Json;
+  /** Each module's parked document, by node name (kernel bootModules). */
+  modules?: Record<string, Json>;
+};
 
 export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
-  context: schema<PlatformCtx>(type({ motd: "string", "terminals?": "string[]" })),
-  methods: ["park", "info", "http", "terminals", "attachStream"],
+  context: schema<PlatformCtx>(
+    // arktype infers `unknown` for the index signature where the context says Json; the
+    // runtime shape is the same, so the one cast lives here. Undeclared keys pass, so a
+    // reader that predates a field is not stopped by it.
+    type({
+      motd: "string",
+      "terminals?": "string[]",
+      "sandbox?": "unknown",
+      "modules?": { "[string]": "unknown" },
+    }) as never,
+  ),
+  methods: ["park", "info", "http", "terminals", "attachStream", "log"],
 });
+
+/** The node names the two parking modules were keyed by before nodes were named by class. */
+const RENAMED_NODES: Record<string, string> = {
+  terminal: "TerminalModule",
+  sandbox: "SandboxModule",
+};
+
+/**
+ * The module documents to boot from: what the last platform parked under `modules`
+ * (older node names mapped to the current ones), completed from the top-level fields
+ * when a platform older than the module tree parked them there.
+ */
+function parkedModules(context: PlatformCtx): Record<string, Json> {
+  const modules: Record<string, Json> = {};
+  for (const [key, value] of Object.entries(context.modules ?? {}))
+    modules[RENAMED_NODES[key] ?? key] = value;
+  if (modules.TerminalModule === undefined && context.terminals !== undefined)
+    modules.TerminalModule = { v: 1, self: { terminals: context.terminals } };
+  if (modules.SandboxModule === undefined && context.sandbox !== undefined)
+    modules.SandboxModule = { v: 1, self: { settings: context.sandbox } };
+  return modules;
+}
+
+/** A parking module's own state out of the tree's parked documents, for the top-level fields. */
+function parkedSelf(modules: Record<string, Json>, node: string): Record<string, Json> | null {
+  const doc = modules[node];
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) return null;
+  const self = (doc as { self?: Json }).self;
+  return self !== null && typeof self === "object" && !Array.isArray(self)
+    ? (self as Record<string, Json>)
+    : null;
+}
 
 /**
  * The resource interfaces this platform parks, by ID-prefix group (see
@@ -98,13 +224,67 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
+  /**
+   * Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old
+   * code. Judged by STRUCTURE too, at create(): the closed shape of MachineSession registered
+   * beside the sessions (SESSION_SHAPE_ID) must equal this build's, or the group is doomed.
+   */
+  [SESSION_GROUP]: MembersOf<HeldSession>;
+  agent: MembersOf<HandedAgentState>;
 }
+
+/**
+ * The Agent state as one App leaves it for the next (PRFC-0015): the AgentState node
+ * itself, the closed shape of the AgentState interface as the leaving build declares it,
+ * and — once the entry's disposer has run — the end of the runs it stopped.
+ *
+ * The envelope is the group's declared contract and stays this small on purpose. What the
+ * state LOOKS like is not declared by hand anywhere: `shape` is printed from the generated
+ * interface table, so a change to RuntimeEntry or RuntimeSession changes it by itself.
+ */
+interface HandedAgentState {
+  state: object;
+  shape: string | null;
+  stopped?: Promise<void>;
+}
+
+/** Registry id of the handed-over Agent state — in the `agent:` group, so a build that does not declare the group stops the runs behind it. */
+const AGENT_STATE_RESOURCE_ID = "agent:state";
+/** The AgentState interface's key in the generated table. */
+const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
+/**
+ * What a Session whose Task a swap had to stop is started again with. The stopped turn
+ * itself comes back through core's carry-over (`[turn_aborted]`); this only says why.
+ */
+const RESUME_AFTER_UPDATE =
+  "[harness_updated] The harness was updated while you were working and your run was interrupted. Continue from where you left off.";
+
+/**
+ * The API sockets the platform shell serves (PRFC-0011), handed to the successor platform
+ * as one handle that closes them all. A socket's calls resolve the App of the moment for as
+ * long as the SHELL lives (a re-assembly changes nothing for it); a push replaces the shell,
+ * and the socket would keep dispatching into the replaced one — its machines, sessions and
+ * hubs handed over, its local routes still answering, every call through a machine hanging
+ * without a word. So the successor closes them (1012) once it is up, and the browser's
+ * client reconnects through the runtime's handshake and re-issues its streams.
+ */
+const API_SOCKETS_RESOURCE_ID = "apiSockets:open";
+/**
+ * How long after the successor's boot its predecessor's sockets are closed. The runtime
+ * re-points its own tree to the successor right after the swap resolves; a reconnect that
+ * arrived before that (a runtime from before #827 authenticates the handshake on a snapshot
+ * of the tree) read a disposed tree and took the process down. Two seconds is far more
+ * than that hand-off takes and far less than anyone notices.
+ */
+const RECONNECT_GRACE_MS = 2_000;
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
+  // The predecessor's open API sockets, as the successor closes them (see the ID's doc).
+  apiSockets: ["close"],
   // A parked pty, as its adopters use it — EVERY member reached after adoption, not a
   // representative sample: the manager (id, seq, ownerUserId, alive, info, onExit, kill,
-  // dispose), the routes (capture, write, rename, exit) and the stream binding
+  // dispose), the routes (capture, write, rename, exit, setSession) and the stream binding
   // (onOutput, resize, releaseSize, restoreStream). A short list would let a predecessor
   // satisfy the descriptor and still TypeError on the first keystroke after a swap,
   // which is exactly what this check exists to prevent.
@@ -116,6 +296,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "exit",
     "info",
     "rename",
+    "setSession",
     "capture",
     "write",
     "resize",
@@ -126,6 +307,13 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "kill",
     "dispose",
   ],
+  // A held ssh session to a machine, as the successor's transport claims it back
+  // (machines/transport/ssh-session.ts): commands, the SOCKS port, and its command stream. Every member the adopter calls, for the same reason as `terminal` — and the
+  // group's NAME carries a version, because a member that exists on an old object still runs
+  // the old object's code: a behavior change bumps the name, so the old group is disposed
+  // here (its sessions closed) and the machines are re-held fresh.
+  [SESSION_GROUP]: ["hold", "held", "retarget", "adopt", "run", "session", "close"],
+  agent: ["state", "shape", "stopped"],
 };
 
 /**
@@ -135,214 +323,577 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
  */
 const DRAIN_GRACE_MS = 5000;
 
-export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
-  async create(ctx, context) {
-    // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
-    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
-    // The check sits HERE, in the bundle, because the runtime that needs it is by
-    // definition too old to receive it; failing this early costs nothing — doUpgradeAll
-    // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
-    // would refuse (bootAppDeps treats a business-less platform as fatal too).
-    const claim = claimRuntimeCapabilities(ctx.resources);
-    if (claim.kind === "refused") {
-      throw new Error(
-        `this runtime publishes no business capabilities this platform can claim ` +
-          `(${claim.reason}) — update the installation itself; a push replaces the ` +
-          `platform, never the runtime`,
+type CreateCtx = Parameters<Impl<PlatformApi, PlatformCtx>["create"]>[0];
+
+/**
+ * The App proper: one module tree over the runtime's capabilities. Booted as the INNER
+ * instance of `platformImpl` below, and booted again — by the kernel's own upgrade — when a
+ * plugin change asks the App to re-assemble.
+ */
+async function createInner(
+  ctx: CreateCtx,
+  context: PlatformCtx,
+  reassemble: (change?: ReassemblyChange) => Promise<boolean>,
+  /** The slip of the push this boot belongs to (push-plugins.ts); null for every other boot. */
+  push: PushSlip | null = null,
+): Promise<PlatformApi> {
+  // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
+  // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
+  // The check sits HERE, in the bundle, because the runtime that needs it is by
+  // definition too old to receive it; failing this early costs nothing — doUpgradeAll
+  // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
+  // would refuse (bootAppDeps treats a business-less platform as fatal too).
+  const claim = claimHmrCapabilities(ctx.resources);
+  if (claim.kind === "refused") {
+    throw new Error(
+      `this runtime publishes no business capabilities this platform can claim ` +
+        `(${claim.reason}) — update the installation itself; a push replaces the ` +
+        `platform, never the runtime`,
+    );
+  }
+  const caps = claim.kind === "claimed" ? claim.caps : null;
+  // A pushed platform carries its own migrations, which is the only way the tables its
+  // business needs can reach a runtime older than they are — that runtime will never grow
+  // them by restarting, because it does not have them. swapPath: this boot can be rolled
+  // back, so contract migrations stay pending for the runtime's next open instead of being
+  // applied here; the boot never fails on them. Before any node is created: every repo below
+  // prepares its statements against this schema.
+  if (caps !== null) {
+    const { deferred } = migrate(caps.db, { swapPath: true });
+    if (deferred.length > 0) {
+      console.log(`[platform] left for the runtime's next restart: ${deferred.join(", ")}`);
+    }
+  }
+  // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
+  // the predecessor declared at the version this build also declares, hard-stop the
+  // rest — a version bump or a dropped group means this create() does not speak the
+  // contract behind those handles, and adopting them anyway is how a swap turns into a
+  // TypeError. A predecessor from before the declaration existed reads as `{}`:
+  // nothing provable, nothing disposed on its behalf (pre-declaration behavior).
+  const inherited = ctx.resources.claim<Interfaces>(RESOURCE_IFACES_RESOURCE_ID);
+  const inheritable = inherited !== undefined && inherited.family === DECLARED_RESOURCES.family;
+  // DECIDE ONLY. Disposing a group kills live ptys and child processes, and nothing
+  // brings them back — so the decision is computed here and ACTED ON at the bottom,
+  // once this App is fully built. Everything between can still throw (a module's
+  // create, a workbench factory), and a boot that fails there is recovered by re-booting
+  // the previous bundle; that recovery is only honest if the resources it re-adopts are
+  // still alive.
+  const doomedGroups = Object.entries(inherited ?? {})
+    .filter(([group]) => group !== "family")
+    .filter(([group, offered]) => {
+      // Wrong family, wrong version, or a group this build no longer declares: this
+      // create() cannot speak the contract behind those handles.
+      const need = DECLARED_RESOURCES[group];
+      const offers =
+        Array.isArray(need) && Array.isArray(offered) && need.every((m) => offered.includes(m));
+      return !inheritable || !offers;
+    })
+    .map(([group]) => group);
+  // The Agent state is judged a second time, by structure: the envelope matching says the
+  // two builds agree on HOW a state is handed over, the closed shape says they agree on
+  // what a state IS — every field of it, and every interface behind those, the loaded
+  // Session objects' included. Equal means this build's logic can work on the predecessor's
+  // state as it stands; anything else dooms the group like a version bump would.
+  const handed = ctx.resources.claim<HandedAgentState>(AGENT_STATE_RESOURCE_ID);
+  const agentStateShape = closedShape(ifaceTable as unknown as IfaceTable, AGENT_STATE_IFACE);
+  if (
+    handed !== undefined &&
+    !doomedGroups.includes("agent") &&
+    (agentStateShape === null || handed.shape !== agentStateShape)
+  ) {
+    doomedGroups.push("agent");
+  }
+  // The delivered machine sessions, by structure too: the leaving build registered the
+  // closed shape of MachineSession beside them; equal means the objects answer the calls
+  // this build's transport makes, as this build types them. Anything else dooms the group —
+  // the sessions are closed at the commit and every machine is re-held with objects of this
+  // build. (A behavior change behind an unchanged shape is the group NAME's version to catch.)
+  const handedSessionShape = ctx.resources.claim<string | null>(SESSION_SHAPE_ID);
+  const sessionShape = closedShape(ifaceTable as unknown as IfaceTable, MACHINE_SESSION_IFACE);
+  if (
+    inherited?.[SESSION_GROUP] !== undefined &&
+    !doomedGroups.includes(SESSION_GROUP) &&
+    (sessionShape === null || handedSessionShape !== sessionShape)
+  ) {
+    doomedGroups.push(SESSION_GROUP);
+  }
+  const adoptable = (group: string) => !doomedGroups.includes(group);
+  const takenOver = handed !== undefined && adoptable("agent");
+
+  // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
+  // it: a machine installed before a plugin existed otherwise never offers it, and a feature
+  // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
+  if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
+  if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));
+  // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
+  // servers in the data root's plugin prefix, beside the ones the build ships.
+  if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
+
+  // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
+  // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed
+  // over by the runtime, so the rule for reading it ships by push like every other policy.
+  // A bare kernel has no root to read and keeps whatever was already imported.
+  const plugins =
+    caps === null
+      ? pluginHostFrom(ctx.resources)
+      : await loadPluginHost(
+          ctx.resources,
+          caps.config.root,
+          caps.hmr.assetsDir(),
+          // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
+          // server's own id says which of those tables are its own.
+          new MachinesRepo(caps.db).ownId(),
+        );
+  // Plus whatever a test stood up in process, which no closure could name (see the id).
+  const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
+  if (injected != null && typeof injected.entries === "function") {
+    for (const entry of injected.entries().values()) plugins.use(entry);
+  }
+
+  // Installed plugins this platform cannot satisfy are left out of this generation
+  // (plugin/unsatisfied.ts); the host keeps them for the next one. Whether to boot that way
+  // is asked of a person only where one is waiting: a push whose pusher has not accepted it
+  // is refused with the list written back for them (push-plugins.ts); every other boot — a
+  // cold start, a re-assembly, a restore — goes ahead, since refusing would keep the server
+  // down with nobody to answer.
+  const loaded = [...plugins.entries().values()];
+  const bootKept = async (boot: (kept: PluginSelection) => Promise<ModuleTree>) => {
+    try {
+      return await bootWithoutUnsatisfied(
+        loaded,
+        boot,
+        push !== null && !push.leaveOut ? "refuse" : "leave-out",
+      );
+    } catch (err) {
+      if (push !== null && err instanceof UnsatisfiedPluginsError) {
+        push.refused = true;
+        push.unsatisfied = err.plugins;
+      }
+      throw err;
+    }
+  };
+  let unsatisfied: UnsatisfiedPlugin[];
+  let tree: ModuleTree;
+  let business: ModuleTree | null = null;
+  let terminals: TerminalManager;
+  if (caps === null) {
+    // A declared bare kernel: terminals only, no business surface. The module tree is
+    // reduced to what needs no runtime capability — the sandbox floor and the backends
+    // registered into it — so confinement settings still park and restore.
+    console.warn("[platform] bare kernel: terminals only, no business surface");
+    terminals = new TerminalManager(ctx.resources, { assets: () => null });
+    terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
+    ({ tree, unsatisfied } = await bootKept((kept) =>
+      bootModules(bareTree(kept.modules, kept.replacements), {
+        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+        resources: ctx.resources,
+        parked: parkedModules(context),
+      }),
+    ));
+  } else {
+    // THE MODULE TREE (see ../platform.ts): every business service, every route
+    // group and the terminal manager are modules wired by their manifests — checked as
+    // data before any create() runs, created in dependency order. Sandbox backends the
+    // plugin host registered enter the same tree as one contributing module.
+    ({ tree, unsatisfied } = await bootKept((kept) =>
+      bootModules(
+        platformDef(
+          caps,
+          adoptable,
+          kept.modules,
+          kept.replacements,
+          reassemble,
+          // The predecessor's state boots in place of a fresh AgentState node: this App's
+          // SessionManager is built over it, running Tasks and all.
+          takenOver ? new Map([[AgentStateStore, handed.state]]) : new Map(),
+        ),
+        {
+          ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+          resources: ctx.resources,
+          parked: parkedModules(context),
+        },
+      ),
+    ));
+    business = tree;
+    terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
+  }
+  // Said in the three places someone looks: the log, the error record an admin sees in every
+  // Project's Cost Center (a bare kernel has none), and — through the host — the plugin's own
+  // row on the installed-plugins page. One record per plugin: the code carries the specifier,
+  // or the recorder's short-window dedup would keep only the first of a boot.
+  const errors = business?.api<Errors>("ObservabilityModule", "Errors") ?? null;
+  for (const { specifier, disabled, reason } of unsatisfied) {
+    const what = disabled
+      ? `left out of this generation: ${reason}`
+      : `runs without the contributions this platform has no slot for: ${reason}`;
+    console.warn(`[platform] plugin '${specifier}' ${what}`);
+    errors?.record({
+      source: "plugin",
+      code: `unsatisfied:${specifier}`,
+      kind: "unexpected",
+      err: disabled
+        ? `Disabled on this build: ${reason}`
+        : `Runs without part of itself on this build: ${reason}`,
+    });
+  }
+  // A host from a generation older than this record (a bare kernel keeps the one it was handed) has nowhere to put it.
+  if (typeof plugins.setUnsatisfied === "function") plugins.setUnsatisfied(unsatisfied);
+  // Ordinary code over this App's own auth: the same object the business routes
+  // authenticate with. A bare kernel has none — terminals stay fail-closed.
+  const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
+  const identity = identityFrom(auth);
+  const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
+  // A pty on a machine, served through this server's own stream (machines/terminal-relay.ts).
+  // A bare kernel reaches no machines and serves only its own ptys.
+  const remote = business?.api<RemoteTerminals>("TerminalRelay", "TerminalRelay") ?? null;
+  // The runtime's one mid-request need of the CURRENT App is a hook installed over a
+  // claimed capability — overwrite-only across swaps, so a dead generation's hook is
+  // replaced and never removed: "is this session busy" for the channel sweep.
+  if (caps !== null && manager !== null) {
+    caps.channels.setActivityProbe((key) => manager.statusOf(key) !== "idle");
+  }
+  // PARK — the App's resource inventory, split by fate:
+  //
+  // DELIVERED (survives the swap; the successor adopts it at load):
+  //   - pty sessions        registry `terminal:*` + the terminal module's parked ids
+  //   - machine sessions    held ssh children claimed by the successor through the registry
+  //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
+  //                         runtime-owned, re-claimed by every App
+  //   - the Agent state     registry `agent:state` (PRFC-0015): running Tasks, pending
+  //                         approvals, queued follow-ups, loaded Sessions and their
+  //                         environments, all left as they are. A successor whose
+  //                         AgentState has the same closed shape boots over it; any other
+  //                         disposes the group, which stops the runs with THIS App's logic,
+  //                         and starts the parked ones again with its own
+  // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
+  //   - scheduler, messaging bridge   their modules dispose; successors start from the record
+  //   - reap timers         the terminal module's effect quiesces them
+  // DETACHED (the object survives, this App's grip on it does not):
+  //   - pty exit listeners  unsubscribed, so a dead generation never releases a
+  //                         registry id the successor owns
+  // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
+  // bounded by its own 10-minute cap, and a successful update restarts the process
+  // anyway); an in-flight machines install (same shape — its ssh children run to their
+  // own timeouts, the far side's installer stages-and-swaps or rolls back on its own,
+  // and the progress log is simply lost, which re-running recovers); and SSE subscriber
+  // closures (they serve the old generation's stream until the client reloads on
+  // web_updated — the channel hub itself is runtime-owned).
+  // A module with state of its own (sandbox settings, workbench refs, ssh tunnels, an
+  // in-flight job) belongs in the right list here — the list is the contract, not a
+  // description of today's modules.
+  // The tree's dispose runs every module's effects in reverse creation order. It leaves
+  // no asynchronous tail any more — the one it had was waiting for aborted runs to end, and
+  // a swap aborts none — so api.drained(), which the KERNEL awaits between dispose and the
+  // successor's boot (kernel/upgrade.ts), has nothing to report.
+  ctx.effect(() => {
+    // Held machine sessions are DELIVERED, not suspended: the machines module's own dispose
+    // effect closes only its transient sessions and leaves the held ones in the registry.
+    // Nothing is stopped here: whether the runs go on is the SUCCESSOR's call, made once it
+    // is built (see the commit below), so a boot that fails re-adopts a state nobody touched.
+    manager?.detach();
+    tree.dispose();
+    if (business === null) terminals.quiesce();
+  });
+
+  // COMMIT: from here the App is built and nothing below throws, so the irreversible
+  // half of the resource reconciliation runs — the groups this build cannot speak for
+  // are disposed, and the declaration is overwritten (never released — see the ID's
+  // doc) so the NEXT App reads this build's.
+  for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
+  ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+  // What THIS build's machine sessions look like, for the next build to compare against —
+  // in the sessions' own group, so it is disposed with them. The sessions themselves are
+  // registered by the transport as each is held.
+  ctx.resources.register(SESSION_SHAPE_ID, sessionShape);
+  // The Agent state changes hands here and not a line earlier, for the reason the plugin
+  // host below does: a create() that threw leaves the previous App's entry, and the runs
+  // behind it, exactly as they were. The disposer is THIS App's way of stopping — it runs
+  // when a successor cannot take the state over, and at process exit.
+  if (business !== null && manager !== null) {
+    const envelope: HandedAgentState = {
+      state: business.api<object>("SessionRuntimeModule", "AgentState"),
+      shape: agentStateShape,
+    };
+    ctx.resources.register(AGENT_STATE_RESOURCE_ID, envelope, () => {
+      envelope.stopped = manager.shutdown(DRAIN_GRACE_MS);
+    });
+    // A predecessor's state this build could not take over: the group's disposal above
+    // stopped its runs with the predecessor's own logic; what was running is started again
+    // with this one's, from the Trace, once those runs have ended.
+    if (handed !== undefined && !takenOver) {
+      const running = parkedSelf(parkedModules(context), "SessionsModule")?.running;
+      void resumeStopped(manager, handed, Array.isArray(running) ? running : []);
+    }
+  }
+  // The imported plugin objects, handed to whoever boots next — parked state, registered
+  // at the commit so a create() that threw leaves the previous App's host in place.
+  ctx.resources.register(PLUGINS_RESOURCE_ID, plugins);
+  // What an accepted push ran without, for its answer.
+  if (push !== null) push.unsatisfied = unsatisfied;
+
+  const httpApi = business?.api<{
+    fetch(request: Request): Promise<Response>;
+    fetchAs(userId: string, request: Request): Promise<Response>;
+  }>("HttpModule", "http");
+  const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
+  const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
+
+  return {
+    log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),
+    park: () => {
+      const modules = tree.park();
+      // The top-level fields are written for every platform that reads them: a bare
+      // kernel's own ptys, and the two parking modules' state in the form the first
+      // platforms parked it — so a rollback to any of them keeps terminals and confinement.
+      const terminalIds =
+        business === null
+          ? terminals.handleIds()
+          : (parkedSelf(modules, "TerminalModule")?.terminals as string[] | undefined);
+      const sandbox = parkedSelf(modules, "SandboxModule")?.settings;
+      return {
+        motd: context.motd,
+        modules,
+        ...(terminalIds !== undefined ? { terminals: terminalIds } : {}),
+        ...(sandbox !== undefined ? { sandbox } : {}),
+      };
+    },
+    info: () => ({
+      impl: "packaged",
+      ifaceVersion: PlatformIface.version,
+      motd: context.motd,
+      terminals: terminals.handleIds().length,
+    }),
+    http,
+    terminals: () => terminals,
+    attachStream: (ws, ref, url, log) => {
+      // The runtime handed the socket over with the reference it authenticated. Three things
+      // it can be: the API socket (served as the user its cookie named at the handshake), a
+      // reference to a machine's pty (the relay takes it), or a local pty. The API socket is
+      // the shell's (platformImpl below): it outlives this App, so its calls must resolve the
+      // App of the moment, which only the shell knows.
+      if (isApiSocketRef(ref)) return ws.close(1013, "served by the platform shell");
+      if (remote?.attach(ws, ref, url, log) === true) return;
+      bindTerminalStream(ws, ref, url, log);
+    },
+    business: () => business,
+    // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
+    // effect cannot await — exposed for index.ts's shutdown to call before disposing.
+    shutdown: async () => {
+      if (manager !== null) await manager.shutdown(DRAIN_GRACE_MS);
+    },
+    drained: () => undefined,
+  };
+}
+
+/** Starts the Sessions a swap had to stop again — after the stop has settled, one by one, a failure logged and passed over. */
+async function resumeStopped(
+  manager: SessionManager,
+  handed: HandedAgentState,
+  running: readonly Json[],
+): Promise<void> {
+  await handed.stopped;
+  for (const sessionId of running) {
+    if (typeof sessionId !== "string") continue;
+    try {
+      await manager.startTask(sessionId, [userText(RESUME_AFTER_UPDATE, "server")]);
+    } catch (err) {
+      console.error(
+        `[platform] could not resume ${sessionId} after the update: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    const caps = claim.kind === "claimed" ? claim.caps : null;
-    // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
-    // the predecessor declared at the version this build also declares, hard-stop the
-    // rest — a version bump or a dropped group means this create() does not speak the
-    // contract behind those handles, and adopting them anyway is how a swap turns into a
-    // TypeError. A predecessor from before the declaration existed reads as `{}`:
-    // nothing provable, nothing disposed on its behalf (pre-declaration behavior).
-    const inherited = ctx.resources.claim<Interfaces>(RESOURCE_IFACES_RESOURCE_ID);
-    const inheritable = inherited !== undefined && inherited.family === DECLARED_RESOURCES.family;
-    // DECIDE ONLY. Disposing a group kills live ptys and child processes, and nothing
-    // brings them back — so the decision is computed here and ACTED ON at the bottom,
-    // once this App is fully built. Everything between can still throw (plugin handlers,
-    // workflow factories, the scheduler), and a boot that fails there is recovered by
-    // re-booting the previous bundle; that recovery is only honest if the resources it
-    // re-adopts are still alive.
-    const doomedGroups = Object.entries(inherited ?? {})
-      .filter(([group]) => group !== "family")
-      .filter(([group, offered]) => {
-        // Wrong family, wrong version, or a group this build no longer declares: this
-        // create() cannot speak the contract behind those handles.
-        const need = DECLARED_RESOURCES[group];
-        const offers =
-          Array.isArray(need) && Array.isArray(offered) && need.every((m) => offered.includes(m));
-        return !inheritable || !offers;
-      })
-      .map(([group]) => group);
+  }
+}
 
-    const terminals = new TerminalManager(ctx.resources, {
-      // A pushed bundle's node-pty binaries live where the host materialized them.
-      assets: () => caps?.hmr.assetsDir() ?? null,
-    });
-    // Shells started before this instance existed are still running in the registry: claim
-    // them back so a push is invisible to whoever was typing in one — unless their group
-    // is doomed, in which case this build cannot speak the contract behind those handles
-    // and must not adopt them. It does not dispose them either: that happens at the
-    // commit below, so a failed boot leaves them for the recovered predecessor.
-    terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
-    // The extension seam (see ../extension/index.ts): the definition view first, then the
-    // instance context, with the workflows built in between — so an extension that registers
-    // one always sees it instantiated in the App it registered into. The host is CLAIMED
-    // from the registry, never imported (see extensionHostFrom).
-    const extensions = extensionHostFrom(ctx.resources);
-    const extIface: PenguinInterface = {
-      workflow: new WorkflowFactories(),
-      tool: new Map(),
+/**
+ * What the runtime boots: a shell around the inner App, so the App can re-assemble itself
+ * while the runtime keeps holding the same instance.
+ *
+ * A plugin change is configuration, and configuration changes while the process runs; the
+ * tree has to be built again for it to take. That rebuild is the platform's own business —
+ * policy, shipped by push, working on every runtime — so it happens here, above the seam,
+ * with the kernel's `upgrade` over the inner instance: same impl, same iface, same parked
+ * document, the swap a hot push performs but without a new bundle. A boot that fails is
+ * recovered onto the previous document, as a failed push is, and reported as false.
+ *
+ * Every member of the outer API forwards to the inner App of the moment. Re-assemblies are
+ * serialized on `op`; a runtime-driven dispose (a push landing) disposes the inner App at
+ * once, as the App's own dispose always did, unless a re-assembly is mid-swap — then the
+ * dispose waits for it through `drained`, which the kernel awaits before booting the
+ * successor. One window stays open by design: `park()` cannot wait, so a push
+ * that parks exactly while a re-assembly is mid-swap parks the tree being replaced.
+ */
+export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
+  async create(ctx, context) {
+    // Taken HERE, once: this create() is what a push boots, and only its first inner boot is
+    // the push's. A re-assembly later boots the same inner impl with nobody waiting on it.
+    let push = takePushSlip(ctx.resources);
+    const innerImpl: Impl<PlatformApi, PlatformCtx> = {
+      create: (innerCtx, innerContext) => {
+        const slip = push;
+        push = null;
+        return createInner(innerCtx, innerContext, reassemble, slip);
+      },
     };
-    extensions.emit("initialize", extIface);
-    extensions.emit("create", {
-      workflows: instantiateWorkflows(extIface.workflow),
-      terminals,
+    let inner: Instance<PlatformApi>;
+    let op: Promise<unknown> = Promise.resolve();
+    let closed = false;
+    /** True while a re-assembly holds the inner instance mid-swap. */
+    let swapping = false;
+    async function reassemble(change?: ReassemblyChange): Promise<boolean> {
+      const run = op.then(async () => {
+        if (closed) return false;
+        // The change is written HERE, in the queue: two edits of one Project's file never
+        // interleave, and each re-assembly reads exactly what was written for it.
+        await change?.write();
+        swapping = true;
+        try {
+          const result = await upgrade({
+            current: inner,
+            impl: innerImpl,
+            iface: PlatformIface,
+            resources: ctx.resources,
+          });
+          if (result.status === "ok") {
+            inner = result.instance;
+            return true;
+          }
+          if (result.status === "failed") {
+            // The kernel has disposed the previous tree; the restore boot reads the
+            // configuration again, so the change is undone first — with it in place, a
+            // plugin that broke the boot once would break the restore too and leave the
+            // process forwarding to a disposed tree.
+            const reason =
+              result.error instanceof Error ? result.error.message : String(result.error);
+            await change?.undo();
+            inner = await boot(innerImpl, PlatformIface, result.doc, ctx.resources);
+            console.warn(
+              `[platform] the App failed to boot after a plugin change; the change was undone and the previous App restored: ${reason}`,
+            );
+          }
+          return false;
+        } finally {
+          swapping = false;
+        }
+      });
+      op = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    }
+    // The kernel hands create() its node's own document; the inner boot wants the tree's,
+    // which for this platform (no kernel children — the module tree parks inside `modules`)
+    // is that document wrapped once.
+    // The predecessor shell's open sockets, read BEFORE the boot below overwrites the entry.
+    const previousSockets = ctx.resources.claim<{ close(): void }>(API_SOCKETS_RESOURCE_ID);
+    inner = await boot(innerImpl, PlatformIface, initialDoc(PlatformIface, context), ctx.resources);
+
+    /** The API sockets this shell serves; each call on them resolves the inner App of the moment. */
+    const apiSockets = new Set<WebSocket>();
+    ctx.resources.register(API_SOCKETS_RESOURCE_ID, {
+      close: () => {
+        for (const ws of apiSockets) ws.close(1012, "the harness was updated; reconnect");
+        apiSockets.clear();
+      },
     });
-
-    // The business deps, built per App over the runtime's published capabilities — see
-    // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
-    // every other capability-less host was refused above.
-    let deps: AppDeps | null = null;
-    if (caps === null) {
-      console.warn("[platform] bare kernel: terminals only, no business surface");
-    } else {
-      deps = buildAppDeps(caps, caps.overrides);
-      // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
-      // scan; only active while this App is.
-      await deps.scheduler.start();
-      // Messaging bridge: connect every enabled Session binding (channel event
-      // streams); only active while this App is, like the scheduler.
-      await deps.messaging.start();
-      // Startup adoption sweep: fold Trace-only Sessions (legacy CLI-direct runs) into
-      // the sessions index as client:'cli' rows, so every later list is pure SQLite.
-      // Fire-and-forget — a broken trace shard must not block the boot — with failures
-      // recorded like any background capture point. Idempotent and mtime-gated, so the
-      // re-run after a hot swap costs only the gate checks.
-      const errors = deps.errors;
-      void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
-        errors.record({ source: "process", err, code: "trace_adoption_failed" });
-      });
-      // Machines, in one sweep (service.ts start()): a push here is a push everywhere, so
-      // this App booting hands the same build on to any machine still carrying a different
-      // one — cheap when there is nothing to do, since which machines are behind is read
-      // from the install records, not asked over the network — and then re-holds every
-      // connection the record says was held, starting a remote server that is down on the
-      // way and handing each its Model config as it connects. Fire-and-forget for the same
-      // reason as the adoption sweep: a host that is slow to answer must not hold up the
-      // App that serves everything else.
-      void deps.machines.start().catch((err: unknown) => {
-        errors.record({ source: "process", err, code: "machines_reconnect_failed" });
-      });
+    if (previousSockets !== undefined) {
+      const grace = setTimeout(() => previousSockets.close(), RECONNECT_GRACE_MS);
+      grace.unref?.();
     }
 
-    // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
-    // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const identity = identityFrom(deps?.authService ?? null);
-
-    // ONE app, ONE pointer: every route this App serves — terminal group and business
-    // groups — registers into a single Hono table, and the swap publishes deps + table +
-    // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
-    const app = createApp(deps, terminals, identity);
-    const business = deps;
-    // The runtime's one mid-request need of the CURRENT App is a hook installed over a
-    // claimed capability — overwrite-only across swaps, so a dead generation's hook is
-    // replaced and never removed: "is this session busy" for the channel sweep.
-    if (caps !== null && business !== null) {
-      caps.channels.setActivityProbe((key) => business.manager.statusOf(key) !== "idle");
-    }
-    // PARK — the App's complete resource inventory, split by fate. Everything stateful
-    // this App creates is on one of these three lists; a new resource must pick its list
-    // when it is added, or the swap leaks it.
-    //
-    // DELIVERED (survives the swap; the successor adopts it at load):
-    //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
-    //   - machine tunnels     ssh children + machines-connect.json (pid/port) → adopted by
-    //                         the successor's tunnelPortFor, which checks the pid is alive
-    //   - runtime singletons  db / auth / channels / config / proxy / desktop —
-    //                         runtime-owned, re-claimed by every App; not this App's to park
-    // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
-    //   - scheduler           stop() now; successor start() reconciles missed fires
-    //   - messaging bridge    stop() closes the channel connections; successor start()
-    //                         reconnects every enabled binding from the DB
-    //   - agent runs          approvals → deny, drives → abort; a goal's GOAL.json reads
-    //                         as aborted once its Session is idle (GET /goal)
-    //   - session environments dispose() after the drive settles — kills background
-    //                         commands (dev servers etc.) that would otherwise run on
-    //                         orphaned and invisible to the successor's fresh Session
-    //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
-    //   - machine connections stop() closes every ssh session this generation opened;
-    //                         successor start() re-holds each the record says was held
-    // DETACHED (the object survives, this App's grip on it does not):
-    //   - pty exit listeners  unsubscribed, so a dead generation never releases a
-    //                         registry id the successor owns
-    // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
-    // bounded by its own 10-minute cap, and a successful update restarts the process
-    // anyway); an in-flight machines install (same shape — its ssh children run to their
-    // own timeouts, the far side's installer stages-and-swaps or rolls back on its own,
-    // and the progress log is simply lost, which re-running recovers); and SSE subscriber
-    // closures (they serve the old generation's stream until the client reloads on
-    // web_updated — the channel hub itself is runtime-owned).
-    // A build that adds a service with state of its own (sandbox settings, workflow
-    // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
-    // the contract, not a description of today's services.
-    //
-    // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
-    // actually end) cannot — dispose is sync — so it is exposed as api.drained(), which
-    // the KERNEL awaits between dispose and the successor's boot (kernel/upgrade.ts).
-    // Nothing about the handover touches the registry.
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
-      terminals.quiesce();
-      // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
-      // processes that keep forwarding across the swap, and the successor adopts them by the
-      // pid recorded in web.db (machines/service.ts).
-      const drains: Promise<unknown>[] = [];
-      if (business !== null) {
-        business.scheduler.stop();
-        business.messaging.stop();
-        business.machines.stop();
-        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
+      closed = true;
+      // Synchronous in the ordinary case, exactly as the App's own dispose is: the runtime
+      // (and a test's cleanup) closes the database right after this returns, and every
+      // module's dispose effect must have run by then. Only a re-assembly caught mid-swap
+      // is let finish first — it holds the one handle on the tree it is booting.
+      if (!swapping) {
+        inner.dispose();
+        drained = inner.api.drained();
+        return;
       }
-      drained = Promise.allSettled(drains).then(() => undefined);
+      drained = op.then(() => {
+        inner.dispose();
+        return inner.api.drained();
+      });
     });
-
-    // COMMIT: from here the App is built and nothing below throws, so the irreversible
-    // half of the resource reconciliation runs — the groups this build cannot speak for
-    // are disposed, and the declaration is overwritten (never released — see the ID's
-    // doc) so the NEXT App reads this build's.
-    for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
-    ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
-
-    const http = seamHttp(app);
-
     return {
-      // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are
-      // resources, and outliving a swap is the whole point. Process exit sweeps them
-      // through the registry's own disposers.
-      park: () => ({ motd: context.motd, terminals: terminals.handleIds() }),
-      info: () => ({
-        impl: "packaged",
-        ifaceVersion: PlatformIface.version,
-        motd: context.motd,
-        terminals: terminals.handleIds().length,
-      }),
-      http,
-      terminals: () => terminals,
-      attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
-      business: () => business,
-      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
-      // effect cannot await — exposed for index.ts's shutdown to call before disposing.
-      shutdown: async () => {
-        if (business !== null) await business.manager.shutdown(DRAIN_GRACE_MS);
+      log: (line) => inner.api.log(line),
+      park: () => inner.api.park(),
+      info: () => inner.api.info(),
+      http: (request) => inner.api.http(request),
+      terminals: () => inner.api.terminals(),
+      attachStream: (ws, ref, url, log) => {
+        if (!isApiSocketRef(ref)) return inner.api.attachStream(ws, ref, url, log);
+        // The API socket: served here, as the user the handshake authenticated, with every
+        // call entering the inner App of the moment — a re-assembly under an open socket is
+        // invisible to it. A bare kernel has no routes to enter.
+        if (inner.api.business() === null) return ws.close(1013, "no business surface");
+        const userId = ref.ownerUserId;
+        apiSockets.add(ws);
+        ws.once("close", () => apiSockets.delete(ws));
+        // One entry per call into the App of the moment; a stream call's answer rides its
+        // Request in (socket/stream-answer.ts), so its route answers it directly.
+        const entered = (request: Request): Promise<Response> => {
+          const http = inner.api
+            .business()
+            ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
+              "HttpModule",
+              "http",
+            );
+          if (http === undefined) {
+            return Promise.resolve(
+              Response.json(
+                { error: { code: "unavailable", message: "The App is being replaced." } },
+                { status: 503 },
+              ),
+            );
+          }
+          return http.fetchAs(userId, request);
+        };
+        serveApiSocket(ws, {
+          fetch: entered,
+          fetchStream: (request, answer) => entered(carryStreamAnswer(request, answer)),
+          origin: `${url.protocol}//${url.host}`,
+          log,
+        });
       },
+      business: () => inner.api.business(),
+      shutdown: () => inner.api.shutdown(),
       drained: () => drained,
     };
   },
 };
+
+/** A bare kernel's tree: the sandbox floor and whatever contributes to it, nothing that needs a capability. */
+function bareTree(
+  plugins: ModuleDef[],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
+): ModuleDef {
+  return {
+    manifest: {
+      name: "platform",
+      requires: {},
+      provides: {},
+      contributes: {},
+      children: ["SandboxModule", "*"],
+    },
+    children: [
+      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable, replace }),
+      ...plugins,
+    ],
+    create: () => ({ api: {} }),
+  };
+}
+
+/** The terminal-only surface of a declared bare kernel. */
+function bareApp(terminals: TerminalManager, identity: Identity): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.notFound(() => declined());
+  app.route("/", terminalRoutes(terminals, identity));
+  return app;
+}
 
 /**
  * The packaged bundle the runtime boots when nothing has been pushed yet — code AND its

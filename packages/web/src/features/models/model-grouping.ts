@@ -19,10 +19,10 @@
 import {
   MODEL_PROVIDERS,
   catalogEntryFor,
-  effectivePricing,
   offPeakAt,
-} from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+  retainedCatalogPricing,
+} from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo, OffPeakDiscount } from "@prismshadow/penguin-server/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
 
@@ -47,6 +47,12 @@ export interface ModelRowLike {
   /** Upstream model id (i.e. the stored model_id). */
   modelId: string;
   displayName?: string;
+  /**
+   * The row's running promotion, as the models endpoint reports it: a fraction off the stored
+   * price, which is the list price (0.5 = half price). The server keeps it apart from the config
+   * file and applies it when it prices usage. Absent when the row has none.
+   */
+  discount?: number;
 }
 
 /** Synthesized vendor info for a user-defined group: OpenAI protocol semantics (env fallback OPENAI_*), no external links or gateway endpoint. */
@@ -91,10 +97,11 @@ export interface ProviderGroup<T extends ModelRowLike> {
 }
 
 /**
- * Filter + group by vendor; rows within a group keep their original order. Built-in groups
- * follow MODEL_PROVIDERS order (the custom group is returned even when empty, when there's
- * no search query); user-defined groups each form their own group, sorted by name and
- * appended after custom.
+ * Filter + group by vendor; rows within a group keep their original order (the models page
+ * then orders each group by that group's sort, model-sort.ts; the chat model picker keeps
+ * this order). Built-in groups follow MODEL_PROVIDERS order (the custom group is returned
+ * even when empty, when there's no search query); user-defined groups each form their own
+ * group, sorted by name and appended after custom.
  *
  * `groupOrder` then rearranges that list: groups it names take its order, groups it does
  * not keep their automatic order and TRAIL (orderModelGroups — a group the user just
@@ -122,7 +129,7 @@ export function groupModelRows<T extends ModelRowLike>(
 }
 
 /**
- * Flattens the library grouping into one ordered list (the chat model dropdown uses this):
+ * Flattens the library grouping into one ordered list (the chat model picker uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
  * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
  * on top; in-group row order preserved. Passing the page's stored order here is what keeps
@@ -136,8 +143,9 @@ export function orderModelsLikeLibrary<T extends ModelRowLike>(
 }
 
 /**
- * Row shape for the configured-key filter: adds the read-only credential display and the masked
- * env-fallback preview (the DTO's ModelInfo is a superset).
+ * Row shape for the configured-key filter: adds the read-only credential display, the masked
+ * env-fallback preview and the effective connection's key source (the DTO's ModelInfo is a
+ * superset).
  */
 export interface ModelCredentialRowLike extends ModelRowLike {
   credential?: { apiKeyMasked?: string };
@@ -147,17 +155,23 @@ export interface ModelCredentialRowLike extends ModelRowLike {
    * this entry.
    */
   envKeyMasked?: string;
+  /** Where the key the row is used with comes from (GET /models' `effective`); its group's key included. */
+  effective?: { apiKeySource: "model" | "provider" | "env" | "none" };
 }
 
 /**
  * Whether the model has an API key behind it — the single rule shared by the model library, the
- * chat model picker and the chat credential guide: a stored (masked) key **or** a masked env
- * fallback, since a user who exported the variable has configured the key just as deliberately as
- * one who typed it into the dialog. `envKey` is only the NAME of that variable and says nothing
- * about whether it is set, so it never counts on its own.
+ * chat model picker and the chat credential guide: a key of its own, its group's key, or a masked
+ * env fallback, since a user who exported the variable has configured the key just as
+ * deliberately as one who typed it into the dialog. `envKey` is only the NAME of that variable
+ * and says nothing about whether it is set, so it never counts on its own.
  */
 export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
-  return !!m.credential?.apiKeyMasked || !!m.envKeyMasked;
+  return (
+    !!m.credential?.apiKeyMasked ||
+    !!m.envKeyMasked ||
+    (m.effective !== undefined && m.effective.apiKeySource !== "none")
+  );
 }
 
 /**
@@ -190,16 +204,64 @@ export interface PricingBucketsLike {
 
 /** The discount decoration for one model card, and the price it makes the row cost right now. */
 export interface DiscountedPrice {
-  /** Whole-percent rate off list, as the badge shows it (50 for a half-price row). */
+  /**
+   * Whole-percent saving off the list price, as the badge shows it (50 for a half-price row). A
+   * promotion and a live off-peak tier combine into one figure: 20% off, then half of the rest,
+   * is 60.
+   */
   percent: number;
   /**
    * What the seller bills for this row right now, in USD per million tokens — the figure the
-   * card prints. For a flat promotion this is the stored price, already discounted at sync
-   * time; for a scheduled one the stored price is the peak price and this is the reduced rate.
+   * card prints: the stored list price less the running promotion and, while the off-peak tier
+   * is live, less its rate as well.
    */
-  billed: { cacheRead: number; cacheWrite: number; output: number };
-  /** True when the rate is a time-of-day one, so the badge can explain when it applies. */
-  scheduled: boolean;
+  billed: BucketPrices;
+  /**
+   * When the saving is the time-of-day tier alone, the peak windows of the row's own schedule —
+   * the hours it bills at list price instead — so the badge can explain when the rate applies.
+   * Absent otherwise: a row that also runs a promotion is explained as the promotion.
+   */
+  peak?: PeakWindows;
+}
+
+/**
+ * A schedule's peak windows reduced to the parts a sentence about them needs. Each dictionary
+ * spells this one digest in its own words, so the explanation follows the schedule a row
+ * actually declares; the catalog carries more than one vendor's windows. Both name the zone as
+ * Beijing time: every catalog schedule is written in UTC+8, which the catalog's tests pin.
+ */
+export interface PeakWindows {
+  /**
+   * The ISO weekdays the windows fall on (1 = Monday … 7 = Sunday), as inclusive runs of
+   * consecutive days: `[[1, 5]]` is Monday to Friday.
+   */
+  days: Array<[number, number]>;
+  /** The runs cover the whole week, so the windows recur daily. */
+  everyDay: boolean;
+  /** The windows on those days, as whole-hour `[start, end)` pairs in Beijing time. */
+  hours: OffPeakDiscount["peakHours"];
+}
+
+/** The digest of one schedule's peak windows (see PeakWindows). */
+export function peakWindows(schedule: OffPeakDiscount): PeakWindows {
+  const days: Array<[number, number]> = [];
+  for (const day of schedule.peakDays) {
+    const run = days.at(-1);
+    if (run !== undefined && run[1] === day - 1) run[1] = day;
+    else days.push([day, day]);
+  }
+  return {
+    days,
+    everyDay: days.length === 1 && days[0]![0] === 1 && days[0]![1] === 7,
+    hours: schedule.peakHours,
+  };
+}
+
+/** The three price buckets in USD per million tokens, in the numeric shape the DTO carries. */
+export interface BucketPrices {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
 }
 
 /** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
@@ -211,55 +273,116 @@ function bucketValue(v: number | string | undefined): number | undefined {
 }
 
 /**
- * The discount decoration for one model row, or undefined for a row that carries none.
+ * `value` as a fraction off a price, or undefined when it is not one. Only (0, 1) says anything:
+ * a badge built from a value outside that range reads as `-0%`, as `-100%` beside a "Free" tag,
+ * or as `--20%`.
+ */
+export function fractionOff(value: number | undefined): number | undefined {
+  return value !== undefined && value > 0 && value < 1 ? value : undefined;
+}
+
+/**
+ * A price as the row's running promotion bills it: every bucket less `discount`, or `pricing`
+ * itself when there is no promotion. Stored prices are list prices, so anything estimating what
+ * usage costs from them has to take off the promotion the server takes off when it records that
+ * cost. A time-of-day tier is not applied here.
+ */
+export function promotedPricing(
+  pricing: BucketPrices | undefined,
+  discount: number | undefined,
+): BucketPrices | undefined {
+  const promotion = fractionOff(discount);
+  if (pricing === undefined || promotion === undefined) return pricing;
+  return {
+    cacheRead: pricing.cacheRead * (1 - promotion),
+    cacheWrite: pricing.cacheWrite * (1 - promotion),
+    output: pricing.output * (1 - promotion),
+  };
+}
+
+/**
+ * What a turn on `ref` is estimated to cost per million Tokens: the Project's row, its promotion
+ * taken off (promotedPricing), or, when the Project no longer has the row, the catalog price the
+ * server still costs a former default model's usage at (retainedCatalogPricing), so a reply on
+ * a model "Restore defaults" deleted keeps its figure. Undefined while the table has not loaded,
+ * and for any other model it lacks.
+ */
+export function turnPricing(
+  rows: ReadonlyArray<ModelRefValue & { pricing?: BucketPrices; discount?: number }> | undefined,
+  ref: ModelRefValue | null | undefined,
+): BucketPrices | undefined {
+  if (rows === undefined || !ref) return undefined;
+  const row = rows.find((m) => sameModelRef(m, ref));
+  if (row !== undefined) return promotedPricing(row.pricing, row.discount);
+  const kept = retainedCatalogPricing(ref.provider, ref.modelId);
+  return kept && { cacheRead: kept.cache_read, cacheWrite: kept.cache_write, output: kept.output };
+}
+
+/**
+ * The discount decoration for one model row, or undefined for a row billed at its stored price.
  *
- * A row qualifies only when its (provider, modelId) names a catalog entry on a promotion AND
- * its stored price is still exactly the price that entry expects to be stored. Prices are
- * editable, and a hand-typed number has nothing to do with the seller's list price — marking it
- * would invent a saving the user is not getting. The same guard covers a Project that has not
- * run "sync presets" yet: its rows still hold whatever price they were created with.
+ * The stored price is always the list price, and two things can take something off it:
  *
- * Which price that is differs by promotion kind, and the difference is the point:
+ * - A **promotion** is the row's `discount`, which the server keeps apart from the config file:
+ *   presets are seeded and synced with the catalog's, a platform sync writes the platform's, and
+ *   a save that changes the row's price clears it. Keeping it true to the price stored beside
+ *   it is the server's job, so it is taken as given here.
+ * - An **off-peak tier** comes from the catalog entry's schedule. It changes twice a day, so
+ *   nothing stores it: the reduction is applied here, against `now`, and inside the peak windows
+ *   the row is simply at list price. It applies only while the stored price is still exactly the
+ *   catalog's peak price. Prices are editable, and a hand-typed number has nothing to do with the
+ *   seller's peak price — halving it would invent a saving the user is not getting.
  *
- * - A **flat** promotion is a single rate the seller bills until it lapses, so `sync presets`
- *   bakes it in and the stored number is already the discounted one.
- * - A **scheduled** one changes twice a day. Baking it in would put a number on disk that meant
- *   something different an hour later, and would make re-syncing rewrite prices by the clock —
- *   so the peak price is stored and the reduction is applied here, against `now`. Inside the
- *   peak windows the row is simply at list price and carries no mark at all.
+ * When both apply, the two reductions multiply.
  */
 export function discountedPrice(
   row: ModelRowLike & PricingBucketsLike,
   now: Date = new Date(),
 ): DiscountedPrice | undefined {
+  const cacheRead = bucketValue(row.cacheRead);
+  const cacheWrite = bucketValue(row.cacheWrite);
+  const output = bucketValue(row.output);
+  // An unpriced row has no price to take anything off.
+  if (cacheRead === undefined || cacheWrite === undefined || output === undefined) return undefined;
+  const promotion = fractionOff(row.discount) ?? 0;
   const entry = catalogEntryFor(row.provider, row.modelId);
-  if (entry?.pricing === undefined) return undefined;
-  const schedule = entry.offPeakDiscount;
-  const rate = schedule?.rate ?? entry.discount;
-  // A fraction off, so only (0, 1) says anything: `effectivePricing` already ignores 0, and a
-  // badge built from a value outside that range reads as `-0%`, `-100%` beside a "Free" tag, or
-  // `--20%`. A stray 0 is the plausible one — the field's own doc says a lapsed promotion is one
-  // field to delete, and deleting a digit is the near miss.
-  if (rate === undefined || rate <= 0 || rate >= 1) return undefined;
-  const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
-  if (expected === undefined) return undefined;
-  const same =
-    bucketValue(row.cacheRead) === expected.cache_read &&
-    bucketValue(row.cacheWrite) === expected.cache_write &&
-    bucketValue(row.output) === expected.output;
-  if (!same) return undefined;
-  if (schedule !== undefined && !offPeakAt(schedule, now)) return undefined;
-  const billed = effectivePricing(entry, now);
-  if (billed === undefined) return undefined;
+  const schedule = entry?.offPeakDiscount;
+  const peak = entry?.pricing;
+  const tier =
+    schedule !== undefined &&
+    peak !== undefined &&
+    cacheRead === peak.cache_read &&
+    cacheWrite === peak.cache_write &&
+    output === peak.output &&
+    offPeakAt(schedule, now)
+      ? (fractionOff(schedule.rate) ?? 0)
+      : 0;
+  if (promotion === 0 && tier === 0) return undefined;
+  const off = (v: number): number => Math.round(v * (1 - promotion) * (1 - tier) * 1e6) / 1e6;
   return {
-    percent: Math.round(rate * 100),
-    billed: {
-      cacheRead: billed.cache_read,
-      cacheWrite: billed.cache_write,
-      output: billed.output,
-    },
-    scheduled: schedule !== undefined,
+    percent: Math.round((promotion + tier - promotion * tier) * 100),
+    billed: { cacheRead: off(cacheRead), cacheWrite: off(cacheWrite), output: off(output) },
+    ...(schedule !== undefined && tier > 0 && promotion === 0
+      ? { peak: peakWindows(schedule) }
+      : {}),
   };
+}
+
+/**
+ * What the seller bills for one row at `now`, bucket by bucket: the figures its card prints, so
+ * the stored list price less whatever discountedPrice takes off at that moment. Undefined for a
+ * row without a full price (a bucket blank or not a number), the shape that saves as no pricing
+ * at all.
+ */
+export function billedPrice(
+  row: ModelRowLike & PricingBucketsLike,
+  now: Date = new Date(),
+): BucketPrices | undefined {
+  const cacheRead = bucketValue(row.cacheRead);
+  const cacheWrite = bucketValue(row.cacheWrite);
+  const output = bucketValue(row.output);
+  if (cacheRead === undefined || cacheWrite === undefined || output === undefined) return undefined;
+  return discountedPrice(row, now)?.billed ?? { cacheRead, cacheWrite, output };
 }
 
 export interface VisibleChatModelsOptions {
@@ -275,10 +398,10 @@ export interface VisibleChatModelsOptions {
 }
 
 /**
- * Candidate list for the chat model dropdown: library order → keep only models with a key
- * (hasConfiguredKey: stored or env-backed; plus the selected and the default model, unless
+ * Candidate list for the chat model picker: library order → keep only models with a key
+ * (hasConfiguredKey: its own, its group's or env-backed; plus the selected and the default model, unless
  * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
- * degrades to showAll (everything listed), so the dropdown is never uselessly empty.
+ * degrades to showAll (everything listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],

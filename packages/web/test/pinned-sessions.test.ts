@@ -1,13 +1,17 @@
 /**
- * pinned-sessions.ts unit tests: the sidebar conversation list's row-level pin. Pinned
- * ids persist per Project in localStorage (injectable storage; no server field exists —
- * SessionPatchRequest accepts no pin, so persistence is deliberately frontend-side):
- * nothing stored or corrupted storage degrades to "nothing pinned", junk array elements
- * are dropped, Projects are isolated, and deleting a Session prunes its id (other stale
- * ids stay inert — a pin is a pure membership test). Ordering composes with the group
- * lists through the same pinnedFirst helper the group pins use: the pinned cluster
- * sits at the top of a group's ACTIVE rows in either grouping mode, keeping each
- * partition's own recency order; folder rows are untouched.
+ * Row pins in the sidebar's conversation list (lib/pinned-sessions.ts), kept per Project in
+ * localStorage because the server has no pin field.
+ *
+ * - Given no Project or nothing stored, nothing is pinned, and reading writes nothing.
+ * - Toggling, saving and loading round-trips the user's set; Projects keep separate sets.
+ * - A malformed stored value reads as nothing pinned, keeping the well-formed ids.
+ * - A storage that throws (quota, private mode, a throwing getter) never escapes: saving is a
+ *   no-op and loading is empty.
+ * - Toggling adds or removes one id without mutating the input; removing an unpinned id
+ *   returns the same set, so the caller skips its writes.
+ * - The pinned cluster tops a group's rows, each partition keeping its order; a pinned row the
+ *   sidebar does not draw (archived, a subagent) and a pin of a deleted Session surface
+ *   nothing.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -19,17 +23,8 @@ import {
   togglePinnedSession,
 } from "../src/lib/pinned-sessions";
 import type { PinnedSessionsStorage } from "../src/lib/pinned-sessions";
-import { partitionSessions, pinnedFirst } from "../src/lib/session-grouping";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
-function memStorage(): PinnedSessionsStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
+import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Minimal SessionInfo (session-grouping.test.ts convention: only the fields the logic reads matter). */
 function session(
@@ -44,6 +39,7 @@ function session(
     modelId: "claude-4-8",
     workspace: "/w",
     approvalMode: "allow-all",
+    sandbox: { mode: "danger-full-access", network: "open" },
     createdAt: "2026-08-13T00:00:00.000Z",
     lastActiveAt: "2026-08-13T00:00:00.000Z",
     status: "idle",
@@ -57,7 +53,7 @@ function session(
 
 describe("persisted pins (per-Project localStorage)", () => {
   it("nothing stored — or no Project yet — is the empty set, and reading never writes", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(loadPinnedSessions("p1", s).size).toBe(0);
     expect(loadPinnedSessions(null, s).size).toBe(0);
     expect(s.map.size).toBe(0); // load never writes; save without a Project is a no-op
@@ -66,7 +62,7 @@ describe("persisted pins (per-Project localStorage)", () => {
   });
 
   it("toggle → save → load round-trips the user's set (fresh instance per load)", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     let set = loadPinnedSessions("p1", s);
     set = togglePinnedSession(set, "session-a");
     set = togglePinnedSession(set, "session-b");
@@ -77,7 +73,7 @@ describe("persisted pins (per-Project localStorage)", () => {
   });
 
   it("Projects are isolated: each key holds its own set", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     savePinnedSessions("p1", new Set(["a"]), s);
     savePinnedSessions("p2", new Set(["b", "c"]), s);
     expect([...loadPinnedSessions("p1", s)]).toEqual(["a"]);
@@ -86,7 +82,7 @@ describe("persisted pins (per-Project localStorage)", () => {
   });
 
   it("malformed JSON / non-array shapes degrade to empty; junk array elements are dropped", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["{not json", '"a"', "42", "null", "{}", ""]) {
       s.map.set(pinnedSessionsKey("p1"), raw);
       expect(loadPinnedSessions("p1", s).size).toBe(0);
@@ -96,14 +92,7 @@ describe("persisted pins (per-Project localStorage)", () => {
   });
 
   it("storage throwing (quota/private mode): save does not throw, load yields empty", () => {
-    const broken: PinnedSessionsStorage = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    };
+    const broken = blockedStorage();
     expect(() => savePinnedSessions("p1", new Set(["a"]), broken)).not.toThrow();
     expect(loadPinnedSessions("p1", broken).size).toBe(0);
   });
@@ -139,7 +128,7 @@ describe("togglePinnedSession / removePinnedSession", () => {
 });
 
 describe("pinned ordering composes with the group lists", () => {
-  it("the pinned cluster tops a group's active rows, each partition keeping its own order; stale ids are inert", () => {
+  it("the pinned cluster tops a group's rows, each partition keeping its own order; stale ids are inert", () => {
     const rows = [
       session("s1"),
       session("s2"),
@@ -147,22 +136,12 @@ describe("pinned ordering composes with the group lists", () => {
       session("s4", { archived: true }),
       session("s5", { source: "subagent" }),
     ];
-    // Both grouping modes feed the shared group body the same way: partition first,
-    // then pinnedFirst over the ACTIVE rows only (pinning is an active-list priority).
-    const parts = partitionSessions(rows);
-    const pins = new Set(["s3", "deleted-elsewhere"]);
-    const active = pinnedFirst(parts.active, (s) => s.sessionId, pins);
-    expect(active.map((s) => s.sessionId)).toEqual(["s3", "s1", "s2"]);
-    // Folder rows keep chronological order and membership regardless of pins …
-    expect(parts.archived.map((s) => s.sessionId)).toEqual(["s4"]);
-    expect(parts.subagent.map((s) => s.sessionId)).toEqual(["s5"]);
-    // … and a stored id of a Session deleted elsewhere never surfaces a row.
-    expect(active.some((s) => s.sessionId === "deleted-elsewhere")).toBe(false);
-  });
-
-  it("no pins = the group's original order, untouched", () => {
-    const rows = [session("s1"), session("s2")];
-    const active = pinnedFirst(partitionSessions(rows).active, (s) => s.sessionId, new Set());
-    expect(active.map((s) => s.sessionId)).toEqual(["s1", "s2"]);
+    // Every grouping mode feeds the shared group body the same way: the sidebar's own rows
+    // first, then pinnedFirst over them.
+    const pins = new Set(["s3", "s4", "s5", "deleted-elsewhere"]);
+    const shown = pinnedFirst(rows.filter(isSidebarRow), (s) => s.sessionId, pins);
+    // A pinned archived or subagent Session is not the sidebar's, and a stored id of a
+    // Session deleted elsewhere never surfaces a row.
+    expect(shown.map((s) => s.sessionId)).toEqual(["s3", "s1", "s2"]);
   });
 });

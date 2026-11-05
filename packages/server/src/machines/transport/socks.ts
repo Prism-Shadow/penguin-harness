@@ -40,11 +40,21 @@ export function dialThroughSocks(
     socket.setTimeout(HANDSHAKE_TIMEOUT_MS, () => fail("the session's SOCKS handshake timed out"));
     let buffer = Buffer.alloc(0);
     let stage: "greet" | "connect" = "greet";
+    let settled = false;
     const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
       socket.removeListener("data", onData);
       socket.destroy();
       reject(new Error(message));
     };
+    // ssh answers a channel the machine refused — nothing listening on that port over there —
+    // by closing the socket, with no SOCKS reply at all. A closed socket's idle timer never
+    // fires, so without this the dial would wait for good: every request to a machine whose
+    // server just died would hang instead of failing.
+    const onClose = () =>
+      fail(`nothing answered at ${host}:${port} on the machine: the session closed the channel`);
+    socket.once("close", onClose);
     const onData = (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk]);
       if (stage === "greet") {
@@ -62,8 +72,10 @@ export function dialThroughSocks(
         const total = 4 + addrLen + 2;
         if (buffer.length < total) return;
         const rest = buffer.subarray(total);
+        settled = true;
         socket.removeListener("data", onData);
         socket.removeListener("error", onError);
+        socket.removeListener("close", onClose);
         socket.setTimeout(0);
         if (rest.length > 0) socket.unshift(rest);
         resolve(socket);

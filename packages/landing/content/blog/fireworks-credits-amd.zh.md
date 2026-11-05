@@ -1,99 +1,80 @@
 ---
-title: 携手 AMD 开发者计划：免费领取 $50 Fireworks 额度，直连 PenguinHarness
+title: 携手 AMD 开发者计划：免费领取 $50 Fireworks 额度，PenguinHarness 直接可用
 date: 2026-07-20
 category: news
-excerpt: 我们很高兴与 AMD AI Developer Program 合作，为大家带来 Fireworks 的免费兑换码——按本文申请 $50 Credits，再在 PenguinHarness 里三步用起来。
+excerpt: 我们与 AMD AI Developer Program 合作，为大家提供免费的 Fireworks 兑换码。本文介绍如何在 AMD 国际站或中国站申请 $50 Credits，再在 PenguinHarness 里三步用起来。
 ---
 
-我们很高兴与 **AMD AI Developer Program**（AMD 开发者计划）合作，为大家带来 Fireworks 的免费兑换码：加入计划并通过审核，即可获得可兑换 **$50 Fireworks AI Credits** 的 Coupon Code。PenguinHarness 内置 Fireworks AI 网关分组——OpenAI 协议、预置 base URL 与五个模型，额度到手即刻可用。
+> 本文基于 PenguinHarness 0.1.0 撰写，之后的版本在部分细节上可能有所不同。
 
-> 页面内容、Credits 金额与有效期可能调整，请以申请时的页面及审批邮件为准。
+我们与 **AMD AI Developer Program**（AMD 开发者计划）合作，为大家带来免费的 Fireworks 兑换码。加入计划并通过审核，就能拿到一个兑换码，可兑换 **$50 Fireworks AI Credits**。PenguinHarness 内置 Fireworks AI 网关分组，OpenAI 协议、base URL 和五个模型都已预置，额度到手就能用。
 
-## 第一步：打开 AMD AI Developer Program 页面
+这个计划有国际站和中国站两个站点。两边的前两步不同，从填写申请表开始，步骤完全相同。
 
-访问 AMD AI Developer Program 中国站官方入口：
+> 页面内容、Credits 金额与有效期可能调整，请以申请页面和审批邮件为准。
 
-点击此链接 [AMD AI Developer Program 中国站](https://developer.amd.com.cn/login?source=2a6CMBw3K)
+## 第一步：注册或登录
 
-或在浏览器中输入下面的网址
-
-https://developer.amd.com.cn/login?source=2a6CMBw3K
-
-- 没有 AMD ADP账户：点击 “注册账号”。输入个人信息，创建ADP账户。
-
-- 已有 AMD ADP 账户：点击“登录”，然后按页面提示登录。
+- **国际站**：打开 <https://developer.amd.com/ai-developer-program/>，在 **Join the AMD AI Developer Program** 区域点击 **Create Account**，填写个人信息。已有 AMD ADP 账号的，点击 **Log In**，按页面提示登录。
+- **中国站**：打开 <https://developer.amd.com.cn/login?source=2a6CMBw3K>，点击**注册账号**，填写个人信息，创建 ADP 账号。已有账号的，点击**登录**，按页面提示登录。
 
 <img width="327" height="690" alt="image 2" src="https://github.com/user-attachments/assets/e904e4aa-28e4-424e-98e1-373275000623" />
 
+## 第二步：进入申请页
 
-## 第二步：进入活动页
+登录后：
 
-点击首页“新闻/公告”或进入“活动中心”相关活动页，点击“去申请”。
+- **国际站**：
+  1. 点击顶部导航栏中的 **Member Perks**。
+  2. 找到 **Cloud Credit Options**。
+  3. 点击页面底部的 **Request Cloud Credits**。
+- **中国站**：从首页的**新闻/公告**进入活动，或者在**活动中心**打开相关活动页，然后点击**去申请**。
 
 <img width="1533" height="904" alt="image" src="https://github.com/user-attachments/assets/650ad0a8-6f27-4fea-b157-381d24fb3d15" />
 
+## 第三步：填写申请表
 
+按表单要求填写个人信息：
 
-## 第三步：填写 Credits 申请表
+- 在 **Product Needed** 处选择 **Fireworks AI**。
+- 在 **Profile** 处至少填写一个公开资料，用于账号验证。LinkedIn、GitHub、作品集、公司或学校主页、微信、企业微信等都可以。审核人员会查看这些资料，评估你的申请资格。
 
-进入申请表后，填写对应的个人信息。
-
-在Product Needed 处默认选择Fireworks AI。
-
-在Profile从处至少一个公开资料用于账户验证。审核人员将查看您的相关账号用于评估您的申请资格。
-
-
-
-填写页面中其他带 `*` 的必填项，检查邮箱、身份、产品选项和公开资料链接无误后提交申请。
-
-
+填好其他带 `*` 的必填项，核对邮箱、身份、产品选项和公开资料链接，确认无误后提交。
 
 ## 第四步：等待审核
 
-提交后，AMD 会验证账户及申请资料。通常需要 2–3 个工作日，实际时间可能因申请量、资料完整度或节假日而变化。
+AMD 会验证你的账号和申请资料，通常需要 2–3 个工作日。实际时间会受申请量、资料完整度和节假日影响。
 
+## 第五步：接收兑换码
 
+审核通过后，AMD 会向申请邮箱发送邮件，邮件里有一个唯一的兑换码（Coupon Code），可兑换 $50 Fireworks AI Credits。请妥善保存，不要公开、转发，也不要提交到代码仓库。
 
-## 第五步：收到邮件并激活 Credits
+## 第六步：兑换 Credits 并创建 API key
 
-审核通过后，AMD 会向申请邮箱发送附带兑换码的邮件
-
-审批邮件包含一个唯一 Coupon Code，用于兑换 $50 Fireworks AI Credits，请妥善保存，请勿公开、转发或提交到代码仓库中。
-
-
-## 第六步：兑换 Fireworks AI Credits 并创建 API Key
-
-1. 打开 [https://fireworks\.ai/](https://fireworks.ai/) 并登录 Fireworks AI 账户。
-
-2. 点击 Redeem Promo，输入邮件中的 Coupon Code，兑换 $50 Credits。
-
-3. 兑换成功后，点击 Create API Key，即可生成 Fireworks API Key。
+1. 打开 <https://fireworks.ai/> 并登录。
+2. 点击 **Redeem Promo**，输入邮件里的兑换码，兑换 $50 Credits。
+3. 点击 **Create API Key**，生成 Fireworks API key。
 
 <img width="1462" height="733" alt="image 1" src="https://github.com/user-attachments/assets/179c8f11-18f2-4e80-b0b0-4d48fd81db80" />
-
-
 
 ## 在 PenguinHarness 中用起来
 
 拿到 API key 后，三步接入：
 
-**1. 安装并启动**
+1. 安装 PenguinHarness 并启动 Web App：
 
-```bash
-curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初始密码见首次启动输出）
-```
+   ```bash
+   curl -fsSL https://penguin.ooo/install.sh | sh
+   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026，登录页上也有提示）
+   ```
 
-**2. 配置 Fireworks 模型**
-
-进入「模型仓库」页，找到 **Fireworks AI** 分组，点击「统一配置 key」粘贴刚创建的 API key。分组预置了五个模型——GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3、DeepSeek V4 Flash——base URL 与价格已填好，任选一个设为默认即可；也可以点组头的「测速」，实测各模型的 TTFT 与 TPS 再决定。
-
-**3. 开始使用**
-
-回到对话页，把第一个任务交给 Agent——例如「分析 data.csv，输出各季度销售额汇总」。
+2. 打开**模型仓库**页面，找到 **Fireworks AI** 分组，点击**统一配置 API key**，粘贴刚创建的 API key。分组预置了五个模型：GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3 和 DeepSeek V4 Flash，base URL 与价格都已填好，任选一个设为默认即可。想先比较各模型的实测 TTFT 与 TPS，可以点击分组上的**测速**。
+3. 回到**对话**页面，把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。
 
 ## 参考链接
 
+- [AMD AI Developer Program](https://developer.amd.com/ai-developer-program/)
 - [AMD AI Developer Program 中国站](https://developer.amd.com.cn/login?source=2a6CMBw3K)
-- 申请步骤与截图整理自[AMD AI Developer Program 官方申请指南](https://acn658bi9o7j.feishu.cn/docx/T8VIdjkZXoqyDwxwNjacbcsYngd)，感谢原作者
+- [AMD 官方 Cloud Credits 申请视频教程](https://www.youtube.com/watch?v=masSW53JkTY)
+- 国际站的申请步骤与截图整理自 WhatGhost 的申请指南（[中文](https://github.com/WhatGhost/whatghost_Notebooks/blob/main/other/AMD_AI_Developer_Program_Credits_%E7%94%B3%E8%AF%B7%E6%8C%87%E5%8D%97.md) / [English](https://github.com/WhatGhost/whatghost_Notebooks/blob/main/other/AMD_AI_Developer_Program_Credits_Application_Guide_EN.md)），中国站的申请步骤与截图整理自 [AMD AI Developer Program 官方申请指南](https://acn658bi9o7j.feishu.cn/docx/T8VIdjkZXoqyDwxwNjacbcsYngd)。感谢各位原作者。
 - [PenguinHarness 模型配置文档](https://penguin.ooo/docs/models)

@@ -16,6 +16,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
 import { liveServerLock } from "./lock.js";
 import type { ServerLock } from "./lock.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 export type ResetAdminPasswordResult =
   /** Refused: a live server owns this data root (stop it first — web.db is single-writer). */
@@ -39,12 +40,12 @@ export async function resetAdminPassword(
   if (!fs.existsSync(dbPath)) return { outcome: "no_database", dbPath };
   const db = openDatabase(dbPath);
   try {
-    const users = new UsersRepo(db);
+    const users = wire(UsersRepo, { db: db });
     if (users.findById(ADMIN_USER_ID) === null) return { outcome: "no_admin" };
     // Discarded unread: a value nobody holds cannot be typed, phished, or left in a buffer.
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
-    new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
+    wire(AuthSessionsRepo, { db: db }).deleteByUser(ADMIN_USER_ID);
     clearInitialAdminPassword(root);
     return { outcome: "reset" };
   } finally {

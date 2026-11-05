@@ -14,7 +14,7 @@ describe("parseThinkingLevel", () => {
     expect(parseThinkingLevel("medium")).toBe("medium");
     expect(parseThinkingLevel("  HIGH ")).toBe("high");
     expect(parseThinkingLevel("xhigh")).toBe("xhigh");
-    // "max" joined the ladder with AgentHub 0.4.4; the flag and /thinking accept it because
+    // "max" is MMSP's deepest thinking level; the flag and /thinking accept it because
     // both validate against core's DEFAULT_CHAT_THINKING_LEVELS, and the printed sets say so.
     expect(parseThinkingLevel("MAX")).toBe("max");
   });

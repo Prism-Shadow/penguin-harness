@@ -2,43 +2,50 @@
  * Endpoint model listing — the thin core wrapper over `AutoLLMClient.listModels()`.
  *
  * Exists so hosts (the server's models routes) can enumerate what an endpoint serves
- * without depending on AgentHub directly: core mediates the AgentHub boundary, AgentHub
- * owns the client and the per-protocol `/models` call. Routed through a **generic protocol
- * client type** (`openai-responses` / `ant-messages` / `openai-chat`), the listing is the
- * endpoint's whole catalog; routed through a vendor-pinned type, AgentHub filters the ids
- * down to that client's own models, and a client with no models endpoint rejects with its
- * `UnsupportedOperationError` (recognizable by `err.name`).
+ * without depending on MMSP directly: core mediates the MMSP boundary, MMSP owns the
+ * client and the per-protocol `/models` call. A client named by its type speaks for
+ * whatever the endpoint serves, so the listing is the endpoint's whole catalog; a client
+ * with no models endpoint rejects with MMSP's `UnsupportedOperationError` (recognizable by
+ * `err.name`).
  *
- * Credential semantics mirror the connectivity test: an omitted `apiKey` lets the wrapped
- * SDK read the protocol's own environment variable (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`),
- * and a missing credential surfaces as the SDK's own construction/request error — callers
- * collapse errors into their outcome shape, nothing is caught here.
+ * The key and the base URL go to MMSP as the caller gives them, and the environment is MMSP's
+ * rule, as for a Session (PRN-021): a client handed no key reads its own `*_API_KEY` for its
+ * default endpoint, calls an open MMSP server keyless, and refuses any other base URL before a
+ * request, which reaches the caller as a ModelCredentialError (newAutoLLMClient). Other failures
+ * surface as the SDK's own errors — callers collapse errors into their outcome shape, nothing is
+ * caught here.
  */
-import { AutoLLMClient } from "@prismshadow/agenthub";
+import { userAgent } from "../index.js";
+import { newAutoLLMClient } from "./model-client.js";
 
 /** One endpoint listing request: which protocol to speak, and the credential/URL to speak it with. */
 export interface ListEndpointModelsOptions {
-  /** AgentHub client type to route through (the add-group flow passes a detected generic protocol). */
+  /** MMSP client type to route through (the add-group flow passes a detected generic protocol). */
   clientType: string;
-  /** Plaintext API key; omitted = the SDK's environment fallback for the protocol. */
+  /** Plaintext API key; omitted = whatever MMSP's client does with none for this base URL. */
   apiKey?: string;
-  /** Endpoint base URL; omitted = the vendor default of the routed client. */
+  /** Endpoint base URL; omitted = the routed client's own `*_BASE_URL`, else its default. */
   baseUrl?: string;
 }
 
 /**
  * Lists the model ids the endpoint serves, in the order the endpoint returned them.
- * Throws whatever AgentHub or the wrapped SDK throws (unsupported operation, auth,
- * network); bounding the call in time is the caller's concern.
+ * Throws whatever MMSP or the wrapped SDK throws (unsupported operation, auth,
+ * network), or a ModelCredentialError when MMSP refuses a keyless base URL; bounding the call
+ * in time is the caller's concern.
  */
 export async function listEndpointModels(options: ListEndpointModelsOptions): Promise<string[]> {
-  const client = new AutoLLMClient({
+  const apiKey = options.apiKey || undefined;
+  const baseUrl = options.baseUrl?.trim() || undefined;
+  const client = newAutoLLMClient({
     // AutoLLMClient routes by clientType when given one; model is its fallback routing key
     // and must still be a string, so the client type doubles as it.
     model: options.clientType,
     clientType: options.clientType,
-    ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-    ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+    ...(apiKey !== undefined ? { apiKey } : {}),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    // Spelled exactly so, as GenerativeModel spells it (see its constructor).
+    defaultHeaders: { "User-Agent": userAgent() },
   });
   return client.listModels();
 }

@@ -26,7 +26,7 @@ pnpm dev:landing # 落地页（Vite），127.0.0.1:7366
 pnpm penguin ... # 从源码运行 CLI；`penguin web` 服务在 127.0.0.1:7369
 pnpm desktop     # 从源码运行桌面应用（先全量构建，再启动 Electron）
 
-BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 + 文档
+BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 + 文档 + 画廊
 ```
 
 每条 dev 命令都会先执行 `scripts/dev-prebuild.mjs`。它在一把用于串行化并发调用的锁之后，
@@ -49,6 +49,14 @@ web/server 消费的是快照副本，只有当该包的 `build` 脚本经由 pn
 （`syncInjectedDepsAfterScripts`）。在 packages/core 里直接跑 `npx tsup` 会更新
 `packages/core/dist`，却把那些快照——以及任何已经填充的 Vite 依赖缓存——留在旧构建上；如果手工重建
 之后，正在运行的开发 Web App 仍在提供陈旧的 core，删掉 `packages/web/node_modules/.vite` 再重启。
+
+插件不受快照规则约束：在工作区检出里，core 的 loader 直接读取仓库的 `plugins/<name>/` 目录，而非
+pnpm 注入的副本（插件没有 `build` 脚本，副本永远不会重新同步），因此 `plugins/` 下的改动——新增的
+Skill、改过的 SKILL.md、改过的 `package.json`——在 `pnpm dev` 与测试中立即生效。插件自身的版本就是
+它的 npm 版本（`package.json`，随发行递增）；日期版本（`YYYY.MM.DD.N`）属于安装时写进 Agent 的部件：
+改了 `skills/<name>/` 下的任何文件，就要递增该 Skill 的 SKILL.md frontmatter 中的 `version`；改了钩子
+脚本或 `penguin.hooks` 中的命令，就要递增 `package.json` 的 `penguin.hooks.version`。已装副本正是靠这些版本得知自己
+落后，部件改动而版本未递增的 PR 会被 CI 拒绝（`scripts/check-plugin-versions.mjs`）。
 
 会触及数据的开发入口默认使用各自独立的数据根目录，与已安装 CLI/server 的 `~/.penguin/data`
 分开——在仓库上折腾永远不会把状态与你真实的 Agent 混在一起。`pnpm dev`、`pnpm dev:server` 与
@@ -81,13 +89,14 @@ userData 目录随其名称一并搬家，Chromium 配置文件也跟着走，�
 ## 仓库结构
 
 一个 pnpm monorepo（TypeScript，Node >= 24）。一次安装交付四个层次，它们共享同一个数据目录
-（`~/.penguin/data`）与同一套消息协议（OmniMessage）：
+（`~/.penguin/data`）与同一种消息格式（AMSP 记录）：
 
 | 包                                        | 名称                          | 职责                                                                        |
 | ----------------------------------------- | ----------------------------- | --------------------------------------------------------------------------- |
-| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK 与引擎：ReAct 循环、OmniMessage 协议、LLM/Environment 接口契约、Agent State、Trace |
+| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK 与引擎：ReAct 循环、LLM/Environment 接口契约、Agent State、Trace |
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | `penguin` 命令：REPL、单次运行、模型与 vault 配置、服务启动器               |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web 后端：HTTP API + SSE 流式传输、多用户认证、Project 鉴权、用量统计       |
+| [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP 记录（类型、判别函数、构造函数与标记，core 再导出）、Agent API 的传输类型，以及零依赖的客户端，适用于 Node 与浏览器 |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App：多会话聊天，Agent/Skill/模型管理，Trace 可观测性，评测中心         |
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | 内置插件，一插件一 npm 包：Skill（软件开发、模型开发、Agent 开发/调优……）与会话钩子（目标模式、技能沉淀）；loader 在 `packages/core` |
 | [`packages/landing`](../packages/landing) | —                             | 产品落地页（本仓库的官网）                                                 |
@@ -100,7 +109,22 @@ userData 目录随其名称一并搬家，Chromium 配置文件也跟着走，�
 
 ## 质量门禁
 
-以下每一项 CI 都会在每个 PR 上运行——推送前请先在本地跑一遍：
+PR 和 `main` 推送通过 pnpm 的依赖图选择变更包及其下游，先构建所需依赖，再执行类型检查和测试。
+浏览器与站点测试在 Linux 运行，受影响的原生运行时包还会在 macOS 和 Windows 运行。
+公共构建脚本、lockfile 或无法归类的输入变更会触发全量检查。plan 任务会列出选择结果及原因。
+
+core、server 和 web 在已有的 Linux 测试运行中统计分支与行覆盖率，各分片上传 LCOV 和 JSON 摘要。
+没有设置任意的覆盖率门槛；修改分支时应添加行为回归测试，包括失败路径和禁止发生的副作用。
+
+应用变更会运行真实 server 与本地 mock LLM 驱动的浏览器 smoke，fork PR 也能运行。
+场景覆盖登录、批准前禁止执行命令、刷新恢复和后续消息。打包检查保留了版本注入、插件索引、
+安装器和内置 CLI 的历史回归兜底；未压缩的 Electron 运行包仅在手动 CI 中上传。
+
+新版本发布前，完整的三平台 CI 会检查实际发布 ref，全部通过后才允许发布。
+已存在的不可变版本仍可重试发布器和镜像同步。手动 CI 默认全量检查。
+分支保护应将聚合任务 `ci` 设为必需项；它会拒绝失败、缺失或意外跳过的任务。
+
+开发时优先运行相关包的检查；以下命令运行完整本地测试集：
 
 ```bash
 pnpm format:check   # prettier
@@ -118,6 +142,7 @@ Agent 读到的是同一个目录。
 ```bash
 npx playwright install chromium                      # 一次即可
 pnpm --filter @prismshadow/penguin-web test:e2e      # 针对 mock LLM 的浏览器 e2e
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs  # CI 所跑的部分
 pnpm test:e2e                                        # core 的真实模型 e2e，需要 DEEPSEEK_API_KEY
 ```
 
@@ -136,11 +161,22 @@ pnpm test:e2e                                        # core 的真实模型 e2e�
 - **每次发布随附自己的公告**：`changelog/<version>/RELEASE.md` 会被原样发布为 GitHub Release 正文。
   在发布准备期间撰写，并**在打 tag 之前提交**——发布工作流是从 tag 的 checkout 里读它的，事后添加的
   文件永远到不了 Release 页面。缺少它时，工作流退回到 GitHub 自动生成的说明。
+- **官方镜像从源码构建**：`.github/workflows/docker.yml` 将 `linux/amd64` 与 `linux/arm64`
+  镜像推送到 Docker Hub 的 `hiyouga/penguinharness`。`main` 上影响镜像运行代码或构建输入的推送
+  会更新 `latest`；仅修改文档、站点或桌面端源码时不更新。发布工作流从 tag 自身的源码构建
+  `X.Y.Z` 版本镜像。修改 `Dockerfile`、`.dockerignore`、`docker/` 或该工作流的 PR 会运行
+  amd64 镜像冒烟测试。
 - **发布准备要提升仓库版本号**：那个把 `changelog/unreleased/` 改名的 `release: X.Y.Z` PR，同时也要把
-  根目录及每个 `packages/*/package.json` 的 `version`、以及 core 的 `VERSION` 常量
-  （`packages/core/src/index.ts`）提升到发布版本。发布工作流会拒绝版本号与仓库不一致的 tag 推送，
+  根目录、每个 `packages/*/package.json` 与每个 `plugins/*/package.json` 的 `version`、以及 core 的
+  `VERSION` 常量（`packages/core/src/index.ts`）提升到发布版本。发布工作流会拒绝版本号与仓库不一致的 tag 推送，
   因此漏掉提升会在发布任何东西之前就失败（v0.2.1 曾在仓库还是 0.2.0 时被打了 tag，此后每个开发构建
   都在提示有更新，直到仓库追上为止）。
+- **发布分支要在打 tag 之前证明安装包能出来。** 分支命名为 `release/<version>`：每次推送到
+  `release/**` 分支都会运行 `desktop-build.yml`，并要求 macOS 与 Windows 签名，与发布工作流的调用方式
+  一致；CI 从不演练签名。等分支最终 commit 上的这次运行通过后再合并、打 tag；tag 不会被移动，打完才发现
+  的问题要用掉一个版本号（0.2.10 在 CI 全绿时打了 tag，因运行器镜像变化丢了 macOS 安装包，只得以 0.2.11
+  重新发布）。在发布分支之外想补验一次：
+  `gh workflow run desktop-build.yml --ref <分支> -f require_macos_signing=true -f require_windows_signing=true`。
 - `assets/readme/` 下的 README 素材是生成物——基准测试图表由落地页的基准数据生成，演示截图由
   `node packages/landing/scripts/capture-readme-demo.mjs` 生成（需先构建；需要 Playwright chromium）。
   请重新生成，而不要手工编辑。

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Readable, Writable } from "node:stream";
 import { toolCall } from "@prismshadow/penguin-core";
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import type { AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
 import { makeApprove, promptApproval, resolveApprovalMode } from "../src/approval.js";
 import { getMessages } from "../src/i18n.js";
 
@@ -20,9 +20,9 @@ function collector(): { stream: Writable; text: () => string } {
 }
 
 // mock_read_only_tool is only used for approval-mode tests, not a real tool; its permission is read-only ("r").
-const readTool = (): OmniMessage<ToolCallPayload> =>
+const readTool = (): AmspRecord<ToolCallPayload> =>
   toolCall({ name: "mock_read_only_tool", arguments: '{"path":"a"}', toolCallId: "r1" });
-const writeTool = (): OmniMessage<ToolCallPayload> =>
+const writeTool = (): AmspRecord<ToolCallPayload> =>
   toolCall({ name: "exec_command", arguments: '{"cmd":"rm x"}', toolCallId: "w1" });
 
 const perms: Record<string, "r" | "rw"> = {

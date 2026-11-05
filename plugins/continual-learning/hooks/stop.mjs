@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-/** Completed LLM turns (token_usage records) a Task must exceed before a summary fires. */
+/** Completed LLM turns (request_end records with status completed) a Task must exceed before a summary fires. */
 const TURNS_THRESHOLD = 30;
 /** Per-line clips of the excerpt and its total cap (the oldest lines go first). */
 const CLIP = { user: 800, assistant: 1200, toolCall: 300, toolOutput: 400 };
@@ -63,12 +63,25 @@ function isTaskStart(r) {
   return true;
 }
 
-/** The just-ended Task's records: everything after the last Task-starting input — the whole file when none is in it (a compaction rotated the file mid-Task). */
+/** Whether a record belongs to a Task's input: a Task-starting user text, or an image sent with one. */
+function isTaskInput(r) {
+  if (isTaskStart(r)) return true;
+  return isMain(r) && r.type === "model_msg" && !!r.payload && r.payload.type === "image_url";
+}
+
+/**
+ * The just-ended Task's records: everything from its input on — the whole file when no input
+ * is in it (a compaction rotated the file mid-Task). An input is a batch: the user's message,
+ * its images, and what the harness sent right behind it (a user_prompt hook's context, goal
+ * mode's round-1 protocol). The window opens at the batch's first record, so the excerpt
+ * keeps what the user asked.
+ */
 function taskWindow(records) {
   let start = 0;
   records.forEach((r, i) => {
     if (isTaskStart(r)) start = i;
   });
+  while (start > 0 && isTaskInput(records[start - 1])) start -= 1;
   return records.slice(start);
 }
 
@@ -109,7 +122,7 @@ function condense(records) {
       lines.push(`[tool_call ${p.name}] ${clip(p.arguments || "", CLIP.toolCall)}`);
     } else if (p.type === "tool_call_output") {
       const name = toolNames.get(p.tool_call_id) || p.tool_call_id;
-      const status = p.stop_reason && p.stop_reason !== "completed" ? ` · ${p.stop_reason}` : "";
+      const status = p.status && p.status !== "completed" ? ` · ${p.status}` : "";
       lines.push(`[tool_output ${name}${status}] ${clip(p.output || "", CLIP.toolOutput)}`);
     }
   }
@@ -176,7 +189,11 @@ const skills = installedSkills(skillsDir);
 if (skills.length === 0) process.exit(0);
 
 const window = taskWindow(records);
-const turns = window.filter((r) => isEvent(r, "token_usage")).length;
+// A turn is a Request that completed: an attempt cut off at its output cap reports its usage too,
+// and it is retried, so it is no turn; nor is an interrupted or failed one.
+const turns = window.filter(
+  (r) => isEvent(r, "request_end") && r.payload.status === "completed",
+).length;
 if (turns <= TURNS_THRESHOLD) process.exit(0);
 
 const invoked = invokedSkills(window);
@@ -190,7 +207,7 @@ const prompt = [
   "",
   "A finding is something a future session of this agent would want to know before it starts: a correction the user made, a gotcha in the environment or the codebase, a command or approach that worked or failed, a convention the user expects. Not a finding: session-specific trivia, secrets or credentials, and anything the skill already says.",
   "",
-  "For each finding, edit the SKILL.md of the skill it belongs to — one of the invoked skills when it fits, otherwise the most relevant installed skill. Keep the guidance short and general, and bump `version` in that file's frontmatter to today's date with the next sequence number (`YYYY-MM-DD.N`). Do not create new skills and do not touch anything outside the skills directory. If nothing durable was learned, change nothing.",
+  "For each finding, edit the SKILL.md of the skill it belongs to — one of the invoked skills when it fits, otherwise the most relevant installed skill. Keep the guidance short and general, and bump `version` in that file's frontmatter to today's date with the next sequence number (`YYYY.MM.DD.N`). Do not create new skills and do not touch anything outside the skills directory. If nothing durable was learned, change nothing.",
   "",
   "Transcript excerpt:",
   "",

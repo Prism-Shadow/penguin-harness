@@ -1,18 +1,24 @@
 /**
  * Vite config: React SPA + Tailwind CSS 4.
  *
- * Dev server listens on 7365; `/api` is proxied to the **development** backend (127.0.0.1:7368 --
- * `pnpm dev:server`, deliberately not the installed server's 7364, which is routinely running at the
- * same time). Honors PORT so overriding the backend port moves the proxy with it, and
- * PENGUIN_API_PROXY overrides the whole target. SSE (text/event-stream) passes through http-proxy
- * transparently, no special config needed.
+ * Dev server listens on 7365; `/api` and a machine's `/server/<machineId>/api` are proxied to the
+ * **development** backend (127.0.0.1:7368 -- `pnpm dev:server`, deliberately not the installed
+ * server's 7364, which is routinely running at the same time). Honors PORT so overriding the backend
+ * port moves the proxy with it, and PENGUIN_API_PROXY overrides the whole target. SSE
+ * (text/event-stream) passes through http-proxy transparently, no special config needed.
  * The vitest config is kept separate in vitest.config.ts (its embedded vite 5 types conflict with this
  * package's vite 7 plugin types, hence the separate file to avoid the clash).
+ *
+ * `penguinUi()` emits the licence texts of the shared UI package's bundled fonts beside the build
+ * (`fonts-licenses/`) and copies the package's built Workbench runtime in as `workbench-runtime/`,
+ * which the server serves to TSX Workbench pages: build `@prismshadow/penguin-ui` before this
+ * package. It is imported by relative path on purpose — see its module doc.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -32,21 +38,36 @@ export function apiProxyTarget(env: Record<string, string | undefined> = process
 }
 
 /**
- * Drops the `woff` and `truetype` fallbacks from a KaTeX stylesheet, leaving each `@font-face` with
- * its woff2 source alone.
+ * The calls the page addresses to one machine, `/server/<machineId>/api/…`
+ * (src/lib/server-context.ts). The backend forwards them to that machine; the dev server only has
+ * to hand them on. Without this entry Vite answered them itself: a GET came back as the SPA's
+ * index.html with status 200 and anything else as an empty 404, so every request to a machine
+ * failed with an unparseable answer under `pnpm dev` and nowhere else.
  *
- * KaTeX ships twenty faces in three formats and lists all three in every `src`, so Vite — which
- * emits an asset for each URL a stylesheet references — copies sixty font files into the bundle.
- * The forty non-woff2 ones are ~800KB that nothing can request: woff2 has been supported by every
- * browser this SPA runs in since 2016, and the desktop shell is Chromium. A browser somehow without
- * it now falls back to the `serif` at the end of KaTeX's own font stack rather than failing.
- *
- * Exported for the unit test: a silent miss here (a Vite id format change, a KaTeX release that
- * reorders `src`) costs bundle size without breaking anything, so nothing would otherwise notice.
+ * A pattern rather than the `/server/` prefix, so that only API paths are taken from the SPA.
  */
-export function dropNonWoff2FontSources(css: string): string {
-  return css.replace(/\s*,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, "");
+export const MACHINE_API_PATH = "^/server/[^/]+/api(?:/|$)";
+
+/**
+ * The dev server's proxy table: the backend's own API, and its API for each machine. Takes the
+ * environment as an argument for the same reason {@link apiProxyTarget} does.
+ */
+export function devProxy(env: Record<string, string | undefined> = process.env) {
+  const target = apiProxyTarget(env);
+  return {
+    "/api": {
+      target,
+      changeOrigin: false,
+      // The terminal stream (/api/terminals/:id/stream) is a WebSocket upgrade; without
+      // this the proxy answers the handshake itself and the terminal never connects.
+      ws: true,
+    },
+    [MACHINE_API_PATH]: { target, changeOrigin: false },
+  };
 }
+
+// The gallery's config and this package's tests import it from here.
+export { dropNonWoff2FontSources };
 
 /**
  * Applies {@link dropNonWoff2FontSources} to KaTeX's stylesheet before Vite resolves the `url()`s
@@ -66,19 +87,26 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), katexWoff2Only()],
+  plugins: [penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
+  build: {
+    // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
+    // stylesheet references would then ride inside the one render-blocking CSS file for every
+    // session, whatever its theme. As its own file it is fetched only when some text needs it.
+    assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
+  },
+  // The highlighting worker loads its themes and each grammar with a dynamic import, so its
+  // bundle has to be code-split — and Vite's default worker format, IIFE, cannot be. Without this
+  // the build fails outright rather than shipping something subtly wrong, which is the good case.
+  worker: { format: "es" },
   server: {
     // Fixed PenguinHarness dev port (stands alone — vite configs cannot import core TS,
     // so the numbers are literals here; the allocation table lives in core's internal/ports.ts).
     port: 7365,
-    proxy: {
-      "/api": {
-        target: apiProxyTarget(),
-        changeOrigin: false,
-        // The terminal stream (/api/terminals/:id/stream) is a WebSocket upgrade; without
-        // this the proxy answers the handshake itself and the terminal never connects.
-        ws: true,
-      },
-    },
+    // Cross-origin requests to /api are the server's to answer, not Vite's: the Chrome extension
+    // pairs from its own chrome-extension:// origin through this port, and Vite's default CORS
+    // rule (localhost pages only) answered its preflight itself and refused it, so the request
+    // never reached the server's pairing route. Off, the preflight is proxied like everything else.
+    cors: false,
+    proxy: devProxy(),
   },
 });

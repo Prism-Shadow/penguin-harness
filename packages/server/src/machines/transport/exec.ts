@@ -28,16 +28,35 @@ export interface ExecResult {
 /** Enough for a payload transfer over a slow link, short enough to not hang a menu forever. */
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * How the child is started beyond its argv (login.ts): its own environment — the one place a
+ * password travels — and, for an OpenSSH that asks a terminal first, a session of its own with no
+ * terminal in it.
+ */
+export interface ChildLaunch {
+  env?: NodeJS.ProcessEnv;
+  detached?: boolean;
+}
+
 export function run(
   file: string,
   args: string[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number } & ChildLaunch = {},
 ): Promise<ExecResult> {
+  // execFile does not pass `detached` on to the child; a detached run is a spawn with nothing on
+  // its stdin, which is what a command without input reads anyway.
+  if (opts.detached === true) {
+    return runWithInput(file, args, { ...opts, input: Buffer.alloc(0) });
+  }
   return new Promise((resolve) => {
     execFile(
       file,
       args,
-      { timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+      {
+        timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        maxBuffer: 16 * 1024 * 1024,
+        ...(opts.env === undefined ? {} : { env: opts.env }),
+      },
       (error, stdout, stderr) => {
         const code =
           error && typeof (error as NodeJS.ErrnoException & { code?: number }).code === "number"
@@ -74,10 +93,14 @@ export function run(
 export function runWithInput(
   file: string,
   args: string[],
-  opts: { input: Buffer; onLine?: (line: string) => void; timeoutMs?: number },
+  opts: { input: Buffer; onLine?: (line: string) => void; timeoutMs?: number } & ChildLaunch,
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
-    const child = spawn(file, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(file, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(opts.env === undefined ? {} : { env: opts.env }),
+      ...(opts.detached === true ? { detached: true } : {}),
+    });
     let stdout = "";
     let stderr = "";
     let pending = "";
@@ -119,38 +142,8 @@ export function runWithInput(
   });
 }
 
-/** A local helper's stdout as bytes — a tarball to hand to a machine as a heredoc. */
-export function runBytes(
-  file: string,
-  args: string[],
-): Promise<{ code: number; stdout: Buffer; stderr: string }> {
-  return new Promise((resolve) => {
-    execFile(
-      file,
-      args,
-      { encoding: "buffer", timeout: DEFAULT_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        const code =
-          error && typeof (error as NodeJS.ErrnoException & { code?: number }).code === "number"
-            ? ((error as NodeJS.ErrnoException & { code: number }).code as number)
-            : error
-              ? 1
-              : 0;
-        resolve({ code, stdout: Buffer.from(stdout), stderr: String(stderr) });
-      },
-    );
-  });
-}
-
 /** What a failed ExecResult says, in the transport's words; `whenSilent` when it said nothing. */
 export function execFailureText(result: ExecResult, whenSilent: string): string {
   if (result.timedOut) return "the machine did not answer in time";
   return result.stderr.trim() || whenSilent;
-}
-
-/** True when the failure is "ssh could not authenticate without asking" — the BatchMode wall. */
-export function looksLikeAuthFailure(result: ExecResult): boolean {
-  return /permission denied|no supported authentication|host key verification failed/i.test(
-    result.stderr,
-  );
 }

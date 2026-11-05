@@ -51,6 +51,7 @@ import type {
   AgentModelConfigDto,
   AgentCompactionConfigDto,
   AgentMemoryConfigDto,
+  AgentHooksConfigDto,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
@@ -67,6 +68,9 @@ import {
   optionalString,
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
@@ -83,8 +87,12 @@ export interface AgentConfigView {
   stateDir: string;
 }
 
-export class AgentConfigService {
-  constructor(private readonly root: string) {}
+@Component()
+export class AgentConfigService implements AgentConfig {
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
 
   /** Whether the Agent exists (determined by the presence of system_config.yaml, matching the CLI's convention). */
   async exists(projectId: string, agentId: string): Promise<boolean> {
@@ -149,6 +157,7 @@ export class AgentConfigService {
     const vault = asRecord(parsed.vault);
     const skills = asRecord(parsed.skills);
     const schedules = asRecord(parsed.schedules);
+    const hooks = asRecord(parsed.hooks);
     const tools = asRecord(parsed.tools);
 
     let agentsMd = "";
@@ -212,6 +221,9 @@ export class AgentConfigService {
       prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
       templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
     };
+    // The hook switch has no prompt half and no template fact: hook packages are scripts run
+    // at the loop's hook points, never text in the context.
+    const hooksDto: AgentHooksConfigDto = { enabled: hooks.enabled !== false };
     // Kernel stamp: reported literally (null = predates the mechanism), with the current
     // generation and the outdated verdict beside it, so the client renders the update hint
     // without knowing core's KERNEL_VERSION.
@@ -231,6 +243,7 @@ export class AgentConfigService {
       vault: vaultDto,
       skills: skillsDto,
       schedules: schedulesDto,
+      hooks: hooksDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
     };
@@ -371,6 +384,11 @@ export class AgentConfigService {
       setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
       setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
     }
+    // The hook switch is the one section that governs behavior rather than the context: with
+    // it off a new Session assembles no hooks, while the packages stay installed on disk.
+    if (cfg.hooks !== undefined) {
+      setIfProvided(["hooks", "enabled"], optionalBoolean(asRecord(cfg.hooks), "enabled"));
+    }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
     }
@@ -507,6 +525,11 @@ function validateMcpServers(value: unknown): MCPServerConfig[] {
     }
     if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
       throw badRequest(`mcpServers[${i}].config must be an object.`);
+    }
+    // Provenance a plugin's install wrote: kept through the edit, so reinstalling or
+    // uninstalling that plugin still finds its entry.
+    if (s.plugin !== undefined && typeof s.plugin !== "string") {
+      throw badRequest(`mcpServers[${i}].plugin must be a string.`);
     }
     // Transport-level validation through the core resolver — the single source of truth
     // with the runtime: a precise 400 at save time beats a warn-and-skip at the next

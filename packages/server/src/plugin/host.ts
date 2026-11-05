@@ -1,0 +1,163 @@
+/**
+ * The plugin host: the plugins this process loaded, as module definitions the
+ * platform boots as children of its tree. Kept out of ./index.ts so the published
+ * `@prismshadow/penguin-server/plugin` subpath stays types only.
+ */
+import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import type { UnsatisfiedPlugin } from "../api/types.js";
+
+/** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
+export interface LoadedPlugin {
+  specifier: string;
+  /**
+   * The entry file this was imported from, when there was one to resolve. It is what makes a
+   * REUSE safe: the specifier alone does not say which bytes are behind it, and a hot push
+   * moves the builtin plugins to a new assets directory — so an entry held from before the
+   * push resolves to a different file, and must be imported again rather than kept. Absent on
+   * an entry from a generation older than this field (re-imported, which is correct for it)
+   * and on a bare specifier the installation itself resolves.
+   */
+  file?: string | null;
+  /**
+   * The entry file's modification time when it was imported. A file rewritten in place keeps
+   * its path, so the path alone would reuse the old code; absent on an older generation's
+   * entry, which is then imported again.
+   */
+  stamp?: number | null;
+  /** Nodes the plugin adds under the root. */
+  modules: ModuleDef[];
+  /** Nodes the plugin stands in for, by the replaced node's name. */
+  replaces: ModuleDef[];
+  /** The interfaces and types the package's `ifaces.json` carries; absent for a module built in code. */
+  ifaces?: IfaceTable;
+}
+
+/** One host per server process; load order is the order the modules join the tree. */
+export class PluginHost {
+  private readonly plugins: LoadedPlugin[] = [];
+  /** specifier → why a listed plugin is not here; what a surface reports beside its row. */
+  private readonly failures = new Map<string, string>();
+  /** specifier → a loaded plugin the generation holding this host could not fully run. */
+  private unmet = new Map<string, UnsatisfiedPlugin>();
+
+  /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
+  use(plugin: LoadedPlugin): void {
+    const taken = new Set(this.modules().map((m) => m.manifest.name));
+    for (const m of plugin.modules) {
+      if (taken.has(m.manifest.name)) {
+        throw new Error(
+          `plugin '${plugin.specifier}': module '${m.manifest.name}' is already loaded by another plugin`,
+        );
+      }
+    }
+    const replaced = this.replacements();
+    for (const m of plugin.replaces) {
+      if (replaced.has(m.manifest.name)) {
+        throw new Error(
+          `plugin '${plugin.specifier}': '${m.manifest.name}' is already replaced by another plugin`,
+        );
+      }
+    }
+    this.plugins.push(plugin);
+  }
+
+  /** Every plugin module, in load order — what the platform adds to its tree. */
+  modules(): readonly ModuleDef[] {
+    return this.plugins.flatMap((e) => e.modules);
+  }
+
+  /** The nodes plugins stand in for, by name — what the platform builds instead of its own. */
+  replacements(): ReadonlyMap<string, ModuleDef> {
+    return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
+  }
+
+  /**
+   * The host's table with every plugin's folded in — what the tree is checked against. On
+   * a key both carry (a plugin's table copies the host interfaces it compiled against) the
+   * host's entry stands: it is what is provided, and what a hand-written manifest was
+   * always looked up in.
+   */
+  ifaces(host: IfaceTable): IfaceTable {
+    const ifaces = { ...host.ifaces };
+    const types = { ...host.types };
+    for (const plugin of this.plugins) {
+      if (plugin.ifaces === undefined) continue;
+      for (const [key, decl] of Object.entries(plugin.ifaces.ifaces)) ifaces[key] ??= decl;
+      for (const [key, decl] of Object.entries(plugin.ifaces.types)) types[key] ??= decl;
+    }
+    return { ifaces, types };
+  }
+
+  /** What is loaded, by specifier — how the next App reuses these objects instead of importing again. */
+  entries(): ReadonlyMap<string, LoadedPlugin> {
+    return new Map(this.plugins.map((e) => [e.specifier, e]));
+  }
+
+  /** Records why a listed plugin could not be loaded into this host. */
+  skip(specifier: string, reason: string): void {
+    this.failures.set(specifier, reason);
+  }
+
+  /** The listed plugins this host could not load, each with its reason. */
+  skipped(): ReadonlyMap<string, string> {
+    return this.failures;
+  }
+
+  /**
+   * Records what the booted tree runs without (plugin/unsatisfied.ts). Replaced whole at every
+   * boot: it is a fact about one generation, and a host that outlives its generation (a bare
+   * kernel keeps the one it was handed) must not carry the last one's.
+   */
+  setUnsatisfied(plugins: readonly UnsatisfiedPlugin[]): void {
+    this.unmet = new Map(plugins.map((p) => [p.specifier, p]));
+  }
+
+  /** The loaded plugins this generation could not fully run, each with what became of it. */
+  unsatisfied(): ReadonlyMap<string, UnsatisfiedPlugin> {
+    return this.unmet;
+  }
+
+  /** Nothing to release at process exit: modules dispose with the App that created them. */
+  dispose(): void {}
+}
+
+/**
+ * Registry key for the loaded plugin host.
+ *
+ * Nothing about the host is the runtime's business: which plugins a deployment runs is
+ * configuration the platform reads, the modules go into the platform's tree, and a platform
+ * route writes this very entry when the list changes (http/routes/plugins-installed.ts). It
+ * is parked only because the imported objects must survive a swap — a re-import would give
+ * the successor different module instances.
+ *
+ * The platform builds it, at its own boot (plugin/loader.ts's loadPluginHost). The runtime
+ * keeps a load of its own only as a shim for platforms older than that move.
+ */
+export const PLUGINS_RESOURCE_ID = "platform.plugins";
+
+/**
+ * The host the runtime loaded (see ./loader.ts), or an empty one — the honest reading
+ * of "this runtime knows nothing about plugins".
+ *
+ * CLAIMED, not imported: a pushed bundle is compiled standalone, so a module-level host
+ * inside it would be a second, empty one and every configured plugin would go missing
+ * on the first hot push.
+ */
+export function pluginHostFrom(resources: Resources): PluginHost {
+  const claimed = resources.claim<Partial<PluginHost> | null>(PLUGINS_RESOURCE_ID);
+  // A runtime older than this contract publishes a host of another shape (the activate-era
+  // one, or one without replacements). A pushed platform must still boot on it, so an
+  // unrecognized host reads as "no plugins": what it registered belongs to a generation this
+  // platform cannot honor, and the seam says so rather than crashing.
+  if (claimed === null || claimed === undefined || typeof claimed.modules !== "function") {
+    return new PluginHost();
+  }
+  if (typeof claimed.replacements !== "function") {
+    const host = new PluginHost();
+    for (const m of claimed.modules()) {
+      host.use({ specifier: m.manifest.name, modules: [m], replaces: [] });
+    }
+    return host;
+  }
+  return claimed as PluginHost;
+}

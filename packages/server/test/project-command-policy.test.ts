@@ -1,16 +1,16 @@
 /**
- * GET|PUT /api/projects/:p/command-policy — the Project sandbox command policy (the
+ * A Project's sandbox command policy (GET|PUT /api/projects/:p/command-policy, the
  * `[command_policy]` block of .project_config.toml).
  *
- * Pins the contract's load-bearing corners: who may read (any member) and write (owner
- * only, a non-member unable to tell the Project exists); that a new project is seeded with
- * the factory rules while a pre-seeding project (no stored block) still serves them as the
- * effective set; that the rules are plain editable data (edit / disable / delete / add all
- * round-trip) and a PUT materializes the full list; that an uncompilable pattern is
- * rejected up front (a rule that cannot fire must not save); and that a policy write is a
- * read-modify-write — the models table must survive.
+ * - A new Project is seeded with the factory rules; one from before seeding (no stored block)
+ *   still serves them as the effective set.
+ * - Any member reads; only the owner writes, and a non-member cannot tell the Project exists.
+ * - The rules are plain data: edit, disable, delete and add all round-trip, as do an empty
+ *   list and a disabled policy, and a PUT materializes the full list.
+ * - An uncompilable pattern is refused naming its rule; malformed bodies are refused.
+ * - The write is read-modify-write: the models table survives.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -30,7 +30,7 @@ describe("project command policy", () => {
   let projectId: string;
   let url: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -38,17 +38,23 @@ describe("project command policy", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-shared", name: "Shared" })
+      await owner.post("/api/projects", { projectId: `owner_a-shared_${projects}`, name: "Shared" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     url = `/api/projects/${projectId}/command-policy`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("a new project is seeded with the factory rules; any member reads; a non-member gets 404", async () => {

@@ -1,30 +1,28 @@
 /**
  * Docs UI copy (bilingual): this file holds the Chinese dictionary `zh` and the runtime
  * active dictionary `S`; the English dictionary lives in strings-en.ts (constrained to
- * the same shape by the `Strings` type). Locale switching is handled by state/locale.tsx,
- * which calls `setActiveStrings` and remounts the tree keyed by locale — keep `S.x`
- * reads inside components. Doc page bodies are Markdown files under content/, not here.
+ * the same shape by the `Strings` type). Locale switching is handled by the shared
+ * SiteLocaleProvider (app.tsx), which calls `setActiveStrings`, and SiteLocaleScope remounts
+ * the tree keyed by locale — keep `S.x` reads inside components. Doc page bodies are Markdown files under content/, not here.
  */
 export const zh = {
   siteName: "PenguinHarness",
 
   nav: {
-    // Landing-parity labels: the top bar mirrors the landing page's nav exactly
-    // (same items, same order) so the two sites link into each other seamlessly.
-    highlights: "特色",
-    selfImprove: "自进化",
-    quickstart: "快速开始",
-    cases: "案例",
-    scenarios: "应用场景",
-    benchmark: "评测",
-    contract: "CONTRACT.md",
-    features: "功能",
+    // The landing page's words for the site bar; which pages it shows, and in what order, is
+    // the shared page list's (SITE_PAGES), the same on all three sites.
+    home: "主页",
     blog: "博客",
     download: "下载",
+    plugins: "插件",
+    benchmarks: "评估集",
+    leaderboards: "榜单",
+    amsp: "AMSP",
     docs: "文档",
+    gallery: "画廊",
     github: "GitHub",
-    openMenu: "打开目录",
-    closeMenu: "关闭目录",
+    openMenu: "打开菜单",
+    closeMenu: "关闭菜单",
   },
 
   theme: {
@@ -43,8 +41,9 @@ export const zh = {
 
   sections: {
     start: "开始",
-    design: "核心设计",
     guides: "使用指南",
+    advanced: "进阶功能",
+    design: "工作原理",
     reference: "参考",
   } as Record<string, string>,
 
@@ -74,7 +73,7 @@ export const zh = {
     repo: "GitHub 仓库",
     license: "Apache-2.0 License",
     site: "产品主页",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
   },
 };
 

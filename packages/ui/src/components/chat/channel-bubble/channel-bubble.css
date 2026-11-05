@@ -1,0 +1,41 @@
+/*
+ * Inside a channel bubble (channel-bubble.tsx). The Markdown typography prints inline code and
+ * table rules in the neutral tint (prose.css), and somebody else's bubble is that same tint, so
+ * inside it those marks would disappear into their own colour. One step deeper puts them back,
+ * on both bubble surfaces. Fenced blocks need nothing: `.md-body pre` carries a border and its
+ * own fill, and the code inside it is transparent — the `:not(pre) >` shape keeps this off it.
+ *
+ * Plain CSS on tokens, unlayered, like prose.css: the rules it adjusts are unlayered, which a
+ * utility in a cascade layer could never override. Each selector here out-weighs the one it
+ * adjusts (`.md-body code`, and `.md-body`, which maps the table rules of markdown-table.css), so
+ * the order the stylesheets are emitted in does not matter.
+ */
+.channel-bubble :not(pre) > code {
+  background-color: var(--ui-line-emphasis);
+}
+.channel-bubble .md-body {
+  --md-table-rule: var(--ui-line-emphasis);
+  --md-table-rule-head: var(--ui-line-emphasis);
+}
+
+/* A channel message's time (channel-bubble.tsx) sits in the bubble's bottom-right
+   corner, and the words keep room for it: the last line of the body ends in an inline gap of the
+   time's width — WhatsApp's spacer — so a line that ends short of the gap shares the line with
+   the time, and one that does not wraps its last word under, leaving the corner to the time. A
+   block that cannot end in an inline gap (code, a table) is given the line under it instead. */
+.channel-bubble {
+  --channel-time-gap: 2.75rem;
+}
+.channel-bubble .md-body > :is(p, h1, h2, h3, h4):last-child::after,
+.channel-bubble .md-body > :is(ul, ol):last-child > li:last-child::after,
+.channel-bubble .md-body > blockquote:last-child > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: var(--channel-time-gap);
+}
+.channel-bubble .md-body > :is(pre, .md-table):last-child {
+  margin-bottom: 1.125rem;
+}
+.channel-time-gap {
+  flex: 0 0 var(--channel-time-gap);
+}

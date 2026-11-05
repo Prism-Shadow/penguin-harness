@@ -1,15 +1,17 @@
 /**
- * Parked draft conversations (draft-sessions.ts): parking moves the ACTIVE new-chat
- * draft into the per-user×Project list (model carry-over stays behind, like a
- * successful send), entries round-trip through validated storage, and corrupted
- * storage degrades to an empty list instead of crashing.
+ * Parked draft conversations (features/chat/draft-sessions.ts), per user and Project. The
+ * module keeps an in-memory mirror keyed by storage key, so every test uses its own user id.
  *
- * Note: the module keeps an in-memory mirror keyed by storage key, so every test uses
- * its own user id to stay isolated from the others' keys.
+ * - Parking moves a typed active draft into the list, leaving only the model carry-over in
+ *   the active slot; an untyped draft parks nothing, and an AI-composed prompt is dropped
+ *   rather than parked. The newest parked draft sorts first.
+ * - An entry updates in place (unknown ids change nothing); removing is idempotent and the
+ *   stored key goes with the last entry.
+ * - Corrupted storage reads as an empty list, malformed entries dropped field by field.
+ * - A parked draft is titled by its first non-empty line, trimmed and capped.
  */
 import { describe, expect, it } from "vitest";
 import { draftKey, loadDraft, saveDraft } from "../src/features/chat/draft-cache";
-import type { DraftStorage } from "../src/features/chat/draft-cache";
 import {
   draftSessionsKey,
   draftSessionTitle,
@@ -19,20 +21,11 @@ import {
   saveDraftSession,
 } from "../src/features/chat/draft-sessions";
 
-/** In-memory storage (vitest runs in a Node environment, no localStorage). */
-function memStorage(): DraftStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-    removeItem: (k) => void map.delete(k),
-  };
-}
+import { memoryStorage } from "./helpers/storage";
 
 describe("parkActiveDraft", () => {
   it("moves a typed active draft into the parked list and keeps only the model carry-over", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(
       draftKey("u-park", "proj"),
       {
@@ -58,7 +51,7 @@ describe("parkActiveDraft", () => {
   });
 
   it("parks nothing when the active draft has no typed text (empty or whitespace)", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(parkActiveDraft("u-empty", "proj", s)).toBeNull();
     saveDraft(draftKey("u-empty", "proj"), { text: "   \n", agentId: "a" }, s);
     expect(parkActiveDraft("u-empty", "proj", s)).toBeNull();
@@ -67,7 +60,7 @@ describe("parkActiveDraft", () => {
   });
 
   it("drops an AI-composed prompt instead of parking it, keeping the model carry-over", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(
       draftKey("u-ai", "proj"),
       {
@@ -88,7 +81,7 @@ describe("parkActiveDraft", () => {
   });
 
   it("newest parked draft sorts first", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(draftKey("u-order", "proj"), { text: "first" }, s);
     const first = parkActiveDraft("u-order", "proj", s)!;
     saveDraft(draftKey("u-order", "proj"), { text: "second" }, s);
@@ -100,7 +93,7 @@ describe("parkActiveDraft", () => {
 
 describe("saveDraftSession / removeDraftSession", () => {
   it("updates an entry's content in place and is a no-op for unknown ids", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(draftKey("u-save", "proj"), { text: "v1" }, s);
     const id = parkActiveDraft("u-save", "proj", s)!;
     const savedAt = getDraftSession("u-save", "proj", id, s)!.savedAt;
@@ -114,7 +107,7 @@ describe("saveDraftSession / removeDraftSession", () => {
   });
 
   it("removes entries idempotently and clears the storage key when the list empties", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveDraft(draftKey("u-rm", "proj"), { text: "bye" }, s);
     const id = parkActiveDraft("u-rm", "proj", s)!;
     removeDraftSession("u-rm", "proj", id, s);
@@ -126,10 +119,10 @@ describe("saveDraftSession / removeDraftSession", () => {
 
 describe("stored-list validation", () => {
   it("corrupted storage degrades to an empty list; malformed entries are dropped field-by-field", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     s.map.set(draftSessionsKey("u-bad", "proj"), "{not json");
     expect(getDraftSession("u-bad", "proj", "draft-x", s)).toBeNull();
-    const s2 = memStorage();
+    const s2 = memoryStorage();
     s2.map.set(
       draftSessionsKey("u-bad2", "proj"),
       JSON.stringify([

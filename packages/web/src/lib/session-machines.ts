@@ -1,0 +1,94 @@
+/**
+ * Which machine owns a Session.
+ *
+ * A Session lives on the server whose filesystem its workspace is on: that server runs the
+ * agent, holds the messages, writes the trace, serves the files. So every call about a
+ * Session has to reach THAT machine — and there are two dozen such endpoints.
+ *
+ * Rather than thread a machine argument through all of them, the routing is a rule over the
+ * PATH: a request to `/api/sessions/<id>/…` goes wherever `<id>` was last seen. Call sites
+ * stay unchanged, and a Session's machine is recorded in exactly two places — when a list
+ * hands one back, and when one is created.
+ *
+ * Absence means this machine, which is also every Session that existed before Sessions could
+ * live anywhere else. In-memory on purpose: the mapping is rebuilt by the very list that
+ * displays them, and a stale entry surviving a reload would route a call at a machine that
+ * may no longer own — or may no longer have — that Session.
+ */
+import { apiUrl } from "./server-context";
+
+/** sessionId → the machine it lives on. Absent = this server. */
+const owners = new Map<string, string>();
+/**
+ * Sessions seen on this server's own list or made here. Routing reads absence as "here" either
+ * way; this says that "here" is known rather than assumed, which is what a link to a Session the
+ * list no longer holds needs: one known to be here is settled by this server's answer alone,
+ * whatever machine of the Project is out of reach (features/chat/route-reach.ts).
+ */
+const knownHere = new Set<string>();
+
+/** Records where a Session lives. `null` (this machine) is stored as absence, not as a value. */
+export function rememberSessionMachine(sessionId: string, machineId: string | null): void {
+  if (machineId === null) {
+    owners.delete(sessionId);
+    knownHere.add(sessionId);
+  } else {
+    owners.set(sessionId, machineId);
+    knownHere.delete(sessionId);
+  }
+}
+
+/** Whether the Session is known to live on this server (not merely not known elsewhere). */
+export function sessionKnownHere(sessionId: string): boolean {
+  return knownHere.has(sessionId);
+}
+
+/** The machine a Session lives on, or null for this one. */
+export function machineForSession(sessionId: string): string | null {
+  return owners.get(sessionId) ?? null;
+}
+
+/** Forgets everything — for a project switch, where the whole list is about to be rebuilt. */
+export function forgetSessionMachines(): void {
+  owners.clear();
+  knownHere.clear();
+}
+
+/**
+ * The session id a path is about, or null when it is not a session-scoped path.
+ *
+ * Deliberately narrow: only `/api/sessions/<id>` and paths beneath it. The project-scoped
+ * `/api/projects/:p/agents/:a/sessions` listing is NOT session-scoped — it asks a server
+ * which Sessions it has, and answering it from another machine would be that machine
+ * answering a question about this one.
+ */
+export function sessionIdInPath(path: string): string | null {
+  const match = /^\/api\/sessions\/([^/?#]+)/.exec(path);
+  if (match === null) return null;
+  try {
+    return decodeURIComponent(match[1]!);
+  } catch {
+    return match[1]!; // A malformed escape is not a reason to lose the id.
+  }
+}
+
+/**
+ * The machine a request should go to, from its path alone: the owner of the Session it names,
+ * or null for this one. This is the whole routing rule.
+ */
+export function machineForPath(path: string): string | null {
+  const sessionId = sessionIdInPath(path);
+  return sessionId === null ? null : machineForSession(sessionId);
+}
+
+/**
+ * A server-absolute URL the BROWSER follows itself (an `<img src>`), routed by the same rule.
+ * No request passes through the fetch wrapper for the rule to act on, so the owner's proxy
+ * prefix has to be in the URL: a windowed history page names each Trace image as
+ * `/api/sessions/<id>/trace-image?…`, which for a Session on a machine only that machine can
+ * answer. Anything that is not a Session path (a `data:` URL, an http(s) address, a URL already
+ * re-rooted onto a machine) comes back unchanged.
+ */
+export function routedUrl(url: string): string {
+  return apiUrl(url, machineForPath(url));
+}

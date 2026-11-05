@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; auditing prose that reads like a leaked authoring session; or changing anything a user sees or reads — a component, a style, UI strings, docs, landing copy — which must not read as AI slop. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
@@ -9,18 +9,37 @@ PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP
 (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell
 (`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package
 per plugin under the repo root's `plugins/`, with `packages/plugins` as the loader that depends on
-them all. It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider
-clients of its own.
+them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
+`@prismshadow/agenthub`) and implements no provider clients of its own.
 
-This page is the part that applies to every change. Four reference files carry the detail, read
+This page is the part that applies to every change. The reference files carry the detail, read
 them when the task reaches them:
 
 | Read | When |
 | --- | --- |
 | `reference/verification.md` | A test fails oddly, CI reads green when it should not, or the user asks you to run the suite on another machine |
 | `reference/changelog.md` | Writing or auditing a changelog entry |
-| `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
+| `reference/model-catalog.md` | Touching the server's model catalog, pricing, provider groups, which environment variable a keyless row reads, or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
+| The `penguin-harness-writing` skill | Writing or revising a blog post, a docs page or landing copy: a gateway model writes every word, through its prompts and checks |
+| `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
+| `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed, CI time as a cost |
+| `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
+
+## No AI slop — every time something is rendered or written
+
+Whatever you add to the UI or the copy, check it before you call it done: **decide before you
+decorate; one accent, one voice; hierarchy from scale and space; subtract first; specific beats
+punchy; decoration must mean something.** No gradients, glows, emoji, pill spam, cards in cards,
+coloured keywords or "it's not just X — it's Y". Reuse the theme tokens and `lib/tone.ts`; status
+is a labelled pill or an icon plus a tooltip, never a bare coloured dot; sections are ruled, not
+boxed. Run `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>`
+and triage every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
+
+**A copy request changes words, in place.** When the owner asks for new copy, swap the words
+inside the existing layout: removing or restyling a section, element, type size, number or
+animation needs the owner's explicit say, and a feature demo is the real software (a capture of
+the running Web App or a live gallery frame), never an imitation UI or a scripted replay.
 
 ## Repo shape — read before your first edit
 
@@ -55,9 +74,22 @@ checkout's copy of the file you are already looking at. When a path does not res
 narrowing — reason about the package layout, ask `git ls-files`, follow the conventions above — over
 widening the root. The only paths outside the worktree worth reading are the siblings named here:
 `../penguin-harness-design` for specs, `../penguin-harness-wt/*` for another topic's tree, and
-`../agenthub` where it is checked out. Reach them by name; never find them by scanning. Say all of
-this to every subagent you dispatch — widening the search root is the first move a subagent makes
-when a path does not resolve.
+`../agenthub` for MMSP where it is checked out (the checkout keeps the library's former name).
+Reach them by name; never find them by scanning. Say all of this to every subagent you dispatch —
+widening the search root is the first move a subagent makes when a path does not resolve.
+
+## Tests prove behaviour, not the source
+
+Before a test, write its scenarios (Given / When / Then) in the file header; one `it` per
+scenario, named as the behaviour. Assert only what the caller can observe — and look first for
+what must *not* happen (a retry that must not duplicate, a refusal that must not write). Never
+test a constant, a copied table, a UI string against its dictionary, or which private helper
+ran. Fake only at the system's edge with the package's shared helpers (one fetch fake, one mock
+LLM, `createTestApp`, real temp dirs, fake timers); do not `vi.mock` the package's own modules.
+Every branch a change adds is taken by a scenario; pruning never lowers branch coverage. No real
+sleeps, no per-test servers. CI time is a cost paid three times (Linux, macOS, Windows): keep each
+test well under a second, and check your PR's job durations after CI. `reference/testing.md` has
+the rules and the checklist.
 
 ## Verify what you changed
 
@@ -69,7 +101,7 @@ The full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm typecheck`, `
 Pick the narrowest evidence that would actually fail for this change's regression:
 
 ```sh
-pnpm --filter @prismshadow/penguin-core exec vitest run test/model-catalog.test.ts   # one file, ~1s
+pnpm --filter @prismshadow/penguin-server exec vitest run test/model-catalog.test.ts # one file, ~2s
 pnpm --filter @prismshadow/penguin-web test                                          # one package
 ```
 
@@ -78,9 +110,13 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
 | `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
-| The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
+| The model catalog | server `model-catalog.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
+| The credential rule or a row's effective connection | core `model-connection.test.ts`, server `models.test.ts` and `models-balance.test.ts` |
+| Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
+| Anything that opens, folds, resizes or animates in the Web App or `packages/ui` | the `ui` and `web` tests + frames captured mid-transition in all three themes (`penguin-harness-frontend`, "Motion"); a resting screenshot is not evidence |
+| A remote test tree after `main` moved (a merge, a rebase) | rebuild `@prismshadow/penguin-server...` there first: a stale core `dist` reads as dozens of TS2305 "no exported member" errors in web and the gallery |
 | `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
 | Installers, `release.yml` | `sh scripts/test-installer.sh` |
 
@@ -102,6 +138,30 @@ Force-pushes and reverting someone else's commits still need confirmation.
 When a test fails in a way that does not match your diff, when CI reads green too easily, or when a
 fake or an assertion looks like it proves nothing, read `reference/verification.md` before spending
 a second round on it.
+
+## A prompt-cache miss is a cost regression, and it has to be said out loud
+
+A provider serves a cached prefix only while the next request repeats the previous one byte for byte
+from the front: the model id, the tools, the fast-mode parameters, the system prompt, the remaining
+prompt-affecting parameters, then the messages. Everything from the earliest divergence onward is
+re-read at full price, on every request of every running conversation — not only the one in front of
+you. A word added to a tool description costs far more than its own tokens.
+
+Three suites in `packages/core/test` hold that line, and a failure means something different in each:
+
+| Failing | What it is telling you |
+| --- | --- |
+| `prompt-cache-invariants.test.ts` | Your change made a request stop extending its predecessor. This is the regression itself; the diagnostic names the tier that diverged and estimates the input that falls after it. |
+| `prompt-cache-lifecycle.test.ts` | The same thing counted in provider tokens. A number that went down is money. |
+| `prompt-cache-simulator.test.ts` | You changed the rule engine, not the harness. Only correct when the provider's documented rules changed — go and check the documentation, not the test. |
+
+**Never re-baseline these to green.** Editing an expected number, or adding a case to the list of
+misses that are there by design, is a decision about spending the user's money — not a fix. Put the
+tier that moved and what it costs in front of them and let them decide.
+
+And say it in the reply, not only in a test log. A cache regression shows up in no other signal this
+repo produces: nothing is slower, nothing is wrong on screen, and CI goes green the moment the
+numbers are edited. If you do not raise it, it ships.
 
 ## Record and ship
 
@@ -131,3 +191,37 @@ Whatever is decided, compatibility code is a standing cost: name **how long it s
 it, and what has to be true first**, at the code site and in a dedicated
 `changelog/unreleased/YYYY-MM-DD-backward-compatibility.md`. Other entries in that batch reference
 that file instead of re-telling it. A batch with no compatibility handling has no such file.
+
+## Core never special-cases a model, provider or gateway
+
+`packages/core/src` contains no model ids, provider ids, vendor hostnames or endpoints, and no
+catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog/`,
+published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
+CLI and the gallery import) and reaches core only through the Project config the server seeds —
+`[providers.<id>]`, `[[models]]`, `default_model` — or through host hooks
+(`AgentAssembly`). Nor does any package keep environment or refusal logic: which variable a
+keyless model reads, and which base URL is refused without a key, is MMSP's rule. Core passes the
+file's key, base URL and client type to MMSP verbatim, and every preview asks MMSP's
+`@prismshadow/mmsp/credentials` (the catalog's `env-keys.ts`). The one exception
+is App attribution: `llm/app-attribution.ts` (`attributionHeaders`) names the gateways whose headers
+`GenerativeModel` attaches. A change that wants core to know a model or a vendor belongs in the
+catalog and the config it seeds instead; a core test that needs a Project writes a fixture
+(`test/seeded-project.ts`), never the catalog.
+
+## One concern per module
+
+Logic with its own reason to change — an identification scheme (App attribution), a migration, a
+derivation rule (which variable a keyless row reads), a protocol mirror (MMSP's routing table) —
+gets a file of its own beside its caller, never a section appended to a large neighbour. A change that moves or
+reshapes a large file splits it along its concerns, keeping the import graph acyclic: a module
+cycle that reads a binding at load time fails with a TDZ `ReferenceError`. The case that set the
+rule: [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167) first put App attribution
+at the top of `generative-model.ts`.
+
+## The message protocol is closed by default
+
+- **AMSP records are closed by default.** No new field, type or enum value unless the fact is
+  unrepresentable by existing records and underivable by readers; prefer recording earlier or
+  streaming an existing record over a new field. Say so in the PR. The architecture spec's
+  message-format section states the rule, and `packages/amsp/src/records/types.ts` repeats it
+  at its head.

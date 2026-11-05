@@ -1,0 +1,509 @@
+/**
+ * The floating launcher for the workbench — an AssistiveTouch-style ball floating clear of
+ * the chat body's right edge while no dock surface is up, so the dock's panels stay
+ * discoverable for a user who never notices the toolbar's toggle. The ball carries a short
+ * caption, and a click fans out one round button per panel the registry offers here (the
+ * terminal among them) onto a tight ring centred on it and opening leftward. The entries are
+ * glyphs alone; the caption
+ * under the ball is where their names are read — it shows the hovered or focused entry's
+ * name — because seven name pills floating around the ball is what pushed the ring far
+ * enough out to stop reading as one object. The ball is that readout's other half: it draws
+ * the pointed-at entry's glyph, an expand mark while the pointer or focus is on the ball
+ * itself, and the workbench tiles the rest of the time. Nothing carries a tooltip: every name
+ * is already on screen. Picking an entry opens its panel: in the right dock on a wide window,
+ * in the merged bottom surface on a narrow one, which makes that surface visible and unmounts
+ * the launcher. The arc's last entry puts the launcher away for good, remembered as a global
+ * preference and turned back on from Appearance settings. The ball drags along the edge —
+ * another global preference, a ratio of the body's height — and springs back onto it when
+ * let go; Esc, a press elsewhere or a scroll folds the fan.
+ *
+ * Mounted inside the chat body, the region between the toolbar and the composer: clamping
+ * to its own container is what keeps it off both, and its right edge is the chat column's
+ * (the dock row's, while the dock is hidden). The position is written to the node directly
+ * — a transform driven by two spring drivers — rather than through React state, because a
+ * drag moves it every frame. The decisions live in dock-launcher-state.ts; the ball and the
+ * fan are drawn by the UI package (`LauncherBall`, `LauncherFan`), and this container holds
+ * their motion, their gestures and what each entry opens.
+ */
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type {
+  FocusEvent as ReactFocusEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
+import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  LauncherBall,
+  LauncherFan,
+  SPRING_DEFAULT,
+  SPRING_MOMENTUM,
+  createSpringDriver,
+  scrollMovesAnchor,
+  toastInfo,
+  usePointerDrag,
+  usePrefersReducedMotion,
+} from "@prismshadow/penguin-ui";
+import type { SpringDriver } from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+import { useDockPanels } from "./panel-registry";
+import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";
+import {
+  FAN_ENTRY_SIZE,
+  LAUNCHER_CAPTION_HEIGHT,
+  LAUNCHER_SIZE,
+  clampLauncherTop,
+  dragPosition,
+  fanLayout,
+  launcherHiddenVersion,
+  launcherRatioFromTop,
+  launcherTopFromRatio,
+  readLauncherHidden,
+  readLauncherRatio,
+  shouldShowLauncher,
+  subscribeLauncherHidden,
+  writeLauncherHidden,
+  writeLauncherRatio,
+} from "./dock-launcher-state";
+
+/**
+ * The ball's inset from the body's right edge (px): the ball floats well clear of the edge
+ * rather than sitting against it, and that room is what keeps the caption centred. A caption
+ * centred under the ball may be up to LAUNCHER_SIZE + 2·EDGE_INSET − 12 ≈ 108px wide before
+ * it touches the body's edge — wider than the longest name it shows ("Hide launcher"), so
+ * nothing has to slide sideways to stay inside.
+ */
+const EDGE_INSET = 32;
+/** Movement that turns a press into a drag (px); under it the press is a click. */
+const DRAG_THRESHOLD = 4;
+/** The fan's exit animation, after which its entries unmount (`.launcher-fan-out` in styles.css). */
+const FAN_EXIT_MS = 140;
+
+export interface DockLauncherProps {
+  /** A pending approval inside a subagent: the amber dot rides the ball and the agents entry. */
+  agentsPending: boolean;
+}
+
+/** Renders the ball while no dock surface holds its room and the user has not put it away. */
+export function DockLauncher({ agentsPending }: DockLauncherProps) {
+  useSyncExternalStore(subscribeDock, dockVersion);
+  useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
+  const narrow = isNarrow();
+  const visible = shouldShowLauncher({
+    rightDockVisible: isDockVisible("right"),
+    bottomDockVisible: isDockVisible("bottom"),
+    narrow,
+    hidden: readLauncherHidden(),
+  });
+  if (!visible) return null;
+  return <FloatingLauncher agentsPending={agentsPending} narrow={narrow} />;
+}
+
+interface FanState {
+  /** "closing" keeps the entries mounted through their exit animation. */
+  phase: "open" | "closing";
+  /** The geometry the arc was laid out for, frozen at the moment it opened. */
+  top: number;
+  bodyHeight: number;
+}
+
+interface FanEntry {
+  key: string;
+  label: string;
+  /** Drawn twice at two sizes: ICON_SIZE.launcherEntry in the fan, ICON_SIZE.launcherBall in the ball while this entry is pointed at. */
+  glyphAt: (size: number) => ReactNode;
+  badge: boolean;
+  testId: string;
+  choose: () => void;
+}
+
+function FloatingLauncher({
+  agentsPending,
+  narrow,
+}: {
+  agentsPending: boolean;
+  /** Below the breakpoint the docks merge, so an entry names no dock and lets the store pick. */
+  narrow: boolean;
+}) {
+  // The panels offered here, in registry order (the built-in browser only in the desktop app's
+  // own window): one fan entry each.
+  const panels = useDockPanels();
+  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const ballRef = useRef<HTMLButtonElement | null>(null);
+  const fanRef = useRef<HTMLDivElement | null>(null);
+  /** The resting position — the stored preference — as a ratio of the body's height. */
+  const ratioRef = useRef(readLauncherRatio());
+  const bodyHeightRef = useRef(0);
+  const draggingRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  /** Set by a completed drag so the click the browser fires on release does not toggle the fan. */
+  const suppressClick = useRef(false);
+
+  // ---------------------------------------------------------------------------- position
+  // Two spring drivers write the wrapper's transform directly: x is the pull off the edge
+  // (0 at rest, negative into the conversation), y the top offset within the body.
+  const drivers = useRef<{ x: SpringDriver; y: SpringDriver } | null>(null);
+  if (drivers.current === null) {
+    const apply = () => {
+      const root = rootRef.current;
+      const d = drivers.current;
+      if (root && d) root.style.transform = `translate(${d.x.value}px, ${d.y.value}px)`;
+    };
+    drivers.current = { x: createSpringDriver(0, apply), y: createSpringDriver(0, apply) };
+  }
+  useEffect(
+    () => () => {
+      drivers.current?.x.dispose();
+      drivers.current?.y.dispose();
+    },
+    [],
+  );
+
+  // --------------------------------------------------------------------------------- fan
+  const [fan, setFanState] = useState<FanState | null>(null);
+  /**
+   * The entry the pointer or focus is on: the caption under the ball reads out its name and the
+   * ball draws its glyph. The key rather than the label, because the ball redraws the same mark
+   * one rung larger than the fan does. Null is nothing pointed at.
+   */
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  /** The pointer or focus is on the ball itself: it offers to open rather than naming itself. */
+  const [ballActive, setBallActive] = useState(false);
+  // Mirrored in a ref so event handlers that fire before the next render read the latest.
+  const fanNow = useRef<FanState | null>(null);
+  const exitTimer = useRef(0);
+  const setFan = useCallback((next: FanState | null) => {
+    fanNow.current = next;
+    setFanState(next);
+  }, []);
+  useEffect(() => () => window.clearTimeout(exitTimer.current), []);
+
+  const openFan = useCallback(() => {
+    window.clearTimeout(exitTimer.current);
+    setFan({
+      phase: "open",
+      top: drivers.current?.y.value ?? 0,
+      bodyHeight: bodyHeightRef.current,
+    });
+  }, [setFan]);
+
+  /** Folds the fan; `refocus` returns focus to the ball (Esc) so a keyboard user is not stranded. */
+  const closeFan = useCallback(
+    (refocus: boolean) => {
+      setHoveredKey(null);
+      const current = fanNow.current;
+      if (current !== null && current.phase === "open") {
+        if (reducedMotionRef.current) {
+          setFan(null);
+        } else {
+          setFan({ ...current, phase: "closing" });
+          window.clearTimeout(exitTimer.current);
+          exitTimer.current = window.setTimeout(() => setFan(null), FAN_EXIT_MS);
+        }
+      }
+      if (refocus) ballRef.current?.focus();
+    },
+    [setFan],
+  );
+
+  const fanOpen = fan?.phase === "open";
+
+  // Dismissal while open: a press elsewhere; Esc (capture, stopped — a dialog underneath
+  // must not close with it); the user scrolling anywhere (wheel / touch, which a stream
+  // auto-following a reply never fires); a scroll that moved the launcher itself.
+  useEffect(() => {
+    if (!fanOpen) return;
+    const root = rootRef.current;
+    const inside = (target: EventTarget | null): boolean =>
+      target instanceof Node && root?.contains(target) === true;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!inside(event.target)) closeFan(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      closeFan(true);
+    };
+    const onUserScroll = (event: Event) => {
+      if (!inside(event.target)) closeFan(false);
+    };
+    const onScroll = (event: Event) => {
+      if (scrollMovesAnchor(event.target as Node | null, root)) closeFan(false);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("wheel", onUserScroll, { capture: true, passive: true });
+    window.addEventListener("touchmove", onUserScroll, { capture: true, passive: true });
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("wheel", onUserScroll, { capture: true });
+      window.removeEventListener("touchmove", onUserScroll, { capture: true });
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [fanOpen, closeFan]);
+
+  // The body's height bounds the travel: measured on mount and on every resize, and the
+  // ball re-placed from its stored ratio (unless a drag is holding it) — a taller or
+  // shorter body moves the resting point, and a fan opened for the old geometry folds.
+  useLayoutEffect(() => {
+    const body = rootRef.current?.parentElement;
+    const d = drivers.current;
+    if (!body || !d) return;
+    let lastHeight = -1;
+    const place = () => {
+      const height = body.clientHeight;
+      if (height === lastHeight) return;
+      lastHeight = height;
+      bodyHeightRef.current = height;
+      if (!draggingRef.current) d.y.set(launcherTopFromRatio(ratioRef.current, height));
+      closeFan(false);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [closeFan]);
+
+  // -------------------------------------------------------------------------------- drag
+
+  /**
+   * Lets go of the ball: back onto the edge and inside the body. A completed drag stores
+   * where it landed; an abandoned gesture (pointercancel) returns to the stored spot.
+   */
+  const settle = useCallback((persist: boolean) => {
+    draggingRef.current = false;
+    setDragging(false);
+    const d = drivers.current;
+    if (!d) return;
+    const bodyHeight = bodyHeightRef.current;
+    let top: number;
+    if (persist) {
+      top = clampLauncherTop(d.y.value, bodyHeight);
+      ratioRef.current = launcherRatioFromTop(top, bodyHeight);
+      writeLauncherRatio(ratioRef.current);
+    } else {
+      top = launcherTopFromRatio(ratioRef.current, bodyHeight);
+    }
+    if (reducedMotionRef.current) {
+      d.y.set(top);
+      d.x.set(0);
+      return;
+    }
+    d.y.animateTo(top, SPRING_DEFAULT);
+    d.x.animateTo(0, SPRING_MOMENTUM);
+  }, []);
+
+  const dragProps = usePointerDrag<{ startTop: number; clientX: number; clientY: number }>({
+    threshold: DRAG_THRESHOLD,
+    begin: (event) => {
+      const d = drivers.current;
+      if (!d) return null;
+      // Gesture takeover: an in-flight snap-back stops where it is and the press continues from there.
+      const [top] = d.y.stop();
+      d.x.stop();
+      return { startTop: top, clientX: event.clientX, clientY: event.clientY };
+    },
+    onMove: (event, payload) => {
+      const d = drivers.current;
+      if (!d) return;
+      if (!draggingRef.current) {
+        draggingRef.current = true;
+        setDragging(true);
+        closeFan(false);
+      }
+      const { x, top } = dragPosition(
+        payload.startTop,
+        event.clientX - payload.clientX,
+        event.clientY - payload.clientY,
+        bodyHeightRef.current,
+      );
+      d.x.set(x);
+      d.y.set(top);
+    },
+    onEnd: (_payload, dragged) => {
+      if (!dragged) {
+        // A press without movement: the click handler toggles the fan; a snap-back the
+        // press interrupted resumes.
+        settle(false);
+        return;
+      }
+      suppressClick.current = true;
+      settle(true);
+    },
+    onCancel: () => settle(false),
+  });
+
+  const onBallClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (fanNow.current?.phase === "open") closeFan(false);
+    else openFan();
+  };
+
+  // ---------------------------------------------------------------------------- keyboard
+
+  // Arrow keys walk the arc from top to bottom — the entries are in that order in the DOM —
+  // with the ball at the head of the sequence and wrap-around; Home/End jump to its ends.
+  const onRootKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const current = fanNow.current;
+    if (current?.phase !== "open") return;
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const ball = ballRef.current;
+    const entries = [...(fanRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    if (!ball || entries.length === 0) return;
+    const column = [ball, ...entries];
+    const index = column.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = column.length - 1;
+    else if (index === -1) next = event.key === "ArrowDown" ? 0 : column.length - 1;
+    else next = (index + (event.key === "ArrowDown" ? 1 : -1) + column.length) % column.length;
+    event.preventDefault();
+    column[next]?.focus();
+  };
+
+  // Tabbing out of the launcher folds the fan. Only a move to another element counts: a
+  // null relatedTarget is the window losing focus, or a browser that does not focus
+  // buttons on click — folding there would unmount an entry under its own click.
+  const onRootBlur = (event: ReactFocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && !rootRef.current?.contains(next)) closeFan(false);
+  };
+
+  // ------------------------------------------------------------------------------ render
+
+  // Wide: the launcher stands in for the right dock, so it names that dock. Narrow: the two
+  // render as one merged surface, so it names none and the store lands the tab where the
+  // toolbar's own panel buttons land it.
+  const target = narrow ? undefined : "right";
+  const entries: FanEntry[] = panels.map((definition) => ({
+    key: definition.id,
+    label: definition.label(),
+    glyphAt: (size) => <GlyphIcon d={definition.glyph} size={size} />,
+    badge: definition.id === "agents" && agentsPending,
+    testId: `dock-launcher-open-${definition.id}`,
+    // The dock becomes visible with the tab, and the launcher unmounts with it.
+    choose: () => openPanel(definition.id, target, definition.defaultPosition),
+  }));
+  entries.push({
+    key: "hide",
+    label: S.dock.launcherHide,
+    // The struck-through eye, in the muted ink so it reads as a lesser thing than the panels
+    // above it — and keeps reading that way when the ball mirrors it.
+    glyphAt: (size) => <GlyphIcon d={ICONS.eyeOff} size={size} className={toneInk.muted} />,
+    badge: false,
+    testId: "dock-launcher-hide",
+    // Writing the preference unmounts the launcher under its own click, so the toast is
+    // what is left on screen: it says where the ball comes back from.
+    choose: () => {
+      closeFan(false);
+      writeLauncherHidden(true);
+      toastInfo(S.dock.launcherHiddenToast);
+    },
+  });
+
+  // What the ball shows, in the one place the states cannot contradict each other: an entry being
+  // pointed at wins, then the ball's own hover — which names what the NEXT CLICK does, not what
+  // the ball is, so an open fan offers to close and a closed one offers to open — and the resting
+  // workbench mark last. A fan merely standing open is not a hover.
+  const hovered = entries.find((entry) => entry.key === hoveredKey) ?? null;
+  const ballAction = fanOpen ? S.dock.launcherClose : S.dock.launcherOpen;
+  const captionText = hovered?.label ?? (ballActive ? ballAction : S.dock.launcherCaption);
+  const ballGlyph = hovered ? (
+    hovered.glyphAt(ICON_SIZE.launcherBall)
+  ) : (
+    <GlyphIcon
+      d={ballActive ? (fanOpen ? ICONS.cornersIn : ICONS.cornersOut) : ICONS.tiles}
+      size={ICON_SIZE.launcherBall}
+    />
+  );
+
+  const label = agentsPending ? `${S.dock.launcher} · ${S.dock.launcherPending}` : S.dock.launcher;
+  // Where each entry sits on the arc, for the geometry the fan opened with. The count is
+  // the one being rendered, so a terminal appearing or leaving mid-fan re-spreads the arc.
+  const slots = fan === null ? [] : fanLayout(fan.top, fan.bodyHeight, entries.length);
+
+  return (
+    <div
+      ref={rootRef}
+      data-testid="dock-launcher"
+      data-fan={fan?.phase ?? "closed"}
+      onKeyDown={onRootKeyDown}
+      onBlur={onRootBlur}
+      className="absolute top-0 z-30"
+      style={{ right: EDGE_INSET, width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
+    >
+      {fan !== null && (
+        <LauncherFan
+          fanRef={fanRef}
+          label={S.dock.launcherPanels}
+          phase={fan.phase}
+          entrySize={FAN_ENTRY_SIZE}
+          // One slot per entry by construction; the guard is only the index type's.
+          entries={entries.flatMap((entry, index) => {
+            const slot = slots[index];
+            return slot === undefined
+              ? []
+              : [
+                  {
+                    key: entry.key,
+                    // The glyph carries no text, so the name lives in the accessible name and
+                    // in the caption under the ball, which reads out whatever is pointed at.
+                    label: entry.label,
+                    glyph: entry.glyphAt(ICON_SIZE.launcherEntry),
+                    badge: entry.badge,
+                    testId: entry.testId,
+                    x: slot.x,
+                    y: slot.y,
+                    onChoose: entry.choose,
+                  },
+                ];
+          })}
+          onPoint={setHoveredKey}
+          onLeave={(left) => setHoveredKey((key) => (key === left ? null : key))}
+        />
+      )}
+      <LauncherBall
+        buttonRef={ballRef}
+        {...dragProps}
+        onClick={onBallClick}
+        onMouseEnter={() => setBallActive(true)}
+        onMouseLeave={() => setBallActive(false)}
+        onFocus={() => setBallActive(true)}
+        onBlur={() => setBallActive(false)}
+        // No tooltip: the caption under the ball already says what it opens, and the drag is
+        // discovered by dragging.
+        label={label}
+        aria-expanded={fanOpen}
+        size={LAUNCHER_SIZE}
+        // Spelled from the constant the vertical clamp reserves, so the two cannot drift apart.
+        captionHeight={LAUNCHER_CAPTION_HEIGHT}
+        glyph={ballGlyph}
+        // The launcher's own word at rest, "open" while the ball itself is pointed at, and the
+        // pointed-at entry's name while the fan is open — the ball drawing that entry's mark
+        // meanwhile.
+        caption={captionText}
+        lit={fanOpen || dragging}
+        dragging={dragging}
+        badge={agentsPending}
+      />
+    </div>
+  );
+}

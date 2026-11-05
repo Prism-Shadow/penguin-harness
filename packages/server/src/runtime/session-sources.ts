@@ -1,36 +1,166 @@
 /**
- * In-process registry of Session origins, derived from core `session_meta` — the single
- * source of truth for a Session's origin (the DB stores no `source` column).
+ * In-process registry of Session sources, derived from core `session_meta` — the single
+ * source of truth for what kind of conversation a Session is (the DB stores no `source`
+ * column).
  *
  * Populated wherever the server actually has the meta in hand: Session creation
  * (SessionService reads the just-created core Session's meta), subagent registration
- * (SessionManager reads the forwarded child meta), and Trace adoption / lazy list
- * resolution (SessionService reads the Trace head's session_meta). `null` records a
- * **known** user-created Session (meta seen, no source) so the Trace is not re-read on
- * every list; an absent entry means "unknown" and the list path resolves it from the
- * Trace once per process lifetime.
+ * (SessionManager reads the forwarded child meta), forks (always `user`), and Trace adoption /
+ * lazy list resolution (the trace index's head read). A value read back from a Trace is
+ * narrowed through core's `normalizeSessionSource` (the retired `benchmark` reads as `cli`),
+ * except that a head recording no source is kept as `null`: what it reads as depends on the
+ * Session's index row (`readRecordedSource`), which a head read does not have. An absent entry
+ * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
-import type { SessionSource } from "../api/types.js";
+import type { SessionCategory, SessionSource } from "../api/types.js";
+import type { SessionRow } from "../db/repos/sessions.js";
+import { Component } from "@prismshadow/penguin-core/kernel";
+import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 /**
- * Narrows an untrusted value (on-disk Trace JSON / forwarded meta) to a SessionSource:
- * only the exact known origins pass; anything else — including junk written by third
- * parties — is treated as absent rather than cast through.
+ * What a Session's Trace head records as its source: one of the sources, or `null` for a head
+ * written before the source was required, which records none.
  */
-export function asSessionSource(v: unknown): SessionSource | undefined {
-  return v === "schedule" || v === "subagent" ? v : undefined;
+export type RecordedSource = SessionSource | null;
+
+/**
+ * A Session's source, from what its Trace head records and the client its index row names.
+ * A recorded source is the answer. A head that records none was written before the source was
+ * required, when company mode's desk and ticket Sessions recorded none either; the organization
+ * runtime stamps those rows `client = "org"`, so such a row reads as `company`, and every other
+ * one as `user`, the reading core's `normalizeSessionSource` gives a missing source.
+ */
+export function readRecordedSource(
+  recorded: RecordedSource,
+  client: SessionRow["client"],
+): SessionSource {
+  if (recorded !== null) return recorded;
+  // compat(0.3.0): a head from before the source was required. It goes with core's missing →
+  // `user` branch (see normalizeSessionSource), and a one-time rewrite of old heads, if that is
+  // what replaces it, writes `company` for these rows.
+  return client === "org" ? "company" : "user";
 }
 
-export class SessionSources {
-  private readonly map = new Map<string, SessionSource | null>();
+/**
+ * The source of a Session that has not run yet, read from its index row. Its session_meta is
+ * written by its first run, so once the process that created it is gone nothing on disk names
+ * its source. These clients are written by the server alone, each for one source: the organization
+ * runtime opens only company Sessions under its `org` client (a desk opened at a hire can wait
+ * days for its first run; the children its Sessions spawn run, and so record their own source,
+ * at once); the Agent API and Workbench host open only their respective sources under
+ * `api` and `workbench` clients. Such a row reads
+ * as that source, and the loader rebuilds it as one. Any other row stays unclassified until its
+ * first run records a source.
+ */
+export function unrunSource(client: SessionRow["client"]): SessionSource | undefined {
+  if (client === "org") return "company";
+  if (client === "workbench") return "workbench";
+  return client === "api" ? "api" : undefined;
+}
 
-  /** Records a Session's origin as read from session_meta (`null` = meta seen, user-created). */
-  set(sessionId: string, source: SessionSource | null): void {
+/**
+ * The sources a program opens a Session for — the Agent API, a scheduled task's new-Session
+ * run, `penguin run`, a workbench — which the listing rule files away unless the user keeps them.
+ */
+export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set([
+  "api",
+  "schedule",
+  "cli",
+  "workbench",
+]);
+
+/**
+ * The request header a server that adopted this one as a machine sends with every call it makes
+ * here (its `/server/<id>` proxy and its own calls): the time it adopted this server, ISO.
+ */
+export const ADOPTED_AT_HEADER = "x-penguin-adopted-at";
+
+/**
+ * Who is reading a list, as far as the listing rule cares: a server that adopted this one as a
+ * machine at `adoptedAt` (read from {@link ADOPTED_AT_HEADER}), or anyone else (`{}`).
+ */
+export interface ListingView {
+  adoptedAt?: string;
+}
+
+/** The view a request asks for: its adoption time when the header carries a valid one. */
+export function listingViewOf(header: string | undefined): ListingView {
+  if (header === undefined || !Number.isFinite(Date.parse(header))) return {};
+  return { adoptedAt: header };
+}
+
+/**
+ * A Session's source as the reader sees it. To a server that adopted this one, a Session created
+ * here before it did — a person's, or one whose source is not read yet — reads as `cli`: nobody
+ * opened it through that server, so it is listed like any other task a program ran here (archived
+ * until kept). Every other reader, and every other Session, sees the source as recorded. Nothing
+ * is stored: this server's own pages and CLI see what they always saw.
+ */
+export function sourceSeenBy(
+  source: SessionSource | undefined,
+  createdAt: string,
+  view: ListingView | undefined,
+): SessionSource | undefined {
+  if (view?.adoptedAt === undefined) return source;
+  if (source !== undefined && source !== "user") return source;
+  return Date.parse(createdAt) < Date.parse(view.adoptedAt) ? "cli" : source;
+}
+
+/** The two marks on a Session's row the listing rule reads (SessionRow.archivedAt / keptAt). */
+export interface ListingMarks {
+  archivedAt: string | null;
+  keptAt: string | null;
+}
+
+/** A row's marks, with the optional fields of an older-shaped row read as unset. */
+export function listingMarksOf(row: {
+  archivedAt?: string | null;
+  keptAt?: string | null;
+}): ListingMarks {
+  return { archivedAt: row.archivedAt ?? null, keptAt: row.keptAt ?? null };
+}
+
+/**
+ * Where a Session is listed — the listing rule, computed on every read, so nothing on disk is
+ * ever rewritten to move a Session between lists:
+ *
+ * - none for a `company` Session (company mode's own views list it: a desk, a ticket's
+ *   sessions) and for a `subagent` Session (its parent's Agent panel opens it), whatever their
+ *   marks;
+ * - `archived` when the user archived it;
+ * - `archived` when a program opened it (BACKGROUND_SOURCES) and the user has not kept it;
+ * - `active` otherwise — a person's conversation, a kept background Session, and a row whose
+ *   Trace has not been read yet.
+ *
+ * The Web App applies the same rule to the rows it holds (`sessionCategory`, through the
+ * effective `SessionInfo.archived`), so server filtering and client rendering never disagree.
+ */
+export function listCategory(
+  source: SessionSource | undefined,
+  marks: ListingMarks,
+): SessionCategory | null {
+  if (source === "company" || source === "subagent") return null;
+  if (marks.archivedAt !== null) return "archived";
+  if (source !== undefined && BACKGROUND_SOURCES.has(source) && marks.keptAt === null) {
+    return "archived";
+  }
+  return "active";
+}
+
+@Component()
+export class SessionSources implements SessionOrigins {
+  private readonly map = new Map<string, RecordedSource>();
+
+  /** Records a Session's source as read from session_meta (`null`: a head that records none). */
+  set(sessionId: string, source: RecordedSource): void {
     this.map.set(sessionId, source);
   }
 
-  /** Known origin, `null` for a known user-created Session, `undefined` when this process has not seen the meta. */
-  get(sessionId: string): SessionSource | null | undefined {
+  /**
+   * What the Session's meta records: a source, `null` for a head that records none (read it
+   * through `readRecordedSource`), `undefined` when this process has not seen the meta.
+   */
+  get(sessionId: string): RecordedSource | undefined {
     return this.map.get(sessionId);
   }
 

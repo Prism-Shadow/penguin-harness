@@ -1,16 +1,29 @@
 /**
  * Global styles: single-file Tailwind CSS 4 entry point.
- * Visual tone: GitHub-style simplicity — solid white background + 1px borders + a single brand blue accent,
- * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
- * login-circuit.tsx). Dark theme is toggled via the html.dark class.
+ * Shared themes define the visual tone and optional shell wallpaper. The login page has its own
+ * circuit-trace animation (.login-trace, see login-circuit.tsx). Dark mode uses the html.dark class.
+ *
+ * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
+ * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
+ * tokens (body colours and fonts, focus ring, selection, scrollbars); each `themes/*.css` holds
+ * one theme's values, including the gray bridge the palette classes below resolve through. This
+ * file keeps what is the app's own: the brand scale, layout invariants, animations and the
+ * unlayered content rules.
  *
  * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
  * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
  */
 @import "tailwindcss";
+@import "@prismshadow/penguin-ui/theme.css";
+@import "@prismshadow/penguin-ui/themes/github.css";
+@import "@prismshadow/penguin-ui/themes/modern.css";
+@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/fonts.css";
 
-/* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
-@custom-variant dark (&:where(.dark, .dark *));
+/* Tailwind scans the Vite root only: the package's components carry class strings too. The test
+   helpers are excluded, so the class patterns they spell never enter the app's sheet. */
+@source "../../ui/src";
+@source not "../../ui/src/testing";
 
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {
@@ -30,56 +43,26 @@
 
 @layer base {
   :root {
-    color-scheme: light;
-    /* The body font stack, named because KaTeX borrows it: math has to fall back to the same CJK
-       faces as the prose around it (see .katex .cjk_fallback below), and two copies would drift. */
-    --font-app-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
-      sans-serif;
-    /* Theme color (accent): used for primary buttons, focus rings, etc. Defaults to gray/white (neutral,
-       switches with light/dark); selecting a specific color via data-accent overrides it (consistent across
-       light/dark, white text). */
-    --accent-bg: #111827; /* neutral light = gray-900 */
-    --accent-fg: #ffffff;
-  }
-  .dark {
-    color-scheme: dark;
-    /* Dark mode uses a pure-black base tone (no indigo tint): overrides the neutral gray scale with
-       true-neutral values — gray-950 pure black as the body background, gray-900/800/700 as near-black
-       surfaces and borders. */
-    --color-gray-950: #000000;
-    --color-gray-900: #0d0d0d;
-    --color-gray-800: #1f1f1f;
-    --color-gray-700: #303030;
-    /* neutral accent dark = gray-100 (light background, dark text button). */
-    --accent-bg: #f3f4f6;
-    --accent-fg: #111827;
-  }
-  /* Theme color presets (consistent across light/dark, white text): selecting data-accent overrides the neutral default. */
-  :root[data-accent="blue"] {
-    --accent-bg: #2563eb;
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="green"] {
-    --accent-bg: #15803d; /* green-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="violet"] {
-    --accent-bg: #7c3aed;
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="rose"] {
-    --accent-bg: #be123c; /* rose-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="amber"] {
-    --accent-bg: #b45309; /* amber-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
+    /* The body font stack under a name of the app's own, which the workbench frame reads off the
+       document (lib/workbench-theme.ts). An alias of the theme's token, so the two cannot drift. */
+    --font-app-sans: var(--ui-font-sans);
   }
   html,
   body,
   #root {
     height: 100%;
+  }
+  /* The desktop window's drag handle (index.html): a transparent strip over the title-bar band,
+     zero tall in a browser. Every page keeps its own controls out of the band, so the strip has
+     nothing to give way to; it is first in the document and first in paint order all the same,
+     so a control laid over it later could still opt out with `no-drag`. */
+  .window-drag-strip {
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(titlebar-area-height, 0px);
+    z-index: -1;
+    -webkit-app-region: drag;
+    app-region: drag;
   }
   /* Every scroll container is its own containing block.
      The shell is height-constrained (the three rules above) and each page scrolls inside its
@@ -104,55 +87,19 @@
   .overflow-y-scroll {
     position: relative;
   }
-  body {
-    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
-    font-family: var(--font-app-sans);
-  }
-  code,
-  pre,
-  kbd {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  }
-  /* Keyboard accessibility: soft brand-colored outer ring (input controls use their own focus ring, not stacked). */
-  button:focus-visible,
-  a:focus-visible,
-  [role="tab"]:focus-visible,
-  summary:focus-visible {
-    outline: 3px solid rgb(107 114 128 / 0.4);
-    outline-offset: 2px;
-  }
-  /* Consistent pointer cursor for clickable buttons: Tailwind 4 preflight reverted button to the browser's
-     default arrow cursor (v3 used pointer); disabled state keeps the default. Explicit cursor-* utility
-     classes (e.g. cursor-zoom-in) take precedence. */
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-  ::selection {
-    background: rgb(0 0 0 / 0.1);
-  }
-  .dark ::selection {
-    background: rgb(255 255 255 / 0.18);
-  }
-  /* Thin scrollbar. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
-  }
-  .dark * {
-    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
-  }
-  /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
-  .no-scrollbar {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
 }
 
-/* ---------- Animations (EmaPowerbank style: 160-280ms ease, slight entrance offset + subtle scale) ---------- */
+/* The preview is an interior row of Appearance, so only the surrounding settings group's
+   outer ends have corners. A nested last row must not acquire its own bottom corners. */
+.background-settings-details .ui-field {
+  border-radius: 0;
+}
+
+/* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */
+
+/* The entrances and exits the shared components name (`anim-pop`, `anim-fade`, `anim-msg`, the
+   toast, drawer and launcher-fan classes) live in the UI package beside its other motion rules:
+   packages/ui/src/animations.css, imported by theme.css. These are the app's own. */
 
 @keyframes rise-in {
   from {
@@ -165,101 +112,31 @@
   }
 }
 
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
 /* Login card entrance (used only on the login page; in-app pages skip entrance animations to avoid a
    transform ancestor hijacking fixed-positioned overlays). */
 .anim-rise {
   animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-/* Dropdown menu / popover entrance. */
-.anim-pop {
-  animation: pop-in 120ms ease-out both;
-}
-/* Top toast overlay: slides in from above / slides up while fading out. */
-@keyframes toast-in {
+/* A status icon replaced by the next one (the composer's permission level): the new icon turns
+   and grows in from small, so the change is seen rather than blinked. */
+@keyframes icon-swap {
   from {
     opacity: 0;
-    transform: translateY(-10px) scale(0.98);
+    transform: scale(0.4) rotate(-45deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15) rotate(6deg);
   }
   to {
     opacity: 1;
-    transform: none;
+    transform: scale(1) rotate(0);
   }
 }
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
+.anim-icon-swap {
+  display: block;
+  animation: icon-swap 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-.anim-toast-in {
-  animation: toast-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-toast-out {
-  animation: toast-out 160ms ease-in both;
-}
-
-/* Overlay fade-in. */
-.anim-fade {
-  animation: fade-in 120ms ease-out both;
-}
-/* Message item entrance. */
-.anim-msg {
-  animation: msg-in 180ms ease-out both;
-}
-
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
    conversation-outline.tsx to the [data-outline-anchor] wrapper via classList — deliberately
    outside React's managed props, so stream re-renders don't strip it mid-flash. */
@@ -286,13 +163,6 @@
 .dark .outline-flash {
   animation-name: outline-flash-dark;
 }
-/* Drawer slide-in. */
-.anim-drawer-left {
-  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-drawer-right {
-  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
 
 /* Truncated-title scroll reveal (#309, sidebar conversation rows; truncated.tsx attaches the
    class and the two variables only when the title measurably overflows). While the row — the
@@ -314,10 +184,11 @@
    in keyframes gets a no-op (ellipsis kept, `title` tooltip still there) instead of a
    clipped-but-motionless title.
 
-   Being an animation rather than a transition is what makes the reduced-motion path free: the
+   Being an animation rather than a transition is what keeps the reduced-motion path cheap: the
    global `animation: none !important` block below disables the reveal outright, leaving the
-   ellipsis and the `title` tooltip — no JS media query to subscribe to per row, nothing to go
-   stale between render and effect.
+   ellipsis and the `title` tooltip that truncated.tsx hands back there (#570). Choosing between
+   the two is the only thing JS reads the preference for, and it reads it from one app-wide media
+   query (the UI package's usePrefersReducedMotion) — still nothing subscribed per row.
 
    :focus-visible (not :focus-within) scopes the keyboard trigger to actual keyboard focus;
    inside :is() its selector is forgiving, so engines without :has() keep the hover trigger. */
@@ -335,48 +206,60 @@
   animation: title-scroll-reveal var(--title-scroll-ms, 0ms) linear 0.3s forwards;
 }
 
-/* Busy hourglass (session-activity-icon.tsx: the running glyph). An hourglass does not spin —
-   it gets turned over — so this holds the glyph still, flips it 180 degrees in ~360ms, holds
-   again, and flips back. The long dwell is what makes it legible at the 12px the sidebar renders
-   it at: a continuous spin at that size reads as a smudge, while two deliberate turns per cycle
-   read as "still working" even out of the corner of the eye.
-
-   `transform` is the only thing the keyframes touch and the at-rest glyph has none, so the
-   global `animation: none !important` below is a free no-op here: the hourglass simply stands
-   upright. Nothing needs a JS media query, and the glyph never disappears. */
-@keyframes hourglass-turn {
-  0%,
-  38% {
-    transform: rotate(0deg);
-  }
-  50%,
-  88% {
-    transform: rotate(180deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-.hourglass-turn {
-  animation: hourglass-turn 3s ease-in-out infinite;
-}
-
-/* Compacting squeeze (session-activity-icon.tsx: the compress glyph). Compaction pushes a
-   context down to a summary, so its mark closes on its own centre bar and springs back rather
-   than turning: the two live session states then differ by motion as well as by shape, which is
-   what lets them share one tone. Same reduced-motion property as the hourglass — `transform`
-   only, so disabling animation leaves the mark at full size and fully legible. */
-@keyframes compact-squeeze {
+/* The built-in browser's agent-at-work frame (features/builtin-browser/browser-layer.tsx): an
+   inset ring over the page on screen while an agent acts in it, drawn in the busy tone's ink
+   through currentColor. It breathes by opacity from a resting state that IS the full ring, so
+   the global `animation: none` below leaves it on screen, still, instead of hiding it. */
+@keyframes browser-agent-ring {
   0%,
   100% {
-    transform: scaleY(1);
+    opacity: 1;
   }
   50% {
-    transform: scaleY(0.62);
+    opacity: 0.35;
   }
 }
-.compact-squeeze {
-  animation: compact-squeeze 1.8s ease-in-out infinite;
+.browser-agent-ring {
+  box-shadow: inset 0 0 0 2px currentColor;
+  animation: browser-agent-ring 1.6s ease-in-out infinite;
+}
+
+/* The models page's TokenDance banner (features/models/tokendance-banner.tsx): a slow highlight
+   sweeps across the brand name alone every 6 s — a deliberate emphasis on the sponsor's name,
+   the one emphasis the banner carries (owner, 2026-10-12); the rest of the banner stands still.
+   The word is painted by a gradient clipped to its glyphs: its own ink on both sides of a narrow
+   bright band, three times the word's width. The band sweeps from before the word to past its
+   end, and the word's own resting position shows ink only, so under the global `animation: none`
+   below it is plain text. */
+@keyframes banner-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  30%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+.banner-shimmer {
+  --banner-ink: var(--color-gray-700);
+  --banner-glow: var(--color-gray-300);
+  /* Deliberate emphasis on the sponsor's name. deslop-ignore-next-line 06 */
+  background-image: linear-gradient(
+    100deg,
+    var(--banner-ink) 42%,
+    var(--banner-glow) 50%,
+    var(--banner-ink) 58%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: banner-shimmer 6s ease-in-out infinite;
+}
+.dark .banner-shimmer {
+  --banner-ink: var(--color-gray-300);
+  --banner-glow: var(--color-white);
 }
 
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out
@@ -449,151 +332,41 @@
      entirely by the `title-scroll-reveal` keyframes above — including the inline-block
      that makes the text transformable at all — so `animation: none` leaves the title
      exactly as it renders at rest, ellipsis and `title` tooltip included. */
-  /* Nor do the two busy session glyphs (#291): their keyframes only rotate and scale, so
-     disabling them leaves the hourglass upright and the compress mark at full height — both
-     still present, just not moving. */
+  /* Nor do the two busy session glyphs (#291): their keyframes, in the UI package's theme.css,
+     only rotate and scale, so disabling them leaves the hourglass upright and the compress mark
+     at full height — both still present, just not moving. */
 }
 
-/* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */
-
-.md-body {
-  /* Long unspaced strings like attachment paths / long URLs wrap within the narrow container instead of breaking the layout (especially important for mobile message streams). */
-  overflow-wrap: break-word;
+/* The stretch of the context panel's bar past the compaction threshold: hatched, so it reads as
+   room the model has but compaction fires before the Session can use — distinct from the plain
+   free run left of the cutter. The stripe is the only carrier of that meaning (its `title` sits
+   inside the bar's aria-hidden track), so each theme weights its own ink to clear 3:1 against
+   the track it is drawn on: gray-200 in light, and in dark this app's own override of gray-800
+   (#1f1f1f, far darker than the stock value), which is why the dark stripe is the lighter ink
+   of the two. */
+.context-hatch {
+  /* The hatch is the meaning. deslop-ignore-next-line 06 */
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-600) 70%, transparent) 0 2px,
+    transparent 2px 6px
+  );
 }
-.md-body :is(p, ul, ol, pre, blockquote, table) {
-  margin: 0.5rem 0;
-}
-.md-body li {
-  margin: 0.25rem 0;
-}
-.md-body p {
-  line-height: 1.7;
-}
-.md-body :is(h1, h2, h3, h4) {
-  font-weight: 600;
-  margin: 0.75rem 0 0.5rem;
-}
-.md-body h1 {
-  font-size: 1.25rem;
-}
-.md-body h2 {
-  font-size: 1.125rem;
-}
-.md-body h3 {
-  font-size: 1rem;
-}
-.md-body ul {
-  list-style: disc;
-  padding-left: 1.25rem;
-}
-.md-body ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-}
-.md-body a {
-  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
-  /* `anywhere` rather than `word-break: break-all`: it only breaks a token that would otherwise
-     overflow, so long URLs wrap cleanly (filling each line) while short Latin words in mixed
-     CJK/Latin link text never split mid-word; unlike `break-word` it also counts the break
-     opportunities toward min-content sizing, so a long link can't blow out flex/table layouts. */
-  overflow-wrap: anywhere;
-}
-.md-body code {
-  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
-}
-/* Inline code in prose often holds long unbroken paths/identifiers: same rationale as the link
-   rule above (fenced blocks are excluded — .md-body pre scrolls horizontally instead). */
-.md-body :not(pre) > code {
-  overflow-wrap: anywhere;
-}
-.md-body pre {
-  @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900;
-  /* Off-screen code blocks skip layout/paint: with several settled 200KB+ replies in the
-     transcript, their <pre> layout dominated every streaming commit (profiled ~90% native
-     layout) and froze the chat while large code streamed in. auto keeps the measured size for
-     stable scrollbar geometry; on-screen blocks render normally and stay find-in-page searchable. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 400px;
-}
-.md-body pre code {
-  background: transparent;
-  color: inherit;
-  padding: 0;
-}
-/* Shiki code block (features/chat/code-block.tsx): the outer component provides its own chrome (rounded
-   border + language label header), so this resets the inner pre's border/background/radius — overriding
-   both .md-body pre's styles and Shiki's own inline background colors (!important beats inline style), with
-   the dark background left to the outer dark:bg-*. Not scoped to .md-body: the Files preview's source view
-   isn't inside a markdown container. Dark text is overridden via the dual-theme inline variable
-   --shiki-dark, so switching themes doesn't require re-highlighting. */
-.code-block pre {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent !important;
-  padding: 0.625rem 0.75rem;
-}
-html.dark .shiki,
-html.dark .shiki span {
-  color: var(--shiki-dark) !important;
-  font-style: var(--shiki-dark-font-style) !important;
-  font-weight: var(--shiki-dark-font-weight) !important;
-  text-decoration: var(--shiki-dark-text-decoration) !important;
-}
-.md-body blockquote {
-  @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
-}
-.md-body table {
-  border-collapse: collapse;
-  /* Same rule as docs (packages/docs/src/styles.css): a wide table scrolls horizontally inside
-     the message body instead of pushing the whole page wide. */
-  display: block;
-  overflow-x: auto;
-}
-.md-body :is(th, td) {
-  @apply border border-gray-200 px-2 py-1 text-sm dark:border-gray-800;
+.dark .context-hatch {
+  /* deslop-ignore-next-line 06 */
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-400) 60%, transparent) 0 2px,
+    transparent 2px 6px
+  );
 }
 
-/* ---------- KaTeX (math rendering; see lib/markdown-plugins.ts) ---------- */
+/* ---------- Markdown and code ---------- */
 
-/* KaTeX's own fonts carry no CJK glyphs, and it tags every CJK run `cjk_fallback` while leaving
-   that class undefined in its stylesheet — so a CJK `\text{}` inherits `.katex { font: …
-   KaTeX_Main, "Times New Roman", serif }` and lands on whatever the browser picks last. Pointing
-   the class at the app's own stack makes CJK inside a formula match the sentence it sits in, on
-   every platform, and leaves Latin math on KaTeX's metrics-tuned faces where it belongs. */
-.katex .cjk_fallback {
-  font-family: var(--font-app-sans);
-}
+/* The Markdown typography (`.md-body`, `.md-compact`, `.md-body-flush`), the code surface
+   (`.code-*`), Shiki's dark palette and the KaTeX fixes live in the shared UI package, beside the
+   components that draw them: packages/ui/src/components/content/prose/prose.css. */
 
-/* A formula KaTeX could not parse (rehype-katex falls back to this rather than throwing): its own
-   source, in the body colour, marked as suspect without shouting. The parse error rides along in
-   the element's title attribute, which is what `cursor: help` advertises. */
-.katex-error {
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-  cursor: help;
-  @apply decoration-gray-400 dark:decoration-gray-600;
-}
-
-/* Display math is `white-space: nowrap` by construction, so a wide matrix or a long derivation
-   would otherwise push the whole message body sideways. Same treatment as .md-body table and pre:
-   scroll inside the block. Overflow on one axis forces the other to scroll too, so the padding is
-   what keeps tall fractions and descenders from being clipped. */
-.md-body .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.25rem 0;
-}
-
-/* The same guard for inline math, which is nowrap too and sits in the text flow where nothing
-   clips it. `\(…\)` is meant for short spans, but nothing stops a model putting a whole derivation
-   in one, and an inline run that overflows takes the message column and the page with it.
-   A scroll container has to be inline-block to exist at all; `vertical-align: middle` is what
-   keeps it on the line, because an inline-block whose overflow is not `visible` aligns its bottom
-   margin edge to the baseline and would otherwise hang a fraction's descender above the text. */
-.md-body :not(.katex-display) > .katex {
-  display: inline-block;
-  max-width: 100%;
-  overflow-x: auto;
-  vertical-align: middle;
-}
+/* The company channel's bubble (`.channel-bubble`: the deeper inline-code chip and table rules
+   inside it) lives in the shared UI package too, beside its component:
+   packages/ui/src/components/chat/channel-bubble/channel-bubble.css. */

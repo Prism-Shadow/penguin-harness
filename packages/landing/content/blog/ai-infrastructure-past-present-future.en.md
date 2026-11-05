@@ -2,44 +2,48 @@
 title: "AI Infrastructure: Past, Present, and Future"
 date: 2026-07-22
 category: perspectives
-excerpt: PyTorch, vLLM, Ollama and LlamaFactory were all designed for a human who reads the docs, watches the logs and remembers what is already running. Increasingly the thing driving them is an agent. Here is what changes — and what PenguinHarness ships today to make it work.
+excerpt: AI infrastructure was built for human operators, and agents increasingly drive it. The stack already suits agents; what they lack is an engineer's operating knowledge, which PenguinHarness ships as Skills.
 ---
 
-The infrastructure we use to build AI was designed for people. PyTorch assumes someone reading a tutorial. vLLM assumes an engineer who knows how much VRAM the card has. LlamaFactory assumes a researcher who will read the training curve and decide whether it is going well. Ollama assumes you remember whether the service is already running.
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
 
-Every one of those assumptions is about a human operator. And increasingly, the operator is an agent.
+The infrastructure we use to build AI was designed for people. PyTorch assumes someone reading a tutorial. vLLM assumes an engineer who knows how much VRAM the GPU has. LlamaFactory assumes a researcher who reads the training curve and decides whether training is going well. Ollama assumes you remember whether the service is already running.
 
-This is a short post about what that changes, and what we already ship for it.
+Every one of these assumptions is about a human operator, and the operator is increasingly an agent: a model that does its work by calling tools. This post asks what changes when a program drives the stack. Our answer is that the stack itself needs little change, because it is already text and commands that an agent can run through a shell.
 
-## 1. Past: three assumptions about a human operator
+What agents lack is the operating knowledge a competent engineer carries. That knowledge can be written down, and PenguinHarness ships it today as Skills, together with runtime support for long jobs and readable failures. Three problems remain that nobody has solved yet.
 
-Three assumptions run through nearly all AI tooling, and all three quietly break when the user is a program.
+## Past: the stack assumes a human operator
 
-### 1.1 That the user carries state in their head
+Three assumptions about the operator run through nearly all AI tooling, and all three quietly break when the operator is a program.
 
-You know you started an Ollama server this morning. You know the training job from last night is still holding the GPU. None of that is in any command's output, because a human did not need it written down.
+### The operator keeps state in their head
 
-### 1.2 That errors are a starting point for investigation
+The first assumption is that the user remembers what is running. You know you started an Ollama server this morning. You know last night's training job still holds the GPU. No command prints either fact, because a human never needed it written down. An agent that sees only command output knows neither.
 
-`CUDA out of memory` is a perfectly good message for a person — you read it, you halve the batch size, you move on. It tells an agent almost nothing about what to do next, and the ML stack is full of errors like it: shape mismatches thrown eight frames deep, NCCL timeouts, a silent fallback to CPU that only shows up as everything being forty times slower.
+### Errors start an investigation
 
-### 1.3 That documentation is read once, by someone who will remember it
+The second assumption is that an error message is where a person starts investigating. `CUDA out of memory` is a good message for a person: you read it, halve the batch size, and move on. It tells an agent almost nothing about what to do next. The ML stack is full of errors like it: shape mismatches thrown eight frames deep, NCCL timeouts, and a silent fallback to CPU whose only symptom is that everything runs forty times slower.
 
-Tutorials are written as prose, front to back, with the important constraint — the model has to fit in VRAM — in a sentence somewhere in the middle.
+Stripe measured what this costs when it benchmarked whether agents could build real integrations against its API. The failure mode it found generalizes well beyond Stripe: agents "would pass in nonexistent Stripe data, observe 400s, and consider the task complete." The error was correct. It still failed to communicate failure.
 
-Stripe measured what this costs when they benchmarked whether agents could build real integrations against their API. The failure mode they found generalizes uncomfortably well: agents "would pass in nonexistent Stripe data, observe 400s, and consider the task complete." The error was correct. It still failed to communicate failure.
+### Documentation is read once
 
-## 2. Present: the stack is already agent-shaped
+The third assumption is that documentation is read once, by someone who will remember it. Tutorials are prose, written to be read front to back. The most important constraint, for example that the model has to fit in VRAM, sits in a sentence somewhere in the middle.
 
-### 2.1 The shell is the integration
+## Present: the stack is already agent-shaped
 
-The good news is that AI infrastructure is, by accident, better suited to agents than most software. It is already command-line tools, YAML configs and Python files — text in, text out, composable. There is no need to wrap `nvidia-smi` in anything. An agent with a shell can already drive the entire stack.
+The stack needs no new interfaces for agents. It needs operating knowledge and a runtime built for AI work, which is shaped differently from web work.
 
-That is why PenguinHarness exposes the shell as its universal interface — `exec_command` is the whole filesystem and process interface, and there are no separate file tools. Driving vLLM is not an integration; it is a command.
+### The shell is the integration layer
 
-### 2.2 What actually needs building: the operating knowledge
+AI infrastructure is, by accident, better suited to agents than most software. It already consists of command-line tools, YAML configs, and Python files: text in, text out, and composable. A tool like `nvidia-smi` needs no wrapper, because an agent with a shell can already drive the entire stack.
 
-What is missing is not connectivity. It is the operating knowledge a competent engineer has and a model does not. We ship that as **Skills** — instruction packages an agent reads on demand. Three of them cover this stack directly, in the AI App Development group:
+That is why PenguinHarness uses the shell as its universal interface. In 0.1.1, `exec_command` was the whole filesystem and process interface, and there were no separate file tools. Driving vLLM is not an integration; it is a command.
+
+### What is missing is operating knowledge
+
+What is missing is not connectivity. It is the operating knowledge a competent engineer has and a model does not. PenguinHarness ships that knowledge as **Skills**, instruction packages an agent reads on demand. Three of them, in the AI App Development group, cover this stack directly:
 
 | Skill | What it lets an agent do |
 | --- | --- |
@@ -47,41 +51,43 @@ What is missing is not connectivity. It is the operating knowledge a competent e
 | `vllm` | Serve on GPU for high throughput, with tool-calling flags enabled for agent workloads |
 | `llamafactory` | Fine-tune with LoRA/QLoRA, SFT or DPO through YAML configs |
 
-What is in them is more interesting than that they exist, because each one encodes a rule a human would never have needed:
+What these Skills contain matters more than the fact that they exist. They encode rules that a human operator never needed to be told:
 
-1. **Check the world before changing it.** The `ollama` skill has the agent run `ollama --version` and `ollama ps` first, and then states the rule plainly: if port 11434 is already serving, reuse that instance — *never kill an existing Ollama process*. A human knows not to kill their colleague's server. An agent has to be told.
-2. **Preflight the constraint that actually binds.** The `vllm` skill confirms hardware with `nvidia-smi` (or `rocm-smi` on AMD) before anything else, because model size and context length are bounded by VRAM. The buried sentence in the tutorial becomes step zero.
-3. **Verify, do not assume.** Both serving skills end with a real check — `curl http://localhost:8000/v1/models` — before the job counts as done. This is the direct answer to the Stripe failure mode: the definition of success is an observation, not the absence of a crash.
-4. **Finish the job.** A served model is invisible to PenguinHarness until it is registered, so the skills close the loop with `penguin config model add --client-type openai --base-url ...` and then confirm with `penguin config model list`. Starting a server is not the task. Having a usable model is.
-5. **Ask instead of guessing.** Every skill opens the same way: if the request names a skill but no concrete goal, ask first and run nothing. Engine choice, for instance, follows the user's preference rather than a hardcoded default — vLLM for high-throughput GPU serving, Ollama as the simple default and the only option on macOS or CPU-only machines.
+1. **Check the world before changing it.** The `ollama` Skill has the agent run `ollama --version` and `ollama ps` first. Then it states the rule plainly: if port 11434 is already serving, reuse that instance, and *never kill an existing Ollama process*. A human knows not to kill a colleague's server. An agent has to be told.
+2. **Check the real constraint first.** The `vllm` Skill confirms the hardware with `nvidia-smi` (or `rocm-smi` on AMD) before it serves anything, because VRAM limits both model size and context length. The sentence buried in the tutorial becomes step zero.
+3. **Verify instead of assuming.** Both serving Skills end with a real check before the job counts as done, such as `curl http://localhost:8000/v1/models` for vLLM. This is the direct answer to the Stripe failure mode: success is defined by an observation, not by the absence of a crash.
+4. **Finish the job.** PenguinHarness cannot see a served model until it is registered. The Skills therefore close the loop with `penguin config model add --client-type openai --base-url ...` and confirm the result with `penguin config model list`. Starting a server is not the task. Having a usable model is.
+5. **Ask instead of guessing.** All three Skills open the same way: if the request names the Skill but gives no concrete goal, the agent asks first and runs nothing. The choice of engine also follows the user's preference rather than a hardcoded default. vLLM is for high-throughput GPU serving, while Ollama is the simple default and the only one of the two that runs on macOS or CPU-only machines.
 
-### 2.3 Two runtime pieces, because AI work is not shaped like web work
+### Long jobs are first-class
 
-**Long jobs are first-class.** Training and serving do not complete in thirty seconds. `exec_command` waits in the foreground, and once a command outruns its window it keeps running in the background and hands back a `process_id`; `input_command` then polls it, writes to stdin, or sends Ctrl-C. An agent can start a fine-tune, go do something else, and come back to check on it — without a special "training tool."
+Training and serving do not finish in thirty seconds, so the runtime treats long jobs as the normal case. `exec_command` waits in the foreground. Once a command outruns its wait window, it keeps running in the background and the tool returns a `process_id`. `input_command` then polls that process, writes to its stdin, or sends Ctrl-C. An agent can start a fine-tune, do something else, and come back to check on it, without a special training tool.
 
-**Failures come back as text, not exceptions.** Tools never throw into the loop. A non-zero exit, a timeout, an OOM — all of it converges into tool output the model reads and reacts to, with the exit code appended outside the truncation window so it survives even when a long log gets cut. That last detail matters more than it sounds: the one line telling you the run actually failed is usually the last one.
+### Failures come back as text
 
-## 3. Future: what is still hard
+Tools never throw exceptions into the agent loop. A non-zero exit, a timeout, or an out-of-memory (OOM) error becomes tool output that the model reads and reacts to. The exit code is appended outside the truncation window, so it survives even when a long log is cut. That detail matters more than it seems, because the line that says a run failed is usually the last one.
 
-Three problems are not solved, by us or anyone.
+## Future: three unsolved problems
 
-### 3.1 ML-stack errors are still written for humans
+Three problems remain unsolved, by us or by anyone else.
 
-Nothing in an agent harness can fix a traceback that does not say what to change. The fix has to happen upstream, in the frameworks — and the guidance already exists: good tool errors are specific and actionable rather than opaque codes and tracebacks. Very little of the training stack meets that bar today.
+### ML-stack errors are still written for humans
 
-### 3.2 GPUs are a shared resource with no protocol
+Nothing in an agent harness, the software that runs an agent's loop and its tools, can fix a traceback that does not say what to change. The fix has to happen upstream, in the frameworks. The guidance already exists: [Anthropic's advice on writing tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) says good tool errors are specific and actionable, not opaque codes and tracebacks. Very little of the training stack meets that bar today.
 
-An agent can read `nvidia-smi`, but there is no standard way to reserve VRAM, queue behind another job, or find out that the memory it just saw is about to be taken. Today the answer is a written rule — do not kill what you did not start — which is a convention, not a guarantee.
+### GPUs are shared without a protocol
 
-### 3.3 Reproducibility is unresolved
+An agent can read `nvidia-smi`, but there is no standard way to reserve VRAM, to queue behind another job, or to learn that the memory it just saw is about to be taken. Today the answer is a written rule: do not kill what you did not start. That is a convention, not a guarantee.
 
-A fine-tune is a long, expensive, stochastic action. Agents make those cheap to launch, which makes it much easier to end up with a model nobody can reproduce. Snapshots and traces help; they are not a full answer.
+### Reproducibility is unresolved
 
-## 4. The short version
+A fine-tune is long, expensive, and stochastic. Agents make such runs cheap to launch, which makes it much easier to end up with a model nobody can reproduce. Snapshots and Traces help, but they are not a full answer.
 
-AI infrastructure did not need to be reinvented for agents — it was already text and commands. What was missing is the operating knowledge around it: check before you change, preflight the real constraint, verify with an observation, and finish the job rather than starting it.
+## Conclusion
 
-That is what our skills encode, on top of a shell, a two-phase process model for long jobs, and errors that come back as readable text.
+AI infrastructure did not need to be reinvented for agents, because it was already text and commands. What was missing is the operating knowledge around it: check before you change anything, check the real constraint first, verify with an observation, and finish the job instead of only starting it.
+
+PenguinHarness encodes that knowledge in Skills. Underneath them are a shell, a two-phase process model for long jobs, and errors that come back as readable text. The commands below install PenguinHarness and ask an agent to serve a local model and register it:
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
@@ -90,7 +96,7 @@ penguin run -m "Serve Qwen3.5-0.8B with Ollama and register it with Penguin"
 
 ---
 
-- **Docs**: [Skills](https://penguin.ooo/docs/skills) · [Tools & Approval](https://penguin.ooo/docs/tools) · [Models & Providers](https://penguin.ooo/docs/models)
+- **Docs**: [Skills & Plugins](https://penguin.ooo/docs/skills) · [Tools & Approval](https://penguin.ooo/docs/tools) · [Models & Providers](https://penguin.ooo/docs/models)
 - **Community**: [GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **Sources**: [vLLM](https://docs.vllm.ai/) · [Ollama](https://ollama.com/) · [LlamaFactory](https://github.com/hiyouga/LlamaFactory) · [Stripe, Can AI agents build real Stripe integrations?](https://stripe.com/blog/can-ai-agents-build-real-stripe-integrations) · [Anthropic, Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents)

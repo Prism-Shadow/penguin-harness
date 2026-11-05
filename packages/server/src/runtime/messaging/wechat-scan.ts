@@ -1,3 +1,5 @@
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
 /**
  * WeChat scan-to-connect: binding the official claw bot by scanning a QR code in WeChat.
  *
@@ -34,6 +36,7 @@
  * task is deleted, so nothing can resolve it twice.
  */
 import { randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { WECHAT_API_BASE, WECHAT_BOT_TYPE, wechatFetchErrorText } from "./wechat-api.js";
 
 /** Overall deadline for `get_bot_qrcode`, which answers immediately. */
@@ -143,6 +146,7 @@ export function createWeChatScanTransport(base = WECHAT_API_BASE): WeChatScanTra
   const headers = (): Record<string, string> => ({
     "iLink-App-Id": "bot",
     "iLink-App-ClientVersion": String((1 << 16) | 0),
+    "user-agent": userAgent(),
   });
 
   return {
@@ -463,5 +467,18 @@ export class WeChatScanService {
     }, WECHAT_SCAN_TASK_TTL_MS);
     timer.unref();
     this.sweepTimer = timer;
+  }
+}
+
+/** The scan-to-connect transport as a node, so a test stands in a fake for the network. */
+@Interface()
+export abstract class WeChatScanTransportHandle {
+  abstract transport: Opaque<"WeChatScanTransport", WeChatScanTransport>;
+}
+@Module()
+export class WeChatScanTransportProvider {
+  @Provide() wechatScanTransport!: WeChatScanTransportHandle;
+  setup() {
+    this.wechatScanTransport = { transport: createWeChatScanTransport() };
   }
 }

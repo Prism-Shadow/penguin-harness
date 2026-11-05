@@ -1,383 +1,543 @@
 /**
- * Machines page: pick a host out of the SERVER's own `~/.ssh/config` and install this build
- * on it.
+ * Machines: the fleet as cards in the Agents list's shape, each one opening the Machine dialog.
  *
- * The host list is a PICKER, not a rendered list, because an ssh config routinely declares
- * hundreds of entries: the panel shows a few rows, a fuzzy query reaches the rest, and the
- * matched characters are highlighted so a subsequence hit (`gpu1` → `gpu-01`) reads as a
- * match rather than as a wrong result. A counter names how many rows the current view leaves
- * out — silent truncation would read as "that host is not in my config".
+ * A card's quick buttons are the Agents card's: Use starts a new conversation in the machine's
+ * temporary workspace, Settings opens the Machine dialog, Delete takes the machine off this
+ * Project — after a confirmation that says plainly what happens: the connection drops, and the
+ * program and its data stay on the machine, its host in the ssh config. A connected machine on
+ * this server's build also has Sync config, which hands it this Project's config now. The Machine
+ * dialog holds every other verb in one toolbar (machine-detail-dialog.tsx): Enable or Update, Stop
+ * or Start its server, Restart it, Sync config, Configure SSH, Reinstall, Uninstall. While the
+ * server brings a machine back, or after it stopped trying, the card's middle and the dialog show
+ * the shared retry status, with its Retry.
  *
- * The list itself is the config text; the server does no `ssh -G` and no network to produce
- * it, so hundreds of hosts cost one file read and a row carries nothing but its alias.
+ * One card per machine, this server first, then the machines in use by name. A card says the
+ * state once, as a labelled pill beside the name with the reason on hover (machine-card.tsx). While machines
+ * in use carry another build, the notice under the title counts them and updates them all at
+ * once, after a confirmation.
  *
- * An install is a job on the server, not a request that finishes: it probes the machine,
- * may fetch a Node runtime, copies an image over scp and runs an installer there. POST
- * starts it and the page polls while it runs. The progress lines are the far side's own
- * words wherever there are any, so they are rendered verbatim in a monospace block rather
- * than interpreted here — a refused key or an unusable Node explains itself better than any
- * status enum could.
+ * Add machine, at the end of the title row like the other pages' add and import buttons, opens
+ * the add dialog (add-machine-dialog.tsx): a host from the ssh config, or a new one by hand. A
+ * machine added there has a card at once — enabling, it shows its progress; added only, its
+ * dialog offers Enable — and keeps it, a failed first install included, until it is deleted.
  *
- * One job exists at a time server-side, so the panel below follows THE JOB and names the
- * alias it belongs to, while the button follows the SELECTION: picking another host while
- * one installs must not hide the install that is running.
- *
- * Which hosts already carry this program comes from each machine's own persisted record,
- * not from the job — the job is one slot, so reading "installed" off it made a host stop
- * looking installed the moment anything else was installed or the server restarted.
+ * The list is the one live account of the machines (state/machines.tsx): the server says when
+ * it changed and the page reads it again, so a job's steps advance as they happen. While a job is
+ * on its way the page also reads it every few seconds, in case a word from the server was lost.
+ * The servers are re-probed on a widening schedule (probe-schedule.ts) so a machine that went
+ * quiet is noticed without a tap.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MachinesResponse } from "@prismshadow/penguin-server/api";
+import { useNavigate } from "react-router";
+import type {
+  MachineInfo,
+  MachinesResponse,
+  MachinesUseResponse,
+  SshHostResponse,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Checkbox,
+  ConfirmModal,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  MachineList,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
+  TodoNotice,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useProject } from "../../state/project";
+import { useLocale } from "../../state/locale";
+import { useMachines } from "../../state/machines";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { formatDateTime } from "../../lib/format";
-import { toneInk, toneStrip } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { Dropdown } from "../../components/ui/dropdown";
-import { EmptyState } from "../../components/ui/empty-state";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { Skeleton } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
-import { installButtonState, installedMachines, verdictOf } from "./machines-view";
-import type { MachineVerdict } from "./machines-view";
-import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+import {
+  anyJobPending,
+  imageNotice,
+  jobFor,
+  localMachine,
+  machinesInUse,
+  updateNotice,
+} from "./machines-view";
+import { probeDelayMs, probeFingerprint } from "./probe-schedule";
+import { SshHostDialog } from "./ssh-host-dialog";
+import { AddMachineDialog } from "./add-machine-dialog";
+import type { AddedMachines } from "./add-machine-dialog";
+import { MachineCard } from "./machine-card";
+import { MachineDetailDialog } from "./machine-detail-dialog";
+import type { MachineVerb } from "./machine-detail-dialog";
+import { programDirOf } from "./machine-detail-view";
+import { toastApiError } from "../../lib/toast-api-error";
 
-/** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
-const POLL_MS = 1500;
+/** While a job is on its way, the page reads the list this often too: a net under the server's word. */
+const FALLBACK_POLL_MS = 5_000;
 
-/** A finished job's one-line verdict, and the tone that carries it. */
-function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
-  if (verdict.kind === "failed") {
-    return { text: S.machines.failedAt(verdict.step), tone: "danger" };
-  }
-  const version = verdict.version ?? "";
-  return {
-    text:
-      verdict.kind === "already-installed"
-        ? S.machines.alreadyInstalled(version)
-        : S.machines.installed(version),
-    tone: "success",
-  };
-}
+const MONO = "font-mono text-xs tabular-nums";
+
+/**
+ * A verb that stops or removes something, waiting on its confirmation: deleting a machine from
+ * the Project, stopping its server, uninstalling the program, reinstalling it (the server there
+ * restarts), and updating every machine that is behind (each reinstalls and reconnects).
+ */
+type PendingVerb =
+  | { kind: "delete"; id: string }
+  | { kind: "stop"; id: string }
+  | { kind: "uninstall"; id: string }
+  | { kind: "reinstall"; id: string }
+  | { kind: "updateAll"; ids: string[] };
 
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
+  const { locale } = useLocale();
+  const navigate = useNavigate();
   // Machines belong to the Project, like every other row in this nav group: switching
-  // Projects switches which machines are listed, and installing here gives the machine to
-  // THIS Project.
+  // Projects switches which machines are listed, and enabling one here gives the machine to
+  // THIS Project — the same one whose Model credentials it will be handed.
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  const [state, setState] = useState<MachinesResponse | null>(null);
+  const account = useMachines();
+  const state = account.state;
+  const { accept, refresh } = account;
+  /** What the last request from this page answered with when it failed; the list's own read error otherwise. */
   const [error, setError] = useState<string | null>(null);
-  /** True while a POST has not come back yet — the server has no job to report in that window. */
-  const [starting, setStarting] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const shownError = error ?? account.error;
+  /** True while a POST has not come back yet. */
+  const [posting, setPosting] = useState(false);
+  /** The host whose ssh form is open, to configure it; null while closed. */
+  const [hostForm, setHostForm] = useState<SshHostResponse | null>(null);
+  /** The add dialog is open. */
+  const [adding, setAdding] = useState(false);
+  /** Moves when that form saves, so an open Machine dialog reads the host block again. */
+  const [hostEpoch, setHostEpoch] = useState(0);
+  const [pendingVerb, setPendingVerb] = useState<PendingVerb | null>(null);
+  /** The uninstall confirmation's box: the data directory goes too. Off each time it opens. */
+  const [removeData, setRemoveData] = useState(false);
+  /** The machine whose dialog is open, by id; null while none is. */
+  const [openId, setOpenId] = useState<string | null>(null);
+  /** What the update notice was waved away at (machines-view.ts `updateNotice`). */
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
-  /** The picker panel; closing it always clears the query, so it reopens unfiltered. */
-  const [pickerOpen, setPickerOpenState] = useState(false);
-  const [query, setQuery] = useState("");
-  const setPickerOpen = (open: boolean) => {
-    setPickerOpenState(open);
-    if (!open) setQuery("");
-  };
+  // While a job is on its way the server tells the page of every step; a word lost on the way
+  // (a stream reconnecting) is caught by reading the list every few seconds meanwhile.
+  const pending = state !== null && anyJobPending(state);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setInterval(() => void refresh(), FALLBACK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [pending, refresh]);
 
-  const load = useCallback(async () => {
-    if (projectId === null) return; // No Project chosen yet: nothing to list machines for.
+  const machines = useMemo(() => state?.machines ?? [], [state]);
+  const inUse = useMemo(() => (state === null ? [] : machinesInUse(state)), [state]);
+  const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
+  const jobs = useMemo(() => state?.jobs ?? [], [state]);
+  const imageVersion = state?.imageVersion ?? null;
+  const notice = useMemo(
+    () => (state === null ? null : updateNotice(state, dismissed)),
+    [state, dismissed],
+  );
+  /** The open dialog's machine: one with a card on this page, or none. */
+  const openMachine = useMemo(
+    () =>
+      openId === null
+        ? null
+        : ([...(local === null ? [] : [local]), ...inUse].find((m) => m.id === openId) ?? null),
+    [openId, local, inUse],
+  );
+  // A machine that left the list (deleted) takes its dialog with it, and does not reopen it
+  // should it come back later.
+  useEffect(() => {
+    if (openId !== null && state !== null && openMachine === null) setOpenId(null);
+  }, [openId, state, openMachine]);
+
+  /**
+   * Re-probe the servers in use on a widening schedule. Separate from the server's own word on
+   * the list: that one follows jobs and connections, this one watches the servers nobody is
+   * touching and has to stay cheap for hours.
+   */
+  const settledRounds = useRef(0);
+  const lastPrint = useRef<string | null>(null);
+  const probe = useCallback(async () => {
+    if (projectId === null) return;
     try {
-      setState(await api.getMachines(projectId));
+      const next = await api.probeMachines(projectId);
+      const print = probeFingerprint(next.machines);
+      // A round that changed nothing widens the interval; anything moving resets it.
+      settledRounds.current = print === lastPrint.current ? settledRounds.current + 1 : 0;
+      lastPrint.current = print;
+      accept(next);
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     }
-  }, [projectId]);
+  }, [projectId, accept]);
 
+  const probeRef = useRef(probe);
+  probeRef.current = probe;
+  /** Nothing in use anywhere: there is no server to ask about, so no timer runs at all. */
+  const hasInUse = inUse.length > 0;
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Poll only while a job runs. Chained timeouts rather than an interval: a slow response
-  // must not stack requests behind itself.
-  const running = state?.job?.running === true;
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  useEffect(() => {
-    if (!running) return;
+    if (!hasInUse) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
+    const arm = (delay: number) => {
       timer = setTimeout(() => {
-        void loadRef.current().finally(() => {
-          if (!cancelled) tick();
+        void probeRef.current().finally(() => {
+          if (!cancelled) arm(probeDelayMs(settledRounds.current));
         });
-      }, POLL_MS);
+      }, delay);
     };
-    tick();
+    // The first probe is immediate: opening the page is itself a reason to look.
+    arm(0);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [running]);
+  }, [hasInUse]);
 
-  // The picker offers targets, and this machine is never one: a server does not push this
-  // build over the program directory it is running from (the API says 409 to the attempt).
-  const machines = useMemo(() => (state?.machines ?? []).filter((m) => !m.local), [state]);
-  const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
-  const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
-  const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
-  const hiddenCount = matched.length - visible.length;
-  const selected = machines.find((machine) => machine.id === selectedId) ?? null;
-
-  const install = async () => {
-    if (selectedId === null || projectId === null) return;
-    setStarting(true);
+  /** Sends a verb and takes the list it answers with; true when the server took it. */
+  const post = async (run: (projectId: string) => Promise<MachinesResponse>): Promise<boolean> => {
+    if (projectId === null) return false;
+    setPosting(true);
     try {
-      setState(await api.installOnMachine(projectId, selectedId));
+      accept(await run(projectId));
       setError(null);
+      return true;
     } catch (err) {
       setError(apiErrorText(err));
+      return false;
     } finally {
-      setStarting(false);
+      setPosting(false);
+    }
+  };
+  /**
+   * Retry while the server brings a machine back. A refusal is said in the page's notice and
+   * rejects, so the retry status lets the press be made again.
+   */
+  const retryReconnect = async (machine: MachineInfo): Promise<void> => {
+    if (!(await post((project) => api.reconnectMachine(project, machine.id)))) {
+      throw new Error("The server did not take the retry.");
+    }
+  };
+  /** Stop retrying, the same way: a failed request is said, and the press can be made again. */
+  const stopReconnecting = async (machine: MachineInfo): Promise<void> => {
+    if (!(await post((project) => api.stopReconnectingMachine(project, machine.id)))) {
+      throw new Error("The server did not take the stop.");
     }
   };
 
-  const job = state?.job ?? null;
-  const verdict = job === null ? null : verdictOf(job);
-  const verdictText = verdict === null ? null : verdictLine(verdict);
-  const button =
-    state === null
-      ? { action: "install" as const, disabled: true }
-      : installButtonState(selected, state, starting);
+  /** What the server turned down, by machine, as the page's notice says it; null for nothing. */
+  const refusals = (answer: MachinesUseResponse): string | null => {
+    if (answer.refused.length === 0) return null;
+    const byId = new Map(answer.machines.map((machine) => [machine.id, machine.alias]));
+    return answer.refused
+      .map(({ machineId, why }) => {
+        const alias = byId.get(machineId) ?? machineId;
+        if (why === "self") return S.machines.refusedSelf(alias);
+        if (why === "no-image") return S.machines.noImage;
+        return S.machines.refusedUnknown(alias);
+      })
+      .join(" ");
+  };
+  const use = (ids: string[], replaceProgram = false) =>
+    post(async (project) => {
+      const answer = await api.useMachines(project, ids, replaceProgram);
+      const refused = refusals(answer);
+      // Set after `post` clears the error, by way of the microtask order: post awaits this, so
+      // its setError(null) runs first and this one stands.
+      if (refused !== null) queueMicrotask(() => setError(refused));
+      return answer;
+    });
+  /** The add dialog's answer: the list as it now stands, and a word on what happened. */
+  const added = ({ state: answer, verb, count }: AddedMachines) => {
+    accept(answer);
+    const refused = refusals(answer);
+    setError(refused);
+    const landed = count - answer.refused.length;
+    if (landed > 0) {
+      toastSuccess(
+        verb === "use"
+          ? S.machines.addDialog.addedInstalling(landed)
+          : S.machines.addDialog.added(landed),
+      );
+    }
+  };
+  // The four that stop, remove or replace something — the machine's place in this Project, its
+  // server, its program, the program installed over itself — are reached only through the
+  // confirmation below.
+  const deleteMachine = (id: string) => post((project) => api.stopUsingMachines(project, [id]));
+  const stopServer = (id: string) => post((project) => api.stopMachine(project, id));
+  const uninstall = (id: string, withData: boolean) =>
+    post((project) => api.uninstallMachine(project, id, withData));
+  const reinstall = (id: string) => use([id], true);
+  const runPendingVerb = () => {
+    const verb = pendingVerb;
+    setPendingVerb(null);
+    if (verb === null) return;
+    if (verb.kind === "delete") void deleteMachine(verb.id);
+    else if (verb.kind === "stop") void stopServer(verb.id);
+    else if (verb.kind === "uninstall") void uninstall(verb.id, removeData);
+    else if (verb.kind === "reinstall") void reinstall(verb.id);
+    else void use(verb.ids);
+  };
+  const machineOf = (id: string) => machines.find((machine) => machine.id === id);
+  const aliasOf = (id: string) => machineOf(id)?.alias ?? id;
+  const c = S.machines.confirm;
+  /** The confirmation's title, verb, body and tone: stopping or removing is danger, an update primary. */
+  const verbPrompt = (() => {
+    if (pendingVerb === null) return null;
+    switch (pendingVerb.kind) {
+      case "delete":
+        return {
+          title: c.deleteTitle(aliasOf(pendingVerb.id)),
+          label: S.machines.card.delete,
+          body: c.deleteBody(
+            aliasOf(pendingVerb.id),
+            machineOf(pendingVerb.id)?.passwordSaved === true,
+          ),
+          tone: "danger" as const,
+        };
+      case "stop":
+        return {
+          title: c.stopTitle(aliasOf(pendingVerb.id)),
+          label: S.machines.detail.toolbar.stop,
+          body: c.stopBody,
+          tone: "danger" as const,
+        };
+      case "uninstall":
+        return {
+          title: c.uninstallTitle(aliasOf(pendingVerb.id)),
+          label: S.machines.detail.toolbar.uninstall,
+          body: c.uninstallBody(programDirOf(machineOf(pendingVerb.id)?.root ?? "")),
+          tone: "danger" as const,
+        };
+      case "reinstall":
+        return {
+          title: c.reinstallTitle(aliasOf(pendingVerb.id)),
+          label: S.machines.detail.toolbar.reinstall,
+          body: c.reinstallBody,
+          tone: "danger" as const,
+        };
+      case "updateAll":
+        return {
+          title: S.machines.updateAll(pendingVerb.ids.length),
+          label: S.machines.updateAll(pendingVerb.ids.length),
+          body: S.machines.updateAllConfirm(pendingVerb.ids.length),
+          tone: "primary" as const,
+        };
+    }
+  })();
+  const configure = async (alias: string) => {
+    if (projectId === null) return;
+    try {
+      setHostForm(await api.getSshHost(projectId, alias));
+    } catch (err) {
+      toastApiError(err);
+    }
+  };
+  /**
+   * A new conversation in the machine's temporary workspace — the new-chat page's own draft, its
+   * workspace set to the temporary one there, the machine's own default Agent picked by it; this
+   * server's card starts one here.
+   */
+  const startChat = (machine: MachineInfo) =>
+    navigate("/chat/new", {
+      state:
+        machine.local || machine.machineId === null
+          ? { workspace: "" }
+          : { workspace: "", machineId: machine.machineId },
+    });
+
+  /** Every verb the Machine dialog asks for, for one machine. */
+  const act = (machine: MachineInfo, verb: MachineVerb) => {
+    switch (verb) {
+      case "use":
+        return void use([machine.id]);
+      case "start":
+        return void post((project) => api.connectMachine(project, machine.id));
+      case "restart":
+        return void post((project) => api.restartMachine(project, machine.id));
+      case "syncConfig":
+        return void post((project) => api.syncMachineConfig(project, machine.id));
+      case "configure":
+        return void configure(machine.alias);
+      case "reconnect":
+        return retryReconnect(machine);
+      case "stopReconnecting":
+        return stopReconnecting(machine);
+      case "uninstall":
+        setRemoveData(false);
+        return setPendingVerb({ kind: "uninstall", id: machine.id });
+      default:
+        // Stopping its server and reinstalling it interrupt someone: each waits on its confirmation.
+        return setPendingVerb({ kind: verb, id: machine.id });
+    }
+  };
+
+  const image = state === null ? null : imageNotice(state);
+  const noImage = image?.kind === "noImage";
+
+  const card = (machine: MachineInfo) => (
+    <MachineCard
+      key={machine.id}
+      machine={machine}
+      job={jobFor(jobs, machine.id)}
+      imageVersion={imageVersion}
+      locale={locale}
+      busy={posting}
+      onOpen={() => setOpenId(machine.id)}
+      onUse={() => startChat(machine)}
+      onSyncConfig={() => void post((project) => api.syncMachineConfig(project, machine.id))}
+      onDelete={() => setPendingVerb({ kind: "delete", id: machine.id })}
+      onRetry={() => retryReconnect(machine)}
+      onStopRetry={() => stopReconnecting(machine)}
+    />
+  );
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-          {S.machines.pageTitle}
-          <InfoPopover label={S.machines.pageTitle}>{S.machines.pageDesc}</InfoPopover>
-        </h1>
-
-        {error !== null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
-            {error}
-          </div>
+    <PageFrame>
+      {/* The notices belong to the header: they sit under the title, and the list keeps one gap
+          below whichever block ends the header. */}
+      <PageHeader
+        title={S.machines.pageTitle}
+        actions={
+          // At the end of the title row, as the Agents and Plugins pages put theirs: the form
+          // rung, the primary look, its glyph before its word.
+          <Button
+            size="sm"
+            variant="primary"
+            data-action="add-machine"
+            disabled={state === null || noImage}
+            onClick={() => setAdding(true)}
+          >
+            <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
+            {S.machines.add}
+          </Button>
+        }
+      >
+        {shownError !== null && (
+          <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
+            {shownError}
+          </NoticeStrip>
         )}
-
-        {state === null ? (
-          <div className="mt-6 space-y-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : (
-          <>
-            {state.imageVersion === null ? (
-              <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
-                {S.machines.noImage}
-              </div>
-            ) : (
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {S.machines.imageVersion(state.imageVersion)}
-              </p>
-            )}
-
-            {machines.length === 0 ? (
-              <EmptyState title={S.machines.empty} />
-            ) : (
-              <div className="mt-6 flex items-start gap-2">
-                {/* The picker. Fuzzy query over the aliases, matched characters bright and
-                    the rest dimmed — with a subsequence match, an unmarked row looks wrong. */}
-                <Dropdown
-                  open={pickerOpen}
-                  setOpen={setPickerOpen}
-                  className="min-w-0 flex-1"
-                  menuClass="left-0 right-0 top-full mt-1 origin-top"
-                  button={
-                    <button
-                      type="button"
-                      onClick={() => setPickerOpen(!pickerOpen)}
-                      aria-haspopup="listbox"
-                      aria-expanded={pickerOpen}
-                      className="flex w-full items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      <span
-                        className={`min-w-0 flex-1 truncate ${selected === null ? "text-gray-400 dark:text-gray-500" : ""}`}
-                      >
-                        {selected?.alias ?? S.machines.pick}
-                      </span>
-                      <ChevronDown className="shrink-0 text-gray-400" />
-                    </button>
-                  }
-                >
-                  {machines.length > MAX_VISIBLE_MACHINES && (
-                    <div className="px-2 pt-1 pb-1">
-                      <input
-                        type="search"
-                        autoFocus
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder={S.machines.search}
-                        aria-label={S.machines.search}
-                        className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
-                      />
-                    </div>
-                  )}
-                  {visible.map(({ machine, positions }) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(machine.id);
-                        setPickerOpen(false);
-                      }}
-                      className="flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-                    >
-                      <span
-                        className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
-                      >
-                        {positions.length === 0
-                          ? machine.alias
-                          : highlightSegments(machine.alias, positions).map((segment, i) => (
-                              <span
-                                key={i}
-                                className={
-                                  segment.hit
-                                    ? "font-semibold text-gray-900 dark:text-white"
-                                    : undefined
-                                }
-                              >
-                                {segment.text}
-                              </span>
-                            ))}
-                      </span>
-                      {/* Which hosts already carry this program — the version, not a bare
-                          tick, because a stale one is the reason to reinstall. */}
-                      {machine.installed !== null && (
-                        <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                          {machine.installed.version}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                  {visible.length === 0 && (
-                    <p className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
-                      {S.machines.noMatch}
-                    </p>
-                  )}
-                  {hiddenCount > 0 && (
-                    <p className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
-                      {S.machines.more(hiddenCount)}
-                    </p>
-                  )}
-                </Dropdown>
-                <Button
-                  variant="primary"
-                  disabled={button.disabled}
-                  onClick={() => void install()}
-                  className="shrink-0"
-                >
-                  {button.action === "installing"
-                    ? S.machines.installing
-                    : button.action === "reinstall"
-                      ? S.machines.reinstall
-                      : S.machines.install}
-                </Button>
-              </div>
-            )}
-
-            {selected?.installed != null && (
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {S.machines.installedAt(
-                  selected.installed.version,
-                  formatDateTime(selected.installed.at),
-                )}
-              </p>
-            )}
-
-            {/* What this server has already installed, standing on the page rather than
-                only inside the picker: it is the answer to "what did I do", which a panel
-                that has to be opened one row at a time cannot give. */}
-            {installed.length > 0 && (
-              <section className="mt-6">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  {S.machines.installedTitle(installed.length)}
-                </h2>
-                <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {installed.map((machine) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => setSelectedId(machine.id)}
-                      aria-current={machine.id === selectedId ? "true" : undefined}
-                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
-                        machine.id === selectedId
-                          ? "bg-gray-100 dark:bg-gray-800"
-                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
-                      }`}
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {machine.alias}
-                      </span>
-                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                        {machine.installed!.version}
-                      </span>
-                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                        {formatDateTime(machine.installed!.at)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* The job, whichever machine it belongs to — named, so a selection change
-                while one runs never leaves an unattributed log on screen. */}
-            {job !== null && (
-              <section className="mt-5 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 dark:bg-gray-900">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{job.alias}</span>
-                  {running ? (
-                    <span className={`text-xs ${toneInk.busy}`}>{S.machines.installing}</span>
-                  ) : (
-                    verdictText !== null && (
-                      <span className={`text-xs ${toneInk[verdictText.tone]}`}>
-                        {verdictText.text}
-                      </span>
-                    )
-                  )}
-                </div>
-                {job.log.length > 0 && (
-                  <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {S.machines.output}
-                    </p>
-                    <pre className="mt-1 max-h-64 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {job.log.join("\n")}
-                    </pre>
-                    {verdict?.kind === "failed" && (
-                      <pre
-                        className={`mt-2 font-mono text-xs break-words whitespace-pre-wrap ${toneInk.danger}`}
-                      >
-                        {verdict.message}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </section>
-            )}
-          </>
+        {noImage && shownError === null && (
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
+            {S.machines.noImage}
+          </NoticeStrip>
         )}
-      </div>
-    </div>
+        {image?.kind === "buildFailed" && shownError === null && (
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
+            <p>{S.machines.checkoutImageFailed}</p>
+            {/* The build's own last lines: where pnpm, vite or the packer said what went wrong. */}
+            <pre className={`mt-1 break-words whitespace-pre-wrap ${MONO}`}>{image.detail}</pre>
+          </NoticeStrip>
+        )}
+        {/* Machines on another build than this server's, in the one notice shape every page's
+            "update all" takes: the count, the update behind a confirmation, and a way to put it
+            down while the same machines stay behind. */}
+        {notice !== null && (
+          <TodoNotice
+            text={S.machines.updateNotice(notice.ids.length)}
+            actionLabel={S.todo.updateNow}
+            busy={posting || pending}
+            onAction={() => setPendingVerb({ kind: "updateAll", ids: notice.ids })}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => setDismissed((prev) => new Set([...prev, ...notice.keys]))}
+          />
+        )}
+      </PageHeader>
+      {projectId !== null && state !== null && adding && (
+        <AddMachineDialog
+          projectId={projectId}
+          state={state}
+          onClose={() => setAdding(false)}
+          onAdded={added}
+        />
+      )}
+      {projectId !== null && hostForm !== null && (
+        <SshHostDialog
+          key={hostForm.alias}
+          host={hostForm}
+          projectId={projectId}
+          onClose={() => setHostForm(null)}
+          onSaved={(next) => {
+            accept(next);
+            setError(null);
+            setHostEpoch((epoch) => epoch + 1);
+          }}
+        />
+      )}
+      {projectId !== null && openMachine !== null && (
+        <MachineDetailDialog
+          projectId={projectId}
+          hostEpoch={hostEpoch}
+          machine={openMachine}
+          job={jobFor(jobs, openMachine.id)}
+          imageVersion={imageVersion}
+          locale={locale}
+          error={shownError}
+          busy={posting}
+          noImage={noImage}
+          onAct={(verb) => act(openMachine, verb)}
+          onClose={() => setOpenId(null)}
+        />
+      )}
+      {/* Every verb that asks first — the notice's update of all of them included — opens this
+          one confirmation by setting `pendingVerb`, and only its confirm runs the verb. */}
+      {pendingVerb !== null && verbPrompt !== null && (
+        <ConfirmModal
+          open
+          title={verbPrompt.title}
+          tone={verbPrompt.tone}
+          onClose={() => setPendingVerb(null)}
+          onConfirm={runPendingVerb}
+          confirmLabel={verbPrompt.label}
+          cancelLabel={S.common.cancel}
+        >
+          <p className="text-sm font-medium">{verbPrompt.title}</p>
+          <p className="mt-1 text-sm text-fg-muted">{verbPrompt.body}</p>
+          {/* An uninstall keeps the machine's data unless asked: the box says where it lives. */}
+          {pendingVerb.kind === "uninstall" && (
+            <Checkbox
+              className="mt-3"
+              data-field="removeData"
+              checked={removeData}
+              onChange={setRemoveData}
+              label={S.machines.confirm.removeData}
+              hint={
+                <>
+                  <span className={`block break-all ${MONO}`}>
+                    {machineOf(pendingVerb.id)?.root ?? ""}
+                  </span>
+                  <span className="block">{S.machines.confirm.removeDataWarning}</span>
+                </>
+              }
+            />
+          )}
+        </ConfirmModal>
+      )}
+
+      {state === null ? (
+        // A refusal (the page is an admin's) or a failed read says so above, with nothing below
+        // pretending to load.
+        error === null && <MachineList loading />
+      ) : (
+        <MachineList
+          empty={
+            inUse.length === 0 ? (
+              <EmptyState title={S.machines.noneInUse} description={S.machines.sshHint} />
+            ) : null
+          }
+        >
+          {local !== null && card(local)}
+          {inUse.map(card)}
+        </MachineList>
+      )}
+    </PageFrame>
   );
 }

@@ -68,6 +68,35 @@ describe("blog post raw HTML", () => {
     expect(html).not.toContain("&lt;img");
   });
 
+  it("renders a one-line drawn figure as an inline SVG the figure styles can reach", () => {
+    const figure =
+      '<figure class="post-figure" data-figure="flow">' +
+      '<svg class="fig-svg" viewBox="0 0 560 80" role="img" aria-labelledby="post-flow-en-title">' +
+      '<title id="post-flow-en-title">A request passing one check</title>' +
+      '<defs><marker id="post-flow-en-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs>' +
+      '<rect x="0" y="20" width="160" height="40" class="fig-box"/>' +
+      '<text x="80" y="44" class="fig-label" text-anchor="middle">request</text>' +
+      '<path d="M160 40L240 40" class="fig-edge" marker-end="url(#post-flow-en-arrow)"/>' +
+      '<rect x="240" y="20" width="160" height="40" class="fig-s1"/>' +
+      "</svg>" +
+      '<ol class="fig-steps"><li>request</li></ol>' +
+      "<figcaption>One request, one check.</figcaption></figure>";
+    const html = render(figure);
+    // An HTML block, not inline HTML: a <figure> wrapped in a <p> is split apart by the browser.
+    expect(html.startsWith('<figure class="post-figure" data-figure="flow">')).toBe(true);
+    expect(html).not.toContain("&lt;");
+    // SVG attributes keep their case (a lowercased viewbox would not scale the drawing) and the
+    // accessible name stays inside the drawing it names.
+    expect(html).toContain(
+      '<svg class="fig-svg" viewBox="0 0 560 80" role="img" aria-labelledby="post-flow-en-title"><title id="post-flow-en-title">A request passing one check</title>',
+    );
+    expect(html).toContain('refX="9" refY="5" markerWidth="7" markerHeight="7"');
+    expect(html).toContain('class="fig-edge" marker-end="url(#post-flow-en-arrow)"');
+    expect(html).toContain(
+      '<ol class="fig-steps"><li>request</li></ol><figcaption>One request, one check.</figcaption></figure>',
+    );
+  });
+
   it("still escapes angle brackets inside code spans", () => {
     const html = render("Snapshots live at `snapshots/v<version>.tar.gz`.");
     expect(html).toContain("<code>snapshots/v&lt;version&gt;.tar.gz</code>");

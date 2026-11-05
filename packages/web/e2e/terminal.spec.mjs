@@ -5,7 +5,7 @@
  *   scrollback, colours and cursor included — instead of starting over;
  * - the reattached page is a live terminal, not a screenshot of one;
  * - work started before the reload is still running after it (the shell never restarted);
- * - "New shell" is the one action that deliberately drops the session;
+ * - "New terminal" is the one action that deliberately drops the session;
  * - the page is deep-linkable: ?id= attaches an existing terminal (the dock's detach
  *   handoff), ?cwd= picks the starting directory of a new one.
  */
@@ -96,7 +96,7 @@ test("keeps the shell and its screen across a reload", async ({ page }) => {
   await run(page, "pkill -f 'penguin-e2e-ticks' >/dev/null 2>&1; rm -f /tmp/penguin-e2e-ticks");
 });
 
-test("New shell starts a fresh session", async ({ page }) => {
+test("New terminal starts a fresh session", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   await killAllTerminals(page.request);
   await page.goto(`${BASE}/terminal`);

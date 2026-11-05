@@ -104,6 +104,19 @@ export function formatPercent(ratio: number | null | undefined): string {
 }
 
 /**
+ * Average display for a "total ÷ count" figure (the Trace summary's tool calls
+ * per round): one decimal place, kept even when it is `.0`, so an average is
+ * never mistaken for the whole count printed beside it. A count of 0 leaves the
+ * average undefined → `—`, the same mark formatMoney and formatTps use for a
+ * figure that is not available, so an empty Trace reads the same way in every
+ * column.
+ */
+export function formatAverage(total: number, count: number): string {
+  const avg = total / count;
+  return count > 0 && Number.isFinite(avg) ? avg.toFixed(1) : "—";
+}
+
+/**
  * Cost display (converted to the selected currency; prices are stored in
  * USD): null/undefined → `—`; 1 USD ≈ 7 CNY; decimal places scale with
  * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four).
@@ -153,6 +166,15 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
+/**
+ * A Date as the viewer's local calendar date, `yyyy-mm-dd` — the shape `formatMonthDay`
+ * reads. It takes the date part of its input verbatim, so an instant has to be converted
+ * here, on the Date; handing it a `...Z` timestamp would name the UTC day instead.
+ */
+export function localYmd(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /** ISO timestamp → local `yyyy-MM-dd HH:mm` display; returns the input unchanged if parsing fails. */
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -160,7 +182,18 @@ export function formatDateTime(iso: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** English month abbreviations for formatMonthDay (Intl-free — see the rationale there). */
+/**
+ * ISO timestamp → local `MM-dd HH:mm`: `formatDateTime` without the year, for a time said beside
+ * how long ago it was (a week at most), where the year goes without saying. Returns the input
+ * unchanged if parsing fails.
+ */
+export function formatShortDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** English month abbreviations for the date formatters below (Intl-free — see formatMonthDay). */
 const EN_MONTHS = [
   "Jan",
   "Feb",
@@ -178,7 +211,7 @@ const EN_MONTHS = [
 
 /**
  * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized
- * month + day, no year: en `Jul 26`, zh `7 月 26 日` (the version footer's "last
+ * month + day, no year: en `Jul 26`, zh `7月26日` (the version footer's "last
  * updated" date, product-specified wording — the zh form keeps the CJK/numeral
  * spacing the owner asked for, which `Intl` would drop). The fields are read
  * straight from the string rather than via `new Date()` + local-zone formatting:
@@ -193,7 +226,27 @@ export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
   const month = Number(m[1]);
   const day = Number(m[2]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
-  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month} 月 ${day} 日`;
+  // zh writes the date without spaces (8月30日), the way the message-time format does;
+  // en keeps the abbreviated month (Aug 30).
+  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month}月${day}日`;
+}
+
+/**
+ * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized date with
+ * the year: en `Sep 15, 2026`, zh `2026年9月15日` (a release's date in the release notes, whose
+ * entries span years). Read straight from the string for the same reason as formatMonthDay;
+ * unparsable or out-of-range input returns unchanged.
+ */
+export function formatYearMonthDay(iso: string, locale: "zh" | "en"): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
+  if (!m) return iso;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  return locale === "en"
+    ? `${EN_MONTHS[month - 1]} ${day}, ${year}`
+    : `${year}年${month}月${day}日`;
 }
 
 /**
@@ -259,14 +312,17 @@ export function formatRelativeDate(iso: string, locale: "zh" | "en"): string {
  * per-conversation time): under a minute zh 「刚刚」 / en "now", then minute / hour /
  * day steps — zh keeps the dictionary wording (`5 分钟前`), en stays ultra-short
  * (`5m`, `3h`, `2d`) per the CLI-style abbreviation register. A week or older — or a
- * future time (clock skew) — falls back to the absolute month-day (formatMonthDay);
- * an unparsable value yields "" so callers hide the slot rather than show garbage.
+ * future time (clock skew) — falls back to the absolute month-day of the viewer's own
+ * calendar day (formatMonthDay over localYmd, not the raw timestamp: the instant is a
+ * `...Z` stamp, and reading its date part would name the UTC day — a row last active at
+ * 07:00 on the 31st in UTC+8 would read as the 30th); an unparsable value yields "" so
+ * callers hide the slot rather than show garbage.
  */
 export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const diffMs = Date.now() - d.getTime();
-  if (diffMs < 0) return formatMonthDay(iso, locale);
+  if (diffMs < 0) return formatMonthDay(localYmd(d), locale);
   const min = Math.floor(diffMs / 60_000);
   if (min < 1) return locale === "en" ? "now" : "刚刚";
   if (min < 60) return locale === "en" ? `${min}m` : `${min} 分钟前`;
@@ -274,7 +330,55 @@ export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
   if (hours < 24) return locale === "en" ? `${hours}h` : `${hours} 小时前`;
   const days = Math.floor(hours / 24);
   if (days < 7) return locale === "en" ? `${days}d` : `${days} 天前`;
-  return formatMonthDay(iso, locale);
+  return formatMonthDay(localYmd(d), locale);
+}
+
+/** `n unit(s) ago`, singular for one. */
+function agoEn(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+}
+
+/**
+ * ISO timestamp → how long ago, in words a sentence can hold — the long form of
+ * `formatRelativeShort`, for a fact in a dialog rather than a narrow row: under a minute zh
+ * 「刚刚」 / en "just now", then minutes, hours and days (`3 分钟前` / `3 minutes ago`) up to a
+ * week. A week or older — or a future time (clock skew) — is the absolute `formatDateTime`; an
+ * unparsable value yields "". `now` is the clock it measures from.
+ */
+export function formatRelativeLong(
+  iso: string,
+  locale: "zh" | "en",
+  now: number = Date.now(),
+): string {
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return "";
+  const diffMs = now - at;
+  if (diffMs < 0) return formatDateTime(iso);
+  const min = Math.floor(diffMs / 60_000);
+  if (min < 1) return locale === "en" ? "just now" : "刚刚";
+  if (min < 60) return locale === "en" ? agoEn(min, "minute") : `${min} 分钟前`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return locale === "en" ? agoEn(hours, "hour") : `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return locale === "en" ? agoEn(days, "day") : `${days} 天前`;
+  return formatDateTime(iso);
+}
+
+/**
+ * A span of time in words a sentence can hold — how long something has lasted, or how long until
+ * it happens: whole seconds under a minute (at least one), then whole minutes, hours and days
+ * (`3 分钟` / `3 minutes`), each rounded down. Always led by its number, so a sentence puts the
+ * same space before it in either language.
+ */
+export function formatSpan(ms: number, locale: "zh" | "en"): string {
+  const unit = (n: number, zh: string, en: string) =>
+    locale === "en" ? `${n} ${en}${n === 1 ? "" : "s"}` : `${n} ${zh}`;
+  const min = Math.floor(Math.max(0, ms) / 60_000);
+  if (min < 1) return unit(Math.max(1, Math.floor(Math.max(0, ms) / 1000)), "秒", "second");
+  if (min < 60) return unit(min, "分钟", "minute");
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return unit(hours, "小时", "hour");
+  return unit(Math.floor(hours / 24), "天", "day");
 }
 
 /** ISO timestamp → local `HH:mm:ss` (inline display in the Trace timeline); returns the input unchanged if parsing fails. */

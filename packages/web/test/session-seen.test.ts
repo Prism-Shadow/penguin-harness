@@ -1,3 +1,20 @@
+/**
+ * Which Sessions the user has read (lib/session-seen.ts): a per-Project marker per Session in
+ * localStorage, against which a row's last activity reads as unread or not.
+ *
+ * - Activity after a Session's marker is unread; at or before it, read.
+ * - A Session with no marker falls back to the Project's seed, so conversations that existed
+ *   before this browser first looked do not all start unread; with no seed, all are unread.
+ * - An unparseable activity stamp never raises an alert.
+ * - Marking a Session seen stamps the later of the wall clock and its last activity (a lagging
+ *   local clock still marks it read), leaves other markers alone, and returns the same state
+ *   when nothing changes.
+ * - Forgetting a Session drops its marker, or returns the state unchanged when it had none.
+ * - Markers survive a serialize/parse cycle; junk parses to nothing remembered, malformed
+ *   markers are dropped, and the stored markers are capped, evicting the least recently seen.
+ * - The first note in a Project seeds it; notes are scoped per Project, need a Project, and a
+ *   deleted Session's marker is pruned.
+ */
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   forgetSession,
@@ -10,7 +27,8 @@ import {
   serializeSessionSeen,
   sessionSeenKey,
 } from "../src/lib/session-seen";
-import type { SessionSeenState, SessionSeenStorage } from "../src/lib/session-seen";
+import type { SessionSeenState } from "../src/lib/session-seen";
+import { memoryStorage } from "./helpers/storage";
 
 const AT = (iso: string) => Date.parse(iso);
 // Fixtures sit safely in the past: noteSessionSeen seeds from the real clock, so a "future"
@@ -23,16 +41,6 @@ const state = (seededAt: number, seen: Record<string, number> = {}): SessionSeen
   seededAt,
   seen: new Map(Object.entries(seen)),
 });
-
-/** In-memory localStorage stand-in (vitest runs in Node). */
-function memoryStorage(initial: Record<string, string> = {}) {
-  const map = new Map(Object.entries(initial));
-  return {
-    getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => void map.set(k, v),
-    read: (k: string) => map.get(k) ?? null,
-  } satisfies SessionSeenStorage & { read: (k: string) => string | null };
-}
 
 describe("isSessionUnread", () => {
   it("treats activity after the marker as unread and activity before it as read", () => {
@@ -133,7 +141,7 @@ describe("noteSessionSeen", () => {
   it("seeds on the first write so existing conversations start out read", () => {
     const storage = memoryStorage();
     noteSessionSeen("proj", "a", T1, storage);
-    const stored = parseSessionSeen(storage.read(sessionSeenKey("proj")));
+    const stored = parseSessionSeen(storage.getItem(sessionSeenKey("proj")));
     expect(stored.seededAt).toBeGreaterThan(0);
     // A different Session that last ran before the seed reads as read.
     expect(isSessionUnread(stored, "other", T0)).toBe(false);
@@ -143,20 +151,20 @@ describe("noteSessionSeen", () => {
   it("scopes markers per Project", () => {
     const storage = memoryStorage();
     noteSessionSeen("one", "a", T1, storage);
-    expect(storage.read(sessionSeenKey("one"))).not.toBeNull();
-    expect(storage.read(sessionSeenKey("two"))).toBeNull();
+    expect(storage.getItem(sessionSeenKey("one"))).not.toBeNull();
+    expect(storage.getItem(sessionSeenKey("two"))).toBeNull();
   });
 
   it("is a no-op without a Project", () => {
     const storage = memoryStorage();
     noteSessionSeen(null, "a", T1, storage);
-    expect(storage.read(sessionSeenKey("proj"))).toBeNull();
+    expect(storage.getItem(sessionSeenKey("proj"))).toBeNull();
   });
 
   it("prunes a deleted Session's marker", () => {
     const storage = memoryStorage();
     noteSessionSeen("proj", "a", T1, storage);
     forgetSession("proj", "a", storage);
-    expect(parseSessionSeen(storage.read(sessionSeenKey("proj"))).seen.has("a")).toBe(false);
+    expect(parseSessionSeen(storage.getItem(sessionSeenKey("proj"))).seen.has("a")).toBe(false);
   });
 });

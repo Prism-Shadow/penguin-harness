@@ -1,0 +1,136 @@
+# The context ring measures against compaction, its threshold becomes a draggable cutter, and the panel ranks files beside tools
+
+- **Date:** 2026-09-02
+- **Type:** feature
+- **Scope:** `web`, `server`, `core`
+- **PR:** [#584](https://github.com/Prism-Shadow/penguin-harness/pull/584)
+
+[中文版](2026-09-02-context-top-files.zh.md)
+
+The composer's context ring now fills against the point compaction fires rather than the model's
+context window, so a context half-way to being summarized reads as half full instead of nearly
+empty on a large-window model. The panel's bar keeps the window as its scale and marks that point
+with a dashed cutter — which is now also the control that moves it: drag the cutter, confirm the
+number, and the Agent's compaction threshold changes for the conversation you are looking at,
+immediately. That immediacy is a core change: compaction settings have left the strict tier and
+are re-read at every compaction checkpoint. The composition panel also gained a second Top 5: the
+files whose `read_file` / `edit_file` / `write_file` traffic occupies the most of the current
+context, beside the tool ranking it already had. A Tools / Files switch above the list picks the
+view, and the panel remembers the choice for the rest of the tab session.
+
+## The ring fills against the compaction threshold
+
+- The ring, its panel's header ratio and the panel's bar all use one basis: the **effective**
+  compaction threshold — `min(the Agent's compaction.max_context_length, the model's
+  context_window − the compaction headroom)`, the same derivation the Agent compacts at, with the
+  seeded default threshold filled in for an Agent that configures none and the assumed 128000
+  window for a model entry that declares none. 64k used against a 128k threshold on a 1M-window
+  model now reads 50%, where it read 6% before. Amber past 80% and red past 95% follow the same
+  basis.
+- The window has not disappeared from view: the bar names its own scale underneath itself, as
+  "Max context N", whenever the bar is drawn.
+- The panel's **bar** keeps the model window as its scale, because the two answer different
+  questions: the ring says how close compaction is, the bar says how much model there is and
+  where inside it the trigger sits. While the panel is open the server's own `compactionThreshold`
+  is preferred over the client's derivation — the same arithmetic, one of them read from disk a
+  moment ago — so an Agent-config edit shows up without a page reload.
+- Two fallbacks keep the ring honest where no threshold applies: compaction switched off (`<= 0`)
+  and the subagent composer, which has no Session-level Agent config to reason from, both keep the
+  old window basis.
+- The chat page re-reads the Agent's config on an Agent switch and when the tab regains focus, so
+  a threshold lowered on the settings page is reflected on the way back.
+
+## A notice when the model cannot hold the Agent's threshold
+
+- The composer raises a dismissible amber notice when the selected model's `context_window` is
+  below the Agent's **configured** `compaction.max_context_length` — the case where compaction
+  silently fires at the window's edge instead of at the number the user set. It names both
+  figures, says compaction therefore fires at the edge of the window, points at the two ways to
+  lower the threshold below it — the panel's cutter, or the Agent settings — and notes that either
+  applies immediately. It links to that Agent's settings.
+- Judged on the configured threshold, never the effective one, which is already capped by the
+  window and so could never disagree with it. It re-evaluates when the model changes and when the
+  Agent config is re-read; a dismissal is remembered per Session and model for the rest of the tab
+  session.
+
+## A new model's context window defaults to 1,000,000
+
+- The Web model dialog records 1,000,000, not 128000, when a custom or user-group model is saved
+  with its context-window field blank, and the field's hint says so. A model added by hand is a
+  known model, and today's hand-added models are large-window ones; guessing low costs real
+  capacity, guessing high costs one edit.
+- Core's assumption for an entry that carries **no** `context_window` at all is unchanged at
+  128000 — that is the safety default for an unknown window, a different number for a different
+  question. `penguin config model add` still writes no default when `--context-window` is omitted.
+
+## The compaction threshold is a draggable cutter
+
+- The dashed cutter on the panel's bar sits at the effective compaction threshold and names it on
+  hover. Dragging it proposes a new threshold, snapped to the nearest 1,000 tokens and clamped to
+  the bar's own ends, with the proposed value shown beside it while the gesture runs.
+- It is a `role="slider"` and takes the keyboard too: ArrowLeft / ArrowRight move it by 1,000,
+  Shift by 10,000, Enter releases and Escape abandons the adjustment.
+- A release (or Enter) opens a confirmation naming the Agent and the threshold being replaced,
+  carrying a **number field prefilled with the proposal and still editable** — a gesture this
+  coarse must not write a configuration value on its own. The field takes any whole number above
+  zero; a value above the model window is allowed, and the hint then names the threshold that will
+  actually be in force. Cancel or Escape snaps the cutter back.
+- Confirming writes `compaction.max_context_length` through the same endpoint the Agent settings
+  page uses, sending only the compaction change, then re-reads the Agent config the chat page
+  holds — so the ring, the cutter and the small-window notice all move together — and a toast
+  says it applied.
+- A cutter is drawn whenever compaction is on. A threshold the model window cannot reach pins it
+  to the bar's right edge rather than removing it: the cutter is how such a threshold gets
+  lowered, so it is the last thing that may disappear when the threshold is wrong.
+
+## Compaction settings apply immediately, mid-conversation
+
+- `compaction.max_context_length`, `max_session_turns`, `mode` and `prompt` have left the strict
+  tier. The engine re-reads the section from the Agent's `system_config.yaml` at every compaction
+  checkpoint — after each request reports its token usage, and on a manual `/compact` — so a
+  change saved to an Agent is honoured by Sessions already running, without waiting for a
+  compaction to rotate the context. Compaction settings never belonged to the request prefix: they
+  decide when a context ends, not what it looks like.
+- `ContextEngineDeps` gained an optional `readCompaction` provider for this. It refreshes an
+  existing baseline and never creates one, so whether compaction is *configured* stays a constant
+  of the Session; an embedder that supplies only `compaction` keeps the previous
+  fixed-per-context behaviour, and `openNextContext`'s `compaction` still replaces the baseline at
+  a rotation. A read that throws leaves the settings already in force and warns once — a config
+  file that is momentarily unreadable must not end a run.
+- `Agent` supplies that provider for every Session, reading only the `compaction` section and
+  caching it by the config file's identity on disk, so an unchanged file costs one `stat` per
+  checkpoint. Everything else in the file stays strict tier and still belongs to the context that
+  was assembled from it.
+- The Agent settings page's save feedback follows: a save that changed **only** compaction fields
+  now says it takes effect immediately, including running conversations. Every other runtime field
+  keeps the existing wording.
+
+## Files beside tools in the composition panel
+
+- `GET /api/sessions/:sessionId/context` gained `topFiles`: at most five entries of
+  `{ path, tokens, ops: { read, edit, write } }`, ranked by the context each file's file-tool calls
+  and their results occupy — the same character heuristic and the same call-to-result pairing as
+  `topTools`, so both rankings are shares of the same estimate. A call is keyed by the file its
+  `file_path` resolves to, the way the file tools resolve it against the Workspace, so `a.ts`,
+  `./a.ts` and the absolute spelling are one row. A call with a missing or invalid `file_path` is
+  left out of the file ranking (the tool itself refuses such a call); it still counts as tool
+  traffic.
+- A file inside the Session's Workspace is shown Workspace-relative; any other file is absolute,
+  with the home directory shortened to `~`.
+- The Files view shows each file's name alone, in the same mono type as the Tools view; the full
+  path is the row's tooltip, which is what tells two files of the same name apart. Its token and
+  percent columns are the same shares of the whole context the Tools view shows. A context whose
+  tools never touched a file says "No file traffic in this context". The per-op counts stay in the
+  response and are not drawn.
+- The two views are picked by a pair of text buttons sitting on the ranking's heading line, sized
+  to it.
+- The six parts, `contextClosed` and `compactionThreshold` are unchanged.
+
+## Core
+
+- `DEFAULT_MAX_CONTEXT_LENGTH` moved from `state/default-config.ts` to `llm/context-limits.ts`,
+  beside the derivation that caps it, and core gained a `@prismshadow/penguin-core/context-limits`
+  subpath. Both halves of the threshold rule now reach a browser bundle through one
+  Node-free module, so the web app derives the ring's basis with core's arithmetic instead of a
+  second copy of it. The constant is still exported from the package root; nothing that imported
+  it needs to change.

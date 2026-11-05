@@ -37,5 +37,6 @@ export default defineConfig({
     environment: "node",
     testTimeout: process.platform === "win32" ? 120_000 : 5_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
+    coverage: { provider: "v8", include: ["src/**"] },
   },
 });

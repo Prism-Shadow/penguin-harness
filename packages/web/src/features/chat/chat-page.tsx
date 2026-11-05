@@ -4,82 +4,102 @@
  * popup) + the message stream and input area (input box vertically centered when there
  * are no messages), with the dock surfaces beside and below (features/dock): every side
  * element — subagents, Workspace files, Memory, Trace, terminals — is a tab in the right
- * or bottom dock, arranged by the user and persisted globally. This page contributes the
- * panel BODIES (they need its session/stream state) through DockPanel's renderPanel, and
- * the stream's jump commands: a message file card opens the Workspace tab on that file
- * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a
- * memory-change row opens the Memory tab located (onLocateMemoryChange).
+ * or bottom dock, arranged by the user and persisted globally. The panel BODIES are registry
+ * definitions (builtin-dock-panels.tsx); this page provides the session/stream state they read
+ * around both docks (chat-dock-context.tsx), and the stream's jump commands: a message file
+ * card, or a reply's link to a Workspace file, opens the Workspace tab on that file
+ * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a memory-change
+ * row opens the Memory tab located (onLocateMemoryChange).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
+import { adoptBrowserSession } from "../builtin-browser/browser-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
-  ApprovalMode,
+  CostParts,
+  InterruptRequest,
   ModelRefDto,
   ModelsResponse,
+  SessionInfo,
   SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
-  SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  ActivityIcon,
+  Button,
+  ConfirmModal,
+  CopyButton,
+  Dot,
+  Dropdown,
+  EmptyState,
+  GlyphIcon,
+  Heading,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Modal,
+  Skeleton,
+  StatChip,
+  WallpaperSurface,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { switchDeskModel } from "../company/desk-model";
+import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { useWorkbenchTabs, WorkbenchFrame, WorkbenchTabStrip } from "../workbenches/workbench-tabs";
 import { apiErrorText } from "../../lib/api-error";
+import type { PermissionPick } from "../../lib/permission-level";
+import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { formatDateTime, humanizeTokens } from "../../lib/format";
+import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import {
-  formatDateTime,
-  humanizeDuration,
-  humanizeDurationLive,
-  humanizeTokens,
-} from "../../lib/format";
-import { latestConversation } from "../../lib/session-grouping";
-import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
+  sessionActivity,
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+} from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
+import { a2uiDrafts } from "../../lib/a2ui-drafts";
 import {
   approvalKey,
   createStreamModel,
   finalizeHistory,
   pushMessage,
-} from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import {
-  bucketCostUsd,
-  liveSessionElapsedMs,
-  sessionElapsedBreakdown,
-} from "../../lib/omni/task-stats";
-import type { TaskStatsTracker } from "../../lib/omni/task-stats";
+} from "../../lib/amsp/stream-model";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { bucketCostUsd } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
-import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import {
-  SessionActivityIcon,
-  sessionActivityLabel,
-} from "../../components/ui/session-activity-icon";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
 import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
+import type { A2uiActions, StreamRenderContext } from "./message-stream";
+import { RequestFailureDialog } from "./request-failure-dialog";
+import type { RequestFailure } from "./request-failure-report";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
+import { approvalModeChoices } from "./approval-mode";
+import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -91,65 +111,78 @@ import type { StagedThinkingSwitch } from "./thinking-level";
 import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
-import { parkActiveDraft } from "./draft-sessions";
-import { sessionForProject, sessionProbeKey } from "./session-project";
+import { prepareNewChatDraft } from "./new-chat";
+import {
+  heldRouteSession,
+  resolveRoutedSession,
+  routeSessionOutcome,
+  routedView,
+  sessionForProject,
+  sessionProbeKey,
+} from "./session-project";
+import { useRouteLookup } from "./use-route-lookup";
+import { RouteOfflineNotice } from "./route-offline-notice";
+import { RouteRefusedNotice } from "./route-refused-notice";
+import { machineForSession, sessionKnownHere } from "../../lib/session-machines";
+import { HistoryLoadFailed } from "./history-load-failed";
+import { HistoryLoading } from "./history-loading";
+import { MachineRestartNotice } from "./machine-restart-notice";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
-import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { WorkspaceBrowser } from "./workspace-browser";
-import { ChatMemoryView } from "./memory-view";
+import { modelLabel } from "./model-select";
+import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
+import type { SwitchContextShape } from "./model-switch";
+import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useAgentSkills } from "./use-agent-skills";
+import { useMachineModels } from "../../lib/machine-models";
+import { agentSettingsPath } from "../../lib/agent-location";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
-import { SubagentsView } from "./subagents-view";
-import { TracePanel } from "../traces/trace-panel";
-import { MessagingPanel } from "../messaging/messaging-panel";
+import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { measureComposer } from "../dock/composer-height";
+import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
-import { panelLabel } from "../dock/panel-meta";
+// importing it registers the built-in panels (their definitions and bodies) with the dock
+import "./builtin-dock-panels";
+import { ChatDockProvider } from "./chat-dock-context";
+import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
-import { setDockCwd } from "../dock/dock-terminal";
+import { reownTerminals, setDockConversation } from "../dock/dock-terminal";
 import {
   adoptDockScope,
+  closedDockView,
+  currentDockScope,
   dockViews,
   dockVersion,
   isTabShown,
   openPanel,
   panelDock,
   subscribeDock,
-  type PanelKind,
 } from "../dock/dock-state";
 import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
-import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneInk } from "../../lib/tone";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { DockToggles } from "./dock-toggles";
+import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
+import { exitedProcessIds, reportableProcessFailure } from "./process-list";
+import { ArchivedSessionStub } from "./archived-session-stub";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
-
-/** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
-  return (
-    <span
-      title={label}
-      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
-    >
-      <GlyphIcon d={icon} />
-      {value}
-    </span>
-  );
-}
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
@@ -165,41 +198,10 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} size="sm" className="shrink-0" />
       </div>
     </div>
   );
-}
-
-/**
- * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
- * live cumulative (settled cross-Task total + the running Task's wall clock so far, see
- * liveSessionElapsedMs); when idle no timer runs and it renders exactly the settled total.
- * Whole seconds while ticking, decimals only on the settled value — same convention as
- * LiveDuration on running tool/thinking cards.
- */
-function SessionElapsed({
-  stats,
-  taskOpen,
-  taskStartLocalMs,
-}: {
-  stats: TaskStatsTracker;
-  taskOpen: boolean;
-  taskStartLocalMs: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!taskOpen) return;
-    // Load-bearing, not redundant: `now` still holds whatever the state last saw (mount time,
-    // or the final tick of a previous Task), and the first interval callback is a full second
-    // away. The first live render after a Task starts must not compute from that stale clock,
-    // so re-anchor immediately on entering the running state.
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [taskOpen]);
-  if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
-  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
 }
 
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
@@ -211,11 +213,11 @@ interface HeaderStats {
   costUncosted: boolean;
   elapsedNode: ReactNode;
   /**
-   * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
-   * component has anything to report yet (a conversation that has not run shows the bare
-   * time rather than a row of zeroes).
+   * The elapsed time's API / tool breakdown, what its "?" opens in the details card, or null
+   * when neither component has anything to report yet. The details card only: the chip is the
+   * card's trigger and shows the total alone.
    */
-  elapsedSplit: string | null;
+  elapsedSplit: ReactNode | null;
 }
 
 /**
@@ -230,36 +232,18 @@ interface HeaderStats {
  */
 function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
   const stats = model.stats;
+  const elapsed = {
+    stats,
+    taskOpen: model.taskOpen,
+    taskStartLocalMs: model.taskStartLocalMs,
+  };
   return {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
     costText: cost.costText,
     costUncosted: cost.costUncosted,
-    elapsedNode: (
-      <SessionElapsed
-        stats={stats}
-        taskOpen={model.taskOpen}
-        taskStartLocalMs={model.taskStartLocalMs}
-      />
-    ),
-    elapsedSplit: elapsedSplitText(stats),
+    elapsedNode: <SessionElapsed {...elapsed} />,
+    elapsedSplit: sessionElapsedSplit(elapsed),
   };
-}
-
-/**
- * The parenthesised API / tool breakdown of the elapsed time, or null when both components are
- * still zero. A component that is genuinely zero beside a non-zero one still prints: "no tool
- * time" is worth reading. Unlike the total beside it this does not tick — it advances as each
- * Request and tool closes, so mid-turn it trails the running total, and the two components can
- * also overlap each other. Both are why it is rendered as two measurements, not as a split of
- * the total (see sessionElapsedBreakdown).
- */
-function elapsedSplitText(stats: TaskStatsTracker): string | null {
-  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
-  if (apiMs <= 0 && toolMs <= 0) return null;
-  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
-    humanizeDuration(apiMs),
-    humanizeDuration(toolMs),
-  )}${S.chat.statParenClose}`;
 }
 
 /**
@@ -287,6 +271,7 @@ export function ChatPage() {
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
+  const company = useCompany();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -294,8 +279,14 @@ export function ChatPage() {
   const {
     sessions,
     loading: sessionsLoading,
+    machineLabels,
+    offlineMachineIds,
+    disconnectedMachineIds,
+    askingMachineIds,
+    listRound,
     reload: reloadSessions,
     add: addSession,
+    remove: removeSession,
     isDeleted: isSessionDeleted,
     replace,
     setStatus,
@@ -312,12 +303,21 @@ export function ChatPage() {
   const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** A failed model request whose details are on show (「[详情]」 on its line); null for none. */
+  const [failureShown, setFailureShown] = useState<RequestFailure | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** This server's model configuration for the Project (the page's own while it acts here). */
+  const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
+  // Only the current Project's: the read is reset in an effect, and the draft (remounted per
+  // Project in the same commit) would otherwise resolve its model against the last Project's.
+  const localModels = scopedValue(localModelsRead, projectId);
   // Background processes the conversation started (the details popover list), refreshed by
-  // the polling effect below; procBusy marks the row whose stop request is in flight.
+  // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
+  // flight (every exited row at once while "clear exited" runs).
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
-  const [procBusy, setProcBusy] = useState<string | null>(null);
+  const [procBusy, setProcBusy] = useState<readonly string[] | null>(null);
+  /** A running process whose Stop awaits confirmation: it ends the process and drops its output. */
+  const [procToKill, setProcToKill] = useState<SessionProcessInfo | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
   // server-recorded values — they can trail the live chip mid-run and reconcile on idle.
   const [usageBuckets, setUsageBuckets] = useState<{
@@ -325,6 +325,10 @@ export function ChatPage() {
     cacheWrite: number;
     output: number;
   } | null>(null);
+  // The recorded cost's priced parts from the same fetch (the details card's cost "?"). They
+  // sum to the recorded cost, not to the live estimate the chip adds on top mid-run, so they
+  // can trail it until the idle refresh reconciles the two.
+  const [usageCostParts, setUsageCostParts] = useState<CostParts | null>(null);
   // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
   // providers key their prompt PREFIX on the thinking level, so switching with history in
   // place invalidates the provider's prefix cache and the next request re-bills the whole
@@ -333,6 +337,17 @@ export function ChatPage() {
   // the pick is held until the compaction completes. Logic in thinking-level.ts
   // (needsThinkingSwitchConfirm / thinkingSwitchAfterCompaction).
   const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
+  // A pick in the session toolbar's model picker, waiting on its confirm dialog (null = no
+  // dialog). `shape` is what the switch will do to the context — compact it first, switch an
+  // empty conversation at once, or continue from a summary already held — so the dialog and
+  // the toast promise only that. See onPickSessionModel / confirmModelSwitch.
+  const [modelSwitchAsk, setModelSwitchAsk] = useState<{
+    to: ModelRefDto;
+    shape: SwitchContextShape;
+  } | null>(null);
+  // The dialog stays open (its buttons busy) until the switch request answers, so a double
+  // click cannot post the switch twice.
+  const [modelSwitchPosting, setModelSwitchPosting] = useState(false);
 
   const routeSessionId = params.sessionId ?? null;
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
@@ -343,9 +358,21 @@ export function ChatPage() {
   // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Keeps the terminal list fresh while a conversation is on screen — which is also how the
+  // page learns whether this server serves terminals at all (the terminal panel's `offered`).
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
-  /** Workspace tab: locate this file in the tree (a message file card's click). */
+  /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
+  /**
+   * Brings the Workspace tab up on a Workspace-relative path. Both callers have already
+   * normalized the text they hold (toWorkspaceRelative strips an absolute prefix and converts
+   * Windows separators). Stable on purpose: every link rendered in the transcript reads it
+   * through context, so a fresh function per render would re-render them all on every frame.
+   */
+  const openWorkspaceFile = useCallback((path: string) => {
+    openPanel("workspace");
+    setFileOpenRequest({ path });
+  }, []);
   /** Memory tab: land on this memory's detail (a card row), or the list (null target). */
   const [memoryRequest, setMemoryRequest] = useState<{
     target: MemoryLocateTarget | null;
@@ -363,12 +390,18 @@ export function ChatPage() {
   const [subagentTaskScope, setSubagentTaskScope] = useState<{
     anchorSessionId: string;
   } | null>(null);
-  useEffect(() => {
+  // The commands above belong to the conversation they were given in. Dropped while rendering
+  // the route that names another one, not in an effect after it: the panel bodies of the next
+  // conversation would otherwise mount with the last one's command for a render and act on it
+  // (land the Memory panel on its entry, focus the agents panel on its child).
+  const [commandsFor, setCommandsFor] = useState(routeSessionId);
+  if (commandsFor !== routeSessionId) {
+    setCommandsFor(routeSessionId);
     setFileOpenRequest(null);
     setMemoryRequest(null);
     setSubagentFocus(null);
     setSubagentTaskScope(null);
-  }, [routeSessionId]);
+  }
   // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
   // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
@@ -393,17 +426,190 @@ export function ChatPage() {
   // below treats the two alike.
   const parkedDraftId = parkedDraftIdOf(routeSessionId);
   const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
-  const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
-  // New shells start in this conversation's Workspace — its files are what a terminal
-  // opened here is for. While drafting, the Workspace is the one picked in the draft and
-  // DraftView publishes it instead (a child effect runs before this one, so this must
-  // yield rather than clobber it with null). Leaving the chat for another page keeps the
-  // last conversation's Workspace: it is a better default than home for the hotkey,
-  // which stays live everywhere.
+  /**
+   * The folder the draft has picked, and its machine — what the dock's Files panel browses
+   * while there is no Session to address it by. Null for a temporary Workspace, which has no
+   * directory until the first message makes one.
+   */
+  const [draftWorkspace, setDraftWorkspace] = useState<{
+    path: string;
+    machineId: string | null;
+  } | null>(null);
+  const onDraftWorkspace = useCallback((path: string, machineId: string | null) => {
+    const trimmed = path.trim();
+    setDraftWorkspace((prev) =>
+      trimmed === ""
+        ? null
+        : prev !== null && prev.path === trimmed && prev.machineId === machineId
+          ? prev
+          : { path: trimmed, machineId },
+    );
+  }, []);
+  // A Workspace group's "Browse files" in the sidebar lands on a draft for that folder and asks
+  // for the Files panel: opened once per navigation, in the draft's own dock scope (AppLayout
+  // points the dock at the route in a layout effect, which runs before this one).
+  const browseFilesKey =
+    draft && (location.state as { browseFiles?: boolean } | null)?.browseFiles === true
+      ? location.key
+      : null;
+  const openedForBrowse = useRef<string | null>(null);
+  useEffect(() => {
+    if (browseFilesKey === null || openedForBrowse.current === browseFilesKey) return;
+    openedForBrowse.current = browseFilesKey;
+    openPanel("workspace");
+  }, [browseFilesKey]);
+  /**
+   * The row the direct lookup below produced, kept beside the list: the list is replaced by
+   * every reload, and a row that only a lookup knows about (an organization's desk, a
+   * deep-linked conversation past the fetched pages) would otherwise disappear from under
+   * the open conversation. See resolveRoutedSession.
+   */
+  const [fetchedSession, setFetchedSession] = useState<SessionInfo | null>(null);
+  // A Session this page deleted, or heard was deleted, is not shown from a stale lookup either:
+  // its route probes, fails at once on the tombstone, and moves on.
+  const listed =
+    draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
+      ? null
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
+  /**
+   * The routed Session, held across a refetch that momentarily does not list it.
+   *
+   * `listed` is derived from a list that reload() rebuilds WHOLESALE: for the tick between
+   * the fetches landing and the merged array being set, a source that answers slower, a
+   * machine that misses one round, or a Session whose category changed under a page that is
+   * not loaded, all read as "that row is not here". None of them mean the conversation on
+   * screen has gone anywhere, so the render must not take them for it — dropping `selected`
+   * for that tick paints the skeleton over a conversation the reader is in the middle of.
+   *
+   * Held only for the route it was seen on, and only until the direct lookup SAYS it is gone:
+   * `routeSessionPending` and the redirect below still read `listed`, so a Session actually
+   * deleted still probes, still fails, and still redirects — one tick later than before.
+   */
+  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  /** A row the lookup found while the Session list was still loading, to add once it settles. */
+  const addWhenListed = useRef<SessionInfo | null>(null);
+  /**
+   * The direct lookup of the routed Session (use-route-lookup.ts). The list is paged: a
+   * deep-linked Session (old bookmark, cross-page jump) may sit beyond the loaded pages, so it is
+   * looked up directly and inserted before the auto-select effect below concludes it doesn't
+   * exist. It is NOT gated on `sessionsLoading`: the lookup is what opens the conversation, and
+   * holding it behind the sidebar's list fan-out put seconds of sidebar work in front of the
+   * conversation the reader asked for. Read from `listed`, never from `selected`: the held Session
+   * below keeps the conversation on screen through a refetch, but must not tell the lookup that
+   * the row is loaded.
+   */
+  const routeLookup = useRouteLookup<SessionInfo>({
+    key: draft ? null : probeKey,
+    listLoading: sessionsLoading,
+    listed: listed !== null,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    owner: routeSessionId ? machineForSession(routeSessionId) : null,
+    local: routeSessionId !== null && sessionKnownHere(routeSessionId),
+    offline: offlineMachineIds,
+    asking: askingMachineIds,
+    disconnected: disconnectedMachineIds,
+    listRound,
+    lookup: async () =>
+      sessionForProject((await api.getSession(routeSessionId!)).session, projectId!),
+    onFound: (session, listLoading) => {
+      setFetchedSession(session);
+      // add() invalidates a reload in flight. During the sidebar's first load that threw the
+      // whole load away, leaving the list on this one row and still loading; the conversation
+      // needs only the fetched row, so the list gets it once it has settled.
+      if (listLoading) addWhenListed.current = session;
+      else addSession(session);
+      // A Session of an Agent the list has not loaded (company mode creates Agents
+      // server-side): fetch the list, or the page has no Agent to render under.
+      if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
+    },
+    onMachinesSilent: () => void reloadSessions(),
+  });
+  const heldSession = useRef<SessionInfo | null>(null);
+  heldSession.current = heldRouteSession(
+    heldSession.current,
+    listed,
+    routeSessionId ?? null,
+    routeLookup.failed,
+    projectId,
+  );
+  const routed = draft ? null : heldSession.current;
+  /**
+   * An archived Session the route names is shown as a stub (archived-session-stub.tsx), never as
+   * a conversation (routedView). None of the conversation's machinery — its stream and history,
+   * its composer, its dock panels, its usage and processes — runs for it: `selected` is null and
+   * the stub reads `archivedRow` instead. Unarchiving swaps the row in and the conversation loads
+   * in place.
+   */
+  const { conversation: selected, archived: archivedRow } = routedView(routed);
+  /**
+   * The Agent this page renders under: the conversation's own, else the current Agent (a draft
+   * has no Session, and an archived Session's stub runs nothing of its conversation). The
+   * current Agent is resolved against THIS server's Agent list and is adopted from the Session
+   * only when that list carries it — an organization's employee whose Agent lives on a machine
+   * is never in it, so going by the current Agent alone left that conversation on the
+   * placeholder for good, with nothing to say why.
+   */
+  const draftOwnerKey = `${projectId}:${parkedDraftId ?? location.key}`;
+  const [draftOwner, setDraftOwner] = useState<{
+    key: string;
+    agentId: string | null;
+    machineId: string | null;
+  } | null>(null);
+  const onDraftAgent = useCallback(
+    (agentId: string | null, machineId: string | null) => {
+      setDraftOwner({ key: draftOwnerKey, agentId, machineId });
+    },
+    [draftOwnerKey],
+  );
+  const resolvedDraftOwner = draftOwner?.key === draftOwnerKey ? draftOwner : null;
+  const pageAgentId = draft
+    ? (resolvedDraftOwner?.agentId ?? null)
+    : (selected?.agentId ?? agentId);
+  const pageMachineId = draft
+    ? (resolvedDraftOwner?.machineId ?? null)
+    : selected === null
+      ? null
+      : machineForSession(selected.sessionId);
+  /**
+   * The models this page offers and prices by: those of the server it acts on. A draft whose
+   * workspace is on a machine creates its Session over there, and a conversation on a machine
+   * runs there — either way the machine's own models are the ones it can take.
+   */
+  const machineModels = useMachineModels(projectId, pageMachineId);
+  const models = pageMachineId === null ? localModels : machineModels;
+  const returnWorkbench = (
+    location.state as {
+      workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
+    } | null
+  )?.workbench;
+  // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
+  // workbenches live on: a Session on a machine runs a copy of the Agent there, and the workbenches
+  // it built are in that copy. The current Agent is always one of this server's, so going by
+  // it listed the wrong Agent's workbenches (or none) for every Session on a machine.
+  const workbenchTabs = useWorkbenchTabs(
+    projectId,
+    pageAgentId,
+    pageMachineId,
+    location.key,
+    returnWorkbench?.projectId === projectId &&
+      returnWorkbench.agentId === pageAgentId &&
+      returnWorkbench.machineId === pageMachineId
+      ? returnWorkbench.tabId
+      : null,
+  );
+  // The docks' terminals belong to this conversation: they are created under its Session id,
+  // start in its Workspace — its files are what a terminal opened here is for — on the machine
+  // it runs on, and only its own are listed. While drafting there is no Session and DraftView
+  // publishes the draft's Workspace instead (a child effect runs before this one, so this must
+  // yield rather than clobber it).
   useEffect(() => {
     if (draft) return;
-    setDockCwd(selected?.workspace ?? null);
-  }, [draft, selected?.workspace]);
+    setDockConversation({
+      sessionId: selected?.sessionId ?? null,
+      workspace: selected?.workspace ?? null,
+      machineId: selected === null ? null : machineForSession(selected.sessionId),
+    });
+  }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -411,14 +617,14 @@ export function ChatPage() {
     : null;
 
   // Tab title follows the current Session (refreshes in sync once the auto-generated title arrives).
-  useDocumentTitle(selected ? (selected.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
+  useDocumentTitle(routed ? (routed.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
 
+  // No handler for the sub-session registration the parent's channel announces: a subagent
+  // Session is in no list (its parent's Agent panel opens it), so nothing here has to refresh.
   const stream = useSessionStream(
     selected?.sessionId ?? null,
     selected?.status ?? "idle",
     setTitle,
-    // Sub-session registration notice (session_created is pushed over the parent session's channel): reload the list so it appears immediately.
-    () => void reloadSessions(),
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
@@ -434,14 +640,18 @@ export function ChatPage() {
   } = useSessionDraft(selected?.sessionId ?? null);
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // of the live tail model's items. Keyed on the prefix's identity as well as the stream
+  // version: the controller prepends synchronously and its repaint signal is throttled, so
+  // a render forced by anything else in between must not pair the NEW prepend count (read
+  // live below) with the OLD item list — the stream would anchor against a layout that has
+  // not changed yet and leave the commit that does change it unanchored.
   const allItems = useMemo(
     () =>
       stream.prefixItems.length > 0
         ? [...stream.prefixItems, ...stream.model.items]
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.prefixItems, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
@@ -500,10 +710,12 @@ export function ChatPage() {
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
@@ -530,19 +742,44 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  /**
+   * The machine the selected Session's Agent lives on (null: this server). A Session on a
+   * machine runs that machine's Agent: its settings — the thinking level and compaction threshold
+   * the composer shows and edits, the settings page it links to — are that Agent's, read and
+   * written over there. The same id on this server is another Agent.
+   */
+  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  // Goal mode's plugin check, against the Session's Agent on the server that holds it
+  // (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () =>
+      projectId && selectedAgentId
+        ? goalPluginGate(projectId, selectedAgentId, selectedAgentMachine)
+        : null,
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
   // config's level (auto-follow — each model context reads the config, so Agent-config edits
   // keep taking effect). A pin is DURABLE: it survives a reload, shows up in a second tab,
-  // and core applies it from the Session's next LLM request on (soft-limited — the picker's
-  // menu advises compacting first, since the change invalidates the model's cached
+  // and core applies it from the Session's next LLM request on (soft-limited — a pick mid-chat
+  // is confirmed first, offering to compact, since the change invalidates the model's cached
   // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
+  // The Agent list may not carry this Session's Agent yet (an Agent an organization created
+  // moments ago): the probe below reloads the list, and this effect re-runs once it lands.
+  const selectedAgentKnown =
+    selectedAgentId !== null && agents.some((a) => a.agentId === selectedAgentId);
   useEffect(() => {
-    if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
+    if (selectedSessionId && selectedAgentId && selectedAgentKnown)
+      setCurrentAgentId(selectedAgentId);
+    else if (selectedSessionId && selectedAgentId)
+      console.warn(
+        `[chat] the Agent ${selectedAgentId} of ${selectedSessionId} is not in this server's Agent list; the conversation renders under the Session's own Agent id`,
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
+  }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
   // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
   // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
@@ -556,129 +793,167 @@ export function ChatPage() {
   // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  // The stream trails a switch by one render (still the previous Session's model and state), so
+  // the tracker is told whose data it is looking at; the panel opens only in this conversation's
+  // own docks, the ones on screen when the effect runs.
+  const streamSessionId = stream.sessionId;
   useEffect(() => {
     const action = advancePanelTaskScope(panelTaskScopeRef.current, {
       sessionId: selectedSessionId,
+      streamSessionId,
       taskCount,
       liveSpawn,
     });
-    if (action === "autoOpen" && !isTabShown("agents")) openPanel("agents");
-    // The tracker only acts on real transitions of these three observed values.
+    if (action === "autoOpen" && currentDockScope() === selectedSessionId && !isTabShown("agents"))
+      openPanel("agents");
+    // The tracker only acts on real transitions of these observed values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, taskCount, liveSpawn]);
+  }, [selectedSessionId, streamSessionId, taskCount, liveSpawn]);
 
-  // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
-  // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
-  // area's selection) before refetching; a failed fetch is silently treated as no skills.
-  // Clearing preserves reference identity (an already-empty array isn't replaced), matching
-  // draft-view's convention.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    if (!projectId || !selectedAgentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, selectedAgentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, selectedAgentId]);
+  // Skills installed on the session's Agent, on its machine (candidates for the input area's
+  // skill dropdown); a switch clears them, which also clears the input area's selection.
+  const { skills: agentSkills } = useAgentSkills(projectId, selectedAgentId, selectedAgentMachine);
 
-  // The session Agent's configured thinking level ("" = unset/loading), via the same
-  // agent-config endpoint the draft picker uses: the in-session picker DISPLAYS this while
-  // the user hasn't picked a level (auto-follow — sending still omits the level until
-  // touched, see turnThinkingLevel). Refetched when the session's Agent changes; a failed
-  // fetch leaves it unset (the picker then shows an em dash until picked).
+  // Two readouts come off the session Agent's config, via the same agent-config endpoint the
+  // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
+  // picker DISPLAYS while the user hasn't picked a level (auto-follow — sending still omits the
+  // level until touched, see turnThinkingLevel). The configured compaction threshold is the
+  // basis the composer's context ring fills against, and the number its small-window notice is
+  // judged against. A failed fetch leaves both unset (the picker shows an em dash until picked;
+  // the ring falls back to the model window and the notice stays down).
   const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
+  const [compactionLimit, setCompactionLimit] = useState<number | undefined>(undefined);
+  // Cleared on an Agent switch only. A plain refresh must not blank values that are about to
+  // come back unchanged: doing that inside the fetch effect would flash the thinking picker's
+  // em dash and drop the ring to the window basis on every refetch.
   useEffect(() => {
     setAgentThinkingLevel("");
+    setCompactionLimit(undefined);
+  }, [projectId, selectedAgentId, selectedAgentMachine]);
+  // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
+  // the value this composer holds can go stale under it. Routing to the settings page and back
+  // remounts this page and refetches anyway; the focus listener covers the other tab editing the
+  // same Agent. (`models` has no such refresh — a model entry is not edited mid-conversation the
+  // way a threshold is, and it already listens for its own change event.)
+  const [agentConfigTick, setAgentConfigTick] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setAgentConfigTick((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+  useEffect(() => {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, selectedAgentId)
+      .getAgentConfig(projectId, selectedAgentId, selectedAgentMachine)
       .then((res) => {
-        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        if (cancelled) return;
+        setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        setCompactionLimit(configuredCompactionLimit(res.config.compaction?.maxContextLength));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId]);
-
-  // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
-  // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
-  // below concludes it doesn't exist; only a failed probe releases that redirect.
-  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
-  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  }, [projectId, selectedAgentId, selectedAgentMachine, agentConfigTick]);
   /**
-   * The route names a Session we cannot answer for YET: not in the loaded pages, and the
-   * direct lookup that settles it has not failed. Ordinary with a paged list — a deep link,
-   * a Session just created, a row beyond the first page. Shared by the probe effect, the
-   * auto-select effect and the render, so the three cannot disagree about what "pending"
-   * means — their disagreeing is what once painted "no Sessions yet" over a conversation
-   * that was about to appear.
+   * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
+   * this page holds so the ring, the cutter and the small-window notice all move together.
+   *
+   * Compaction settings are re-read by the engine at every compaction checkpoint, so this
+   * applies to the conversation on screen without waiting for a rotation — which is what the
+   * toast says. Rejecting rather than swallowing the failure is what keeps the dialog open on
+   * the value the user typed.
    */
-  const routeSessionPending = !!routeSessionId && selected === null && probeFailedKey !== probeKey;
-  useEffect(() => {
-    if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
-    // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
-    // key must not be re-probed just because the list's identity churned.
-    if (!routeSessionPending) return;
-    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
-    // lookup below could only 404 (and the server would record that as an error). Deleting
-    // the conversation you are looking at is the normal way to discard a Session fork, so
-    // this path runs on every such delete. Treat it as an already-failed probe, which
-    // releases the redirect effect below to move on to another conversation.
-    if (isSessionDeleted(routeSessionId)) {
-      setProbeFailedKey(probeKey);
-      return;
-    }
-    let cancelled = false;
-    api.getSession(routeSessionId).then(
-      (res) => {
-        if (cancelled) return;
-        const session = sessionForProject(res.session, projectId);
-        if (session) addSession(session);
-        else setProbeFailedKey(probeKey);
-      },
-      () => {
-        if (!cancelled) setProbeFailedKey(probeKey);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-    // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
-    // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
-    // depending on the array identity cancelled and re-issued it on every user event.
-  }, [
-    draft,
-    projectId,
-    routeSessionId,
-    probeKey,
-    sessionsLoading,
-    routeSessionPending,
-    selected,
-    addSession,
-    isSessionDeleted,
-  ]);
+  const onChangeCompactionLimit = useCallback(
+    async (maxContextLength: number): Promise<void> => {
+      if (!projectId || !selectedAgentId) return;
+      try {
+        await api.putAgentConfig(
+          projectId,
+          selectedAgentId,
+          { config: { compaction: { maxContextLength } } },
+          selectedAgentMachine,
+        );
+      } catch (e) {
+        toastApiError(e);
+        throw e;
+      }
+      setCompactionLimit(configuredCompactionLimit(maxContextLength));
+      setAgentConfigTick((n) => n + 1);
+      toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
+    },
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
 
-  // Auto-select the most recent conversation when the route doesn't select one (newest loaded
-  // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
-  // to their parent, so neither is auto-opened); if there is none, fall back to draft state
-  // (instead of auto-creating one).
+  /** The machine the routed Session is on record as living on, or null (this server, or unknown). */
+  const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
+
+  /**
+   * The ssh alias of the machine a Session is on, or null for this server's own. Falls back
+   * to the machine id when the list could not be read (it is admin-only) — honest, where
+   * inventing a name is not.
+   */
+  const machineNameOf = (sessionId: string): string | null => {
+    const machineId = machineForSession(sessionId);
+    return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  };
+  /**
+   * The route names a Session we cannot answer for YET: not in the loaded pages, and the lookup
+   * has settled nothing (use-route-lookup.ts). Shared by the auto-select effect and the render,
+   * so the two cannot disagree about what "pending" means — their disagreeing is what once
+   * painted "no Sessions yet" over a conversation that was about to appear.
+   */
+  const routeSessionPending = routeLookup.pending;
+  /**
+   * The lookup has failed and the only servers that could still answer for this Session are
+   * out of reach. It is not gone — so the redirect must not fire and the row must not be
+   * dropped — but it is not loading either, and a skeleton that never resolves reads as a
+   * hung page. Say what is actually the matter instead; the lookup is made again once the
+   * machines answer (use-route-lookup.ts).
+   */
+  const routeSessionOffline = routeLookup.outOfReach;
+  // The row found during the list's first load, added once the list has settled and only if
+  // it did not bring the row itself (one beyond the first page, or an organization's row,
+  // which no list page serves and whose status and title events reach only listed rows).
+  useEffect(() => {
+    const row = addWhenListed.current;
+    if (sessionsLoading || row === null) return;
+    addWhenListed.current = null;
+    if (row.sessionId !== routeSessionId || sessions.some((s) => s.sessionId === row.sessionId))
+      return;
+    addSession(row);
+  }, [sessionsLoading, sessions, routeSessionId, addSession]);
+
+  /**
+   * What becomes of the routed Session (session-project.ts): shown, still being looked for, a
+   * reason to open another conversation, or — the direct lookup said it does not exist — a
+   * dead link the page owns up to in place rather than swapping in some other conversation.
+   */
+  const routeOutcome = routeSessionOutcome({
+    shown: routed !== null,
+    pending: routeSessionPending,
+    routeSessionId,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    missing: routeLookup.missing,
+    refused: routeLookup.refused !== null,
+  });
+
+  // Auto-select the last conversation when the route doesn't select one: the most recently
+  // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
+  // rail's entry follows — archived rows are hidden by choice and background Sessions were
+  // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
+  // (instead of auto-creating one). A routed id missing from the paged list isn't gone until
+  // the direct lookup fails, and one the lookup says does not exist is not replaced at all.
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (selected !== null) return;
-    // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionPending) return;
-    const last = latestConversation(sessions);
+    if (routeOutcome !== "redirect") return;
+    // An organization's desk or ticket Session is never auto-opened: landing in one by default
+    // would put the user inside a conversation the scheduler drives, and company mode's own
+    // groups are where it is reached.
+    const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
+  }, [sessionsLoading, draft, routeOutcome, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -729,8 +1004,17 @@ export function ChatPage() {
       // the turn appended its own record to it. Same edge, same guard — a phantom "idle"
       // from a detaching stream never reaches here.
       setSettledTurnSignal((n) => n + 1);
+      // The turn may equally have created a scheduled task, switched one off, or consumed a
+      // one-off — so the Project's schedule directories are re-read on this same edge, the way
+      // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
+      // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
+      // alarm clock come from the same list and cannot disagree. The list re-read is the one on
+      // the server this conversation runs on: a turn on a machine wrote its task files there.
+      if (projectId !== null) {
+        noteScheduleEvent(projectId, machineForSession(selectedSessionId));
+      }
     }
-  }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
+  }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
   // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
   // again when a run finishes under the user's eyes, so the sidebar row left behind is not
@@ -752,16 +1036,19 @@ export function ChatPage() {
   // Session switch: resets the usage-fetch marker, the file-card existence cache, any
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
-  // and the popover's per-session data (process list / token buckets),
+  // a model switch waiting behind its own dialog (it was asked of the conversation left),
+  // and the popover's per-session data (process list / token buckets / cost parts),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
   // selected Session row, so it changes with the session by construction.
   useEffect(() => {
     usageAppliedRef.current = null;
     setThinkingSwitch(null);
+    setModelSwitchAsk(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
+    setUsageCostParts(null);
   }, [routeSessionId]);
 
   // Batched existence check for file summaries: cache stable positive results and share in-flight
@@ -829,6 +1116,7 @@ export function ChatPage() {
         setUsageBuckets(
           row ? { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output } : null,
         );
+        setUsageCostParts(row?.costParts ?? null);
         bumpUsageStamp((n) => n + 1);
       })
       .catch(() => undefined);
@@ -882,29 +1170,31 @@ export function ChatPage() {
   }, [selectedSessionId, stream.taskState, processesCanChange, backgroundProcessCount]);
 
   /**
-   * Shared body of the per-row process actions (Stop / Remove): one request at a time
-   * (procBusy), the statuses that only mean "the list was stale" swallowed instead of
-   * toasted, and the list refreshed however the request ended — the truth comes from the
-   * refresh, not from the response. The refresh is applied ONLY while its own session is
-   * still selected: switching sessions mid-request would otherwise paint the previous
-   * session's processes into the new session's card, and with the popover closed and
-   * nothing running there is no poll to correct it.
+   * Shared body of the process actions (a row's Stop / Remove, the list's "clear exited"):
+   * one action at a time (procBusy), one request per entry through the per-entry route, the
+   * statuses that only mean "the list was stale" swallowed instead of toasted (at most one
+   * toast for the whole batch — see reportableProcessFailure), and the list refreshed
+   * however the requests ended — the truth comes from the refresh, not from the responses.
+   * The refresh is applied ONLY while its own session is still selected: switching sessions
+   * mid-request would otherwise paint the previous session's processes into the new
+   * session's card, and with the popover closed and nothing running there is no poll to
+   * correct it.
    */
   const runProcessAction = useCallback(
     async (
-      processId: string,
+      processIds: readonly string[],
       request: (sessionId: string, processId: string) => Promise<void>,
       staleStatuses: readonly number[],
     ) => {
       if (!selected || procBusy !== null) return;
       const sessionId = selected.sessionId;
-      setProcBusy(processId);
+      setProcBusy(processIds);
       try {
-        await request(sessionId, processId);
-      } catch (e) {
-        if (!(e instanceof ApiError && staleStatuses.includes(e.status))) {
-          toastError(apiErrorText(e));
-        }
+        const results = await Promise.allSettled(
+          processIds.map((processId) => request(sessionId, processId)),
+        );
+        const failure = reportableProcessFailure(results, staleStatuses);
+        if (failure !== null) toastApiError(failure.error);
       } finally {
         setProcBusy(null);
         api
@@ -922,7 +1212,7 @@ export function ChatPage() {
   // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
   // same outcome, not an error worth surfacing).
   const onKillProcess = useCallback(
-    (processId: string) => runProcessAction(processId, api.killSessionProcess, [404]),
+    (processId: string) => runProcessAction([processId], api.killSessionProcess, [404]),
     [runProcessAction],
   );
 
@@ -930,11 +1220,20 @@ export function ChatPage() {
   // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
   // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
   const onRemoveProcess = useCallback(
-    (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
+    (processId: string) => runProcessAction([processId], api.removeSessionProcess, [404, 409]),
     [runProcessAction],
   );
 
-  // Model config (context window + credential guide): fetched once per Project.
+  // Clear every EXITED entry at once: the rows' own Remove, sent for each of them through the
+  // same route, so every entry meets the same checks (an entry that turns out to be running
+  // stays, one already gone is no error) and running rows are never touched.
+  const exitedIds = useMemo(() => exitedProcessIds(processes), [processes]);
+  const onClearExitedProcesses = useCallback(
+    () => runProcessAction(exitedIds, api.removeSessionProcess, [404, 409]),
+    [runProcessAction, exitedIds],
+  );
+
+  // This server's model config (context window + credential guide): fetched once per Project.
   //
   // The credential guide **only ever nags once per lifetime** (first entry after registration):
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
@@ -945,12 +1244,12 @@ export function ChatPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setModels(null);
+    setLocalModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
-        setModels(res);
+        setLocalModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -980,11 +1279,11 @@ export function ChatPage() {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
       if (!detail || detail.defaultModel === undefined) return;
-      setModels(null);
+      setLocalModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setLocalModels(scoped(projectId, res));
         })
         .catch(() => undefined);
     };
@@ -1001,9 +1300,12 @@ export function ChatPage() {
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again.
-      adoptDockScope(respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      // an id nothing routes to again — its shells first, so its tabs stay its own. Only
+      // someone still on the old id is taken to the new one; whoever moved on stays put.
+      await adoptBrowserSession(currentId, respondedId);
+      await reownTerminals(currentId, respondedId);
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );
@@ -1023,7 +1325,7 @@ export function ChatPage() {
         return true;
       } catch (e) {
         // Returning false -> the input area keeps the draft, letting the user fix it and resend (the error copy includes the session model's upstream id).
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -1061,14 +1363,56 @@ export function ChatPage() {
           prevModelId: selected.modelId,
         }),
       };
+      // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
+      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
+      // is now talking in, instead of staying on the old one while a stray one is opened.
+      if (selected.orgId !== undefined) {
+        try {
+          const deskId = await switchDeskModel(
+            api,
+            {
+              projectId,
+              orgId: selected.orgId,
+              agentId: selected.agentId,
+              sessionId: selected.sessionId,
+            },
+            ref,
+          );
+          if (deskId !== null) {
+            const res = await api.postTask(deskId, { input: [origin, ...input] });
+            discardSessionDraft();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            navigate(`/chat/${res.sessionId}`);
+            return true;
+          }
+        } catch (e) {
+          // The model may be written and the desk renewed by now; the lists say which.
+          void company.reloadOrgChart();
+          void company.reloadOrgSessions();
+          toastApiError(e, { modelId: ref.modelId });
+          return false;
+        }
+      }
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, selected.agentId, {
-          provider: ref.provider,
-          modelId: ref.modelId,
-          workspace: selected.workspace,
-          approvalMode: selected.approvalMode,
-        });
+        const created = await api.createSession(
+          projectId,
+          selected.agentId,
+          {
+            provider: ref.provider,
+            modelId: ref.modelId,
+            workspace: selected.workspace,
+            approvalMode: selected.approvalMode,
+            sandbox: selected.sandbox,
+          },
+          // On the machine the source Session is on: the Workspace being carried over is a
+          // directory THERE, and this server would refuse a path it does not have
+          // ("Workspace does not exist or is inaccessible"). The machine travels with the
+          // path, here as everywhere.
+          machineForSession(selected.sessionId),
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -1077,12 +1421,18 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
-        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
+        toastApiError(e, { modelId: ref.modelId });
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, removeSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1106,9 +1456,14 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -1117,7 +1472,13 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
         toastError(
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
@@ -1125,13 +1486,42 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, currentAgent, selected, addSession, discardSessionDraft, navigate, models],
+    [
+      projectId,
+      currentAgent,
+      selected,
+      addSession,
+      removeSession,
+      discardSessionDraft,
+      navigate,
+      models,
+    ],
   );
 
   const onStop = useCallback(async () => {
     if (!selected) return;
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
+
+  // "Retry" on the line a failed or stopped run ended on: the Session runs once with no new
+  // input and sends the unfinished turn's held input on its own. A refusal surfaces as a toast —
+  // nothing held (a later message already sent it) has its own sentence, anything else reads
+  // like a failed send — and is rethrown, which enables the button again.
+  const onRetry = useCallback(async (): Promise<void> => {
+    if (!selected) return;
+    try {
+      // Same shape as tasks: the response carries the Session's actual id.
+      const res = await api.postRetry(selected.sessionId);
+      await syncHealedSessionId(selected.sessionId, res.sessionId);
+    } catch (e) {
+      toastError(
+        e instanceof ApiError && e.code === "nothing_to_retry"
+          ? S.chat.retryNothing
+          : apiErrorText(e, { modelId: selected.modelId }),
+      );
+      throw e;
+    }
+  }, [selected, syncHealedSessionId]);
 
   // Follow-up queue: post the full input with queueIfBusy — a busy session holds it
   // server-side and auto-sends it as an ordinary next task once this run finishes (the
@@ -1149,11 +1539,61 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
     [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // Interrupt, then send: post the full input with `interrupt` — a busy session stops its run
+  // and sends this right after the turn it cut (the abort's carry-over goes out ahead of it,
+  // with the undelivered steering), an idle one just starts it. Same success contract as the
+  // queue: the input area clears the draft on true.
+  const onInterruptSend = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastApiError(e, { modelId: selected.modelId });
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
+  const interruptWaiting = useCallback(
+    async (target: InterruptRequest): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postInterrupt(selected.sessionId, target);
+        return true;
+      } catch (e) {
+        toastError(
+          e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
+            ? S.chat.interruptAlreadySent
+            : apiErrorText(e),
+        );
+        return false;
+      }
+    },
+    [selected],
+  );
+  const onInterruptFollowUp = useCallback(
+    (followUpId: string) => interruptWaiting({ followUpId }),
+    [interruptWaiting],
+  );
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
@@ -1182,18 +1622,73 @@ export function ChatPage() {
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return "failed";
       }
     },
     [selected, discardSessionDraft],
   );
 
+  /**
+   * The scheduled-tasks panel's exit: the composed prompt lands in this conversation's composer
+   * and stops there. Nothing is posted — pressing Send stays the user's move, and the composer
+   * then routes it the way it routes anything typed (a steering message while a Task runs, a
+   * task otherwise), so this path needs no delivery rules of its own.
+   */
+  const composerRef = useRef<ComposerControl | null>(null);
+  const prefillComposer = useCallback((text: string) => {
+    // An empty pin list: a schedule prompt names no Skills, so the composer's own selection stands.
+    composerRef.current?.fillPrompt(text, []);
+  }, []);
+  /**
+   * A reply's choice or form block answers through the same exit: the picked text lands in the
+   * composer (replacing typed text only after the user confirms) and Send stays the user's move;
+   * its "Other…" fills nothing, which empties what an earlier pick put there. The open
+   * question's answers in progress are kept in this browser per Session (lib/a2ui-drafts.ts),
+   * so a reload finds them. The transcript decides which reply may use these (see
+   * MessageItems); memoized because the blocks read them through context, past the memoized
+   * Markdown.
+   */
+  const { locale } = useLocale();
+  const a2uiActions = useMemo<A2uiActions>(
+    () => ({
+      interactive: true,
+      fill: prefillComposer,
+      lang: locale,
+      drafts: a2uiDrafts,
+      draftScope: selectedSessionId ?? undefined,
+    }),
+    [prefillComposer, locale, selectedSessionId],
+  );
+  /**
+   * The Files panel's exit into the conversation — a `@path` reference, or a fenced block
+   * around what was selected in a preview — and the message stream's, an excerpt of the
+   * conversation selected in it. Nothing is sent and nothing already typed is disturbed: the
+   * surface contributes a part of a message the user is writing.
+   */
+  /** Staged as a chip, so the draft keeps whatever the user was in the middle of writing. */
+  const addComposerReference = useCallback((reference: ComposerReference) => {
+    composerRef.current?.addReference(reference);
+  }, []);
+
+  // A fresh Session row from the server, applied wherever the page reads the row from: the
+  // paged list, and the direct lookup's copy for a row the list does not hold (see
+  // resolveRoutedSession).
+  const applySessionRow = useCallback(
+    (session: SessionInfo) => {
+      replace(session);
+      setFetchedSession((cur) =>
+        cur !== null && cur.sessionId === session.sessionId ? session : cur,
+      );
+    },
+    [replace],
+  );
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
-  // from the next LLM request (the picker's menu advises compacting first). Modeled on
-  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have.
+  // from the next LLM request (a pick mid-chat reaches here through the confirm dialog, which
+  // offers to compact first). Modeled on onChangePermission — a failed write surfaces as a
+  // toast and leaves the level as it was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(
     (level: string) => {
       if (!selected) return;
@@ -1203,7 +1698,7 @@ export function ChatPage() {
         })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
     [selected, replace],
@@ -1220,7 +1715,7 @@ export function ChatPage() {
       try {
         return await api.recallSteer(selected.sessionId, steerId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1236,7 +1731,7 @@ export function ChatPage() {
         // is pinned to.
         return await api.recallFollowUp(selected.sessionId, followUpId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1259,20 +1754,57 @@ export function ChatPage() {
     [selected, stream],
   );
 
-  const onChangeApprovalMode = useCallback(
-    (mode: ApprovalMode) => {
+  // "Move to background" on an executing tool call: the call returns a background handle and
+  // the turn carries on. 404 means it finished in the click's race window and 409 that the
+  // tool has no background form — the card settles on its own either way, so neither is worth
+  // a toast; anything else is a real failure the user should see.
+  const onSendToBackground = useCallback(
+    async (toolCallId: string) => {
+      if (!selected) return;
+      try {
+        await api.postToolCallBackground(selected.sessionId, toolCallId);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
+        toastApiError(e);
+      }
+    },
+    [selected],
+  );
+
+  // A preset from the permission button: the approval mode and the Session's own sandbox
+  // policy in one PATCH, applied from the next tool call and command. A refused change (a
+  // non-admin loosening past the server's settings) stores nothing — the route checks every
+  // field before writing any — so the Session is as it was, and the toast says why.
+  const onChangePermission = useCallback(
+    (pick: PermissionPick) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
-      void api
-        .patchSession(selected.sessionId, { approvalMode: mode })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+      // Returned so the permission button keeps the pick on screen until the save settles.
+      return api
+        .patchSession(selected.sessionId, {
+          approvalMode: pick.approvalMode,
+          // Absent for an approval-mode pick: the Session's policy is left as it is.
+          ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => toastApiError(e))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],
   );
+
+  // The Sandbox card was saved: the open Session's view (switch, presets) is read again, so the
+  // permission menu shows what the card now says.
+  const selectedId = selected?.sessionId;
+  useEffect(() => {
+    if (selectedId === undefined) return;
+    return onPluginConfigSaved("sandbox", () => {
+      void api.getSession(selectedId).then(
+        (res) => replace(res.session),
+        () => undefined,
+      );
+    });
+  }, [selectedId, replace]);
 
   // Starts a context compaction — the single path to the server for it (the composer's
   // /compact command and the thinking-switch dialog's "compact, then switch" both come
@@ -1289,7 +1821,7 @@ export function ChatPage() {
       await syncHealedSessionId(selected.sessionId, res.sessionId);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
       return false;
     }
   }, [selected, syncHealedSessionId]);
@@ -1375,12 +1907,107 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
 
+  /** A model's display label for the switch dialog and its toasts: the configured name, else the id. */
+  const modelDisplay = useCallback(
+    (ref: ModelRefDto): string => {
+      const m = models?.models.find((x) => sameModelRef(x, ref));
+      return m ? modelLabel(m) : ref.modelId;
+    },
+    [models],
+  );
+
+  // Session toolbar model picker: switches THIS conversation's model (the `/model` handoff opens
+  // a new conversation instead). Re-picking the current model does nothing, and neither does a
+  // pick that raced a Task starting (the picker is disabled then, and the server would refuse
+  // it anyway); any other pick asks first, worded for what the switch will do: compact the
+  // context on the current model before moving on, hand the picked model the Trace path when
+  // the current one is unavailable, or — right after a compaction or a switch, when there is
+  // nothing to compact — continue on the picked model from what is already held.
+  const onPickSessionModel = useCallback(
+    (ref: ModelRefDto) => {
+      if (!selected || sameModelRef(ref, selected)) return;
+      if (sessionModelPickerDisabled(stream.taskState)) return;
+      // Read at pick time: the model's items mutate in place. The live tail decides, behind
+      // whatever window was backfilled above it.
+      const shape = switchContextShape(
+        [...stream.prefixItems, ...stream.model.items],
+        selected,
+        models,
+      );
+      setModelSwitchAsk({ to: ref, shape });
+    },
+    [selected, stream.taskState, stream.prefixItems, stream.model, models],
+  );
+
+  // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
+  // compaction, the model-change marker alone) carries it from here, and the effect below moves
+  // the Session row once the new context's session_meta names the new model. 200 = the Session
+  // never ran and switched inside the request: the row comes back with the response — under a
+  // new id when the server had to rebuild a Session that left no Trace, which the page follows.
+  // A refusal (409 busy / same model / target not configured / target unavailable) is a toast.
+  const confirmModelSwitch = useCallback(async () => {
+    const ask = modelSwitchAsk;
+    if (!selected || ask === null || modelSwitchPosting) return;
+    setModelSwitchPosting(true);
+    const from = modelDisplay({ provider: selected.provider, modelId: selected.modelId });
+    const to = modelDisplay(ask.to);
+    try {
+      const res = await api.switchSessionModel(selected.sessionId, {
+        provider: ask.to.provider,
+        modelId: ask.to.modelId,
+      });
+      if ("session" in res) {
+        applySessionRow(res.session);
+        toastSuccess(S.chat.modelSwitchInSessionApplied(to));
+        await syncHealedSessionId(selected.sessionId, res.session.sessionId);
+        return;
+      }
+      // Only a switch that compacts may say so; one that continues from what is held, or hands
+      // over by Trace path, runs no compaction and must not promise one.
+      toastInfo(
+        ask.shape === "compact"
+          ? S.chat.modelSwitchInSessionStarted(from, to)
+          : S.chat.modelSwitchInSessionSwitching(to),
+      );
+    } catch (e) {
+      // The codes that take a model name are about the model the Session is on (its loader's
+      // missing credential); a refusal of the target names it in its own message.
+      toastApiError(e, { modelId: selected.modelId });
+    } finally {
+      setModelSwitchPosting(false);
+      setModelSwitchAsk(null);
+    }
+  }, [
+    modelSwitchAsk,
+    modelSwitchPosting,
+    selected,
+    modelDisplay,
+    applySessionRow,
+    syncHealedSessionId,
+  ]);
+
+  // The Session row (model badge, context window, window notice, header price) follows the
+  // model the conversation is on: when the running context's session_meta names another model
+  // than the row on hand — a switch completed, on this tab or another one watching the
+  // Session, or the row was held from before a switch — the row moves to it in place, the way
+  // a title does. The server moved its own row before it published that record. Runs per
+  // stream version because the model mutates in place.
+  useEffect(() => {
+    const running = stream.model.contextModel;
+    if (!selected || running === null || stream.loading) return;
+    if (!sessionRowStale(running, selected)) return;
+    applySessionRow({ ...selected, provider: running.provider, modelId: running.modelId });
+    // `version` is the model's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.version, stream.model, stream.loading, selected, applySessionRow]);
+
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
   // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
-  // cache — the sidebar's own new-chat entries do the same (sidebar.tsx).
+  // cache, and the draft starts on the Project's new-chat defaults — the sidebar's own
+  // new-chat entries do the same (new-chat.ts).
   const newChat = useCallback(() => {
-    if (user && projectId) parkActiveDraft(user.userId, projectId);
+    if (user && projectId) prepareNewChatDraft(user.userId, projectId);
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [user, projectId, navigate]);
 
@@ -1418,24 +2045,32 @@ export function ChatPage() {
         addSession(created.session);
         navigate(`/chat/${created.session.sessionId}`);
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
       }
     },
     [selected, addSession, navigate],
   );
 
-  // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
-  // (paired reference) current pricing; null if no pricing is configured.
-  const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
+  // Real-time cost for a turn: converts the Task's bucketed usage using a Model's (paired
+  // reference) current pricing; null if no pricing is configured. That pricing is the list
+  // price, so a promotion the models response reports for the Model comes off it here, as it
+  // does on the recorded cost. A Task is priced on the model it ran on when its row names one
+  // (a Session can switch models between Tasks), else on the Session's own. A former default
+  // model the table no longer has keeps the catalog price the server costs it at (turnPricing).
+  const pricingOf = (ref: ModelRefDto | null) => turnPricing(models?.models, ref);
+  const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
+    bodies: stream.bodies,
     onApprove,
+    onSendToBackground,
     origin: [],
     // Any non-idle state (running / compacting) counts as "not yet stopped": compaction can
     // happen mid-turn, and if only running were checked, the trailing group would flash
     // "finished running" during compaction before flipping back to "running".
     taskRunning: stream.taskState !== "idle",
-    taskCost: (stats) => bucketCostUsd(stats.tokensByBucket, modelPricing),
+    taskCost: (stats, model) =>
+      bucketCostUsd(stats.tokensByBucket, model ? pricingOf(model) : modelPricing),
     // Reconnect countdown controls (live waiting state only): retry-now skips the
     // remaining backoff server-side (benign no-op on timing races), give-up is the
     // ordinary session abort — the engine's abort-during-backoff path ends the turn.
@@ -1445,13 +2080,11 @@ export function ChatPage() {
     onGiveUp: () => {
       void onStop();
     },
-    onOpenFile: (path) => {
-      // The file card has already normalized the text path to a Workspace-relative path
-      // (toWorkspaceRelative, including stripping absolute-path prefixes and converting
-      // Windows separators), so this just brings the Workspace tab up and navigates to it.
-      openPanel("workspace");
-      setFileOpenRequest({ path });
-    },
+    // Retry after a failed or stopped run: offered only while the composer could send — a
+    // Session on screen with nothing running or compacting, the same state its Send requires.
+    ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
+    onShowFailure: setFailureShown,
+    onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
       // child's own id), with the graph pinned to this chip's Task.
@@ -1478,6 +2111,7 @@ export function ChatPage() {
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,
+    a2uiActions,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
@@ -1489,82 +2123,60 @@ export function ChatPage() {
   // view arrives as a bottom view). They render on the draft page too — the arrangement is
   // the user's workbench, and a terminal opened while drafting must be visible — with the
   // session-bound panels showing a placeholder until the first send creates the Session.
-  // useDockMount keeps a closing dock mounted through its collapse transition and skips
-  // the animation for instant changes (scope switches, cross-dock moves).
+  // useDockMount keeps a closing dock mounted through its collapse transition and then
+  // holds it at zero size on closedDockView, so hiding a dock costs none of what its panels
+  // hold; it skips the animation for instant changes (scope switches, cross-dock moves).
+  // Narrow: the merged view is a bottom view, and the closed one goes to the same mount.
   const views = dockViews();
-  const rightMount = useDockMount(views.find((view) => view.position === "right") ?? null);
-  const bottomMount = useDockMount(views.find((view) => view.position === "bottom") ?? null);
-  const terminalSupported = terminalApiSupported();
+  const rightMount = useDockMount(
+    views.find((view) => view.position === "right") ?? null,
+    closedDockView("right"),
+  );
+  const bottomMount = useDockMount(
+    views.find((view) => view.position === "bottom") ?? null,
+    closedDockView("bottom"),
+  );
 
+  // The Memory panel's way to its management: add / edit / delete live on the Agent's
+  // settings page, on the memory tab — the page of the Agent on the machine the conversation
+  // is on.
+  const openMemorySettings = useCallback(
+    (memoryAgentId: string, machineId: string | null) =>
+      navigate(agentSettingsPath(memoryAgentId, machineId, "memory")),
+    [navigate],
+  );
   /**
-   * The panel tabs' bodies. Keyed by Session where the view starts over per conversation
-   * (agents / memory / trace); the Workspace browser instead re-binds through its props —
-   * its own handled-once request guard is what the conversation-switch e2e covers.
+   * What the dock panel bodies read off this page (builtin-dock-panels.tsx), provided around
+   * both docks below. Not memoised: `ctx` is rebuilt on every render and the stream fields
+   * move with every version, so a memo would miss every time; the bodies re-render with the
+   * page, exactly as they did when the page built them inline. The callbacks in it are the
+   * page's own memoised ones, passed as they are, never wrapped afresh.
    */
-  const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
-    switch (kind) {
-      case "agents":
-        return (
-          <SubagentsView
-            key={selected.sessionId}
-            session={selected}
-            // The merged view (backfilled windows included): a chip on an older turn keeps
-            // its historical graph and child conversation reachable after pagination.
-            model={panelModel}
-            version={stream.version}
-            taskRunning={stream.taskState !== "idle"}
-            ctx={ctx}
-            focusRequest={subagentFocus}
-            taskScope={subagentTaskScope}
-            subagents={stream.subagents}
-            models={models?.models ?? []}
-            approvalMode={selected.approvalMode}
-            onChangeApprovalMode={onChangeApprovalMode}
-            modeSaving={modeSaving}
-            parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
-          />
-        );
-      case "workspace":
-        return (
-          <WorkspaceBrowser
-            session={selected}
-            openRequest={fileOpenRequest}
-            active={active}
-            reloadSignal={settledTurnSignal}
-          />
-        );
-      case "memory":
-        return (
-          <ChatMemoryView
-            key={selected.sessionId}
-            session={selected}
-            changes={sessionMemoryChanges}
-            scopes={memoryListing.scopes}
-            listingError={memoryListing.error}
-            request={memoryRequest}
-            active={active}
-            // Management (add / edit / delete) lives on the agent-settings memory tab.
-            onOpenSettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
-          />
-        );
-      case "trace":
-        return (
-          <TracePanel
-            key={selected.sessionId}
-            session={selected}
-            active={active}
-            reloadSignal={settledTurnSignal}
-          />
-        );
-      case "messaging":
-        return (
-          <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
-        );
-    }
+  const chatDock: ChatDockState = {
+    selected,
+    draft,
+    draftWorkspace,
+    projectId,
+    panelModel,
+    stream,
+    ctx,
+    subagentFocus,
+    subagentTaskScope,
+    models,
+    onChangePermission,
+    modeSaving,
+    parentThinkingLevel: sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
+    fileOpenRequest,
+    settledTurnSignal,
+    addComposerReference,
+    sessionMemoryChanges,
+    memoryListing,
+    memoryRequest,
+    openMemorySettings,
+    prefillComposer,
   };
 
-  if (!projectId || !agentId) {
+  if (!projectId || (!draft && !pageAgentId)) {
     return (
       <div className="p-6">
         <Skeleton className="h-6 w-64" />
@@ -1601,14 +2213,6 @@ export function ChatPage() {
       currency,
     }),
   );
-  // Cache hit rate over the recorded input buckets (cacheRead = hits, cacheWrite =
-  // uncached input) — the details card's tokens-line parenthetical. Null until a usage
-  // row with any input has applied, so a fresh session shows no "0%" out of thin air.
-  const recordedInput = usageBuckets ? usageBuckets.cacheRead + usageBuckets.cacheWrite : 0;
-  const cacheHitRate =
-    usageBuckets && recordedInput > 0
-      ? `${Math.round((100 * usageBuckets.cacheRead) / recordedInput)}%`
-      : null;
   // Display name of the Session's own Agent for the details card — null when the Agent has
   // no name of its own (agentDisplayName then returns the id, which the row already shows)
   // or when the Agent list hasn't arrived yet.
@@ -1622,12 +2226,13 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
-  // Input area in session state: Agent / Workspace / Model are already locked by the Session
-  // (the model selector isn't rendered; models feeds the locked model's read-only display and
-  // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
-  // /model forks the conversation onto another model.
+  // Input area in session state: Agent and Workspace are fixed by the Session. The toolbar's
+  // model picker switches this conversation's model in place (confirmed, compacting first);
+  // approval mode and the thinking level stay editable; /model opens a NEW conversation on
+  // another model and leaves this one as it is.
   const input = selected && (
     <ChatInput
+      controlRef={composerRef}
       status={stream.taskState}
       onSend={onSend}
       onSteer={onSteer}
@@ -1641,24 +2246,36 @@ export function ChatPage() {
       queuedFollowUps={stream.queuedFollowUps}
       pendingFollowUps={stream.pendingFollowUps}
       onRecallFollowUp={onRecallFollowUp}
+      onInterruptSend={onInterruptSend}
+      onInterruptFollowUp={onInterruptFollowUp}
+      onInterruptSteering={onInterruptSteering}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
+      onPickSessionModel={onPickSessionModel}
       // Display value: the level pinned on this Session, else the Agent config's level
       // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
       turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
       // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
+      {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+      onChangeCompactionLimit={onChangeCompactionLimit}
+      onOpenAgentSettings={() =>
+        navigate(agentSettingsPath(selected.agentId, selectedAgentMachine, "runtime"))
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
       vision={vision}
       approvalMode={selected.approvalMode}
-      onChangeApprovalMode={onChangeApprovalMode}
+      // An organization's Session is not offered always-ask: nobody is there to be asked.
+      approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
+      sandbox={selected.sandbox}
+      onChangePermission={onChangePermission}
       modeSaving={modeSaving}
       autoFocus
       agents={agents}
@@ -1667,6 +2284,7 @@ export function ChatPage() {
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      goalPlugin={goalPlugin}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
@@ -1692,29 +2310,85 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
+  /**
+   * The class for what a shown workbench tab covers: the toolbar and everything under it. It stays
+   * mounted and laid out, so nothing reflows or refits, but it is not painted and takes no pointer.
+   * The cover's own z-index cannot do that: the docks paint layers above the page (the bottom
+   * dock's boundary handle straddling its top edge, a fullscreen surface and the handle on its
+   * leading edge), and each of them showed through the page — the handle as a line that lit up
+   * under the pointer, took the cursor and resized the hidden dock.
+   */
+  const coveredByWorkbench =
+    workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null
+      ? "invisible"
+      : "";
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
     // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
-    <div data-dock-host className="flex h-full flex-col bg-white dark:bg-gray-950">
+    // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
+    // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
+    // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
+    <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
+      {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
+          chat (which stays mounted, so its state survives a look at the page, but is not
+          painted: coveredByWorkbench) below the strip; the strip is absent when the Agent has
+          no workbench with a UI. */}
+      <WorkbenchTabStrip
+        tabs={workbenchTabs.tabs}
+        notices={workbenchTabs.notices}
+        active={workbenchTabs.active}
+        onSelect={workbenchTabs.setActive}
+      />
+      {workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
+        <div className="absolute inset-x-0 bottom-0 top-9 z-10">
+          <WorkbenchFrame
+            // Per tab: the frame keeps this workbench's history fold, its error and its
+            // armed Remove, and none of that belongs to the next tab.
+            key={workbenchTabs.activeTab.tabId}
+            projectId={projectId}
+            agentId={pageAgentId}
+            tab={workbenchTabs.activeTab}
+            onChanged={() => void workbenchTabs.refresh()}
+            onRemoved={() => {
+              workbenchTabs.setActive(null);
+              void workbenchTabs.refresh();
+            }}
+          />
+        </div>
+      )}
+      {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
+          nothing of the conversation is read until it is unarchived. */}
+      {archivedRow && (
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
+          <Heading level={5} as="h1" className="flex min-w-0">
+            <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
+          </Heading>
+        </div>
+      )}
       {/* Thin top toolbar */}
       {selected && (
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="flex min-w-0 text-[15px] font-semibold">
+            {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
+            <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
-            </h1>
+            </Heading>
             {/* Session-level state: a turning hourglass while the run is active, and nothing at
                 all once it settles — the conversation on screen is by definition read, and the
                 unread dot is a sidebar affordance for the rows you are NOT looking at. The
                 compacting state stays in the stream banner rather than being repeated here.
                 Below sm only the glyph remains so the title keeps its room. */}
             {headerActivity === "running" && (
-              <span
-                title={sessionActivityLabel(headerActivity)}
-                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-              >
-                <SessionActivityIcon activity={headerActivity} />
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <ActivityIcon
+                  activity={headerActivity}
+                  label={sessionActivityLabel(headerActivity)}
+                />
                 <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
@@ -1724,7 +2398,7 @@ export function ChatPage() {
               placement actions and pin toggles. Every entry is a dock tab (features/dock)
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
-          <PanelsToolbar agentsPending={anySubagentPending} />
+          <DockToggles agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -1750,18 +2424,21 @@ export function ChatPage() {
             button={
               <button
                 type="button"
-                title={S.chat.infoPanel}
+                data-tooltip={S.chat.infoPanel}
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
-                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
+                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-control-hover ${
+                  infoOpen ? "bg-control-selected" : ""
                 }`}
               >
-                {/* Wide: the chip row (icon + title per chip carries the full meaning). */}
-                <span className="hidden items-center gap-3 px-2 sm:flex">
+                {/* Wide: the chip row, a glyph and a total per chip, each named by its label.
+                    No breakdown rides on a chip: a hover hint on a visible reading never opens,
+                    and this button holds no "?", so the breakdowns are in the details card it
+                    opens. The row sets the chips' face and ink, and keeps each on one line. */}
+                <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
                   <StatChip
-                    icon={STAT_ICONS.tokens}
+                    glyph={STAT_ICONS.tokens}
                     value={hs.tokensText}
                     label={`${S.chat.statTokens}（Token）`}
                   />
@@ -1771,35 +2448,40 @@ export function ChatPage() {
                       something's broken. */}
                   {hs.costText != null && (
                     <StatChip
-                      icon={STAT_ICONS.cost}
+                      glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
-                      label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                      label={`${S.common.cost}（${currency}）`}
                     />
                   )}
                   <StatChip
-                    icon={STAT_ICONS.elapsed}
+                    glyph={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
-                    label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
+                    label={S.chat.statElapsed}
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
-                      mid-round: their count, in the live-status green, the same figure and
-                      glyph as the session row's mark and read live off the row. Bare ink like
-                      the chips beside it, not a tinted pill: this is one more reading in the
-                      stat row, not a badge that should out-weigh them. */}
+                      mid-round: their count, in the same tone, figure and glyph as the
+                      session row's mark and read live off the row. A count is what this
+                      reading is, and a glyph beside a number is how every other chip in this
+                      row says what its number counts. Bare ink like the chips beside it, not
+                      a tinted pill: this is one more reading in the stat row, not a badge
+                      that should out-weigh them. In the live-status green (`busy`), the same
+                      tone as the session row's mark: background work is work still running
+                      behind this conversation, and glyph and number wear that colour together
+                      wherever they appear; the title still names the count in words. */}
                   {backgroundCount > 0 && (
                     <span
-                      title={S.chat.backgroundTasks(backgroundCount)}
+                      data-tooltip={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      <GlyphIcon d={ICONS.pulse} />
                       {backgroundCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
+                  <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }
@@ -1839,7 +2521,11 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}
                 </p>
-                <p className="break-all font-mono text-xs leading-5">{selected.workspace}</p>
+                {/* The machine too: a path names a directory only together with the
+                    filesystem it is on, and the same path exists on more than one of them. */}
+                <p className="break-all font-mono text-xs leading-5">
+                  {nameOnMachine(selected.workspace, machineNameOf(selected.sessionId))}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1851,55 +2537,68 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.sessionStats}
                 </p>
-                {/* A bulleted list, one stat per line. The tokens bullet carries the cache
-                    hit rate in parentheses (cacheRead ÷ all recorded input); the rate comes
-                    from the usage fetch, so it can trail the live total mid-run and
-                    reconciles on idle. No-cost sessions omit the cost bullet entirely, as
-                    the chip does. */}
-                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
-                  <li>
-                    {S.chat.statTotalTokens} {hs.tokensText}
-                    {cacheHitRate !== null &&
-                      `${S.chat.statParenOpen}${S.chat.statCacheHit(cacheHitRate)}${S.chat.statParenClose}`}
-                  </li>
-                  {hs.costText != null && (
-                    <li>
-                      {S.common.cost} {hs.costText}
-                      {hs.costUncosted ? " *" : ""}
-                    </li>
-                  )}
-                  <li>
-                    {S.chat.statElapsed} {hs.elapsedNode}
-                    {hs.elapsedSplit}
-                  </li>
-                </ul>
+                {/* One total per bullet, each from the usage fetch or the live stream as its
+                    reading needs, with its breakdown behind a "?" right of it. No-cost
+                    sessions omit the cost bullet entirely, as the chip does. */}
+                <SessionStatsList
+                  tokens={hs.tokensText}
+                  usage={usageBuckets}
+                  cost={
+                    hs.costText != null
+                      ? { text: hs.costText, uncosted: hs.costUncosted, parts: usageCostParts }
+                      : null
+                  }
+                  currency={currency}
+                  elapsed={hs.elapsedNode}
+                  elapsedSplit={hs.elapsedSplit}
+                />
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole
                   process group and the row drops on the follow-up refresh; exited rows keep
                   their "exited" label and carry a remove button that deletes the entry from
-                  the list (#312). Hidden entirely while there are none. */}
+                  the list (#312), and the heading carries one action removing every exited
+                  row at once. A command too long for its row shows whole in a tooltip. Hidden
+                  entirely while there are none. */}
               {processes.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {S.chat.processList}
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.processList}
+                    </p>
+                    {/* Only while something has exited. Words rather than a glyph, in the quiet
+                        text-action style of the memory card's "Open memory list": the same
+                        text size as the heading beside it, so the heading row keeps its height
+                        when the first process exits. The same no-confirm tidy-up as a single
+                        row's Remove, and its hint, like that button's, says what leaves with
+                        the rows. */}
+                    {exitedIds.length > 0 && (
+                      <button
+                        type="button"
+                        data-tooltip={S.chat.processClearExitedHint}
+                        data-tooltip-extra
+                        disabled={procBusy !== null}
+                        onClick={() => void onClearExitedProcesses()}
+                        className="shrink-0 whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
+                      >
+                        {S.chat.processClearExited}
+                      </button>
+                    )}
+                  </div>
                   <ul className="mt-1 space-y-1.5">
                     {processes.map((p) => (
                       <li key={p.processId} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            p.running
-                              ? `animate-pulse ${toneDot.busy}`
-                              : "bg-gray-300 dark:bg-gray-600"
-                          }`}
-                        />
+                        {p.running ? (
+                          <Dot tone="success" pulse />
+                        ) : (
+                          <span
+                            aria-hidden
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                          />
+                        )}
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate font-mono text-xs" title={p.cmd}>
-                            {p.cmd}
-                          </span>
-                          <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                          <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
+                          <span className="block truncate text-xs text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
                             {/* Detected service URL (output scan or port probe), running rows
@@ -1912,7 +2611,7 @@ export function ChatPage() {
                                   href={p.serviceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title={p.serviceUrl}
+                                  data-tooltip={p.serviceUrl}
                                   className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
                                 >
                                   {p.serviceUrl.replace(/^https?:\/\//i, "")}
@@ -1925,14 +2624,16 @@ export function ChatPage() {
                           <button
                             type="button"
                             disabled={procBusy !== null}
-                            onClick={() => void onKillProcess(p.processId)}
-                            className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            onClick={() => setProcToKill(p)}
+                            className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                           >
-                            {procBusy === p.processId ? S.common.loading : S.chat.processStop}
+                            {procBusy?.includes(p.processId)
+                              ? S.common.loading
+                              : S.chat.processStop}
                           </button>
                         ) : (
                           <>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                               {S.chat.processExited}
                             </span>
                             {/* The row is the only handle on that process's captured
@@ -1943,12 +2644,15 @@ export function ChatPage() {
                                 says what leaves with it. */}
                             <button
                               type="button"
-                              title={S.chat.processRemoveHint}
+                              data-tooltip={S.chat.processRemoveHint}
+                              data-tooltip-extra
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
-                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                              className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                             >
-                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                              {procBusy?.includes(p.processId)
+                                ? S.common.loading
+                                : S.chat.processRemove}
                             </button>
                           </>
                         )}
@@ -1962,145 +2666,236 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the right dock on this row (below the toolbar — a dock
-          beside the whole page would squeeze the header), with the bottom dock after the
-          row spanning the full page width. data-dock-row is what the drag preview
-          measures for a right landing. */}
-      <div data-dock-row className="flex min-h-0 flex-1">
-        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
-            covers the conversation and the composer in both branches below, and nothing else
-            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-            it (terminal panes included) are all outside, where a file drop is inert (see
-            drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
-        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {draft ? (
-            // Draft state: DraftView's vertically centered input card + Agent / Workspace
-            // selection panel; the Session is only created once the first message is sent. Keyed
-            // by Project (switching Project remounts onto that Project's draft cache) and by the
-            // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
-            // chat" while already on the draft page (which just parked the typed text) remounts
-            // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
-            // so it's not part of the key.)
-            <DraftView
-              key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
-              projectId={projectId}
-              models={models}
-              {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
-            />
-          ) : (
-            // Keyed by Session: the whole block does a light fade-in when switching sessions.
-            <div
-              key={selected?.sessionId ?? "empty"}
-              className="anim-fade flex min-h-0 flex-1 flex-col"
-            >
-              {selected ? (
-                stream.error ? (
-                  // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                    <p className="text-sm text-red-600 dark:text-red-400">
-                      {S.chat.historyLoadFailed}：{stream.error}
-                    </p>
-                    <Button onClick={stream.retry}>{S.common.retry}</Button>
-                  </div>
-                ) : stream.loading ? (
-                  <div className="space-y-3 p-6">
-                    <Skeleton className="h-5 w-1/3" />
-                    <Skeleton className="h-5 w-2/3" />
-                    <Skeleton className="h-5 w-1/2" />
-                  </div>
-                ) : (
-                  // The empty state shares the same structure as the message stream (message
-                  // area + bottom input area): only the message area's content differs, and
-                  // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                  // recreated when the first message arrives (preserving draft/focus).
-                  <>
-                    <div className="min-h-0 flex-1">
-                      {emptyChat ? (
-                        <div className="flex h-full items-center justify-center px-4">
-                          <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
-                            {S.chat.emptyGreeting}
-                          </p>
-                        </div>
-                      ) : (
-                        <MessageStream
-                          items={allItems}
-                          version={stream.version}
-                          ctx={ctx}
-                          scrollElRef={streamScrollRef}
-                          // Scroll-up backfill of older history windows (tail-first
-                          // loading): near-top scrolling prepends the previous window,
-                          // scroll position anchored (see MessageStream).
-                          older={{
-                            hasMore: stream.older.hasMore,
-                            loading: stream.older.loading,
-                            error: stream.older.error,
-                            prependedCount: stream.prefixItems.length,
-                            onLoad: stream.loadOlder,
-                          }}
-                          // Tick-rail minimap over the stream's left gutter (zero layout
-                          // width; hides itself when the gutter is too narrow or the
-                          // pointer can't hover).
-                          outline={
-                            <ConversationOutline
-                              entries={outline}
-                              turnOffset={stream.outlineOffset}
-                              version={stream.version}
-                              scrollRef={streamScrollRef}
-                              running={stream.taskState !== "idle"}
-                              fit={railFit}
-                            />
-                          }
-                        />
-                      )}
-                    </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
-                      <div className="mx-auto max-w-3xl">
-                        {/* Goal banner docked above the composer: an in-flight goal's progress
-                            (restored on load while still active), or the terminal state reached
-                            during this page's lifetime. The stop button is the composer's
-                            regular stop (one abort ends the whole goal loop). */}
-                        {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                        {input}
-                      </div>
-                    </div>
-                  </>
-                )
-              ) : sessionsLoading || routeSessionPending ? (
-                <div className="space-y-3 p-6">
-                  <Skeleton className="h-5 w-1/2" />
-                </div>
-              ) : (
-                <EmptyState
-                  title={S.chat.noSessions}
-                  action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
+      {/* The state the dock panels' bodies read (chat-dock-context.tsx): one provider over
+          the row's right dock and the bottom dock after it — a provider adds no element. */}
+      <ChatDockProvider value={chatDock}>
+        {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
+            (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
+            dock covers the row alone. Layout-neutral: it takes the column's remaining height
+            exactly as the row and the dock did when they sat in the column themselves. */}
+        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
+          {/* Body: chat column + the right dock on this row (below the toolbar — a dock
+              beside the whole page would squeeze the header), with the bottom dock after the
+              row spanning the full page width. data-dock-row is what the drag preview
+              measures for a right landing. */}
+          <div data-dock-row className="flex min-h-0 flex-1">
+            {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+                covers the conversation and the composer in both branches below, and nothing else
+                — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+                it (terminal panes included) are all outside, where a file drop is inert (see
+                drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
+            <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {draft ? (
+                // Draft state: DraftView's vertically centered input card + Agent / Workspace
+                // selection panel; the Session is only created once the first message is sent. Keyed
+                // by Project (switching Project remounts onto that Project's draft cache) and by the
+                // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
+                // chat" while already on the draft page (which just parked the typed text) remounts
+                // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
+                // so it's not part of the key.)
+                <DraftView
+                  key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
+                  projectId={projectId}
+                  models={models}
+                  {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+                  composerRef={composerRef}
+                  onWorkspaceChange={onDraftWorkspace}
+                  onAgentChange={onDraftAgent}
                 />
+              ) : (
+                // Keyed by Session: the whole block does a light fade-in when switching sessions.
+                <div
+                  key={routed?.sessionId ?? "empty"}
+                  className="anim-fade flex min-h-0 flex-1 flex-col"
+                >
+                  {archivedRow ? (
+                    <ArchivedSessionStub
+                      session={archivedRow}
+                      onUnarchived={(row) => {
+                        // Back among the conversations: the list takes the row (and counts it),
+                        // and this page loads the conversation in its place.
+                        setFetchedSession(row);
+                        replace(row);
+                      }}
+                      onDeleted={(row) => {
+                        removeSession(row.sessionId);
+                        navigate("/chat");
+                      }}
+                    />
+                  ) : selected ? (
+                    stream.error ? (
+                      // History failed to load: say why and offer the way on, instead of staying on
+                      // a misleading empty state — for a conversation on a machine out of reach,
+                      // the machine's state rather than the transport's error.
+                      <HistoryLoadFailed
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        error={stream.error}
+                        cause={stream.errorCause}
+                        onRetry={stream.retry}
+                      />
+                    ) : stream.loading ? (
+                      // The skeleton, and past a second, for a conversation on a machine, how far
+                      // its newest messages have come over and how the link stands.
+                      <HistoryLoading
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        progress={stream.transfer.window}
+                        onRetryNow={stream.retryNow}
+                      />
+                    ) : (
+                      // The empty state shares the same structure as the message stream (message
+                      // area + bottom input area): only the message area's content differs, and
+                      // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
+                      // recreated when the first message arrives (preserving draft/focus).
+                      <>
+                        {/* `relative`: the floating dock launcher below anchors to this body —
+                            the region between the toolbar and the composer — so clamping to
+                            it keeps the launcher off both. */}
+                        <div className="relative min-h-0 flex-1">
+                          {emptyChat ? (
+                            <div className="flex h-full items-center justify-center px-4">
+                              <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
+                                {S.chat.emptyGreeting}
+                              </p>
+                            </div>
+                          ) : (
+                            <MessageStream
+                              items={allItems}
+                              version={stream.version}
+                              ctx={ctx}
+                              scrollElRef={streamScrollRef}
+                              // The selection menu's "Add to conversation": the excerpt is staged
+                              // in this composer as a chip, the same way the Files panel stages a
+                              // quoted range.
+                              onAddExcerpt={addComposerReference}
+                              // Scroll-up backfill of older history windows (tail-first
+                              // loading): near-top scrolling prepends the previous window,
+                              // scroll position anchored (see MessageStream).
+                              older={{
+                                hasMore: stream.older.hasMore,
+                                loading: stream.older.loading,
+                                error: stream.older.error,
+                                errorCause: stream.older.errorCause,
+                                prependedCount: stream.prefixItems.length,
+                                onLoad: stream.loadOlder,
+                                transfer: stream.transfer,
+                                beyondTail: stream.older.beyondTail,
+                              }}
+                              // Tick-rail minimap over the stream's left gutter (zero layout
+                              // width; hides itself when the gutter is too narrow or the
+                              // pointer can't hover).
+                              outline={
+                                <ConversationOutline
+                                  entries={outline}
+                                  turnOffset={stream.outlineOffset}
+                                  version={stream.version}
+                                  scrollRef={streamScrollRef}
+                                  running={stream.taskState !== "idle"}
+                                  fit={railFit}
+                                />
+                              }
+                            />
+                          )}
+                          {/* The right dock's floating launcher: rides this body's right edge
+                              while that dock is hidden, and opens its panels in one click. */}
+                          <DockLauncher agentsPending={anySubagentPending} />
+                          <RequestFailureDialog
+                            failure={failureShown}
+                            sessionId={selected?.sessionId ?? null}
+                            sessionModel={activeModelRef}
+                            workspace={selected?.workspace ?? null}
+                            onClose={() => setFailureShown(null)}
+                          />
+                        </div>
+                        {/* Measured: the bottom dock's docked height stops where this box would
+                            be covered, and gives way as it grows. */}
+                        <WallpaperSurface
+                          ref={measureComposer}
+                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                        >
+                          <div className="mx-auto max-w-3xl">
+                            {/* Goal banner docked above the composer: an in-flight goal's progress
+                                (restored on load while still active), or the terminal state reached
+                                during this page's lifetime. The stop button is the composer's
+                                regular stop (one abort ends the whole goal loop). */}
+                            {/* A conversation on a machine whose server needs a restart: its live
+                                updates stay away until then, and this says so instead of the
+                                stream retrying in silence. */}
+                            {!draft && pageMachineId !== null && (
+                              <MachineRestartNotice machineId={pageMachineId} />
+                            )}
+                            {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                            {input}
+                          </div>
+                        </WallpaperSurface>
+                      </>
+                    )
+                  ) : routeSessionOffline ? (
+                    <RouteOfflineNotice
+                      owner={routeSessionOwner}
+                      offline={routeLookup.silent}
+                      disconnected={routeLookup.disconnected}
+                      labels={machineLabels}
+                    />
+                  ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
+                    // The machine holding it will not show it to this server: said in place,
+                    // neither gone nor out of reach.
+                    <RouteRefusedNotice
+                      machineId={routeLookup.refused.machineId}
+                      alias={routeLookup.refused.alias}
+                      labels={machineLabels}
+                    />
+                  ) : !sessionsLoading && routeOutcome === "notFound" ? (
+                    // A dead link: said in place, with the one way on that fits the mode —
+                    // a new conversation, or back to the organization in company mode.
+                    <EmptyState
+                      title={S.chat.sessionNotFound}
+                      description={S.chat.sessionNotFoundHint}
+                      action={
+                        company.workMode === "company" ? (
+                          <Button onClick={() => navigate("/org")}>
+                            {S.company.backToOverview}
+                          </Button>
+                        ) : (
+                          <Button onClick={newChat}>{S.nav.newChat}</Button>
+                        )
+                      }
+                    />
+                  ) : sessionsLoading || routeSessionPending ? (
+                    <div className="space-y-3 p-6">
+                      <Skeleton className="h-5 w-1/2" />
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title={S.chat.noSessions}
+                      action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
+                    />
+                  )}
+                </div>
               )}
-            </div>
+            </ChatDropRegion>
+
+            {archivedRow === null && rightMount.view && (
+              <DockPanel
+                view={rightMount.view}
+                open={rightMount.open}
+                animateEntrance={rightMount.animateEntrance}
+                panelBadges={{ agents: anySubagentPending }}
+              />
+            )}
+          </div>
+
+          {archivedRow === null && bottomMount.view && (
+            <DockPanel
+              view={bottomMount.view}
+              open={bottomMount.open}
+              animateEntrance={bottomMount.animateEntrance}
+              panelBadges={{ agents: anySubagentPending }}
+            />
           )}
-        </ChatDropRegion>
-
-        {rightMount.view && (
-          <DockPanel
-            view={rightMount.view}
-            open={rightMount.open}
-            animateEntrance={rightMount.animateEntrance}
-            renderPanel={renderPanel}
-            panelBadges={{ agents: anySubagentPending }}
-            terminalSupported={terminalSupported}
-          />
-        )}
-      </div>
-
-      {bottomMount.view && (
-        <DockPanel
-          view={bottomMount.view}
-          open={bottomMount.open}
-          animateEntrance={bottomMount.animateEntrance}
-          renderPanel={renderPanel}
-          panelBadges={{ agents: anySubagentPending }}
-          terminalSupported={terminalSupported}
-        />
-      )}
+        </div>
+      </ChatDockProvider>
 
       <Modal
         open={credentialGuide}
@@ -2108,8 +2903,11 @@ export function ChatPage() {
         onClose={() => setCredentialGuide(false)}
         footer={
           <>
-            <Button onClick={() => setCredentialGuide(false)}>{S.project.later}</Button>
+            <Button size="sm" onClick={() => setCredentialGuide(false)}>
+              {S.project.later}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 setCredentialGuide(false);
@@ -2124,6 +2922,23 @@ export function ChatPage() {
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.noCredentialBody}</p>
       </Modal>
 
+      <ConfirmModal
+        open={procToKill !== null}
+        title={S.chat.processStopTitle}
+        onClose={() => setProcToKill(null)}
+        onConfirm={() => {
+          if (procToKill !== null) void onKillProcess(procToKill.processId);
+          setProcToKill(null);
+        }}
+        confirmLabel={S.chat.processStop}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.chat.processStopConfirm}</p>
+        <p className="mt-2 line-clamp-3 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+          {procToKill?.cmd}
+        </p>
+      </ConfirmModal>
+
       {/* Mid-chat thinking-level switch confirmation (issue #310), three choices: compact
           first and switch when it finishes (primary — the recommended, cheap path), switch
           anyway (immediate, today's force path), or cancel (keeps the current level). The
@@ -2135,6 +2950,7 @@ export function ChatPage() {
         title={S.chat.thinkingSwitchTitle}
         tone="primary"
         confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        cancelLabel={S.common.cancel}
         confirmDisabled={stream.taskState !== "idle"}
         onConfirm={compactThenThinkingSwitch}
         secondaryLabel={S.chat.thinkingSwitchConfirm}
@@ -2157,6 +2973,53 @@ export function ChatPage() {
           </p>
         )}
       </ConfirmModal>
-    </div>
+
+      {/* In-conversation model switch confirmation (the session toolbar's model picker), two
+          choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
+          compacts on the current model first, and a failed compaction hands the history over
+          by Trace path. The shapes that compact nothing read "switch" instead: an empty
+          transcript (the switch is immediate), a transcript ending in a completed compaction or
+          a model switch (the conversation continues from what is already held), and a current
+          model that is unavailable (the picked model gets the Trace path). The session can
+          start running while the dialog is up (a queued follow-up, a schedule): the confirm is
+          then disabled and the body says why, exactly like the thinking dialog. */}
+      <ConfirmModal
+        open={modelSwitchAsk !== null}
+        title={S.chat.modelSwitchInSessionTitle}
+        tone="primary"
+        confirmLabel={
+          modelSwitchAsk?.shape === "compact"
+            ? S.chat.modelSwitchInSessionConfirm
+            : S.chat.modelSwitchInSessionDirectConfirm
+        }
+        cancelLabel={S.common.cancel}
+        confirmDisabled={stream.taskState !== "idle"}
+        busy={modelSwitchPosting}
+        onConfirm={() => void confirmModelSwitch()}
+        onClose={() => {
+          if (!modelSwitchPosting) setModelSwitchAsk(null);
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {modelSwitchAsk === null || selected === null
+            ? null
+            : modelSwitchAsk.shape === "empty"
+              ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
+              : modelSwitchAsk.shape === "compacted"
+                ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
+                : (modelSwitchAsk.shape === "handover"
+                    ? S.chat.modelSwitchInSessionHandoverBody
+                    : S.chat.modelSwitchInSessionBody)(
+                    modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
+                    modelDisplay(modelSwitchAsk.to),
+                  )}
+        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
+      </ConfirmModal>
+    </WallpaperSurface>
   );
 }

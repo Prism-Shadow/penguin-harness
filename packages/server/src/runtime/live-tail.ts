@@ -7,7 +7,7 @@
  * client that joins mid-stream — a refresh during a long tool call — cannot rebuild the
  * in-progress message from `GET /messages` alone, and its fresh EventSource carries no
  * `Last-Event-ID` for the channel buffer to replay. This tracker lets the messages
- * endpoint attach, alongside history, one synthetic `partial_* start` OmniMessage per
+ * endpoint attach, alongside history, one synthetic `partial_* start` AmspRecord per
  * open fragment whose payload carries the full accumulated content so far (text/thinking
  * prefix, tool-call name + accumulated arguments, tool-output prefix + images); the
  * client seeds these into its stream model and live deltas keep appending on top. See
@@ -15,17 +15,15 @@
  *
  * Fed by SessionManager.drive in the same synchronous tick as each channel publish, so a
  * "channel cursor + fragments" capture between two publishes is always a consistent
- * snapshot. Mirrors core PartialAggregator's merge semantics (fragment key = payload type
- * + tool_call_id; start reopens, delta accumulates, stop closes) with the origin chain
- * added to the key — the aggregator collapses fragments into complete messages, while
- * this keeps the running prefix instead. A complete model message with the same identity
+ * snapshot. A fragment is keyed by origin chain + payload type + tool_call_id; start
+ * reopens it, delta accumulates its running prefix, stop closes it. A complete model message with the same identity
  * also closes the fragment (covers stop-less closures, e.g. interruption cleanup); the
  * whole session entry is dropped when the run ends (SessionManager.drive's finally).
  */
 import { isPartialPayload } from "@prismshadow/penguin-core";
 import type {
   CompleteModelPayload,
-  OmniMessage,
+  AmspRecord,
   PartialModelPayload,
 } from "@prismshadow/penguin-core";
 
@@ -79,7 +77,7 @@ function partialKindFor(p: CompleteModelPayload): PartialKind | null {
   }
 }
 
-/** Fragment key: origin chain + payload type + tool_call_id (same merge rule as core's PartialAggregator, origin added). */
+/** Fragment key: origin chain + payload type + tool_call_id. */
 function fragmentKey(origin: string[] | undefined, kind: PartialKind, toolCallId: string): string {
   // "\0" (the escape, not a raw byte -- a raw NUL makes git classify the file as binary)
   // separates the origin chain from the kind: session ids are [A-Za-z0-9_-], so the
@@ -149,12 +147,19 @@ function startPayload(frag: OpenFragment): PartialModelPayload {
   }
 }
 
-export class LiveTailTracker {
+/** The open streaming fragments of running sessions, as their holder uses them — what {@link LiveTailTracker} implements. */
+export interface LiveTail {
+  observe(sessionId: string, msg: AmspRecord): void;
+  fragments(sessionId: string): AmspRecord[];
+  clear(sessionId: string): void;
+}
+
+export class LiveTailTracker implements LiveTail {
   /** sessionId → open fragments keyed by fragmentKey, in the order they were opened. */
   private readonly sessions = new Map<string, Map<string, OpenFragment>>();
 
   /** Feed one published message (call in the same synchronous tick as the channel publish). */
-  observe(sessionId: string, msg: OmniMessage): void {
+  observe(sessionId: string, msg: AmspRecord): void {
     if (msg.type !== "model_msg") return;
     const p = msg.payload;
     if (!isPartialPayload(p)) {
@@ -189,7 +194,7 @@ export class LiveTailTracker {
     }
     let frag = open?.get(key);
     if (!frag) {
-      // delta/stop without a start: lenient, same as core's PartialAggregator.
+      // delta/stop without a start: lenient, a delta opens the fragment.
       if (p.event_type === "stop") return; // nothing was open; nothing to keep or clear
       if (!open) {
         open = new Map();
@@ -215,10 +220,10 @@ export class LiveTailTracker {
    * carrying the full accumulated content, the original origin chain, and the original
    * start timestamp. Empty when the session has no open fragments.
    */
-  fragments(sessionId: string): OmniMessage[] {
+  fragments(sessionId: string): AmspRecord[] {
     const open = this.sessions.get(sessionId);
     if (!open) return [];
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for (const frag of open.values()) {
       out.push({
         timestamp: frag.timestamp,

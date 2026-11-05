@@ -1,0 +1,607 @@
+/**
+ * Workspace files panel logic, kept DOM-free so it can be unit-tested:
+ *   - the directory tree's shape — listings fetched lazily per directory and keyed by its
+ *     Workspace-relative path ("" is the root), the set of open directories, and the flat
+ *     row list the tree renders from the two (the row's own shape and the keyboard step over
+ *     it are the UI package's `FileTree`'s, shared with the app's other file trees);
+ *   - the search box's filter over the rows that are loaded;
+ *   - which directory a dropped batch lands in;
+ *   - when the panel is too narrow for a tree beside a preview, and how wide the tree pane
+ *     may be dragged when it is not;
+ *   - which files count as text — by extension, or by looking at their first bytes when
+ *     the extension says nothing — and so can be previewed as text and edited in place, and
+ *     how the read-only file browser previews a file by its name;
+ *   - the persisted preferences (tree visibility, tree width, soft wrap) and the
+ *     unsaved-changes decision;
+ *   - what the panel's "add to conversation" puts in the composer — the `@path` reference,
+ *     the fenced block a preview selection becomes, and where each of them may be spliced
+ *     into a draft that is already half typed.
+ */
+import type { FileBrowserPreviewKind, FileTreeRow } from "@prismshadow/penguin-ui";
+import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
+import { joinWorkspacePath } from "./file-path";
+
+// ------------------------------------------------------------------------------- layout
+
+// When the panel is one column and how wide its tree may be dragged: shared with the handbook's
+// browser, so they live in the UI package beside the frame that lays the two panes out.
+export {
+  PREVIEW_MIN_WIDTH,
+  TREE_LAYOUT_MIN_WIDTH,
+  TREE_MIN_WIDTH,
+  clampTreeWidth,
+  defaultTreeWidth,
+  isNarrowLayout,
+  maxTreeWidth,
+} from "@prismshadow/penguin-ui";
+
+// -------------------------------------------------------------------------------- paths
+
+/** The directory a Workspace-relative path sits in ("" for a root-level entry). */
+export function parentDir(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i >= 0 ? path.slice(0, i) : "";
+}
+
+export function baseName(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i >= 0 ? path.slice(i + 1) : path;
+}
+
+/** Whether `path` is `dir` itself or lies inside it. */
+export function isWithin(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(`${dir}/`);
+}
+
+/**
+ * Where `path` is once `from` has moved to `to`: `to` itself, or the same place under it when
+ * `path` lay inside `from`; null when the move did not touch it. A sibling that merely shares a
+ * prefix (`docs-old` beside `docs`) is untouched.
+ */
+export function movedPath(path: string, from: string, to: string): string | null {
+  return isWithin(path, from) ? `${to}${path.slice(from.length)}` : null;
+}
+
+/** The set with every path the move touched carried to its new place. */
+export function movedSet(set: ReadonlySet<string>, from: string, to: string): Set<string> {
+  return new Set([...set].map((p) => movedPath(p, from, to) ?? p));
+}
+
+/** The loaded listings with every directory the move touched filed under its new path. */
+export function movedListings(
+  listings: Listings,
+  from: string,
+  to: string,
+): Map<string, readonly WorkspaceFileEntry[]> {
+  return new Map([...listings].map(([dir, entries]) => [movedPath(dir, from, to) ?? dir, entries]));
+}
+
+/** What a new text file is called until it is named. */
+export const DEFAULT_TEXT_FILE_NAME = "untitled.txt";
+
+/**
+ * The end of a file name's stem — where its extension starts, or its whole length when it has
+ * none. The name field selects up to here, so typing replaces `untitled` and keeps `.txt`. A
+ * leading dot (`.env`) is part of the stem, not an extension.
+ */
+export function stemEnd(name: string): number {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? dot : name.length;
+}
+
+/**
+ * A typed new-entry name made into the relative path it creates under the chosen directory:
+ * trimmed, with the slashes at either end dropped (a folder named `drafts/` is `drafts`, and a
+ * leading `/` would otherwise read as the Workspace root). A `/` inside stays: it creates the
+ * folders in between.
+ */
+export function newEntryName(raw: string): string {
+  return raw.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+/** The directories from the root down to the path's parent, root first: "a/b/c.txt" → ["", "a", "a/b"]. */
+export function ancestorDirs(path: string): string[] {
+  const out = [""];
+  const segments = path.split("/").filter((s) => s !== "");
+  for (let i = 1; i < segments.length; i += 1) out.push(segments.slice(0, i).join("/"));
+  return out;
+}
+
+// --------------------------------------------------------------------------------- tree
+
+/** Loaded directory listings by directory path ("" = the Workspace root). A missing key means "not fetched yet". */
+export type Listings = ReadonlyMap<string, readonly WorkspaceFileEntry[]>;
+
+/** Directories first, then by name — the order the server lists in, reapplied after a client-side insertion. */
+export function sortEntries(entries: readonly WorkspaceFileEntry[]): WorkspaceFileEntry[] {
+  return [...entries].sort((a, b) =>
+    a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1,
+  );
+}
+
+/**
+ * The listings with `entry` in `dir`, inserted in sorted position and replacing a same-named
+ * entry (an upload or a save overwrote it). Returns a new map; the input is left untouched.
+ */
+export function upsertEntry(
+  listings: Listings,
+  dir: string,
+  entry: WorkspaceFileEntry,
+): Map<string, readonly WorkspaceFileEntry[]> {
+  const next = new Map(listings);
+  const current = listings.get(dir) ?? [];
+  next.set(dir, sortEntries([...current.filter((e) => e.name !== entry.name), entry]));
+  return next;
+}
+
+/** The expanded set with every directory above `path` open, so the row for `path` is on screen. */
+export function expandTo(expanded: ReadonlySet<string>, path: string): Set<string> {
+  const next = new Set(expanded);
+  for (const dir of ancestorDirs(path)) next.add(dir);
+  return next;
+}
+
+/**
+ * The expanded set with `dir` opened (its ancestors too, so it is reachable) or closed. Closing
+ * leaves the descendants' own state alone: reopening the directory brings back the subtree the
+ * way it was left.
+ */
+export function withExpanded(
+  expanded: ReadonlySet<string>,
+  dir: string,
+  open: boolean,
+): Set<string> {
+  if (open) {
+    const next = expandTo(expanded, dir);
+    next.add(dir);
+    return next;
+  }
+  const next = new Set(expanded);
+  next.delete(dir);
+  return next;
+}
+
+/** One rendered tree row: a shared tree row plus what the Workspace shows beside a file's name. */
+export interface TreeRow extends FileTreeRow {
+  sizeBytes: number;
+  mtime: string;
+}
+
+/**
+ * The rows the tree draws, top to bottom: a depth-first walk from the root (always open)
+ * into every open directory whose listing has arrived. An open directory that is still
+ * loading contributes its own row and no children.
+ */
+export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const walk = (dir: string, depth: number): void => {
+    const entries = listings.get(dir) ?? [];
+    for (const [index, entry] of entries.entries()) {
+      const path = joinWorkspacePath(dir, entry.name);
+      const isDir = entry.kind === "dir";
+      const open = isDir && expanded.has(path);
+      const children = isDir ? listings.get(path) : undefined;
+      rows.push({
+        path,
+        name: entry.name,
+        kind: entry.kind,
+        depth,
+        posInSet: index + 1,
+        setSize: entries.length,
+        expanded: open,
+        loaded: !isDir || children !== undefined,
+        empty: isDir && children !== undefined && children.length === 0,
+        sizeBytes: entry.sizeBytes,
+        mtime: entry.mtime,
+      });
+      if (open && children !== undefined) walk(path, depth + 1);
+    }
+  };
+  walk("", 0);
+  return rows;
+}
+
+/**
+ * The rows a whole-Workspace search draws: one per hit the server returned, flat, each naming
+ * its full path rather than its base name.
+ *
+ * Flat because there is no tree to place them in — a hit can sit in a directory the lazy tree
+ * has never listed, and the hits are already ordered shallowest first, so nesting them would
+ * mean loading every ancestor of every hit to draw scaffolding nobody asked for. The full path
+ * because the base name is the part the reader just typed; where the file *is* is the answer
+ * they are looking for.
+ *
+ * Every row is depth 0 and closed: a directory hit is somewhere to go, not something to unfold
+ * in a list that is not a tree.
+ */
+export function searchRows(hits: readonly WorkspaceSearchHit[]): TreeRow[] {
+  return hits.map((hit, index) => ({
+    path: hit.path,
+    name: hit.path,
+    kind: hit.kind,
+    depth: 0,
+    posInSet: index + 1,
+    setSize: hits.length,
+    expanded: false,
+    loaded: hit.kind === "file",
+    empty: false,
+    sizeBytes: hit.sizeBytes,
+    mtime: hit.mtime,
+  }));
+}
+
+// --------------------------------------------------------------------------------- drop
+
+/**
+ * The directory a drop lands in: a folder row under the pointer takes the files itself, a
+ * file row hands them to its own directory, and anywhere else in the panel means the
+ * current directory.
+ */
+export function dropTargetDir(
+  hit: { kind: "dir" | "file"; path: string } | null,
+  currentDir: string,
+): string {
+  if (hit === null) return currentDir;
+  return hit.kind === "dir" ? hit.path : parentDir(hit.path);
+}
+
+// ---------------------------------------------------------------------------- file kinds
+
+const TEXT_EXTS = new Set([
+  "txt",
+  "md",
+  "json",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "py",
+  "sh",
+  "bash",
+  "yaml",
+  "yml",
+  "toml",
+  "css",
+  "csv",
+  "log",
+  "xml",
+  "ini",
+  "conf",
+  "rs",
+  "go",
+  "java",
+  "c",
+  "h",
+  "cpp",
+  "hpp",
+  "sql",
+  "rb",
+  "php",
+  "gitignore",
+  "env",
+]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+const HTML_EXTS = new Set(["html", "htm"]);
+
+/**
+ * How a file previews, decided from its name. `unknown` is not "unsupported" yet: the
+ * browser reads such a file's first bytes and treats it as text when they look like text
+ * (a Makefile, a LICENSE, a dotfile with no extension).
+ */
+export type PreviewKind = "text" | "md" | "image" | "html" | "pdf" | "unknown";
+
+/** The lowercased extension, or the whole lowercased name when it has none ("Makefile" → "makefile", ".env" → "env"). */
+export function extOf(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : name.toLowerCase();
+}
+
+export function previewKindFor(name: string): PreviewKind {
+  const ext = extOf(name);
+  if (IMAGE_EXTS.has(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (HTML_EXTS.has(ext)) return "html";
+  if (ext === "md") return "md";
+  if (TEXT_EXTS.has(ext)) return "text";
+  return "unknown";
+}
+
+/**
+ * How a file previews in the read-only file browser (the UI package's `FileBrowser`), from its
+ * name: the Workspace panel's own classification, minus the two answers a read-only browser
+ * cannot give. HTML reads as its source, since rendering it would need the panel's sandboxed
+ * frame; a name that says nothing reads as unsupported, since nobody there is reading the first
+ * bytes to find out.
+ */
+export function previewKindOf(name: string): FileBrowserPreviewKind {
+  const kind = previewKindFor(name);
+  if (kind === "html") return "text";
+  return kind === "unknown" ? "unsupported" : kind;
+}
+
+/**
+ * `bytes` without a multi-byte UTF-8 sequence cut off at its end: a read chunk can end
+ * anywhere, and judging validity on the partial character would call a text file binary.
+ */
+export function utf8Complete(bytes: Uint8Array): Uint8Array {
+  let i = bytes.length - 1;
+  let back = 0;
+  while (i >= 0 && back < 3 && (bytes[i]! & 0xc0) === 0x80) {
+    i -= 1;
+    back += 1;
+  }
+  if (i < 0) return bytes;
+  const lead = bytes[i]!;
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return bytes.length - i < need ? bytes.subarray(0, i) : bytes;
+}
+
+/** Control bytes a text file legitimately carries: tab, LF, CR, FF, backspace, escape (ANSI-colored logs). */
+const TEXT_CONTROL_BYTES = new Set([8, 9, 10, 12, 13, 27]);
+
+/**
+ * Whether a sample of a file's bytes reads as text: no NUL byte, few other control bytes,
+ * and valid UTF-8 once a trailing partial character is set aside. Deliberately strict —
+ * a binary mistaken for text becomes an editable garble, while a text file of some other
+ * encoding merely stays a download.
+ */
+export function looksLikeText(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return true;
+  let control = 0;
+  for (const b of bytes) {
+    if (b === 0) return false;
+    if (b < 0x20 && !TEXT_CONTROL_BYTES.has(b)) control += 1;
+  }
+  if (control / bytes.length > 0.1) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(utf8Complete(bytes));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ------------------------------------------------------------------------------ editing
+
+/** Bytes a text preview reads before it is cut off; a longer file previews truncated and cannot be edited in place. */
+export const TEXT_PREVIEW_LIMIT = 1024 * 1024;
+
+/** Per-file ceiling of the content write endpoint, in whole MB — the server's `MAX_UPLOAD_BYTES`, mirrored so an oversize save or upload is refused before any bytes travel. */
+export const WORKSPACE_UPLOAD_LIMIT_MB = 14;
+
+/**
+ * Whether a preview can switch to the editor: a text-like kind whose full content is (or can
+ * be) on hand. A truncated preview is exactly the case that must stay read-only — saving it
+ * back would write the truncated text over the whole file.
+ */
+export function canEditPreview(preview: { kind: string; truncated?: boolean }): boolean {
+  return (
+    (preview.kind === "text" || preview.kind === "md" || preview.kind === "html") &&
+    preview.truncated !== true
+  );
+}
+
+/** The in-place editor: the file, the text it opened with, and what has been typed since. */
+export interface EditorState {
+  path: string;
+  baseline: string;
+  draft: string;
+  /**
+   * The version marker the baseline was read with, sent back as the save's write
+   * precondition so the write cannot land on a file the Agent has since rewritten.
+   */
+  version: string;
+  /** The file was found to carry a different version while this editor was open. */
+  changedOnDisk?: boolean;
+}
+
+export function isDirty(editor: EditorState | null): boolean {
+  return editor !== null && editor.draft !== editor.baseline;
+}
+
+/**
+ * Whether landing on `nextPath` (null: on no file) would abandon typed changes and so must
+ * ask first. Re-opening the file being edited keeps the editor and asks nothing.
+ */
+export function needsDiscardConfirm(editor: EditorState | null, nextPath: string | null): boolean {
+  return isDirty(editor) && nextPath !== editor!.path;
+}
+
+// --------------------------------------------------------------------------- preference
+
+/** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
+export interface TreePreferenceStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** Global preferences, not per Session: whether the tree pane is shown, how wide it is, and whether the editor soft-wraps. */
+export const TREE_VISIBLE_KEY = "penguin.files.treeVisible";
+export const TREE_WIDTH_KEY = "penguin.files.treeWidth";
+/** Soft wrap, shared by the source view and the editor (see parseWrapLines on why one value, and on the key's name). */
+export const EDITOR_WRAP_KEY = "penguin.files.editorWrap";
+
+/** Tolerant parse: only an explicit "off" spelling hides the tree; nothing stored or anything unrecognized shows it (the default). */
+export function parseTreeVisible(raw: string | null): boolean {
+  if (raw === null) return true;
+  const value = raw.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "hidden" || value === "no");
+}
+
+export function readTreeVisible(storage?: TreePreferenceStorage): boolean {
+  try {
+    // localStorage is resolved inside the try: merely touching it throws when site data is
+    // blocked, and this runs from a useState initializer.
+    return parseTreeVisible((storage ?? localStorage).getItem(TREE_VISIBLE_KEY));
+  } catch {
+    return true;
+  }
+}
+
+export function writeTreeVisible(visible: boolean, storage?: TreePreferenceStorage): void {
+  try {
+    (storage ?? localStorage).setItem(TREE_VISIBLE_KEY, visible ? "1" : "0");
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+/**
+ * Tolerant parse of the stored tree width: null for nothing stored and for anything that is
+ * not a positive number, which is what makes the caller fall back to the width the pane had
+ * before it was ever dragged.
+ */
+export function parseTreeWidth(raw: string | null): number | null {
+  if (raw === null) return null;
+  const value = Number.parseInt(raw.trim(), 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function readTreeWidth(storage?: TreePreferenceStorage): number | null {
+  try {
+    return parseTreeWidth((storage ?? localStorage).getItem(TREE_WIDTH_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function writeTreeWidth(width: number, storage?: TreePreferenceStorage): void {
+  try {
+    (storage ?? localStorage).setItem(TREE_WIDTH_KEY, String(Math.round(width)));
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+/**
+ * Tolerant parse of the soft-wrap preference: ON unless an explicit off spelling is stored.
+ * Wrapping is what a reader wants of a file — a line that runs off the right edge has to be
+ * chased to be read — and the same file being edited should not reflow on the way in.
+ *
+ * One value for both the source view and the editor, deliberately. They are the same file
+ * seen two ways, and Edit swaps them in place: a separate preference would let pressing Edit
+ * reflow the whole file and carry the line you were aiming at off the screen. The stored key
+ * still reads `editorWrap` because the editor had the toggle first and a rename would silently
+ * discard everyone's answer.
+ */
+export function parseWrapLines(raw: string | null): boolean {
+  if (raw === null) return true;
+  const value = raw.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "off" || value === "no");
+}
+
+export function readWrapLines(storage?: TreePreferenceStorage): boolean {
+  try {
+    return parseWrapLines((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
+  } catch {
+    return true;
+  }
+}
+
+export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): void {
+  try {
+    (storage ?? localStorage).setItem(EDITOR_WRAP_KEY, wrap ? "1" : "0");
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+// -------------------------------------------------------------- composer references
+
+/**
+ * Something a surface hands the composer: what it points at, and the text the message carries
+ * once it is sent. The Files panel hands a Workspace entry or a quoted range of one; the
+ * conversation's own selection menu hands an excerpt of the conversation.
+ *
+ * The text is deliberately kept out of the textarea. What a surface contributes is a whole
+ * thing — a file, a directory, a quoted range, an excerpt — and the draft is where the person is
+ * writing; splicing the one into the other buries what they were saying under what they were
+ * pointing at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill`
+ * already stage their picks in.
+ */
+export type ComposerReference = WorkspaceReference | ExcerptReference;
+
+/** A Workspace entry, or a quoted range of one — what the Files panel hands the composer. */
+export interface WorkspaceReference {
+  /** Which glyph the chip wears, and what its label means. */
+  kind: "file" | "dir" | "quote";
+  /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
+  path: string;
+  /** What goes into the message. */
+  text: string;
+  /** 1-based and inclusive, on a `quote` whose place in the file could be resolved. */
+  fromLine?: number;
+  toLine?: number;
+}
+
+/**
+ * Text selected in the conversation itself. It has no path to name it by, so the chip is
+ * labelled by the excerpt's own start and its tooltip is the whole excerpt.
+ */
+export interface ExcerptReference {
+  kind: "excerpt";
+  /** The selected text, as the selection read it: the chip's label and tooltip come from this. */
+  excerpt: string;
+  /** What goes into the message: the excerpt as a Markdown blockquote. */
+  text: string;
+}
+
+/**
+ * A line range as `:12` or `:12-18` — the `file:line` form every editor and stack trace uses, which
+ * is why it is written the same way in both languages and read the same way by the model.
+ */
+export function lineSuffix(fromLine: number, toLine: number): string {
+  return fromLine === toLine ? `:${fromLine}` : `:${fromLine}-${toLine}`;
+}
+
+/**
+ * The `@`-prefixed reference a Workspace entry inserts into the composer. The trailing
+ * slash on a directory is the only thing in the string that says it is one; nothing parses
+ * these — the `@` is there for the reader, not for a mention mechanism.
+ */
+export function pathReference(path: string, kind: "dir" | "file"): string {
+  return kind === "dir" ? `@${path}/` : `@${path}`;
+}
+
+/** The longest run of backticks anywhere in `text`. */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  let run = 0;
+  for (const ch of text) {
+    if (ch !== "`") {
+      run = 0;
+      continue;
+    }
+    run += 1;
+    if (run > longest) longest = run;
+  }
+  return longest;
+}
+
+/**
+ * The fenced block a preview selection inserts: a `@path` header carrying the line range,
+ * then the selection verbatim. The fence is opened one backtick longer than the longest run
+ * the selection itself contains, so a selection that carries fences still nests correctly.
+ * The selected text is neither trimmed nor re-indented — the block is what was on screen.
+ */
+export function selectionBlock({
+  path,
+  language,
+  selection,
+  fromLine,
+  toLine,
+}: {
+  path: string;
+  language: string;
+  selection: string;
+  /** 1-based and inclusive. Both are omitted where the selection's place in the file cannot be resolved — a guessed range would be a lie, so the header then carries the path alone. */
+  fromLine?: number;
+  toLine?: number;
+}): string {
+  const range = fromLine === undefined || toLine === undefined ? "" : lineSuffix(fromLine, toLine);
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(selection) + 1));
+  const body = selection.endsWith("\n") ? selection : `${selection}\n`;
+  return `@${path}${range}\n${fence}${language}\n${body}${fence}`;
+}

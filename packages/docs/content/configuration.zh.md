@@ -1,115 +1,238 @@
 ---
 title: 配置参考
-description: 环境变量、Project 配置、Agent 配置、Vault 与定时任务的完整字段参考。
+description: PenguinHarness 的每一项设置及其默认值与限制，从环境变量到 Project、Agent、记忆、密钥保险柜和定时任务文件。
 ---
 
-PenguinHarness 的配置分三层：环境变量决定部署形态，Project 配置管理模型与凭证，Agent 配置定义单个 Agent 的行为。此外每个 Agent 还有 Vault（私有环境变量）与 Schedule（定时任务）两类状态文件。
+PenguinHarness 的配置分三层：环境变量决定部署形态，Project 配置管理模型和凭证，Agent 配置定义单个 Agent 的行为。每个 Agent 还有自己的[记忆](#记忆)、[Vault](#vault) 和[定时任务](#定时任务)状态文件。
 
 ## 环境变量
 
-CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
+CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
-| 变量 | 说明 | 缺省值 |
+| 变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `PENGUIN_HOME` | 数据根目录 | `~/.penguin/data` |
 | `PORT` | Web 服务监听端口 | `7364` |
 | `HOST` | Web 服务监听地址 | `127.0.0.1` |
-| `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
-| `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
-| `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
-| `PENGUIN_TRUST_PROXY` | 设为 `1` 信任 `x-forwarded-proto` 请求头——在终结 TLS 的反向代理（且由代理自行设置/清除该头）之后设置，使会话 Cookie 带 `Secure` 标记、热更新网络门禁识别 HTTPS | 未设置，忽略该请求头 |
-| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成一个密码，哈希后即丢弃、无人见过；账号通过首次登录链接认领 |
+| `PENGUIN_WEB_DB` | 服务器 SQLite 数据库路径 | `<root>/web.db` |
+| `PENGUIN_WEB_DIST` | 前端静态资源目录 | 服务器包自带的 `web-dist`（源码检出中为 `packages/web/dist`） |
+| `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
+| `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权和余额查询时调用的可信源 | `https://go.penguin.ooo` |
+| `MODELSCOPE_BRIDGE_URL` | 服务端发起 ModelScope Key 授权时调用的授权中转层地址 | `https://go.penguin.ooo/modelscope` |
+| `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 与 `x-forwarded-host` 请求头 | 未设置：两者都忽略。桌面应用的服务端会设置它 |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
-| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
-| `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |
-| `PENGUIN_CLI_ENTRY` | 本安装提供给其所运行 Agent 的 CLI 入口脚本（见下文） | 由 `penguin server` / `penguin web` 与桌面版自动设置；若服务端从仓库检出启动，则回退到该检出的 `packages/cli/dist/penguin.js` |
+| `PENGUIN_UPDATE_CHECK` | 设为 `off` 时关闭 Web App 的新版本检查 | 启用 |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | 设为任意非空值后，桌面应用在 macOS/Linux 上从图形界面启动时不再导入登录 shell 的环境变量 | 未设置：照常导入 |
+| `PENGUIN_SHELL` | 运行 Agent 命令的 shell（可执行文件名或路径） | 未设置：自动选择，见[工具与审批](/tools#命令会话) |
+| `PENGUIN_CLI_ENTRY` | 本安装提供给所运行 Agent 的 CLI 入口脚本（见 [PATH 启动脚本](#path-启动脚本)） | 由 `penguin server` / `penguin web` 和桌面应用设置 |
 
-这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 与 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
+说明：
 
-有一样东西是反向流动的：**本安装自己的 `penguin` 会排在 Agent 所执行的每一条命令的 PATH 最前面**。服务端启动时会在 `<root>/bin/penguin` 写下一个启动脚本——它用服务端自己的 Node 运行上表所指的 CLI 入口——并把该目录置于每条命令 PATH 的最前。于是命令里的 `penguin` 就是该 Agent 正运行其中的这套 harness，而不是机器上全局安装的那个版本。该目录既写进子进程环境，也在 shell 内部再前置一次：命令经由登录 shell 执行，而登录 profile 往往会在子进程环境设定之后重写 PATH；这同时意味着它也排在 [vault](#vault) 中设置的 `PATH` 之前——而 vault 里的 `PATH` 本身是整体替换继承值的。该脚本在每次启动时重写，因此安装位置变动会在下次启动被跟上；没有可指向的入口时则不写，`penguin` 的解析与此前无异。
+- `PENGUIN_TRUST_PROXY`：当部署在终结 TLS 的反向代理之后时设置。代理必须原样保留外部的 `Host` 请求头，并把 `x-forwarded-proto` 覆盖为 `https`；还应当用外部主机名覆盖 `x-forwarded-host`，或者删掉它。服务端对每个头都只认单个值：代理追加而不是覆盖时产生的列表不予采信，格式不对的值也一样。服务端据此得出浏览器所在的地址，即[公共源](/security#网络暴露面)：会话 Cookie 带上 `Secure` 标记，热更新的网络检查能识别出 HTTPS，模型厂商的授权也跳回这个地址。写请求的 `Origin` 则与转发的协议加原样的 `Host` 比对。不设置，或者代理改写了 `Host`、在 `x-forwarded-proto` 上追加了值，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。外部主机名也应当启用 HSTS。桌面应用内嵌的服务端会自己设置它：它只监听回环地址，从外部只能经 Penguin Remote 中继访问，中继的客户端应当让 `Host` 保持为公网主机名，并把 `x-forwarded-proto` 覆盖为 `https`、把 `x-forwarded-host` 覆盖为公网主机名，各只带一个值。
+- `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
+- `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[连接账户](/models#连接账户)。
+- `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。
+- `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
+- `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
+- `PENGUIN_CLI_ENTRY`：未设置时，从源码检出启动的服务器提供该检出自己的 CLI（见 [PATH 启动脚本](#path-启动脚本)）。开发入口 `pnpm dev`、`pnpm desktop` 和 `pnpm penguin` 会清掉继承来的值（例如已安装应用的终端传下来的值），始终使用检出自己的 CLI；打包版与安装版的启动仍以它为准。
 
-`PENGUIN_PREVIEW_ORIGIN` 必须与应用源在**主机名**上不同，只换端口不行：Cookie 不区分端口，换端口仍然共用会话 Cookie。本地使用不必配置——App 固定在规范主机 `localhost`，预览用 `127.0.0.1`，既不需要配置也不需要 DNS。经 LAN 地址或真实域名访问时才需要设置，否则那里的预览会回退到同源沙箱，`localStorage`、Cookie 与第三方 embed 都不可用。在真实域名上设置时，会话 Cookie 必须保持 host-only（不带 `Domain=`），否则同注册域下的兄弟子域会共享它。取值无法解析时启动即报错，不会静默回退。
+### Agent 所执行命令的环境
 
-### Provider 凭证环境变量
+Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动：
 
-当模型条目未内联 `api_key` 时，AgentHub 按 Provider 回退读取对应环境变量；仅当条目未内联 `base_url` 时才使用 `*_BASE_URL`：
+- **移除：** `PORT`、`HOST`、`FORCE_COLOR`、`CLICOLOR_FORCE` 以及所有 `PENGUIN_*` 变量。这些变量配置的是 PenguinHarness 本身，不是命令。如果不移除，`exec_command` 启动的开发服务器会读到 `PORT`，试图绑定本应留给 PenguinHarness 的端口，而不是自己另选。
+- **代理：** 在服务器运行的 Session 中，由[设置](/settings#代理选项)里的 **Agent 环境使用代理** 开关决定代理变量。关闭时移除 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`；开启时注入已配置的代理地址，没有配置地址时透传宿主的变量。
+- **密钥保险柜：** 之后再叠加 Agent 的[密钥保险柜](#vault)，所以在保险柜里设置的 `PORT` 或 `PENGUIN_*` 变量确实能传给命令。
+- **控制变量：** 由服务器驱动的 Session 随后注入 `PENGUIN_API_URL`、`PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`（公司模式下还有 `PENGUIN_ORG_ID`），Agent 自己发起的 `penguin` 调用因此能到达运行它的服务器。这些变量会覆盖密钥保险柜里的同名条目。见 [CLI 参考](/cli)。
+- **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。
 
-| Provider | API Key | Base URL |
+### PATH 启动脚本
+
+Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin`。服务器启动时会在 `<root>/bin/penguin` 写入一个启动脚本：脚本用服务器自己的 Node 运行 `PENGUIN_CLI_ENTRY` 指向的 CLI 入口，并把这个目录放到每条命令 PATH 的最前面。这样，命令里调用的 `penguin` 就是 Agent 正在运行的这套 harness，无论机器上全局装的是什么版本。它连接的也是这套 harness：只要 `PENGUIN_HOME` 尚未设置，启动脚本就为它启动的 CLI 把它设为本服务器的数据根目录，且只作用于这个 CLI；服务器的数据库不在 `<root>/web.db` 时，还会一并设置 `PENGUIN_WEB_DB`。
+
+终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。在 bash、zsh 和 fish 里，这个目录在每个提示符出现前都会回到最前面，排在你自己的提示符钩子之后执行，插件在启动之后才加上的钩子也不例外。要在这里运行别的 `penguin`，请使用它的完整路径，或在启动文件里定义名为 `penguin` 的 alias 或函数：shell 会先查找它们，再查 PATH。终端的环境不带服务器自己的 `PENGUIN_*`、`PORT` 和 `HOST` 变量，所以无论 `penguin` 还是你在终端里启动的服务器，都不会沿用本服务器的设置；你自己的启动文件导出的变量照常生效。其中属于你自己的设置会保留：`PENGUIN_LANG`、`PENGUIN_UPDATE_CHECK`、`PENGUIN_NO_LOGIN_SHELL_ENV`、`PENGUIN_SHELL`、`PENGUIN_INSTALL_DIR`、下载与更新源的变量（`PENGUIN_DOWNLOAD_*`、`PENGUIN_UPDATE_SOURCE`、`PENGUIN_UPDATE_SPEED_PROBE`），以及 `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL`。没有启动脚本时，终端会保留服务器的 `PENGUIN_HOME` 和 `PENGUIN_WEB_DB`，因为此时没有别的途径让 `penguin` 找到这台服务器。
+
+从源码检出启动的服务器，其每个终端的第一行会写明 `penguin` 运行的是哪份 CLI，以及它的数据根目录。这一行由你的 shell 在第一个提示符出现前、你的启动文件运行之后打印（它们输出的内容排在这一行之上），因此反映它们的设置：启动文件导出了 `PENGUIN_API_URL`，或指向另一个数据根目录的 `PENGUIN_HOME` 时，这一行会改为说明此处的 `penguin` 连接的是那台服务器，而不是这个实例。在 cmd，以及 bash、zsh、fish、sh 和 PowerShell 以外的 shell 里，这一行由服务器在 shell 启动前写入，内容不变。
+
+这个目录既前置到环境变量里，也前置到 shell 内部，因为命令通过登录 shell 运行，而登录 shell 的 profile 常常随后重写 PATH。这也让它排在[密钥保险柜](#vault)里设置的 `PATH` 之前，而保险柜里的 `PATH` 原本会整体替换继承来的值。
+
+启动脚本在每次启动时都会重写，因此安装位置移动后，下次启动会自动跟上。没有可指向的入口时就不写启动脚本，`penguin` 的解析结果与没有启动脚本时相同。从源码检出启动、而检出自己的 CLI 无法运行的服务器，则写入一个说明原因并以失败退出的启动脚本，不让别的安装的 `penguin` 顶替。
+
+### Workspace 预览源
+
+`PENGUIN_PREVIEW_ORIGIN` 与应用本身的源必须在**主机名**上不同，不能只是端口不同：Cookie 不区分端口，换个端口仍然共享同一个会话 Cookie。
+
+- **本地使用：** 保持不设置。应用会规范化到 `localhost`，预览由 `127.0.0.1` 提供，不需要配置，也不需要 DNS。
+- **局域网地址或正式域名：** 必须设置。否则预览会回退到同源沙箱，`localStorage`、Cookie 和第三方嵌入都无法工作。使用正式域名时，会话 Cookie 要保持 host-only（不设 `Domain=`），否则同级子域名会共享这个 Cookie。
+
+值无法解析时，服务器会在启动时直接停止，而不是静默回退。
+
+### 供应商凭证变量
+
+模型的 base URL、协议与 API key 各自只从 Project 配置解析：先取模型自己的值，再取所在分组 `[providers.<id>]` 的值（见[分组连接信息](#分组连接信息)）。PenguinHarness 把这些值原样交给模型路由到的 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 客户端，没有 key 时怎么办由客户端决定：只有不带 base URL，或 base URL 就是该客户端自己的缺省端点（如 DeepSeek 的 `https://api.deepseek.com`）时，它才读取自己的 `*_API_KEY`；不带 base URL 时，端点取它的 `*_BASE_URL`，没有则取缺省端点。没有 key、却带其他 base URL 的模型，在任何请求之前即被拒绝，无论环境里有什么；唯一的例外是走 `mmsp` 客户端的模型，即开放的 MMSP 服务器，它不发送任何 key。要用厂商变量访问厂商的第二个主机、代理或 Bedrock，就让模型与分组的 base URL 都留空，在 key 旁一并设置厂商的 `*_BASE_URL`（如 `ANTHROPIC_BASE_URL=bedrock://us-east-1`）。要使用文件里的其他 base URL，就把 key 也写进文件。见[设置 API key](/models#设置-api-key)。
+
+| 分组 | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M3 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
+新建 Project 不给这七个一方厂商分组写 `base_url`，组内没有 key 的模型因此读取上表的变量；base URL 是厂商缺省端点的分组或模型同样读取。网关分组（openrouter、fireworks、siliconflow、atlascloud、runcrate、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）的分组带网关的 base URL，组内模型须在文件里有 key：它们的 OpenAI 兼容客户端会读取 `OPENAI_*`（opencode-go 中走 Anthropic Messages 的模型读取 `ANTHROPIC_*`），里面存的是你的 OpenAI 或 Anthropic key。custom 或自建分组的模型若在任何一层都不带 base URL，则读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它。vllm 分组的客户端读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`：新建 Project 把 `vllm serve` 默认监听的 `http://127.0.0.1:8000/v1` 写为该分组的 base URL；任何一层都不带 base URL 的 vllm 模型发往 `VLLM_BASE_URL`，未设置时同样发往该地址。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）或 `openai-chat-vllm-adapter` 客户端（vLLM 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，未设置 key 启动的服务器正是这样接受请求；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，落盘权限 0600，凭证内联在模型条目上。模型身份始终是 `(provider, model_id)` 成对引用，禁止任何形式的字符串拼接；指向本文件的每一处引用都要带上两半，provider 绝不由裸 `model_id` 推断。
+`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在文件里：每个分组在 `[providers.<id>]` 存一份，模型条目上只存覆盖分组的值。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
 
-| 字段 | 说明 |
-| --- | --- |
-| `name` | Project 展示名（缺省显示 id） |
-| `default_model` | 缺省模型的成对引用 `{ provider, model_id }`，必须指向 `models` 中的条目 |
-| `vision_model` | 代读图片的视觉模型（纯文本模型用 `read_file` 读图时由它代读），成对引用 |
-| `[command_policy]` | 沙箱安全策略：针对 shell 命令的拒绝规则，先于审批模式生效——见[沙箱安全策略](#沙箱安全策略) |
-| `[[models]]` | 可用模型条目列表 |
+| 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `name` | 字符串 | — | Project 显示名；未设置时显示 id |
+| `default_model` | 成对引用 | — | 指向默认模型的 `{ provider, model_id }` 成对引用；必须指向 `models` 里的条目 |
+| `vision_model` | 成对引用 | — | 为纯文本模型读取图像的视觉模型（`read_file` 会把图像交给它）；成对引用 |
+| `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
+| `[command_policy]` | 表 | 出厂规则集 | shell 命令的拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
+| `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |
+| `[providers.<id>]` | 表 | — | 分组的连接信息，组内模型跟随它；见[分组连接信息](#分组连接信息) |
+| `[[models]]` | 表数组 | — | 可用的模型条目 |
 
-模型条目（`[[models]]`）字段：
 
-| 字段 | 说明 |
-| --- | --- |
-| `provider` | Provider 分组；与 `model_id` 共同构成条目唯一键 |
-| `model_id` | 上游请求 id，原样发送给 AgentHub |
-| `context_window` | 上下文窗口大小 |
-| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断。自定义端点使用通用协议客户端 `openai-responses` / `ant-messages` / `openai-chat`(Web 对话框可按 base URL 检测其中哪一种；0.4.2 之前的旧写法 `openai` 为 `openai-chat` 的已废弃别名，读取时归一化) |
-| `display_name` | 展示名；仅在与内置目录不同时持久化 |
-| `vision` | 是否支持图片输入；缺省视为支持 |
-| `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |
-| `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
-| `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
-| `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
-| `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |
-| `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
+### 模型条目
+
+Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+
+| 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `provider` | 字符串 | — | 供应商分组；与 `model_id` 一起构成条目的唯一键 |
+| `model_id` | 字符串 | — | 上游请求 id，原样发给 MMSP |
+| `context_window` | 数字 | — | 上下文窗口大小 |
+| `client_type` | 字符串 | 分组的；两者都没有时按 `model_id` 开头的厂商系列路由 | 该模型自己的 MMSP 客户端类型 |
+| `display_name` | 字符串 | 内置模型目录中的名称 | 显示名；与模型目录不同时才会持久化 |
+| `vision` | 布尔 | `true` | 模型是否接受图像输入 |
+| `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
+| `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
+| `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
+| `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时，若解析不出 `base_url` 或解析出的是客户端缺省端点，为客户端自己的环境变量 | 该模型自己的内联凭证 |
+| `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
+| `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
+
+字段说明：
+
+- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 识别前三种中的哪一种；后两种需手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
+- `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
+- `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
+- `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
+- `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有解析不出 `base_url`、或解析出的是客户端缺省端点时，才使用客户端自己的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
+
+[providers.deepseek]
+api_key = "sk-..."
+created_at = "2026-10-02T08:00:00.000Z"
+
+[providers.openrouter]
+base_url = "https://proxy.example.com/openrouter/v1"
+client_type = "openai-responses"
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
-vision = true
-api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
 cache_read = 0.005714
 cache_write = 0.285714
 output = 1.142857
+
+[[models]]
+provider = "openrouter"
+model_id = "openrouter/free"
+context_window = 128000
+vision = false
+api_key = "sk-or-..."
 ```
 
-`pricing.unit` 目前固定为 `usd_per_mtok`（USD 每百万 Token）；三档对应 `token_usage` 的三个计数桶。
+deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分组设置的代理，使用分组的协议和自己的 key。`pricing.unit` 目前始终是 `usd_per_mtok`（美元每百万 Token）。三档价格对应 `token_usage` 的三个计数器。
 
-该文件通过 CLI `penguin config model …` 或 Web 的 Models 页面修改——服务运行期间不要手工编辑，模型本身则永远无权读写它。
+通过 CLI（`penguin config model …`）或 Web App 的「模型库」页面编辑这个文件。
 
-### 沙箱安全策略
+> [!WARNING]
+> 服务运行期间不要手动编辑 `.project_config.toml`。模型无权读写这个文件。
 
-`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，模型收到固定文案 `Tool call denied by policy.`——与人工取消可区分——从而换路。策略同样压过 [pre-tool-use hook](/agent-loop#pre-tool-use-hook) 的 `allow`：被否决的调用无论已装钩子怎么答都保持 forbidden。策略放在 Project 配置而不是 Agent State：Agent 经自己的配置面改不到它。它属于运行参数的严格层：随模型上下文在开启时读取一次，修改在各运行中 Session 的下一次轮换（压缩）生效，新对话立即生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身，改动同样在下一次轮换生效。
+### 分组连接信息
 
-规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集读回编辑区，由 Save 落盘。
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议与本地 base URL `http://127.0.0.1:8000/v1`。一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
 
-| 字段 | 说明 |
+| 键 | 类型 | 说明 |
+| --- | --- | --- |
+| `api_key` | 字符串 | 分组密钥，组内没有自己 key、访问分组端点的模型都使用它 |
+| `base_url` | 字符串 | 分组的 base URL |
+| `client_type` | 字符串 | 分组的 MMSP 客户端类型；模型自己的 `client_type` 优先于它 |
+| `created_at` | 字符串 | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
+
+模型的每个连接字段各自解析，取第一个非空值：
+
+| 字段 | 解析顺序 |
 | --- | --- |
-| `enabled` | 总开关；缺省 = **启用**（仅在关闭时落盘 `enabled = false`） |
-| `[[command_policy.rules]]` | 拒绝规则列表，按顺序匹配：`name`（在设置页标识该规则）+ `pattern`（JavaScript 正则源码，对空白归一化后的命令做匹配）+ 可选 `description` + 每条 `enabled`（缺省 = 启用）。存储空列表 = 没有规则；缺失列表 = 出厂集 |
+| `base_url` | 模型条目 → 分组 → 无：客户端的缺省端点 |
+| `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
+| `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：客户端自己的环境变量，仅限不带 `base_url` 或为客户端缺省端点时（见[供应商凭证变量](#供应商凭证变量)） |
 
-出厂规则集刻意保持很小——只收录一旦照原样执行就不可挽回的命令：同时带递归与强制标志的 `rm`、`mkfs`、`dd` 直写块设备、经典 fork bomb、以及重定向写入块设备（`/dev/null` 等仍然合法）。另有四条是同样这五条的 Windows 对应写法（`exec_command` 在 Windows 上会解析到 pwsh 或 cmd）：递归强制删除（`Remove-Item -Recurse -Force`、`rd /s /q`）、格式化卷（`format C:`、`Format-Volume`）、裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）、以及 cmd 版 fork bomb。
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。
 
-匹配会先把常规写法归一化再套规则，免得平常的敲法平白漏过去：带路径（`/bin/rm`）、带前缀命令（`sudo`、`env`、`command`、`nice`、`xargs`）、给命令词加引号或反斜杠转义（`"rm"`、`r''m`、`\rm`）、以及字面量形式的 `sh -c 'rm -rf /'` 都会命中。归一化只做一件事：去掉引号标记——不展开、不替换、不解码。
+### 新对话默认值
+
+`[default_chat]` 块为 Web App 的新对话预填默认值，在 **Project 设置** 的 **默认值** 标签页管理。每个键都可选且相互独立；加载时发现无效的值会直接丢弃，不影响其他键。
+
+| 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `agent_id` | 字符串 | — | 新对话预选的 Agent；必须是已存在的 Agent |
+| `workspace` | 字符串 | 临时 Workspace | 预填的 Workspace 目录 |
+| `approval_mode` | 字符串 | `allow-all` | 预填的审批模式：`allow-all`、`deny-all`、`read-only` 或 `always-ask` |
+| `thinking_level` | 字符串 | — | 回退思考等级（`low` / `medium` / `high` / `xhigh` / `max`），供配置里没有设置 `model.thinking_level` 的 Agent 使用 |
+
+默认模型不在这个块里：它仍然是顶层的 `default_model`。
+
+### 插件
+
+`[plugins]` 表列出 Project 要求的[服务端插件](/skills#服务端插件)，供所有机器共用，在**插件市场**页面只读；页面安装与移除写入所看机器的 `[plugins.<machineId>]` 表。每个键是一个包名，值是形如 Cargo `[dependencies]` 的要求：
+
+插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。Manage installs 仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
+
+```toml
+[plugins]
+"@penguinharness/sandbox-bwrap" = "*"
+"@scope/name" = "1.2.3"
+"@scope/other" = { version = "1.2" }
+```
+
+- `"*"` 表示部署发布的任意版本。版本字符串和 `{ version = "…" }` 形式会作为要求保留下来；目前加载只看包名。
+- 服务器运行所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
+- 读取文件时，其他形式的条目会被丢弃，文件的其余部分照常加载。`plugins` 键不是表时，视为不要求任何插件。
+- 空表照样写成空表，表示这个 Project 不要求任何插件。
+
+## 命令策略
+
+`[command_policy]` 块是 Project 为 shell 命令设下的护栏：一组在审批边界直接生效的拒绝规则。
+
+| 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | 布尔 | 启用 | 总开关；只以 `enabled = false` 的形式存储 |
+| `[[command_policy.rules]]` | 表数组 | 出厂规则集 | 拒绝规则，按顺序匹配。存储为空列表表示没有规则；不存储列表则表示使用出厂规则集 |
+
+每条规则包含以下键：
+
+| 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `name` | 字符串 | — | 在设置界面中标识这条规则 |
+| `pattern` | 字符串 | — | JavaScript 正则表达式源码，与空白符归一化后的命令匹配 |
+| `description` | 字符串 | — | 可选的描述 |
+| `enabled` | 布尔 | 启用 | 单条规则的开关 |
 
 ```toml
 [command_policy]
@@ -117,7 +240,7 @@ enabled = true
 
 [[command_policy.rules]]
 name = "rm-recursive-force"
-pattern = "…" # 播种自出厂集
+pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
 
 [[command_policy.rules]]
@@ -126,208 +249,324 @@ pattern = "git push [^;|&]*--force"
 enabled = false
 ```
 
-这是**防事故的护栏，不是安全边界**——这句话讲的是模式匹配本身能做到什么，而不是对这份实现的谦辞。shell 是一门编程语言，靠在程序跑起来之前读它的文本来判断它会做什么，不是加规则就能逼近的事。所以策略覆盖的是人和模型真正会敲出来的写法，到此为止：
+打开 Web App 的 **Project 设置**，在 **安全策略** 标签页管理这套策略。只有 Project 所有者能编辑；成员看到的是当前生效的策略。
 
-- **运行期才拼出来的命令不在覆盖范围内，将来也不会在。** 用 `$IFS` 代替空格、走变量或别名（`X=rm; $X -rf /`）、命令替换、`eval`、base64 喂给 shell、`python -c`、经管道进入的解释器。每一条都要一个从此长期维护的模式，换来的只是覆盖的表象。存心要让命令跑起来的人，总能让它跑起来。
-- **MCP 工具是另一个面。** 本策略只读 `exec_command` 与 `input_command`。MCP Server 自己的 `permission` 等级是那边现有的旋钮，但依赖它之前先看清它做什么：它只决定该 Server 的工具向审批模式报告哪个等级，仅此而已——不隔离 Server，也不限制其工具运行时能做什么（见[工具与审批](/tools)）。把匹配 shell 文本的正则伸进任意 MCP 参数，只会给一个需要真控制的面再加一层更弱的控制。
-- **不在名单上的命令。** `shred`、`wipefs`、`find -delete`、`git clean -xfd`、`chmod -R 000 /` 都不匹配任何出厂规则——名单是刻意保持小的。项目在意什么，就自己加规则。
+### 生效方式
 
-它换来的是：毁灭性单行命令不会被误跑——模型碰到 shell 的两条路都算，POSIX 与 Windows 两种写法都算，任何审批模式下都算。这是一道减速带，而在不可逆的命令前面，减速带是值得有的。要真正的边界——一个无论跑什么都碰不到文件系统其余部分的进程——机制是进程隔离（bubblewrap、dsh），那是另一层，本策略与之互补而非替代。
+- **检查范围：** 两个会触达 shell 的工具：`exec_command` 的 `cmd`（启动的命令）和 `input_command` 的 `chars`（往运行中的命令键入的内容）。
+- **生效时机：** `Session.run` 会用策略包住注入的审批回调，所以只要命中规则，在任何审批模式下（`allow-all` 也不例外）都会在询问宿主之前直接拒绝。
+- **模型看到什么：** 一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法。
+- **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。策略否决的调用，无论已安装的钩子给出什么答复，都保持禁止。
+- **存放位置：** 策略存放在 Project 配置里，而不是 Agent State 里，所以 Agent 通过自身设置修改配置时碰不到它。
+- **修改何时生效：** 策略属于严格层级的运行时参数，只在模型上下文开启时读取一次。改动要等运行中的 Session 下一次轮换（压缩）才生效，新对话则立即生效。
 
-在 Web App Project 设置的「安全策略」页管理（仅 owner 可改；成员只读展示生效策略）。
+### 出厂规则
+
+规则就是**普通数据，没有特殊层级**。出厂规则集会像模型预设一样预置到每个新建 Project 里：创建时复制一份，之后绝不重写。此后每条规则都能编辑、停用或删除，你也可以添加自己的规则。在预置机制上线之前创建的 Project（存储中没有 `rules` 列表）会按出厂规则集运作，直到第一次保存编辑、把列表写进去为止。设置页面上的 **恢复默认** 会把出厂规则集重新载入编辑器，保存后写回。
+
+出厂规则集刻意保持精简，只覆盖那些原样执行就会造成破坏、且无法撤销的命令：
+
+- 同时带递归和强制标志的 `rm`
+- `mkfs`
+- 直接向块设备写入的 `dd`
+- 经典的 fork 炸弹
+- 重定向到块设备的 shell 命令（`/dev/null` 这类仍然允许）
+
+另有四条规则用 Windows 写法覆盖同样的场景，因为 `exec_command` 在 Windows 上可能解析为 pwsh 或 cmd：
+
+- 递归强制删除（`Remove-Item -Recurse -Force`、`rd /s /q`）
+- 卷格式化（`format C:`、`Format-Volume`）
+- 裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）
+- cmd 版的 fork 炸弹
+
+### 匹配规则
+
+在规则运行之前，匹配逻辑会先归一化几种常见写法，避免直白的输入碰巧漏网。下面这些写法全部都能命中：
+
+- 开头带路径（`/bin/rm`）
+- 前面套了一层包装命令（`sudo`、`env`、`command`、`nice`、`xargs`）
+- 命令词加了引号或反斜杠转义（`"rm"`、`r''m`、`\rm`）
+- 原样传入的 `sh -c 'rm -rf /'`
+
+归一化只删除引号。展开、替换、解码，一律不做。
+
+### 策略不覆盖的范围
+
+命令策略是一道**防误操作的护栏，不是安全边界**。这句话描述的是模式匹配能做到什么，不是对本实现的自谦。Shell 是一门编程语言，规则加得再多，也无法在程序运行前靠阅读它的文本来更准确地判断它会做什么。策略覆盖人和模型实际会敲出来的写法，到此为止：
+
+- **运行时计算出来的命令不在覆盖范围内，以后也不会有。** 例如：用 `$IFS` 代替空格、变量或别名（`X=rm; $X -rf /`）、命令替换、`eval`、通过管道把 base64 送进 shell、`python -c`、经由管道调用的解释器。每一种都得配一条需要永久维护的模式，换来的只是「已覆盖」的假象。真想让命令跑起来的人，总有办法让它跑起来。
+- **MCP 工具是另一个层面。** 策略只读 `exec_command` 和 `input_command`。MCP Server 自身的 `permission` 等级才是那个层面上的设置，但它只设定 Server 的工具向审批模式上报的等级，既不给 Server 加沙箱，也不限制工具运行时的行为（见[工具与审批](/tools)）。把 shell 文本匹配器扩展到任意 MCP 参数，只会给一个真正需要硬控制的层面再叠一道更弱的控制。
+- **不在清单上的命令不覆盖。** `shred`、`wipefs`、`find -delete`、`git clean -xfd`、`chmod -R 000 /` 都匹配不到任何出厂规则。为你的 Project 在意的命令自行添加规则。
+- **它不是文件系统权限。** 能写任意路径的工具仍然可以改写配置文件本身，改动在下一次轮换时生效。
+
+这套策略确实换来的是：一条破坏性的单行命令，无论通过哪个触达 shell 的工具、写成 POSIX 还是 Windows 的形式、处于哪种审批模式，都不会因误操作而执行。这是一道减速带，而在不可逆的命令前面，减速带值得设置。至于真正的边界，也就是让进程无论执行什么都碰不到文件系统的其他部分，靠的是隔离机制（bubblewrap、dsh）。那是独立的另一层，这套策略补充它，而不是取代它。
 
 ## Agent 配置
 
-`agent_state/system_config.yaml` 定义单个 Agent 的行为（YAML；经 Web UI 编辑时保留注释）：
+`agent_state/system_config.yaml` 定义一个 Agent 的行为。文件是 YAML 格式，在 Web App 中编辑时，注释会保留。
 
-| 字段 | 缺省值 | 说明 |
+| 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `name` | — | Agent 展示名（缺省回退到 id） |
+| `name` | — | Agent 显示名称；未设置时回退到 id |
 | `description` | — | Agent 描述 |
-| `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
-| `kernel_version` | 当前内核版本 | 配置内核版本（日期字符串）：记录该配置基于哪一代内置默认，创建、还原默认与更新内核时盖章；与 `version` 无关，用户编辑不改变它，缺失视为早于内核版本机制（即过期） |
-| `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
-| `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
-| `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；每个模型上下文开启时采用的档位（Session 钉住的档位优先），上下文内固定，修改在下一次压缩后生效 |
-| `model.timeoutMs` | `300000` | 单次 Request 的**空闲**超时（毫秒）：等待上游下一个事件的上限，收到任一事件即归零重计，不是整次请求的总时长上限。它约束的是连接建立与首个事件的等待、以及流式过程中的事件间隔——思考不外露的模型整段推理都落在「首个事件」这一段里，缺省值为此留足余量 |
-| `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
-| `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
+| `version` | `1` | Agent State 版本（自然数），每次成功优化后递增 |
+| `kernel_version` | 当前内核版本 | 配置基于哪一代内置默认值（日期字符串） |
+| `system_prompt` | 内置模板 | 必填；唯一支持占位符替换的模板 |
+| `max_turns` | `-1` | 每个 Task 的最大 LLM 轮数 |
+| `model.max_tokens` | `32000` | 每次 Request 的输出 Token 上限 |
+| `model.thinking_level` | `medium` | 每个模型上下文开启时使用的思考等级，除非 Session 钉住了等级 |
+| `model.timeoutMs` | `600000` | 每次 Request 的**空闲**时间预算，单位毫秒 |
+| `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值 |
+| `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
-| `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
-| `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
-| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{USER_MEMORY_INDEX}}` |
-| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{WORKSPACE_MEMORY_INDEX}}` 与 `{{WORKSPACE_MEMORY_DIR}}` |
-| `vault.enabled` | `true` | 保险柜小节是否进入上下文（关闭后值仍注入子进程环境，只是模型看不到键名清单） |
-| `vault.prompt` | 内置模板 | `{{VAULT}}` 区块内容，可在 Vault 标签页编辑——含 `{{VAULT_KEYS}}` |
-| `skills.enabled` | `true` | 技能小节是否进入上下文（关闭后已装技能仍可被 `[use_skills]` 显式调用） |
-| `skills.prompt` | 内置模板 | `{{SKILLS}}` 区块内容，可在技能标签页编辑——含 `{{SKILL_METADATA}}` |
-| `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
-| `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
-| `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
+| `compaction.prompt` | 内置模板 | summarize 模式压缩使用的提示词 |
+| `memory.enabled` | `true` | 记忆是否进入上下文，以及是否准备记忆目录 |
+| `memory.prompt` | 内置模板 | `{{MEMORY}}` 块中始终注入的那一半；包含 `{{USER_MEMORY_INDEX}}` |
+| `memory.workspace_prompt` | 内置模板 | 仅在持久 Workspace 中追加；包含 `{{WORKSPACE_MEMORY_INDEX}}` 和 `{{WORKSPACE_MEMORY_DIR}}` |
+| `vault.enabled` | `true` | 密钥保险柜小节是否进入上下文 |
+| `vault.prompt` | 内置模板 | `{{VAULT}}` 块；包含 `{{VAULT_KEYS}}` |
+| `skills.enabled` | `true` | 技能小节是否进入上下文 |
+| `skills.prompt` | 内置模板 | `{{SKILLS}}` 块；包含 `{{SKILL_METADATA}}` |
+| `schedules.enabled` | `true` | 定时任务小节是否进入上下文 |
+| `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
+| `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
+| `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`，插件安装的条目另带 `plugin`） |
+
+### 字段说明
+
+- `kernel_version`：在创建时、还原为默认配置时以及内核更新时打上标记。它与 `version` 无关，也不会因你的编辑而改变。值缺失说明配置早于这套机制，视为过时。
+- `max_turns`：`-1` 表示不限制；正整数则为单个 Task 的轮数上限。
+- `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
+- `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
+- `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
+- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
+- `compaction.max_session_turns`：`-1` 表示不限制。
+- `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **技能**，`schedules.prompt` 在 **定时任务**。
+- `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。
+- `skills.enabled`：关闭时，已安装的 Skill 仍可通过 `[use_skills]` 显式调用。
+- `schedules.enabled`：关闭时，服务端仍会触发任务，只是模型不再了解任务系统。
+- `hooks.enabled`：唯一没有提示词的小节，因为钩子包是脚本，不是上下文文本。关闭时，钩子包仍保持安装，只是不再有任何环节调用它们。
+- `tools.builtin`：每个条目包含 `name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`。`call_description` 是按工具控制调用参数 `description` 的开关；开启时调用必须带上这个参数；字段缺失则视为保留。
+- `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。`config` 中的字符串值可以写指向 Vault 键的 `${KEY}` 引用，在 Server 连接时填入，见 [Vault 引用](/tools#vault-引用)。`plugin` 是写入该条目的那次安装所属的插件：重新安装或卸载这个插件，只动带它名字的条目；不带这个字段的条目归你自己。删掉这个字段，条目就归你所有，此后该插件读作未安装，而且名称被占用期间无法再安装它。见 [MCP Server](/tools#mcp-server)。
+
+四个 `compaction.*` 字段是本文件中唯一即时生效的部分，运行中的对话无需等待。引擎会在每个压缩检查点重新读取这一节（每次请求上报 Token 用量之后，以及手动执行 `/compact` 时），因此保存的修改对已在运行的 Session 同样生效。其余内容都在模型上下文开启时读取，修改要到下一次压缩才生效。在 Web App 里，你还可以在上下文面板中拖动条上的虚线切刀来[修改阈值](/chat#修改压缩阈值)。
 
 工具权限与审批语义见[工具与审批](/tools)。
 
-局部调整示例（在初始化生成的文件基础上修改）。注意本文件**不与默认值做 deep merge**：写出的字段整体生效，省略的字段才在使用处回退表中缺省值；`system_prompt` 是必填字段（缺失会拒绝加载），编辑其他字段时应保留初始化写入的完整模板：
+本文件**不与默认值做深度合并**。写出的键整体生效；只有省略的键，才会在用到时回退到上述默认值。`system_prompt` 必填，缺少此字段的文件无法加载，因此编辑其他字段时请保留完整生成的模板。下面是一个部分覆盖的示例，由 init 步骤生成的文件修改而来：
 
 ```yaml
 name: default_agent
 description: General-purpose agent
 version: 3
 
-# 必填:保留初始化生成的完整默认模板(含 {{AGENTS_MD}} 等占位符,此处从略)。
+# Required: keep the full generated default template ({{AGENTS_MD}} and friends; elided here).
 system_prompt: |
   …
 
-# -1(缺省)不限制轮数;设为正整数则限制单个 Task 的轮数。
+# -1 (the default) = unlimited; set a positive integer to cap the turns of a single Task.
 max_turns: -1
 
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 300000
+  timeoutMs: 600000
 
 compaction:
   max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 
-# tools 整段省略 = 使用完整默认工具集。一旦写出 tools.builtin,将**整体替换**
-# 默认列表:必须为每个要保留的工具携带完整定义(含 parameters JSON Schema),
-# 参见「工具与审批」页。
+# Omitting the whole tools section = the full default toolset. Writing tools.builtin
+# REPLACES the default list wholesale: carry the complete definition (including the
+# parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
-既有 Agent 始终按其磁盘上的配置原样运行——更新后的代码默认值不会自动合并。内置默认发生实质变化时，配置的 `kernel_version` 落后于当前内核版本，详情页与智能体列表会给出更新提示。采用当前默认值有两条路径（同在设置页概览、相邻放置）：
+### 内核更新
 
-- **更新内核**：无损合并，**以设置页为单位**逐页比对（系统提示词、运行参数、工具、技能、记忆、密钥保险柜、定时任务）。配置中整页缺失、或整页哈希仍等于某一代已记录的内置默认，即按当前默认整页重写——后续版本新增的工具也正是借这次整页重写进入既有 Agent。只要该页被改动过，就**整页**保持不变并在结果中列出：改了一个内置工具，整个「工具」页都会被保留，因此自加的工具与删掉的工具都会留存，而该页其余内容在还原默认配置之前不再跟进新默认。`name`、`description`、`version` 与 `tools.mcpServers` 不属于任何设置页，永不触碰。完成后盖章 `kernel_version`。比对是**保守**的：只有整页哈希命中已记录代际才被视为旧默认，太老而无法识别的代际一律按自定义保留。
-- **还原为默认配置**：与 Skill 更新同语义，用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。更新内核因保守保留而没跟上时，这是全量刷新的兜底。
+已有 Agent 始终按磁盘上的配置原样运行，新版代码的默认值绝不会自动合并进来。当内置默认值发生实质性变化时，配置的 `kernel_version` 会落后于当前内核，设置页面和智能体列表会显示更新提示。设置总览上有两个操作可以采纳当前默认值。
 
-面向开发者：`kernel_version` 只在对内置默认做出实质修改时手动前进（取当日日期）。CI 的 pinned-hash 测试（`core/test/kernel-version.test.ts`）重算各设置页哈希并与 `kernel-history.ts` 中的 `KERNEL_DEFAULT_TAB_HASHES` 比对，不一致即失败，并逐个列出变动的设置页及其对应改动：更新 `KERNEL_VERSION`、把该页旧哈希追加到 `KERNEL_SUPERSEDED_TAB_HASHES`、再写入新哈希。同日多次变更可复用当日版本号。已记录的旧哈希一经写入即冻结——它们就是「仍是旧默认」的识别依据。
+**更新内核**是一次无损合并，按设置标签页逐一进行（**系统提示词**、**运行参数**、**工具**、**技能**、**记忆**、**密钥保险柜**、**定时任务**）：
+
+- 配置里完全没有的标签页，或者哈希仍与某一*已记录*代的内置默认值一致的标签页，会按当前默认值重写。之后版本新增的工具，也是通过这条途径进入已有 Agent 的。
+- 只要你以任何方式改动过，标签页就会**完整**保持不变，并列入结果。哪怕只改了一个内置工具，整个**工具**标签页也会保留：你新增的工具和删除的工具都原样留存，这个标签页也不再跟随新默认值，直到你执行还原为默认配置。
+- `name`、`description`、`version`、`hooks` 和 `tools.mcpServers` 不属于任何标签页，更新永远不会碰它们。
+- 最后，配置会打上当前 `kernel_version` 的标记。
+- 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
+
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+
+面向开发者的说明：
+
+- `kernel_version` 由人工推进，且只在内置默认值发生实质性变化时更新，取当天日期。同一天的多次改动可能复用同一天的版本。
+- CI 中的固定哈希测试（`core/test/kernel-version.test.ts`）会重新计算每个标签页的哈希，并与 `kernel-history.ts` 里的 `KERNEL_DEFAULT_TAB_HASHES` 比对。发现偏差时测试失败，并列出每个变动的标签页及所需的修改：递增 `KERNEL_VERSION`，把这个标签页原先的哈希追加到 `KERNEL_SUPERSEDED_TAB_HASHES`，再写入重新计算出的哈希。
+- 已淘汰的哈希永久冻结：判断一个标签页是否仍是旧默认值，靠的就是它们。
 
 ### 系统提示词占位符
 
-`system_prompt` 是唯一进行占位符替换的模板，可用占位符：
+`system_prompt` 是唯一支持占位符替换的模板。可用占位符如下：
 
 | 占位符 | 注入内容 |
 | --- | --- |
-| `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
-| `{{VAULT}}` | 渲染后的 `vault.prompt` 区块（保险柜小节）；`vault.enabled` 关闭时为空。模板没有它就不注入该小节——Vault 标签页提供显式插入/迁移 |
-| `{{SKILLS}}` | 渲染后的 `skills.prompt` 区块（技能小节）；`skills.enabled` 关闭时为空。模板没有它就不注入该小节——技能标签页提供显式插入/迁移 |
-| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
-| `{{SCHEDULES}}` | 渲染后的 `schedules.prompt` 区块（定时任务小节）；`schedules.enabled` 关闭时为空。模板没有它就不注入该小节——定时任务标签页提供显式插入 |
-| `{{VAULT_KEYS}}` | `vault.prompt` 内：Vault 的键名列表（仅键名，每键一行 `- KEY`）。为兼容旧模板，直接写在模板正文中的该占位符仍会被替换，并同样受 `vault.enabled` 控制 |
-| `{{SKILL_METADATA}}` | `skills.prompt` 内：已安装 Skill 的元数据行。为兼容旧模板，直接写在模板正文中的该占位符仍会被替换，并同样受 `skills.enabled` 控制 |
-| `{{SCHEDULE_LIST}}` | `schedules.prompt` 内：现有定时任务名列表（每任务一行 `- name`；无任务时为空清单说明） |
-| `{{USER_MEMORY_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{WORKSPACE_MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{WORKSPACE_MEMORY_DIR}}` | 仅 `memory.workspace_prompt` 内：当前 Workspace 记忆目录的绝对路径 |
+| `{{AGENTS_MD}}` | `AGENTS.md` 全文 |
+| `{{VAULT}}` | 渲染后的 `vault.prompt` 块（密钥保险柜小节）；`vault.enabled` 关闭时为空 |
+| `{{SKILLS}}` | 渲染后的 `skills.prompt` 块（技能小节）；`skills.enabled` 关闭时为空 |
+| `{{MEMORY}}` | 渲染后的 `memory.prompt` 块，持久 Workspace 中还会加上 `memory.workspace_prompt`；记忆关闭时为空 |
+| `{{SCHEDULES}}` | 渲染后的 `schedules.prompt` 块（定时任务小节）；`schedules.enabled` 关闭时为空 |
+| `{{VAULT_KEYS}}` | 在 `vault.prompt` 内：密钥保险柜的密钥名称列表（只有名称，每个密钥一行 `- KEY`） |
+| `{{SKILL_METADATA}}` | 在 `skills.prompt` 内：已安装 Skill 的元数据行 |
+| `{{SCHEDULE_LIST}}` | 在 `schedules.prompt` 内：当前的任务名称列表（每个任务一行 `- name`；没有任务时显示空列表说明） |
+| `{{USER_MEMORY_INDEX}}` | 在记忆提示词内：用户作用域的 `MEMORY.md` 索引（最多 200 行，总计不超过 25,000 字符） |
+| `{{WORKSPACE_MEMORY_INDEX}}` | 仅在 `memory.workspace_prompt` 内：Workspace 作用域的 `MEMORY.md` 索引（最多 200 行，总计不超过 25,000 字符） |
+| `{{WORKSPACE_MEMORY_DIR}}` | 仅在 `memory.workspace_prompt` 内：当前 Workspace 记忆目录的绝对路径 |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{PROJECT_DIR}}` | App Data Dir：PenguinHarness 应用数据根目录（即 Project 目录） |
+| `{{PROJECT_DIR}}` | App Data Dir：PenguinHarness 的应用数据根目录（即 Project 目录） |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace 路径 |
-| `{{PROVIDER}}` | 模型 provider 分组 |
+| `{{PROVIDER}}` | 模型供应商分组 |
 | `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
 
-`{{PROJECT_DIR}}` 在提示词中以 **App Data Dir** 名义暴露给模型：PenguinHarness 的应用数据根目录，存放全部 Agent 的数据文件（`agents/<agent_id>/…`）与 Project 级数据——特意不以 Project/任务目录的口径描述，避免模型将其误认为本次任务的工作目录（`CWD`）。
+**小节占位符。** 密钥保险柜、技能、记忆、定时任务四个小节共用一套模式：一个占位符、一个开关、一段可编辑的提示词。模板里只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本放在对应的 `*.prompt` 键里（在设置标签页编辑），关闭 `*.enabled` 则整块为空。模板缺少其中某个占位符时，对应小节不会注入；相应的设置标签页会提供显式插入占位符或迁移旧版模板的操作。四个小节占位符在组装时最后展开，一趟完成。展开后的文本不会再次扫描，因此记忆索引或小节提示词里看起来像占位符的文本会按字面保留。
 
-Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
+**App Data Dir。** `{{PROJECT_DIR}}` 会以 **App Data Dir** 的名义展示给模型：这是 PenguinHarness 的应用数据根目录，存放所有 Agent 的数据文件（`agents/<agent_id>/…`）和 Project 级数据。刻意不把它描述成 Project 或 Task 目录，避免模型误以为它是任务的工作目录（`CWD`）。
 
-`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（见[上下文压缩](/agent-loop)）。
+**Windows 路径。** 在 Windows 上，`{{PROJECT_DIR}}` 和 `{{CWD}}` 一律以正斜杠注入；core 为模型拼出的其他路径也是如此（附件行、目标模式的 goal 文件行、截断输出的恢复路径）。模型会把这种写法照搬进 JSON 工具参数和 shell 命令。Node 的 fs API 和包内工具所用的 Git Bash 都接受正斜杠，还能避开 JSON 反斜杠转义错误。
 
-Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
+**AGENTS.md。** `agent_state/AGENTS.md` 是开发者可编辑的指令文件，通过 `{{AGENTS_MD}}` 注入，默认为空。它也是优化器编辑最多的文件；参见[自我进化](/self-improvement)。与 Agent State 的其余内容（包括 `system_config.yaml`）一样，它在每次模型上下文开启时读取：创建 Session 时读一次，压缩开启下一个上下文时再读一次。因此，修改会在运行中 Session 的下一次压缩时生效，而不只对新建 Session 生效，且绝不会影响正在运行的上下文。`compaction` 一节是例外；见[上下文压缩](/agent-loop)。
 
-**旧模板兼容**：`system_config.yaml` 在 Agent 创建时物化、从不自动升级，早于本机制创建的 Agent 模板中是硬编码的 `# Vault` / `# Skills` 段落文字加内联 `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}`。这类模板继续工作：内联占位符仍被替换，且同样受新开关控制（关闭时替换为空串）。对应标签页会提示「旧版模板」并提供一键迁移——把旧默认段落逐字原位替换为新占位符，装配结果不变；自定义改动过段落文字的模板不匹配逐字迁移，则按缺占位符处理、提供一键插入（插到 `# Environment` 之前）。
+**旧版模板。** `system_config.yaml` 在创建 Agent 时写入，此后不会自动升级。在小节占位符出现之前创建的 Agent，模板里硬编码了 `# Vault` / `# Skills` 小节文本，并内联了 `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}`。这类模板仍然可用：内联占位符照常替换，并遵守小节开关（开关关闭时替换为空字符串）。对应的设置标签页会提示旧版模板并提供一键迁移：把旧的默认小节文本原封不动地就地替换为新占位符，组装出的提示词保持不变。如果小节文本有过自定义，原样迁移便匹配不上，此时模板按缺少占位符处理，可在 `# Environment` 之前一键插入。
 
 ## 记忆
 
-`agent_state/memory/` 保存 Agent 跨 Session 的长期记忆：用户反馈、项目决策、协作约定与外部系统入口——这些无法从 Workspace 或代码历史可靠重新推导。它不是上下文压缩：压缩保存单个 Session 的短期工作状态。
+`agent_state/memory/` 保存 Agent 在多次 Session 之间记住的内容：用户反馈、项目决策、工作惯例、外部系统的入口，也就是无法从 Workspace 或它的代码历史中重新推导的内容。记忆不是上下文压缩，压缩保留的是单个 Session 的短期状态。
 
-记忆有两个作用域，都归属于单个 Agent，绝不跨 Agent 共享：
+记忆分两个作用域。两者都只属于一个 Agent，绝不与其他 Agent 共享：
 
-- **用户作用域**（`memory/user/`）——无论在哪工作都成立的内容：用户是谁、其长期偏好、与具体代码库无关的参考。每个 Session 都会读到，包括运行在临时 Workspace 中的会话——那种会话没有别处可写。
-- **Workspace 作用域**（`memory/<workspace_memory_key>/`）——关于某一个 Workspace 的事实。同一 Agent、同一 Workspace 的多个 Session 共享；不同 Workspace 的主题文件相互隔离。
-
-每个作用域各带一份 `MEMORY.md` 索引；不同 Agent 即使使用同一 Workspace 也各自维护。记忆位于 Agent State，因此随导出、导入与快照一同流转，Project 内有权访问该 Agent 的成员都能读到——所以凭据与敏感个人信息绝不应写入。
+- **用户作用域**（`memory/user/`）：Agent 无论在哪里工作都成立的内容，比如用户是谁、长期偏好，以及不绑定某个代码库的参考资料。每个 Session 都会读取它，包括运行在临时 Workspace 里的 Session，因为这种 Session 没有别的地方可写。
+- **Workspace 作用域**（`memory/<workspace_memory_key>/`）：关于某个 Workspace 的事实。同一 Agent 在同一 Workspace 中的 Session 共享这些内容；不同 Workspace 的主题文件彼此独立。
 
 ```text
 agent_state/memory/
-├── user/                         # 用户作用域（无 marker：它不对应任何路径）
-│   ├── MEMORY.md                 # 本作用域索引
+├── user/                         # user scope (no marker: it stands for no path)
+│   ├── MEMORY.md                 # this scope's index
 │   └── prefers-pnpm.md
-└── my-app-a81f32c4/              # 单个 Workspace
-    ├── .workspace                # 该 key 对应的 Workspace 路径
+└── my-app-a81f32c4/              # one Workspace
+    ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
     └── testing-conventions.md
 ```
 
-`user` 是保留目录名。之所以安全：生成的 workspace memory key 一律是 `<base>-<8 位十六进制>`，必然含连字符——不含连字符的名字永远不会被生成出来。
+每个作用域都有自己的 `MEMORY.md` 索引，而且不同 Agent 绝不共享记忆，即使在同一个 Workspace 里也是如此。记忆存放在 Agent State 中，因此会随导出、导入和快照一起迁移。
 
-workspace memory key 为 `<安全 basename>-<真实路径 sha256 的 8 位十六进制>`。身份只由实际目录决定，与 Git 无关：指向同一目录的两个软链接得到同一 key；目录移动或重命名后视为新的 Workspace（旧记忆仍以旧 key 留在磁盘上）。PenguinHarness 自动创建的临时 Workspace（位于 `agents/<agent_id>/workspaces/` 下）没有 Workspace 作用域，子 Agent 继承该临时 Workspace 时同样没有：临时 Workspace 是每个 Session 分配一个，之后不会有任何 Session 再跑进去读它。这类会话仍然拥有用户作用域——它能学到的东西本来也属于那一层。
+> [!WARNING]
+> 能访问这个 Agent 的所有 Project 成员都能读到它的记忆。不要把凭证和敏感的个人数据存进去。
 
-主题文件按语义划分，不按 Task、Session 或日期划分，并带 frontmatter：
+要读取或删除记忆，或者让 Agent 来修改，使用 [Agent 设置](/agents)的 **记忆** 标签页。
+
+### Workspace 记忆键
+
+Workspace 记忆键的格式是 `<safe-basename>-<8 hex of the real path's sha256>`。
+
+- `user` 是保留的目录名，这样做是安全的：生成的键都形如 `<base>-<8 hex>`，一定包含连字符。
+- 标识就是目录本身，与 Git 无关。指向同一目录的两个符号链接解析出同一个键；移动或重命名目录会让它变成一个新 Workspace，旧记忆仍以旧键留在磁盘上。
+- 临时 Workspace 由 PenguinHarness 分配在 `agents/<agent_id>/workspaces/` 下，完全没有 Workspace 作用域，子 Agent 继承时也不例外。临时 Workspace 按 Session 分配，之后不会再有 Session 在那里运行并读回内容。这种 Session 仍然会拿到用户作用域，它学到的东西本来也该存在那里。
+
+### 主题文件
+
+每个主题文件保存一个事实或主题，而不是每个 Task、Session 或日期一个文件，并带有 frontmatter：
 
 ```markdown
 ---
 name: testing-conventions
-description: 项目的测试环境和验证规则
+description: the project's test environment and verification rules
 updated_at: 2026-08-07
 ---
 
-- 集成测试必须连接真实数据库，不使用 mock repository。
+- Integration tests connect to a real database; no mock repositories.
 ```
 
-frontmatter 只有这三个字段——记忆属于哪一层由所在目录表达，不设 `type` 字段（早期文件里残留的 `type:` 行会被当作未知字段忽略）。值得保存的是：用户是谁（角色、专长、长期偏好）以及希望 agent 如何工作（连同原因）；无法仅从代码推导的决策、约束与计划；外部系统、文档与服务的稳定入口。提示词还点明了这类事实出现的时机——同一诉求被再次提出、以超出当前任务的方式纠正某项结果、反复讲到的习惯或开发实践、以及交代过一次、否则还要再问一遍的可复用工作信息。「重复」是强信号而非硬性条件，长期偏好只讲一次同样成立；拿不准是否值得记住时，agent 会在对话里直接询问用户。记错的主题连同其索引行一并删除；日期写绝对日期（`YYYY-MM-DD`），相对日期对后续 Session 没有意义。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
+frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目录决定，因此没有 `type` 字段；早期文件里遗留的 `type:` 行会当作未知字段忽略。
 
-每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
+默认的记忆提示词告诉模型保存哪些内容：
 
-进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{USER_MEMORY_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{WORKSPACE_MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织。`User Memory Dir` 行是字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`，模型可据 Environment 段自行拼出；`Workspace Memory Dir` 行经 `{{WORKSPACE_MEMORY_DIR}}` 直接渲染为解析后的路径——它的末段（工作区记忆键）是路径哈希，模型无从自行推得。
+- 用户是谁、希望 Agent 怎么工作，以及背后的原因
+- 从代码推导不出的目标、决策和约束
+- 指向外部系统、文档和资源的指引
 
-空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。默认记忆提示词只声明行数上限，并要求每行索引保持在约 150 字符以内，模型在撞线之前就会把索引保持在限内；字符兜底仅存在于代码中。主题正文由模型按需读取。
+它还列出了会产生这类事实的时刻：同一个请求第二次出现、一条超出当前任务仍然成立的纠正、不止一次提到的习惯或做法，或者一个不记住就得再问的可复用工作细节。重复只会让事实更明显；长期偏好只要清楚地说过一次就够了。分不清某件事值不值得保存时，Agent 会在对话里直接询问。
 
-两半之所以是两个独立配置键：替换引擎没有条件分支，临时 Workspace 绝不能被塞进 Workspace 小节（它的目录行和作用域二选一规则），所以那一半在临时 Workspace 下干脆不追加。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
+提示词明确排除以下内容：
 
-模板中没有 `{{MEMORY}}` 的 Agent（例如创建于记忆功能之前）不会注入任何内容；记忆标签页会给出提示并提供一键插入占位符（插到 `# Environment` 之前，即默认模板中的位置）——不存在任何自动拼接。组装后的完整提示词记录在 `session_meta`。
+- 代码、配置或 Git 历史里已经写明的事实
+- 未经验证的猜测
+- 对话记录摘录（即使用户要求保存，Agent 也只保存其中非显然的部分）
 
-查看、删除或让 Agent 修改已保存的记忆，见设置页的[记忆标签](/web-app#agent-设置agents)。
+用户想保存的其他内容都可以存。对于纠正和决策，模型会加上 **Why:** 和 **How to apply:** 两行。事后证明有误的记忆会连同索引行一起删除。日期一律写绝对日期（`YYYY-MM-DD`），因为相对日期对后续 Session 毫无意义。
+
+### 注入方式
+
+只有索引会进入上下文，通过模板中的 `{{MEMORY}}` 占位符注入。每个 `MEMORY.md` 每行列出本作用域的一条记忆，格式为 `- [Title](file.md) — hook`，链接相对于作用域目录。模型更新文件时同步更新索引，删除也不例外，两者始终保持一致。
+
+`{{MEMORY}}` 展开为：
+
+- `memory.prompt`：记忆的用途和保存方法，然后是一个 `## User memory` 小节，内含索引（`{{USER_MEMORY_INDEX}}`）。
+- `memory.workspace_prompt`：仅当 Session 运行在持久 Workspace 中时存在，是一个包含 `{{WORKSPACE_MEMORY_INDEX}}` 的 `## Workspace memory` 小节。
+
+这两段提示词都是 Agent 级配置，可在 **记忆** 标签页编辑，和模板其他小节一样按 Markdown 标题组织。`User Memory Dir` 一行是字面模板 `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`，模型根据 Environment 小节自行解析。`Workspace Memory Dir` 一行则通过 `{{WORKSPACE_MEMORY_DIR}}` 直接渲染为解析后的路径，因为它的最后一段是 Workspace 记忆键，这是模型自己拼不出来的路径哈希。
+
+限制：
+
+- 索引为空时，会注入一条明确的「还没有保存任何内容」提示。
+- 每个作用域的注入上限是 200 行（按惯例一条记忆一行），另外还有一个 25,000 字符的总量兜底上限，应对索引里出现几条超长行的情况。超过上限时，会附上一条截断说明，让模型自己去打开完整的 `MEMORY.md`。磁盘上的文件始终原样不动。
+- 默认记忆提示词写明了行数上限，并要求索引行控制在约 150 字符以内，让模型在触及上限之前就把索引保持得很短。字符数兜底只存在于代码中。
+- 模型按需读取主题正文。
+
+这两段是各自独立的配置键，因为占位符替换不支持条件判断。临时 Workspace 绝不能收到 Workspace 小节（即它的目录行和选择作用域的规则），所以那一段在那里根本不会追加。Harness 只决定记忆存放在哪里，并把写入限制在这个范围内。判断什么值得保存、拆分主题、维护索引，这些都是模型的工作，用普通文件工具完成。
+
+模板里没有 `{{MEMORY}}` 就不会注入任何记忆；在记忆功能发布之前创建的 Agent 就是例子。**记忆** 标签页会说明这一情况，并提供一个明确的一键操作：把占位符插入到 `# Environment` 之前，也就是默认模板中它所在的位置。任何内容都不会自动拼接进去。组装好的完整提示词记录在 `session_meta` 中。
 
 ## Vault
 
-`agent_state/.vault.toml` 是 Agent 级的环境变量保险库：隐藏文件，落盘权限 0600。
+`agent_state/.vault.toml` 是 Agent 级的环境变量密钥保险柜：一个隐藏文件，以 0600 权限写入。
 
-- 键名须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（shell 环境变量命名规则）；
-- 值只注入工具子进程的环境变量，永远不进入模型上下文与 Trace；
-- 系统提示词中只披露键名：模板的 `{{VAULT}}` 占位符展开为 `vault.prompt`（内含 `{{VAULT_KEYS}}` 键名列表），提示词可在 Vault 标签页编辑；`vault.enabled` 关闭则整段为空——值照旧注入子进程，只是模型看不到键名清单。旧模板的内联 `{{VAULT_KEYS}}` 仍被替换并受同一开关控制，标签页提供一键迁移（见「系统提示词占位符」一节）；
-- 经 Web/API 保存会使该 Agent 已缓存的 Session 运行时失效：其任意 Session 的下一个任务会重新恢复（resume）并使用新值；进行中的任务保持其启动时的值（CLI 直接改文件对运行中的 server 则要等 Session 下次创建或恢复时生效）；
-- 通过 CLI `penguin config vault set/list/remove` 或 Web 的 Vault 标签页管理。
+- 键名必须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（即 shell 环境变量的命名规则）。值的长度上限为 8,192 个字符。
+- 值只注入工具子进程的环境，以及 MCP Server 条目中以 `${KEY}` 引用该键的地方（见 [Vault 引用](/tools#vault-引用)）。这些值绝不会进入模型上下文，也不会出现在 Trace 里。
+- 系统提示词里只显示键名。模板中的 `{{VAULT}}` 占位符展开为 `vault.prompt`，其中带有 `{{VAULT_KEYS}}` 键名列表，可在 **密钥保险柜** 标签页编辑。`vault.enabled` 关闭时这一块为空：值仍会注入子进程，只是模型看不到键名。旧版模板里内联的 `{{VAULT_KEYS}}` 在同一个开关控制下仍会照常替换，标签页还提供一键迁移（参见[系统提示词占位符](#系统提示词占位符)）。
+- 保存后的更改立即对新 Session 生效；正在运行的 Session 则在下一次压缩时生效，与其他 Agent State 的更改一样。无论在 Web App 里保存、通过 API 保存还是用 CLI 保存，行为都相同。
+- 用 `penguin config vault set/list/remove` 管理，或在 **密钥保险柜** 标签页操作。
 
 ## 定时任务
 
-`agent_state/schedule/<name>.toml` 每个文件描述一个定时任务（文件名即任务标识），按节律向 Agent 发送预设 Prompt。定时任务仅在 Web 服务（server 运行时）运行期间执行，在 Web 的 Agent 设置 → Schedule 标签页管理。
+每个文件 `agent_state/schedule/<name>.toml` 描述一个定时任务，按设定的周期向 Agent 发送预设 Prompt。文件名就是任务的标识。定时任务只在 Web 服务（服务器运行时）运行期间执行。可以在 Agent 设置的 **定时任务** 标签页或对话页面管理，见[定时任务](/schedules)。
 
-| 字段 | 必填 | 说明 |
-| --- | --- | --- |
-| `prompt` | 是 | 触发时发送的 Prompt |
-| `enabled` | 否 | 是否启用，缺省 `false` |
-| `start_at` | 是 | 首次触发时刻（ISO 8601） |
-| `period` | 否 | 周期，形如 `30m` / `12h` / `7d`，下限 5 分钟；缺省为一次性任务 |
-| `end_at` | 否 | 结束时刻，须晚于 `start_at` |
-| `session_id` | 否 | 绑定既有 Session；与下列三项互斥 |
-| `workspace` | 否 | 新建 Session 模式的 Workspace |
-| `provider` / `model_id` | 否 | 新建 Session 模式的模型成对引用；要写就两个都写，只写 `model_id` 会被拒绝，两个都不写则使用 Project 默认模型 |
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `prompt` | 字符串 | 必填 | 每次触发时发送的 Prompt |
+| `enabled` | 布尔 | `false` | 任务是否触发 |
+| `start_at` | 日期时间（ISO 8601） | 必填 | 首次触发时间 |
+| `period` | 字符串 | 省略表示一次性任务 | 执行周期，如 `30m` / `12h` / `7d`；最小 5 分钟 |
+| `end_at` | 日期时间（ISO 8601） | — | 结束时间；必须晚于 `start_at` |
+| `session_id` | 字符串 | — | 把任务绑定到一个已有 Session；与下面三个字段互斥 |
+| `workspace` | 字符串 | — | 新建 Session 模式使用的 Workspace |
+| `provider` / `model_id` | 字符串对 | Project 的默认模型 | 新建 Session 模式的成对模型引用 |
+
+`provider` 和 `model_id` 要么都写，要么都不写。只写 `model_id` 的文件无效；两者都不写时使用 Project 的默认模型。
+
+不会再触发的任务——已触发或已错过的一次性任务，以及已过 `end_at` 的任务——会由调度器原样移进 `agent_state/schedule/expired/`，见[结束的任务会归档](/schedules#结束的任务会归档)。
 
 ```toml
-prompt = "检查昨日构建结果并汇总失败原因"
+prompt = "Check yesterday's builds and summarize the failures"
 enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
 ```
 
-模板的 `{{SCHEDULES}}` 占位符展开为 `schedules.prompt`：教模型用文件工具自行管理这些 TOML 文件（目录、字段规则、约 30 秒自动生效、防重复等卫生规则），末尾经 `{{SCHEDULE_LIST}}` 注入现有任务名列表。提示词可在定时任务标签页编辑；`schedules.enabled` 关闭则整段为空——server 照常按计划触发任务，只是模型不了解任务体系。早于本机制创建的 Agent 模板没有该占位符，标签页提供一键插入。
+模板中的 `{{SCHEDULES}}` 占位符展开为 `schedules.prompt`。它教模型用自己的文件工具管理这些 TOML 文件：目录位置、字段规则、约 30 秒内自动生效，以及防止重复的规则。末尾通过 `{{SCHEDULE_LIST}}` 附上当前的任务名列表。这段提示词可在 **定时任务** 标签页编辑。`schedules.enabled` 关闭时这一块为空：服务器仍按计划触发任务，只是不再教模型这套任务系统。在这个机制出现之前创建的 Agent，模板里没有这个占位符，标签页提供一键插入。
 
 ## 设计原则
 
-Agent 的行为完整地存放于磁盘上的可编辑文件——提示词、Skill、配置都是数据而非代码。正因如此，Agent 才能被 Agent 改进：优化器编辑的与你手工编辑的是同一批文件。参见[自我进化](/self-improvement)与 [CLI 参考](/cli)。
+Agent 的行为完全由磁盘上可编辑的文件决定：Prompt、Skill 和配置都是数据，而不是代码。正因如此，Agent 才能改进 Agent：优化器编辑的正是你手动编辑的那些文件。参见[自我进化](/self-improvement)和 [CLI 参考](/cli)。

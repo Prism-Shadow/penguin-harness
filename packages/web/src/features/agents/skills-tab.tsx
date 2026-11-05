@@ -13,49 +13,63 @@
  * as a zip that round-trips through that same endpoint. Read and mutate are both
  * member-level, matching the skills routes — no owner gating here.
  *
+ * The import dialog is mounted only while it is open, so every opening starts with nothing
+ * typed. The source is its draft under the settings commit model: closing the dialog with one
+ * typed (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in
+ * flight. Opening the chat hands the source over, so the draft is forgotten before the page
+ * moves to the conversation.
+ *
  * Prompt-injection controls (usePromptInjection): the skills.enabled switch, the
  * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
  * skills.prompt section, mirroring the Memory tab.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useNavigate } from "react-router";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  CopiedStatus,
+  CopyCheckGlyph,
+  DownloadIcon,
+  GlyphIcon,
+  HelpFold,
+  HiddenFileInput,
+  ICONS,
+  IconButton,
+  Input,
+  Modal,
+  SettingsEmpty,
+  SettingsList,
+  ListRow,
+  ICON_SIZE,
+  SkeletonList,
+  Textarea,
+  buttonClass,
+  discardUnsaved,
+  toastSuccess,
+  useCopied,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input, Textarea } from "../../components/ui/input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { DownloadIcon } from "../../components/ui/icons";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { SettingsEmpty } from "../../components/ui/empty-state";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { useAiBridge } from "../ai-create";
+import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
+import { toastApiError } from "../../lib/toast-api-error";
 
-/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
-const UPLOAD_LABEL_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
-  "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
-  "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
-
-/** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
-export const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
+/** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
+export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the skill name for the confirm copy. */
 interface PendingOverwrite {
@@ -71,11 +85,12 @@ export function SkillsTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const navigate = useNavigate();
-  const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
-  const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
@@ -92,13 +107,8 @@ export function SkillsTab({
   const [busy, setBusy] = useState(false);
   // Skill name pending uninstall confirmation (non-null shows the confirm modal).
   const [removing, setRemoving] = useState<string | null>(null);
-  // Import modal: the source for the chat-install prompt + upload state travel with the modal.
+  // The import dialog; what it holds (the source, the upload) lives in it, while it is open.
   const [importOpen, setImportOpen] = useState(false);
-  const [source, setSource] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  // Non-null shows the overwrite confirm (the archive POST answered 409 skill_exists).
-  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -107,15 +117,15 @@ export function SkillsTab({
     try {
       // The injection controls' state loads in parallel with the tab's own list.
       const [res, configView] = await Promise.all([
-        api.getAgentSkills(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.getAgentSkills(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setSkills(res.skills);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -125,44 +135,13 @@ export function SkillsTab({
   const agent = agents.find((a) => a.agentId === agentId);
   const agentName = agent ? agentDisplayName(agent) : agentId;
 
-  /**
-   * "Export as zip": fetch the archive and save it via a temporary object-URL anchor.
-   * The codebase's other downloads are bare `<a href download>` anchors (snapshot export,
-   * trace download), but a bare anchor would save the error JSON as a file when the
-   * request fails — fetching first lets failures surface as a toast instead. The JSON-only
-   * api client can't carry binary, hence the raw fetch (errors re-wrapped as ApiError so
-   * apiErrorText localizes by code as usual).
-   */
+  /** "Export as zip": the shared archive download (archive-download.ts); a failure surfaces as a toast. */
   const exportSkill = async (name: string) => {
     if (!projectId) return;
     try {
-      const res = await fetch(api.agentSkillArchiveUrl(projectId, agentId, name));
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: { code?: string; message?: string };
-        } | null;
-        throw new ApiError(
-          res.status,
-          body?.error?.code ?? "unknown",
-          body?.error?.message ?? S.common.unknownError,
-        );
-      }
-      // The server's Content-Disposition is the authority on the filename (it appends
-      // -v<version> when the frontmatter declares one explicitly); <name>.zip is only
-      // the fallback for a missing/unparseable header.
-      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(
-        res.headers.get("content-disposition") ?? "",
-      )?.[1];
-      const url = URL.createObjectURL(await res.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = encoded ? decodeURIComponent(encoded) : `${name}.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name, machineId), name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -171,26 +150,165 @@ export function SkillsTab({
     if (!projectId || removing === null) return;
     setBusy(true);
     try {
-      await api.removeAgentSkill(projectId, agentId, removing);
+      await api.removeAgentSkill(projectId, agentId, removing, machineId);
       toastSuccess(`${S.skills.uninstalledToast(removing, agentName)}${S.agent.takesEffectSuffix}`);
       await load();
       // The agent card's skill count changed; refresh the list provider too.
-      void reloadAgents();
+      if (machineId === null) void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setRemoving(null);
     }
   };
 
-  /** Open the import modal (reset the form and upload state). */
-  const openImport = () => {
-    setSource("");
-    setUploadError(null);
-    setOverwriting(null);
-    setImportOpen(true);
+  /** An upload landed: the dialog closes and the list is read again from disk. */
+  const imported = async () => {
+    setImportOpen(false);
+    toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
+    await load();
+    // The agent card's skill count changed; refresh the list provider too.
+    if (machineId === null) void reloadAgents();
   };
+
+  /** Metadata: the installed copy's version (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy installed before that spelling; empty when the frontmatter carries none), shown bare like the library card. */
+  const metaLine = (skill: SkillMetadataItem): string => skill.version;
+
+  if (!projectId) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabSkills}>{S.skills.agentTabDesc}</HelpFold>
+
+      {toggleCard}
+      {alertStrip}
+
+      {/* Import entry point at the head of the installed list, right-aligned — the admin users
+          page puts its create action in the same slot above its table. It renders in every list
+          state (loading, empty, populated) so the action never shifts and the dashed empty block
+          keeps a header instead of standing alone; the modal carries both install paths. */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={skills === null}
+          onClick={() => setImportOpen(true)}
+        >
+          {S.skills.importSkill}
+        </Button>
+      </div>
+
+      {skills === null ? (
+        <SkeletonList rows={4} />
+      ) : skills.length === 0 ? (
+        <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
+      ) : (
+        <SettingsList label={S.agent.tabSkills}>
+          {skills.map((skill) => (
+            <ListRow
+              key={skill.name}
+              as="li"
+              leading={<SkillTile icon={skill.icon} name={skill.name} />}
+              title={
+                <span className="font-mono text-[length:var(--ui-text-code-size)] font-semibold">
+                  {skill.name}
+                </span>
+              }
+              description={
+                <span
+                  data-tooltip={skill.description}
+                  data-tooltip-content="text"
+                  data-tooltip-extra={skill.description !== localizedShortText(locale, skill)}
+                >
+                  {localizedShortText(locale, skill)}
+                </span>
+              }
+              meta={metaLine(skill) || undefined}
+              trailing={
+                <>
+                  <IconButton
+                    label={`${S.skills.exportSkill} ${skill.name}`}
+                    title={S.skills.exportSkill}
+                    disabled={busy}
+                    onClick={() => void exportSkill(skill.name)}
+                  >
+                    <DownloadIcon size={ICON_SIZE.iconButton} />
+                  </IconButton>
+                  <IconButton
+                    variant="danger"
+                    label={`${S.skills.uninstall} ${skill.name}`}
+                    title={S.skills.uninstall}
+                    disabled={busy}
+                    onClick={() => setRemoving(skill.name)}
+                  >
+                    <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                  </IconButton>
+                </>
+              }
+            />
+          ))}
+        </SettingsList>
+      )}
+
+      {promptSection}
+
+      {importOpen && (
+        <SkillImportDialog
+          projectId={projectId}
+          agentId={agentId}
+          onClose={() => setImportOpen(false)}
+          onImported={() => void imported()}
+        />
+      )}
+
+      {/* Uninstall confirmation (shared ConfirmModal, same copy as the skill library page). */}
+      <ConfirmModal
+        open={removing !== null}
+        title={removing !== null ? S.skills.uninstallConfirmTitle(removing) : ""}
+        busy={busy}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => void confirmRemove()}
+        confirmLabel={S.skills.uninstall}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}
+        </p>
+      </ConfirmModal>
+
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The "Import skill" dialog: the recommended chat install on top, the zip upload below. The
+ * source is the dialog's draft (compared without the spaces around it): closing with one typed
+ * asks first, and an upload in flight holds every way of closing until it answers.
+ */
+function SkillImportDialog({
+  projectId,
+  agentId,
+  onClose,
+  onImported,
+}: {
+  projectId: string;
+  agentId: string;
+  onClose: () => void;
+  /** A zip landed: the tab closes the dialog and reads the list again. */
+  onImported: () => void;
+}) {
+  const { openAiChat } = useAiBridge();
+  const machineId = useAgentLocation();
+  const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
+  const source = form.draft;
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Non-null shows the overwrite confirm (the archive POST answered 409 skill_exists).
+  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
 
   // The prompt tailors its lead sentence to the source kind (URL / repo / path / command /
   // reference — see skill-import-source.ts); the preview substitutes a placeholder token
@@ -203,41 +321,38 @@ export function SkillsTab({
   const promptCopy = useCopied();
 
   /**
-   * "Open a new chat" with this Agent: the same draft-state entry as the agents page
-   * "New Chat" button. A non-empty source goes through the AI bridge instead, which prefills
-   * the composer with the generated install prompt (parking typed-but-unsent draft text
-   * first) and clears a stale handoff target and skill pre-selection along with it.
+   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
+   * install prompt (parking typed-but-unsent draft text first) and clears a stale handoff
+   * target and skill pre-selection along with it. Disabled without a source, like the copy
+   * button — a blank chat would drop the prompt the dialog just built. The source goes with
+   * the chat, so nothing typed is left to lose: it is forgotten first, or the leave guard
+   * would hold the move to the conversation.
    */
   const openChat = () => {
-    if (trimmedSource) {
-      openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
-      return;
-    }
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+    if (trimmedSource === "") return;
+    discardUnsaved(form.scope);
+    openAiChat({ agentId, text: buildImportPrompt(trimmedSource), machineId });
+    onClose();
   };
 
   /**
    * POST the zip to the archive endpoint. A 409 skill_exists pops the overwrite confirm
    * (the skill name is read from the server's fixed message tail, pinned by the route
-   * tests; `fallbackName` — the picked file's stem — covers a parse miss). Success closes
-   * the modal and re-fetches the list.
+   * tests; `fallbackName` — the picked file's stem — covers a parse miss). Success hands
+   * over to the tab, which closes the dialog and re-fetches the list.
    */
   const upload = async (dataBase64: string, fallbackName: string, overwrite: boolean) => {
-    if (!projectId) return;
     setUploading(true);
     setUploadError(null);
     try {
-      await api.installAgentSkillArchive(projectId, agentId, {
-        dataBase64,
-        ...(overwrite ? { overwrite: true } : {}),
-      });
+      await api.installAgentSkillArchive(
+        projectId,
+        agentId,
+        { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
+        machineId,
+      );
       setOverwriting(null);
-      setImportOpen(false);
-      toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
-      await load();
-      // The agent card's skill count changed; refresh the list provider too.
-      void reloadAgents();
+      onImported();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.code === "skill_exists") {
         const name = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? fallbackName;
@@ -266,113 +381,22 @@ export function SkillsTab({
     reader.readAsDataURL(file);
   };
 
-  /** Metadata: the installed copy's version (`YYYY-MM-DD.N`; empty when the frontmatter carries none), shown bare like the library card. */
-  const metaLine = (skill: SkillMetadataItem): string => skill.version;
-
-  if (!projectId) return null;
-
   return (
-    <div className="space-y-4">
-      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
-      <HelpFold label={S.agent.tabSkills}>{S.skills.agentTabDesc}</HelpFold>
-
-      {toggleCard}
-      {alertStrip}
-
-      {/* Import entry point at the head of the installed list, right-aligned — the admin users
-          page puts its create action in the same slot above its table. It renders in every list
-          state (loading, empty, populated) so the action never shifts and the dashed empty block
-          keeps a header instead of standing alone; the modal carries both install paths. */}
-      <div className="flex justify-end">
-        <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
-          {S.skills.importSkill}
-        </Button>
-      </div>
-
-      {skills === null ? (
-        <SkeletonList rows={4} />
-      ) : skills.length === 0 ? (
-        <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
-      ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-          {skills.map((skill) => (
-            <div
-              key={skill.name}
-              className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-            >
-              <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
-              <div className="min-w-0 flex-1">
-                <span
-                  className="block truncate font-mono text-[13px] font-semibold"
-                  title={skill.name}
-                >
-                  {skill.name}
-                </span>
-                {/* Short description truncates to one line (full description goes into title for hover reading). */}
-                <p
-                  className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={skill.description}
-                >
-                  {localizedShortText(locale, skill)}
-                </p>
-              </div>
-              {metaLine(skill) !== "" && (
-                <span
-                  className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                  title={metaLine(skill)}
-                >
-                  {metaLine(skill)}
-                </span>
-              )}
-              {/* Icon-only row actions (same affordance as the agents page cards: neutral
-                  bordered icon for export, danger variant with red text/hover for delete);
-                  the tooltip + aria-label carry the wording. */}
-              <Button
-                size="icon"
-                title={S.skills.exportSkill}
-                aria-label={`${S.skills.exportSkill} ${skill.name}`}
-                disabled={busy}
-                onClick={() => void exportSkill(skill.name)}
-              >
-                <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
-              </Button>
-              <Button
-                size="icon"
-                variant="danger"
-                title={S.skills.uninstall}
-                aria-label={`${S.skills.uninstall} ${skill.name}`}
-                disabled={busy}
-                onClick={() => setRemoving(skill.name)}
-              >
-                <GlyphIcon d={TRASH_ICON} size={14} />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {promptSection}
-
-      {/* Import modal: recommended chat install on top, zip upload below. */}
-      <Modal
-        open={importOpen}
-        title={S.skills.importSkill}
-        onClose={() => setImportOpen(false)}
-        widthClass="sm:max-w-lg"
-      >
+    <>
+      <Modal open title={S.skills.importSkill} onClose={requestClose} widthClass="sm:max-w-lg">
         <div className="space-y-4">
           <section>
             <p className="text-sm font-medium">{S.skills.importChatTitle}</p>
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
               {S.skills.importChatWhy}
             </p>
-            <div className="mt-2.5 space-y-2.5">
+            <div className="mt-2.5 space-y-3">
               <Input
                 size="sm"
                 label={S.skills.importSourceLabel}
                 hint={S.skills.importSourceHint}
                 value={source}
-                onChange={(e) => setSource(e.target.value)}
+                onChange={(e) => form.setDraft(e.target.value)}
                 placeholder={S.skills.importSourcePlaceholder}
                 autoComplete="off"
               />
@@ -394,7 +418,12 @@ export function SkillsTab({
                   {S.skills.importCopyPrompt}
                 </Button>
                 <CopiedStatus copied={promptCopy.copied} />
-                <Button size="sm" variant="primary" onClick={openChat}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={trimmedSource === ""}
+                  onClick={openChat}
+                >
                   {S.skills.importOpenChat}
                 </Button>
               </div>
@@ -423,7 +452,9 @@ export function SkillsTab({
       <ConfirmModal
         open={overwriting !== null}
         title={S.skills.importOverwriteTitle}
+        tone="primary"
         confirmLabel={S.skills.importOverwriteAction}
+        cancelLabel={S.common.cancel}
         busy={uploading}
         onClose={() => setOverwriting(null)}
         onConfirm={() => {
@@ -434,21 +465,6 @@ export function SkillsTab({
           {overwriting !== null ? S.skills.importOverwriteBody(overwriting.name) : ""}
         </p>
       </ConfirmModal>
-
-      {/* Uninstall confirmation (shared ConfirmModal, same copy as the skill library page). */}
-      <ConfirmModal
-        open={removing !== null}
-        title={removing !== null ? S.skills.uninstallConfirmTitle(removing) : ""}
-        busy={busy}
-        onClose={() => setRemoving(null)}
-        onConfirm={() => void confirmRemove()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}
-        </p>
-      </ConfirmModal>
-
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-    </div>
+    </>
   );
 }

@@ -67,21 +67,22 @@
  * reply-files.ts): path-like tokens that resolve inside the Workspace and actually exist,
  * pictures sent as pictures and everything else as attachments. Not "every file the run
  * wrote": the Agent's own words are what say which output was the point, and a chat window
- * is a bad place to receive a directory. What the caps drop is named in the chat rather
- * than dropped quietly.
+ * is a bad place to receive a directory. What the caps drop and what the channel refuses is
+ * filed as error records under the Session's Project, one per cause for the whole reply,
+ * rather than dropped quietly, and none of it is posted into the chat (see
+ * messagingFilesNotSentRecords).
  */
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type {
-  MessagingBindingRow,
-  MessagingBindingsRepo,
-} from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
+import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
+import { MESSAGE_MAX } from "../error-recorder.js";
 import type { ErrorSink } from "../error-recorder.js";
 import { recallStoreOf } from "../session-manager.js";
 import type { RecallStore } from "../session-manager.js";
@@ -93,10 +94,38 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { MessagingReplyHeldError } from "./connector.js";
 import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
-import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
+import {
+  MessagingMediaTooLargeError,
+  MessagingOutboundCapError,
+  MessagingPermissionError,
+  MessagingUnsupportedError,
+  isImageFileName,
+} from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
+import { Component, Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { QQScanTransportHandle } from "./qq-scan.js";
+import { QQScanService, createQQScanTransport } from "./qq-scan.js";
+import type { AppEnv } from "../../auth/middleware.js";
+import { Hono } from "hono";
+
+import { FeishuMessaging } from "./feishu-connector.js";
+import { TelegramMessaging } from "./telegram-connector.js";
+import { QqMessaging } from "./qq-connector.js";
+import { WechatMessaging } from "./wechat-connector.js";
+import { WeChatScanService } from "./wechat-scan.js";
+import type { WeChatScanTransportHandle } from "./wechat-scan.js";
+import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
+import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
+import type { Access } from "../../mechanisms/projects.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Errors } from "../../mechanisms/observability.js";
+import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { Settings } from "../../mechanisms/settings.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
@@ -279,8 +308,8 @@ export const MESSAGING_TEST_MESSAGE =
  *
  * The count is not anyone's API limit but a judgement about the medium: a reply naming more
  * than a handful of files is reporting on work rather than delivering it, and a chat is the
- * wrong place to receive twenty attachments. The remainder is counted in a notice, never
- * silently dropped — the Web App still has all of them.
+ * wrong place to receive twenty attachments. The remainder is counted in an error record
+ * (`messaging_files_skipped`), never silently dropped — the Web App still has all of them.
  */
 export const MESSAGING_OUTBOUND_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const MESSAGING_OUTBOUND_FILE_MAX_BYTES = 30 * 1024 * 1024;
@@ -296,33 +325,240 @@ export const MESSAGING_OUTBOUND_FILE_MAX_COUNT = 5;
  */
 const MESSAGING_OUTBOUND_MTIME_GRACE_MS = 2_000;
 
-/** One file a ceiling refused, named so the user knows which one to go and fetch. */
-export function messagingFileTooLargeNotice(fileName: string, maxBytes: number): string {
-  const mb = Math.floor(maxBytes / (1024 * 1024));
-  return `"${fileName}" is over this channel's ${mb}MB limit and was not sent. 文件“${fileName}”超过该渠道 ${mb}MB 的上限，未发送。`;
+/** A mentioned file's name: the tail of `rel`, which is always "/"-joined (toWorkspaceRelative). */
+function baseNameOf(rel: string): string {
+  return rel.slice(rel.lastIndexOf("/") + 1);
+}
+
+/** A mentioned file held back at an outbound ceiling, and the ceiling (see deliverOneFile). */
+export interface OversizeOutboundFile {
+  fileName: string;
+  maxBytes: number;
+  asImage: boolean;
+}
+
+/** A mentioned file the read or the channel refused, and what was thrown. */
+export interface RefusedOutboundFile {
+  fileName: string;
+  err: unknown;
+}
+
+/** One error record to file: the capture point's code and the error it carries. */
+export interface MessagingErrorRecord {
+  code: string;
+  err: Error;
 }
 
 /**
- * One file the channel would not take, with its own reason.
+ * The error records for the files of one reply that did not go out: ONE per cause, naming every
+ * file that cause held back — never one per file.
  *
- * Every other way a file does not arrive is named in the chat — over the byte cap, past the
- * count cap, an inbound refusal. A failed upload reached `error_records` and nothing else,
- * which the person in the chat cannot open, so the feature simply looked broken.
+ * Per reply rather than per file because the recorder keeps a single record per code and
+ * Project inside a two-second window (see error-recorder.ts), and a reply's files fail within
+ * milliseconds of each other: filed one by one, five files QQ refused would surface as the
+ * first alone. None of them is posted into the chat, so these records are the only place any
+ * of it is said. The causes, in the order they are returned:
+ *
+ * - `messaging_file_send_failed`, in up to three records by what was thrown: a missing
+ *   permission (unexpected), any other refusal (unexpected), and a refusal the channel repeats
+ *   for every file (expected — any file on QQ), the one record that keeps the type thrown,
+ *   because error-kind.ts reads its kind off it. The permission record names the files, then
+ *   lists the scopes and console links once, and quotes nothing that was thrown: Feishu's
+ *   refusal carries the same scopes and link and ends in a log_id that is new on every request,
+ *   so quoting it would give each file its own line repeating the fix — and nobody needs a
+ *   log_id to grant a scope. The three share a code, so a reply failing for two of these
+ *   causes at once reaches the recorder's window twice and keeps only the first record: the
+ *   causes somebody has to act on are therefore the ones that come first.
+ * - `messaging_file_too_large`, the files over an outbound ceiling, each with its limit
+ *   (expected).
+ *
+ * The files past the per-reply count are recorded apart from these (see filesSkippedError).
  */
-export function messagingFileFailedNotice(fileName: string, reason: string): string {
-  return `"${fileName}" could not be sent to the chat. 文件“${fileName}”未能发送到会话。(${noticeReason(reason)})`;
+export function messagingFilesNotSentRecords(
+  channel: string,
+  oversize: readonly OversizeOutboundFile[],
+  refused: readonly RefusedOutboundFile[],
+): MessagingErrorRecord[] {
+  const permission: Array<{ fileName: string; err: MessagingPermissionError }> = [];
+  const other: RefusedOutboundFile[] = [];
+  const unsupported: RefusedOutboundFile[] = [];
+  for (const file of refused) {
+    if (file.err instanceof MessagingPermissionError) {
+      permission.push({ fileName: file.fileName, err: file.err });
+    } else if (file.err instanceof MessagingUnsupportedError) {
+      unsupported.push(file);
+    } else {
+      other.push(file);
+    }
+  }
+  const records: MessagingErrorRecord[] = [];
+  if (permission.length > 0) {
+    const scopes = [...new Set(permission.flatMap((file) => file.err.scopes))];
+    const grantUrls = [
+      ...new Set(
+        permission.flatMap((file) => (file.err.grantUrl === null ? [] : [file.err.grantUrl])),
+      ),
+    ];
+    const fix = ["this bot's app is missing a permission.", scopes.join(", "), ...grantUrls].join(
+      "\n",
+    );
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new Error(
+        filesNotSentMessage(
+          channel,
+          permission.map((file) => ({ fileName: file.fileName, reason: fix })),
+          VERBATIM,
+        ),
+      ),
+    });
+  }
+  if (other.length > 0) {
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new Error(filesNotSentMessage(channel, other.map(thrownReason), VERBATIM)),
+    });
+  }
+  if (unsupported.length > 0) {
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new MessagingUnsupportedError(
+        filesNotSentMessage(channel, unsupported.map(thrownReason), VERBATIM),
+      ),
+    });
+  }
+  if (oversize.length > 0) {
+    const overLimit = oversize.map((file) => ({
+      fileName: file.fileName,
+      reason: `larger than the ${Math.floor(file.maxBytes / (1024 * 1024))}MB limit for ${file.asImage ? "a picture" : "a file"}`,
+    }));
+    records.push({
+      code: "messaging_file_too_large",
+      err: new MessagingOutboundCapError(filesNotSentMessage(channel, overLimit, OVER_LIMIT)),
+    });
+  }
+  return records;
 }
 
-/** One file this bot's app is not permitted to upload — the fixable half of the above. */
-export function messagingFilePermissionNotice(
-  fileName: string,
-  scopes: readonly string[],
-  grantUrl: string | null,
+/** One file's part in a record: its name, and why it did not go out. */
+interface FileReason {
+  fileName: string;
+  reason: string;
+}
+
+/** A refused file's reason: what the read or the channel said. */
+function thrownReason(file: { fileName: string; err: unknown }): FileReason {
+  return {
+    fileName: file.fileName,
+    reason: file.err instanceof Error ? file.err.message : String(file.err),
+  };
+}
+
+/** How a record's reason reads after a lone file's head, and as the one reason several files share. */
+interface ReasonWording {
+  lone(reason: string): string;
+  shared(reason: string): string;
+}
+
+/** A reason that reads the same either way: a refusal as it was thrown, or a permission's fix. */
+const VERBATIM: ReasonWording = { lone: (reason) => reason, shared: (reason) => reason };
+
+/** A ceiling, which reads as a property of the file, or of each file, it held back. */
+const OVER_LIMIT: ReasonWording = {
+  lone: (reason) => `it is ${reason}`,
+  shared: (reason) => `each is ${reason}`,
+};
+
+/**
+ * The head of a record about one file: which file, and which channel it was going to.
+ *
+ * The record has to read on its own in the cost center's error table, where nothing else on the
+ * row names the file or the channel. `channel` is the binding's discriminant, the same name the
+ * bridge's log lines use.
+ */
+function fileNotSentHead(channel: string, fileName: string): string {
+  return `"${fileName}" was not sent to the ${channel} chat`;
+}
+
+/**
+ * The message of one record covering `files`, fitted under the recorder's MESSAGE_MAX.
+ *
+ * A lone file reads `"<file>" was not sent to the <channel> chat: <reason>`. Several read
+ * `<n> files were not sent to the <channel> chat: "<a>", "<b>"`, then the reason they share —
+ * or, when their reasons differ, one `"<file>": <reason>` line each.
+ *
+ * Fitted here rather than left to the recorder, which cuts from the end, where the reasons are.
+ * The list of names gives way first, down to "…": a reason is worth more than the fifth name,
+ * and a line per file names its own file anyway. Only then are the reasons cut, all of them
+ * alike, so each keeps its file's name and the start of what went wrong.
+ */
+function filesNotSentMessage(
+  channel: string,
+  files: readonly FileReason[],
+  wording: ReasonWording,
 ): string {
-  return `"${fileName}" could not be sent: this bot's app is missing a permission. 文件“${fileName}”未能发送：机器人应用缺少所需权限。\n${permissionDetail(scopes, grantUrl)}`;
+  const first = files[0]!;
+  if (files.length === 1) {
+    return clip(
+      `${fileNotSentHead(channel, first.fileName)}: ${wording.lone(first.reason)}`,
+      MESSAGE_MAX,
+    );
+  }
+  const head = (list: string): string =>
+    `${files.length} files were not sent to the ${channel} chat: ${list}`;
+  const lines = files.every((file) => file.reason === first.reason)
+    ? [wording.shared(first.reason)]
+    : files.map((file) => `"${file.fileName}": ${file.reason}`);
+  const body = `\n${lines.join("\n")}`;
+  const names = files.map((file) => file.fileName);
+  const listRoom = MESSAGE_MAX - head("").length - body.length;
+  if (listRoom >= 1) return head(quotedNames(names, listRoom)) + body;
+  // One "\n" goes in front of each line.
+  const lineRoom = MESSAGE_MAX - head("…").length - lines.length;
+  const fitted = fitLines(lines, lineRoom).map((line) => `\n${line}`);
+  return clip(head("…") + fitted.join(""), MESSAGE_MAX);
 }
 
-/** How many names one drop notice lists before it stops: a signal, not an inventory. */
+/** The names quoted and joined, as many as fit in `max` characters, the rest marked "…". */
+function quotedNames(names: readonly string[], max: number): string {
+  const quoted = names.map((name) => `"${name}"`);
+  const all = quoted.join(", ");
+  if (all.length <= max) return all;
+  let shown = "";
+  for (const name of quoted) {
+    const next = shown === "" ? name : `${shown}, ${name}`;
+    if (next.length + ", …".length > max) break;
+    shown = next;
+  }
+  return shown === "" ? "…" : `${shown}, …`;
+}
+
+/**
+ * `lines` cut to share `room` characters alike: a line shorter than an equal share stays whole,
+ * and what it leaves over goes to the longer ones.
+ */
+function fitLines(lines: readonly string[], room: number): string[] {
+  const out = [...lines];
+  const shortestFirst = lines.map((_, i) => i).sort((a, b) => lines[a]!.length - lines[b]!.length);
+  let left = room;
+  shortestFirst.forEach((index, done) => {
+    out[index] = clip(lines[index]!, Math.floor(left / (shortestFirst.length - done)));
+    left -= out[index]!.length;
+  });
+  return out;
+}
+
+/** `text` cut to at most `max` characters, the cut marked "…", never between a surrogate pair. */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max < 1) return "";
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+
+/** How many names a line about dropped files lists before it stops: a signal, not an inventory. */
 const MESSAGING_NOTICE_NAMES_MAX = 5;
 
 /**
@@ -336,9 +572,9 @@ const MESSAGING_NOTICE_NAMES_MAX = 5;
  * failed, and announcing them puts an error-shaped line under replies that were entirely
  * correct — with no move for the reader to make, because nothing was ever going to arrive.
  *
- * Contrast `noteFileFailure`, which does reach the chat: there the file exists and its upload
- * failed, so something the reply promised is genuinely missing and silence would read as the
- * feature being broken.
+ * Contrast messagingFilesNotSentRecords: there the files exist and did not go out, so something
+ * the reply promised is genuinely missing, and that is filed as an error record under the
+ * Session's Project. Neither reaches the chat.
  *
  * Still recorded, because "it mentioned a file and I never got it" is a real question someone
  * will ask, and the server log answers it without charging every other reader for it.
@@ -349,9 +585,24 @@ export function messagingFilesMissingLog(names: readonly string[]): string {
   return `[messaging] reply named files the Workspace does not have, nothing sent: ${list}`;
 }
 
-/** The tail of a batch the count cap cut off. */
-export function messagingFilesSkippedNotice(skipped: number): string {
-  return `${skipped} more mentioned file(s) were not sent — at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply. 另有 ${skipped} 个提及的文件未发送——每条回复最多附带 ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} 个。`;
+/**
+ * The error record for the tail of a batch the count cap cut off — one per reply, however many
+ * files it holds: how many, the cap, and which. The names are quoted like every other record's
+ * and give way to "…" where the whole list would run past the recorder's MESSAGE_MAX, which
+ * would otherwise cut it mid-name, closing bracket and all.
+ */
+function filesSkippedError(
+  channel: string,
+  fileNames: readonly string[],
+): MessagingOutboundCapError {
+  const n = fileNames.length;
+  const files =
+    n === 1 ? "1 more file the reply mentioned was" : `${n} more files the reply mentioned were`;
+  const message = (list: string): string =>
+    `${files} not sent to the ${channel} chat: at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply (${list})`;
+  return new MessagingOutboundCapError(
+    message(quotedNames(fileNames, MESSAGE_MAX - message("").length)),
+  );
 }
 
 /**
@@ -539,7 +790,7 @@ function inboundKey(sessionId: string, channel: string): string {
  * this store names.
  */
 function inboundRecallStore(
-  input: OmniMessage[],
+  input: AmspRecord[],
   attachments: readonly TaskAttachment[],
   written: readonly string[],
 ): RecallStore {
@@ -554,11 +805,11 @@ function inboundRecallStore(
 }
 
 /** Minimal dependency on SessionManager (eases test doubles; mirrors ScheduleTaskRunner). */
-export interface MessagingTaskRunner {
+export interface MessagingTaskRunnerShape {
   statusOf(sessionId: string): string;
   startTask(
     sessionId: string,
-    input: OmniMessage[],
+    input: AmspRecord[],
     /**
      * `recall` is what a queued follow-up hands back when the user withdraws it in the Web
      * App. It is optional because the manager derives one from the input for every caller
@@ -567,6 +818,16 @@ export interface MessagingTaskRunner {
      */
     opts: { queueIfBusy: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }>;
+  /**
+   * Pins the Session's runtime against idle eviction while a connection is enabled (`on`), or
+   * releases the pin.
+   */
+  keepLoaded(sessionId: string, on: boolean): void;
+  /**
+   * Loads the Session's runtime ahead of its first message, starting nothing; resolves quietly
+   * for a Session that is gone or being deleted.
+   */
+  preload(sessionId: string): Promise<void>;
 }
 
 /**
@@ -604,7 +865,7 @@ export interface MessagingWorkspaceFiles {
 }
 
 export interface MessagingBridgeDeps {
-  repo: MessagingBindingsRepo;
+  repo: MessagingBindings;
   sessions: MessagingSessionIndex;
   files: MessagingWorkspaceFiles;
   /**
@@ -689,6 +950,18 @@ interface BridgeEntry {
    * healthy in every snapshot taken between its failures.
    */
   lastConnectionError: { at: string; detail: string } | null;
+  /**
+   * Since when the connector has been holding replies for the chat's next inbound message (see
+   * MessagingReplyHeldError), as its `onHeldChange` last said; null while it holds none. Not a
+   * delivery failure and never folded into `lastDeliveryError`: the replies are kept, not lost.
+   */
+  heldReplySince: string | null;
+  /**
+   * A held reply has been logged in the current holding episode. Every send of a long run is
+   * held once the platform's budget is spent, and a line per send would bury the one fact that
+   * matters — that holding started. Cleared when the connector reports nothing held.
+   */
+  heldLogged: boolean;
   /** Last observed run state on the Session channel. */
   active: string;
   /** False while joined mid-run: that run's partial tail must not mirror as half a reply. */
@@ -847,6 +1120,7 @@ export class MessagingBridge {
       ...(entry.lastConnectionError !== null
         ? { lastConnectionError: entry.lastConnectionError }
         : {}),
+      ...(entry.heldReplySince !== null ? { heldReplySince: entry.heldReplySince } : {}),
     };
   }
 
@@ -891,7 +1165,9 @@ export class MessagingBridge {
   async sendTestMessage(row: MessagingBindingRow): Promise<void> {
     if (row.lastChatId === null) throw new Error("no chat is known yet");
     const client = await this.clientFor(row.sessionId, row);
-    await client.sendText(row.lastChatId, MESSAGING_TEST_MESSAGE);
+    // A probe: a channel that would hold an undeliverable reply must refuse this one instead,
+    // because a test message arriving an hour later proves nothing (see MessagingSendOptions).
+    await client.sendText(row.lastChatId, MESSAGING_TEST_MESSAGE, { probe: true });
   }
 
   // -------------------------------------------------------------------------
@@ -928,6 +1204,8 @@ export class MessagingBridge {
       lastDeliveryError: null,
       lastSendNote: null,
       lastConnectionError: null,
+      heldReplySince: null,
+      heldLogged: false,
       active: runState,
       armed: runState === "idle",
       inCompaction: false,
@@ -939,6 +1217,18 @@ export class MessagingBridge {
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
+    // The Session is where this bot lives on the server, so it stays loaded for as long as the
+    // connection is enabled, and is loaded NOW rather than by the first message — which after
+    // an enable or a restart would otherwise wait for a resume from the Trace before anything
+    // else. `disconnect` releases it, and a reconnect re-pins it right here. Not awaited: a slow
+    // or failing load must not hold up the connection, and the first message meets the same
+    // failure and reports it on the binding's status.
+    this.deps.runner.keepLoaded(row.sessionId, true);
+    void this.deps.runner.preload(row.sessionId).catch((err: unknown) => {
+      this.log(
+        `[messaging] preload of ${row.sessionId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
     // Before the stream can hand over its first event: the binding row's watermark is the
     // only thing that outlived the previous process, and a channel opening a connection is
     // exactly when it replays what it never saw acknowledged. Without this, the first
@@ -954,6 +1244,12 @@ export class MessagingBridge {
         onMessage: (msg) => this.onInbound(entry, msg),
         onReady: () => this.setStatus(entry, { state: "connected" }),
         onError: (err) => this.recordConnectionFailure(entry, err),
+        onHeldChange: (since) => this.setHeldReplySince(entry, since),
+        // A flush the connector made on its own: no send in the chain is waiting to record it.
+        onSendFailed: (err) => {
+          if (!this.live(entry)) return;
+          this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        },
       });
       if (this.entries.get(row.sessionId) !== entry) {
         // A concurrent sync/unbind replaced this attempt while the channel was loading.
@@ -970,6 +1266,7 @@ export class MessagingBridge {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     this.entries.delete(sessionId);
+    this.deps.runner.keepLoaded(sessionId, false);
     entry.unsubscribe?.();
     try {
       entry.connection?.close();
@@ -1023,11 +1320,12 @@ export class MessagingBridge {
       err,
       code,
       // Classified here rather than left to the recorder's default: its fallback for a
-      // non-HTTP source is `unexpected`, which files a scope the app was never granted and a
-      // file the platform cannot carry as defects. `code` goes in with the error because the
-      // same refusal means different things at different capture points — on an image
-      // download the chat is handed the fix, on a send it hears nothing at all, and only the
-      // first of those is routine (see error-kind.ts for the rule).
+      // non-HTTP source is `unexpected`, which files an inbound image the app was never granted
+      // the scope to download, and a file the platform cannot carry, as defects. `code` goes in
+      // with the error because the same refusal means different things at different capture
+      // points — on an image download the chat is handed the fix, on a send or an upload it
+      // hears nothing at all, and only the first of those is routine (see error-kind.ts for
+      // the rule).
       kind: messagingErrorKind(err, code),
       ctx: {
         sessionId,
@@ -1071,6 +1369,27 @@ export class MessagingBridge {
     if (seen === entry.lastSendNote) return;
     entry.lastSendNote = seen;
     if (seen !== null) this.log(`[messaging] ${entry.channel} delivered degraded: ${seen}`);
+  }
+
+  /** The connector's `onHeldChange`, behind the stale-entry guard every connector callback has. */
+  private setHeldReplySince(entry: BridgeEntry, since: string | null): void {
+    if (!this.live(entry)) return;
+    entry.heldReplySince = since;
+    if (since === null) entry.heldLogged = false;
+  }
+
+  /**
+   * Whether a send's failure is the connector HOLDING the reply rather than losing it (see
+   * MessagingReplyHeldError). Such a send is not a delivery failure — no error record, no
+   * `lastDeliveryError` — and is logged once per holding episode, not once per message.
+   */
+  private wasHeld(entry: BridgeEntry, err: unknown): boolean {
+    if (!(err instanceof MessagingReplyHeldError)) return false;
+    if (!entry.heldLogged) {
+      entry.heldLogged = true;
+      this.log(`[messaging] ${entry.channel} replies held for later delivery: ${err.message}`);
+    }
+    return true;
   }
 
   private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
@@ -1233,7 +1552,7 @@ export class MessagingBridge {
    */
   private async writeInboundFiles(
     entry: BridgeEntry,
-    input: OmniMessage[],
+    input: AmspRecord[],
     attachments: readonly TaskAttachment[],
   ): Promise<AttachedFiles> {
     if (attachments.length === 0) return { input, written: [] };
@@ -1342,9 +1661,9 @@ export class MessagingBridge {
   private async inboundImageParts(
     entry: BridgeEntry,
     images: readonly MessagingInboundImage[],
-  ): Promise<{ parts: OmniMessage[] } | { notice: string }> {
+  ): Promise<{ parts: AmspRecord[] } | { notice: string }> {
     const budget = this.imageBudgetFor(entry);
-    const parts: OmniMessage[] = [];
+    const parts: AmspRecord[] = [];
     for (const image of images) {
       const remaining = budget.remaining(this.now(), this.inboundImageBudgetBytes);
       if (remaining <= 0) return { notice: messagingImageBudgetNotice() };
@@ -1401,12 +1720,16 @@ export class MessagingBridge {
     const row = this.deps.repo.find(entry.sessionId, entry.channel);
     if (!row) return;
     const client = await this.clientFor(entry.sessionId, row);
-    this.noteSend(
-      entry,
-      msg.chatKind === "direct"
-        ? await client.sendText(msg.chatId, text)
-        : await client.replyText(msg.messageId, text),
-    );
+    try {
+      this.noteSend(
+        entry,
+        msg.chatKind === "direct"
+          ? await client.sendText(msg.chatId, text)
+          : await client.replyText(msg.messageId, text),
+      );
+    } catch (err) {
+      if (!this.wasHeld(entry, err)) throw err;
+    }
   }
 
   // —— Outbound ——————————————————————————————————————————————————————————————
@@ -1435,7 +1758,7 @@ export class MessagingBridge {
       }
       return;
     }
-    const msg = data as OmniMessage;
+    const msg = data as AmspRecord;
     if (msg.origin !== undefined && msg.origin.length > 0) return; // subagent output is not the reply
     const payload = msg.payload as { type?: string; role?: string; text?: string };
     if (msg.type === "event_msg") {
@@ -1468,7 +1791,12 @@ export class MessagingBridge {
    */
   private relay(entry: BridgeEntry, text: string): void {
     if (!entry.armed) return; // joined mid-run: this run's messages are not a reply
-    const body = text.trim();
+    // A chat cannot draw the Web App's rich blocks (a choice, a form, steps, a callout, a widget), so
+    // each one leaves as the readable Markdown it stands for: a choice as numbered options the
+    // person answers by number or in their own words. Only the outbound copy changes; the
+    // stored message keeps the block. No language is passed, because the bridge has no locale
+    // for an external chat: the fallback's few labels follow the language of the reply itself.
+    const body = toFallbackMarkdown(text).trim();
     if (body === "") return;
     if (this.finalReplyOnly(entry)) {
       entry.heldReply = body;
@@ -1647,7 +1975,9 @@ export class MessagingBridge {
           this.noteSend(entry, await client.sendText(to.chatId, chunk, { markdown }));
         }
       } catch (err) {
-        this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        if (!this.wasHeld(entry, err)) {
+          this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+        }
       }
     }
   }
@@ -1675,9 +2005,12 @@ export class MessagingBridge {
    * A file the run did not write is dropped SILENTLY, and so is a name matching no file at
    * all: the rule reads prose, so a reply that mentions the config it read — or describes a
    * `hello-world.md` it never wrote — is the ordinary case, and announcing those puts an
-   * error-shaped line under correct answers. Both are logged instead. What IS named in the
-   * chat is a file that exists and whose upload failed: there the reply promised something
-   * that then did not arrive, which is the one case where silence reads as broken.
+   * error-shaped line under correct answers. Both are logged instead. What IS recorded is a
+   * file that exists and still did not go out — over a ceiling, past the count cap, or
+   * refused on the way: the reply promised something that then did not arrive, so it is filed
+   * under the Session's Project, once the batch is done, in one record per cause naming every
+   * file it held back (see messagingFilesNotSentRecords). None of it is posted into the chat,
+   * which carries the reply and its files and nothing about the ones that stayed behind.
    *
    * Always plain sends, never a threaded reply: a run that mentions a file has by
    * definition already sent the text that mentions it, and that message took the group's
@@ -1713,17 +2046,31 @@ export class MessagingBridge {
       }
       if (produced.length === 0 && missing.length === 0) return;
       const client = await this.clientFor(entry.sessionId, row);
+      const oversize: OversizeOutboundFile[] = [];
+      const refused: RefusedOutboundFile[] = [];
       for (const rel of produced.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
         try {
-          await this.deliverOneFile(client, chatId, session.workspace, rel);
+          const heldBack = await this.deliverOneFile(client, chatId, session.workspace, rel);
+          if (heldBack !== null) oversize.push(heldBack);
         } catch (err) {
-          this.recordError(entry.sessionId, err, "messaging_file_send_failed");
-          await this.noteFileFailure(client, chatId, rel, err);
+          refused.push({ fileName: baseNameOf(rel), err });
         }
       }
-      const skipped = produced.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT;
-      if (skipped > 0) {
-        await client.sendText(chatId, messagingFilesSkippedNotice(skipped));
+      // Filed only once the batch is done, and one record per cause rather than per file: the
+      // recorder would keep only the first of several same-code records filed this close
+      // together (see messagingFilesNotSentRecords).
+      for (const record of messagingFilesNotSentRecords(entry.channel, oversize, refused)) {
+        this.recordError(entry.sessionId, record.err, record.code);
+      }
+      // One record for the whole tail, not one per file: the cap is a single decision about
+      // this reply, and a row per file would read as that many separate failures.
+      const skipped = produced.slice(MESSAGING_OUTBOUND_FILE_MAX_COUNT);
+      if (skipped.length > 0) {
+        this.recordError(
+          entry.sessionId,
+          filesSkippedError(entry.channel, skipped.map(baseNameOf)),
+          "messaging_files_skipped",
+        );
       }
       // Logged, never sent: a name in a reply is not a promise of a file (see
       // messagingFilesMissingLog).
@@ -1734,43 +2081,17 @@ export class MessagingBridge {
   }
 
   /**
-   * Names one file that did not make it, in the chat.
-   *
-   * Every other way a file does not arrive is already visible there — over the byte cap,
-   * past the count cap, an inbound refusal. A failed upload reached `error_records` alone,
-   * which the person in the chat cannot open, so the feature just looked broken. A missing
-   * permission gets its own wording: it is the one failure they can fix themselves, in
-   * about ten seconds, given the scope name and the console link.
-   *
-   * Its own try/catch: a chat that will not take the notice must not take the rest of the
-   * batch down with it, and the upload failure behind it is already recorded.
+   * One mirrored file: read under the outer ceiling, then sent as a picture or an attachment.
+   * Resolves null once the file went out. A file over the ceiling for its kind is not sent and
+   * resolves to that ceiling instead; a read or a send the channel refused throws. The caller
+   * records both (see messagingFilesNotSentRecords).
    */
-  private async noteFileFailure(
-    client: MessagingClient,
-    chatId: string,
-    rel: string,
-    err: unknown,
-  ): Promise<void> {
-    // `rel` is always "/"-joined (see toWorkspaceRelative), so its base name is its tail.
-    const fileName = rel.slice(rel.lastIndexOf("/") + 1);
-    const text =
-      err instanceof MessagingPermissionError
-        ? messagingFilePermissionNotice(fileName, err.scopes, err.grantUrl)
-        : messagingFileFailedNotice(fileName, err instanceof Error ? err.message : String(err));
-    try {
-      await client.sendText(chatId, text);
-    } catch {
-      // A channel that will not take the notice either is one problem, not two.
-    }
-  }
-
-  /** One mirrored file: read under the outer ceiling, then sent as a picture or an attachment. */
   private async deliverOneFile(
     client: MessagingClient,
     chatId: string,
     workspace: string,
     rel: string,
-  ): Promise<void> {
+  ): Promise<OversizeOutboundFile | null> {
     // Read first, classify second. `rel` is the path the REPLY spelled, and the canonical
     // file behind it may not share its extension: an in-Workspace `report.png -> report.pdf`
     // (the everyday "latest" symlink) classified by the mention would go to the image
@@ -1785,13 +2106,11 @@ export class MessagingBridge {
     const maxBytes = asImage
       ? MESSAGING_OUTBOUND_IMAGE_MAX_BYTES
       : MESSAGING_OUTBOUND_FILE_MAX_BYTES;
-    if (file.data.length > maxBytes) {
-      await client.sendText(chatId, messagingFileTooLargeNotice(file.fileName, maxBytes));
-      return;
-    }
+    if (file.data.length > maxBytes) return { fileName: file.fileName, maxBytes, asImage };
     const outbound = { fileName: file.fileName, data: file.data };
     if (asImage) await client.sendImage(chatId, outbound);
     else await client.sendFile(chatId, outbound);
+    return null;
   }
 
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */
@@ -1802,7 +2121,9 @@ export class MessagingBridge {
     try {
       this.noteSend(entry, await target.client.sendText(target.chatId, text));
     } catch (err) {
-      this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+      if (!this.wasHeld(entry, err)) {
+        this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
+      }
     }
   }
 
@@ -1845,3 +2166,117 @@ export class MessagingBridge {
     return new Promise((resolve) => setTimeout(resolve, this.lineDelayMs));
   }
 }
+
+/** What the bridge needs of the session runtime — declared at the consumer. */
+export abstract class MessagingTaskRunner extends Interface<MessagingTaskRunnerShape>() {}
+
+/** The chat-channel bridge: bindings, delivery, status. */
+export abstract class Messaging extends Interface<
+  Pick<
+    MessagingBridge,
+    | "start"
+    | "stop"
+    | "sync"
+    | "unbind"
+    | "unbindSession"
+    | "statusOf"
+    | "testCredentials"
+    | "sendTestMessage"
+  >
+>() {}
+
+export abstract class QQScan extends Interface<
+  Pick<QQScanService, "start" | "poll" | "cancel" | "cancelSession">
+>() {}
+
+export interface MessagingSlots {
+  /** A channel connector: which channel it speaks (static), and the connector (code). */
+  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
+}
+
+@Module({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "messaging.session-routes",
+        prefix: "/api/sessions",
+        auth: "user",
+        order: 280,
+      },
+    ],
+  },
+  children: [FeishuMessaging, TelegramMessaging, QqMessaging, WechatMessaging],
+})
+export class MessagingModule {
+  @Use() private readonly paths!: Paths;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly tuning!: MessagingTuning;
+  @Use() private readonly qqScanTransport!: QQScanTransportHandle;
+  @Use() private readonly wechatScanTransport!: WeChatScanTransportHandle;
+  @Use() private readonly log!: Log;
+  @Use() private readonly messagingRepo!: MessagingBindings;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly runner!: MessagingTaskRunner;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly access!: Access;
+  @Provide() messaging!: Messaging;
+  @Provide() qqScan!: QQScan;
+  @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;
+  async setup({ contributions, effect }: ClassCtx) {
+    const { lineDelayMs, inboundImageBudgetBytes } = this.tuning;
+    const now = () => this.clock.now().getTime();
+    const messagingRepo = this.messagingRepo;
+    const sessionsRepo = this.sessionsRepo;
+    const messaging = new MessagingBridge({
+      repo: messagingRepo,
+      sessions: sessionsRepo,
+      files: this.workspaceFiles,
+      root: this.paths.root,
+      attachmentLimits: () => toAttachmentLimits(this.settings.getAttachmentLimitsMb()),
+      channels: this.channels as ChannelHub,
+      runner: this.runner,
+      // Every connector arrives as a contribution — the built-in three from the child
+      // modules, and any other through the same slot.
+      connectors: (contributions.connectors ?? []).map((c) => c.code as MessagingChannelConnector),
+      errors: this.errors,
+      log: (line) => this.log.line(line),
+      now,
+      ...(lineDelayMs !== undefined ? { lineDelayMs } : {}),
+      ...(inboundImageBudgetBytes !== undefined ? { inboundImageBudgetBytes } : {}),
+    });
+    const qqScan = new QQScanService(this.qqScanTransport.transport, { now });
+    // Same shape as the QQ one: what it holds is the handle that collects a bot token
+    // rather than a key that decrypts a secret, and is equally not worth persisting.
+    const wechatScan = new WeChatScanService(this.wechatScanTransport.transport, { now });
+    // Connect every enabled binding; only active while this App is.
+    await messaging.start();
+    effect(() => messaging.stop());
+    this.messaging = messaging;
+    this.qqScan = qqScan;
+    this.sessionRoutesRoutes = sessionMessagingRoutes({
+      messaging,
+      messagingRepo,
+      access: this.access,
+      qqScan,
+      wechatScan,
+      sessionsRepo,
+    });
+  }
+}
+
+/**
+ * The pacing and budgets the messaging bridge and its connectors run with. Every field is
+ * optional: absent, a connector applies its own default; a test stands in zeros.
+ */
+@Interface()
+export abstract class MessagingTuning {
+  abstract lineDelayMs?: number;
+  abstract inboundImageBudgetBytes?: number;
+  abstract qqTailFlushMs?: number;
+  abstract retryDelayMs?: (failures: number) => number;
+}
+@Component()
+export class DefaultMessagingTuning implements MessagingTuning {}

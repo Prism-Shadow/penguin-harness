@@ -5,20 +5,18 @@ export const en: Strings = {
   siteName: "PenguinHarness",
 
   nav: {
-    highlights: "Highlights",
-    selfImprove: "Self-evolution",
-    quickstart: "Quick start",
-    cases: "Cases",
-    scenarios: "Scenarios",
-    benchmark: "Benchmark",
-    contract: "CONTRACT.md",
-    features: "Features",
+    home: "Home",
     blog: "Blog",
     download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
+    amsp: "AMSP",
     docs: "Docs",
+    gallery: "Gallery",
     github: "GitHub",
-    openMenu: "Open navigation",
-    closeMenu: "Close navigation",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
   },
 
   theme: {
@@ -37,8 +35,9 @@ export const en: Strings = {
 
   sections: {
     start: "Get Started",
-    design: "Core Design",
     guides: "Guides",
+    advanced: "Advanced",
+    design: "How It Works",
     reference: "Reference",
   } as Record<string, string>,
 
@@ -68,6 +67,6 @@ export const en: Strings = {
     repo: "GitHub repository",
     license: "Apache-2.0 License",
     site: "Website",
-    copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+    copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
   },
 };

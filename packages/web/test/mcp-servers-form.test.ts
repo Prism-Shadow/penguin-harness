@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyMcpForm,
+  entryToTest,
   formToServer,
   parseKeyValueLines,
   permissionOf,
@@ -100,6 +101,29 @@ describe("formToServer", () => {
     });
   });
 
+  it("keeps an entry a plugin installed as the plugin's through an edit, its OAuth block and vault references included", () => {
+    const entry = {
+      name: "gmail",
+      plugin: "gmail",
+      config: {
+        transport: "http",
+        url: "https://gmailmcp.googleapis.com/mcp/v1",
+        headers: { "X-Client": "${GMAIL_CLIENT_ID}" },
+        oauth: { client_id: "${GMAIL_CLIENT_ID}", client_secret: "${GMAIL_CLIENT_SECRET}" },
+      },
+    };
+    const form = serverToForm(entry);
+    expect(form.headersText).toBe("X-Client: ${GMAIL_CLIENT_ID}");
+    const saved = formToServer({ ...form, permission: "r" });
+    expect(saved.ok && saved.server).toEqual({
+      ...entry,
+      config: { ...entry.config, permission: "r" },
+    });
+    // The user's own entry stays the user's.
+    const own = formToServer(serverToForm({ name: "mine", config: { url: "https://x.example" } }));
+    expect(own.ok && own.server).not.toHaveProperty("plugin");
+  });
+
   it("merges extras back and lets known fields win", () => {
     const form = {
       ...emptyMcpForm(),
@@ -148,6 +172,44 @@ describe("formToServer", () => {
       envText: "GOOD=1\nbroken-line",
     });
     expect(built).toMatchObject({ ok: false, errors: { env: { code: "kv_line", line: 2 } } });
+  });
+});
+
+describe("entryToTest", () => {
+  // Saved without an explicit transport and with the default permission spelled out: the
+  // form's own rebuild of it names the transport and leaves the default out.
+  const saved = {
+    name: "web",
+    config: {
+      url: "https://mcp.example.com/mcp",
+      headers: { Authorization: "Bearer ${WEB_TOKEN}" },
+      permission: "auto",
+    },
+  };
+
+  it("tests a saved entry as saved while its form still says what it says", () => {
+    expect(entryToTest(serverToForm(saved), saved)).toEqual({ ok: true, server: saved });
+  });
+
+  it("tests the form's entry once anything changed, and a new entry as the form builds it", () => {
+    const moved = entryToTest(
+      { ...serverToForm(saved), url: "https://elsewhere.example/mcp" },
+      saved,
+    );
+    expect(moved).toEqual({
+      ok: true,
+      server: {
+        name: "web",
+        config: {
+          transport: "http",
+          url: "https://elsewhere.example/mcp",
+          headers: { Authorization: "Bearer ${WEB_TOKEN}" },
+        },
+      },
+    });
+    const renamed = entryToTest({ ...serverToForm(saved), name: "web-2" }, saved);
+    expect(renamed.ok && renamed.server.name).toBe("web-2");
+    expect(entryToTest(serverToForm(saved), undefined)).toEqual(formToServer(serverToForm(saved)));
   });
 });
 

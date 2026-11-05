@@ -1,85 +1,81 @@
 /**
- * Self-improvement loop, centered on the Target Agent's vN -> vN+1 upgrade: the
- * Optimizer orchestrates Evaluators to score vN (scores & traces flow back as edge
- * labels, not as a node), analyzes them, and ships the upgraded vN+1 — drawn as a
- * bold evolve arrow between the two versions. Beside it, three outcome trends with
- * real axes and ticks, each line growing from zero rightwards on a slow loop.
- * Illustrative; all colors are theme-aware Tailwind fill/stroke classes.
+ * One self-evolution round, drawn as the loop it is. The Optimizer (an ordinary agent running the
+ * agent-optimization Skill) dispatches Evaluator subagents (agent-evaluation), which run the
+ * tested agent on each Benchmark case and score it; scores and Traces flow back, and the
+ * Optimizer's change turns version N into N+1, drawn as the bold evolve arrow between the two
+ * versions. Beside it, the three numbers the scoreboard records for every version, each line
+ * growing from the left on a slow loop.
+ *
+ * The chart values are illustrative. Their shapes follow the rules, not a
+ * wish: the score only rises because a version is kept only when it scores higher, while cost and
+ * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
+ * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
+ * panel, the recorded demo of a decision agent's round (what it shows is the video's accessible
+ * name), captioned with what its test runs cost.
  */
 import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
+import { useVisibleActivity } from "../lib/visible-activity";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
+import { useWidth } from "../lib/use-width";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
-import { useLocale } from "../state/locale";
-import evoPosterZh from "../assets/evo-poster-zh.webp";
-import evoPosterEn from "../assets/evo-poster-en.webp";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
+import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
+import demoPosterEn from "../assets/shots/decision-evo-en.webp";
 
-/** Rounded node with a centered label and an optional version pill. */
+/** Skill names and version marks are identifiers, the same in every language. */
+const OPTIMIZER_SKILL = "agent-optimization";
+const EVALUATOR_SKILL = "agent-evaluation";
+const VERSION_OLD = "vN";
+const VERSION_NEW = "vN+1";
+
+type NodeKind = "accent" | "target" | "neutral";
+
+/** A role: its name over the Skill it runs (or the version it is), both centred. */
 function Node({
   x,
   y,
-  w = 150,
-  h = 48,
+  w,
+  h = 56,
   label,
+  sub,
   kind = "neutral",
-  badge,
-  badgeKind = "neutral",
 }: {
   x: number;
   y: number;
-  w?: number;
+  w: number;
   h?: number;
   label: string;
-  kind?: "accent" | "target" | "neutral";
-  badge?: string;
-  badgeKind?: "accent" | "neutral";
+  sub: string;
+  kind?: NodeKind;
 }) {
   const rect =
     kind === "accent"
       ? "fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
       : kind === "target"
         ? "fill-brand-50 stroke-brand-200 dark:fill-brand-950 dark:stroke-brand-800"
-        : "fill-gray-50 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700";
-  const text =
+        : "fill-white stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700";
+  const title =
     kind === "target" ? "fill-brand-800 dark:fill-brand-200" : "fill-gray-900 dark:fill-gray-100";
+  const subText =
+    kind === "target" ? "fill-brand-700 dark:fill-brand-300" : "fill-gray-500 dark:fill-gray-400";
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={10} strokeWidth={1.5} className={rect} />
       <text
         x={x + w / 2}
-        y={y + h / 2 + 4.5}
+        y={y + 24}
         textAnchor="middle"
-        className={`text-[13px] font-semibold ${text}`}
+        className={`text-sm font-semibold ${title}`}
       >
         {label}
       </text>
-      {badge && (
-        <>
-          <rect
-            x={x + w - 26}
-            y={y - 12}
-            width={44}
-            height={22}
-            rx={11}
-            className={
-              badgeKind === "accent"
-                ? "fill-brand-600 dark:fill-brand-400"
-                : "fill-gray-400 dark:fill-gray-600"
-            }
-          />
-          <text
-            x={x + w - 4}
-            y={y + 3}
-            textAnchor="middle"
-            className={`text-[10.5px] font-semibold ${
-              badgeKind === "accent" ? "fill-white dark:fill-gray-950" : "fill-white"
-            }`}
-          >
-            {badge}
-          </text>
-        </>
-      )}
+      <text x={x + w / 2} y={y + 42} textAnchor="middle" className={`font-mono text-xs ${subText}`}>
+        {sub}
+      </text>
     </g>
   );
 }
@@ -104,8 +100,8 @@ function EdgeLabel({
       textAnchor={anchor}
       className={
         accent
-          ? "fill-brand-700 text-[10.5px] font-medium dark:fill-brand-300"
-          : "fill-gray-500 text-[10.5px] dark:fill-gray-400"
+          ? "fill-brand-700 text-xs font-medium dark:fill-brand-300"
+          : "fill-gray-500 text-xs dark:fill-gray-400"
       }
     >
       {children}
@@ -118,7 +114,7 @@ function FlowDot({
   dur,
   begin,
   accent = false,
-  r = 1.5,
+  r = 1.75,
 }: {
   path: string;
   dur: string;
@@ -145,82 +141,94 @@ function FlowDot({
   );
 }
 
-/** Loop edges (top machinery) and the bold evolve chord (bottom). */
-const EDGE_SPAWN = "M330,76 L330,154";
-const EDGE_FEEDBACK = "M390,208 L390,82";
-const EDGE_BENCH_OLD = "M295,208 L163,294";
-const EDGE_BENCH_NEW = "M425,208 L557,294";
-const EDGE_EVOLVE = "M216,324 L504,324";
+/**
+ * Geometry of the drawing: the Optimizer on top, the Evaluator stack in the middle, the two
+ * versions of the tested agent at the bottom corners. Every arrow ends on its node's edge; the
+ * viewBox is cropped to the drawn content so the diagram fills its column.
+ */
+const OPT = { x: 270, y: 16, w: 180 };
+const EVAL = { x: 270, y: 150, w: 180 };
+const OLD = { x: 50, y: 300, w: 170 };
+const NEW = { x: 500, y: 300, w: 170 };
+const NODE_H = 56;
 
-/** Draw-loop timing, mirroring the old CSS keyframes: grow, hold, fade, repeat. */
+const EDGE_SPAWN = "M330,74 L330,149";
+const EDGE_FEEDBACK = "M390,150 L390,73";
+const EDGE_BENCH_OLD = "M300,208 L150,299";
+const EDGE_BENCH_NEW = "M420,208 L570,299";
+const EDGE_EVOLVE = "M226,328 L494,328";
+
+/** Draw-loop timing: grow, hold, fade, repeat. */
 const CYCLE_S = 4.6;
 const DRAW_END = 0.55;
 const HOLD_END = 0.84;
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t));
 
 /**
- * Outcome trend chart with proper axes and ticks; a single rAF clock grows the
- * line from zero rightwards and carries a value label on the moving head — the
- * number changes as the curve climbs (or falls), so the trend reads at a glance.
- * Reduced-motion users see the finished line with its final value.
+ * One recorded number across the versions, with hairline axes and ticks. A single rAF clock grows
+ * the line from the left and carries the value on the moving head, so the number changes as the
+ * curve moves. Reduced motion shows the finished line with its last value.
  */
 function TrendChart({
   label,
   hint,
   points,
   yTicks,
-  xTicks,
   phase,
   format,
 }: {
   label: string;
   hint: string;
-  points: number[];
-  yTicks: number[];
-  xTicks: Array<{ at: number; text: string }>;
+  points: readonly number[];
+  yTicks: readonly number[];
   /** Seconds this chart runs ahead of the shared cycle (staggers the trio). */
   phase: number;
   format: (v: number) => string;
 }) {
-  const W = 210;
-  const H = 112;
-  const M = { left: 34, right: 10, top: 16, bottom: 20 };
+  // Laid out at the width it is shown at, so the ticks and the value keep the page's small size.
+  const { ref: box, width: W } = useWidth<HTMLDivElement>(210);
+  const H = 96;
+  const M = { left: 34, right: 12, top: 16, bottom: 22 };
   const yMax = Math.max(...yTicks);
   const yMin = Math.min(...yTicks);
-  const px = (i: number) => M.left + (i / (points.length - 1)) * (W - M.left - M.right);
+  const last = points.length - 1;
+  const px = (i: number) => M.left + (i / last) * (W - M.left - M.right);
   const py = (v: number) => M.top + ((yMax - v) / (yMax - yMin || 1)) * (H - M.top - M.bottom);
   const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${px(i)},${py(v)}`).join(" ");
+  const xTicks = [0, Math.round(last / 2), last];
   const axis = "stroke-gray-200 dark:stroke-gray-800";
-  const tickText = "fill-gray-400 text-[8.5px] tabular-nums dark:fill-gray-500";
+  const tickText = "fill-gray-500 text-xs tabular-nums dark:fill-gray-400";
 
+  const { ref, active } = useVisibleActivity<HTMLElement>();
+  const reduced = usePrefersReducedMotion();
   const fadeRef = useRef<SVGGElement>(null);
   const pathRef = useRef<SVGPathElement>(null);
   const headRef = useRef<SVGGElement>(null);
-  const labelRef = useRef<SVGTextElement>(null);
+  const valueRef = useRef<SVGTextElement>(null);
 
   useEffect(() => {
     const fade = fadeRef.current;
     const line = pathRef.current;
     const head = headRef.current;
-    const value = labelRef.current;
+    const value = valueRef.current;
     if (!fade || !line || !head || !value) return;
 
     const apply = (p: number, opacity: number) => {
       line.style.strokeDashoffset = String(1 - p);
-      const f = p * (points.length - 1);
+      const f = p * last;
       const i0 = Math.floor(f);
-      const i1 = Math.min(points.length - 1, i0 + 1);
+      const i1 = Math.min(last, i0 + 1);
       const v = (points[i0] ?? 0) + ((points[i1] ?? 0) - (points[i0] ?? 0)) * (f - i0);
       const x = px(f);
       const y = py(v);
       head.setAttribute("transform", `translate(${x}, ${y})`);
       value.textContent = format(v);
       value.setAttribute("x", String(Math.min(W - M.right - 10, Math.max(M.left + 12, x))));
-      value.setAttribute("y", String(Math.max(10, y - 9)));
+      value.setAttribute("y", String(Math.max(12, y - 9)));
       fade.style.opacity = String(opacity);
     };
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (reduced || !active) {
       apply(1, 1);
       return;
     }
@@ -235,344 +243,350 @@ function TrendChart({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // px/py are pure functions of the props below.
+    // px/py are pure functions of the props and the width below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, phase, format]);
+  }, [points, phase, format, active, reduced, W]);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-baseline justify-between">
-        <p className="text-sm font-semibold tracking-tight">{label}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+    <figure ref={ref} className="min-w-0">
+      <figcaption className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-semibold tracking-tight">{label}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
+      </figcaption>
+      <div ref={box} className="mt-1">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="block w-full"
+          aria-hidden="true"
+        >
+          <line
+            x1={M.left}
+            y1={M.top}
+            x2={M.left}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
+          />
+          <line
+            x1={M.left}
+            y1={H - M.bottom}
+            x2={W - M.right}
+            y2={H - M.bottom}
+            className={axis}
+            strokeWidth="1"
+          />
+          {yTicks.map((t) => (
+            <g key={t}>
+              <line
+                x1={M.left - 3}
+                y1={py(t)}
+                x2={M.left}
+                y2={py(t)}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={M.left - 6} y={py(t) + 4} textAnchor="end" className={tickText}>
+                {t}
+              </text>
+            </g>
+          ))}
+          {xTicks.map((i) => (
+            <g key={i}>
+              <line
+                x1={px(i)}
+                y1={H - M.bottom}
+                x2={px(i)}
+                y2={H - M.bottom + 3}
+                className={axis}
+                strokeWidth="1"
+              />
+              <text x={px(i)} y={H - M.bottom + 15} textAnchor="middle" className={tickText}>
+                {`v${i + 1}`}
+              </text>
+            </g>
+          ))}
+          <g ref={fadeRef}>
+            <path
+              ref={pathRef}
+              d={path}
+              pathLength={1}
+              fill="none"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="stroke-brand-600 dark:stroke-brand-400"
+              style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
+            />
+            <g ref={headRef}>
+              <circle r={5} className="fill-gray-50 dark:fill-gray-900" />
+              <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
+            </g>
+            <text
+              ref={valueRef}
+              textAnchor="middle"
+              className="fill-brand-700 text-xs font-semibold tabular-nums dark:fill-brand-300"
+            />
+          </g>
+        </svg>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 w-full" aria-hidden="true">
-        {/* Axes: hairline, solid, recessive. */}
-        <line
-          x1={M.left}
-          y1={M.top}
-          x2={M.left}
-          y2={H - M.bottom}
-          className={axis}
-          strokeWidth="1"
-        />
-        <line
-          x1={M.left}
-          y1={H - M.bottom}
-          x2={W - M.right}
-          y2={H - M.bottom}
-          className={axis}
-          strokeWidth="1"
-        />
-        {yTicks.map((t) => (
-          <g key={t}>
-            <line
-              x1={M.left - 3}
-              y1={py(t)}
-              x2={M.left}
-              y2={py(t)}
-              className={axis}
-              strokeWidth="1"
-            />
-            <text x={M.left - 6} y={py(t) + 3} textAnchor="end" className={tickText}>
-              {t}
-            </text>
-          </g>
-        ))}
-        {xTicks.map((t) => (
-          <g key={t.text}>
-            <line
-              x1={px(t.at)}
-              y1={H - M.bottom}
-              x2={px(t.at)}
-              y2={H - M.bottom + 3}
-              className={axis}
-              strokeWidth="1"
-            />
-            <text x={px(t.at)} y={H - M.bottom + 12} textAnchor="middle" className={tickText}>
-              {t.text}
-            </text>
-          </g>
-        ))}
-        <g ref={fadeRef}>
-          <path
-            ref={pathRef}
-            d={path}
-            pathLength={1}
-            fill="none"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="stroke-brand-600 dark:stroke-brand-400"
-            style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
-          />
-          <g ref={headRef}>
-            <circle r={5} className="fill-white dark:fill-gray-900" />
-            <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
-          </g>
-          {/* The moving value label riding the curve head. */}
-          <text
-            ref={labelRef}
-            textAnchor="middle"
-            className="fill-brand-700 text-[10px] font-semibold tabular-nums dark:fill-brand-300"
-          />
-        </g>
-      </svg>
-    </div>
+    </figure>
   );
 }
 
-const TRENDS: Array<{
-  points: number[];
-  yTicks: number[];
-  xTicks: Array<{ at: number; text: string }>;
+/**
+ * Illustrative values for seven kept versions, index-aligned with S.selfImprove.trends. The score
+ * strictly rises (a version that does not score higher is never kept); cost and duration wander.
+ */
+const TRENDS: ReadonlyArray<{
+  points: readonly number[];
+  yTicks: readonly number[];
   format: (v: number) => string;
 }> = [
   {
-    points: [52, 58, 56, 64, 70, 75, 79],
+    points: [46, 52, 55, 61, 64, 69, 73],
     yTicks: [0, 50, 100],
-    xTicks: [
-      { at: 0, text: "v1" },
-      { at: 3, text: "v4" },
-      { at: 6, text: "v7" },
-    ],
-    format: (v) => `${v.toFixed(1)}%`,
+    format: (v) => v.toFixed(1),
   },
   {
-    points: [0.42, 0.38, 0.39, 0.33, 0.3, 0.27, 0.25],
+    points: [0.31, 0.35, 0.3, 0.37, 0.33, 0.29, 0.34],
     yTicks: [0, 0.25, 0.5],
-    xTicks: [
-      { at: 0, text: "v1" },
-      { at: 3, text: "v4" },
-      { at: 6, text: "v7" },
-    ],
     format: (v) => `$${v.toFixed(2)}`,
   },
   {
-    points: [115, 107, 109, 98, 92, 87, 83],
+    points: [86, 97, 91, 104, 95, 89, 99],
     yTicks: [0, 60, 120],
-    xTicks: [
-      { at: 0, text: "v1" },
-      { at: 3, text: "v4" },
-      { at: 6, text: "v7" },
-    ],
-    format: (v) => `${v.toFixed(1)}s`,
+    format: (v) => `${Math.round(v)}s`,
   },
 ];
 
-function MobileFlowNode({
+function MobileNode({
   label,
-  badge,
-  accent = false,
+  sub,
+  kind = "neutral",
 }: {
   label: string;
-  badge?: string;
-  accent?: boolean;
+  sub: string;
+  kind?: NodeKind;
 }) {
+  const box =
+    kind === "accent"
+      ? "border-brand-500 bg-white text-gray-900 dark:border-brand-400 dark:bg-gray-900 dark:text-gray-100"
+      : kind === "target"
+        ? "border-brand-200 bg-brand-50 text-brand-800 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200"
+        : "border-gray-300 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100";
+  const subText =
+    kind === "target" ? "text-brand-700 dark:text-brand-300" : "text-gray-500 dark:text-gray-400";
   return (
-    <div
-      className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-center text-xs font-semibold ${
-        accent
-          ? "border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200"
-          : "border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-      }`}
-    >
-      <span>{label}</span>
-      {badge && (
-        <span
-          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${
-            accent
-              ? "bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950"
-              : "bg-gray-400 text-white dark:bg-gray-600"
-          }`}
-        >
-          {badge}
-        </span>
-      )}
+    <div className={`min-w-0 rounded-lg border-[1.5px] px-2 py-2 text-center ${box}`}>
+      <p className="text-xs font-semibold">{label}</p>
+      <p className={`mt-0.5 font-mono text-xs break-all ${subText}`}>{sub}</p>
     </div>
   );
 }
 
-/** Compact reading order for phones; the full SVG remains visible from sm upward. */
+/** The same loop read top to bottom, for widths where the drawing's labels would get too small. */
 function MobileEvolutionFlow() {
+  const c = S.selfImprove;
+  const edge = "text-xs text-gray-500 dark:text-gray-400";
   return (
-    <div
-      role="img"
-      aria-label={S.selfImprove.diagramLabel}
-      className="rounded-xl border border-gray-200 bg-white p-4 sm:hidden dark:border-gray-800 dark:bg-gray-900"
-    >
-      <MobileFlowNode label={S.selfImprove.nodeOptimizer} accent />
-      <div className="my-2 flex flex-col items-center text-[10px] leading-4 text-gray-500 dark:text-gray-400">
-        <span>{S.selfImprove.edgeSpawn}</span>
-        <span aria-hidden="true">↓</span>
+    <div role="img" aria-label={c.diagramLabel} className="md:hidden">
+      <MobileNode label={c.nodeOptimizer} sub={OPTIMIZER_SKILL} kind="accent" />
+      <div className={`grid grid-cols-2 gap-3 py-2 text-center ${edge}`}>
+        <p>
+          {c.edgeSpawn}
+          <span className="block" aria-hidden="true">
+            ↓
+          </span>
+        </p>
+        <p>
+          <span className="block" aria-hidden="true">
+            ↑
+          </span>
+          {c.edgeFeedback}
+        </p>
       </div>
-      <MobileFlowNode label={S.selfImprove.nodeEvaluator} />
-      <div className="my-2 flex flex-col items-center text-[10px] leading-4 text-gray-500 dark:text-gray-400">
-        <span>
-          {S.selfImprove.edgeFeedback} · {S.selfImprove.edgeBench}
+      <MobileNode label={c.nodeEvaluator} sub={EVALUATOR_SKILL} />
+      <p className={`py-2 text-center ${edge}`}>
+        {c.edgeBench}
+        <span className="block" aria-hidden="true">
+          ↓
         </span>
-        <span aria-hidden="true">↓</span>
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] items-center gap-2">
-        <MobileFlowNode label={S.selfImprove.nodeTarget} badge={S.selfImprove.badgeOld} />
-        <div className="text-center text-[10px] leading-4 font-medium text-brand-700 dark:text-brand-300">
-          <span className="block">{S.selfImprove.edgeImprove}</span>
-          <span className="block text-base" aria-hidden="true">
+      </p>
+      <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+        <MobileNode label={c.nodeTarget} sub={VERSION_OLD} />
+        <p className="text-center text-xs font-medium text-brand-700 dark:text-brand-300">
+          {c.edgeImprove}
+          <span className="block text-base leading-5" aria-hidden="true">
             →
           </span>
-        </div>
-        <MobileFlowNode label={S.selfImprove.nodeTarget} badge={S.selfImprove.badgeNew} accent />
+        </p>
+        <MobileNode label={c.nodeTarget} sub={VERSION_NEW} kind="target" />
+        <p className={`self-start text-center ${edge}`}>{c.noteOld}</p>
+        <span />
+        <p className={`self-start text-center ${edge}`}>{c.noteNew}</p>
       </div>
     </div>
   );
 }
 
-export function SelfImprove() {
-  const { locale } = useLocale();
+function LoopDiagram() {
+  const c = S.selfImprove;
+  const reduced = usePrefersReducedMotion();
+  const { ref, active } = useVisibleActivity<SVGSVGElement>();
   return (
-    <Section
-      id="self-improvement"
-      eyebrow={S.selfImprove.eyebrow}
-      title={S.selfImprove.title}
-      subtitle={S.selfImprove.subtitle}
+    <svg
+      ref={ref}
+      viewBox="30 8 660 380"
+      role="img"
+      aria-label={c.diagramLabel}
+      className="mx-auto hidden w-full max-w-[760px] md:block"
     >
-      <div className="mx-auto grid max-w-5xl items-center gap-6 lg:grid-cols-[minmax(0,1fr)_15.5rem]">
-        <MobileEvolutionFlow />
-        <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 sm:block dark:border-gray-800 dark:bg-gray-900">
-          <svg
-            viewBox="0 0 720 380"
-            role="img"
-            aria-label={S.selfImprove.diagramLabel}
-            className="mx-auto w-full max-w-2xl min-w-[34rem]"
-          >
-            <defs>
-              <marker
-                id="si-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 Z" className="fill-gray-400 dark:fill-gray-500" />
-              </marker>
-              <marker
-                id="si-arrow-accent"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 Z" className="fill-brand-500 dark:fill-brand-400" />
-              </marker>
-            </defs>
+      <defs>
+        <marker
+          id="si-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M0,0 L10,5 L0,10 Z" className="fill-gray-400 dark:fill-gray-500" />
+        </marker>
+        <marker
+          id="si-arrow-accent"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M0,0 L10,5 L0,10 Z" className="fill-brand-500 dark:fill-brand-400" />
+        </marker>
+      </defs>
 
-            {/* Loop edges: Evaluators benchmark BOTH versions (vN and vN+1). */}
-            <g
-              fill="none"
-              strokeWidth={1.5}
-              className="stroke-gray-400 dark:stroke-gray-500"
-              markerEnd="url(#si-arrow)"
-            >
-              <path d={EDGE_SPAWN} />
-              <path d={EDGE_FEEDBACK} />
-              <path d={EDGE_BENCH_OLD} />
-              <path d={EDGE_BENCH_NEW} />
-            </g>
-            {/* The evolve chord: vN -> vN+1 is the story (the Optimizer's update lands here). */}
-            <path
-              d={EDGE_EVOLVE}
-              fill="none"
-              strokeWidth={2.5}
-              className="stroke-brand-500 dark:stroke-brand-400"
-              markerEnd="url(#si-arrow-accent)"
-            />
+      {/* The loop: dispatch down, scores up, and every version run on the Benchmark. */}
+      <g
+        fill="none"
+        strokeWidth={1.5}
+        className="stroke-gray-400 dark:stroke-gray-500"
+        markerEnd="url(#si-arrow)"
+      >
+        <path d={EDGE_SPAWN} />
+        <path d={EDGE_FEEDBACK} />
+        <path d={EDGE_BENCH_OLD} />
+        <path d={EDGE_BENCH_NEW} />
+      </g>
+      {/* The evolve chord: the Optimizer's change turns vN into vN+1. */}
+      <path
+        d={EDGE_EVOLVE}
+        fill="none"
+        strokeWidth={2.5}
+        className="stroke-brand-500 dark:stroke-brand-400"
+        markerEnd="url(#si-arrow-accent)"
+      />
 
-            {/* Moving dots along every arrow. */}
-            <FlowDot path={EDGE_SPAWN} dur="2.4s" begin="0s" />
-            <FlowDot path={EDGE_FEEDBACK} dur="2.4s" begin="1.2s" />
-            <FlowDot path={EDGE_BENCH_OLD} dur="2.6s" begin="0.6s" />
-            <FlowDot path={EDGE_BENCH_NEW} dur="2.6s" begin="1.9s" />
-            <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="0s" accent r={2} />
-            <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="1.1s" accent r={2} />
+      {active && !reduced && (
+        <>
+          <FlowDot path={EDGE_SPAWN} dur="2.4s" begin="0s" />
+          <FlowDot path={EDGE_FEEDBACK} dur="2.4s" begin="1.2s" />
+          <FlowDot path={EDGE_BENCH_OLD} dur="2.6s" begin="0.6s" />
+          <FlowDot path={EDGE_BENCH_NEW} dur="2.6s" begin="1.9s" />
+          <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="0s" accent r={2.25} />
+          <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="1.1s" accent r={2.25} />
+        </>
+      )}
 
-            <EdgeLabel x={322} y={120} anchor="end">
-              {S.selfImprove.edgeSpawn}
-            </EdgeLabel>
-            <EdgeLabel x={398} y={120} anchor="start">
-              {S.selfImprove.edgeFeedback}
-            </EdgeLabel>
-            {/* Centered between the two benchmark diagonals: it applies to both. */}
-            <EdgeLabel x={360} y={252} anchor="middle">
-              {S.selfImprove.edgeBench}
-            </EdgeLabel>
-            <EdgeLabel x={360} y={312} anchor="middle" accent>
-              {S.selfImprove.edgeImprove}
-            </EdgeLabel>
+      <EdgeLabel x={322} y={116} anchor="end">
+        {c.edgeSpawn}
+      </EdgeLabel>
+      <EdgeLabel x={398} y={116} anchor="start">
+        {c.edgeFeedback}
+      </EdgeLabel>
+      {/* Between the two diagonals: every version is run on the same cases. */}
+      <EdgeLabel x={360} y={262}>
+        {c.edgeBench}
+      </EdgeLabel>
+      <EdgeLabel x={360} y={316} accent>
+        {c.edgeImprove}
+      </EdgeLabel>
 
-            {/* Evaluator stack (x N) */}
-            <rect
-              x={301}
-              y={170}
-              width={150}
-              height={48}
-              rx={10}
-              className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/60 dark:stroke-gray-700/60"
-            />
-            <rect
-              x={293}
-              y={162}
-              width={150}
-              height={48}
-              rx={10}
-              className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/80 dark:stroke-gray-700/80"
-            />
-            <Node x={285} y={154} label={S.selfImprove.nodeEvaluator} />
+      {/* Evaluator × N: two cards behind the front one. */}
+      <rect
+        x={EVAL.x + 16}
+        y={EVAL.y + 16}
+        width={EVAL.w}
+        height={NODE_H}
+        rx={10}
+        className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/50 dark:stroke-gray-700/50"
+      />
+      <rect
+        x={EVAL.x + 8}
+        y={EVAL.y + 8}
+        width={EVAL.w}
+        height={NODE_H}
+        rx={10}
+        className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/80 dark:stroke-gray-700/80"
+      />
+      <Node {...EVAL} label={c.nodeEvaluator} sub={EVALUATOR_SKILL} />
+      <Node {...OPT} label={c.nodeOptimizer} sub={OPTIMIZER_SKILL} kind="accent" />
+      <Node {...OLD} label={c.nodeTarget} sub={VERSION_OLD} />
+      <Node {...NEW} label={c.nodeTarget} sub={VERSION_NEW} kind="target" />
 
-            <Node x={285} y={28} label={S.selfImprove.nodeOptimizer} kind="accent" />
-            <Node
-              x={60}
-              y={300}
-              label={S.selfImprove.nodeTarget}
-              badge={S.selfImprove.badgeOld}
-              badgeKind="neutral"
-            />
-            <Node
-              x={510}
-              y={300}
-              label={S.selfImprove.nodeTarget}
-              kind="target"
-              badge={S.selfImprove.badgeNew}
-              badgeKind="accent"
-            />
-          </svg>
-        </div>
+      <EdgeLabel x={OLD.x + OLD.w / 2} y={OLD.y + NODE_H + 20}>
+        {c.noteOld}
+      </EdgeLabel>
+      <EdgeLabel x={NEW.x + NEW.w / 2} y={NEW.y + NODE_H + 20}>
+        {c.noteNew}
+      </EdgeLabel>
+    </svg>
+  );
+}
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-          {S.selfImprove.trends.map((t, i) => (
-            <TrendChart
-              key={t.label}
-              label={t.label}
-              hint={t.hint}
-              points={TRENDS[i]?.points ?? []}
-              yTicks={TRENDS[i]?.yTicks ?? [0, 1]}
-              xTicks={TRENDS[i]?.xTicks ?? []}
-              phase={i * 1.4}
-              format={TRENDS[i]?.format ?? ((v) => v.toFixed(0))}
-            />
-          ))}
+/** The recorded demo and its title-frame poster, per language. */
+const DEMO: Record<Locale, { video: string; poster: string }> = {
+  zh: { video: demoVideoUrl("decision_evo_zh"), poster: demoPosterZh },
+  en: { video: demoVideoUrl("decision_evo_en"), poster: demoPosterEn },
+};
+
+export function SelfImprove() {
+  const c = S.selfImprove;
+  const { locale } = useSiteLocale();
+  const demo = DEMO[locale];
+  return (
+    <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
+      <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
+          <MobileEvolutionFlow />
+          <LoopDiagram />
+          <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-5">
+            {c.trends.map((t, i) => {
+              const data = TRENDS[i];
+              if (!data) return null;
+              return (
+                <TrendChart
+                  key={t.label}
+                  label={t.label}
+                  hint={t.hint}
+                  points={data.points}
+                  yTicks={data.yTicks}
+                  phase={i * 1.4}
+                  format={data.format}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
-      <div className="mt-10">
-        <DemoVideo
-          src={demoVideoUrl(locale === "zh" ? "evo_zh" : "evo_en")}
-          poster={locale === "zh" ? evoPosterZh : evoPosterEn}
-          label={S.selfImprove.videoLabel}
-          caption={S.selfImprove.videoCaption}
-        />
-      </div>
+      <figure className="mx-auto mt-10 max-w-5xl">
+        <DemoVideo src={demo.video} poster={demo.poster} label={c.demo.caption} />
+        <figcaption className="mt-3 text-center text-sm text-gray-600 dark:text-gray-400">
+          {c.demo.cost}
+        </figcaption>
+      </figure>
     </Section>
   );
 }

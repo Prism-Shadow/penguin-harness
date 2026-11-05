@@ -13,8 +13,8 @@ import type {
   MemoryChangeOp,
   MemoryChangeRow,
   MemoryLocateTarget,
-} from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
+} from "../../lib/amsp/memory-changes";
+import { memoryRowKey } from "../../lib/amsp/memory-changes";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

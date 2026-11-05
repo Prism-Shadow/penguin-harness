@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createCompletionTracker } from "../src/lib/completion-notify";
+import { createCompletionTracker, observedSessions } from "../src/lib/completion-notify";
 import type { ObservedSession } from "../src/lib/completion-notify";
-import type { SessionStatus } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 
 const row = (sessionId: string, status: SessionStatus): ObservedSession => ({
   sessionId,
@@ -78,5 +78,41 @@ describe("createCompletionTracker", () => {
     expect(t.observe([row("a", "idle"), row("a", "running")], 1000)).toEqual(["a"]);
     // The duplicate "running" row did not restart the run.
     expect(t.observe([row("a", "idle")], 60_000)).toEqual([]);
+  });
+});
+
+describe("observedSessions", () => {
+  const info = (sessionId: string, over: Partial<SessionInfo>): SessionInfo => ({
+    sessionId,
+    projectId: "p",
+    agentId: "a1",
+    provider: "anthropic",
+    modelId: "claude-sonnet-4",
+    workspace: "/w",
+    approvalMode: "allow-all",
+    sandbox: { mode: "danger-full-access", network: "open" },
+    createdAt: "2026-10-11T09:00:00.000Z",
+    lastActiveAt: "2026-10-11T09:00:00.000Z",
+    status: "running",
+    pendingApprovalCount: 0,
+    pendingFollowUpCount: 0,
+    hasTrace: true,
+    archived: false,
+    ...over,
+  });
+
+  it("notifies for the sidebar's conversations only, not for the archived, subagent or organization Sessions a page holds", () => {
+    const t = createCompletionTracker();
+    const running = [
+      info("mine", { source: "user" }),
+      info("kept", { source: "cli" }),
+      info("filed", { source: "user", archived: true }),
+      info("program", { source: "api", archived: true }),
+      info("child", { source: "subagent" }),
+      info("desk", { source: "company", orgId: "o1" }),
+    ];
+    t.observe(observedSessions(running), 0);
+    const settled = running.map((s) => ({ ...s, status: "idle" as const }));
+    expect(t.observe(observedSessions(settled), 1000)).toEqual(["mine", "kept"]);
   });
 });

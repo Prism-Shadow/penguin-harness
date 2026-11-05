@@ -6,6 +6,10 @@
  * past what is loaded, so the count walks 11 → 1 → gone, and a "收起" row folds the whole
  * group back to its first page.
  *
+ * Grouped by time, the buckets are stretches of ONE list: the list carries the same single
+ * reveal row, counted off the Project's total and walking ten rows a click, with no second
+ * "load more" row beside it.
+ *
  * A list taller than the viewport must scroll INSIDE the sidebar: the document itself
  * stays unscrollable before and after the reveal. Each row's sr-only Agent name is
  * position:absolute, and without a positioned scroller those boxes anchored to the
@@ -25,10 +29,9 @@ const P = "password123";
 const PAGE = 10; // SIDEBAR_PAGE_SIZE
 const TOTAL = 21; // two full pages plus one, so the reveal row must survive a click
 
-test("a group reveals its own remainder one page at a time, and 收起 folds it back", async ({
-  page,
-}) => {
-  await provisionAndLogin(page.request, U, P);
+/** Log in as a fresh user (own default Project), point it at the mock LLM, and seed TOTAL sessions. */
+async function seedSessions(page, user) {
+  await provisionAndLogin(page.request, user, P);
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
 
@@ -57,6 +60,12 @@ test("a group reveals its own remainder one page at a time, and 收起 folds it 
     );
     expect(res.ok(), `create session ${i}: ${await res.text()}`).toBeTruthy();
   }
+}
+
+test("a group reveals its own remainder one page at a time, and 收起 folds it back", async ({
+  page,
+}) => {
+  await seedSessions(page, U);
 
   await page.goto(`${BASE}/chat`);
   const sidebar = page.getByRole("complementary");
@@ -104,4 +113,38 @@ test("a group reveals its own remainder one page at a time, and 收起 folds it 
   await expect(rows).toHaveCount(PAGE);
   await expect(reveal).toBeVisible();
   await expect(collapse).toHaveCount(0);
+});
+
+test("grouped by time, one reveal row walks the whole list ten rows a click", async ({ page }) => {
+  await seedSessions(page, "pagetimeuser");
+  await page.addInitScript(() => localStorage.setItem("penguin.sidebarGroupMode", "time"));
+
+  await page.goto(`${BASE}/chat`);
+  const sidebar = page.getByRole("complementary");
+  const rows = sidebar.getByText("新对话");
+  /** Every row that pages the list, whatever it says: there must only ever be one. */
+  const pagingRows = sidebar.getByRole("button", { name: /展开其余|加载更多/ });
+  await expect(rows).toHaveCount(PAGE);
+  await expect(pagingRows).toHaveCount(1);
+  await expect(
+    sidebar.getByRole("button", { name: `展开其余 ${TOTAL - PAGE} 个对话` }),
+  ).toBeVisible();
+
+  // The click fetches the next server page and shows ten more — still under one row.
+  await pagingRows.click();
+  await expect(rows).toHaveCount(PAGE * 2);
+  await expect(pagingRows).toHaveCount(1);
+  await expect(
+    sidebar.getByRole("button", { name: `展开其余 ${TOTAL - PAGE * 2} 个对话` }),
+  ).toBeVisible();
+  const collapse = sidebar.getByRole("button", { name: "收起", exact: true });
+  await expect(collapse).toBeVisible();
+
+  await pagingRows.click();
+  await expect(rows).toHaveCount(TOTAL);
+  await expect(pagingRows).toHaveCount(0);
+
+  await collapse.click();
+  await expect(rows).toHaveCount(PAGE);
+  await expect(pagingRows).toHaveCount(1);
 });

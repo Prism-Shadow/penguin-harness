@@ -31,9 +31,9 @@ export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"]
 /**
  * The levels the picker offers, in menu order: "none" is deliberately excluded (many models
  * don't support disabling thinking) — it can still be displayed (a stored legacy value) but
- * never picked. "max" carries no such caveat: every AgentHub client maps it onto the deepest
- * effort its vendor accepts and degrades silently where there is no such tier, so it is
- * offered like any other tier.
+ * never picked. "max" carries no such caveat: MMSP maps every level onto the closest effort
+ * the model supports and degrades silently where there is no such tier, so it is offered
+ * like any other tier.
  */
 export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
@@ -86,54 +86,6 @@ export function sessionThinkingLevel(pinned: string, agentLevel: string): string
   return pinned || agentLevel;
 }
 
-/** One dropdown row of the agent-settings thinking-level menu (shape of OptionMenuChoice<string>). */
-export interface ThinkingLevelOptionRow {
-  value: string;
-  /** Compact text on the trigger button. */
-  triggerLabel: string;
-  /** Panel row title. */
-  label: string;
-  /** Panel row description. */
-  description: string;
-}
-
-/**
- * Assembles the agent-settings thinking-level dropdown rows from the dictionary's
- * [value, description] pairs, composing both review decisions:
- * - the "" (inherit) row is **filtered** — the menu offers only concrete tiers, the user
- *   picks explicitly; an unset value shows the OptionMenu's (default) placeholder and the
- *   reset link next to the menu rewinds a local pick back to it;
- * - `none` is no longer offered (many models cannot disable thinking) but stays a valid
- *   stored value: when the **persisted** config already carries it, a display-only row is
- *   appended — the trigger shows the real stored state and nothing is silently rewritten.
- *   Gating on the persisted value (not the local edit state) means a misclick onto another
- *   tier keeps the row until the change is actually saved, so the user can always click
- *   back to the value still stored on disk.
- */
-export function thinkingLevelOptionsFor(
-  options: ReadonlyArray<readonly [string, string]>,
-  noneKeptDescription: string,
-  storedLevel: string | undefined,
-): ThinkingLevelOptionRow[] {
-  const rows = options
-    .filter(([value]) => value !== "")
-    .map(([value, description]) => ({
-      value,
-      triggerLabel: value,
-      label: value,
-      description,
-    }));
-  if (storedLevel === "none") {
-    rows.push({
-      value: "none",
-      triggerLabel: "none",
-      label: "none",
-      description: noneKeptDescription,
-    });
-  }
-  return rows;
-}
-
 /**
  * Structural subset of a stream ChatItem that the mid-chat switch guard inspects: the
  * item kind plus the compaction items' outcome fields (`running`/`status` — string unions
@@ -143,6 +95,30 @@ export interface ThinkingSwitchItem {
   kind: string;
   running?: boolean;
   status?: string;
+}
+
+/**
+ * Reads the end of a transcript: the trailing run of housekeeping rows — compaction banners,
+ * the model-change marker of a model switch, and the MCP connect row of a context whose
+ * servers had to be connected again. `compacted` says the context in effect is a new one with
+ * nothing said on it yet: a compaction in that run completed (a failed retry after it changed
+ * nothing), or a model switch opened it — a switch away from a context that had not answered
+ * runs no compaction and leaves the marker alone. A compaction that failed or is still running
+ * leaves the old context in effect. `before` counts the items ahead of the run.
+ */
+export function trailingCompaction(items: ReadonlyArray<ThinkingSwitchItem>): {
+  compacted: boolean;
+  before: number;
+} {
+  let last = items.length - 1;
+  let compacted = false;
+  while (last >= 0 && ["compaction", "model_change", "mcp_connect"].includes(items[last]!.kind)) {
+    const c = items[last]!;
+    if (c.kind === "model_change") compacted = true;
+    if (c.kind === "compaction" && !c.running && c.status === "completed") compacted = true;
+    last--;
+  }
+  return { compacted, before: last + 1 };
 }
 
 /**
@@ -157,22 +133,14 @@ export interface ThinkingSwitchItem {
  *   has a non-empty tail, and the trailing-compaction check below only looks at the tail.
  * - A transcript that ENDS in a settled successful compaction is also free to switch: the
  *   provider context was just rewritten to a short summary, so the user who followed the
- *   "compact first, then switch" advice is not warned a second time. Failed or still
- *   running trailing compactions don't count (the old context is still in effect), but a
- *   successful one anywhere in the trailing compaction run does (a failed retry after a
- *   success changed nothing).
+ *   "compact first, then switch" advice is not warned a second time. So is one that ends in a
+ *   model switch: the context that switch opened has not been sent yet (see
+ *   `trailingCompaction` for what counts).
  */
 export function prefixCacheAtRisk(items: ReadonlyArray<ThinkingSwitchItem>): boolean {
-  let last = items.length - 1;
-  let compacted = false;
-  while (last >= 0 && items[last]!.kind === "compaction") {
-    const c = items[last]!;
-    if (!c.running && c.status === "completed") compacted = true;
-    last--;
-  }
-  // Nothing but (at most) compaction rows: no billable history to protect.
-  if (last < 0) return false;
-  return !compacted;
+  const { compacted, before } = trailingCompaction(items);
+  // Nothing but (at most) housekeeping rows: no billable history to protect.
+  return before > 0 && !compacted;
 }
 
 /**

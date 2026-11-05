@@ -1,0 +1,267 @@
+---
+title: Evaluation Center
+description: Create Benchmarks, score agents on them, and improve agents against those scores in the Web App.
+---
+
+The Evaluation Center is where you measure and improve agents in the Web App. A **Benchmark** is a set of cases, each with a task statement and a private scoring rubric. A Benchmark belongs to the Project rather than to one agent, so it can score any agent in the Project.
+
+- To build a Benchmark, see [Create a Benchmark with AI](#create-a-benchmark-with-ai) or [Create a Benchmark manually](#create-a-benchmark-manually).
+- To bring in a Benchmark from a repository folder or a zip, or to download one, see [Import a Benchmark](#import-a-benchmark) and [Export a Benchmark](#export-a-benchmark).
+- To read the cases, the score chart and past evaluations, see [Read a Benchmark](#read-a-benchmark).
+- To score an agent, see [Evaluate an agent](#evaluate-an-agent).
+- To improve an agent against its scores, see [Optimize an agent](#optimize-an-agent).
+- To change the questions or clean up, see [Replace a Benchmark](#replace-a-benchmark) and [Delete a Benchmark](#delete-a-benchmark).
+
+For how evaluation and optimization work behind these pages, see [Self-Improvement](/self-improvement).
+
+## Open the Evaluation Center
+
+In the sidebar, select **Evaluation Center**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
+
+Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab; the **Optimize** card adds that another self-evolution algorithm can be picked. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that. Every member also gets **Import benchmark**, to the left of them; see [Import a Benchmark](#import-a-benchmark).
+
+Each Benchmark card shows:
+
+- the title, the directory name and the description;
+- the number of cases and the runs per case;
+- when the Benchmark was last evaluated, and the agents it has tested;
+- a sparkline of its scores, and the newest score with its change from the previous evaluation under the same [label](#score-chart).
+
+A card's actions are **Use**, **View** and, for the Project owner, a delete icon. Selecting the card itself does the same as **View**.
+
+To narrow the list, type in the search box; it matches titles, descriptions and tested agents. The address `/benchmark?agentId=<agent>` lists only the Benchmarks that have evaluated that agent; select **Show all** to see every Benchmark again.
+
+### Benchmarks that are not ready
+
+A Benchmark that is not finished is masked. Its card is dimmed under a notice, **Use** and **View** are disabled, and its page shows the same notice in place of the cases and the chart. Only the owner's delete icon still works.
+
+- **Being built**: AI is still writing the cases and calibrating their difficulty. The Benchmark opens once that is done.
+- **Creation failed**: the difficulty calibration never finished. The owner deletes the Benchmark and creates it again; a member is only told that calibration did not finish, because deleting is the owner's to do.
+
+### The example Benchmark
+
+Every Project comes with `example-benchmark`, whose sample evaluations test `default_agent`, so the page has data from the start. It is written when the Project is created: if you delete it, it stays deleted.
+
+### Built-in Benchmarks
+
+A new Project also comes with Benchmarks built from public evaluation sets: **PenguinHarness Benchmark Sec A** to **Sec E**, each a subset chosen to run on CPU-only Docker, and a Train/Test package pair for each of the six **GDPEVO Essential** scenarios. Each one's description names the original benchmark:
+
+| Benchmark | Original benchmark: what it measures |
+| --- | --- |
+| `penguinharness-benchmark-sec-a` | rag-bench-essential (Data Analysis Bench): analysis over reports, spreadsheets, document libraries, survey microdata and a SQL database |
+| `penguinharness-benchmark-sec-b` | DeepSWE v1.1: features and fixes in real open-source repositories |
+| `penguinharness-benchmark-sec-c` | AutomationBench: business workflows across simulated SaaS apps |
+| `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1: research-grade scientific computing |
+| `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0: hard, realistic tasks done in a terminal |
+| `penguinharness-benchmark-gdpevo-essential-<scenario>-train` | GDPEVO Essential: five training questions in one business scenario, displayed as five Cases and completed in one continuous Agent Session and container |
+| `penguinharness-benchmark-gdpevo-essential-<scenario>-test` | GDPEVO Essential: five held-out questions in the matching scenario, each evaluated independently |
+
+GDPEVO Essential measures self-evolution within each scenario: train on its five Train Cases, freeze the learned Agent State, then evaluate it on the paired Test package. Launch the shared training task once, keep its Session and container between questions, and count its usage once. The Case statements give the launch instructions and the mapping to each question’s score. Test questions use separate containers and Sessions. GDPevo's answers are public, so during a GDPevo task the agent can reach only the model provider's API host, not the internet.
+
+The tasks run in Docker through [Harbor](https://github.com/harbor-framework/harbor). The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which also holds the rules for running them. A case's statement holds a short description of the task and the link to its folder in that repository at a pinned commit, and its launch instructions link those rules and give the command that starts the task. The task's own verifier decides the score: a pass scores 100 and a fail 0, and GDPevo's grader scores a partly correct answer by the fraction it gets right.
+
+**Before you evaluate**
+
+- The machine the evaluator agent runs on has Docker with Compose v2 and [uv](https://docs.astral.sh/uv/), and can reach GitHub, Docker Hub, nodejs.org, the npm registry and the model provider.
+- The model the evaluation runs on, the evaluation conversation's, has its API key saved on the **Models** page. The evaluation copies that one model entry into each task container; it needs no Vault entry.
+- The evaluator agent's `agent-evaluation` Skill is version 2026.10.09.1 or later. It ships in the `agent-evaluation` plugin (previously part of `agent-tuning`). An agent created before that keeps its older copy until you update the plugin on the **Plugins** page.
+
+Evaluate Sec A–E and GDPEVO Essential Test like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per independent Case and run. Every trial takes a Docker network of its own, and a host has only a limited supply, so trials run four at a time unless you name another limit (eight at most), for example in the evaluation's **Note**; evaluations that share a machine divide its limit. The next trial starts as soon as one finishes, not batch by batch. The evaluation also builds an install bundle of Node.js and the PenguinHarness CLI once per checkout, and each trial unpacks it instead of installing both in its container, which saves about two minutes per trial; when the bundle cannot be built, the containers install from the network. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
+
+What a run of Sec A to Sec E costs and how PenguinHarness scores on those tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md). Those task sets were calibrated on the model measured there, so the scores describe those tasks, not the full upstream benchmarks.
+
+They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does. To add a missing one to an existing Project, import it from its package folder (see [Import a Benchmark](#import-a-benchmark)).
+
+## Create a Benchmark with AI
+
+AI writes the cases for an agent, trial-runs each case to calibrate its difficulty, and records the agent's first score, the baseline.
+
+1. At the top right of the Evaluation Center, select **Create with AI**.
+2. In the **Create a Benchmark with AI** dialog, choose a **Test Agent**: the agent the cases are written for. Its scores are recorded under it.
+3. Describe the capability and the scenarios to test, or start from one of the examples under **Try an example**.
+4. Select **Edit in a new conversation**. The prompt opens in a new conversation's composer, with the `benchmark-design` and `agent-evaluation` Skills selected.
+5. Review the prompt and send it. Nothing runs until you do.
+
+The dialog's "Done by … in a new conversation" line names the agent that does the writing: the Project's default agent, not the Test Agent.
+
+The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab do the same with their own conversation's model, and the chart gives each model its own line. To keep later scores on the baseline's line, evaluate on the model the baseline used.
+
+While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**; the owner then deletes the Benchmark and creates it again.
+
+## Create a Benchmark manually
+
+**Before you begin**
+
+- Only the Project owner can create a Benchmark manually.
+
+1. At the top right of the Evaluation Center, select **Create manually**.
+2. In the **Create a Benchmark manually** form, fill in **Title**, **Benchmark id** and **Description**. The id is also the directory name: letters, digits, `_` and `-` only. It does not follow the title as you type; select **Generate with AI** beside the field to derive a kebab-case id from the title.
+3. Set **Runs per case**, an integer from 1 to 1000. Evaluations and optimizations run every case this many times by default and average the results.
+4. For each case, fill in **Directory suffix**, **Case title**, **Statement** and **Scoring rubric**. The statement goes to the agent under test. The rubric lists observable scoring items that total 100 points, and never reaches the agent under test. Select **Add case** to add another case.
+5. Select **Create Benchmark**. The Benchmark's page opens.
+
+You do not choose an owning agent. A manual Benchmark is published at once but has no baseline yet, so [evaluate an agent](#evaluate-an-agent) on it before you optimize.
+
+## Import a Benchmark
+
+A Benchmark can also come in as a **package**: its `benchmark_config.toml` and its cases, without anyone's scores. Any member of the Project can import one.
+
+1. At the top right of the Evaluation Center, select **Import benchmark**.
+2. Take one of the dialog's two ways:
+   - **Import with an agent.** Paste a repository folder link, local path or description into **Benchmark source**, or choose one of the four examples from [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark). Select **Open a new chat**, review the prompt, and send it. Expand **Full prompt** to preview or copy it in the dialog.
+   - **Upload zip.** Select **Choose zip file** and pick an exported Benchmark package, or a zip with `benchmark_config.toml` and the `CASE-*` folders at its root or inside one top-level folder.
+3. If a Benchmark with the same id already exists, a confirmation asks before overwriting. Overwriting replaces all of its files and deletes its evaluation records and run results, and cannot be undone. While an evaluation of that Benchmark still has a trial running under its `.jobs` folder, the overwrite is refused, because the evaluation would go on writing into the new copy: wait for it to end, then import again.
+
+The agent resolves the link to a fixed commit, fetches that package into a temporary directory and reads its files. It copies `benchmark_config.toml` and the `CASE-*` folders directly into the Project's `<app_data_dir>/benchmarks/<id>/`, records the source in `[origin]`, and creates `scoreboard.yaml` containing `evaluations: []`. It asks before replacing an existing directory and does not replace one while an evaluation is running. You can also copy these files yourself; the Evaluation Center reads them from disk.
+
+A package carries no scores: an imported Benchmark starts without evaluations, so [evaluate an agent](#evaluate-an-agent) on it first. An upload is refused, with the reason, when the zip is not a package:
+
+- it holds a `scoreboard.yaml`, a `.jobs` folder or another entry starting with `.`, or anything at the top level besides `benchmark_config.toml` and the `CASE-*` folders;
+- it holds a symbolic link, a name with a control character in it, or two names that differ only in letter case;
+- its `status` is not `published`, or a case lacks `statement/README.md` or `rubric/README.md`;
+- its top-level folder is named differently from the manifest's `id`, or, with the manifest at the zip's root, the manifest names no `id`;
+- its manifest goes past what the create form allows: a title over 200 characters, a description over 2,000, or more than 1,000 runs;
+- it is larger than 14 MB, or unpacks to more than 1,000 files, 5 MB in one file or 20 MB in all.
+
+> [!NOTE]
+> Import Benchmarks only from sources you trust. A package is text that the evaluator and the agent under test read; nothing in it runs on its own.
+
+## Export a Benchmark
+
+1. Open the Benchmark's page.
+2. In the header, beside the directory path, select the **Export** icon.
+
+The download, `<benchmark>-v<version>.zip` (`<benchmark>.zip` for a Benchmark without a version), is the Benchmark's package: `benchmark_config.toml` as it is on disk, its origin included, and every case. It leaves out the scoreboard, the `.jobs` folder, other entries starting with `.` and symbolic links, so it can be imported again, on this server or another. Only a published Benchmark has a package: one that is being built, whose creation failed, or whose manifest can't be read shows no **Export**.
+
+## Read a Benchmark
+
+Select a Benchmark card, or **View**, to open the Benchmark's page (`/benchmark/<benchmark>`). **Back to list** returns to the list.
+
+The header shows the Benchmark's directory, `benchmarks/<benchmark>`, beside the title, with a **Copy directory path** button and, for a published Benchmark, an **Export** button, then the Benchmark's version when its manifest has one (for example `v2026.10.09.1`) and its own **Use** button. A Benchmark an agent imported from a repository folder also links that folder under **Source**.
+
+### Cases
+
+**Cases** lists the Benchmark's cases. Select **View details** on a case to open it.
+
+The case dialog shows the case's files in the same file browser as the plugin details: a file tree on the left, listed level by level, and a read-only preview on the right. The tree has two top-level folders:
+
+- **Task materials**: what the agent under test works from.
+- **Scoring rubric**: what the evaluator scores against. This folder is marked **Hidden from Target Agent**.
+
+### Score chart
+
+The **Score over time** chart plots each evaluation's score over time, with one line per **label**. A label combines the tested agent, the model ID and the thinking level, so only comparable scores share a line. A record without a label falls into a grey **Unlabeled** series.
+
+The Agent State version is deliberately left out of the label. Successive versions of one agent on the same model and thinking level stay on one line, which is where an improvement becomes visible. Hover over a point to see the version it tested.
+
+### Evaluations
+
+The **Evaluations** table lists the Benchmark's evaluations, newest first. Its columns are **Time**, **Tested agent**, **Version**, **Model ID**, **Thinking level**, **Score**, **Cost** and **Duration**. A Benchmark with no evaluations shows **No evaluations yet** instead.
+
+Select a row to open that evaluation in a dialog. The dialog shows:
+
+- the label, with the tested agent and its version;
+- the score, cost and duration;
+- the evaluation's summary, with its title and body shown separately;
+- a per-case table whose rows expand to every run's raw result and the Session it ran in.
+
+Select a case in that table to open the case dialog on top.
+
+## Ask AI about a case or an evaluation
+
+The case dialog and the evaluation dialog both end with **Ask AI**. It opens a prompt dialog with a question already filled in, and example questions you can switch to. The default question is also the first example, so you can bring it back after trying another.
+
+In the case dialog, the examples are:
+
+- **Explain what this case tests and what a strong answer looks like** (the default)
+- **What does the rubric reward?**
+- **Why did a run score low here?**
+- **How could the statement be clearer?**
+
+In the evaluation dialog, the examples are:
+
+- **Explain this evaluation's result** (the default)
+- **Why is the score low?**
+- **Which cases are weakest, and what should change?**
+- **What changed against the previous evaluation?**
+
+A fixed ending passes along the facts on screen:
+
+- For a case: the paths of its `statement/README.md` and `rubric/README.md`, and how the latest evaluation's runs scored it.
+- For an evaluation: the Benchmark id and directory, the time, the label, the version, the evaluation runtime, the total and per-case scores, every run's Session id, and the summary.
+
+The agent is asked to read those files and Traces and explain what it finds. It only reads and analyzes, and changes neither the Benchmark nor the tested agent. Select **Edit in a new conversation**, then send the prompt.
+
+## Evaluate an agent
+
+An evaluation runs an agent on every case of a Benchmark and adds one labelled score to the Benchmark's scoreboard.
+
+1. On a Benchmark card, or in a Benchmark page's header, select **Use**. The dialog opens on the **Evaluate** tab.
+2. In **Tested agent**, choose the agent to evaluate. It defaults to the agent of the newest evaluation.
+3. In **Evaluator agent**, choose the agent that runs and scores the evaluation. It needs the `agent-evaluation` Skill, and the dialog warns you when that Skill is missing.
+4. Optional: change **Model of the evaluation conversation** (preset to the Project's default model) or **Runs per case** (preset to the Benchmark's configured count), and add a **Note**.
+5. Select **Edit in a new conversation**, review the prompt, and send it.
+
+The tested agent runs on the model of the evaluation conversation: the one set in **Model of the evaluation conversation**, or the one you pick in the composer before you send. Its thinking level is the one it is configured with; the dialog does not change it.
+
+The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, archived by rule: it is listed under [Settings › Archived chats](/settings#archived-chats), and unarchiving it there keeps it in the sidebar. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
+
+## Optimize an agent
+
+Optimization improves an agent with a self-evolution algorithm, the **Method**. The default method changes the agent one hypothesis at a time and keeps a new version only when its score strictly improves, measured against the agent's baseline on this Benchmark. The other methods each run the RSI toolkit of the same name; see [RSI toolkits](/self-improvement#rsi-toolkits).
+
+**Before you begin**
+
+- For the default method, the agent has a complete evaluation on this Benchmark. A Benchmark created with AI has one for its Test Agent; otherwise, [evaluate the agent](#evaluate-an-agent) first. The other methods measure the agent's starting score themselves.
+
+1. On a Benchmark card, or in a Benchmark page's header, select **Use**, then the **Optimize** tab.
+2. In **Method**, choose a toolkit. The list is read from the plugin library each time the dialog opens: every toolkit in its **Agent Self-Evolution** category, with `default-rsi-toolkit` (Default, trial → reflect → improve) first, so a toolkit an admin installs on the **Plugins** page shows up the next time you open the dialog. The hint under the field is the toolkit's own short description. While the library is loading, or when it cannot be read, the field is disabled and the tab optimizes with Default.
+3. In **Tested agent**, choose the agent to improve. The tab shows its current baseline and the target.
+4. In **Optimizer agent**, choose the agent that does the work. It needs the method's Skill: `agent-optimization` for Default, otherwise the toolkit's own Skill — the one named like its plugin (`opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit` or `trace-rsi-toolkit`); for a toolkit without one, the Skill its quick start preselects, or its only Skill. The dialog warns you when that Skill is missing.
+5. Set **Runs per case**. With Default, also set **Round limit** (3 by default) and **Target score**; the target defaults to the baseline rounded up plus 10, at most 100.
+6. Optional: change **Model of the optimizer's conversation** (preset to the Project's default model), and describe a **Focus**.
+7. Select **Edit in a new conversation**, review the prompt, and send it.
+
+With Default, the optimizer stops early when it reaches the target score, and otherwise after the round limit. Its evaluations keep the model and thinking level the baseline recorded. Each accepted version appears as a new point on the same chart line, and its version shows in the **Version** column and in the point's hover text.
+
+With any other method, **Round limit** and **Target score** are hidden: the method sets its own budget, the paper's defaults reduced to a smoke profile unless the **Focus** says otherwise. The prompt hands the method's Skill the tested agent, the Benchmark and the runs per case, and asks it to run the method the way its paper does, keep the tested agent's runtime fixed, measure through the toolkit's own evaluation reference, and record every complete evaluation in the scoreboard under the same label.
+
+> [!WARNING]
+> When the tested agent has no baseline on this Benchmark, the tab warns you to take one on the **Evaluate** tab first, and the target defaults to 80. Sending is not blocked, but with the default method the `agent-optimization` Skill stops and explains that it needs a baseline.
+
+## Replace a Benchmark
+
+A Benchmark's cases are frozen once it exists. Neither the Web App nor the server API can edit a statement or a rubric: changing the questions would make the scores already on the scoreboard incomparable. The calibration AI does while writing the cases happens before the baseline is taken, as part of creating them.
+
+To ask different questions, create a new Benchmark and delete the old one:
+
+1. Open a case, select **Ask AI**, choose **How could the statement be clearer?**, and send the conversation.
+2. Select **Create with AI**, and describe the old Benchmark together with the suggested changes.
+3. Once the new Benchmark is published, [delete the old one](#delete-a-benchmark).
+
+## Delete a Benchmark
+
+Only the Project owner can delete a Benchmark, and only from its card in the list, not from the Benchmark's page.
+
+1. On the Benchmark's card, select the delete icon (**Delete Benchmark**).
+2. Read the confirmation: every case and evaluation record will be removed, and this cannot be undone.
+3. Select **Delete**.
+
+Let any evaluation of the Benchmark finish before you delete it. Deleting does not stop a running evaluation, which goes on writing into the Benchmark's directory: the directory comes back without a `benchmark_config.toml`, is not listed, and has to be deleted by hand.
+
+> [!NOTE]
+> Deleting `example-benchmark` or a [built-in Benchmark](#built-in-benchmarks) is final too: they are written only when the Project is created, never again.
+
+## How it works
+
+- **Storage.** A Benchmark is the directory `benchmarks/<benchmark>/` in the Project, beside `agents/`, named by its Benchmark id. Its manifest is `benchmark_config.toml`, which also records a package version and where the copy came from; each case has `statement/README.md`, `rubric/README.md` and `task_config.toml`, and the scores are in `scoreboard.yaml`. See [Benchmark storage](/self-improvement#benchmark-storage).
+- **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
+- **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
+- **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
+- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with its `id`, the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's, or stays absent. It refuses an overwrite with `409` `benchmark_busy` while `.jobs/` holds a trial without its `result.json` or a Test Agent State packed for a trial (`*.agent-state.tar.gz`), the marks of an evaluation still running. An agent imports a repository folder by copying its manifest and cases directly into `benchmarks/<id>/`, creating an empty scoreboard and recording the source as `git`; the `benchmark-design` Skill's `reference/package.md` describes the file layout.
+- **Exporting.** `GET …/benchmarks/:id/archive` (any member) packs a published Benchmark's `benchmark_config.toml` and cases into a zip.
+- **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
+- **Optimizing.** With Default, the prompt's fixed ending hands `agent-optimization` the tested agent, the Benchmark, the runs, the target score and the round limit. With another method, it hands the method's Skill the tested agent, the Benchmark and the runs, and the method sets its own budget. The **Method** list has one entry per plugin of the library's Agent Self-Evolution category.
+- **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
+- **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.
+- **Built-in Benchmarks.** Their manifests are ordinary, with the origin `builtin`; each statement names the task's folder in the repository at a pinned commit and links the repository's run rules, which the `agent-evaluation` Skill and the RSI toolkits' evaluation reference follow. `agent-evaluation`'s `reference/harbor.md` adds only what PenguinHarness needs: where the checkout lives, which Agent State runs, and how a trial becomes a score.

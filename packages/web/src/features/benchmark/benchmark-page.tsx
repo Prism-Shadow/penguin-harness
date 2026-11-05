@@ -1,649 +1,659 @@
 /**
- * Benchmark page (read-only display):
- * the left directory lists Benchmarks grouped by Agent (the scoreboard is only fetched once
- * expanded); the right side shows the selected Benchmark's title info, a Score-only chart grouped
- * into series by each Evaluation's model ID and thinking level, and an evaluation detail table
- * with separate model ID and thinking-level columns. Rows expand to show the evaluation summary
- * and per-case scores, and Case rows further expand to show the raw results of each Run with a
- * Session link.
- * With a ?agentId= deep link, only the target Agent is expanded by default.
+ * Evaluation Center: every Benchmark of the Project as one card, with the loop a novice needs
+ * spelled out in a standing block under the title — write the cases, evaluate an agent on them,
+ * optimize it against the scores. A Benchmark sits beside the agents rather than under one, so
+ * the page is a flat list and the agents a card names are the ones its scoreboard has tested.
+ * Each card carries the newest Score with its change against the previous record of the same
+ * label, a sparkline of the scoreboard, when it was last evaluated, and its actions; opening one
+ * enters the Benchmark's own page (`/benchmark/:benchmarkId`) instead of splitting this one in
+ * two, the way an Agent's card enters its settings. `?agentId=` narrows the list to the
+ * Benchmarks that tested that Agent. The list is read off this server and every machine it holds
+ * (benchmark-sources.ts): a Benchmark written on a machine is listed too, under its id. Besides
+ * creating one, any member may import one (benchmark-import-modal.tsx): through an Agent from a
+ * repository folder, or from a package zip.
  */
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import type {
-  BenchmarkCaseScore,
-  BenchmarkCaseSummary,
-  BenchmarkEvaluation,
+  AgentSummary,
   BenchmarkSummary,
+  ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  AvatarStack,
+  Button,
+  Card,
+  ConfirmModal,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  PageFrame,
+  PageHeader,
+  Select,
+  Skeleton,
+  SkeletonCard,
+  Sparkline,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
+import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
+import { STAT_ICONS } from "../../lib/stat-icons";
+import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Chevron } from "../../components/ui/chevron";
-import { Truncated } from "../../components/ui/truncated";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Modal } from "../../components/ui/modal";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
-import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
-import { ChartFrame, useChartWidth } from "../usage/chart-svg";
-import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
-import type { EvaluationSeries } from "./benchmark-metrics";
-import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import { useSessions } from "../../state/sessions";
+import type { MergedBenchmark } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useLocale } from "../../state/locale";
+import { AiCreateModal, pickDefaultAgent } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import {
+  benchmarkDescription,
+  latestWithDelta,
+  matchesBenchmarkQuery,
+  sparklineSeries,
+} from "./benchmark-metrics";
+import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
+import { ImportBenchmarkModal } from "./benchmark-import-modal";
+import { benchmarkRoute } from "./benchmark-route";
+import { useBenchmarksAcross } from "./benchmark-sources";
+import { CreateBenchmarkModal } from "./create-benchmark-modal";
+import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
 
-interface Selection {
-  agentId: string;
+/** The Skills a design conversation is opened with (see the create modal below). */
+const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
+
+/** How many tested Agents a card names before the rest fold into a "+n". */
+const AVATARS_SHOWN = 3;
+
+function deltaTone(delta: number | null): string {
+  if (delta === null || delta === 0) return toneInk.muted;
+  return delta > 0 ? toneInk.success : toneInk.danger;
+}
+
+/**
+ * The page's pair of create entry points, in its header and in its empty state alike. Creating
+ * with AI opens a conversation, which any member of the Project may start; creating by hand posts
+ * the cases for the server to write under the Project's `benchmarks/`, which only the owner may
+ * do (the route answers anyone else with 403). So a member is offered the AI button by itself,
+ * the way the scheduled-tasks tab offers it. Given `onImport` (the header), Import benchmark
+ * stands before the pair, for everyone: a Benchmark belongs to the Project, and any member may
+ * bring one in.
+ */
+export function BenchmarkCreateButtons({
+  isOwner,
+  onAi,
+  onManual,
+  onImport,
+}: {
+  isOwner: boolean;
+  onAi: () => void;
+  onManual: () => void;
+  onImport?: () => void;
+}) {
+  const create = <AiCreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+  if (onImport === undefined) return create;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="secondary" onClick={onImport}>
+        <GlyphIcon d={ICONS.upload} />
+        {S.benchmark.importBenchmark}
+      </Button>
+      {create}
+    </div>
+  );
+}
+
+/**
+ * The three steps of the loop, a card each: three across from `md` up, stacked below. Every card
+ * names its step and says where on this page to do it — the create buttons at the top right,
+ * Use → Evaluate and Use → Optimize on a Benchmark — and nothing else stands above or beside
+ * them: the maintainer wants the three stages alone, without a how-to line or the Skill names
+ * in grey. Nothing is drawn between the cards — the numbers already carry the order, and an
+ * arrow would only survive one of the two layouts. A member's first card leaves out Create
+ * manually, since the header does not offer it to them.
+ */
+function GuideSteps({ isOwner }: { isOwner: boolean }) {
+  return (
+    <div className="mt-3 grid md:grid-cols-3 gap-3">
+      {S.benchmark.guideFlow.map((step, i) => (
+        <div
+          key={step.title}
+          className="min-w-0 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400"
+        >
+          <span className="flex flex-wrap items-baseline gap-x-1.5">
+            <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">{i + 1}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
+          </span>
+          <p className="mt-1 leading-relaxed">
+            {i === 0 && !isOwner ? S.benchmark.guideCreateMember : step.text}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The Agents a Benchmark has scored, newest scoreboard order first: three tiles and a "+n" for
+ * the rest. The names are in the group's tooltip rather than beside each tile — a card that
+ * tested five agents would otherwise be a list of names with a Benchmark somewhere in it.
+ */
+function TestedAgents({
+  agentIds,
+  nameOf,
+}: {
+  agentIds: readonly string[];
+  nameOf: (agentId: string) => string;
+}) {
+  if (agentIds.length === 0) return null;
+  return (
+    <div
+      className="hidden shrink-0 sm:flex"
+      data-tooltip={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
+      // The avatars name no one, and past the cap a "+N" stands for the rest.
+      data-tooltip-extra
+    >
+      <AvatarStack
+        items={agentIds.map((agentId) => ({ id: agentId, name: nameOf(agentId) }))}
+        max={AVATARS_SHOWN}
+        size={ICON_SIZE.rowLead}
+      />
+    </div>
+  );
+}
+
+/**
+ * One Benchmark in the Agents list's card shape: an info column of title, description and stats,
+ * then the Agents it has tested, the sparkline, the newest Score with its change from the
+ * previous record of the same label, and the actions. The info column is the card's main button
+ * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
+ * nested block. A card that is not published is masked under a notice — still being built for a
+ * draft, creation failed for a Benchmark whose calibration never finished, or a manifest that
+ * cannot be read, with the reason behind an icon — with only the delete icon left live.
+ */
+export function BenchmarkCard({
+  benchmark,
+  locale,
+  nameOf,
+  machineName,
+  canDelete,
+  onOpen,
+  onUse,
+  onDelete,
+}: {
   benchmark: BenchmarkSummary;
-}
-
-/** Expandable tree node for a single Agent (benchmarks are only fetched once expanded; same shape as the AgentNode on the trace observability page). */
-function AgentNode({
-  projectId,
-  agentId,
-  name,
-  defaultOpen,
-  selection,
-  onSelect,
-}: {
-  projectId: string;
-  agentId: string;
-  name: string;
-  /** Whether initially expanded: all expanded when there's no deep link; only the target Agent expanded with a ?agentId= deep link. */
-  defaultOpen: boolean;
-  selection: Selection | null;
-  onSelect: (sel: Selection) => void;
+  locale: "zh" | "en";
+  nameOf: (agentId: string) => string;
+  /** The ssh alias of the one machine that holds this Benchmark, or null when this server has it. */
+  machineName: string | null;
+  canDelete: boolean;
+  onOpen: () => void;
+  onUse: () => void;
+  onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open || benchmarks) return;
-    api
-      .listBenchmarks(projectId, agentId)
-      .then((data) => setBenchmarks(data.benchmarks))
-      .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId]);
-
+  const latest = latestWithDelta(benchmark.evaluations);
+  const series = sparklineSeries(benchmark.evaluations);
+  // A Benchmark that is not published is masked and inert: a draft is still being written and
+  // calibrated by the agent, and a failed one never finished calibrating and can only be thrown
+  // away. Only the owner's delete stays above the mask, which is how either is cleaned up.
+  const masked = benchmark.status !== "published";
+  const failed = benchmark.status === "failed";
+  // A Benchmark whose manifest cannot be read lists as failed; its notice says so instead.
+  const broken = benchmark.manifestError;
+  // Deleting and creating again is a failed Benchmark's only way out, and the hint names that
+  // step only to a viewer who has the delete button beside it.
+  const failedHint =
+    broken !== undefined
+      ? canDelete
+        ? S.benchmark.manifestBrokenHint
+        : S.benchmark.manifestBrokenHintMember
+      : canDelete
+        ? S.benchmark.creationFailedHint
+        : S.benchmark.creationFailedHintMember;
   return (
-    <li className="pt-2.5">
-      <div className="flex items-center px-1 pb-0.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
-        >
-          <AgentAvatar id={agentId} name={name} size={18} className="shrink-0 rounded" />
-          <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            {name}
+    <Card
+      padding="md"
+      interactive={!masked}
+      className="relative flex flex-wrap items-center gap-x-6 gap-y-2"
+      // A click anywhere else on the body enters the page too (lib/card-open.ts); a masked card
+      // enters nothing.
+      {...(masked ? {} : { onClick: cardBodyClick(onOpen) })}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={masked}
+        className="min-w-[14rem] flex-1 text-left"
+      >
+        {/* The title takes the row first; the id (flex-basis 0) gets only what is left and is cut
+            short there, so a long id never truncates the title. */}
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 truncate text-base font-bold">
+            {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
           </span>
-          <Chevron open={open} size={12} className="text-gray-400" />
-          <span className="min-w-0 flex-1" />
-        </button>
-      </div>
-      {open && (
-        <div className="anim-fade">
-          {error && <p className="px-2.5 py-1 text-xs text-red-500">{error}</p>}
-          {!benchmarks && !error && (
-            <p className="px-2.5 py-1 text-xs text-gray-400">{S.common.loading}</p>
-          )}
-          {benchmarks && benchmarks.length === 0 && (
-            <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
-              {S.benchmark.emptyAgent}
-            </p>
-          )}
-          <ul className="space-y-0.5">
-            {benchmarks?.map((b) => {
-              const active = selection?.agentId === agentId && selection.benchmark.id === b.id;
-              return (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect({ agentId, benchmark: b })}
-                    className={`flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
-                      active
-                        ? "bg-gray-200/70 dark:bg-gray-800"
-                        : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
-                    }`}
-                  >
-                    <Truncated
-                      text={b.title}
-                      className={`min-w-0 flex-1 text-sm ${
-                        active
-                          ? "font-medium text-gray-900 dark:text-gray-100"
-                          : "text-gray-700 dark:text-gray-300"
-                      }`}
-                    />
-                    <span className="shrink-0 font-mono text-[11px] text-gray-400">
-                      {b.caseCount}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </li>
-  );
-}
-
-/**
- * Score-over-time line chart. Scores remain valid on 0..100, while the visible y-axis is padded
- * around the observed range and clamped to those limits. Evaluations remain grouped by model ID
- * and thinking level so a runtime change stays visible without adding other metric modes.
- */
-function ScoreTrendChart({
-  evaluations,
-  series,
-}: {
-  evaluations: BenchmarkEvaluation[];
-  series: EvaluationSeries[];
-}) {
-  const [hover, setHover] = useState<number | null>(null);
-  const [ref, width] = useChartWidth();
-
-  const values = scoreValues(evaluations);
-  const scale = scoreScale(values);
-  const geom = makeRangeGeom(evaluations.length, scale.min, scale.max, width);
-  const dates = evaluations.map((e) => formatDateTime(e.time));
-
-  return (
-    <div ref={ref}>
-      {width > 0 && (
-        <ChartFrame
-          geom={geom}
-          fmtY={formatScore}
-          dates={dates}
-          hover={hover}
-          onHover={setHover}
-          yTicks={scale.ticks}
-          bubble={(i) => {
-            const e = evaluations[i]!;
-            const v = values[i] ?? null;
-            return (
-              <>
-                <p className="text-gray-400">{formatDateTime(e.time)}</p>
-                <p className="font-mono">
-                  {v === null ? "—" : formatScore(v)}
-                  {e.version !== undefined && (
-                    <span className="ml-1.5 text-gray-400">v{e.version}</span>
-                  )}
-                </p>
-                <p className="font-mono text-gray-400">
-                  {e.modelId} · {e.thinkingLevel}
-                </p>
-              </>
-            );
-          }}
-        >
-          {series.map((s, si) => {
-            const segments = lineSegments(seriesValues(evaluations, s));
-            return (
-              <g
-                key={s.key === "" ? "unlabeled" : s.key}
-                className={(s.modelId ? seriesColor(si) : NEUTRAL_SERIES).text}
-              >
-                {segments.map((seg, k) => {
-                  return (
-                    <g key={k}>
-                      {seg.length > 1 && (
-                        <path
-                          d={segmentPath(geom, seg)}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          opacity={hover !== null ? 0.35 : 1}
-                        />
-                      )}
-                      {seg.map((p) => (
-                        <circle
-                          key={p.index}
-                          cx={geom.x(p.index)}
-                          cy={geom.y(p.value)}
-                          r={hover === p.index ? 4 : 2.5}
-                          className="fill-current"
-                          opacity={hover !== null && hover !== p.index ? 0.25 : 1}
-                        />
-                      ))}
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
-        </ChartFrame>
-      )}
-    </div>
-  );
-}
-
-/**
- * Score chart + runtime legend. Provider is deliberately not part of chart identity.
- */
-function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
-  const series = modelSeries(evaluations);
-  const labelOf = (s: EvaluationSeries): string => {
-    if (!s.modelId) return S.benchmark.legendUnlabeled;
-    return s.thinkingLevel ? `${s.modelId} · ${s.thinkingLevel}` : s.modelId;
-  };
-  return (
-    <div>
-      <p className="mb-1 text-xs font-semibold text-gray-500">
-        {S.benchmark.trendTitle(S.benchmark.colScore)}
-      </p>
-      {series.length >= 2 && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {series.map((s, i) => (
+          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+            {benchmark.id}
+          </span>
+        </span>
+        {/* An empty description still takes its line, so the cards keep one height. */}
+        <span className="mt-1.5 block min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
+          {benchmarkDescription(benchmark, locale) ?? ""}
+        </span>
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <span className="shrink-0">{S.benchmark.caseCount(benchmark.caseCount)}</span>
+          <span className="shrink-0">{S.benchmark.runsPerCase(benchmark.runs ?? 1)}</span>
+          {latest && (
             <span
-              key={s.key === "" ? "unlabeled" : s.key}
-              className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
+              className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
+              data-tooltip={S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))}
             >
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.modelId ? seriesColor(i) : NEUTRAL_SERIES).swatch}`}
-              />
-              <span className="font-mono">{labelOf(s)}</span>
+              <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
+              {formatRelativeShort(latest.time, locale)}
             </span>
-          ))}
+          )}
+        </span>
+      </button>
+      <TestedAgents agentIds={benchmark.agentIds} nameOf={nameOf} />
+      {series.length > 0 && (
+        <div className="hidden shrink-0 md:block">
+          {/* The scoreboard's Scores in order, the newest marked, on the observed range (the
+              sparkline's default 72×22 box and five-point floor), so a flat series draws a
+              level line through the middle rather than collapsing onto an edge. */}
+          <Sparkline
+            values={series}
+            label={S.benchmark.sparklineLabel(series.length)}
+            scale="range"
+            marker
+          />
         </div>
       )}
-      <ScoreTrendChart evaluations={evaluations} series={series} />
-    </div>
-  );
-}
-
-const CELL = "px-3 py-2";
-
-/** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
-function EvaluationRow({
-  evaluation,
-  caseTitles,
-  onOpenCase,
-  currency,
-}: {
-  evaluation: BenchmarkEvaluation;
-  caseTitles: ReadonlyMap<string, string>;
-  onOpenCase: (caseId: string) => void;
-  currency: Currency;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-      >
-        <td className={CELL}>
-          <span className="flex items-center gap-1.5 text-xs">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            {formatDateTime(evaluation.time)}
-          </span>
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
-        </td>
-        <td
-          className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-          title={evaluation.provider}
-        >
-          {evaluation.modelId}
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.thinkingLevel}
-        </td>
-        <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
-          {formatScore(evaluation.score)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {formatMoney(evaluation.cost, currency)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
-        </td>
-      </tr>
-      {open && (
-        <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={7} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
-            {/* Evaluation summary title and body are displayed separately when present. */}
-            {(evaluation.summaryTitle || evaluation.summary) && (
-              <div className="mb-2">
-                {evaluation.summaryTitle ? (
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                    {evaluation.summaryTitle}
-                  </p>
-                ) : (
-                  <p className="text-xs font-semibold text-gray-500">{S.benchmark.summaryLabel}</p>
-                )}
-                {evaluation.summary && (
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-300">
-                    {evaluation.summary}
-                  </p>
-                )}
-              </div>
-            )}
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-500">
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colCase}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colScore}</th>
-                  <th className="px-2 py-1 font-medium">{S.common.cost}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colDuration}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colSession}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {evaluation.cases.map((c) => (
-                  <CaseRow
-                    key={c.case}
-                    caseScore={c}
-                    title={caseTitles.get(c.case)}
-                    onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
-                    currency={currency}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/**
- * Session id, for correlating a Run with what the side panel shows. It used to deep-link into the
- * Traces page; reading a Trace is now the side panel's job alone, so this is identification only.
- */
-function SessionCell({ sessionId }: { sessionId?: string }) {
-  if (!sessionId) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
-      {sessionId}
-    </span>
-  );
-}
-
-/**
- * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
- * results; the UI never recomputes averages.
- */
-function CaseRow({
-  caseScore: c,
-  title,
-  onOpenCase,
-  currency,
-}: {
-  caseScore: BenchmarkCaseScore;
-  title?: string;
-  onOpenCase?: (caseId: string) => void;
-  currency: Currency;
-}) {
-  const [open, setOpen] = useState(false);
-  const runs = c.runs;
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
-      >
-        <td className="px-2 py-1">
-          <span className="flex items-start gap-1.5">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            <span className="min-w-0">
-              {onOpenCase ? (
-                <button
-                  type="button"
-                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenCase(c.case);
-                  }}
-                >
-                  {title ?? c.case}
-                </button>
-              ) : (
-                <span className="block font-medium text-gray-800 dark:text-gray-200">
-                  {title ?? c.case}
-                </span>
-              )}
-              {title && title !== c.case && (
-                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
-              )}
-            </span>
-          </span>
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {formatMoney(c.cost, currency)}
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
-        </td>
-        <td className="px-2 py-1">
-          <span className="text-gray-400">—</span>
-        </td>
-      </tr>
-      {open &&
-        runs.map((run, i) => (
-          <tr key={i} className="text-xs text-gray-500 dark:text-gray-400">
-            {/* Indented run index row: #1, #2, ... (case-level metrics are their average) */}
-            <td className="py-1 pl-7 pr-2 font-mono">
-              {S.benchmark.colRun} #{i + 1}
-            </td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">
-              {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
-            </td>
-            <td className="px-2 py-1">
-              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
-            </td>
-          </tr>
-        ))}
-    </>
-  );
-}
-
-function CasesSection({
-  cases,
-  error,
-  onOpenCase,
-}: {
-  cases: BenchmarkCaseSummary[] | null;
-  error: string | null;
-  onOpenCase: (caseId: string) => void;
-}) {
-  return (
-    <div>
-      <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
-        {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
-        {cases?.map((item) => {
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onOpenCase(item.id)}
-              className="flex w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/70 dark:hover:bg-gray-800/50"
+      {/* At least a score's width, and as wide as its label beyond that: the label is a phrase
+          ("first evaluation", "Not evaluated yet") that runs longer than a score in English,
+          and cut short or broken over lines it stops reading as one. */}
+      <div className="min-w-16 shrink-0 text-right">
+        {latest ? (
+          <>
+            <span
+              className="block font-mono text-sm font-semibold tabular-nums"
+              data-tooltip={S.benchmark.latestScoreLabel}
             >
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {item.title}
-                </span>
-                <span className="block truncate font-mono text-[11px] text-gray-400">
-                  {item.id}
-                </span>
-              </span>
-              {/* Styled as the quiet gray action the Workspace download link is, not as a
-                  link: the row itself is the button, so an accent-colored label here read as
-                  a second, separately clickable target. Hover feedback comes from the row. */}
-              <span className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300">
-                {S.benchmark.viewCase}
-              </span>
-            </button>
-          );
-        })}
+              {formatScore(latest.score)}
+            </span>
+            <span
+              className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
+            >
+              {latest.delta === null
+                ? S.benchmark.firstEvaluation
+                : latest.delta === 0
+                  ? "0"
+                  : signedDelta(formatScore(latest.delta))}
+            </span>
+          </>
+        ) : (
+          <span className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
+            {S.benchmark.notEvaluated}
+          </span>
+        )}
       </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a
+            Benchmark is for, and optimizing it is the tab next door. */}
+        <Button size="sm" variant="primary" onClick={onUse} disabled={masked}>
+          {S.benchmark.use}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onOpen} disabled={masked}>
+          {S.benchmark.view}
+        </Button>
+        {canDelete && (
+          <Button
+            size="icon"
+            variant="danger"
+            title={S.benchmark.deleteBenchmark}
+            aria-label={S.benchmark.deleteBenchmark}
+            onClick={onDelete}
+            className={masked ? "relative z-10" : undefined}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
+      </div>
+      {masked && (
+        <div
+          role="note"
+          className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-[inherit] bg-white/75 px-4 text-center dark:bg-gray-900/75"
+        >
+          {/* A failed creation is the one thing here the user has to act on, so its title takes
+              the danger ink; the line under it stays secondary text either way. */}
+          <span
+            className={`inline-flex items-center ${ICON_GAP.row} text-sm font-medium ${failed ? toneInk.danger : "text-gray-700 dark:text-gray-200"}`}
+          >
+            {broken !== undefined
+              ? S.benchmark.manifestBroken
+              : failed
+                ? S.benchmark.creationFailed
+                : S.benchmark.building}
+            {broken !== undefined && (
+              <span role="img" data-tooltip={broken.message} aria-label={broken.message}>
+                <GlyphIcon d={ICONS.info} size={ICON_SIZE.inlineGlyph} />
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {failed ? failedHint : S.benchmark.buildingHint}
+          </span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Card-shaped placeholders, so nothing shifts when the fetch lands. */
+function CardSkeletons({ rows }: { rows: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: rows }, (_, i) => (
+        <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+          <div className="min-w-[14rem] flex-1">
+            <Skeleton className="h-[18px] w-40" />
+            <Skeleton className="mt-1.5 h-4 w-2/3" />
+            <Skeleton className="mt-1.5 h-4 w-48" />
+          </div>
+          <Skeleton className="hidden h-9 w-24 md:block" />
+          <Skeleton className="h-8 w-44" />
+        </SkeletonCard>
+      ))}
     </div>
   );
 }
 
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
-  const { currentProject, agents, agentsLoading } = useProject();
-  const { currency } = useTheme();
+  const navigate = useNavigate();
+  const { currentProject, currentAgent, agents } = useProject();
+  const { machineIds, machineLabels } = useSessions();
+  const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
-  // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
-  const [searchParams] = useSearchParams();
-  const focusAgentId = searchParams.get("agentId");
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
-  const [caseError, setCaseError] = useState<string | null>(null);
-  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  const isOwner = currentProject?.role === "owner";
+  // ?agentId= (entered from an Agent): the list narrows to the Benchmarks that tested it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterAgentId = searchParams.get("agentId");
 
-  // Clear the selection when the Project changes.
-  useEffect(() => {
-    setSelection(null);
-  }, [projectId]);
+  /** Bumped to read the list again — after a delete that leaves a machine's copy behind. */
+  const [reload, setReload] = useState(0);
+  const [query, setQuery] = useState("");
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiTarget, setAiTarget] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  /** The Benchmark whose Use dialog is open, if any. */
+  const [using, setUsing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
+  // Benchmarks belong to the Project, so the page reads one list, merged over this server and
+  // the machines it holds, this server's on screen as soon as it answers — and a Project change
+  // starts it over rather than showing the previous Project's cards while the next list is in
+  // flight. A machine that connects re-asks, with the cards on screen kept.
+  const listed = useBenchmarksAcross(projectId, machineIds, reload);
+  const benchmarks = listed.benchmarks;
+  const error = listed.error === null ? null : apiErrorText(listed.error);
+
+  // The Project's models, for the Use dialog's conversation-model picker; a failure just
+  // leaves the picker at the Project default.
   useEffect(() => {
-    setCaseStatements(null);
-    setCaseError(null);
-    setOpenCaseId(null);
-    if (!projectId || !selection) return;
+    if (!projectId) return;
     let cancelled = false;
     api
-      .listBenchmarkCases(projectId, selection.agentId, selection.benchmark.id)
-      .then((data) => {
-        if (!cancelled) setCaseStatements(data.cases);
+      .getModels(projectId, null)
+      .then((res) => {
+        if (!cancelled) setModels(res);
       })
-      .catch((error: unknown) => {
-        if (!cancelled) setCaseError(apiErrorText(error));
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [projectId, selection]);
+  }, [projectId]);
 
   if (!projectId) return null;
 
-  const bm = selection?.benchmark ?? null;
-  // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
-  // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
-  const evaluations = bm ? [...bm.evaluations] : [];
-  const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
-  const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
+  const agentOf = (agentId: string): AgentSummary | undefined =>
+    agents.find((a) => a.agentId === agentId);
+  /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  const nameOf = (agentId: string): string => {
+    const agent = agentOf(agentId);
+    return agent ? agentDisplayName(agent) : agentId;
+  };
+
+  const fallbackAgent = currentAgent?.agentId ?? pickDefaultAgent(agents)?.agentId ?? "";
+  const openAi = () => {
+    setAiTarget(filterAgentId ?? fallbackAgent);
+    setAiOpen(true);
+  };
+  const open = (benchmarkId: string) => navigate(benchmarkRoute(benchmarkId));
+  const clearAgentFilter = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("agentId");
+        return next;
+      },
+      { replace: true },
+    );
+
+  const benchmarkOf = (benchmarkId: string | null): MergedBenchmark | null =>
+    benchmarkId === null ? null : (benchmarks?.find((b) => b.id === benchmarkId) ?? null);
+  const usingBenchmark = benchmarkOf(using);
+  const deletingBenchmark = benchmarkOf(deleting);
+
+  const confirmDelete = async () => {
+    if (deleting === null) return;
+    const benchmarkId = deleting;
+    setDeleteBusy(true);
+    try {
+      await api.deleteBenchmark(projectId, benchmarkId);
+      toastSuccess(S.benchmark.deleted);
+      // Delete removes this server's directory; a copy a machine holds is still a Benchmark.
+      if (deletingBenchmark !== null && deletingBenchmark.machineIds.length > 1) {
+        setReload((n) => n + 1);
+      } else {
+        listed.removeHere(benchmarkId);
+      }
+      setDeleting(null);
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const rows = (benchmarks ?? [])
+    .filter((b) => filterAgentId === null || b.agentIds.includes(filterAgentId))
+    .filter((b) => matchesBenchmarkQuery(b, agents, query));
+
+  let body;
+  if (error !== null) {
+    body = <p className={`px-1 text-xs ${toneInk.danger}`}>{error}</p>;
+  } else if (benchmarks === null) {
+    body = <CardSkeletons rows={4} />;
+  } else if (benchmarks.length === 0) {
+    body = (
+      <EmptyState
+        title={S.benchmark.emptyTitle}
+        description={S.benchmark.emptyDescription}
+        action={
+          <BenchmarkCreateButtons
+            isOwner={isOwner}
+            onAi={openAi}
+            onManual={() => setManualOpen(true)}
+          />
+        }
+      />
+    );
+  } else if (rows.length === 0) {
+    body = <EmptyState title={S.benchmark.noMatches} />;
+  } else {
+    body = (
+      <div className="space-y-3">
+        {rows.map((b) => (
+          <BenchmarkCard
+            key={b.id}
+            benchmark={b}
+            locale={locale}
+            nameOf={nameOf}
+            machineName={b.machineIds.length === 1 ? machineNameOf(b.machineIds[0] ?? null) : null}
+            // Only this server's copy can be deleted from here.
+            canDelete={isOwner && b.machineIds.includes(null)}
+            onOpen={() => open(b.id)}
+            onUse={() => setUsing(b.id)}
+            onDelete={() => setDeleting(b.id)}
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-full flex-col md:flex-row">
-      {/* Directory tree: Agent -> Benchmark (left column on >=md; collapsible top area on <md) */}
-      <aside className="max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
-        <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
-          {S.benchmark.title}
-        </p>
-        {agentsLoading ? (
-          <SkeletonList rows={4} />
-        ) : (
-          <ul>
-            {agents.map((a) => (
-              <AgentNode
-                key={a.agentId}
-                projectId={projectId}
-                agentId={a.agentId}
-                name={agentDisplayName(a)}
-                defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
-                selection={selection}
-                onSelect={setSelection}
-              />
-            ))}
-          </ul>
-        )}
-      </aside>
-
-      <section className="min-w-0 flex-1 overflow-y-auto p-3 md:p-4">
-        {selection && bm ? (
-          // Changing the key on Benchmark switch resets expand state (a detail row's open doesn't linger across Benchmarks).
-          <div key={`${selection.agentId}/${bm.id}`} className="mx-auto max-w-4xl space-y-4">
-            {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
-            <div>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
-                <span className="text-xs text-gray-500">{S.benchmark.caseCount(bm.caseCount)}</span>
-              </div>
-              {bm.description && (
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
-              )}
-            </div>
-
-            <CasesSection cases={caseStatements} error={caseError} onOpenCase={setOpenCaseId} />
-
-            {evaluations.length === 0 ? (
-              <EmptyState title={S.benchmark.noEvaluations} />
-            ) : (
-              <>
-                <TrendSection evaluations={evaluations} />
-
-                <div>
-                  <p className="mb-1 text-xs font-semibold text-gray-500">
-                    {S.benchmark.evaluations}
-                  </p>
-                  <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <table className="w-full min-w-[720px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                          <th className="px-3 py-2.5">{S.common.time}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
-                          <th className="px-3 py-2.5">{S.common.cost}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...evaluations].reverse().map((ev, i) => (
-                          <EvaluationRow
-                            key={i}
-                            evaluation={ev}
-                            caseTitles={caseTitles}
-                            onOpenCase={setOpenCaseId}
-                            currency={currency}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-            {openCase && (
-              <Modal
-                open
-                title={openCase.title}
-                widthClass="sm:max-w-6xl"
-                onClose={() => setOpenCaseId(null)}
-              >
-                <BenchmarkCaseBrowser
-                  projectId={projectId}
-                  agentId={selection.agentId}
-                  benchmarkId={bm.id}
-                  caseSummary={openCase}
+    <>
+      <PageFrame width="lg">
+        {/* The title row and the step cards are one header, so the gap below it stays one gap —
+            the Agents and Models headers have the same shape. Search, then Import benchmark and
+            the two create entry points: below sm the search box takes a line of its own and the
+            buttons wrap under it, since the controls sharing a phone's width would leave the box
+            too narrow to read what was typed into it. */}
+        <PageHeader
+          title={S.benchmark.title}
+          actions={
+            <>
+              <div className="w-full min-w-0 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  aria-label={S.benchmark.searchPlaceholder}
+                  placeholder={S.benchmark.searchPlaceholder}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
                 />
-              </Modal>
-            )}
+              </div>
+              <BenchmarkCreateButtons
+                isOwner={isOwner}
+                onAi={openAi}
+                onManual={() => setManualOpen(true)}
+                onImport={() => setImportOpen(true)}
+              />
+            </>
+          }
+        >
+          <GuideSteps isOwner={isOwner} />
+        </PageHeader>
+
+        {/* What the address is filtering by, and the way out of it: the list is narrowed by a
+            query parameter, which nothing else on the page would otherwise account for. */}
+        {filterAgentId !== null && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <AgentAvatar
+              id={filterAgentId}
+              name={nameOf(filterAgentId)}
+              size={ICON_SIZE.rowLead}
+              className="shrink-0 rounded"
+            />
+            <span
+              className="min-w-0 truncate"
+              data-tooltip={nameOf(filterAgentId)}
+              data-tooltip-content="text"
+            >
+              {S.benchmark.filterByAgent(filterAgentId)}
+            </span>
+            <Button size="sm" variant="ghost" onClick={clearAgentFilter}>
+              {S.benchmark.clearFilter}
+            </Button>
           </div>
-        ) : (
-          <EmptyState title={S.benchmark.selectBenchmark} />
         )}
-      </section>
-    </div>
+
+        {body}
+      </PageFrame>
+
+      <AiCreateModal
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        title={S.benchmark.aiCreateTitle}
+        description={S.benchmark.aiCreateDescription}
+        agents={agents}
+        examples={benchmarkCreateExamples()}
+        // The Skills the design conversation rests on, preselected in the composer so the
+        // `[use_skills]` block names them on send: the designer's own, and the evaluator it has
+        // to delegate every trial evaluation to. An agent that lacks one keeps its list short.
+        skills={BENCHMARK_DESIGN_SKILLS}
+        {...(aiTarget !== "" ? { tail: benchmarkCreateTail(aiTarget) } : {})}
+        intro={
+          <Select
+            size="sm"
+            label={S.benchmark.targetAgent}
+            hint={S.benchmark.targetAgentHint}
+            value={aiTarget}
+            onChange={(e) => setAiTarget(e.target.value)}
+          >
+            {agents.map((a) => (
+              <option key={a.agentId} value={a.agentId}>
+                {agentDisplayName(a)}
+              </option>
+            ))}
+          </Select>
+        }
+      />
+      <CreateBenchmarkModal
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        projectId={projectId}
+        onCreated={(benchmark) => open(benchmark.id)}
+      />
+      {importOpen && (
+        <ImportBenchmarkModal
+          projectId={projectId}
+          agents={agents}
+          onClose={() => setImportOpen(false)}
+          // The list is read again whole: an overwrite replaced a card, and machines merge in.
+          onImported={() => {
+            setImportOpen(false);
+            setReload((n) => n + 1);
+          }}
+        />
+      )}
+      {usingBenchmark && (
+        <UseBenchmarkModal
+          key={usingBenchmark.id}
+          open
+          onClose={() => setUsing(null)}
+          projectId={projectId}
+          benchmark={usingBenchmark}
+          agents={agents}
+          models={models}
+          initialTab="evaluate"
+        />
+      )}
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.benchmark.deleteBenchmark}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => void confirmDelete()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
+        busy={deleteBusy}
+      >
+        <p className="text-sm text-gray-700 dark:text-gray-200">
+          {S.benchmark.deleteConfirm(deletingBenchmark?.title ?? deleting ?? "")}
+        </p>
+      </ConfirmModal>
+    </>
   );
 }

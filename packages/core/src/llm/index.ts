@@ -9,12 +9,12 @@ export {
   GenerativeModel,
   EventTranslator,
   groupHistoryToUniMessages,
-  mergeOmniToUniMessage,
+  mergeRecordsToUniMessage,
   translateEvents,
   usageToTokenCounts,
-  isMalformedJsonParseError,
-  isIncompleteStreamError,
+  isUnusableResponseError,
   isFatalProviderRejection,
+  isRateLimitError,
   isAuthenticationError,
   isFastModeUnsupportedError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
@@ -22,11 +22,14 @@ export {
   toolDefinitionsToSchemas,
   buildUniConfig,
 } from "./generative-model.js";
+export { APP_URL, attributionHeaders } from "./app-attribution.js";
 export { listEndpointModels } from "./list-models.js";
+export { ModelCredentialError } from "./model-client.js";
 export type { ListEndpointModelsOptions } from "./list-models.js";
 export { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 export {
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_CONTEXT_LENGTH,
   OUTPUT_SAFETY_MARGIN,
   MIN_OUTPUT_TOKENS,
   COMPACTION_HEADROOM,

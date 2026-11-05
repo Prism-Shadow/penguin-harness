@@ -4,8 +4,9 @@
  * `install-server.ts` resolves them beside the module
  * that spawns it — `opts.assets?.() ?? path.dirname(import.meta.url)`. That is dist/ for a
  * packaged install and the published assets directory for a hot-pushed bundle, so the same
- * set has to be produced by two different builds: packages/server/tsup.config.ts copies them
- * into dist/, scripts/deploy.mjs pushes them as assets.
+ * set has to be produced by three different builds: packages/server/tsup.config.ts copies them
+ * into dist/, packages/desktop/scripts/build-assets.mjs into the desktop app's dist/ (beside
+ * the one-file server bundle it forks), and scripts/deploy.mjs pushes them as assets.
  *
  * Written once here because it was written twice before, and the copies drifted: the push
  * shipped the two installers and neither applier, leaving a hot-pushed server that could not

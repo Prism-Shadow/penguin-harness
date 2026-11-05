@@ -14,6 +14,8 @@
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
+#   --no-modify-path          do not put `penguin` on PATH (no ~/.local/bin/penguin symlink); for a second
+#                              installation beside the one the command belongs to
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
 # installer bundle holding this script, the program payload (payload.tar.gz) and the payload's
@@ -37,6 +39,7 @@ GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
+MODIFY_PATH=1
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
@@ -117,6 +120,10 @@ while [ $# -gt 0 ]; do
       ;;
     --universal)
       UNIVERSAL=1
+      shift
+      ;;
+    --no-modify-path)
+      MODIFY_PATH=0
       shift
       ;;
     --archive)
@@ -757,14 +764,21 @@ OLD_DIR=""
 rm -rf "$STAGING"
 STAGING=""
 
-# --- Symlink into ~/.local/bin and check PATH only after the install is known to work. ---
-mkdir -p "$BIN_DIR"
-ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
+# --- Symlink into ~/.local/bin and check PATH only after the install is known to work.
+#     --no-modify-path skips both: ~/.local/bin/penguin is one name, and a second
+#     installation that took it would hand its program to whoever types `penguin`. ---
 PATH_MISSING=0
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) PATH_MISSING=1 ;;
-esac
+PENGUIN_COMMAND="penguin"
+if [ "$MODIFY_PATH" -eq 1 ]; then
+  mkdir -p "$BIN_DIR"
+  ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) PATH_MISSING=1 ;;
+  esac
+else
+  PENGUIN_COMMAND="$INSTALL_DIR/bin/penguin"
+fi
 
 echo ""
 echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
@@ -780,6 +794,6 @@ if [ "$PATH_MISSING" -eq 1 ]; then
 fi
 echo ""
 echo "Get started:"
-echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
-echo "  penguin server    # headless server (PORT / HOST to override)"
+echo "  $PENGUIN_COMMAND --help    # all commands"
+echo "  $PENGUIN_COMMAND web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
+echo "  $PENGUIN_COMMAND server    # headless server (PORT / HOST to override)"

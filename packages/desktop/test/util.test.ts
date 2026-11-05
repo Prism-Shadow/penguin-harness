@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_WINDOW_OPTIONS,
   appOriginFor,
+  childGoneLine,
+  classifyWindowOpen,
   desktopLoginUrl,
+  hidesOnClose,
   isAppUrl,
+  isExternalScheme,
   isLocalSurfaceUrl,
   parsePortFile,
+  rendererGoneLine,
+  rendererReloadDelayMs,
   restartDelayMs,
+  urlForLog,
 } from "../src/util.js";
 
 describe("parsePortFile", () => {
@@ -60,8 +68,222 @@ describe("isLocalSurfaceUrl", () => {
   });
 });
 
+describe("classifyWindowOpen", () => {
+  const origin = "http://localhost:7364";
+
+  it("gives the Workspace preview hand-off a window of the app", () => {
+    // It mints the preview token with the session cookie, so the system browser would get a 401.
+    expect(
+      classifyWindowOpen(
+        "http://localhost:7364/api/sessions/s-1/files/preview-redirect?path=out%2Fpelican-bike.html",
+        origin,
+      ),
+    ).toBe("window");
+  });
+
+  it("gives a page on the preview host a window of the app", () => {
+    expect(
+      classifyWindowOpen("http://127.0.0.1:7364/preview/tok.sig/out/pelican-bike.html", origin),
+    ).toBe("window");
+  });
+
+  it("gives a detached terminal a window of the app", () => {
+    // The opener keeps the returned window to put the tab back when it closes.
+    expect(classifyWindowOpen("http://localhost:7364/terminal?id=t-1", origin)).toBe("window");
+  });
+
+  it("refuses a relative chat link resolved onto an SPA route", () => {
+    // The reported reply's [pelican-bike.html](pelican-bike.html), as the chat page resolves it:
+    // a window here was a second copy of the App, one more per click.
+    expect(classifyWindowOpen("http://localhost:7364/chat/pelican-bike.html", origin)).toBe("deny");
+    expect(classifyWindowOpen("http://localhost:7364/", origin)).toBe("deny");
+    expect(classifyWindowOpen("http://localhost:7364/chat/s-1#user-content-fn-1", origin)).toBe(
+      "deny",
+    );
+  });
+
+  it("refuses near misses of the allowed shapes", () => {
+    for (const url of [
+      // Other API routes, and the hand-off's path with a segment added or taken away.
+      "http://localhost:7364/api/sessions/s-1/files/content?path=a.html",
+      "http://localhost:7364/api/sessions/s-1/files/preview-redirect/extra",
+      "http://localhost:7364/api/sessions/files/preview-redirect",
+      // Dot segments resolve before the path is matched.
+      "http://localhost:7364/api/sessions/s-1/files/preview-redirect/../../../../chat",
+      "http://localhost:7364/terminal/other",
+      // A preview path on the app host, and a non-preview path on the preview host: the
+      // preview host 302s that back to the App.
+      "http://localhost:7364/preview/tok/x.html",
+      "http://127.0.0.1:7364/chat/pelican-bike.html",
+      "http://127.0.0.1:7364/terminal?id=t-1",
+      // The IPv6 loopback on the same port is this instance too, but serves no preview.
+      "http://[::1]:7364/preview/tok/x.html",
+    ]) {
+      expect(classifyWindowOpen(url, origin), url).toBe("deny");
+    }
+  });
+
+  it("sends other sites and other local ports to the system browser", () => {
+    expect(classifyWindowOpen("https://example.com/docs", origin)).toBe("external");
+    expect(classifyWindowOpen("mailto:someone@example.com", origin)).toBe("external");
+    // A dev server a conversation started lives on its own port.
+    expect(classifyWindowOpen("http://localhost:3000/", origin)).toBe("external");
+    expect(classifyWindowOpen("http://127.0.0.1:3000/preview/x", origin)).toBe("external");
+    // Another scheme on the same port is not this instance either.
+    expect(classifyWindowOpen("https://localhost:7364/chat", origin)).toBe("external");
+  });
+
+  it("never hands a non-web scheme or junk to the system", () => {
+    for (const url of [
+      "file:///C:/Windows/System32/calc.exe",
+      "javascript:alert(1)",
+      "vscode://file/home/user/a.ts",
+      "not a url",
+    ]) {
+      expect(classifyWindowOpen(url, origin), url).toBe("deny");
+    }
+  });
+
+  it("with no origin yet, a non-web scheme is still refused", () => {
+    expect(classifyWindowOpen("file:///etc/passwd", null)).toBe("deny");
+  });
+
+  it("refuses a blank window from every window, the main window included", () => {
+    // `window.open()` with no URL, from HTML previewed in the main window's Files panel: its
+    // iframe allows popups, and the handler cannot tell that frame from the App. A blank window
+    // inherits the opener's origin, so an allowed one would be a hidden window the preview could
+    // script for as long as it liked. This classification is the whole rule for the main window
+    // too (main-window-open.test.ts pins that it has no exception of its own); the Penguin Go
+    // authorization URL comes here as a regular external request instead.
+    for (const url of ["about:blank", "about:blank#other", "about:srcdoc"]) {
+      expect(classifyWindowOpen(url, origin), url).toBe("deny");
+    }
+    expect(classifyWindowOpen("https://platform.example/authorize?flow=f-1", origin)).toBe(
+      "external",
+    );
+  });
+});
+
+describe("APP_WINDOW_OPTIONS", () => {
+  it("pins every feature a page could use to hide the window it is allowed to open", () => {
+    // Electron spreads the page's `window.open` feature string under the override, so a key
+    // absent here is one the page decides: `show=no,skipTaskbar=yes` on a /preview/ URL was a
+    // hidden, same-origin window — the blank-window gap by another route.
+    expect(APP_WINDOW_OPTIONS).toMatchObject({
+      show: true,
+      skipTaskbar: false,
+      opacity: 1,
+      transparent: false,
+      focusable: true,
+      hiddenInMissionControl: false,
+      enableLargerThanScreen: false,
+    });
+  });
+
+  it("restates the size limits, so a page cannot shrink the window to a point", () => {
+    // `maxWidth=1,maxHeight=1` would otherwise clamp the 1100×800 the override asks for.
+    expect(APP_WINDOW_OPTIONS.minWidth).toBeGreaterThan(0);
+    expect(APP_WINDOW_OPTIONS.minHeight).toBeGreaterThan(0);
+    expect(APP_WINDOW_OPTIONS.width).toBeGreaterThanOrEqual(APP_WINDOW_OPTIONS.minWidth);
+    expect(APP_WINDOW_OPTIONS.height).toBeGreaterThanOrEqual(APP_WINDOW_OPTIONS.minHeight);
+    // 0 is Electron's "no maximum" — the default a page's feature would have replaced.
+    expect(APP_WINDOW_OPTIONS.maxWidth).toBe(0);
+    expect(APP_WINDOW_OPTIONS.maxHeight).toBe(0);
+  });
+});
+
+describe("isExternalScheme", () => {
+  it("accepts web pages and mail links only", () => {
+    expect(isExternalScheme("https://example.com")).toBe(true);
+    expect(isExternalScheme("http://localhost:3000/")).toBe(true);
+    expect(isExternalScheme("mailto:someone@example.com")).toBe(true);
+    expect(isExternalScheme("file:///etc/passwd")).toBe(false);
+    expect(isExternalScheme("ms-settings:privacy")).toBe(false);
+    expect(isExternalScheme("data:text/html,<p>x</p>")).toBe(false);
+    expect(isExternalScheme("/relative")).toBe(false);
+  });
+});
+
+describe("urlForLog", () => {
+  it("keeps origin and path, and drops what can carry a token", () => {
+    expect(urlForLog("http://localhost:7364/api/auth/claim?token=secret#frag")).toBe(
+      "http://localhost:7364/api/auth/claim",
+    );
+    expect(urlForLog("file:///home/user/secret.txt")).toBe("a file: URL");
+    expect(urlForLog("not a url")).toBe("an unparsable URL");
+  });
+});
+
 describe("restartDelayMs", () => {
   it("doubles from 1s and caps at 8s", () => {
     expect([0, 1, 2, 3, 4].map(restartDelayMs)).toEqual([1000, 2000, 4000, 8000, 8000]);
+  });
+});
+
+describe("rendererReloadDelayMs", () => {
+  it("reloads at once the first time, then backs off to a 30s ceiling", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(rendererReloadDelayMs)).toEqual([
+      0, 1000, 2000, 4000, 8000, 16000, 30000, 30000,
+    ]);
+  });
+});
+
+describe("process-gone log lines", () => {
+  it("names the page by origin and path, never its query, with the reason and exit code", () => {
+    expect(
+      rendererGoneLine({
+        type: "webview",
+        id: 12,
+        url: "https://www.amazon.com/your-orders/orders?token=secret",
+        reason: "oom",
+        exitCode: -536870904,
+      }),
+    ).toBe(
+      "a renderer is gone: webview 12 https://www.amazon.com/your-orders/orders (oom, exit code -536870904)",
+    );
+    expect(
+      rendererGoneLine({ type: "window", id: 1, url: "", reason: "crashed", exitCode: 11 }),
+    ).toBe("a renderer is gone: window 1 (crashed, exit code 11)");
+  });
+
+  it("names a child process by its type and service", () => {
+    expect(childGoneLine({ type: "GPU", reason: "crashed", exitCode: 139 })).toBe(
+      "a child process is gone: GPU (crashed, exit code 139)",
+    );
+    expect(
+      childGoneLine({
+        type: "Utility",
+        reason: "oom",
+        exitCode: 9,
+        serviceName: "penguin-server",
+        name: "penguin-server",
+      }),
+    ).toBe("a child process is gone: Utility penguin-server (oom, exit code 9)");
+  });
+});
+
+describe("hidesOnClose", () => {
+  const state = (over: Partial<Parameters<typeof hidesOnClose>[0]> = {}) => ({
+    quitting: false,
+    trayShown: true,
+    closeToTray: true,
+    ...over,
+  });
+
+  it("hides the window only while a tray icon can bring it back", () => {
+    expect(hidesOnClose(state())).toBe(true);
+    expect(hidesOnClose(state({ closeToTray: false }))).toBe(false);
+  });
+
+  it("lets the close through when there is no tray icon", () => {
+    // The Appearance switch turned it off, or the platform could not host one. A hidden
+    // window with nothing to restore it is a running app the user cannot reach: the close
+    // has to proceed instead, leaving the app in the Dock on macOS and quitting elsewhere.
+    expect(hidesOnClose(state({ trayShown: false }))).toBe(false);
+    expect(hidesOnClose(state({ trayShown: false, closeToTray: false }))).toBe(false);
+  });
+
+  it("never intercepts the close a quit runs", () => {
+    expect(hidesOnClose(state({ quitting: true }))).toBe(false);
   });
 });

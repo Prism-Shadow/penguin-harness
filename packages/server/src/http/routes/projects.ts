@@ -15,9 +15,21 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Desktop } from "../../hmr/capabilities.js";
+import type { DesktopService } from "../../services/desktop-service.js";
+import { membersRoutes } from "./members.js";
+import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { Machines } from "../../machines/service.js";
 
-export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface ProjectsRouteDeps {
+  projectService: ProjectLifecycle;
+  /** The machines this Project uses carry its name too (machines/service.ts). */
+  machines: Pick<Machines, "syncConfigEverywhere">;
+}
+
+export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
@@ -43,6 +55,8 @@ export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
     const name = requireString(body, "name", { maxLen: 100, label: "name" }).trim();
     if (name === "") throw badRequest("name must be at least 1 characters.");
     const project = await deps.projectService.renameProject(c.var.user.userId, projectId, name);
+    // Not awaited: the person renaming is not the one who should wait for a set of ssh tunnels.
+    void deps.machines.syncConfigEverywhere(projectId);
     return c.json({ project } satisfies ProjectUpdateResponse);
   });
 
@@ -53,4 +67,40 @@ export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "project-admin.projects",
+        prefix: "/api/projects",
+        auth: "user",
+        order: 80,
+      },
+      {
+        id: "project-admin.members",
+        prefix: "/api/projects/:projectId/members",
+        auth: "user",
+        order: 90,
+      },
+    ],
+  },
+})
+export class ProjectAdminRoutes {
+  @Use() private readonly projectService!: ProjectLifecycle;
+  @Use() private readonly desktop!: Desktop;
+  @Use() private readonly machines!: Machines;
+  @Bind("project-admin.projects") projectsRoutes!: Hono<AppEnv>;
+  @Bind("project-admin.members") membersRoutes!: Hono<AppEnv>;
+  setup() {
+    this.projectsRoutes = projectsRoutes({
+      projectService: this.projectService,
+      machines: this.machines,
+    });
+    this.membersRoutes = membersRoutes({
+      projectService: this.projectService,
+      desktop: this.desktop.current() as DesktopService | null,
+    });
+  }
 }

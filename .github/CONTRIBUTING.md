@@ -28,7 +28,7 @@ pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
 pnpm desktop     # desktop app from source (builds everything first, then Electron)
 
-BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
+BASE_PATH=/ pnpm build:site   # assemble landing + docs + gallery exactly like the Pages deploy
 ```
 
 Every dev command runs `scripts/dev-prebuild.mjs` first, which (behind a lock that
@@ -59,6 +59,18 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
+Plugins are the exception to the snapshot rule: in a workspace checkout core's loader reads
+the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
+no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
+skill, a changed SKILL.md, a changed `package.json` — is live in `pnpm dev` and in the test
+suites at once. A plugin's own version is its npm version (`package.json`, bumped by the
+release); the date versions (`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent.
+Any change under `skills/<name>/` must raise that skill's `version` in its SKILL.md
+frontmatter, and any change to the hook scripts or the `penguin.hooks` commands must raise
+`penguin.hooks.version` in `package.json`: those versions are how installed copies learn they are
+behind, and CI fails a pull request that changed a part without raising it
+(`scripts/check-plugin-versions.mjs`).
+
 Dev entry points that touch data default to separate data roots, kept apart from the
 installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
 your real agents. `pnpm dev`, `pnpm dev:server` and `pnpm desktop` share
@@ -80,8 +92,22 @@ step further: an unpackaged run takes a dev-suffixed app identity (`PenguinHarne
 with its own userData directory, single-instance lock, and sticky port, and defaults to
 `~/.penguin/dev-data` even when launched without the env var
 (`pnpm --dir packages/desktop start`) — so it runs side by side with an installed release
-build, with neither instance seeing the other. Every unpackaged launch prints which pair
+build, with neither instance seeing the other. Every dev-profile launch prints which pair
 it picked: `[shell] dev instance '<name>' on data root <root>`.
+
+That dev profile is a switch, not a property of being unpackaged: an installed release
+build launched with `--dev` (a second shortcut whose target ends in `--dev`, or
+`PenguinHarness.exe --dev`) takes the same dev identity and `~/.penguin/dev-data`, so one
+installation runs twice side by side — the release instance on your real data and a
+second one on a scratch root — without a checkout. It runs the release's own code, so it
+is a way to try the app against separate data, not a way to see uncommitted changes. A
+`--dev` instance does not update itself and does not repair the `penguin` command link;
+both belong to the one installation the two instances share, and the release instance
+does them. The profile also reaches other machines: the shell passes it to its server as
+`PENGUIN_PROFILE`, and the Machines page then works with the machine's installation for
+that profile — `~/.penguin-dev` on port 7371 for dev, beside the release one — so a dev
+instance never touches the release server someone is using there
+(`packages/server/src/machines/layout.ts`).
 
 Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
 to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,
@@ -99,17 +125,19 @@ Copy `.env.example` to `.env` for model credentials in development.
 ## Repo layout
 
 A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a
-single data directory (`~/.penguin/data`) and a single message protocol (OmniMessage):
+single data directory (`~/.penguin/data`) and a single message format (AMSP records):
 
 | Package                                   | Name                          | Role                                                                                                    |
 | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
+| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, LLM/Environment interface contracts, Agent State, Trace                       |
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
+| [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP records (their types, guards, builders and markers, which core re-exports), the Agent API's wire types, and a zero-dependency client for Node and browsers |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
-| [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries); the loader lives in `packages/core` |
+| [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each (`plugins/<name>` is `@penguinharness/<name>`): Agent plugins — skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) — which `packages/core` depends on and loads; and server plugins a Project asks for on the Plugins page (its `[plugins]` table), such as the sandbox backends |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| [`packages/browser-extension`](../packages/browser-extension) | — | PenguinHarness Browser: the Chrome extension through which the server drives the tabs a user hands it (released as a zip) |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime
@@ -119,7 +147,28 @@ is in [Architecture → Division of responsibilities](https://penguin.ooo/docs/a
 
 ## Quality gates
 
-CI runs all of these on every PR — run them locally before pushing:
+PRs and pushes to `main` use pnpm's dependency graph to select changed packages and
+their downstream consumers. CI builds their dependencies, then runs typechecks and tests.
+Browser and site suites run on Linux; affected native runtime packages also run on macOS
+and Windows. Changes to shared build scripts, the lockfile or unclassified inputs select
+the whole workspace. The plan job lists the selection and its reason.
+
+Core, server and web tests collect branch and line coverage during their Linux run; each
+shard uploads LCOV and JSON summaries. There is no arbitrary coverage threshold. Add
+behavioral regression tests for changed branches, including failures and forbidden side effects.
+
+The browser smoke suite runs against the real server and a local mock LLM on app changes,
+including fork PRs. It checks authentication, approval before command execution, reload
+recovery and follow-up messages. Packaging checks retain stamped version/plugin-index,
+installer and bundled-CLI regressions. Unpacked Electron artifacts are uploaded only on
+manual CI runs.
+
+New releases run the complete three-platform CI workflow against the release ref before
+any publishing job starts. Existing immutable releases can still retry their publishers
+and mirrors. A manual CI run defaults to full validation. Keep the aggregate `ci` job
+required in branch protection: it rejects failed, missing and unexpectedly skipped jobs.
+
+Use the package's narrow checks while developing; these commands run the complete local suites:
 
 ```bash
 pnpm format:check   # prettier
@@ -138,6 +187,7 @@ End-to-end suites (optional locally, slower):
 ```bash
 npx playwright install chromium                      # once
 pnpm --filter @prismshadow/penguin-web test:e2e      # browser e2e against a mock LLM
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs  # what CI runs
 pnpm test:e2e                                        # core live-model e2e, needs DEEPSEEK_API_KEY
 ```
 
@@ -161,20 +211,30 @@ pnpm test:e2e                                        # core live-model e2e, need
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
 - **The official image is built from source**, by `.github/workflows/docker.yml`, and
-  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
-  push to `main` publishes that commit as `latest` and as `main-<sha7>`; the release
-  workflow's `docker` job builds the tag's own source and publishes `X.Y.Z`, `X.Y` and —
-  while the tag is the current latest Release — `stable`. A PR touching the `Dockerfile`,
+  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. A push
+  to `main` that changes the image's runtime or build inputs publishes that commit as
+  `latest`, the only tag a push moves. Docs, site and desktop-only source changes leave
+  the image unchanged. The release workflow's `docker` job builds the tag's own source
+  and publishes the exact version `X.Y.Z`. A PR touching the `Dockerfile`, `.dockerignore`,
   `docker/` or that workflow runs the same file as an amd64 smoke build. The push
   needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
   Docker Hub access token with read/write scope on that repository — and the Docker Hub
   repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
-  `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
+  `changelog/unreleased/` also bumps the root and every workspace `package.json`
+  (`packages/*` and `plugins/*`)
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
   version. The release workflow refuses a tag push whose version does not match the
   repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a
   0.2.0 repo, and every dev build nagged about an update until the repo caught up).
+- **The release branch proves its installers before the tag.** Name the branch
+  `release/<version>`: every push to a `release/**` branch runs `desktop-build.yml` with macOS
+  and Windows signing required, the same call the release workflow makes, and CI never
+  exercises signing. Wait for that run on the branch's final commit before merging and
+  tagging; a tag is never moved, so a failure found after it costs a version (0.2.10 was
+  tagged on a green CI, lost its macOS installers to a runner-image change, and shipped again
+  as 0.2.11). To re-check outside a release branch:
+  `gh workflow run desktop-build.yml --ref <branch> -f require_macos_signing=true -f require_windows_signing=true`.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright
@@ -192,6 +252,67 @@ in plain text, and an issue is public and permanent.
 
 Questions and usage help belong on [Discord](https://discord.gg/eFHKqqcU3D) or in the
 WeChat group, not in the issue tracker.
+
+## Design RFCs
+
+Design documents (RFCs) for PenguinHarness live in the [`rfcs/`](../rfcs/) directory. Each RFC
+describes a design decision, architectural choice, or major feature proposal, and can be developed
+and reviewed independently from implementation PRs.
+
+### When to write an RFC
+
+Write an RFC when your proposal affects:
+
+- Core concepts or architecture (message protocol, plugin model, session lifecycle)
+- Major product behavior or user-facing changes
+- Integration of new subsystems or external dependencies
+- Significant changes to existing design decisions
+
+For smaller tasks (bug fixes, minor refactors, performance optimizations), an RFC is not needed.
+
+### RFC workflow
+
+1. **Create an RFC document** using the template at [`rfcs/TEMPLATE.md`](../rfcs/TEMPLATE.md).
+   Choose the next available RFC number (listed in [`rfcs/README.md`](../rfcs/README.md)) and name
+   your file `PRFC-NNNN-your-slug.md`. Every RFC is a pair: the English document and its Chinese
+   counterpart `PRFC-NNNN-your-slug.zh.md`, carrying the same sections, each linking the other at
+   the top.
+
+2. **Submit an RFC PR** to this repository, adding your document under `rfcs/`. The RFC is
+   reviewed before any implementation begins — design and code reviews are separate.
+
+3. **Implementation PRs reference the RFC** — mention the RFC number in your implementation PR title
+   or body so readers can find the design behind the code. RFC and implementation merge independently:
+   an RFC can be approved while implementation is still in draft, or vice versa.
+
+4. **Modify an approved RFC carefully**: once an RFC lands, changes should be rare. If you must update
+   it, raise the version number (e.g., `v1.0.0` → `v2.0.0`) and document the change in a `## Changes`
+   section at the end of the file. See the template for the format.
+
+### RFC format and required sections
+
+Every RFC must include:
+
+- **Summary** — one-paragraph overview of the proposal
+- **Motivation** — why this is needed, what problems it solves
+- **Guide-level explanation** — how to think about this feature (not implementation details yet)
+- **Reference-level explanation** — technical design, interactions with other systems
+- **Drawbacks** — what could go wrong, what we give up
+- **Rationale and alternatives** — why this design, what else was considered
+- **Unresolved questions** — what will be decided during implementation or after merging
+
+See [`rfcs/TEMPLATE.md`](../rfcs/TEMPLATE.md) for a complete example and filling guide.
+
+### Continuous integration for RFCs
+
+Pull requests that modify `rfcs/` are checked for:
+
+- Proper file naming (`PRFC-NNNN-slug.md`)
+- Consecutive numbering and no unexpected duplicates
+- Presence of required sections (Summary, Motivation, etc.)
+- For existing RFCs: version bump and `## Changes` section when content is modified
+
+If any check fails, CI will report the error and suggest corrections.
 
 ## Pull requests
 

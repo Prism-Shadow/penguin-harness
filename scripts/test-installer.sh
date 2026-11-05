@@ -168,6 +168,22 @@ grep -Fq "export const BUILD_COMMIT: string | null = \"$STAMP_SHA\";" \
   "$STAMP_NEW_DIR/packages/core/src/index.ts" \
   || fail_test "release workflow did not stamp core's BUILD_COMMIT"
 
+# Given a manual run dispatched from a different branch, the checked-out tag's
+# commit must be stamped even when GitHub supplies the dispatch branch's SHA.
+(
+  cd "$STAMP_NEW_DIR"
+  git init -q
+  git add .
+  git -c user.name='Installer test' -c user.email='installer@example.invalid' \
+    -c core.hooksPath=/dev/null commit -qm fixture --no-gpg-sign
+  git rev-parse HEAD > "$WORK_DIR/checkout-sha"
+  TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" sh -e "$STAMP_SCRIPT"
+)
+CHECKOUT_SHA="$(cat "$WORK_DIR/checkout-sha")"
+grep -Fq "export const BUILD_COMMIT: string | null = \"$CHECKOUT_SHA\";" \
+  "$STAMP_NEW_DIR/packages/core/src/index.ts" \
+  || fail_test "manual release stamped the dispatch branch instead of the checked-out tag"
+
 # Without GITHUB_SHA (a replay outside Actions) the commit stays null and the rest still stamps.
 STAMP_NOSHA_DIR="$WORK_DIR/stamp-no-sha"
 make_stamp_case "$STAMP_NOSHA_DIR"
@@ -296,6 +312,24 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" 
   || fail_test "offline install from the extracted bundle failed"
 [ "$("$OFFLINE_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "offline install did not produce a working command"
+
+# A second installation beside the first leaves `penguin` with the first: with
+# --no-modify-path the ~/.local/bin symlink is not repointed.
+SECOND_INSTALL="$WORK_DIR/offline-second-install"
+HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$SECOND_INSTALL" PATH="$STUB_BIN:$PATH" \
+  sh "$OFFLINE_DIR/install.sh" --no-modify-path >/dev/null \
+  || fail_test "second install with --no-modify-path failed"
+[ "$("$SECOND_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
+  || fail_test "second install did not produce a working command"
+[ "$(readlink "$TEST_HOME/.local/bin/penguin")" = "$OFFLINE_INSTALL/bin/penguin" ] \
+  || fail_test "--no-modify-path repointed the penguin symlink at the second installation"
+# The same flag arrives through `sh -s --`, which is how a machine install passes it.
+THIRD_INSTALL="$WORK_DIR/offline-third-install"
+HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$THIRD_INSTALL" PENGUIN_ARCHIVE="$ARTIFACT_DIR/$HOST_ASSET" \
+  PATH="$STUB_BIN:$PATH" sh -s -- --no-modify-path < "$OFFLINE_DIR/install.sh" >/dev/null \
+  || fail_test "install over stdin with --no-modify-path failed"
+[ "$(readlink "$TEST_HOME/.local/bin/penguin")" = "$OFFLINE_INSTALL/bin/penguin" ] \
+  || fail_test "--no-modify-path over stdin repointed the penguin symlink"
 
 # The stamped installer inside a released bundle must still prefer its sibling payload and
 # never resolve metadata or download an online asset.

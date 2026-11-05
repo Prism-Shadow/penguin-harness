@@ -8,7 +8,8 @@ export * from "./default-config.js";
 export * from "./kernel-history.js";
 export * from "./kernel-update.js";
 export * from "./builtin-agents.js";
-export * from "./model-catalog.js";
+// A row's effective connection and credential: the Project config's rules, no catalog data.
+export * from "./model-connection.js";
 // Seeded command-policy rules + the single "absent = factory set" fallback (the server
 // serves both; the matcher that reads them is core-internal).
 export * from "./command-policy-defaults.js";
@@ -16,4 +17,10 @@ export * from "./project-config.js";
 export * from "./agent-state.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";
+export * from "./benchmark-manifest.js";
 export * from "./example-benchmark.js";
+export * from "./builtin-benchmarks.js";
+export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
+export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";
+
+export * from "./plugin-workbenches.js";

@@ -12,16 +12,19 @@
 #   Artifacts (one shape per target, serving online and offline installs alike):
 #   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
 #   their .sha256 files, SHA256SUMS, install.sh, install.ps1, probe-64k.bin, probe-1m.bin,
-#   release-download-manifest.tsv, and the desktop installers plus updater metadata/blockmaps;
-#   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
+#   release-download-manifest.tsv, the desktop installers plus updater metadata/blockmaps, and the
+#   Chrome extension as penguin-browser-extension-<version>.zip plus a version-less copy (GitHub
+#   only: neither the download manifest nor the OSS mirror lists it); one version per tag,
+#   multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
-# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
-#   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
+# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/amsp
+#   -> @prismshadow/penguin-core -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the
+#   tag version.
 #   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
 #   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
-#   The publish flow mirrors AgentHub's publish.yml: OIDC trusted publishing (environment: npm +
+#   The publish flow mirrors MMSP's publish.yml: OIDC trusted publishing (environment: npm +
 #   id-token: write, no token). A Trusted Publisher can only be configured in the settings page of a
 #   package that ALREADY EXISTS on the registry, so a brand-new package cannot be first-published by
 #   this workflow. Release checklist for a new package: (1) a maintainer bootstrap-publishes it once
@@ -41,7 +44,7 @@
 # - docker: build and push the official image (Docker Hub hiyouga/penguinharness, linux/amd64 +
 #   linux/arm64) from the tag's own source, independently of npm. The build/publish steps live in
 #   docker.yml, which the same PR-time smoke job exercises and which also publishes `latest` from
-#   every push to main; this workflow only decides when the release tags are published.
+#   runtime/build-input changes on main; this workflow decides when release tags are published.
 name: Release
 
 on:
@@ -64,6 +67,21 @@ env:
   MINGIT_TAG: v2.55.0.windows.3
 
 jobs:
+  validate:
+    needs: check-release
+    # Existing immutable releases can retry their mirrors/publishers, including tags
+    # that predate this CI workflow. New releases must pass the complete gate.
+    if: needs.check-release.outputs.exists != 'true'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      full: true
+    secrets:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
   # Skip the build/upload when the tag's Release already exists (immutable releases forbid
   # replacing assets, so re-uploading can only fail; OSS mirroring and npm publishing are idempotent).
   check-release:
@@ -88,7 +106,7 @@ jobs:
   # Release assets are immutable once published, so the installers must exist when the
   # Release is created.
   desktop:
-    needs: check-release
+    needs: [check-release, validate]
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
     with:
@@ -139,7 +157,8 @@ jobs:
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           printf '%s\n' "$TAG" | grep -Eq '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
-          # Guard: release prep must bump the repo to the tag's version (root + packages/*/package.json
+          # Guard: release prep must bump the repo to the tag's version (root + every workspace
+          # package.json — packages/* and plugins/* —
           # and core's VERSION constant move together in the release: X.Y.Z PR). v0.2.1 was tagged with
           # a 0.2.0 repo, so every dev/source build nagged about updates until the repo caught up —
           # fail the tag push instead. Manual dispatch (EVENT_NAME unset in replays) only warns,
@@ -148,7 +167,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -184,21 +203,41 @@ jobs:
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
           sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
           # The commit is what separates two builds of the same version, which BUILD_DATE cannot:
-          # a release and a same-day rebuild share a date. GITHUB_SHA is the checked-out tag's sha
-          # and needs no git, which matters because the checkout is shallow and carries no tags.
-          # Absence is tolerated rather than guarded, on both arms: tags predating this constant
-          # must stay rebuildable, and a replay outside Actions has no GITHUB_SHA to stamp.
+          # a release and a same-day rebuild share a date. On manual dispatch GITHUB_SHA
+          # belongs to the dispatch branch, so read the actual checkout. The env fallback
+          # keeps fixture replays without a Git checkout working.
+          SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null || printf '%s' "${GITHUB_SHA:-}")"
           if ! grep -q 'export const BUILD_COMMIT: string | null = ' packages/core/src/index.ts; then
             echo "Legacy tag without a BUILD_COMMIT constant; leaving the commit unstamped."
-          elif [ -z "${GITHUB_SHA:-}" ]; then
+          elif [ -z "$SOURCE_SHA" ]; then
             echo "GITHUB_SHA is unset; leaving the commit unstamped."
           else
-            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
-            grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
+            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$SOURCE_SHA\"/" packages/core/src/index.ts
+            grep -Fq "export const BUILD_COMMIT: string | null = \"$SOURCE_SHA\"" packages/core/src/index.ts
           fi
 
       - name: Build (tsup + vite)
         run: pnpm build
+
+      # The Chrome extension (PenguinHarness Browser), zipped by its own build above. It ships
+      # under its versioned name and a version-less copy, so the docs and the Web App's pairing
+      # dialog can link to releases/latest/download/penguin-browser-extension.zip, for users who
+      # cannot reach the Chrome Web Store listing and load it unpacked; the manifest's pinned key
+      # keeps the extension id the same across both. Tags from before the extension have no
+      # zip and skip this step, so they stay rebuildable.
+      - name: Collect the Chrome extension
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p extension-artifacts
+          set -- packages/browser-extension/dist/penguin-browser-extension-*.zip
+          if [ ! -f "$1" ]; then
+            echo "No Chrome extension in this tag; nothing to collect."
+            exit 0
+          fi
+          cp "$1" "extension-artifacts/penguin-browser-extension-${TAG#v}.zip"
+          cp "$1" extension-artifacts/penguin-browser-extension.zip
+          unzip -l extension-artifacts/penguin-browser-extension.zip | grep -q ' manifest.json$'
 
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
@@ -206,11 +245,56 @@ jobs:
       # bin/penguin is scripts/launchers/penguin, shipped verbatim — it is the one spelling of
       # the payload layout (lib/dist/penguin.js, web/, an optional node/), and the shape
       # scripts/test-installer.sh pins.
-      - name: Assemble penguin/ (lib + web + bin)
+      # lib/plugins/: the builtin plugins (the sandbox backends among them) as the npm prefix
+      # the desktop app ships too — the server looks one directory above dist/ for it — so an
+      # installed CLI enables this platform's sandbox backend from the Plugins page with no
+      # registry, the same as the desktop app. Shipped, not installed: nothing loads until the
+      # operator adds it. One prefix serves every payload below (native parts per platform).
+      - name: Assemble penguin/ (lib + web + bin + plugins)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
+          rm -f out/penguin/lib/pnpm-workspace.yaml
           cp -r packages/web/dist out/penguin/web
           install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
+          node scripts/build-plugins.mjs --out out/penguin/lib/plugins
+          test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
+
+      # lib/dist/install-image.gz: this release's harness in the hot push's format, packed by the
+      # push's own packer from the stamped sources. An installed server with nothing pushed to it
+      # installs it on machines (packages/server/src/machines/shipped-image.ts): every command it
+      # runs on a machine goes through the CLI it leaves in that machine's store. One copy serves
+      # every payload below — the bundles are JavaScript, and the machine's own release supplies
+      # its native modules first.
+      - name: Pack the install image
+        run: |
+          node scripts/deploy.mjs --out out/penguin/lib/dist/install-image.gz --skip-web-build
+          test -s out/penguin/lib/dist/install-image.gz
+
+      # node-pty compiles its terminal binding when it is installed, for the machine installing
+      # it — this runner, linux-x64 — and publishes prebuilds for darwin and win32 only. So the
+      # lib/ every payload shares had no binding for linux-arm64, and every terminal on an arm64
+      # Linux machine failed with "Failed to load native module: pty.node". Built here once for
+      # arm64 under QEMU into prebuilds/linux-arm64, which node-pty's loader tries after
+      # build/Release, so one lib/ serves both Linux architectures (N-API: one binding for every
+      # Node). Scripts are skipped at install and node-gyp is run by name, against the image's
+      # own headers, so neither npm's script policy nor a header download decides the build.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Build node-pty for linux-arm64
+        run: |
+          pty=out/penguin/lib/node_modules/node-pty
+          version="$(node -p "require('./$pty/package.json').version")"
+          mkdir -p "$pty/prebuilds/linux-arm64"
+          docker run --rm --platform linux/arm64 -v "$PWD/$pty/prebuilds/linux-arm64:/out" \
+            "node:${NODE_RUNTIME_VERSION#v}-bookworm" sh -c "
+              set -e
+              cd /tmp && npm init -y >/dev/null
+              npm install --ignore-scripts --no-audit --no-fund node-pty@$version
+              cd node_modules/node-pty
+              node \"\$(npm prefix -g)/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js\" rebuild --nodedir=/usr/local
+              cp build/Release/pty.node /out/pty.node"
+          file "$pty/prebuilds/linux-arm64/pty.node" | grep -q 'ARM aarch64'
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -416,6 +500,7 @@ jobs:
             desktop-artifacts/latest*.yml
             desktop-artifacts/*.blockmap
             desktop-artifacts/SHA256SUMS.desktop
+            extension-artifacts/*.zip
             install.sh
             install.ps1
 
@@ -423,8 +508,9 @@ jobs:
     name: Mirror GitHub Release to Alibaba Cloud OSS
     needs: [check-release, release]
     if: >-
-      ${{ always() && needs.check-release.result == 'success' &&
-          (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+      ${{ !cancelled() && needs.check-release.result == 'success' &&
+          (needs.release.result == 'success' ||
+           (needs.release.result == 'skipped' && needs.check-release.outputs.exists == 'true')) }}
     runs-on: ubuntu-latest
     concurrency:
       group: penguin-oss-production
@@ -512,9 +598,13 @@ jobs:
         run: sh scripts/publish-release-to-oss.sh release-assets "$TAG" "${{ steps.latest.outputs.update }}"
 
   publish-npm:
+    needs: [check-release, validate]
+    if: >-
+      !cancelled() && needs.check-release.result == 'success' &&
+      (needs.validate.result == 'success' || needs.check-release.outputs.exists == 'true')
     name: Publish npm packages
     runs-on: ubuntu-latest
-    # OIDC trusted publishing (same as AgentHub's publish.yml): no token; npmjs establishes trust via
+    # OIDC trusted publishing (same as MMSP's publish.yml): no token; npmjs establishes trust via
     # environment `npm` + this workflow. A publish failure doesn't affect the release job (independent, parallel).
     permissions:
       id-token: write
@@ -552,65 +642,26 @@ jobs:
       # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
       # workspace:* dep to the dependency's current version, so the versions must match.
       # BUILD_DATE is stamped alongside VERSION with this run's UTC date (the repo keeps null for dev builds).
+      # The npm job's stamping and its test suites live in scripts/release-npm.sh, which CI's npm
+      # packaging job also exercises on packaging changes and full validation.
+      # (The release job's stamp step above stays inline: test-installer.sh
+      # replays that block.)
       - name: Stamp release version
         env:
-          # Same shell-variable indirection as the release job's stamp step (no GitHub
-          # expressions in the body; see scripts/test-installer.sh).
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          V="${TAG#v}"
-          # Same repo-version guard as the release job: both jobs start from a tag push in
-          # parallel, so the check must fail here too or npm would publish from a tag whose
-          # repo version was never bumped. Manual dispatch only warns (legacy-tag retries).
-          if [ -f package.json ]; then
-            PKG_V="$(node -p 'require("./package.json").version')"
-            if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
-              if [ "${EVENT_NAME:-}" = "push" ]; then
-                echo "error: $MSG" >&2
-                exit 1
-              fi
-              echo "warning: $MSG (continuing: manual dispatch)" >&2
-            fi
-          fi
-          grep -q 'export const VERSION = "' packages/core/src/index.ts
-          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
-          D="$(date -u +%Y-%m-%d)"
-          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
-          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
-          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
-          # The commit is what separates two builds of the same version, which BUILD_DATE cannot:
-          # a release and a same-day rebuild share a date. GITHUB_SHA is the checked-out tag's sha
-          # and needs no git, which matters because the checkout is shallow and carries no tags.
-          # Absence is tolerated rather than guarded, on both arms: tags predating this constant
-          # must stay rebuildable, and a replay outside Actions has no GITHUB_SHA to stamp.
-          if ! grep -q 'export const BUILD_COMMIT: string | null = ' packages/core/src/index.ts; then
-            echo "Legacy tag without a BUILD_COMMIT constant; leaving the commit unstamped."
-          elif [ -z "${GITHUB_SHA:-}" ]; then
-            echo "GITHUB_SHA is unset; leaving the commit unstamped."
-          else
-            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
-            grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
-          fi
-          for dir in plugins/*/; do
-            (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
-          done
-          (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
-          (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
-          (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: GITHUB_SHA="$(git rev-parse HEAD)" bash scripts/release-npm.sh stamp "$TAG"
 
-      # Dependency order: cli bundles core's dist (tsup noExternal), server/web need core's types;
-      # web is built here only to be copied into the server package below.
+      # `pnpm -r build` rather than a list of the packages that get published: it builds the whole
+      # workspace in dependency order, so a package added later cannot fall out of a list nobody
+      # remembers to update. That is what broke 0.2.12 -- `packages/hmr` arrived, `penguin-server`
+      # took a dependency on it, and the list still named four packages, each with a bare
+      # `--filter` that builds the package alone and not what it needs. web is built here for the
+      # same reason it always was: it is copied into the server package below.
       - name: Build and test
         run: |
-          pnpm --filter @prismshadow/penguin-core build
-          pnpm --filter @prismshadow/penguin-server build
-          pnpm --filter @prismshadow/penguin-web build
-          pnpm --filter @prismshadow/penguin-cli build
-          pnpm --filter @prismshadow/penguin-core test
-          pnpm --filter @prismshadow/penguin-server test
-          pnpm --filter @prismshadow/penguin-cli test
+          pnpm -r build
+          bash scripts/release-npm.sh test
 
       # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
       # and the built web assets into the server package (web-dist/, in its files allowlist: an npm install
@@ -619,11 +670,21 @@ jobs:
       # rather than its exit code -- for a missing version of an existing package, older npm exits 0 and
       # newer npm exits 1, but the output is non-empty only when the version exists. Re-running the tag
       # after a mid-chain failure (e.g. Trusted Publisher not configured yet) picks up where it left off.
+      # Before anything is published: every name this job will push must already exist on npm, or
+      # be one the run can create. npm's trusted publishing is configured per package, so a name npm
+      # has never seen cannot be published here at all -- and the loop would find that out partway
+      # through, having already published everything alphabetically before it. 0.2.13 lost a run to
+      # exactly that. Fail here instead, naming what needs a first publish by hand.
+      - name: Every package this publishes already exists on npm
+        run: node scripts/check-publishable.mjs --registry --strict
+
       - name: Publish to npm
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
+          cp LICENSE packages/amsp/LICENSE
           cp LICENSE packages/core/LICENSE
+          cp LICENSE packages/ui/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
           for dir in plugins/*/; do
@@ -634,15 +695,29 @@ jobs:
           # The @penguinharness/* plugin packages go first: core declares them as workspace:*
           # deps, rewritten to their versions at publish time, so they must exist first.
           for dir in plugins/*/; do
-            name="@penguinharness/$(basename "$dir")"
+            # Read the name and the private flag out of the manifest rather than assuming them:
+            # a name is not always @penguinharness/<dir>, and not every plugin is published (the
+            # server plugins that were never first-published are private); a private package
+            # queried on npm filters to nothing.
+            # Publishing is driven by what each package says it is.
+            name="$(node -p "require('./$dir/package.json').name")"
+            private="$(node -p "require('./$dir/package.json').private === true")"
+            if [ "$private" = "true" ]; then
+              echo "$name is private, not published."
+              continue
+            fi
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
-          for pkg in core server cli; do
-            name="@prismshadow/penguin-$pkg"
+          # Full names, in dependency order: @prismshadow/amsp is not a penguin-* name, and the
+          # server depends on it, so it goes first. penguin-ui depends on none of them at run time
+          # (it bundles the part of core it uses); it goes before the server, which carries its
+          # Workbench runtime inside web-dist/. Only pnpm applies its publishConfig, which points
+          # its exports at dist/ instead of src/.
+          for name in @prismshadow/amsp @prismshadow/penguin-core @prismshadow/penguin-ui @prismshadow/penguin-server @prismshadow/penguin-cli; do
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue
@@ -652,13 +727,15 @@ jobs:
 
   # The image is built from the tag's source and installs nothing from npm, so this no longer waits
   # for publish-npm. It is gated like mirror-oss, because a dispatch of an already-released tag must
-  # still be able to (re)publish the image: `release` skipped is as good as `release` succeeded.
+  # still be able to (re)publish the image. A skipped build is accepted only for an existing
+  # immutable release, never when validation blocked a new release.
   docker:
     name: Publish the official Docker image
     needs: [check-release, release]
     if: >-
-      ${{ always() && needs.check-release.result == 'success' &&
-          (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+      ${{ !cancelled() && needs.check-release.result == 'success' &&
+          (needs.release.result == 'success' ||
+           (needs.release.result == 'skipped' && needs.check-release.outputs.exists == 'true')) }}
     permissions:
       contents: read
     uses: ./.github/workflows/docker.yml

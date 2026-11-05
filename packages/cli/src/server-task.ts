@@ -4,7 +4,7 @@
  * A task is driven entirely by the server; the CLI subscribes to the Session's SSE
  * stream FIRST (so nothing is missed), POSTs the task, then consumes frames until the
  * `task_state` flip back to idle:
- *   - default-event frames are OmniMessages, fed straight into StreamRenderer.handle —
+ *   - default-event frames are records, fed straight into StreamRenderer.handle —
  *     the same protocol core streams, so rendering is unchanged;
  *   - `server_event` frames carry `task_state` (end detection; the first event on a
  *     fresh subscription is an authoritative snapshot), `approval_request` (the [Y/n]
@@ -12,10 +12,15 @@
  *
  * Reconnects ride Last-Event-ID: the stream keeps the last seen frame id and reopens
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
- * notice — the messages endpoint still holds the full history for `penguin logs`.
+ * notice — the messages endpoint still holds the full history for `penguin session log`.
  */
-import { isEventMessage, isHookInput, isModelMessage } from "@prismshadow/penguin-core";
-import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHookContinue,
+  isHookInput,
+  isModelMessage,
+} from "@prismshadow/penguin-core";
+import type { ApprovalDecision, AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
 import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { ServerClient } from "./client.js";
 import type { SseFrame } from "./client.js";
@@ -27,7 +32,7 @@ import type { Messages } from "./i18n.js";
 interface ServerEventFrame {
   type: string;
   state?: "idle" | "running" | "compacting";
-  toolCall?: OmniMessage<ToolCallPayload>;
+  toolCall?: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
 
@@ -133,7 +138,7 @@ export interface WatchTaskOptions {
    * Absent = the request is left pending untouched — a passive watcher (the poll form,
    * `--json` collectors) must never decide another surface's approvals.
    */
-  approvalPrompt?: (tc: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+  approvalPrompt?: (tc: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
   /** Goal mode: receives the dim round/summary lines (same rhythm as the core-direct loop had); a minimal sink so --json can swallow them. */
   goal?: { out: { write(text: string): unknown } };
   /** Collects main-session assistant text (complete messages) for `--json` output. */
@@ -195,6 +200,8 @@ export async function watchTask(
   let timedOut = false;
   let outcome: GoalOutcome | undefined;
   let round = 0;
+  // Set by a stop hook's `continue` event, spent by the input that follows it.
+  let continued = false;
   let segmentStartedAt = Date.now();
   // Approval prompts serialize on a promise chain: concurrent requests (parent +
   // subagent) must not interleave their Q&A on one stdin.
@@ -249,15 +256,18 @@ export async function watchTask(
       continue;
     }
     if (frame.event !== undefined) continue; // unknown named events: skip
-    const msg = JSON.parse(frame.data) as OmniMessage;
+    const msg = JSON.parse(frame.data) as AmspRecord;
     if (isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0) {
       aborted = true;
     }
     if (opts.goal) {
       // A hook's input is a round boundary: round 1's protocol message (sent right behind
-      // the objective), then every stop-hook continue — the same predicate as the server's
-      // goal_round events.
-      if (isHookInput(msg)) {
+      // the objective), then every stop-hook continue, each announced by the hook's
+      // `continue` event — the same rule as the server's goal_round events. Any other
+      // harness-stamped input is another package's user_prompt context, not a round.
+      if (isHookContinue(msg)) continued = true;
+      if (isHookInput(msg) && (round === 0 || continued)) {
+        continued = false;
         if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
         round++;
         segmentStartedAt = Date.now();

@@ -1,34 +1,86 @@
 /**
- * The pure half of the machines capability (platform code — see ../src/hmr/README.md):
+ * The pure half of the machines capability (platform code — see packages/hmr/README.md):
  * reading ~/.ssh/config for its aliases, reading what the identity probe answered, choosing
  * the Node runtime to send, the container the image travels in, finding the running
  * server's own pushable image, and the exact ssh/scp commands all of that turns into.
  * No network, no ssh binary.
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
-import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
+import { machineIdentity, parseHostAliases, parseHostEntries } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
   probeServerState,
   readServerStateCommand,
 } from "../src/machines/server-state.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
+import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
+import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
+import { startRemoteServer } from "../src/machines/server-control.js";
 import {
   cmdQuote,
+  isAliveCommand,
+  launchedPid,
   runInstallScriptCommand,
+  startServerCommand,
+  uninstallCommand,
   unpackStoreCommand,
   scpArgs,
   shQuote,
   sshArgs,
   sessionArgs,
 } from "../src/machines/commands.js";
-import { resolvePushPlan } from "../src/machines/install-server.js";
+import { installedRelease, resolvePushPlan, shippedImage } from "../src/machines/install-server.js";
+import { askpassPlan, passwordEnv } from "../src/machines/transport/login.js";
+import { explainSshFailure, sshFailureText } from "../src/machines/ssh-failure.js";
+import { SshPasswords, passwordProblem } from "../src/machines/ssh-passwords.js";
+
+const RELEASE = remoteLayoutFor("release");
+const DEV = remoteLayoutFor("dev");
+
+describe("the stored passwords", () => {
+  it("keeps one private file per alias, named so no alias is a path, and deletes it", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-passwords-"));
+    try {
+      const store = new SshPasswords(root);
+      store.save("nas", " p@ss word ");
+      store.save("../up", "x");
+      expect(store.read("nas")).toBe(" p@ss word ");
+      expect(store.has("nas")).toBe(true);
+      expect([...store.aliases()].sort()).toEqual(["../up", "nas"]);
+      const dir = path.join(root, "ssh-passwords");
+      expect(fs.readdirSync(dir).sort()).toEqual(
+        [Buffer.from("../up").toString("hex"), Buffer.from("nas").toString("hex")].sort(),
+      );
+      if (process.platform !== "win32") {
+        expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+        for (const name of fs.readdirSync(dir)) {
+          expect(fs.statSync(path.join(dir, name)).mode & 0o777).toBe(0o600);
+        }
+      }
+      store.save("nas", "replaced");
+      expect(store.read("nas")).toBe("replaced");
+      expect(store.remove("nas")).toBe(true);
+      expect(store.has("nas")).toBe(false);
+      expect(store.read("nas")).toBeNull();
+      expect(store.remove("nas")).toBe(false);
+      // The helper ssh runs holds no password: it prints the one its environment carries.
+      const helper = fs.readFileSync(store.askpass(), "utf8");
+      expect(helper).not.toContain("replaced");
+      expect(helper).toContain("PENGUIN_SSH_PASSWORD");
+      expect(passwordProblem("")).toBe("required");
+      expect(passwordProblem("two\nlines")).toBe("invalid");
+      expect(passwordProblem("fine")).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -70,10 +122,53 @@ describe("parseHostAliases", () => {
     expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
   });
 
+  it("reads every file one Include line names, in order", () => {
+    const files: Record<string, string> = {
+      "config.d/*": "Host gpu-1",
+      "~/.orbstack/ssh/config": "Host orb",
+    };
+    const aliases = parseHostAliases(
+      "Include config.d/*   ~/.orbstack/ssh/config\nHost laptop",
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(aliases).toEqual(["gpu-1", "orb", "laptop"]);
+  });
+
   it("survives an include cycle instead of spinning", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
     expect(aliases).toContain("deep");
+  });
+});
+
+describe("parseHostEntries", () => {
+  it("reads each host's own HostName, User and Port, a shared block for both its aliases, through Include", () => {
+    const files: Record<string, string> = {
+      "config.d/*": ["Host jump", "  HostName 203.0.113.5", "  Port=2222"].join("\n"),
+    };
+    const entries = parseHostEntries(
+      [
+        "Include config.d/*",
+        "Host *",
+        "  User everyone",
+        "Host gpu-1 gpu-2",
+        "  HostName gpu.lan",
+        "  User root",
+        "Match host gpu-1",
+        "  Port 2200",
+        "Host gpu-1",
+        "  Port 2201",
+        "  User nobody",
+        "Host bare",
+      ].join("\n"),
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(entries).toEqual([
+      { alias: "jump", hostName: "203.0.113.5", port: 2222 },
+      { alias: "gpu-1", hostName: "gpu.lan", user: "root", port: 2201 },
+      { alias: "gpu-2", hostName: "gpu.lan", user: "root" },
+      { alias: "bare" },
+    ]);
   });
 });
 
@@ -87,13 +182,18 @@ describe("machineIdentity", () => {
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
-    expect(POSIX_PROBE).toContain("uname -s -m");
-    expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
-    expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
-    expect(WINDOWS_PROBE).toContain("%PROCESSOR_ARCHITECTURE%");
-    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\lib\\package.json");
-    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
-    expect(WINDOWS_PROBE).not.toContain(";");
+    expect(posixProbe(RELEASE)).toContain("uname -s -m");
+    expect(posixProbe(RELEASE)).toContain('"$HOME/.penguin/lib/package.json"');
+    expect(posixProbe(RELEASE)).toContain(".penguin/data/hmr/harness.json");
+    expect(windowsProbe(RELEASE)).toContain("%PROCESSOR_ARCHITECTURE%");
+    expect(windowsProbe(RELEASE)).toContain("%USERPROFILE%\\.penguin\\lib\\package.json");
+    expect(windowsProbe(RELEASE)).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
+    expect(windowsProbe(RELEASE)).not.toContain(";");
+    // The dev profile asks after ITS installation, never the release one beside it.
+    expect(posixProbe(DEV)).toContain('"$HOME/.penguin-dev/lib/package.json"');
+    expect(posixProbe(DEV)).toContain('"$HOME/.penguin-dev/data/hmr/harness.json"');
+    expect(posixProbe(DEV)).not.toContain("$HOME/.penguin/");
+    expect(windowsProbe(DEV)).toContain("%USERPROFILE%\\.penguin-dev\\lib\\package.json");
   });
 
   it("reads identity, installed version and pushed state from the three sections", () => {
@@ -179,6 +279,82 @@ describe("ssh / scp invocations", () => {
     expect(args).not.toContain("-L ");
   });
 
+  it("signs a password machine in with the password alone, which never rides the command line", () => {
+    const secret = "hunter2 & co";
+    const login = {
+      ...target,
+      password: { askpass: "/r/machines/ssh-askpass/askpass", read: () => secret },
+    };
+    for (const args of [
+      sshArgs(login, "uname -a"),
+      sessionArgs(login, 49152),
+      scpArgs(login, ["/tmp/a"], "/tmp/dir"),
+    ]) {
+      expect(args.join(" ")).not.toContain("hunter2");
+      expect(args).not.toContain("BatchMode=yes");
+      expect(args).toEqual(
+        expect.arrayContaining([
+          "BatchMode=no",
+          "PreferredAuthentications=password,keyboard-interactive",
+          "PubkeyAuthentication=no",
+          "NumberOfPasswordPrompts=1",
+          "User=deploy",
+        ]),
+      );
+    }
+    // The secret travels in the one child's environment, beside the helper that prints it.
+    expect(passwordEnv({ PATH: "/usr/bin" }, "/r/machines/ssh-askpass/askpass", secret)).toEqual({
+      PATH: "/usr/bin",
+      SSH_ASKPASS: "/r/machines/ssh-askpass/askpass",
+      SSH_ASKPASS_REQUIRE: "force",
+      DISPLAY: ":0",
+      PENGUIN_SSH_PASSWORD: secret,
+    });
+    expect(passwordEnv({ DISPLAY: ":1" }, "/a", secret).DISPLAY).toBe(":1");
+  });
+
+  it("hands the password to any OpenSSH it can make ask the helper, and refuses the rest naming the version", () => {
+    expect(askpassPlan("OpenSSH_9.6p1 Ubuntu-3ubuntu13.5, OpenSSL 3.0.13", "linux")).toEqual({
+      ok: true,
+      detached: false,
+    });
+    // Before 8.4 the helper is asked only with no terminal to open: a session of its own.
+    expect(askpassPlan("OpenSSH_8.2p1 Ubuntu-4ubuntu0.11, OpenSSL 1.1.1f", "linux")).toEqual({
+      ok: true,
+      detached: true,
+    });
+    expect(askpassPlan("OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2", "win32").ok).toBe(true);
+    expect(askpassPlan("OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2", "win32")).toMatchObject({
+      ok: false,
+      ssh: "OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2",
+      detail: expect.stringContaining("OpenSSH 8.4 or later"),
+    });
+  });
+
+  it("reads 'Permission denied' by how the machine signs in, and reads its own sentence back the same", () => {
+    const said = "deploy@10.0.0.9: Permission denied (publickey,password).";
+    expect(explainSshFailure(said, "nas")?.reason).toBe("auth");
+    expect(explainSshFailure(said, "nas", { password: true })?.reason).toBe("password-rejected");
+    expect(
+      explainSshFailure("Permission denied, please try again.", "nas", { password: true })?.reason,
+    ).toBe("password-rejected");
+    // A host that takes no password never asked for the stored one.
+    expect(
+      explainSshFailure("deploy@nas: Permission denied (publickey).", "nas", { password: true })
+        ?.reason,
+    ).toBe("password-not-offered");
+    // ssh names an IdentityFile it could not load on its way to the password it did try.
+    expect(
+      explainSshFailure(`no such identity: /k/id: No such file or directory\n${said}`, "nas", {
+        password: true,
+      })?.reason,
+    ).toBe("password-rejected");
+    // What the transport led with reads the same to a caller that does not know the machine.
+    const led = sshFailureText(said, "nas", { password: true })!;
+    expect(led).toMatch(/^nas rejected the password saved for it\./);
+    expect(explainSshFailure(led, "nas")?.reason).toBe("password-rejected");
+  });
+
   it("refuses a SOCKS port that is not one", () => {
     expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
     expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
@@ -243,20 +419,46 @@ describe("ssh / scp invocations", () => {
   });
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
-    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
-      command: "PENGUIN_VERSION='v0.2.4' sh -s",
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, RELEASE)).toEqual({
+      command: `PENGUIN_INSTALL_DIR="$HOME/.penguin" PENGUIN_VERSION='v0.2.4' sh -s`,
       scriptOnStdin: true,
     });
+    // The dev profile installs beside the release program, never over it.
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, DEV).command).toContain(
+      'PENGUIN_INSTALL_DIR="$HOME/.penguin-dev"',
+    );
+  });
+
+  it("a dev-profile install leaves the machine's `penguin` command with the release one", () => {
+    // The installer repoints ~/.local/bin/penguin (or extends the user Path) at whatever it
+    // just installed; from the dev profile that would hand a person typing `penguin` the dev
+    // program, run against the release data root.
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, DEV).command).toBe(
+      `PENGUIN_INSTALL_DIR="$HOME/.penguin-dev" PENGUIN_VERSION='v0.2.4' sh -s -- --no-modify-path`,
+    );
+    expect(
+      runInstallScriptCommand("v0.2.4", { platform: "win32", scriptPath: "%TEMP%\\p.ps1" }, DEV)
+        .command,
+    ).toContain(' -Version "v0.2.4" -NoModifyPath & del /q ');
+    // The release profile owns the command, so its install is the installer's default.
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, RELEASE).command).not.toContain(
+      "no-modify-path",
+    );
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
     expect(
-      runInstallScriptCommand("v0.2.4", {
-        platform: "win32",
-        scriptPath: "%USERPROFILE%\\penguin-ab12.ps1",
-      }),
+      runInstallScriptCommand(
+        "v0.2.4",
+        {
+          platform: "win32",
+          scriptPath: "%USERPROFILE%\\penguin-ab12.ps1",
+        },
+        RELEASE,
+      ),
     ).toEqual({
       command:
+        'set "PENGUIN_INSTALL_DIR=%USERPROFILE%\\.penguin" & ' +
         'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\penguin-ab12.ps1"' +
         ' -Version "v0.2.4" & del /q "%USERPROFILE%\\penguin-ab12.ps1"',
       scriptOnStdin: false,
@@ -268,98 +470,146 @@ describe("ssh / scp invocations", () => {
     // from THERE. Extracting into the data root instead lands them one directory above where
     // hmr/host.ts reads them: the machine keeps answering with whatever it already had, and
     // the replication reports success while achieving nothing.
-    expect(unpackStoreCommand("linux")).toBe(
+    expect(unpackStoreCommand("linux", RELEASE)).toBe(
       'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
-    expect(unpackStoreCommand("win32")).toBe(
+    expect(unpackStoreCommand("linux", DEV)).toBe(
+      'mkdir -p "$HOME/.penguin-dev/data/hmr" && tar -xzf - -C "$HOME/.penguin-dev/data/hmr"',
+    );
+    expect(unpackStoreCommand("win32", RELEASE)).toBe(
       '(if not exist "%USERPROFILE%\\.penguin\\data\\hmr" mkdir "%USERPROFILE%\\.penguin\\data\\hmr") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data\\hmr"',
     );
   });
 });
 
-describe("resolvePushPlan", () => {
+describe("the release a server stands on, and what it installs", () => {
   const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "0.2.4" });
-
-  it("tarball install: the base release, with no pushed state", () => {
+  const works: string[] = [];
+  afterEach(() => {
+    for (const work of works.splice(0)) fs.rmSync(work, { recursive: true, force: true });
+  });
+  /** A tarball install's program directory under a fresh temp dir, with its entry. */
+  const tarball = () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
-      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
+    works.push(work);
+    const lib = path.join(work, "penguin", "lib");
+    fs.mkdirSync(path.join(lib, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(lib, "dist", "penguin.js"), "//\n");
+    fs.writeFileSync(path.join(lib, "package.json"), manifest);
+    return { work, lib, entry: path.join(lib, "dist", "penguin.js") };
+  };
 
-      const plan = resolvePushPlan(work, path.join(root, "lib", "dist", "penguin.js"));
-      expect(plan).toMatchObject({ baseVersion: "0.2.4", harness: null, version: "0.2.4" });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+  it("a tarball install stands on the release its lib/ names, and installs no bare release", () => {
+    const { work, lib, entry } = tarball();
+    expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: lib });
+    // Nothing pushed here: what it installs is the image its release ships, not the bare
+    // release, which would leave a machine with an empty store.
+    expect(resolvePushPlan(work, entry)).toBeNull();
+  });
+
+  it("names the image its release ships beside the entry, and none when it ships none", () => {
+    const { lib, entry } = tarball();
+    expect(shippedImage(entry)).toBeNull();
+    fs.writeFileSync(path.join(lib, "dist", "install-image.gz"), "x");
+    expect(shippedImage(entry)).toEqual({
+      baseVersion: "0.2.4",
+      body: path.join(lib, "dist", "install-image.gz"),
+    });
   });
 
   it("a pushed server adds its hmr state, sha-suffixed", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
-      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
-      const hmrDir = path.join(work, "data", "hmr");
-      fs.mkdirSync(hmrDir, { recursive: true });
-      const harness = JSON.stringify({
-        platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
-      });
-      fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
+    const { work, entry } = tarball();
+    const hmrDir = path.join(work, "data", "hmr");
+    fs.mkdirSync(hmrDir, { recursive: true });
+    const harness = JSON.stringify({
+      platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+    });
+    fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
 
-      const plan = resolvePushPlan(
-        path.join(work, "data"),
-        path.join(root, "lib", "dist", "penguin.js"),
-      );
-      expect(plan).toMatchObject({
-        baseVersion: "0.2.4",
-        harness,
-        hmrDir,
-        version: "0.2.4+hmr.cafe01234567",
-      });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+    expect(resolvePushPlan(path.join(work, "data"), entry)).toMatchObject({
+      baseVersion: "0.2.4",
+      harness,
+      hmrDir,
+      version: "0.2.4+hmr.cafe01234567",
+    });
   });
 
-  it("packaged desktop app: its own manifest names the release it shipped under", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const appDir = path.join(work, "resources", "app");
+  it("names the harness, not its platform bundle: a web-only or CLI-only push is a new version, an assets-only one is not", () => {
+    const { work, entry } = tarball();
+    const hmrDir = path.join(work, "data", "hmr");
+    fs.mkdirSync(hmrDir, { recursive: true });
+    const versionOf = (over: Record<string, unknown>) => {
+      fs.writeFileSync(
+        path.join(hmrDir, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+          cli: { bundle: "store/cli/0123456789abcdef.mjs" },
+          web: { manifest: "store/web/89abcdef01234567.webz" },
+          assets: { dir: "store/assets/1111111111111111" },
+          ...over,
+        }),
+      );
+      return resolvePushPlan(path.join(work, "data"), entry)!.version;
+    };
+    const base = versionOf({});
+    expect(base).toMatch(/^0\.2\.4\+hmr\.[0-9a-f]{12}$/);
+    // The machines sweep compares this string, so each part of the harness has to move it.
+    expect(versionOf({ web: { manifest: "store/web/ffffffffffffffff.webz" } })).not.toBe(base);
+    expect(versionOf({ cli: { bundle: "store/cli/ffffffffffffffff.mjs" } })).not.toBe(base);
+    expect(versionOf({ platform: { bundle: "store/platform/ffffffffffffffff.mjs" } })).not.toBe(
+      base,
+    );
+    // Assets are what a harness loads, not the harness.
+    expect(versionOf({ assets: { dir: "store/assets/2222222222222222" } })).toBe(base);
+  });
+
+  // Where electron-builder puts the app directory (asar off): beside the executable on Windows
+  // and Linux, inside the bundle on macOS, whose resources directory is capitalized.
+  it.each([
+    { os: "Windows and Linux", appPath: ["resources", "app"] },
+    { os: "macOS", appPath: ["PenguinHarness.app", "Contents", "Resources", "app"] },
+  ])(
+    "packaged desktop app on $os: its own manifest names the release, and its dist/ the image it ships",
+    ({ appPath }) => {
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+      works.push(work);
+      const appDir = path.join(work, ...appPath);
       fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
+      // The packed manifest: electron-builder's extraMetadata renames it, the version stays.
       fs.writeFileSync(
         path.join(appDir, "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
+        JSON.stringify({ name: "penguin-harness-desktop", version: "0.2.4" }),
       );
+      fs.writeFileSync(path.join(appDir, "dist", "install-image.gz"), "x");
 
-      const plan = resolvePushPlan(null, path.join(appDir, "dist", "server.js"));
-      expect(plan).toMatchObject({ baseVersion: "0.2.4" });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
+      const entry = path.join(appDir, "dist", "server.js");
+      expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: appDir });
+      expect(shippedImage(entry)).toEqual({
+        baseVersion: "0.2.4",
+        body: path.join(appDir, "dist", "install-image.gz"),
+      });
+    },
+  );
 
   it("a desktop SOURCE run stands on no release: packages/desktop is not under resources/", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const pkgDir = path.join(work, "packages", "desktop");
-      fs.mkdirSync(path.join(pkgDir, "dist"), { recursive: true });
-      fs.writeFileSync(
-        path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
-      );
+    works.push(work);
+    const pkgDir = path.join(work, "packages", "desktop");
+    fs.mkdirSync(path.join(pkgDir, "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
+    );
+    fs.writeFileSync(path.join(pkgDir, "dist", "install-image.gz"), "x");
 
-      expect(resolvePushPlan(null, path.join(pkgDir, "dist", "server.js"))).toBeNull();
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+    expect(installedRelease(path.join(pkgDir, "dist", "server.js"))).toBeNull();
+    expect(shippedImage(path.join(pkgDir, "dist", "server.js"))).toBeNull();
   });
 
   it("a dev checkout stands on no release and answers null", () => {
+    expect(installedRelease("/repo/packages/server/src/index.ts")).toBeNull();
+    expect(installedRelease(undefined)).toBeNull();
     expect(resolvePushPlan(null, "/repo/packages/server/src/index.ts")).toBeNull();
-    expect(resolvePushPlan(null, undefined)).toBeNull();
   });
 });
 
@@ -395,17 +645,36 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
   };
 
   it("speaks cmd.exe to a Windows machine: no $HOME, node.exe, backslashes", () => {
-    const command = readServerStateCommand("win32");
+    const command = readServerStateCommand("win32", RELEASE);
     expect(command).toContain("%USERPROFILE%\\.penguin\\node\\node.exe");
     expect(command).toContain("lib\\dist\\penguin-hmr.js");
     expect(command).not.toContain("$HOME");
-    expect(readServerStateCommand("linux")).toContain("$HOME/.penguin/node/bin/node");
+    expect(readServerStateCommand("linux", RELEASE)).toContain("$HOME/.penguin/node/bin/node");
+    // Each profile's CLI acts on that profile's root, on either kind of machine.
+    expect(readServerStateCommand("linux", DEV)).toContain(
+      'PENGUIN_HOME="$HOME/.penguin-dev/data"',
+    );
+    expect(readServerStateCommand("win32", DEV)).toContain(
+      'set "PENGUIN_HOME=%USERPROFILE%\\.penguin-dev\\data"',
+    );
+  });
+
+  it("carries the profile to the far side, so a server started there reaches on in the same one", () => {
+    // That server has a machines service of its own, and it reads its layout from
+    // PENGUIN_PROFILE. Without the variable a dev-profile server would reach the NEXT
+    // machine's release installation — the profile would hold for exactly one hop.
+    expect(readServerStateCommand("linux", DEV)).toContain(" PENGUIN_PROFILE=dev ");
+    expect(readServerStateCommand("win32", DEV)).toContain('set "PENGUIN_PROFILE=dev" & ');
+    // Named for release too: an account exporting the variable cannot flip a release server.
+    expect(readServerStateCommand("linux", RELEASE)).toContain(" PENGUIN_PROFILE=release ");
+    expect(startServerCommand(7371, DEV)).toContain(" PENGUIN_PROFILE=dev ");
   });
 
   it("a machine whose platform is on record is asked once, in that dialect", async () => {
     const asked: string[] = [];
     const probe = await probeServerState(
       target,
+      RELEASE,
       async (_t, command) => {
         asked.push(command);
         return answered;
@@ -421,6 +690,7 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     const asked: string[] = [];
     const probe = await probeServerState(
       target,
+      RELEASE,
       async (_t, command) => {
         asked.push(command);
         return command.includes("%USERPROFILE%") ? answered : cmdSaid;
@@ -438,11 +708,32 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
       stderr: "ssh: connect to host nas port 22: Connection refused",
       timedOut: false,
     };
-    const probe = await probeServerState(target, async () => refused, null);
+    const probe = await probeServerState(target, RELEASE, async () => refused, null);
     expect(probe.state).toMatchObject({
       kind: "unreachable",
       detail: expect.stringContaining("Connection refused"),
     });
+  });
+
+  it("a machine whose store holds no CLI is said to need installing again, not to run `penguin`", async () => {
+    // What every release's `penguin-hmr` answers on a root nothing was installed into: its advice
+    // is for a person at that machine's terminal, and the remedy from here is an install.
+    for (const said of [
+      "no CLI pushed to /home/cnns/.penguin/data; use `penguin` instead",
+      "the CLI pushed to /home/cnns/.penguin/data is unusable: the committed CLI bundle is missing from the store: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
+    ]) {
+      const probe = await probeServerState(
+        target,
+        RELEASE,
+        async () => ({ code: 1, stdout: `${said}\n`, stderr: "", timedOut: false }),
+        "linux",
+      );
+      expect(probe.state).toMatchObject({ kind: "unreachable" });
+      const detail = (probe.state as { detail: string }).detail;
+      expect(detail).toMatch(/^PenguinHarness is installed on that machine without the build/);
+      expect(detail).toContain("Install it again from this page");
+      expect(detail).toContain(said);
+    }
   });
 });
 
@@ -482,6 +773,219 @@ describe("reading what `penguin server status` answered", () => {
     // would turn every such machine into a silently wrong one.
     const said = "error: unknown command 'status'";
     expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
+  });
+});
+
+describe("startServerCommand", () => {
+  it("survives nohup: the data root rides on `env`, never as a bare assignment nohup would run", () => {
+    const command = startServerCommand(7371, DEV);
+    expect(command).toContain('nohup env PENGUIN_HOME="$HOME/.penguin-dev/data" ');
+    expect(command).not.toMatch(/nohup PENGUIN_HOME=/);
+    expect(command).toContain("server --host 127.0.0.1 --port 7371");
+    expect(command).toContain('"$HOME/.penguin-dev/data/server.log"');
+  });
+
+  it("prints the launched pid, and nothing else reads as one", () => {
+    expect(startServerCommand(7371, DEV).endsWith("& echo $!")).toBe(true);
+    expect(launchedPid("4242\n")).toBe(4242);
+    expect(launchedPid("Welcome to build-box!\n4242\n")).toBe(4242);
+    expect(launchedPid("")).toBeNull();
+    expect(launchedPid("nohup: ignoring input\n")).toBeNull();
+    expect(launchedPid("0\n")).toBeNull();
+  });
+});
+
+// The command runs in a real POSIX shell against a home of its own: what is left on disk is the
+// behaviour. Windows machines are refused before this command is ever built (service.ts).
+describe.skipIf(process.platform === "win32")("removing the program from a machine", () => {
+  const homes: string[] = [];
+  afterEach(() => {
+    for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** A home with an installed program in the layout's directory, data included. */
+  const installedHome = (dir: string) => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
+    homes.push(home);
+    for (const part of ["bin", "lib", "web", "node", "data/hmr", ".old.123"]) {
+      fs.mkdirSync(path.join(home, dir, part), { recursive: true });
+      fs.writeFileSync(path.join(home, dir, part, "file"), "x");
+    }
+    fs.mkdirSync(path.join(home, ".local", "bin"), { recursive: true });
+    return home;
+  };
+  const run = (command: string, home: string) =>
+    spawnSync("sh", ["-c", command], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+  const left = (home: string, dir: string) =>
+    fs.existsSync(path.join(home, dir)) ? fs.readdirSync(path.join(home, dir)).sort() : null;
+
+  it("removes the program and keeps its data", () => {
+    const home = installedHome(".penguin-dev");
+    const done = run(uninstallCommand(DEV, false), home);
+    expect(done.status).toBe(0);
+    expect(left(home, ".penguin-dev")).toEqual(["data"]);
+    expect(fs.existsSync(path.join(home, ".penguin-dev/data/hmr/file"))).toBe(true);
+    expect(done.stdout).toContain("removed");
+  });
+
+  it("removes the data too when asked, and the directory it leaves empty", () => {
+    const home = installedHome(".penguin-dev");
+    expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
+    expect(left(home, ".penguin-dev")).toBeNull();
+  });
+
+  it("leaves what it did not install, and the directory that holds it", () => {
+    const home = installedHome(".penguin-dev");
+    fs.writeFileSync(path.join(home, ".penguin-dev", "notes.txt"), "mine");
+    expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
+    expect(left(home, ".penguin-dev")).toEqual(["notes.txt"]);
+  });
+
+  it("takes the release's `penguin` command only while it still points at this program", () => {
+    const ours = installedHome(".penguin");
+    fs.symlinkSync(path.join(ours, ".penguin/bin/penguin"), path.join(ours, ".local/bin/penguin"));
+    expect(run(uninstallCommand(RELEASE, false), ours).status).toBe(0);
+    expect(fs.existsSync(path.join(ours, ".local/bin/penguin"))).toBe(false);
+
+    const theirs = installedHome(".penguin");
+    fs.symlinkSync("/opt/other/penguin", path.join(theirs, ".local/bin/penguin"));
+    expect(run(uninstallCommand(RELEASE, false), theirs).status).toBe(0);
+    expect(fs.readlinkSync(path.join(theirs, ".local/bin/penguin"))).toBe("/opt/other/penguin");
+
+    // The dev layout never owned the command, whatever it points at.
+    const dev = installedHome(".penguin-dev");
+    fs.symlinkSync(
+      path.join(dev, ".penguin-dev/bin/penguin"),
+      path.join(dev, ".local/bin/penguin"),
+    );
+    expect(run(uninstallCommand(DEV, false), dev).status).toBe(0);
+    expect(fs.lstatSync(path.join(dev, ".local/bin/penguin")).isSymbolicLink()).toBe(true);
+  });
+
+  it("finds nothing to remove on a machine with nothing installed, and says so", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
+    homes.push(home);
+    const done = run(uninstallCommand(DEV, false), home);
+    expect(done.status).toBe(0);
+    expect(done.stdout).toContain("nothing installed");
+  });
+});
+
+describe("startRemoteServer", () => {
+  const target = { alias: "nas", user: "" };
+  const said = (stdout: string) => ({ code: 0, stdout, stderr: "", timedOut: false });
+  const status = (o: Record<string, unknown>) => said(`${JSON.stringify(o)}\n`);
+  /** Runs a start with the wait's sleeps collapsed; the probe interval is not under test. */
+  async function settled<T>(work: Promise<T>): Promise<T> {
+    await vi.runAllTimersAsync();
+    return work;
+  }
+  afterEach(() => vi.useRealTimers());
+
+  it("stops waiting once the launched process is gone, and hands back the log's words", async () => {
+    // A port collision kills the server within a second. Waiting out the whole timeout
+    // would keep the failure from a person for half a minute for nothing.
+    vi.useFakeTimers();
+    const asked: string[] = [];
+    const result = await settled(
+      startRemoteServer(target, 7376, DEV, async (_t, command) => {
+        asked.push(command);
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) return status({ running: false });
+        if (command === isAliveCommand(4242)) return said("gone\n");
+        return said("Error: listen EADDRINUSE: address already in use 127.0.0.1:7376\n");
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
+    expect(asked.filter((c) => c.includes("server status"))).toHaveLength(1);
+  });
+
+  it("a start that dies on a taken port says so plainly, and a crash's stack becomes its error line", async () => {
+    vi.useFakeTimers();
+    const crash = [
+      "node:events:487",
+      "      throw er; // Unhandled 'error' event",
+      "Error: listen EADDRINUSE: address already in use 127.0.0.1:7371",
+      "    at Server.setupListenHandle [as _listen2] (node:net:2009:16)",
+      "Node.js v24.18.0",
+    ].join("\n");
+    const result = await settled(
+      startRemoteServer(target, 7371, DEV, async (_t, command) => {
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) return status({ running: false });
+        if (command === isAliveCommand(4242)) return said("gone\n");
+        return said(`${crash}\n`);
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, portTaken: true });
+    const { detail } = result as { detail: string };
+    expect(detail).toMatch(/^Port 7371 on that machine is taken by another program/);
+    expect(detail).toContain("Error: listen EADDRINUSE");
+    expect(detail).not.toContain("setupListenHandle");
+  });
+
+  it("keeps waiting while the process is alive, and succeeds when a server answers", async () => {
+    vi.useFakeTimers();
+    let probes = 0;
+    const result = await settled(
+      startRemoteServer(target, 7371, DEV, async (_t, command) => {
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) {
+          probes++;
+          return probes < 2
+            ? status({ running: false })
+            : status({ running: true, port: 7371, pid: 4242 });
+        }
+        return said("alive\n");
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+    expect(probes).toBe(2);
+  });
+
+  it("a liveness check that could not run is not a death", async () => {
+    vi.useFakeTimers();
+    let probes = 0;
+    const result = await settled(
+      startRemoteServer(target, 7371, DEV, async (_t, command) => {
+        if (command.includes("server --host")) return said("4242\n");
+        if (command.includes("server status")) {
+          probes++;
+          return probes < 2
+            ? status({ running: false })
+            : status({ running: true, port: 7371, pid: 4242 });
+        }
+        return { code: 255, stdout: "", stderr: "", timedOut: true };
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("remote layout", () => {
+  it("is the release installation unless PENGUIN_PROFILE says dev", () => {
+    expect(profileFromEnv({})).toBe("release");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "release" })).toBe("release");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "dev" })).toBe("dev");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "anything-else" })).toBe("release");
+  });
+
+  it("keeps the two profiles apart on every axis: program, data root, port", () => {
+    expect(RELEASE.programDir.posix).not.toBe(DEV.programDir.posix);
+    expect(RELEASE.dataRoot.posix).not.toBe(DEV.dataRoot.posix);
+    expect(RELEASE.programDir.win).not.toBe(DEV.programDir.win);
+    expect(RELEASE.defaultPort).not.toBe(DEV.defaultPort);
+    // The release layout is the installer's own default, so an install this side made and
+    // one a person made by hand are the same installation.
+    expect(RELEASE.programDir.posix).toBe("$HOME/.penguin");
+    expect(RELEASE.dataRoot.posix).toBe("$HOME/.penguin/data");
+    expect(RELEASE.defaultPort).toBe(7364);
+    expect(DEV.defaultPort).toBe(7371);
+  });
+
+  it("only the release profile registers the machine's `penguin` command", () => {
+    expect(RELEASE.ownsCommand).toBe(true);
+    expect(DEV.ownsCommand).toBe(false);
   });
 });
 

@@ -1,11 +1,15 @@
 /**
- * Client-update relay: the /api/desktop/update routes (shell-window sessions only), the
- * DesktopService store/forward pair behind them, and the message-port glue.
+ * The client-update relay: the /api/desktop/update routes (the shell window's sessions only),
+ * and the shell port they ride.
  *
- * The session gate is pinned in both directions like the change-password one it
- * mirrors: a desktop-via session may read and command, a password-via session against
- * the same desktop-mode server gets 403 — its holder may be on another machine and
- * must not restart this one's GUI app.
+ * - The update status reads as null before the shell's first push, then as the pushed snapshot.
+ * - check / download / install are forwarded to the shell and answered 202.
+ * - A password session against the same desktop server gets 403, an anonymous caller 401, and
+ *   nothing reaches the shell (install replaces the running app, so its gate is pinned every
+ *   way); a plain server has no such routes; with no shell wired a command answers 503.
+ * - Only a well-formed updater frame is read.
+ * - A wired port stores pushed frames, ignores garbage, and carries commands out.
+ * - A plain Node process has no shell port to wire.
  */
 import { describe, expect, it } from "vitest";
 import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
@@ -20,7 +24,7 @@ import {
   shellPortOf,
   wireShellUpdatePort,
 } from "../src/services/desktop-update-port.js";
-import type { ShellPort } from "../src/services/desktop-update-port.js";
+import { FakePort } from "./builtin-browser/fake-shell.js";
 
 const STATUS: DesktopUpdateStatus = {
   appVersion: "0.2.3",
@@ -82,24 +86,14 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
       const actions: string[] = [];
       t.deps.desktop!.onUpdateCommand((action) => actions.push(action));
 
-      const check = await t.app.request("/api/desktop/update/check", {
-        method: "POST",
-        headers: { cookie, "content-type": "application/json" },
-        body: "{}",
-      });
-      expect(check.status).toBe(202);
-      const download = await t.app.request("/api/desktop/update/download", {
-        method: "POST",
-        headers: { cookie, "content-type": "application/json" },
-        body: "{}",
-      });
-      expect(download.status).toBe(202);
-      const install = await t.app.request("/api/desktop/update/install", {
-        method: "POST",
-        headers: { cookie, "content-type": "application/json" },
-        body: "{}",
-      });
-      expect(install.status).toBe(202);
+      for (const action of ["check", "download", "install"]) {
+        const res = await t.app.request(`/api/desktop/update/${action}`, {
+          method: "POST",
+          headers: { cookie, "content-type": "application/json" },
+          body: "{}",
+        });
+        expect(res.status, action).toBe(202);
+      }
       expect(actions).toEqual(["check", "download", "install"]);
     } finally {
       await t.cleanup();
@@ -195,23 +189,16 @@ describe("desktop-update-port", () => {
 
   it("stores pushed frames and posts commands through a wired port", () => {
     const desktop = new DesktopService("t");
-    const posted: unknown[] = [];
-    let onMessage: ((e: { data: unknown }) => void) | undefined;
-    const port: ShellPort = {
-      on: (_event, listener) => {
-        onMessage = listener;
-      },
-      postMessage: (message) => posted.push(message),
-    };
+    const port = new FakePort();
     wireShellUpdatePort(desktop, port);
 
-    onMessage!({ data: { type: "desktop-updater-status", status: STATUS } });
+    port.emit({ type: "desktop-updater-status", status: STATUS });
     expect(desktop.getUpdateStatus()).toEqual(STATUS);
-    onMessage!({ data: { garbage: true } });
+    port.emit({ garbage: true });
     expect(desktop.getUpdateStatus()).toEqual(STATUS);
 
     expect(desktop.requestUpdateCommand("check")).toBe(true);
-    expect(posted).toEqual([{ type: "desktop-updater-command", action: "check" }]);
+    expect(port.sent).toEqual([{ type: "desktop-updater-command", action: "check" }]);
   });
 
   it("finds no shell port on a plain Node process without parentPort", () => {

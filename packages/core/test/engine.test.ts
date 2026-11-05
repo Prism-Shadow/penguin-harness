@@ -11,12 +11,14 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { REJECTED_IMAGE_NOTE } from "../src/engine/rejected-images.js";
 import {
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
   isCompleteModelMessage,
   partialText,
+  partialToolCall,
   partialToolCallOutput,
   sessionMeta,
   thinkingMessage,
@@ -25,7 +27,7 @@ import {
   tokenUsage,
   userText,
   withOrigin,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type {
   RunCutoff,
@@ -36,17 +38,18 @@ import type {
   EnvironmentInterface,
   ToolPermission,
 } from "../src/interfaces/index.js";
+import { markInterruptedToolCall } from "../src/interfaces/index.js";
 import type {
-  OmniMessage,
+  AmspRecord,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 
-import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
+import { parseUserSteeringText } from "@prismshadow/amsp/markers";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
@@ -56,22 +59,19 @@ const PNG_DATA_URL =
 /** Deterministic fake LLM: the first turn yields a tool_call, the second yields the final reply. */
 class FakeLLM implements LLMInterface {
   calls = 0;
-  receivedSecondInput: OmniMessage[] | null = null;
+  receivedSecondInput: AmspRecord[] | null = null;
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls += 1;
     if (this.calls === 1) {
       yield partialText("start", "");
       yield partialText("delta", "I will create the file.");
-      yield partialText("stop", "", "completed");
+      yield partialText("stop", "");
       yield assistantText("I will create the file.");
       yield toolCall({
         name: "exec_command",
         arguments: JSON.stringify({ cmd: "printf 'Hello, Penguin' > hello.txt" }),
         toolCallId: "call_1",
-        stopReason: "completed",
       });
       yield tokenUsage(emptyTokenCounts(), {
         cache_read: 0,
@@ -112,11 +112,11 @@ function execCommandToolConfig() {
   };
 }
 
-const isToolCall = (m: OmniMessage): boolean =>
+const isToolCall = (m: AmspRecord): boolean =>
   isCompleteModelMessage(m) && m.payload.type === "tool_call";
 
 /** Count of text messages in the list starting with `[turn_aborted]` (flatten carry-over count). */
-const turnAbortedCount = (msgs: OmniMessage[]): number =>
+const turnAbortedCount = (msgs: AmspRecord[]): number =>
   msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("[turn_aborted]"))
     .length;
 
@@ -129,11 +129,11 @@ const denyAll: ApproveFn = async () => "deny";
 /** Like collectRun, but also captures the run generator's return value (the RunCutoff | null contract). */
 async function collectRunWithReturn(
   engine: ContextEngine,
-  prompt: OmniMessage[],
+  prompt: AmspRecord[],
   approve: ApproveFn,
   signal?: AbortSignal,
-): Promise<{ all: OmniMessage[]; cutoff: RunCutoff | null }> {
-  const all: OmniMessage[] = [];
+): Promise<{ all: AmspRecord[]; cutoff: RunCutoff | null }> {
+  const all: AmspRecord[] = [];
   const it = engine.run(prompt, { approve, ...(signal ? { signal } : {}) });
   for (;;) {
     const res = await it.next();
@@ -144,11 +144,11 @@ async function collectRunWithReturn(
 
 async function collectRun(
   engine: ContextEngine,
-  prompt: OmniMessage[],
+  prompt: AmspRecord[],
   approve: ApproveFn,
   signal?: AbortSignal,
-): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for await (const msg of engine.run(prompt, {
     approve,
     ...(signal ? { signal } : {}),
@@ -268,14 +268,13 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       let recoveredPath = "";
       let recoveredDuringTask = "";
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           calls += 1;
           if (calls === 1) {
             yield toolCall({
               name: NAME,
               arguments: "{}",
               toolCallId: "recover-call",
-              stopReason: "completed",
             });
             yield tokenUsage(emptyTokenCounts(), {
               cache_read: 0,
@@ -373,7 +372,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         async *executeTool({ toolCall: tc }) {
           // The injected "slow spawn" (through the pre-spy setTimeout, invisible to the spies).
           await new Promise<void>((resolve) => realSetTimeout(resolve, TOOL_LATENCY_MS));
-          yield toolCallOutput({ output: "wrote hello.txt", toolCallId: tc.payload.tool_call_id });
+          yield toolCallOutput({
+            output: "wrote hello.txt",
+            toolCallId: tc.payload.tool_call_id,
+            status: "completed",
+          });
         },
         toolPermission() {
           return "rw";
@@ -420,7 +423,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         // Simulates run_subagent: forwards one complete tool_call_output from a child session
         // (with origin), then yields its own output.
         yield withOrigin(
-          toolCallOutput({ output: "child result", toolCallId: "child_call" }),
+          toolCallOutput({ output: "child result", toolCallId: "child_call", status: "completed" }),
           "sess_child",
         );
         yield partialToolCallOutput({
@@ -432,16 +435,15 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     });
     try {
       let calls = 0;
-      let secondInput: OmniMessage[] | null = null;
+      let secondInput: AmspRecord[] | null = null;
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           calls += 1;
           if (calls === 1) {
             yield toolCall({
               name: NAME,
               arguments: "{}",
               toolCallId: "p1",
-              stopReason: "completed",
             });
             return { status: "completed" };
           }
@@ -498,11 +500,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     expect((denialOutput!.payload as { output: string }).output).toContain("denied");
-    // A denial's stop_reason is "aborted", indicating the tool call was manually canceled.
+    // A denial's status is "aborted": the call never ran.
     const deniedMsg = all.find(
       (m) =>
         (m.payload as { type?: string }).type === "tool_call_output" &&
-        (m.payload as { stop_reason?: string }).stop_reason === "aborted",
+        (m.payload as { status?: string }).status === "aborted",
     );
     expect(deniedMsg).toBeDefined();
     // A human denial is the plain "deny"; its wire format is unchanged from before
@@ -534,7 +536,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     // The decision itself is the audit record: the Trace says who denied with no extra field.
     expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { status?: string }).status).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
     // Fed back to the model like any other tool result.
     const fedBack = llm.receivedSecondInput?.find(
@@ -582,14 +584,13 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect((engine as unknown as { maxTurns: number }).maxTurns).toBe(-1);
   });
 
-  it("streams the max-turns stop note before the complete text (no extra leading newline)", async () => {
+  it("ends a Task at the turn cap with an abort coded max_turns, and writes no notice text", async () => {
     const llm: LLMInterface = {
       async *streamGenerate() {
         yield toolCall({
           name: "exec_command",
           arguments: JSON.stringify({ cmd: "true" }),
           toolCallId: "c1",
-          stopReason: "completed",
         });
         // The model output completes normally -> this turn is not interrupted, so the loop can
         // advance to the next turn and trigger max_turns.
@@ -608,25 +609,20 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     });
     const engine = new ContextEngine({ llm, environment, maxTurns: 1 });
 
-    const all = await collectRun(engine, [userText("go")], allowAll);
-    const partials = all
-      .filter((m) => (m.payload as { type?: string }).type === "partial_text")
-      .map((m) => m.payload);
-    const maxTurnText = "[reached max turns (1); stopping]";
-
-    expect(partials).toMatchObject([
-      { event_type: "start", text: "" },
-      { event_type: "delta", text: maxTurnText },
-      { event_type: "stop", text: "", stop_reason: "fatal" },
-    ]);
-    // No more leading newline.
-    expect(maxTurnText.startsWith("\n")).toBe(false);
-    expect(
-      all.some(
-        (m) =>
-          isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === maxTurnText,
-      ),
-    ).toBe(true);
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+    // The turn cap is no Request: an abort record says it, and the run returns the cutoff.
+    expect(all.at(-1)!.payload).toEqual({
+      type: "abort",
+      error_code: "max_turns",
+      error_message: "reached max turns (1)",
+    });
+    expect(cutoff).toEqual({
+      kind: "max_turns",
+      errorCode: "max_turns",
+      errorMessage: "reached max turns (1)",
+    });
+    expect(all.some((m) => (m.payload as { type?: string }).type === "partial_text")).toBe(false);
+    expect(all.some((m) => isCompleteModelMessage(m) && m.payload.type === "text")).toBe(false);
   });
 
   it("maxTurns -1 removes the cap instead of stopping before the first turn (issue #55)", async () => {
@@ -641,7 +637,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: `c${calls}`,
-            stopReason: "completed",
           });
         } else {
           yield assistantText("Done");
@@ -671,9 +666,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   it("max turns with pending tool outputs carries them over so the next run pairs the tool_call (issue #33)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         received.push(params.newMessages);
         if (received.length === 1) {
           // Turn 1: the tool call completes normally; the tool output cannot be fed back
@@ -682,7 +677,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "c1",
-            stopReason: "completed",
           });
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -716,7 +710,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   it("aborts before run: emits abort and carries the (wrapped) input over to the next run", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         received.push(params.newMessages);
@@ -761,7 +755,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         call += 1;
         if (call === 1) {
           // The model output is interrupted mid-stream (case B): partial thinking + aborted finish.
-          yield thinkingMessage("half thought", "aborted");
+          yield thinkingMessage("half thought");
           return { status: "aborted" };
         }
         yield assistantText("ok");
@@ -801,13 +795,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a1",
-            stopReason: "completed",
           });
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a2",
-            stopReason: "completed",
           });
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -834,7 +826,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       return "allow";
     };
     await collectRun(engine, [userText("go")], approve, controller.signal);
-    const placeholders = (msgs: OmniMessage[]): number =>
+    const placeholders = (msgs: AmspRecord[]): number =>
       msgs.filter(
         (m) => (m.payload as { output?: string }).output === "[interrupted: tool aborted by user]",
       ).length;
@@ -879,6 +871,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         system_prompt: "sys",
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
+        source: "user",
       });
     // Custom Environment: on execution, first forwards origin-tagged child session messages
     // (child meta / child text / grandchild meta), then yields the complete output (simulates
@@ -893,6 +886,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         yield toolCallOutput({
           output: "spawned",
           toolCallId: request.toolCall.payload.tool_call_id,
+          status: "completed",
         });
       },
     };
@@ -915,13 +909,13 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 
   it("in-run reconnect never writes the synthesized [turn_retried] to trace", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
         if (calls === 1) {
-          yield assistantText("half", "retryable");
+          yield assistantText("half");
           return { status: "retryable" };
         }
         yield assistantText("recovered");
@@ -965,7 +959,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 });
 
 describe("ContextEngine live thinking level (the soft-limited runtime parameter)", () => {
-  it("applies setThinkingLevel to every turn request — reconnects included — while compaction requests keep the context default", async () => {
+  it("applies setThinkingLevel to every request of the Session — reconnects and the compaction request included", async () => {
     const levels: (string | undefined)[] = [];
     let calls = 0;
     const llm: LLMInterface = {
@@ -974,13 +968,15 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
         levels.push(params.thinkingLevel);
         if (calls === 1) {
           // First attempt drops: the reconnect retry re-reads the live level.
-          yield assistantText("half", "retryable");
+          yield assistantText("half");
           return { status: "retryable" };
         }
         if (calls === 2) {
           // Retry completes with usage above the compaction threshold → a Task-boundary
-          // summarize compaction issues one more request (the engine's, not a turn): it
-          // must NOT carry the live override — its prefix stays the context's own.
+          // summarize compaction issues one more request (the engine's, not a turn). It
+          // carries the live override like any other: a pin only ever differs from the
+          // context's base once the user has moved it, and by then the turns since have
+          // already gone out at the new level.
           yield assistantText("recovered");
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1023,8 +1019,8 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
     engine.setThinkingLevel("high");
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(3);
-    // Turn attempt + reconnect retry carry the live level; the compaction request does not.
-    expect(levels).toEqual(["high", "high", undefined]);
+    // Turn attempt, reconnect retry and the compaction request all carry the live level.
+    expect(levels).toEqual(["high", "high", "high"]);
 
     // A re-pin between runs is picked up by the next request without any rotation.
     engine.setThinkingLevel("low");
@@ -1038,6 +1034,97 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
     };
     await collectRun(engine, [userText("next")], allowAll);
     expect(llm2Levels).toEqual(["low"]);
+  });
+});
+
+/**
+ * Each request's `request_begin` records the effective thinking level it went out at.
+ *
+ * - Given an LLM whose default is `medium` and no pin, when a run's first attempt drops and the
+ *   reconnect retry completes, then both `request_begin` records say `medium` and the LLM was
+ *   handed `medium` both times.
+ * - Given the pin moves to `high` between two runs, then the first run's `request_begin` says
+ *   `medium` and the second's `high` — a mid-session switch is visible in the Trace — and the
+ *   wire moved with it.
+ * (No pin and no default: compaction.test.ts, "carries no thinking level when the Session has
+ * no pin" — nothing is sent and nothing is recorded.)
+ */
+describe("ContextEngine records each request's effective thinking level", () => {
+  let traces: string;
+  beforeEach(async () => {
+    traces = await mkdtemp(join(tmpdir(), "penguin-tr-level-"));
+  });
+  afterEach(async () => {
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+
+  const quietEnvironment: EnvironmentInterface = {
+    async listTools() {
+      return [];
+    },
+    async *executeTool() {
+      // No tool ever runs in these tests.
+    },
+    toolPermission() {
+      return "rw";
+    },
+  };
+
+  /** The `thinking_level` of every request_begin in the file, in order (`null` = no field). */
+  async function recordedLevels(path: string): Promise<(string | null)[]> {
+    return (await readTrace(path))
+      .filter((m) => (m.payload as { type?: string }).type === "request_begin")
+      .map((m) => (m.payload as { thinking_level?: string }).thinking_level ?? null);
+  }
+
+  it("with no pin, every request — the reconnect retry included — records and sends the LLM's default", async () => {
+    const sent: (string | undefined)[] = [];
+    const llm: LLMInterface = {
+      defaultThinkingLevel: "medium",
+      async *streamGenerate(params) {
+        sent.push(params.thinkingLevel);
+        if (sent.length === 1) {
+          yield assistantText("half");
+          return { status: "retryable" };
+        }
+        yield assistantText("done");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_level_default" });
+    const engine = new ContextEngine({
+      llm,
+      environment: quietEnvironment,
+      trace,
+      maxReconnects: 1,
+      reconnectBackoffMs: 1,
+    });
+
+    await collectRun(engine, [userText("go")], allowAll);
+
+    expect(sent).toEqual(["medium", "medium"]);
+    expect(await recordedLevels(trace.currentPath())).toEqual(["medium", "medium"]);
+  });
+
+  it("a pin set between two runs moves both the record and the wire from the default to the pin", async () => {
+    const sent: (string | undefined)[] = [];
+    const llm: LLMInterface = {
+      defaultThinkingLevel: "medium",
+      async *streamGenerate(params) {
+        sent.push(params.thinkingLevel);
+        yield assistantText("ok");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_level_switch" });
+    const engine = new ContextEngine({ llm, environment: quietEnvironment, trace });
+
+    await collectRun(engine, [userText("first")], allowAll);
+    engine.setThinkingLevel("high");
+    await collectRun(engine, [userText("second")], allowAll);
+
+    expect(sent).toEqual(["medium", "high"]);
+    expect(await recordedLevels(trace.currentPath())).toEqual(["medium", "high"]);
   });
 });
 
@@ -1062,13 +1149,11 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "sleep 0.4; printf one > a.txt" }),
             toolCallId: "t1",
-            stopReason: "completed",
           });
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "printf two > b.txt" }),
             toolCallId: "t2",
-            stopReason: "completed",
           });
           // The model output completes normally -> this turn is not interrupted, results are
           // fed back into the next turn.
@@ -1107,7 +1192,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
       return "allow";
     };
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve })) {
       all.push(msg);
       if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call_output") {
@@ -1152,13 +1237,11 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "printf x" }),
             toolCallId: "u1",
-            stopReason: "completed",
           });
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "printf y" }),
             toolCallId: "u2",
-            stopReason: "completed",
           });
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1190,7 +1273,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     });
     const engine = new ContextEngine({ llm, environment });
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1233,7 +1316,7 @@ describe("ContextEngine tool execution resilience", () => {
         yield toolCallOutput({
           output: "[tool error] boom",
           toolCallId: id,
-          stopReason: "fatal",
+          status: "fatal",
         });
       },
     };
@@ -1253,7 +1336,6 @@ describe("ContextEngine tool execution resilience", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "e1",
-            stopReason: "completed",
           });
           yield usage(); // The model output completes normally.
           return { status: "completed" };
@@ -1271,7 +1353,7 @@ describe("ContextEngine tool execution resilience", () => {
     } as LLMInterface & { calls: number };
 
     const engine = new ContextEngine({ llm, environment: failingEnv });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1279,7 +1361,7 @@ describe("ContextEngine tool execution resilience", () => {
     const failed = all.find(
       (m) =>
         (m.payload as { type?: string }).type === "tool_call_output" &&
-        (m.payload as { stop_reason?: string }).stop_reason === "fatal",
+        (m.payload as { status?: string }).status === "fatal",
     );
     expect(failed).toBeDefined();
     expect(
@@ -1303,7 +1385,7 @@ describe("ContextEngine tool execution resilience", () => {
         return "rw";
       },
       // eslint-disable-next-line require-yield
-      async *executeTool(): AsyncGenerator<OmniMessage> {
+      async *executeTool(): AsyncGenerator<AmspRecord> {
         throw new Error("custom env exploded");
       },
     };
@@ -1323,7 +1405,6 @@ describe("ContextEngine tool execution resilience", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "t1",
-            stopReason: "completed",
           });
           yield usage();
           return { status: "completed" };
@@ -1335,7 +1416,7 @@ describe("ContextEngine tool execution resilience", () => {
         );
         expect(outputs).toHaveLength(1);
         expect((outputs[0]!.payload as { output: string }).output).toContain("custom env exploded");
-        expect((outputs[0]!.payload as { stop_reason?: string }).stop_reason).toBe("fatal");
+        expect((outputs[0]!.payload as { status?: string }).status).toBe("fatal");
         yield assistantText("survived");
         yield usage();
         return { status: "completed" };
@@ -1343,7 +1424,7 @@ describe("ContextEngine tool execution resilience", () => {
     } as LLMInterface & { calls: number };
 
     const engine = new ContextEngine({ llm, environment: throwingEnv });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1372,7 +1453,6 @@ describe("ContextEngine tool execution resilience", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "t1",
-            stopReason: "completed",
           });
           yield usage();
           return { status: "completed" };
@@ -1383,7 +1463,7 @@ describe("ContextEngine tool execution resilience", () => {
           (m) => (m.payload as { type?: string }).type === "tool_call_output",
         );
         expect(outputs).toHaveLength(1);
-        expect((outputs[0]!.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+        expect((outputs[0]!.payload as { status?: string }).status).toBe("aborted");
         yield assistantText("done");
         yield usage();
         return { status: "completed" };
@@ -1397,7 +1477,7 @@ describe("ContextEngine tool execution resilience", () => {
         toolConfig: execCommandToolConfig(),
       }),
     });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], {
       approve: async () => {
         throw new Error("approval channel closed");
@@ -1429,7 +1509,7 @@ describe("ContextEngine abort during execution", () => {
   });
 
   it("aborting a long-running tool ends the turn, emits abort, and carries tool results over (model output completed)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     let call = 0;
     const llm: LLMInterface = {
       async *streamGenerate(params) {
@@ -1440,9 +1520,8 @@ describe("ContextEngine abort during execution", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "sleep 5" }),
             toolCallId: "slow",
-            stopReason: "completed",
           });
-          // Model output completed (outcome=completed) -> AgentHub has committed this turn
+          // Model output completed (outcome=completed) -> MMSP has committed this turn
           // including the tool_call.
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1471,7 +1550,7 @@ describe("ContextEngine abort during execution", () => {
     const startedAt = Date.now();
     setTimeout(() => controller.abort(), 200);
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], {
       approve: allowAll,
       signal: controller.signal,
@@ -1501,7 +1580,7 @@ describe("ContextEngine abort during execution", () => {
   });
 
   it("case A backfills outputs for committed-but-undispatched tool_calls (preserves pairing)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const controller = new AbortController();
     let call = 0;
     const llm: LLMInterface = {
@@ -1509,19 +1588,17 @@ describe("ContextEngine abort during execution", () => {
         received.push(params.newMessages);
         call += 1;
         if (call === 1) {
-          // Two real tool_calls + token_usage: AgentHub commits this turn including both
+          // Two real tool_calls + token_usage: MMSP commits this turn including both
           // a1 and a2 tool_calls.
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a1",
-            stopReason: "completed",
           });
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a2",
-            stopReason: "completed",
           });
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1547,7 +1624,7 @@ describe("ContextEngine abort during execution", () => {
     });
     const engine = new ContextEngine({ llm, environment });
     // Interrupted immediately while approving the first tool: after a1's approval, signal is
-    // already aborted -> neither a1 nor a2 is dispatched, but both have been committed by AgentHub.
+    // already aborted -> neither a1 nor a2 is dispatched, but both have been committed by MMSP.
     let approvals = 0;
     const approve: ApproveFn = async () => {
       approvals += 1;
@@ -1580,7 +1657,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("auto-retries on LLM timeout: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1590,9 +1667,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
           // returning timeout.
           yield partialText("start");
           yield partialText("delta", "thinking...");
-          yield partialText("stop", "", "retryable");
-          yield assistantText("thinking...", "retryable");
-          return { status: "retryable" };
+          yield partialText("stop", "");
+          yield assistantText("thinking...");
+          return { status: "retryable", errorCode: "timeout" };
         }
         // Retry succeeds: completes normally.
         yield assistantText("done");
@@ -1626,6 +1703,8 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
     expect(retried).toContain("[turn_retried]");
     expect(retried).toContain("[text]thinking...[/text]");
+    // The block closes with the failure: a timeout has a code and no provider text.
+    expect(retried).toContain('  [request_error code="timeout"][/request_error]');
     expect(retried).not.toContain("[turn_aborted]");
     // The final reply is produced, with no abort throughout.
     expect(
@@ -1636,24 +1715,32 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("skips a malformed (never-committed) tool_call: no dispatch, no paired output", async () => {
-    // A tool_call produced by an interrupted finish (stop_reason not completed) is never
-    // committed into history by AgentHub: the engine does not dispatch it for execution, does
-    // not add it to this turn's ledger, and does not backfill a paired output; the malformed
-    // turn is cleaned up by reconnect.
+  it("a tool call closed early is written whole but never dispatched and gets no paired output", async () => {
+    // A call whose arguments never fully arrived is closed with what arrived and marked: its
+    // complete record goes out, but nothing is dispatched, nothing enters this turn's ledger
+    // and no output is paired; the broken turn is cleaned up by reconnect.
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
         if (calls === 1) {
-          yield toolCall({
+          yield partialToolCall({
+            eventType: "start",
             name: "exec_command",
+            toolCallId: "tc-broken",
+          });
+          yield partialToolCall({
+            eventType: "delta",
+            name: "",
             arguments: '{"cmd": "ec',
             toolCallId: "tc-broken",
-            stopReason: "retryable",
           });
+          yield partialToolCall({ eventType: "stop", name: "", toolCallId: "tc-broken" });
+          yield markInterruptedToolCall(
+            toolCall({ name: "exec_command", arguments: '{"cmd": "ec', toolCallId: "tc-broken" }),
+          );
           return { status: "retryable", errorMessage: "incomplete stream" };
         }
         yield assistantText("done");
@@ -1678,7 +1765,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(calls).toBe(2);
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
 
-    // No output pointing to that tool_call is produced; the tool is also never approved/executed.
+    // The call's complete record went out with the arguments that arrived...
+    const written = all.filter(
+      (m) =>
+        isCompleteModelMessage(m) &&
+        m.payload.type === "tool_call" &&
+        m.payload.tool_call_id === "tc-broken",
+    );
+    expect(written).toHaveLength(1);
+    expect((written[0]!.payload as { arguments?: string }).arguments).toBe('{"cmd": "ec');
+    // ...but no output pointing to it is produced; the tool is never approved or executed.
     const paired = all.find(
       (m) =>
         isCompleteModelMessage(m) &&
@@ -1691,15 +1787,18 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     );
 
     // The retry resends the original input as-is; the half-formed tool_call is discarded
-    // entirely and does not appear in the retry input in any form.
-    expect(inputs[1]).toEqual(inputs[0]);
-    const retryText = (inputs[1]![0]!.payload as { text?: string }).text ?? "";
-    expect(retryText).toBe("go");
+    // entirely and does not appear in the retry input in any form. The only addition is the
+    // [turn_retried] block, holding nothing but the failure's own text.
+    expect(inputs[1]).toHaveLength(2);
+    expect(inputs[1]![0]).toEqual(inputs[0]![0]);
+    expect((inputs[1]![1]!.payload as { text?: string }).text).toBe(
+      "[turn_retried]\n  [request_error]incomplete stream[/request_error]\n[/turn_retried]",
+    );
   });
 
   it("auto-retries on LLM malformed: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1707,8 +1806,8 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         if (calls === 1) {
           yield partialText("start");
           yield partialText("delta", "partial json response");
-          yield partialText("stop", "", "retryable");
-          yield assistantText("partial json response", "retryable");
+          yield partialText("stop", "");
+          yield assistantText("partial json response");
           return {
             status: "retryable",
             message: "Unexpected token < in JSON at position 0",
@@ -1738,7 +1837,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const all = await collectRun(engine, [userText("go")], allowAll);
 
     expect(calls).toBe(2);
-    // The malformed attempt never entered AgentHub history: the original input is resent,
+    // The malformed attempt never entered MMSP history: the original input is resent,
     // plus [turn_retried] carrying the partial products already produced.
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
@@ -1754,14 +1853,121 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("ends the run without an abort event and carries the original input over when reconnect retries are exhausted", async () => {
+  it("retries a response cut off at its output cap with its cause in the retry block", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
+    const cut = "the response stopped at the output limit (finish_reason: length)";
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
-        yield assistantText("partial...", "retryable");
+        if (calls === 1) {
+          yield assistantText("Half an ans");
+          // The cut-off attempt was billed: it reports its usage like a finished request.
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 64,
+            total: 100,
+          });
+          return { status: "retryable", errorCode: "output_truncated", errorMessage: cut };
+        }
+        yield assistantText("A shorter answer.");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 1, reconnectBackoffMs: 0 });
+
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    expect(calls).toBe(2);
+    expect(cutoff).toBeNull();
+    // Not committed: the original input goes out again, with what the cut attempt wrote and why
+    // it was cut.
+    expect(inputs[1]![0]).toEqual(inputs[0]![0]);
+    const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
+    expect(retried).toContain("[turn_retried]");
+    expect(retried).toContain("Half an ans");
+    expect(retried).toContain(`[request_error code="output_truncated"]${cut}[/request_error]`);
+    const ends = all
+      .map(
+        (m) =>
+          m.payload as {
+            type?: string;
+            status?: string;
+            error_code?: string;
+            retry_in_ms?: number;
+          },
+      )
+      .filter((p) => p.type === "request_end");
+    expect(ends.map((p) => p.status)).toEqual(["retryable", "completed"]);
+    expect(ends[0]!.error_code).toBe("output_truncated");
+    expect(ends[0]!.retry_in_ms).toBe(0);
+    // Both attempts are metered, but only the completed one is a Session turn.
+    const usages = all
+      .map((m) => m.payload as { type?: string; session?: { total: number } })
+      .filter((p) => p.type === "token_usage");
+    expect(usages.map((p) => p.session!.total)).toEqual([100, 101]);
+    expect((engine as unknown as { sessionTurns: number }).sessionTurns).toBe(1);
+  });
+
+  it("resets the ladder on an attempt cut off at its cap like any attempt that received content; the per-turn ceiling of 10 ends the run", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        // Every attempt received a whole response, cut off at the cap.
+        yield assistantText(`Cut off again ${calls}`);
+        return { status: "retryable", errorCode: "output_truncated", errorMessage: "cut" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 2, reconnectBackoffMs: 0 });
+
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    // maxReconnects never runs out (each attempt received content); the default ceiling does,
+    // and the run ends the way an exhausted ladder does.
+    expect(calls).toBe(10);
+    expect(cutoff).toEqual({
+      kind: "llm_failure",
+      errorCode: "output_truncated",
+      errorMessage: "cut",
+    });
+    const last = all
+      .map((m) => m.payload as { type?: string; status?: string; retry_in_ms?: number })
+      .filter((p) => p.type === "request_end")
+      .at(-1)!;
+    expect(last).toMatchObject({
+      status: "retryable",
+      error_code: "output_truncated",
+      attempt: 10,
+    });
+    expect(last.retry_in_ms).toBeUndefined();
+    expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+  });
+
+  it("ends the run without an abort event and carries the original input over when reconnect retries are exhausted", async () => {
+    let calls = 0;
+    const inputs: AmspRecord[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        calls += 1;
+        inputs.push(params.newMessages);
+        yield assistantText("partial...");
         return { status: "retryable" }; // Always needs a reconnect.
       },
     };
@@ -1809,7 +2015,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("a retryable outcome with a message converges to a terminal request_end carrying it (run does not throw)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       // The LLM must never throw an exception at the engine: an error resolves by returning
       // a retryable outcome after closing the structure; the concrete failure rides on
@@ -1951,7 +2157,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   it("a fast-mode rejection (fatal) stops the run without burning the ladder", async () => {
     let calls = 0;
     const llm: LLMInterface = {
-      // GenerativeModel classifies AgentHub's fast_mode UnsupportedParameterError as fatal
+      // GenerativeModel classifies MMSP's fast_mode UnsupportedParameterError as fatal
       // (see llm.test.ts): thrown before any network I/O, deterministic for the session's
       // frozen config, so retrying the identical request can never succeed. The engine
       // must abort with the actionable message instead of costing the ladder.
@@ -1984,6 +2190,123 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       "turn it off in the model settings",
     );
     expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+  });
+
+  it("a provider 4xx on an input holding images retries at once with them replaced by the note", async () => {
+    // GenerativeModel reports a definitive provider 4xx as fatal/rejected (see llm.test.ts) and
+    // reads nothing out of its wording. While the turn's input holds images, the engine takes
+    // the rejection as theirs, replaces them and sends the turn again — no backoff: the 60s
+    // base would time this test out if it waited.
+    const inputs: AmspRecord[][] = [];
+    const providerError = "400 You have uploaded an unsupported image.";
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          return { status: "fatal", errorCode: "rejected", errorMessage: providerError };
+        }
+        yield assistantText("I could not see the image.");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 60_000 });
+
+    // A read_file result carrying an image, handed in the way a carry-over hands it back.
+    const readImage = toolCallOutput({
+      output: "image/png, 70 B",
+      toolCallId: "call_img",
+      images: [PNG_DATA_URL],
+      status: "completed",
+    });
+    const { all, cutoff } = await collectRunWithReturn(engine, [readImage], allowAll);
+
+    expect(cutoff).toBeNull();
+    expect(inputs).toHaveLength(2);
+    expect((inputs[0]![0]!.payload as { images?: string[] }).images).toEqual([PNG_DATA_URL]);
+    // The retry carries no image: the tool output keeps its text and pairing id, the fixed
+    // note appended in place of the picture; the [turn_retried] block behind it quotes the
+    // provider's error for the model to judge — the one place that text goes.
+    expect(inputs[1]).toHaveLength(2);
+    const retried = inputs[1]![0]!.payload as {
+      output?: string;
+      images?: string[];
+      tool_call_id?: string;
+    };
+    expect(retried.images).toBeUndefined();
+    expect(retried.output).toBe(`image/png, 70 B\n${REJECTED_IMAGE_NOTE}`);
+    expect(retried.tool_call_id).toBe("call_img");
+    const block = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
+    expect(block).toContain("[turn_retried]");
+    expect(block).toContain(
+      `  [request_error code="image_rejected"]${providerError}[/request_error]`,
+    );
+    // The rejected attempt is recorded as retried, announcing an immediate retry.
+    const ends = all
+      .filter((m) => (m.payload as { type?: string }).type === "request_end")
+      .map((m) => m.payload as { status?: string; error_code?: string; retry_in_ms?: number });
+    expect(ends).toHaveLength(2);
+    expect(ends[0]).toMatchObject({
+      status: "retryable",
+      error_code: "image_rejected",
+      retry_in_ms: 0,
+    });
+    expect(ends[1]!.status).toBe("completed");
+  });
+
+  it("a provider 4xx on an input with no image ends the run as fatal, whatever it says", async () => {
+    // Nothing to strip: the request's parameters or the committed history are what the
+    // provider refuses, and no retry changes either. The wording is not consulted.
+    let calls = 0;
+    const inputs: AmspRecord[][] = [];
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate(params) {
+        inputs.push(params.newMessages);
+        calls += 1;
+        return {
+          status: "fatal",
+          errorCode: "rejected",
+          errorMessage: "400 Could not process image",
+        };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go on")], allowAll);
+    expect(calls).toBe(1);
+    expect(cutoff).toEqual({
+      kind: "llm_failure",
+      errorCode: "rejected",
+      errorMessage: "400 Could not process image",
+    });
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(end!.payload).toMatchObject({ status: "fatal", error_code: "rejected" });
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
+    // The next run resends the turn as carry-over, its [turn_aborted] block closing with the
+    // failure's error: the model learns why the turn comes again before it carries on.
+    await collectRunWithReturn(engine, [userText("again")], allowAll);
+    expect(inputs).toHaveLength(2);
+    const texts = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    expect(texts[0]).toContain("[turn_aborted]");
+    expect(texts[0]).toContain("  [user_input]go on[/user_input]");
+    expect(texts[0]).toContain(
+      '  [request_error code="rejected"]400 Could not process image[/request_error]',
+    );
+    expect(texts[1]).toBe("again");
   });
 
   it("a retryable outcome takes the ladder", async () => {
@@ -2085,7 +2408,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
-        if (calls <= 2) yield assistantText("partial...", "retryable");
+        if (calls <= 2) yield assistantText("partial...");
         return { status: "retryable" };
       },
     };
@@ -2123,7 +2446,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
-        yield assistantText("partial...", "retryable");
+        yield assistantText("partial...");
         return { status: "retryable" };
       },
     };
@@ -2299,7 +2622,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2311,7 +2634,6 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "printf x >> count.txt" }),
             toolCallId: "t1",
-            stopReason: "completed",
           });
           return { status: "retryable" };
         }
@@ -2361,7 +2683,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("flatten carry-over (auth exit) includes the model's partial thinking and text (PRN-014)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2372,8 +2694,8 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
           // exits straight to the flatten path — `retryable` takes the reconnect ladder,
           // whose carry-over is [turn_retried] instead (covered by the exhausted-retries
           // test below).
-          yield thinkingMessage("half-thought", "fatal");
-          yield assistantText("half-text", "fatal");
+          yield thinkingMessage("half-thought");
+          yield assistantText("half-text");
           return { status: "fatal", errorMessage: "boom" };
         }
         yield assistantText("ok");
@@ -2408,7 +2730,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("carry-over after exhausted retries: raw original input + [turn_retried] with all attempts' products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2419,15 +2741,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "printf x >> chain.txt" }),
             toolCallId: "t1",
-            stopReason: "completed",
           });
-          return { status: "retryable" };
+          return { status: "retryable", errorCode: "network", errorMessage: "502 Bad Gateway" };
         }
         if (calls === 2) {
           // Attempt 2 (retry, original input resent): produces partial thinking then times out
           // again -> retries exhausted.
-          yield thinkingMessage("retry-thought", "retryable");
-          return { status: "retryable" };
+          yield thinkingMessage("retry-thought");
+          return { status: "retryable", errorCode: "timeout" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -2459,6 +2780,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // Retry = original input + [turn_retried] (attempt 1's t1 call/result).
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain(
+      '  [request_error code="network"]502 Bad Gateway[/request_error]',
+    );
 
     // Next run: carry-over = original input + [turn_retried] (accumulating attempt 1's t1
     // call/result and attempt 2's partial thinking), a single un-nested block; produces no
@@ -2472,6 +2796,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(block).toContain('[tool_call_output id="t1"');
     expect(block).toContain("[thinking]retry-thought[/thinking]");
     expect((block.match(/\[turn_retried\]/g) ?? []).length).toBe(1);
+    // One request_error line, the latest failure's: the first attempt's 502 is gone.
+    expect((block.match(/\[request_error/g) ?? []).length).toBe(1);
+    expect(block).toContain('  [request_error code="timeout"][/request_error]');
+    expect(block).not.toContain("502 Bad Gateway");
     expect(nextRunTexts[2]).toBe("next");
     expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
     // t1 already executed once during the failed attempts (side effect occurred); the
@@ -2491,14 +2819,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   it("user abort after a failed retry: [turn_retried] un-nests into the [turn_aborted] flatten", async () => {
     const controller = new AbortController();
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
         if (calls === 1) {
-          yield thinkingMessage("half-1", "retryable");
-          return { status: "retryable" };
+          yield thinkingMessage("half-1");
+          return { status: "retryable", errorCode: "network", errorMessage: "socket hang up" };
         }
         if (calls === 2) {
           // Interrupted by the user while the retry is in progress.
@@ -2538,11 +2866,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(text).toContain("[turn_aborted]");
     expect(text).toContain("[thinking]half-1[/thinking]");
     expect(text).not.toContain("[turn_retried]");
+    // The user interrupted: no request failed this time, so the merged block's old error line
+    // is dropped rather than carried as if it described this attempt.
+    expect(text).not.toContain("[request_error");
     expect((text.match(/\[turn_aborted\]/g) ?? []).length).toBe(1);
   });
 
   it("keeps raw inputs across repeated pre-request aborts (no flatten)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         received.push(params.newMessages);
@@ -2605,13 +2936,13 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
         yield partialToolCallOutput({ eventType: "start", toolCallId });
         yield partialToolCallOutput({ eventType: "delta", output: result, toolCallId });
         yield partialToolCallOutput({ eventType: "stop", toolCallId });
-        yield toolCallOutput({ output: result, toolCallId });
+        yield toolCallOutput({ output: result, toolCallId, status: "completed" });
       },
     };
   }
 
   /** The text payloads of the [user_steering]-wrapped user messages in a list. */
-  const steeringTexts = (msgs: OmniMessage[]): string[] =>
+  const steeringTexts = (msgs: AmspRecord[]): string[] =>
     msgs
       .map((m) => m.payload as { role?: string; text?: string })
       .filter((p) => p.role === "user" && (p.text ?? "").startsWith("[user_steering]"))
@@ -2730,9 +3061,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // looping and sends the queued text as the next input, wrapped in the same marker (UIs
     // keep it inside the running Task; the model knows it is mid-task user input).
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           yield assistantText("final answer");
@@ -2759,7 +3090,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   });
 
   /** Image URLs of the image messages in a list, in order. */
-  const steeredImages = (msgs: OmniMessage[]): string[] =>
+  const steeredImages = (msgs: AmspRecord[]): string[] =>
     msgs
       .map((m) => m.payload as { type?: string; image_url?: string })
       .filter((p) => p.type === "image_url")
@@ -2769,9 +3100,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // An image with no caption is a complete steering message on its own; each entry's images
     // follow that entry's text, so two steers stay distinguishable in the delivered order.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(engineRef!.steer([imageUrlMessage("data:image/png;base64,AAAA")])).toBe(true);
@@ -2819,9 +3150,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     const scratch = await mkdtemp(join(tmpdir(), "penguin-steer-img-"));
     try {
       let engineRef: ContextEngine | null = null;
-      const inputs: OmniMessage[][] = [];
+      const inputs: AmspRecord[][] = [];
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           inputs.push(params.newMessages);
           if (inputs.length === 1) {
             expect(
@@ -2866,9 +3197,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   // rest of the Task heading further that way.
   it("a steering fold that fails ends the run instead of carrying on without the images", async () => {
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(
@@ -2900,9 +3231,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // can return the wrong thing. Sending the images on as messages would be the worse answer:
     // a fold is configured precisely because the model does not take images.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(
@@ -2933,9 +3264,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // `false` means "no Task running — send it as a normal task", which would be the wrong
     // advice for an empty message; so it returns true and simply delivers nothing.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(engineRef!.steer([userText("   ")])).toBe(true);
@@ -2963,9 +3294,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // LLM; the user steers DURING the compaction request (the acceptance window stays open);
     // the new context's first input must be [summary, steering], not just the summary.
     let engineRef: ContextEngine | null = null;
-    const newInputs: OmniMessage[][] = [];
+    const newInputs: AmspRecord[][] = [];
     const oldLLM: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         const texts = params.newMessages.map((m) => (m.payload as { text?: string }).text ?? "");
         if (texts.some((t) => t.includes("summary prompt"))) {
           // The compaction request: steering arrives while it streams.
@@ -2991,7 +3322,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
       },
     };
     const newLLM: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         newInputs.push(params.newMessages);
         yield assistantText("continuing after compaction");
         return { status: "completed" };

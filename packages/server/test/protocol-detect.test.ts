@@ -1,27 +1,48 @@
 /**
- * Protocol auto-detection tests: classification of probe answers (route-exists vs
- * route-missing 404/405 vs HTML/gateway junk vs 5xx), the required probe order
- * (openai-responses → ant-messages → openai-chat, stop at the first served protocol),
- * auth header shapes per protocol (Bearer for the OpenAI protocols; x-api-key +
- * Bearer + anthropic-version for ant-messages, mirroring AgentHub's clients), the
- * per-protocol environment-variable fallback used when no key was typed or stored
- * (ANTHROPIC_* for ant-messages, OPENAI_* for the other two), and the
- * POST /api/projects/:p/models/detect route (validation, stored-key fallback via the
- * paired reference, and that the key never appears in the response).
+ * Protocol auto-detection: which wire protocol a typed base URL speaks.
+ *
+ * - A probe's answer is classified by what it proves: 404/405 is a missing route by status
+ *   alone; a 4xx in an API-error shape (auth failures included, a FastAPI `detail` only when it
+ *   carries a message) is a served route; HTML, non-JSON, a 2xx without protocol markers and
+ *   shapeless 4xx JSON are junk; a 5xx proves nothing.
+ * - A typed URL expands to candidates covering one `/v1` too many, one too few and a whole
+ *   endpoint URL pasted in (the longest endpoint path stripped, repeats collapsed, the rest kept
+ *   exactly as typed), joined to protocol paths the way the wrapped SDKs do.
+ * - Probes run openai-responses → ant-messages → openai-chat, candidate by candidate, stop at the
+ *   first served protocol and report the base URL it was served on; a probe that fails or
+ *   floods (abandoned at the body cap) does not stop the sequence. The protocols the dialogs
+ *   offer by hand only, Google GenAI and MMSP, are never probed: an MMSP server detects nothing.
+ * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
+ *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
+ *   reaches a URL or the reported probes.
+ * - With no key typed or stored, each probe takes what MMSP's client for its protocol reads at
+ *   the probed URL: the protocol's variable (ANTHROPIC_* for ant-messages, OPENAI_* for the
+ *   others) only for that client's own default endpoint, never for any other URL, one
+ *   `*_BASE_URL` names included; unset and blank are absent, and a typed key wins.
+ * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
+ *   paired reference unless clearApiKey says not to — the model's own key, else its group's —
+ *   takes a group alone (the group settings dialog) and probes with the group's key unless
+ *   clearApiKey clears it, never echoes the key, and never sends vendor environment keys to
+ *   the Penguin Go relay.
+ *
+ * No test reaches the network except against a loopback server of its own: the probed endpoint
+ * is the suite's fetch fake.
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
 import {
   MAX_PROBE_BODY_BYTES,
+  candidateBaseUrls,
   classifyProbeResponse,
   detectModelProtocol,
   envApiKeyForProtocol,
   isHttpUrl,
   probeUrl,
 } from "../src/services/protocol-detect.js";
+import { fakeFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -139,6 +160,79 @@ describe("isHttpUrl / probeUrl", () => {
   });
 });
 
+describe("candidateBaseUrls", () => {
+  it("covers the three ways a base URL is mistyped: one /v1 too many, one too few, a whole endpoint URL", () => {
+    expect(candidateBaseUrls("https://host/v1/v1")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host")).toEqual(["https://host", "https://host/v1"]);
+    expect(candidateBaseUrls("https://host/v1/chat/completions")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1/responses")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1/messages")).toEqual([
+      "https://host",
+      "https://host/v1",
+    ]);
+  });
+
+  it("strips the longest endpoint path, not its tail (/chat/completions before /completions, /v1/messages before /messages)", () => {
+    expect(candidateBaseUrls("https://host/v1/completions")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/messages")).toEqual(["https://host", "https://host/v1"]);
+    expect(candidateBaseUrls("https://host/api/chat/completions")).toEqual([
+      "https://host/api",
+      "https://host/api/v1",
+    ]);
+  });
+
+  it("a URL that is already right still gets its neighbour, and a plain host gets /v1", () => {
+    expect(candidateBaseUrls("https://api.example.com/v1")).toEqual([
+      "https://api.example.com/v1",
+      "https://api.example.com",
+    ]);
+    expect(candidateBaseUrls("http://127.0.0.1:8000")).toEqual([
+      "http://127.0.0.1:8000",
+      "http://127.0.0.1:8000/v1",
+    ]);
+  });
+
+  it("trims whitespace, drops trailing slashes, query and fragment", () => {
+    expect(candidateBaseUrls("  https://host/v1/  ")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host/v1/chat/completions?key=abc")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1#section")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+  });
+
+  it("collapses a run of repeated /v1 segments, endpoint path included", () => {
+    expect(candidateBaseUrls("https://host/v1/v1/v1")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host/v1/v1/responses")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+  });
+
+  it("leaves the host's case and every other path segment exactly as typed", () => {
+    expect(candidateBaseUrls("https://API.Example.COM/v1")).toEqual([
+      "https://API.Example.COM/v1",
+      "https://API.Example.COM",
+    ]);
+    expect(candidateBaseUrls("https://host/OpenAI/Compat")).toEqual([
+      "https://host/OpenAI/Compat",
+      "https://host/OpenAI/Compat/v1",
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Probe ordering and header shapes (mocked fetch)
 // ---------------------------------------------------------------------------
@@ -149,30 +243,23 @@ interface SeenCall {
   body: string;
 }
 
-/** Fake fetch serving fixed answers by pathname; unknown paths get an OpenAI-style JSON 404 (like real OpenAI-compatible servers). */
-function fakeFetch(
+/**
+ * The endpoint under probe, over the suite's fetch fake: fixed answers by pathname, and an
+ * OpenAI-style JSON 404 for any other path (like real OpenAI-compatible servers). Each request
+ * lands in `seen` with its headers as a lower-cased record, so an absent one reads undefined.
+ */
+function gateway(
   routes: Record<string, { status: number; body: string }>,
   seen?: SeenCall[],
 ): typeof fetch {
-  return (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const url = String(input);
-    const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) {
-      headers[k.toLowerCase()] = v;
-    }
-    seen?.push({ url, headers, body: String(init?.body ?? "") });
-    const route = routes[new URL(url).pathname];
-    if (!route) {
-      return new Response(OPENAI_ERROR, {
-        status: 404,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response(route.body, {
-      status: route.status,
+  return fakeFetch((call) => {
+    seen?.push({ url: call.url, headers: Object.fromEntries(call.headers), body: call.body });
+    const route = routes[new URL(call.url).pathname];
+    return new Response(route?.body ?? OPENAI_ERROR, {
+      status: route?.status ?? 404,
       headers: { "content-type": "application/json" },
     });
-  }) as typeof fetch;
+  }).fetch;
 }
 
 describe("detectModelProtocol (order and stop-at-first)", () => {
@@ -183,7 +270,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
       apiKey: "sk-unit",
-      fetchImpl: fakeFetch(
+      fetchImpl: gateway(
         {
           "/v1/responses": { status: 401, body: OPENAI_ERROR },
           "/v1/v1/messages": { status: 401, body: ANTHROPIC_ERROR },
@@ -193,6 +280,8 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       ),
     });
     expect(res.detected).toBe("openai-responses");
+    // A base URL that needed no fixing is still reported, so callers compare rather than guess.
+    expect(res.baseUrl).toBe(BASE);
     expect(res.probes.map((p) => p.outcome)).toEqual(["served"]);
     expect(seen.map((c) => c.url)).toEqual(["https://gw.example.com/v1/responses"]);
   });
@@ -200,7 +289,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("falls through to ant-messages when /responses is missing", async () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
-      fetchImpl: fakeFetch({
+      fetchImpl: gateway({
         "/v1/v1/messages": { status: 401, body: ANTHROPIC_ERROR },
         "/v1/chat/completions": { status: 401, body: OPENAI_ERROR },
       }),
@@ -216,7 +305,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
   it("openai-chat is the last resort", async () => {
     const res = await detectModelProtocol({
       baseUrl: BASE,
-      fetchImpl: fakeFetch({
+      fetchImpl: gateway({
         "/v1/chat/completions": { status: 400, body: OPENAI_ERROR },
       }),
     });
@@ -224,16 +313,85 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(res.probes.map((p) => p.outcome)).toEqual(["route_missing", "route_missing", "served"]);
   });
 
-  it("nothing matches: no detected protocol, all three probes reported", async () => {
-    const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: fakeFetch({}) });
+  it("nothing matches: no detected protocol, no base URL, and every candidate's probes reported", async () => {
+    const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: gateway({}) });
     expect(res.detected).toBeUndefined();
-    expect(res.probes).toHaveLength(3);
+    expect(res.baseUrl).toBeUndefined();
+    expect(res.probes).toHaveLength(candidateBaseUrls(BASE).length * 3);
     expect(res.probes.every((p) => p.outcome === "route_missing")).toBe(true);
+    // The whole first candidate is exhausted before the second one is tried.
+    expect(res.probes.map((p) => p.url)).toEqual([
+      "https://gw.example.com/v1/responses",
+      "https://gw.example.com/v1/v1/messages",
+      "https://gw.example.com/v1/chat/completions",
+      "https://gw.example.com/responses",
+      "https://gw.example.com/v1/messages",
+      "https://gw.example.com/chat/completions",
+    ]);
+  });
+
+  it("an MMSP server is never detected: Google GenAI and MMSP are picked by hand, not probed", async () => {
+    // An MMSP server answers its /v1/stream like any API (a JSON 400 for the {} probe) and 404s
+    // every other route; detection still tries only the three protocols and finds nothing.
+    const seen: SeenCall[] = [];
+    const res = await detectModelProtocol({
+      baseUrl: "http://127.0.0.1:25752/v1",
+      fetchImpl: gateway(
+        {
+          "/v1/stream": {
+            status: 400,
+            body: JSON.stringify({ error: { type: "InvalidRequestError", message: "no model" } }),
+          },
+          "/v1/v1beta/models": { status: 400, body: OPENAI_ERROR },
+        },
+        seen,
+      ),
+    });
+    expect(res.detected).toBeUndefined();
+    expect(seen.map((c) => new URL(c.url).pathname)).toEqual([
+      "/v1/responses",
+      "/v1/v1/messages",
+      "/v1/chat/completions",
+      "/responses",
+      "/v1/messages",
+      "/chat/completions",
+    ]);
+  });
+
+  it("a pasted endpoint URL detects on the base it strips down to, and reports that base back", async () => {
+    const res = await detectModelProtocol({
+      baseUrl: "https://gw.example.com/v1/chat/completions",
+      fetchImpl: gateway({ "/v1/chat/completions": { status: 401, body: OPENAI_ERROR } }),
+    });
+    expect(res.detected).toBe("openai-chat");
+    expect(res.baseUrl).toBe("https://gw.example.com/v1");
+    // The two misses before it are the same candidate's earlier protocols, not another base.
+    expect(res.probes.map((p) => [p.clientType, p.outcome, p.url])).toEqual([
+      ["openai-responses", "route_missing", "https://gw.example.com/v1/responses"],
+      ["ant-messages", "route_missing", "https://gw.example.com/v1/v1/messages"],
+      ["openai-chat", "served", "https://gw.example.com/v1/chat/completions"],
+    ]);
+  });
+
+  it("a base URL typed without /v1 falls through to the /v1 candidate and reports it", async () => {
+    const res = await detectModelProtocol({
+      baseUrl: "https://gw.example.com",
+      fetchImpl: gateway({ "/v1/responses": { status: 400, body: OPENAI_ERROR } }),
+    });
+    expect(res.detected).toBe("openai-responses");
+    expect(res.baseUrl).toBe("https://gw.example.com/v1");
+    expect(res.probes.map((p) => p.outcome)).toEqual([
+      "route_missing",
+      "route_missing",
+      "route_missing",
+      "served",
+    ]);
+    expect(res.probes[3]!.url).toBe("https://gw.example.com/v1/responses");
   });
 
   it("probe failures do not stop the sequence: a timeout on /responses still finds chat completions", async () => {
-    const timeoutOnResponses: typeof fetch = (async (input: Parameters<typeof fetch>[0]) => {
-      const path = new URL(String(input)).pathname;
+    const timeoutOnResponses = fakeFetch((call) => {
+      const path = new URL(call.url).pathname;
       if (path === "/v1/responses") {
         throw new DOMException("The operation timed out", "TimeoutError");
       }
@@ -244,7 +402,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
         status: 401,
         headers: { "content-type": "application/json" },
       });
-    }) as typeof fetch;
+    }).fetch;
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: timeoutOnResponses });
     expect(res.detected).toBe("openai-chat");
     expect(res.probes.map((p) => p.outcome)).toEqual(["timeout", "network_error", "served"]);
@@ -254,8 +412,8 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     // Streams well past MAX_PROBE_BODY_BYTES; the reader must stop at the cap rather than
     // materialize the whole thing, and the probe must not be credited as served.
     let pushed = 0;
-    const flooder: typeof fetch = (async (input: Parameters<typeof fetch>[0]) => {
-      const path = new URL(String(input)).pathname;
+    const flooder = fakeFetch((call) => {
+      const path = new URL(call.url).pathname;
       if (path === "/v1/v1/messages") {
         return new Response(OPENAI_ERROR, {
           status: 404,
@@ -283,7 +441,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );
-    }) as typeof fetch;
+    }).fetch;
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: flooder });
     expect(res.probes[0]?.outcome).toBe("junk");
     expect(res.detected).toBe("openai-chat");
@@ -293,14 +451,16 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(pushed).toBeLessThanOrEqual(MAX_PROBE_BODY_BYTES * 2);
   });
 
-  it("auth headers mirror the AgentHub clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
+  it("auth headers mirror the MMSP clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
       baseUrl: `${BASE}/`, // trailing slash must not double up
       apiKey: "sk-secret-key",
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
-    expect(seen).toHaveLength(3);
+    // Nothing serves, so both candidates are probed; the header shapes are asserted on the
+    // first candidate's three calls.
+    expect(seen).toHaveLength(6);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.url).toBe("https://gw.example.com/v1/responses");
     expect(messages.url).toBe("https://gw.example.com/v1/v1/messages");
@@ -323,7 +483,7 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       // Empty env: no key from anywhere, so this stays the genuinely keyless case
       // regardless of what the machine running the suite happens to export.
       env: {},
-      fetchImpl: fakeFetch({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }, seen),
+      fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }, seen),
     });
     expect(res.detected).toBe("openai-responses");
     expect(seen[0]!.headers.authorization).toBeUndefined();
@@ -336,38 +496,83 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
 // ---------------------------------------------------------------------------
 
 describe("envApiKeyForProtocol", () => {
-  it("maps each protocol to the variable its AgentHub client actually reads", () => {
+  const OPENAI = "https://api.openai.com/v1";
+  const ANTHROPIC = "https://api.anthropic.com";
+
+  it("maps each protocol to the variable its MMSP client actually reads, for the vendor's own endpoint", () => {
     const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
-    expect(envApiKeyForProtocol("openai-responses", env)).toBe("sk-openai");
-    expect(envApiKeyForProtocol("openai-chat", env)).toBe("sk-openai");
+    expect(envApiKeyForProtocol("openai-responses", OPENAI, env)).toBe("sk-openai");
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, env)).toBe("sk-openai");
     // The whole point of resolving per protocol: this one is NOT an OPENAI_* reader.
-    expect(envApiKeyForProtocol("ant-messages", env)).toBe("sk-anthropic");
+    expect(envApiKeyForProtocol("ant-messages", ANTHROPIC, env)).toBe("sk-anthropic");
+  });
+
+  it("lends nothing to a URL that is not the vendor's own, even one OPENAI_BASE_URL names", () => {
+    const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
+    // A gateway, a private server: the user's vendor key must not be sent there.
+    expect(envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", env)).toBeUndefined();
+    expect(envApiKeyForProtocol("ant-messages", "http://127.0.0.1:8000", env)).toBeUndefined();
+    // Only the client's default endpoint takes the key when a URL is given: naming the URL in
+    // OPENAI_BASE_URL does not make it one.
+    expect(
+      envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", {
+        ...env,
+        OPENAI_BASE_URL: "https://gw.example.com/v1/",
+      }),
+    ).toBeUndefined();
   });
 
   it("treats unset and blank as absent", () => {
-    expect(envApiKeyForProtocol("openai-chat", {})).toBeUndefined();
-    expect(envApiKeyForProtocol("openai-chat", { OPENAI_API_KEY: "   " })).toBeUndefined();
-    expect(envApiKeyForProtocol("ant-messages", { OPENAI_API_KEY: "sk-openai" })).toBeUndefined();
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, {})).toBeUndefined();
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, { OPENAI_API_KEY: "   " })).toBeUndefined();
+    expect(
+      envApiKeyForProtocol("ant-messages", ANTHROPIC, { OPENAI_API_KEY: "sk-openai" }),
+    ).toBeUndefined();
   });
 });
 
 describe("detectModelProtocol env fallback", () => {
   const BASE = "https://gw.example.com/v1";
 
-  it("authenticates each probe from the env var for the protocol THAT probe speaks", async () => {
+  it("probes a URL that is not a vendor's own anonymously, whatever vendor keys are set", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
       baseUrl: BASE,
-      env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen), // every path 404s, so all three probes run
+      // OPENAI_BASE_URL naming the URL changes nothing: environment keys are for official
+      // endpoints only.
+      env: {
+        OPENAI_API_KEY: "sk-openai",
+        OPENAI_BASE_URL: BASE,
+        ANTHROPIC_API_KEY: "sk-anthropic",
+      },
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
     });
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(6);
+    for (const call of seen) {
+      expect(call.headers.authorization).toBeUndefined();
+      expect(call.headers["x-api-key"]).toBeUndefined();
+    }
+  });
+
+  it("authenticates each probe of a vendor's own URL from the env var for the protocol THAT probe speaks", async () => {
+    const seen: SeenCall[] = [];
+    await detectModelProtocol({
+      baseUrl: "https://api.openai.com/v1",
+      env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
+    });
+    expect(seen).toHaveLength(6);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.headers.authorization).toBe("Bearer sk-openai");
     expect(chat.headers.authorization).toBe("Bearer sk-openai");
-    // ant-messages carries the Anthropic key through both header conventions.
-    expect(messages.headers.authorization).toBe("Bearer sk-anthropic");
-    expect(messages.headers["x-api-key"]).toBe("sk-anthropic");
+    // OpenAI's host is not Anthropic's endpoint: the Messages probe stays anonymous there.
+    expect(messages.headers.authorization).toBeUndefined();
+    expect(messages.headers["x-api-key"]).toBeUndefined();
+    // The neighbouring /v1-less candidate is not the official endpoint either.
+    const [responses2, messages2, chat2] = seen.slice(3) as [SeenCall, SeenCall, SeenCall];
+    expect(responses2.headers.authorization).toBeUndefined();
+    expect(messages2.headers["x-api-key"]).toBeUndefined();
+    expect(chat2.headers.authorization).toBeUndefined();
     // Whatever the source, the credential never reaches a URL.
     for (const call of seen) {
       expect(call.url).not.toContain("sk-openai");
@@ -381,7 +586,7 @@ describe("detectModelProtocol env fallback", () => {
       baseUrl: BASE,
       apiKey: "sk-typed",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
     for (const call of seen) expect(call.headers.authorization).toBe("Bearer sk-typed");
     expect((seen[1] as SeenCall).headers["x-api-key"]).toBe("sk-typed");
@@ -390,9 +595,9 @@ describe("detectModelProtocol env fallback", () => {
   it("falls back per protocol, so a half-configured environment still authenticates its own probe", async () => {
     const seen: SeenCall[] = [];
     await detectModelProtocol({
-      baseUrl: BASE,
+      baseUrl: "https://api.anthropic.com",
       env: { ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen),
+      fetchImpl: gateway({}, seen),
     });
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.headers.authorization).toBeUndefined();
@@ -402,9 +607,9 @@ describe("detectModelProtocol env fallback", () => {
 
   it("never echoes an env-sourced key into the reported probes", async () => {
     const res = await detectModelProtocol({
-      baseUrl: BASE,
+      baseUrl: "https://api.openai.com/v1",
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }),
+      fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }),
     });
     expect(res.detected).toBe("openai-responses");
     expect(JSON.stringify(res)).not.toContain("sk-openai");
@@ -446,17 +651,26 @@ describe("POST /api/projects/:p/models/detect", () => {
   let projectId: string;
   const detectUrl = () => `/api/projects/${projectId}/models/detect`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "diana");
     api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await api.post("/api/projects", { projectId: "diana-detect", name: "Detect project" })
+      await api.post("/api/projects", {
+        projectId: `diana-detect_${projects}`,
+        name: "Detect project",
+      })
     ).json()) as { project: { projectId: string } };
     projectId = created.project.projectId;
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("validates baseUrl: required and absolute http(s)", async () => {
@@ -493,7 +707,7 @@ describe("POST /api/projects/:p/models/detect", () => {
     }
   });
 
-  it("the paired reference falls back to the stored key (probe before the frontend ever sees a plaintext key); clearApiKey suppresses that fallback and leaves only the env var", async () => {
+  it("the paired reference falls back to the stored key (probe before the frontend ever sees a plaintext key); clearApiKey suppresses that fallback, and a private URL is not lent the env var", async () => {
     const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
     const server = antOnlyServer(seen);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -523,14 +737,16 @@ describe("POST /api/projects/:p/models/detect", () => {
       expect(messagesProbe?.xApiKey).toBe("sk-stored-secret");
 
       // clearApiKey drops the STORED key. What backs the probe then is whatever the saved
-      // model itself would run on, i.e. the protocol's env var — so this asserts both
-      // halves, with the environment pinned (the real one must never reach a probe, and
-      // the suite must not depend on what the developer exports).
+      // model itself would run on — and a private server is allowed no env var — so this
+      // asserts both halves, with the environment pinned (the real one must never reach a
+      // probe, and the suite must not depend on what the developer exports).
       const savedAnthropic = process.env.ANTHROPIC_API_KEY;
       const savedOpenai = process.env.OPENAI_API_KEY;
+      const savedAnthropicBase = process.env.ANTHROPIC_BASE_URL;
       try {
         delete process.env.ANTHROPIC_API_KEY;
         delete process.env.OPENAI_API_KEY;
+        delete process.env.ANTHROPIC_BASE_URL;
         seen.length = 0;
         const cleared = await api.post(detectUrl(), {
           baseUrl: `http://127.0.0.1:${port}`,
@@ -547,27 +763,117 @@ describe("POST /api/projects/:p/models/detect", () => {
         expect(keyless?.xApiKey).toBeUndefined();
         expect(keyless?.auth).toBeUndefined();
 
-        // Same request with the env var present: the stored key stays suppressed, and the
-        // environment — not "sk-stored-secret" — is what authenticates the probe.
+        // Same request with the env var present — and even with ANTHROPIC_BASE_URL naming
+        // this very server: the stored key stays suppressed, and the local server is not
+        // Anthropic's endpoint, so the Anthropic key is NOT lent to it and the probe stays
+        // anonymous. Only the client's own default endpoint takes the environment key.
         process.env.ANTHROPIC_API_KEY = "sk-env-anthropic";
+        process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
         seen.length = 0;
-        const viaEnv = await api.post(detectUrl(), {
+        const withheld = await api.post(detectUrl(), {
           baseUrl: `http://127.0.0.1:${port}`,
           provider: "custom",
           modelId: "stored-key-model",
           clearApiKey: true,
         });
-        expect(viaEnv.status).toBe(200);
-        const envProbe = seen.find((c) => c.path === "/v1/messages");
-        expect(envProbe?.xApiKey).toBe("sk-env-anthropic");
-        expect(envProbe?.auth).toBe("Bearer sk-env-anthropic");
+        expect(withheld.status).toBe(200);
+        expect(((await withheld.json()) as ModelProtocolDetectResponse).detected).toBe(
+          "ant-messages",
+        );
+        const withheldProbe = seen.find((c) => c.path === "/v1/messages");
+        expect(withheldProbe?.xApiKey).toBeUndefined();
+        expect(withheldProbe?.auth).toBeUndefined();
       } finally {
         if (savedAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
         else process.env.ANTHROPIC_API_KEY = savedAnthropic;
         if (savedOpenai === undefined) delete process.env.OPENAI_API_KEY;
         else process.env.OPENAI_API_KEY = savedOpenai;
+        if (savedAnthropicBase === undefined) delete process.env.ANTHROPIC_BASE_URL;
+        else process.env.ANTHROPIC_BASE_URL = savedAnthropicBase;
       }
     } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("a group alone probes with the group's key, and so does a model with no key of its own; clearApiKey on the group probes keyless", async () => {
+    const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
+    const server = antOnlyServer(seen);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      const put = await api.put(`/api/projects/${projectId}/models`, {
+        providers: { "my-lab": { baseUrl, apiKey: "sk-lab-group-0001" } },
+        models: [{ provider: "my-lab", modelId: "lab-model", clientType: "openai-chat" }],
+      });
+      expect(put.status).toBe(200);
+      const messagesKey = () => seen.find((c) => c.path === "/v1/messages")?.xApiKey;
+
+      for (const body of [
+        { baseUrl, provider: "my-lab" },
+        { baseUrl, provider: "my-lab", modelId: "lab-model" },
+        // Clearing the model's own key leaves it on its group's.
+        { baseUrl, provider: "my-lab", modelId: "lab-model", clearApiKey: true },
+      ]) {
+        seen.length = 0;
+        const res = await api.post(detectUrl(), body);
+        expect(res.status).toBe(200);
+        expect(JSON.stringify(await res.json())).not.toContain("sk-lab-group-0001");
+        expect(messagesKey(), JSON.stringify(body)).toBe("sk-lab-group-0001");
+      }
+
+      // The group dialog's "clear the group key": the probe is the draft's, so it is keyless.
+      seen.length = 0;
+      const cleared = await api.post(detectUrl(), {
+        baseUrl,
+        provider: "my-lab",
+        clearApiKey: true,
+      });
+      expect(((await cleared.json()) as ModelProtocolDetectResponse).detected).toBe("ant-messages");
+      expect(messagesKey()).toBeUndefined();
+
+      // A model id still needs its group.
+      expect((await api.post(detectUrl(), { baseUrl, modelId: "lab-model" })).status).toBe(400);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("a Penguin Go probe sends no environment key to the relay endpoint, the retired relay variable included", async () => {
+    const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
+    const server = antOnlyServer(seen);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const saved = {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
+    };
+    process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
+    process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
+    // Penguin Go takes keys from the config alone: the variable it once read is ignored.
+    process.env.PENGUIN_GO_API_KEY = "relay-env-must-not-cross";
+    try {
+      const response = await api.post(detectUrl(), {
+        baseUrl: `http://127.0.0.1:${port}`,
+        provider: "penguin-go",
+        modelId: "deepseek-flash",
+      });
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as ModelProtocolDetectResponse).detected).toBe(
+        "ant-messages",
+      );
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((request) => request.auth === undefined)).toBe(true);
+      expect(seen.every((request) => request.xApiKey === undefined)).toBe(true);
+    } finally {
+      if (saved.anthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = saved.anthropic;
+      if (saved.openai === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = saved.openai;
+      if (saved.penguin === undefined) delete process.env.PENGUIN_GO_API_KEY;
+      else process.env.PENGUIN_GO_API_KEY = saved.penguin;
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });

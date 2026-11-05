@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
+import type { Profile } from "./app-identity.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { osProxyEnv } from "./os-proxy.js";
 import { choosePort, readPreferredPort, rememberPreferredPort } from "./port-memory.js";
@@ -80,7 +81,8 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
     if (exited()) throw new Error("The embedded server exited during startup.");
     try {
       // Any HTTP answer counts (the root may 302 on the preview host); manual redirect
-      // keeps the probe from chasing hosts.
+      // keeps the probe from chasing hosts. The announcement this follows is made once the
+      // App is up, so an answer here is the App's.
       const res = await fetch(`${origin}/`, {
         redirect: "manual",
         signal: AbortSignal.timeout(1000),
@@ -104,6 +106,8 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
  */
 export async function startEmbeddedServer(opts: {
   dataRoot: string;
+  /** Which instance this is; the server reaches other machines' matching installation by it. */
+  profile: Profile;
   /** Pinned web dist (packaged app), or null to leave it to the server's default lookup. */
   webDist: string | null;
   /**
@@ -113,7 +117,8 @@ export async function startEmbeddedServer(opts: {
   cliEntry: string | null;
   portFile: string;
   preferredPortFile: string;
-  log: (chunk: string) => void;
+  /** One chunk of the server's output, as it arrived on `stream`. */
+  log: (chunk: string, stream: "stdout" | "stderr") => void;
 }): Promise<EmbeddedServer> {
   const token = randomBytes(32).toString("base64url");
   fs.rmSync(opts.portFile, { force: true });
@@ -129,16 +134,26 @@ export async function startEmbeddedServer(opts: {
       // The server's "use system HTTP proxy" switch then governs whether they are used.
       ...(await osProxyEnv()),
       PENGUIN_HOME: opts.dataRoot,
+      PENGUIN_PROFILE: opts.profile,
       ...(opts.webDist !== null ? { PENGUIN_WEB_DIST: opts.webDist } : {}),
       ...(opts.cliEntry !== null ? { PENGUIN_CLI_ENTRY: opts.cliEntry } : {}),
       HOST: "127.0.0.1",
+      // Reached from outside only through a relay (Penguin Remote), whose last hop sets the
+      // forwarded headers: trusting them is how the server knows the browser's https origin.
+      // Loopback does not keep every web page off the port: a DNS-rebinding page and a preview
+      // page on the loopback preview host reach it and may set any header on their own
+      // same-origin requests. Neither holds the App's cookie, and the guards that keep the
+      // preview host off the API read the raw Host, never a forwarded one. A page on another
+      // origin can set none of these headers on a cross-origin request (it would need a
+      // preflight the server never grants) or on a WebSocket handshake.
+      PENGUIN_TRUST_PROXY: "1",
       PORT: String(requestedPort),
       PENGUIN_DESKTOP_TOKEN: token,
       PENGUIN_PORT_FILE: opts.portFile,
     },
   });
-  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
-  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
+  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stdout"));
+  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stderr"));
   let exited = false;
   child.on("exit", () => {
     exited = true;

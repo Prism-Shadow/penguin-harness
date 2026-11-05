@@ -3,16 +3,31 @@
  *   GET|POST   /api/projects/:p/agents/:a/schedules
  *   POST       /api/projects/:p/agents/:a/schedules/template-placeholder  # insert the {{SCHEDULES}} placeholder
  *   GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name (name is the file name)
+ *   GET        /api/projects/:p/schedules  # every Agent's tasks in the Project, in one list
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
  * (same rules as hand-edited files), and writes take effect immediately via reconciliation.
+ * Two writes are refused: any task whose end_at is already past (it could never fire, and the
+ * scheduler would archive it the moment it landed), and a one-shot whose start_at is already
+ * past (it would fire immediately; "run once now" is not offered — user decision 2026-10-15).
+ * Settled tasks are archived by the scheduler, so no listing here ever shows one.
  */
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
+import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface SchedulesRouteDeps {
+  agentConfigService: AgentConfig;
+  config: ServerConfig;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  scheduler: Scheduling;
+  schedulesRepo: Schedules;
+}
 import { HttpError } from "../errors.js";
 import {
   badRequest,
@@ -36,6 +51,12 @@ import {
   validateScheduleModelRef,
   writeScheduleFile,
 } from "../../runtime/schedule-store.js";
+import { scheduleStatus } from "../../runtime/scheduler.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config } from "../../hmr/capabilities.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */
 function parseUpsertBody(body: Record<string, unknown>): {
@@ -91,15 +112,6 @@ function nextFireAt(
   return next !== null ? new Date(next).toISOString() : undefined;
 }
 
-/** Displayed status precedence: invalid > done/missed (one-shot) > expired > enabled flag. */
-function statusOf(def: ScheduleDefinition, state: ScheduleStateRow, nowMs: number): ScheduleStatus {
-  if (state.invalidReason !== null) return "invalid";
-  if (def.periodMs === undefined && state.firedOnce) return "done";
-  if (def.periodMs === undefined && state.missed) return "missed";
-  if (def.endAtMs !== undefined && nowMs > def.endAtMs) return "expired";
-  return def.enabled ? "active" : "disabled";
-}
-
 function toItem(
   def: ScheduleDefinition,
   state: ScheduleStateRow,
@@ -118,7 +130,7 @@ function toItem(
     ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
     ...(def.modelId !== undefined ? { modelId: def.modelId } : {}),
     ...(def.provider !== undefined ? { provider: def.provider } : {}),
-    status: statusOf(def, state, nowMs),
+    status: scheduleStatus(def, state, nowMs),
     ...(state.invalidReason !== null ? { invalidReason: state.invalidReason } : {}),
     ...(next !== undefined ? { nextFireAt: next } : {}),
     ...(state.lastFiredAt !== null ? { lastFiredAt: state.lastFiredAt } : {}),
@@ -133,13 +145,13 @@ function requireScheduleName(raw: string | undefined): string {
   return raw;
 }
 
-export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
+export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const { entries, invalid } = await deps.scheduler.listAgent(projectId, agentId);
     const nowMs = Date.now();
@@ -153,7 +165,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const name = requireScheduleName(requireString(body, "name", { minLen: 1, maxLen: 100 }));
@@ -170,7 +182,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/template-placeholder", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,
@@ -182,7 +194,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     const item = await readItem(deps, projectId, agentId, name);
     return c.json(item);
@@ -191,7 +203,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.put("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     if (!(await readScheduleFile(deps.config.root, projectId, agentId, name))) {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
@@ -204,7 +216,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     const removed = await deleteScheduleFile(deps.config.root, projectId, agentId, name);
     if (!removed)
@@ -216,9 +228,37 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * The Project-wide listing. The sidebar's session list draws every Agent's Sessions, so the
+ * scheduled-task mark it puts on a row is read from one request that spans the Project instead
+ * of one request per Agent — reading a single Agent's list would leave every other row unmarked.
+ */
+export function projectScheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { entries, invalid } = await deps.scheduler.listProject(projectId);
+    // One clock reading for the whole response: every row's status and next fire time is derived
+    // against the same instant, so a long list cannot straddle a slot boundary.
+    const nowMs = Date.now();
+    const res: ProjectSchedulesResponse = {
+      schedules: entries.map((e) => ({
+        agentId: e.agentId,
+        ...toItem(e.def, e.state, e.queued, nowMs),
+      })),
+      invalidFiles: invalid,
+    };
+    return c.json(res);
+  });
+
+  return app;
+}
+
 /** Write + register creator + reconcile immediately (API changes take effect right away). */
 async function upsert(
-  deps: AppDeps,
+  deps: SchedulesRouteDeps,
   userId: string,
   projectId: string,
   agentId: string,
@@ -229,6 +269,16 @@ async function upsert(
   const raw = serializeSchedule(fields);
   const parsed = parseScheduleFile(name, raw);
   if (!parsed.ok) throw badRequest(`Invalid schedule configuration: ${parsed.error}`);
+  // A one-shot in the past would fire at once (not offered); a past end_at could never fire.
+  const nowMs = Date.now();
+  if (parsed.def.periodMs === undefined && parsed.def.startAtMs <= nowMs) {
+    throw badRequest("start_at is already past: a one-time task needs a future start time.");
+  }
+  if (parsed.def.endAtMs !== undefined && parsed.def.endAtMs <= nowMs) {
+    throw badRequest(
+      "end_at is already past: the task would never fire again. Pick a later end time, or delete the task.",
+    );
+  }
   // At save time, verify the (provider, modelId) pair names a configured model (same rules as reconciliation) so we never persist a broken file.
   // The pairing rule itself is enforced by parseScheduleFile above, which rejects half a reference.
   const refError = await validateScheduleModelRef(deps.projectConfigService, projectId, parsed.def);
@@ -247,7 +297,7 @@ async function upsert(
 }
 
 async function readItem(
-  deps: AppDeps,
+  deps: SchedulesRouteDeps,
   projectId: string,
   agentId: string,
   name: string,
@@ -258,4 +308,45 @@ async function readItem(
   const bad = invalid.find((i) => i.name === name);
   if (bad) throw badRequest(`Invalid schedule file: ${bad.error}`);
   throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "SchedulerRoutes.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules",
+        auth: "user",
+        order: 200,
+      },
+      {
+        id: "SchedulerRoutes.projectRoutes",
+        prefix: "/api/projects/:projectId/schedules",
+        auth: "user",
+        order: 200,
+      },
+    ],
+  },
+})
+export class SchedulerRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly access!: Access;
+  @Use() private readonly scheduler!: Scheduling;
+  @Use() private readonly schedulesRepo!: Schedules;
+  @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("SchedulerRoutes.projectRoutes") projectRoutes!: Hono<AppEnv>;
+  setup() {
+    const deps: SchedulesRouteDeps = {
+      agentConfigService: this.agentConfig,
+      config: this.config,
+      projectConfigService: this.projectConfig,
+      access: this.access,
+      scheduler: this.scheduler,
+      schedulesRepo: this.schedulesRepo,
+    };
+    this.routes = scheduleRoutes(deps);
+    this.projectRoutes = projectScheduleRoutes(deps);
+  }
 }

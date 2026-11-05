@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 /** A numbered channel event; `id` is `<epoch>-<seq>`, `data` is serialized single-line JSON. */
 export interface ChannelEvent {
   id: string;
-  /** SSE event name; omitted (OmniMessage) means no `event:` line. */
+  /** SSE event name; omitted (a record) means no `event:` line. */
   event?: string;
   data: string;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-server",
-  "version": "0.2.9",
+  "version": "0.2.18",
   "type": "module",
   "description": "PenguinHarness web server: multi-user authentication and authorization, Session execution with SSE streaming, and usage accounting, built on @prismshadow/penguin-core.",
   "license": "Apache-2.0",
@@ -17,6 +17,10 @@
     "./api": {
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
     },
     "./machine-status": {
       "types": "./dist/machine-status.d.ts",
@@ -50,9 +54,9 @@
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"
     },
-    "./extension": {
-      "types": "./dist/extension/index.d.ts",
-      "import": "./dist/extension/index.js"
+    "./plugin": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./dist/plugin/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -61,38 +65,44 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7368 -- tsx watch src/index.ts",
+    "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- node ../../scripts/dev-server.mjs src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "build": "tsup"
+    "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
+    "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@prismshadow/amsp": "workspace:*",
+    "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
-    "hono": "^4.12.34",
+    "hono": "^4.13.11",
+    "isomorphic-git": "^1.44.0",
     "node-pty": "^1.1.0",
     "remark-gfm": "^4.0.0",
     "remark-parse": "^11.0.0",
-    "smol-toml": "^1.3.0",
+    "smol-toml": "^1.9.1",
     "tar": "^7.5.21",
-    "undici": "^7.29.0",
+    "typescript": "^5.6.0",
+    "undici": "^7.29.1",
     "unified": "^11.0.5",
     "ws": "^8.18.3",
     "yaml": "^2.5.0"
   },
   "devDependencies": {
+    "@prismshadow/penguin-hmr": "workspace:*",
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "4.1.12",
     "tsup": "^8.3.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   },
   "files": [
     "dist",

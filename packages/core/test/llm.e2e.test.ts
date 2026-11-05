@@ -10,10 +10,10 @@ import "dotenv/config";
 import { describe, expect, it } from "vitest";
 
 import { GenerativeModel } from "../src/llm/index.js";
-import { toolCallOutput, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, ToolCallPayload } from "../src/omnimessage/index.js";
+import { toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp/records";
 
-/** Picks a provider in order by available key; AgentHub routes by modelId and auto-reads the matching env var. */
+/** Picks a provider in order by available key; MMSP routes by modelId and auto-reads the matching env var. */
 const PROVIDERS = [
   { key: "ANTHROPIC_API_KEY", modelId: "claude-sonnet-4-6" },
   { key: "DEEPSEEK_API_KEY", modelId: "deepseek-v4-flash" },
@@ -25,6 +25,9 @@ const maybe = runLive ? it : it.skip;
 describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
   maybe(
     "streams a short reply with partial text, a complete text, and token usage",
+    // Live calls have inherent network/server jitter: allow a generous timeout and retries so
+    // one slow API call doesn't fail CI (assertions stay strict; only transient timeouts are tolerated).
+    { timeout: 90_000, retry: 2 },
     async () => {
       const model = new GenerativeModel({
         modelId: provider!.modelId,
@@ -34,14 +37,14 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
         maxTokens: 2048,
       });
 
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for await (const msg of model.streamGenerate({
         newMessages: [userText("Say hello in exactly three words.")],
       })) {
         out.push(msg);
       }
 
-      const payloadType = (m: OmniMessage): string => (m.payload as { type: string }).type;
+      const payloadType = (m: AmspRecord): string => (m.payload as { type: string }).type;
 
       // At least 1 partial_text.
       const partialTexts = out.filter((m) => payloadType(m) === "partial_text");
@@ -59,15 +62,12 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
       const usage = last.payload as { request: { total: number } };
       expect(usage.request.total).toBeGreaterThan(0);
     },
-    // Live calls have inherent network/server jitter: allow a generous timeout and retries so
-    // one slow API call doesn't fail CI (assertions stay strict; only transient timeouts are tolerated).
-    { timeout: 90_000, retry: 2 },
   );
 });
 
 // --- Gemini tool_call_id uniqueness live regression (consecutive same-name tool calls made the
 // frontend tool cards overwrite each other) ---
-// Gemini's functionCall has no call id, so AgentHub uses the function name as tool_call_id; this group
+// Gemini's functionCall has no call id, so MMSP uses the function name as tool_call_id; this group
 // verifies EventTranslator's in-Session uniqueness (#n suffix) and outbound restoration
 // (functionResponse paired by function name) round-trip on the real API. Runs only when explicitly
 // opted in with GEMINI_API_KEY set.
@@ -77,6 +77,7 @@ const maybeGemini = runGemini ? it : it.skip;
 describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquification${runGemini ? "" : ", skipped"})`, () => {
   maybeGemini(
     "same-name tool calls in two consecutive rounds get distinct tool_call_ids; a tool_result sent back with a suffixed id is paired correctly",
+    { timeout: 120_000, retry: 2 },
     async () => {
       const model = new GenerativeModel({
         modelId: "gemini-3.5-flash",
@@ -98,7 +99,7 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       });
 
       const round = async (
-        input: OmniMessage[],
+        input: AmspRecord[],
       ): Promise<{ calls: ToolCallPayload[]; text: string }> => {
         const calls: ToolCallPayload[] = [];
         let text = "";
@@ -126,7 +127,11 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       // Round 2: after returning the result the model checks Paris next — the same-name call must get a new suffixed id.
       const r2 = await round(
         r1.calls.map((c) =>
-          toolCallOutput({ output: "10:00 AM (mock)", toolCallId: c.tool_call_id }),
+          toolCallOutput({
+            output: "10:00 AM (mock)",
+            toolCallId: c.tool_call_id,
+            status: "completed",
+          }),
         ),
       );
       expect(r2.calls.length).toBeGreaterThanOrEqual(1);
@@ -137,11 +142,14 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       // pairing was accepted; some models may keep appending calls, so don't hard-assert the body.
       const r3 = await round(
         r2.calls.map((c) =>
-          toolCallOutput({ output: "3:00 AM (mock)", toolCallId: c.tool_call_id }),
+          toolCallOutput({
+            output: "3:00 AM (mock)",
+            toolCallId: c.tool_call_id,
+            status: "completed",
+          }),
         ),
       );
       expect(r3.calls.length + r3.text.length).toBeGreaterThan(0);
     },
-    { timeout: 120_000, retry: 2 },
   );
 });

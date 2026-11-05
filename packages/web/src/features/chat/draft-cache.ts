@@ -6,11 +6,17 @@
  * storage: vitest runs in a Node environment (no localStorage), so unit tests inject an in-memory
  * implementation.
  *
+ * The drafts follow the account: the default storage is lib/account-sync's synced storage, which
+ * reports every write so it reaches the account's copy on the server, and the account's drafts
+ * are written into this cache when the user signs in. The cache is what a composer mounts from,
+ * so typing never waits on the network.
+ *
  * The key must include userId (#68): if the same browser logs into different accounts in
  * succession and the key only contains the Project/Session ID, the later user would recover the
  * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
-import type { ApprovalMode } from "@prismshadow/penguin-server/api";
+import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import { syncedStorage } from "../../lib/account-sync/cache";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -18,7 +24,15 @@ export interface DraftCache {
   text?: string;
   agentId?: string;
   workspace?: string;
+  /**
+   * The machine that workspace is on; absent means this one. A path alone is not enough to
+   * act on — `/srv/app` names a different directory on every machine — so the pair travels
+   * together from the picker all the way to Session creation.
+   */
+  machineId?: string;
   approvalMode?: ApprovalMode;
+  /** The draft's own permission picks; a half left out follows the server's sandbox settings. */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * The model selected in the draft (a paired reference; (provider, modelId) is the unique key):
    * load validates the object shape; the old string-typed modelId field is simply dropped
@@ -42,6 +56,8 @@ export interface DraftCache {
    * installed list once it's ready; cleared along with the entire draft on successful send.
    */
   skills?: string[];
+  /** Start in goal mode (written by a plugin's quick start whose demo is a goal); cleared with the draft on send. */
+  goal?: true;
   /**
    * This text was composed by a "Create with AI" surface (features/ai-create/ai-bridge.ts), not
    * typed by anyone: it seeds exactly one draft and dies with it. The mark rides in the cache
@@ -98,6 +114,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   if (typeof o.text === "string") out.text = o.text;
   if (typeof o.agentId === "string") out.agentId = o.agentId;
   if (typeof o.workspace === "string") out.workspace = o.workspace;
+  if (typeof o.machineId === "string" && o.machineId !== "") out.machineId = o.machineId;
   const modelRef = parseModelRef(o.modelRef);
   if (modelRef) out.modelRef = modelRef;
   if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
@@ -110,16 +127,32 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     if (skills.length > 0) out.skills = skills;
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
+  if (o.goal === true) out.goal = true;
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
   ) {
     out.approvalMode = o.approvalMode as ApprovalMode;
   }
+  if (typeof o.sandbox === "object" && o.sandbox !== null) {
+    const raw = o.sandbox as Record<string, unknown>;
+    const sandbox: Partial<SessionSandbox> = {};
+    if (
+      raw.mode === "read-only" ||
+      raw.mode === "workspace-write" ||
+      raw.mode === "danger-full-access"
+    ) {
+      sandbox.mode = raw.mode;
+    }
+    if (raw.network === "open" || raw.network === "local" || raw.network === "none") {
+      sandbox.network = raw.network;
+    }
+    if (Object.keys(sandbox).length > 0) out.sandbox = sandbox;
+  }
   return out;
 }
 
-export function loadDraft(key: string, storage: DraftStorage = localStorage): DraftCache {
+export function loadDraft(key: string, storage: DraftStorage = syncedStorage): DraftCache {
   try {
     return parseDraft(storage.getItem(key));
   } catch {
@@ -130,7 +163,7 @@ export function loadDraft(key: string, storage: DraftStorage = localStorage): Dr
 export function saveDraft(
   key: string,
   draft: DraftCache,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   try {
     storage.setItem(key, JSON.stringify(draft));
@@ -139,7 +172,7 @@ export function saveDraft(
   }
 }
 
-export function clearDraft(key: string, storage: DraftStorage = localStorage): void {
+export function clearDraft(key: string, storage: DraftStorage = syncedStorage): void {
   try {
     storage.removeItem(key);
   } catch {
@@ -157,7 +190,7 @@ export function clearDraft(key: string, storage: DraftStorage = localStorage): v
 export function clearDraftModelRef(
   userId: string,
   projectId: string,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   const key = draftKey(userId, projectId);
   const draft = loadDraft(key, storage);
@@ -180,7 +213,7 @@ export function clearDraftModelRef(
 export function clearDraftChatDefaults(
   userId: string,
   projectId: string,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   const key = draftKey(userId, projectId);
   const draft = loadDraft(key, storage);

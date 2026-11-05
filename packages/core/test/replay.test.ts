@@ -16,6 +16,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { REJECTED_IMAGE_NOTE, replaceInputImages } from "../src/engine/rejected-images.js";
 import {
   assistantText,
   compactionBegin,
@@ -30,8 +31,8 @@ import {
   toolCall,
   toolCallOutput,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/resume.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
@@ -45,7 +46,7 @@ const usage = (total: number): TokenCounts => ({
   total,
 });
 
-function meta(): OmniMessage {
+function meta(): AmspRecord {
   return sessionMeta({
     session_id: "session-2026-07-06-10-00-00-abcdef01",
     provider: "anthropic",
@@ -54,10 +55,11 @@ function meta(): OmniMessage {
     system_prompt: "SP",
     agent_state: "/agent/state",
     workspace: "/ws",
+    source: "user",
   });
 }
 
-function textsOf(msgs: OmniMessage[]): string[] {
+function textsOf(msgs: AmspRecord[]): string[] {
   return msgs.map((m) => {
     const p = m.payload as {
       type?: string;
@@ -92,7 +94,7 @@ describe("resumeTrace", () => {
   it("re-carries the uncommitted round's raw input into the retried round", () => {
     // The synthesized carry-over (flatten) is never written to Trace: replay does its best,
     // merging the unanswered raw input as-is into the retried round (the history content differs
-    // in wording from the flatten AgentHub actually received, but matches in structure and information).
+    // in wording from the flatten MMSP actually received, but matches in structure and information).
     const result = resumeTrace([
       meta(),
       userText("A"),
@@ -115,9 +117,9 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1", status: "completed" }),
       requestBegin(),
-      thinkingMessage("half", "aborted"), // the replay request was interrupted
+      thinkingMessage("half"), // the replay request was interrupted
       requestEnd("aborted"),
     ]);
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
@@ -125,12 +127,66 @@ describe("resumeTrace", () => {
     expect(textsOf(result.carryOver)).toEqual(["result-1"]);
   });
 
+  it("an image-rejected round gives its input back with the images replaced, as the engine resent it", () => {
+    const image = "data:image/png;base64,iVBORw0KGgo=";
+    const readImage = toolCallOutput({
+      output: "image/png, 8 B",
+      toolCallId: "tc1",
+      images: [image],
+      status: "completed",
+    });
+    const errorMessage = "400 Could not process image";
+    const upToRequest: AmspRecord[] = [
+      meta(),
+      userText("look at the screenshot"),
+      requestBegin(),
+      toolCall({ name: "read_file", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      readImage,
+      requestBegin(),
+    ];
+    const retried = resumeTrace([
+      ...upToRequest,
+      requestEnd("retryable", {
+        errorCode: "image_rejected",
+        errorMessage,
+        attempt: 1,
+        retryInMs: 0,
+      }),
+      requestBegin(),
+      assistantText("I could not see it."),
+      requestEnd("completed", { attempt: 2 }),
+      tokenUsage(usage(20), usage(20)),
+    ]);
+    // The fixed note stands in for the image, as the engine sent it; the provider's text rode
+    // in the retry's [turn_retried] block, which replay does not rebuild.
+    const [resent] = textsOf(replaceInputImages([readImage]));
+    expect(resent).toBe(`image/png, 8 B\n${REJECTED_IMAGE_NOTE}`);
+    expect(textsOf(retried.history)).toEqual([
+      "look at the screenshot",
+      "read_file",
+      resent,
+      "I could not see it.",
+    ]);
+    expect((retried.history[2]!.payload as { images?: string[] }).images).toBeUndefined();
+    expect(retried.carryOver).toEqual([]);
+
+    // Any other failure gives the input back as it was: the image is resent.
+    const rejected = resumeTrace([
+      ...upToRequest,
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 unknown parameter" }),
+    ]);
+    expect(rejected.carryOver).toHaveLength(1);
+    expect((rejected.carryOver[0]!.payload as { images?: string[] }).images).toEqual([image]);
+  });
+
   it("treats begin-without-end as uncommitted: raw input re-carried, half-products lost", () => {
     const result = resumeTrace([
       meta(),
       userText("A"),
       requestBegin(),
-      thinkingMessage("half", "aborted"),
+      thinkingMessage("half"),
       // The process exited during the request: no end.
     ]);
     expect(result.history).toEqual([]);
@@ -149,7 +205,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "done-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "done-1", toolCallId: "tc1", status: "completed" }),
       // tc2's output was lost along with the process.
     ]);
     // carry-over = real trailing output + in-memory synthesized placeholder (never written to Trace), pairing complete.
@@ -167,7 +223,7 @@ describe("resumeTrace", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       // A parallel tool finished during the request: its output lands between start and stop.
-      toolCallOutput({ output: "early", toolCallId: "tc1" }),
+      toolCallOutput({ output: "early", toolCallId: "tc1", status: "completed" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
     ]);
@@ -236,7 +292,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1", status: "completed" }),
       // Steering delivered with the tool output as the second turn's input.
       userText(steered),
       requestBegin(),
@@ -274,7 +330,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "late", toolCallId: "tc1" }),
+      toolCallOutput({ output: "late", toolCallId: "tc1", status: "completed" }),
       userText(steered),
     ]);
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
@@ -295,6 +351,32 @@ describe("resumeTrace", () => {
     expect(result.contextClosed).toBe(true);
     expect(result.history).toEqual([]);
     expect(result.pendingSummary).toBeUndefined();
+  });
+
+  it("an open context names the summary it opened with until a turn completes on it", () => {
+    const summary = "[context_summary]\nthe gist\n[/context_summary]";
+    const unanswered = resumeTrace([
+      meta(),
+      userText(summary),
+      userText("and now?"),
+      requestBegin(),
+      requestEnd("aborted"),
+    ]);
+    expect(textsOf(unanswered.carryOver)).toEqual([summary, "and now?"]);
+    expect(unanswered.openingSummary).toBe(unanswered.carryOver[0]);
+
+    const answered = resumeTrace([
+      meta(),
+      userText(summary),
+      userText("and now?"),
+      requestBegin(),
+      assistantText("this"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+    ]);
+    expect(answered.openingSummary).toBeUndefined();
+    // A first input that is no summary is not one the context opened with.
+    expect(resumeTrace([meta(), userText("hello")]).openingSummary).toBeUndefined();
   });
 
   it("drops failed compaction rounds via the generic rule (prompt not in history)", () => {
@@ -329,7 +411,7 @@ describe("parseTraceLines", () => {
    * append, with a complete small record and a newline landing in the middle. Line 2
    * (big prefix + small record) and line 3 (big suffix) are both unparseable.
    */
-  function tornContent(): { content: string; survivors: OmniMessage[] } {
+  function tornContent(): { content: string; survivors: AmspRecord[] } {
     const before = userText("before");
     const after = userText("after");
     const big = JSON.stringify(imageUrlMessage(`data:image/png;base64,${"A".repeat(2048)}`));
@@ -468,7 +550,7 @@ describe("engine trace round-trip", () => {
   it("replaying an engine-written trace reconstructs the committed history", async () => {
     // Two rounds of dialogue: the first round issues and executes a tool call, the second round
     // wraps up -- the engine writes Trace (including request events); replay should reconstruct
-    // history matching what was actually committed to AgentHub, with no leftover carry-over.
+    // history matching what was actually committed to MMSP, with no leftover carry-over.
     let call = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
@@ -534,7 +616,7 @@ describe("engine trace round-trip", () => {
       async *streamGenerate() {
         call += 1;
         if (call === 1) {
-          yield thinkingMessage("half", "aborted");
+          yield thinkingMessage("half");
           return { status: "aborted" };
         }
         yield assistantText("ok");
@@ -578,9 +660,9 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
-      toolCallOutput({ output: "early", toolCallId: "tc1" }),
+      toolCallOutput({ output: "early", toolCallId: "tc1", status: "completed" }),
       requestEnd("aborted"),
-      toolCallOutput({ output: "late", toolCallId: "tc2", stopReason: "aborted" }),
+      toolCallOutput({ output: "late", toolCallId: "tc2", status: "aborted" }),
     ]);
     expect(result.history).toEqual([]);
     expect(textsOf(result.carryOver)).toEqual(["go"]);
@@ -597,8 +679,8 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       userText("go"),
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
-      toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
-      requestEnd("retryable"), // this round is dropped: tc1 never entered AgentHub history
+      toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1", status: "completed" }),
+      requestEnd("retryable"), // this round is dropped: tc1 never entered MMSP history
       requestBegin(),
       assistantText("recovered"),
       requestEnd("completed"),
@@ -663,7 +745,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     ]);
     expect(result.contextClosed).toBe(false);
     expect(result.pendingSummary).toBeUndefined();
-    // Full original history, including the committed compaction exchange (AgentHub committed
+    // Full original history, including the committed compaction exchange (MMSP committed
     // it, so the next request builds on top of it).
     expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
       "text",
@@ -696,7 +778,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
       requestEnd("completed"),
       tokenUsage(usage(150), usage(150)),
-      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct", status: "completed" }),
       compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
       userText("COMPACT NOW"),
       requestBegin(),
@@ -707,7 +789,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
       requestBegin(),
       thinkingMessage("still nothing"),
@@ -747,7 +829,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
       requestEnd("completed"),
       tokenUsage(usage(150), usage(150)),
-      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct", status: "completed" }),
       compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
       userText("COMPACT NOW"),
       requestBegin(),
@@ -757,7 +839,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ]);

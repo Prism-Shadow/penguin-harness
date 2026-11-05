@@ -2,54 +2,68 @@
 title: "Simple Harness Is All You Need"
 date: 2026-07-22
 category: perspectives
-excerpt: Databricks benchmarked coding agents against real pull requests from its own multi-million-line codebase. The best score on the entire board did not belong to the most capable harness — it belonged to the simplest one, at roughly half the cost. Here is why context discipline beats feature count, and how PenguinHarness is built around that bet.
+excerpt: Databricks benchmarked coding agents on roughly a hundred real pull requests, and the highest pass rate went to the simplest harness at about half the cost. This essay argues that a harness is an information budget, and shows how PenguinHarness is built around that idea.
 ---
 
-You would expect a feature-rich agent harness to beat a minimal one. More tools, more context, more scaffolding, better decisions. That is the intuition the entire category was built on.
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
 
-Databricks tested it against real work — roughly a hundred pull requests pulled from their own multi-million-line production monorepo, graded by restoring the held-out tests and running them. Here is the result:
+An **agent harness** is the software around a language model that decides what goes into each request: the system prompt, the tool definitions, and the message history. The common intuition is that a bigger harness makes a better agent. More tools, more context, and more scaffolding should lead to better decisions, and the whole category was built on that belief.
 
-![Databricks' Pareto chart: pass-rate against cost per task. The frontier is dominated by the minimal Pi harness, and the highest score on the chart is Opus 4.8 on Pi](/blog-assets/databricks-pareto.png)
+This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn.
+
+## The evidence: a benchmark on real pull requests
+
+Databricks tested the intuition against real work. It took roughly a hundred pull requests from its own multi-million-line production monorepo, and graded each run by restoring the held-out tests and running them. Here is the result:
+
+![Scatter plot from the Databricks benchmark: pass rate against cost per task for coding agents. Red points mark the Pareto frontier, which is dominated by the minimal Pi harness, and the highest point is Opus 4.8 on Pi](/blog-assets/databricks-pareto.png)
 
 _Pass-rate against cost per task. Red points form the Pareto frontier. Source: [Databricks](https://www.databricks.com/blog/benchmarking-coding-agents-databricks-multi-million-line-codebase)._
 
-Read the top of that chart carefully, because it is the opposite of what the intuition predicts. **The single highest pass-rate — about 90% — belongs to Opus 4.8 running on [Pi](https://github.com/earendil-works/pi), a harness whose entire core is read, write, edit, and a shell.** The same model on Claude Code at maximum effort scores slightly lower, at roughly twice the cost per task. And of the points on the Pareto frontier, most are Pi.
+The top of the chart inverts the intuition. The single highest pass rate, about 90%, belongs to Opus 4.8 running on [Pi](https://github.com/earendil-works/pi), a harness whose entire core is read, write, edit, and a shell. The same model on Claude Code at maximum effort scores slightly lower, at roughly twice the cost per task. Most of the points on the Pareto frontier, the runs that no other run beats on both cost and pass rate, are Pi.
 
-The minimal harness did not merely hold its own on price. **At the top of the board, it won.**
+The minimal harness did not merely hold its own on price. At the top of the board, it won.
 
-Databricks were careful not to overclaim, and so are we: their stated lesson is not that one harness is always cheaper or that vendor harnesses are worse. The chart backs that caution up — Opus on Pi at `max` effort lands around 81%, well below Claude Code at comparable spend. Simplicity is not a guarantee. But the direction is unmistakable, and their explanation of the mechanism is a single sentence:
+Databricks is careful not to overclaim, and so are we. Its stated lesson is not that one harness is always cheaper, or that vendor harnesses are worse. The chart supports that caution: Opus on Pi at `max` effort lands around 81%, well below Claude Code at comparable spend. Simplicity is not a guarantee. The direction is still clear, and Databricks explains the mechanism in two sentences:
 
 > "Pi sent about 3x less context per turn. It managed context better, keeping a tighter working set and finishing the tasks in fewer runs."
 
-One more detail worth noting, since it is rarer than it should be: they refused to grade with a model, on the grounds that doing so "rewards sounding right over being right."
+One choice in the method deserves mention, because few benchmarks make it: Databricks refused to grade with a model, on the grounds that doing so "rewards sounding right over being right."
 
-## 1. A harness is an information budget
+## A harness is an information budget
 
-A model is a function behind an API. It receives a system prompt, tool definitions, and a message history; it returns text and tool calls. That contract is fixed and public. **Everything else — every piece of software deciding what goes into that request — is the harness.**
+A model is a function behind an API. It receives a system prompt, tool definitions, and a message history, and it returns text and tool calls. That contract is fixed and public, so a harness makes exactly one kind of decision: what occupies the model's context window on each turn.
 
-Which means a harness only ever makes one kind of decision: what occupies the finite context window. It is not a feature list. It is a budget, spent on the model's behalf, on every single turn.
+The context window, the text a model can attend to in one request, is finite. Everything a harness does is therefore allocation: it spends a budget on the model's behalf, on every turn. Two harnesses that call the same model are not running different intelligence. They are running different budgets, and in the Databricks data, the one that spent less scored higher.
 
-That reframing explains the chart immediately. Two harnesses calling the same model are not running different intelligence. They are running different budgets — and the one that spent less scored higher.
+## Where context weight accumulates
 
-## 2. Where the weight accumulates
+Context bloat is never one bad decision. It is four defensible ones, compounding on every turn.
 
-Context bloat is never one bad decision. It is four defensible ones, compounding every turn.
+### The tool surface
 
-**The tool surface.** Every tool costs its name, description, and full JSON Schema in *every* request. Thirty tools is not thirty conveniences — it is a permanent tax plus a wider decision space to get lost in. And the marginal ones usually re-implement something a shell already does.
+Every tool costs its name, description, and full JSON Schema in *every* request. Thirty tools are not thirty conveniences. They are a permanent tax, plus a wider decision space for the model to get lost in. The marginal tools usually re-implement something a shell already does.
 
-**Tool output.** A dependency install dumps thousands of lines. That output is not billed once; it becomes history and gets resent every subsequent turn. Uncapped output is the fastest way to turn a cheap task into an expensive one.
+### Tool output
 
-**The system prompt.** Long behavioral rulebooks encode judgment the model already has. Telling a frontier model not to hardcode credentials spends tokens restating its training. Worse, over-specification implies the model is not trusted to reason — which makes it hesitant precisely in the cases the rules failed to anticipate.
+A dependency install prints thousands of lines. That output is not billed once: it becomes history and is resent on every later turn. Uncapped output is the fastest way to turn a cheap task into an expensive one.
 
-**Per-turn injections.** Environment snapshots, status blocks, re-sent config files, stapled onto every message. Individually tiny, structurally permanent.
+### The system prompt
 
-None of these are wrong ideas. They are unpriced ones.
+Long behavioral rulebooks encode judgment the model already has. Telling a frontier model not to hardcode credentials spends Tokens restating its training. Worse, over-specification implies that the model is not trusted to reason, which makes it hesitant in exactly the cases the rules failed to anticipate.
 
-## 3. How PenguinHarness is built
+### Per-turn injections
 
-We made this bet before the benchmark existed, and it is visible in the source rather than the marketing. Every number below is checkable in the repo.
+Environment snapshots, status blocks, and re-sent config files get stapled onto every message. Each one is tiny, but structurally it is permanent.
 
-**Six tools, and no file tools at all.** PenguinHarness ships [six built-in tools](https://penguin.ooo/docs/tools); any session sees five, since the two image tools are mutually exclusive by model class.
+None of these is a wrong idea. The problem is that nobody puts a price on them.
+
+## How PenguinHarness is built
+
+We made this bet before the benchmark existed, and it shows in the source code rather than in marketing copy. Each detail in this section can be checked in the repository at the `v0.1.1` tag.
+
+### Six tools, and no file tools
+
+PenguinHarness 0.1.1 ships [six built-in tools](https://github.com/Prism-Shadow/penguin-harness/blob/v0.1.1/packages/docs/content/tools.en.md). Any one Session sees five of them, because the two image tools are mutually exclusive by model class.
 
 | Tool | Purpose |
 | --- | --- |
@@ -58,51 +72,71 @@ We made this bet before the benchmark existed, and it is visible in the source r
 | `run_subagent` / `input_subagent` | Delegate a subtask to a child agent, then poll or follow up |
 | `read_image` / `describe_image` | Return an image, or have a vision model describe it in text |
 
-There is no read tool, no write tool, no edit tool, no glob, no grep. Reading, writing, editing and searching all go through the shell, because the shell already does them and the model already knows how. Where a four-tool minimal core spends read, write and edit on the filesystem, **we spend one**. We are not claiming the smallest absolute tool count — Pi's core is tighter by one — but the smallest schema surface for what agents actually do all day.
+In 0.1.1 there is no read tool, write tool, edit tool, glob, or grep. Reading, writing, editing, and searching all go through the shell, because the shell already does them and the model already knows how. A four-tool minimal core spends three tools (read, write, and edit) on the filesystem; PenguinHarness spends one. We do not claim the smallest absolute tool count, since Pi's core has one tool fewer. We claim the smallest schema surface for what agents actually do all day.
 
-**A 72-line system prompt.** The default template is 72 lines, about 6,600 characters before substitution ([source](https://github.com/Prism-Shadow/penguin-harness/blob/main/packages/core/src/state/default-config.ts)). Role, success criteria, constraints, stop rules, filesystem layout, a short list of suggested workflows — then it stops.
+### A 72-line system prompt
 
-**Output capped by default.** Every tool call truncates at 16,000 characters, enforced centrally by the Environment. Exit codes are appended *outside* the truncation window, so the line telling the model whether the command succeeded survives even when the middle is cut.
+The 0.1.1 default template is 72 lines, about 6,500 characters before placeholder substitution ([source](https://github.com/Prism-Shadow/penguin-harness/blob/v0.1.1/packages/core/src/state/default-config.ts)). It covers the role, success criteria, constraints, stop rules, the filesystem layout, and a short list of suggested workflows. Then it stops.
 
-**Skills that cost nothing until used.** There is no skill tool. The prompt carries only each skill's name and one-line description; the body is read on demand with an ordinary shell command. A skill you do not use costs you a single line.
+### Output capped by default
 
-**Compaction into a clean context.** Past 128,000 tokens, the engine summarizes into a `<context_summary>` and continues in a *fresh* context rather than appending to a swollen history — so one trace file is always exactly one model context.
+The Environment truncates the output of every tool call at 16,000 characters, in one central place. Exit codes are appended *outside* the truncation window, so the line that tells the model whether the command succeeded survives even when long output is cut.
 
-**A clean message protocol.** No environment metadata stapled to user messages. The model receives the conversation: user turns, assistant turns, tool results.
+### Skills that cost one line until used
 
-## 4. Why less wins
+There is no skill tool. The prompt carries only each Skill's name and one-line description, and the agent reads the body on demand with an ordinary shell command. A Skill that goes unused costs a single line.
 
-The intuition that more context means better decisions is not stupid. It is wrong at the margin, for two reasons.
+### Compaction into a clean context
 
-**Attention is a fixed budget that gets divided.** Self-attention weighs every token against every other. Grow a request from 20K to 60K tokens and the decisive parts — the actual error, the actual constraint — hold a smaller share. Five rules that are followed beat fifty that compete; five tools chosen correctly beat thirty that widen the search.
+Past 128,000 Tokens, the engine summarizes the conversation into a `<context_summary>` and continues in a *fresh* context, instead of appending to a swollen history. As a result, one Trace file always holds exactly one model context.
 
-**Redundant instruction costs more than tokens.** Rules restating training data do not add capability, they add the suggestion that judgment is unwanted. The failure mode is not rule-breaking — it is freezing on the case the rules did not cover.
+### A clean message protocol
 
-There is a third, practical reason: **portability**. Post-training binds models to the *protocol*, not to a harness. Every serious model trains on the same function-calling contract. From the model's side, a lean harness is just a standard request that happens to be short — which is why several vendors' models plus open-weight GLM all did well through the same minimal wrapper, and why lean designs keep working when you switch models. For a project whose proposition is 1000+ models behind one interface, that is the foundation.
+No environment metadata is stapled to user messages. The model receives the conversation itself: user turns, assistant turns, and tool results.
 
-It is also why our own numbers land where they do. On complex data analysis, PenguinHarness on DeepSeek V4 Pro took the highest accuracy of the three harnesses we tested (66.67% against 53.33% for both) at **$0.55** against Claude Code's **$38.48** — roughly 1/70 the bill. On coding we tie Codex at 71.25% and trail Claude Code's 86.25%, but the suite cost **$3.81** against **$220.08** and **$146.97**. We do not claim to beat a frontier model on every axis. We claim the quality gap is one to two orders of magnitude smaller than the price gap.
+## Why less context wins
 
-## 5. What minimalism must not cost
+The intuition that more context improves decisions is reasonable. It is wrong at the margin for two reasons, and a third, practical reason also favors a lean harness.
 
-Here is where we part company with minimalism as a philosophy.
+The first reason is mechanical: attention is a fixed budget that gets divided. Self-attention weighs every Token against every other. When a request grows from 20K to 60K Tokens, the decisive parts, such as the actual error and the actual constraint, hold a smaller share. Five rules that are followed beat fifty that compete, and five tools chosen correctly beat thirty that widen the search.
 
-Stripping a harness down is easy if you also strip out what makes an autonomous process safe on a real machine. Pi's own README is upfront that it *"does not include a built-in permission system"* and suggests containers instead. Reasonable for a personal CLI. Not a trade an enterprise can make.
+The second reason is that redundant instructions cost more than Tokens. Rules that restate training data add no capability; they add the suggestion that judgment is unwanted. The resulting failure is not rule-breaking. It is freezing on a case the rules did not cover.
 
-We treat safety and observability as load-bearing, and they are cheap in context precisely because they live in the runtime rather than the prompt:
+The third reason is practical: portability. Post-training binds a model to the *protocol*, not to a harness, and every serious model trains on the same function-calling contract. From the model's side, a lean harness is just a standard request that happens to be short. That is why models from several vendors, plus the open-weight GLM, all did well through the same minimal wrapper, and why lean designs keep working when you switch models. For a project that offers 1000+ models behind one interface, portability is the foundation.
 
-- **Every tool call gets exactly one approval decision**, in one of four modes — allow-all, deny-all, read-only, always-ask. The SDK denies by default when no approver is supplied, so nothing runs unattended by accident.
-- **Every decision is audited** to the Trace as an `approval_decision` event.
-- **Tools never throw into the engine.** Failures become tool output the model reads and reacts to — which is also why a lean prompt is safe: the environment reports its own errors clearly enough that the prompt does not have to anticipate them.
+The same reasoning explains where our own benchmark numbers land. In those runs, each harness used the model it is normally paired with: DeepSeek V4 Pro on PenguinHarness, Claude Opus 4.8 on Claude Code, and GPT-5.5 on Codex.
 
-Zero extra tokens per turn, fully auditable. Discipline in the context window; rigor in the runtime.
+- **Complex data analysis.** PenguinHarness had the highest accuracy of the three harnesses we tested, 66.67% against 53.33% for both others. It cost $0.55 against Claude Code's $38.48, roughly 1/70 of the bill.
+- **Coding.** PenguinHarness ties Codex at 71.25% and trails Claude Code's 86.25%. The suite cost $3.81, against $220.08 for Codex and $146.97 for Claude Code.
 
-## 6. The takeaway
+We do not claim to beat a frontier model on every axis. We claim that the quality gap is one to two orders of magnitude smaller than the price gap.
 
-The result worth internalizing is not that simple harnesses are cheaper. It is that at the top of a real benchmark, on real pull requests, **the simplest harness produced the best result** — and did it by sending less.
+## What minimalism must not cost
 
-If you are building agents, the audit is short. How many tools does your model see, and how many re-implement a shell? What is your hard cap on tool output? How many lines of your system prompt teach the model things it learned in pre-training? What gets injected into every message?
+This is where we part company with minimalism as a philosophy. A lean context must not come at the cost of what makes an autonomous process safe on a real machine.
 
-Every answer is a line item, charged on every turn, for the life of the task.
+Stripping a harness down is easy if you strip out those safeguards too. Pi's own README says plainly that it "does not include a built-in permission system", and suggests containers instead. That is a reasonable trade for a personal CLI. It is not a trade an enterprise can make.
+
+PenguinHarness treats safety and observability as load-bearing. They are cheap in context because they live in the runtime rather than in the prompt:
+
+- Every tool call gets exactly one approval decision, in one of four approval modes: `allow-all`, `deny-all`, `read-only`, or `always-ask`. The SDK denies by default when no approver is supplied, so nothing runs unattended by accident.
+- Every decision is audited in the Trace as an `approval_decision` event.
+- Tools never throw into the engine. Failures become tool output that the model reads and reacts to. This is also why a lean prompt is safe: the environment reports its own errors clearly enough that the prompt does not have to anticipate them.
+
+None of this adds Tokens to a turn, and every decision stays auditable.
+
+## Conclusion
+
+The result worth internalizing is not that simple harnesses are cheaper. It is that at the top of a real benchmark, on real pull requests, the simplest harness produced the best result, and did so by sending less.
+
+If you build agents, the audit is short:
+
+- How many tools does your model see, and how many of them re-implement a shell?
+- What is your hard cap on tool output?
+- How many lines of your system prompt teach the model things it learned in pre-training?
+- What gets injected into every message?
+
+Each answer is a line item, charged on every turn, for the life of the task. To try PenguinHarness, install it and start the Web App:
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
@@ -111,7 +145,7 @@ penguin web
 
 ---
 
-- **Read the internals**: [Tools & Approval](https://penguin.ooo/docs/tools) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [Skills](https://penguin.ooo/docs/skills)
+- **Read the internals**: [Tools & Approval](https://penguin.ooo/docs/tools) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [Skills & Plugins](https://penguin.ooo/docs/skills)
 - **Come argue with us**: [GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **Sources**: [Databricks — Benchmarking Coding Agents on Databricks' Multi-Million Line Codebase](https://www.databricks.com/blog/benchmarking-coding-agents-databricks-multi-million-line-codebase) · [Pi (earendil-works/pi)](https://github.com/earendil-works/pi) · [SaladDay, "Less is More"](https://x.com/Salad95238547/status/2079508549382644194)

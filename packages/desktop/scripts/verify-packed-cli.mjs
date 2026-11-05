@@ -14,13 +14,23 @@
  * Every app directory found is checked for the launchers and the bundled entry. The
  * launcher is then actually run: a cross-architecture bundle that cannot execute on this
  * host is reported and skipped, but at least one has to run and report a version.
+ *
+ * It is also checked for what the Machines page installs on another computer from it: the
+ * server bundle at the path the server recognizes as a packaged app, the release installers
+ * and the install image (the harness a machine runs, in the hot push's format) beside it,
+ * and the app's own package.json naming this build's version — the release a machine
+ * downloads. None of them is imported by anything, so an app without them builds, starts
+ * and runs its CLI, and only an install on a machine fails.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const { FAR_SIDE_SCRIPTS } = await import(
+  pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "far-side-scripts.mjs")).href
+);
 const outDir = path.join(pkgDir, "out");
 const ownPkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
 const version = ownPkg.version;
@@ -60,6 +70,27 @@ function namesThisBuild(printed) {
   return printed === `v${version}` || printed.startsWith(`v${version}-`);
 }
 
+// The TypeScript compiler the build staged (scripts/build-assets.mjs): its entry and the default
+// library files it reads from its own directory. electron-builder leaves every `*.d.ts` out of
+// `files`, so the library files travel as extra resources (electron-builder.yml); an app packed
+// without them resolves the compiler and then fails every workflow it compiles.
+const compilerDir = path.join(pkgDir, "dist", "node_modules", "typescript");
+const compilerFiles = fs.existsSync(path.join(compilerDir, "lib"))
+  ? [
+      "package.json",
+      ...fs
+        .readdirSync(path.join(compilerDir, "lib"))
+        .sort()
+        .map((name) => `lib/${name}`),
+    ].map((rel) => `dist/node_modules/typescript/${rel}`)
+  : [];
+if (compilerFiles.length === 0) {
+  console.error(
+    `[verify-packed-cli] no staged compiler under ${compilerDir} — run the desktop build first.`,
+  );
+  process.exit(1);
+}
+
 const problems = [];
 let ran = 0;
 
@@ -79,14 +110,24 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing.
-  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/plugin.json`);
+  // failing. Each one is its manifest (package.json) beside the skills or hooks it ships.
+  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
+  for (const name of pluginNames) {
+    const content = ["skills", "hooks"].map((sub) => path.join(app, "node_modules", name, sub));
+    if (!content.some((dir) => fs.existsSync(dir))) {
+      problems.push(`${app}: node_modules/${name} carries neither skills/ nor hooks/.`);
+    }
+  }
   for (const rel of [
     "bin/penguin",
     "bin/penguin.cmd",
     "dist/penguin.js",
+    "dist/server.js",
+    ...FAR_SIDE_SCRIPTS.map(({ name }) => `dist/${name}`),
+    "dist/install-image.gz",
     "web-dist/index.html",
     ...pluginFiles,
+    ...compilerFiles,
   ]) {
     const file = path.join(app, ...rel.split("/"));
     if (!fs.existsSync(file)) {
@@ -100,6 +141,18 @@ for (const app of dirs) {
       if ((fs.statSync(file).mode & 0o111) === 0)
         problems.push(`${app}: ${rel} is not executable.`);
     }
+  }
+
+  let packedVersion = null;
+  try {
+    packedVersion = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).version;
+  } catch {
+    // Reported below with the rest.
+  }
+  if (packedVersion !== version) {
+    problems.push(
+      `${app}: package.json names version ${JSON.stringify(packedVersion)}, want ${version} — the release a machine install downloads.`,
+    );
   }
 
   const launcher =

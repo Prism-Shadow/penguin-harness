@@ -9,9 +9,8 @@
  * can be the right one. Failure-path only — the extra stats/readdir never run on success.
  */
 import path from "node:path";
-import { readdir, stat } from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import { modelVisiblePath } from "../../internal/model-visible-path.js";
+import type { FsDirent, FsPort } from "./fs-port.js";
 
 /** Max directory entries named in the hint; the rest collapse into a "+N more" count. */
 const MAX_LISTED_ENTRIES = 8;
@@ -21,7 +20,7 @@ const MAX_LISTED_ENTRIES = 8;
  * (near-misses like `agent_state/` vs `AGENTS.md` surface first), ties alphabetical.
  * Directories get a trailing "/" so the model can tell what one more segment would hit.
  */
-function rankEntries(entries: Dirent[], missing: string): string[] {
+function rankEntries(entries: FsDirent[], missing: string): string[] {
   const target = missing.toLowerCase();
   const scored = entries.map((entry) => {
     const name = entry.name.toLowerCase();
@@ -31,7 +30,7 @@ function rankEntries(entries: Dirent[], missing: string): string[] {
     return { entry, prefix };
   });
   scored.sort((a, b) => b.prefix - a.prefix || a.entry.name.localeCompare(b.entry.name));
-  return scored.map(({ entry }) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+  return scored.map(({ entry }) => (entry.isDirectory ? `${entry.name}/` : entry.name));
 }
 
 /**
@@ -40,13 +39,13 @@ function rankEntries(entries: Dirent[], missing: string): string[] {
  * Reports the deepest existing ancestor, the first missing segment, and the ancestor's
  * nearest-named entries — or that the "ancestor" is a file (the ENOTDIR case).
  */
-export async function missingPathHint(resolved: string): Promise<string> {
+export async function missingPathHint(resolved: string, fs: FsPort): Promise<string> {
   let ancestor = path.dirname(resolved);
   let missing = path.basename(resolved);
   for (;;) {
     try {
-      const st = await stat(ancestor);
-      if (!st.isDirectory()) {
+      const st = await fs.stat(ancestor);
+      if (!st.isDirectory) {
         return ` Note: "${modelVisiblePath(ancestor)}" exists but is a file, not a directory.`;
       }
       break;
@@ -60,9 +59,9 @@ export async function missingPathHint(resolved: string): Promise<string> {
     }
   }
   const head = ` The directory "${modelVisiblePath(ancestor)}" exists but has no entry "${missing}".`;
-  let entries: Dirent[];
+  let entries: FsDirent[];
   try {
-    entries = await readdir(ancestor, { withFileTypes: true });
+    entries = await fs.readdir(ancestor);
   } catch {
     return head;
   }

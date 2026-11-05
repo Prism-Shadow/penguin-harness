@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { rmEventually } from "./rm-eventually.js";
 import {
   Session,
   assistantText,
@@ -27,7 +28,7 @@ import type {
   HookSubagentSpawned,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   PreToolUseHook,
   SessionMetaPayload,
   StopHook,
@@ -101,7 +102,7 @@ describe("runStopHooks", () => {
       type: "session_meta",
       origin: ["child-1"],
       payload: { session_id: "child-1" },
-    } as unknown as OmniMessage;
+    } as unknown as AmspRecord;
     const spawned = await runStopHooks([hook], stopInput(), async (req) => {
       asks.push(req);
       return { sessionId: "child-1", meta: childMeta };
@@ -135,7 +136,7 @@ describe("script hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-script-hook-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   const write = async (name: string, body: string): Promise<string> => {
@@ -214,12 +215,99 @@ describe("script hooks", () => {
         '{ decision: "stop", reason: `${input.hook} ${input.session_id} ${input.trace_path}` }',
       ),
     );
-    const hook = scriptStopHook("demo", dir, "stop.mjs", 5);
+    const hook = scriptStopHook("demo", dir, "stop.mjs", { timeoutS: 5 });
     expect(hook.name).toBe("demo");
     expect(await hook.run({ sessionId: "s1", tracePath: "/t/s1_001.jsonl" })).toEqual({
       decision: "stop",
       reason: "stop s1 /t/s1_001.jsonl",
     });
+  });
+});
+
+describe("script hooks under the sandbox", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-hooks-sandbox-"));
+  });
+  afterEach(async () => {
+    await rmEventually(dir);
+  });
+
+  it("spawns the confiner's argv with the runner's environment laid over the script's", async () => {
+    // A stand-in runner: runs the script it is handed, and shows that it ran through it.
+    const runner = path.join(dir, "runner.mjs");
+    await fs.writeFile(
+      runner,
+      [
+        'import { pathToFileURL } from "node:url";',
+        'process.env.HOOK_RAN_THROUGH = "runner";',
+        "await import(pathToFileURL(process.argv[2]).href);",
+      ].join("\n"),
+    );
+    const script = path.join(dir, "report.mjs");
+    await fs.writeFile(
+      script,
+      "process.stdout.write(JSON.stringify({ through: process.env.HOOK_RAN_THROUGH, marker: process.env.HOOK_RUNNER_MARK }));\n",
+    );
+    const seen: string[][] = [];
+    const out = (await runHookScript(
+      script,
+      {},
+      {
+        confine: (argv) => {
+          seen.push([...argv]);
+          return { argv: [argv[0]!, runner, ...argv.slice(1)], env: { HOOK_RUNNER_MARK: "set" } };
+        },
+      },
+    )) as { through: string; marker: string };
+    expect(seen).toEqual([[process.execPath, script]]);
+    expect(out).toEqual({ through: "runner", marker: "set" });
+  });
+
+  it("fails the hook when the confiner cannot enforce its policy, and never runs the script", async () => {
+    const script = path.join(dir, "touch.mjs");
+    const witness = path.join(dir, "ran");
+    await fs.writeFile(
+      script,
+      `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(witness)}, "");\n`,
+    );
+    await expect(
+      runHookScript(
+        script,
+        {},
+        {
+          confine: () => {
+            throw new Error("no sandbox backend is mounted");
+          },
+        },
+      ),
+    ).rejects.toThrow(/sandbox: no sandbox backend is mounted/);
+    await expect(fs.access(witness)).rejects.toThrow();
+  });
+
+  it("an installed command reads the Session's confiner at every run, with the package directory as cwd and the Session's scope", async () => {
+    const script = path.join(dir, "stop.mjs");
+    await fs.writeFile(script, 'process.stdout.write(JSON.stringify({ decision: "stop" }));\n');
+    const scopes: unknown[] = [];
+    let confiner: ((argv: readonly string[], opts: unknown) => { argv: readonly string[] }) | null =
+      null;
+    const hook = scriptStopHook("demo", dir, "stop.mjs", {
+      confineSpawn: () => confiner,
+      scope: { workspaceDir: "/ws", scratchpadDir: "/scratch/s1" },
+    });
+    // Unconfined while the getter answers null…
+    expect(await hook.run(stopInput())).toEqual({ decision: "stop" });
+    // …confined under whatever it answers next, with the scope a command would get.
+    confiner = (argv, opts) => {
+      scopes.push(opts);
+      return { argv };
+    };
+    expect(await hook.run(stopInput())).toEqual({ decision: "stop" });
+    expect(scopes).toEqual([{ cwd: dir, workspaceDir: "/ws", scratchpadDir: "/scratch/s1" }]);
+    confiner = () => {
+      throw new Error("refused");
+    };
+    await expect(hook.run(stopInput())).rejects.toThrow(/sandbox: refused/);
   });
 });
 
@@ -229,7 +317,7 @@ describe("script pre-tool-use hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-script-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   it("scriptPreToolUseHook feeds the call on stdin and narrows the parsed answer", async () => {
@@ -273,10 +361,10 @@ describe("Session user-prompt hook", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-prompt-hook-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
-  it("runs the named package's hook with the Session's own id and scratchpad, null when absent", async () => {
+  it("runs the named package's host-triggered hook with the Session's own id and scratchpad, null when absent", async () => {
     const script = path.join(dir, "expand.mjs");
     await fs.writeFile(
       script,
@@ -296,6 +384,7 @@ describe("Session user-prompt hook", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     const scratchpad = path.join(dir, "scratchpad", "session-1");
     const session = new Session({
@@ -313,7 +402,9 @@ describe("Session user-prompt hook", () => {
       },
       imagesDir: scratchpad,
       modelHasVision: true,
-      hooks: { userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs")] },
+      hooks: {
+        userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs", { trigger: "host" })],
+      },
     });
     const result = await session.runUserPromptHook("goal", "ship it", { budget: 500 });
     expect(result?.context).toBe(`user_prompt/session-1/ship it/500 @ ${scratchpad}`);
@@ -327,7 +418,7 @@ describe("Session stop hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-hooks-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   const fakeEnvironment: EnvironmentInterface = {
@@ -376,6 +467,7 @@ describe("Session stop hooks", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     return new Session({
       meta,
@@ -404,7 +496,7 @@ describe("Session stop hooks", () => {
           : { decision: "stop" };
       },
     };
-    const writes: OmniMessage[] = [];
+    const writes: AmspRecord[] = [];
     const trace: TraceSink = {
       write: async (m) => {
         writes.push(m);
@@ -413,7 +505,7 @@ describe("Session stop hooks", () => {
     };
     const llm = echoLLM();
     const session = makeSession([hook], llm, { trace });
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")])) stream.push(msg);
     // Two Tasks ran: the second on the hook's input.
     expect(llm.inputs).toEqual(["hello", "again"]);
@@ -455,7 +547,7 @@ describe("Session stop hooks", () => {
     };
     const llm = echoLLM();
     const session = makeSession([hook], llm);
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")], { signal: controller.signal })) {
       stream.push(msg);
     }
@@ -470,7 +562,7 @@ describe("Session stop hooks", () => {
       type: "session_meta",
       origin: ["child-9"],
       payload: { session_id: "child-9" },
-    } as unknown as OmniMessage;
+    } as unknown as AmspRecord;
     const hook: StopHook = {
       name: "review",
       run: async () => ({ reason: "delegated", subagent: { prompt: "look" } }),
@@ -482,7 +574,7 @@ describe("Session stop hooks", () => {
         return { sessionId: "child-9", meta: childMeta };
       },
     });
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")], { approve: async () => "allow" })) {
       stream.push(msg);
     }
@@ -542,7 +634,7 @@ describe("Session pre-tool-use hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-hooks-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   /** Turn 1 calls exec_command; turn 2 answers with the tool output it saw. */
@@ -551,14 +643,13 @@ describe("Session pre-tool-use hooks", () => {
     const toolOutputs: string[] = [];
     return {
       toolOutputs,
-      async *streamGenerate({ newMessages }): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate({ newMessages }): AsyncGenerator<AmspRecord, LLMOutcome> {
         calls += 1;
         if (calls === 1) {
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd }),
             toolCallId: "c1",
-            stopReason: "completed",
           });
           yield tokenUsage(usage(1), usage(1));
           return { status: "completed" };
@@ -582,7 +673,7 @@ describe("Session pre-tool-use hooks", () => {
       yield toolCallOutput({
         output: "ran",
         toolCallId: tc.payload.tool_call_id,
-        stopReason: "completed",
+        status: "completed",
       });
     },
     toolPermission: () => undefined,
@@ -601,6 +692,7 @@ describe("Session pre-tool-use hooks", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     return new Session({
       meta,
@@ -615,9 +707,9 @@ describe("Session pre-tool-use hooks", () => {
 
   async function collect(
     s: Session,
-    approve: (tc: OmniMessage) => Promise<"allow" | "deny">,
-  ): Promise<OmniMessage[]> {
-    const stream: OmniMessage[] = [];
+    approve: (tc: AmspRecord) => Promise<"allow" | "deny">,
+  ): Promise<AmspRecord[]> {
+    const stream: AmspRecord[] = [];
     for await (const msg of s.run([userText("go")], { approve: approve as never })) {
       stream.push(msg);
     }

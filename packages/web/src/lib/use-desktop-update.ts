@@ -110,6 +110,7 @@ export async function requestClientDownload(): Promise<void> {
 /** Asks the shell to restart into the downloaded build; success renders nothing (the window goes away). Rejects when the POST fails. */
 export async function requestClientInstall(): Promise<void> {
   await api.desktopUpdateInstall();
+  void poll();
 }
 
 /**

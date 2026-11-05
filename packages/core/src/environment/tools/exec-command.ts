@@ -19,16 +19,35 @@
  * Docs: /docs/tools § "Command sessions".
  */
 import path from "node:path";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
+import { DETACHED_TOOL_NOTE_PREFIX } from "../../interfaces/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";
-import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { clampYield, collectUntil, reportLabel, tailForReport } from "./background/index.js";
+import { describeArgumentError, stringArgument } from "./tool-arguments.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
 export const EXEC_COMMAND_NAME = "exec_command";
+
+/**
+ * The argument names that carry the shell text, in the order the tool reads them: `cmd`, the
+ * schema's name, then `command`, accepted as an alias. Models trained on harnesses whose
+ * shell tool takes `command` emit that name even while reading a schema that says `cmd`, and
+ * a call rejected for it tends to be re-issued unchanged — the model believes it followed
+ * the schema — so one session can spend most of its calls on the same mistake. The schema
+ * itself keeps naming `cmd` alone. Every reader of the shell text goes through this list:
+ * the command policy screens exactly the text the tool runs (internal/command-policy.ts),
+ * and the Web App's and CLI's previews fall back to the alias the same way.
+ */
+export const EXEC_COMMAND_TEXT_ARGUMENTS: readonly string[] = ["cmd", "command"];
+
+/** The alias table for argument explanations: `command` is `cmd` under another name, not an unknown argument. */
+const EXEC_COMMAND_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  cmd: EXEC_COMMAND_TEXT_ARGUMENTS.slice(1),
+};
 
 /**
  * exec_command built-in tool: parses arguments, resolves workdir, and delegates to
@@ -48,24 +67,33 @@ export function createExecCommandTool(
   return {
     name: definition.name,
     definition,
+    detachable: true,
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
-      const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
+      const { toolCallId, signal, detachSignal } = ctx;
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
         yield delta(`[${definition.name} unavailable: no command session manager configured]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
-      const cmd = args["cmd"];
-      if (typeof cmd !== "string" || cmd.length === 0) {
-        yield delta(`Missing required argument "cmd" for ${definition.name}.`);
-        return { stopReason: "fatal" };
+      const text = stringArgument(args, EXEC_COMMAND_TEXT_ARGUMENTS);
+      if (text === undefined || text.value.length === 0) {
+        yield delta(
+          describeArgumentError(
+            definition,
+            args,
+            { argument: "cmd", kind: "missing" },
+            { aliases: EXEC_COMMAND_ALIASES },
+          ),
+        );
+        return { status: "fatal" };
       }
+      const cmd = text.value;
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.
       const rawWorkdir = args["workdir"];
       const workdir =
@@ -80,7 +108,7 @@ export function createExecCommandTool(
       );
 
       // Caller already aborted: finish immediately with aborted.
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       let session;
       try {
@@ -88,7 +116,7 @@ export function createExecCommandTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`[spawn error: ${message}]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // run_in_background: no collect window at all — register immediately, arm the completion
@@ -99,7 +127,7 @@ export function createExecCommandTool(
         const id = manager.register(session);
         armCommandDoneReport(session, id, services);
         return {
-          stopReason: "completed",
+          status: "completed",
           note:
             `[command running in background with process_id ${id}; its completion will arrive ` +
             `as a user message — no need to poll. Use input_command to interact (kill: true stops it)]`,
@@ -108,27 +136,47 @@ export function createExecCommandTool(
 
       // On interruption, kill the whole process group (background children included) to
       // avoid orphans; once the process moves to background this listener is removed in finally.
+      // Deliberately listens to `signal` only: a detach leaves the process running — it is the
+      // opposite request.
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        for await (const chunk of session.collect(yieldMs, signal)) yield delta(chunk);
+        // Either an interruption or a detach ends collection; which one fired is read below.
+        for await (const chunk of session.collect(yieldMs, collectUntil(signal, detachSignal))) {
+          yield delta(chunk);
+        }
 
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         if (session.running) {
-          // Still running at the deadline: register as a background process, returning
-          // process_id so input_command can continue accessing it.
+          // Still running: register as a background process, returning process_id so
+          // input_command can continue accessing it. Whatever was collected up to this point
+          // has already been yielded, so it stays in this call's output.
           const id = manager.register(session);
           registered = true;
+          if (detachSignal?.aborted) {
+            // Detached by the user rather than by the yield deadline: the model never chose
+            // to poll this one, so arm the completion report the way a run_in_background
+            // launch does — otherwise the command would finish with nobody told.
+            armCommandDoneReport(session, id, services);
+            return {
+              status: "completed",
+              note:
+                `${DETACHED_TOOL_NOTE_PREFIX} with process_id ${id}; leave it running unattended: ` +
+                `do not poll it or send it input — its completion will arrive on its own as a ` +
+                `[background_task_done] user message. Move on to other work, or end the turn if ` +
+                `nothing else is pending; input_command with kill: true still stops it if the user asks]`,
+            };
+          }
           return {
-            stopReason: "completed",
+            status: "completed",
             note: `[process running with process_id ${id}; use input_command to send input or poll for output]`,
           };
         }
         // Already exited: report exit status; process group cleanup (reaping any leftover
         // background children) is handled uniformly in finally.
         if (session.error) {
-          return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
+          return { status: "fatal", note: `[spawn error: ${session.error.message}]` };
         }
         return resultForExit(session.exit);
       } finally {
@@ -153,7 +201,9 @@ export function createExecCommandTool(
  * SIGTERM" they read like a crash, and the model's reasonable response to a crashed dev
  * server is to start it again, undoing the stop somebody just asked for. Outcomes nobody
  * asked for stay `failed`: a spawn error, a non-zero exit, a hard kill or a fault signal (an
- * OOM kill, a segfault).
+ * OOM kill, a segfault). The report is a notice about a detached job, not a tool result, so its
+ * wording is its own: the same non-zero exit in the foreground ends a completed tool call with
+ * the exit status as its last note (resultForExit).
  */
 export function armCommandDoneReport(
   session: ManagedSession,

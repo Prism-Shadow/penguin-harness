@@ -1,11 +1,19 @@
-# Public site: build the landing page (site root) and the docs site (/docs/) with Vite
-# and deploy them as ONE artifact to GitHub Pages (scripts/build-site.mjs assembles the
-# tree — landing dist with the docs dist copied under docs/).
-# - Pull requests touching either package only BUILD (validation) — no Pages
-#   configuration and no deploy, so PRs never fail on Pages availability.
+# Public site: build the landing page (site root), the docs site (/docs/) and the component
+# gallery (/gallery/) with Vite and deploy them as ONE artifact to GitHub Pages
+# (scripts/build-site.mjs assembles the tree — landing dist with the docs and gallery dists
+# copied under docs/ and gallery/).
+# - Pull requests touching the site only BUILD (validation) — no Pages configuration and
+#   no deploy, so PRs never fail on Pages availability.
 # - Pushes to main (and manual dispatch) build + deploy. The site is served from the
 #   custom apex domain https://penguin.ooo/ (Settings -> Pages -> Custom domain), so
 #   BASE_PATH is "/" — assets resolve from the domain root, not a /<repo>/ subpath.
+# - The Plugins, Benchmarks and Leaderboards pages read the repository's plugins/ and a fresh
+#   clone of Prism-Shadow/penguin-harness-benchmark at build time, so a push touching plugins/
+#   redeploys, and a daily run picks up what changed in the benchmark repository.
+# - The gallery frames the real Web App, compiled from packages/web and packages/ui, so a
+#   push touching either redeploys as well and the public gallery tracks the app. A pull
+#   request touching only those two is not built here: ci.yml selects their affected
+#   consumers and compiles the gallery from them.
 # First-time setup: repository Settings -> Pages -> Source = "GitHub Actions".
 name: Deploy Site
 
@@ -13,16 +21,27 @@ on:
   push:
     branches: [main]
     paths:
+      - "plugins/**"
       - "packages/landing/**"
       - "packages/docs/**"
+      - "packages/ui-gallery/**"
+      - "packages/web/**"
+      - "packages/ui/**"
       - "scripts/build-site.mjs"
       - ".github/workflows/pages.yml"
+  # Same trigger policy as ci.yml: only a pull request whose base is main gets the preview
+  # build, and only when it touches the site.
   pull_request:
+    branches: [main]
     paths:
+      - "plugins/**"
       - "packages/landing/**"
       - "packages/docs/**"
+      - "packages/ui-gallery/**"
       - "scripts/build-site.mjs"
       - ".github/workflows/pages.yml"
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -30,10 +49,10 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time; let an in-flight production deploy finish rather than cancelling it.
+# Let production deployments finish; replace obsolete PR preview builds on each push.
 concurrency:
   group: pages-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -52,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build site (landing + docs, vite)
+      - name: Build site (landing + docs + gallery, vite)
         env:
           BASE_PATH: /
         run: pnpm build:site

@@ -1,20 +1,17 @@
 /**
- * App assembly, both halves of it.
+ * The HMR layer's app assembly.
  *
- * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
- * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
- * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
- * platform — which builds the business surface over those capabilities — and returns that
- * App's deps, read off the booted instance. Neither app listens on a port: tests inject
- * requests via `app.request()`, and the startup entry point is index.ts.
+ * `bootAppDeps(config)` builds the process's core (database, channels, HmrHost), publishes
+ * it into the resource registry (see hmr/capabilities.ts), boots the platform — which builds
+ * the business surface over what it claims there — and returns the boot. `createApp(boot)`
+ * mounts the layer's HTTP surface: the network guards, `/api/hmr`, the platform seam, and
+ * static hosting. Neither listens on a port: tests inject requests via `app.request()`, and
+ * the startup entry point is index.ts.
  *
- * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
- * file — is what a hot push replaces. Both are called from `platformImpl.create`
- * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
- * registry, so every business service and route travels with the platform version rather
- * than with this build. Swap semantics for anything they hold that is not parked is a
- * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
+ * Every other route is the platform's (http/app.ts, `HttpModule`), assembled at every App
+ * creation from `platformImpl.create` (hmr/platform.ts), so it travels with the platform
+ * version rather than with this build. Swap semantics for anything the platform holds that
+ * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
@@ -23,30 +20,35 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
+import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
+import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  RUNTIME_INTERFACES,
-  RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_AUTH_STATE_RESOURCE_ID,
-  RUNTIME_CHANNELS_RESOURCE_ID,
-  RUNTIME_CONFIG_RESOURCE_ID,
-  RUNTIME_DB_RESOURCE_ID,
-  RUNTIME_DESKTOP_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
-  RUNTIME_HMR_RESOURCE_ID,
-  RUNTIME_OVERRIDES_RESOURCE_ID,
-  RUNTIME_PROXY_RESOURCE_ID,
-  RuntimeCapabilities,
+  HMR_INTERFACES,
+  HMR_INTERFACES_RESOURCE_ID,
+  HMR_AUTH_STATE_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
+  HMR_CONFIG_RESOURCE_ID,
+  HMR_DB_RESOURCE_ID,
+  HMR_DESKTOP_RESOURCE_ID,
+  HMR_HOST_RESOURCE_ID,
+  HMR_CONTROL_RESOURCE_ID,
+  HMR_OVERRIDES_RESOURCE_ID,
+  HMR_TEST_PLUGINS_RESOURCE_ID,
+  type Replacements,
+  HMR_PROXY_RESOURCE_ID,
+  HmrCapabilities,
+  ConsoleLog,
+  type Log,
+  type ProxyControl,
 } from "./hmr/capabilities.js";
-import type { ProxyControl } from "./hmr/capabilities.js";
-import { cliShimDir, ensureCliShim } from "./services/cli-shim.js";
+import { ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
-import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
@@ -55,12 +57,14 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { originRule } from "./http/public-origin.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
-import { EXTENSIONS_RESOURCE_ID, type ExtensionHost } from "./extension/host.js";
+import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
@@ -68,7 +72,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
-import { authRoutes } from "./http/routes/auth.js";
+import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -99,8 +103,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -116,8 +118,10 @@ import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HmrHost } from "./hmr/host.js";
-import { hmrRoutes } from "./hmr/routes.js";
+import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
+import { packagedPlatform } from "./hmr/platform.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
   createPreviewTokenSigner,
@@ -127,7 +131,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -150,12 +154,8 @@ import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
-import {
-  agentHooksRoutes,
-  agentPluginsRoutes,
-  pluginLibraryRoutes,
-} from "./http/routes/plugins.js";
-import { agentPortingRoutes } from "./http/routes/agent-porting.js";
+import { agentHooksRoutes } from "./http/routes/hooks.js";
+import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -170,118 +170,52 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
-import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
+import type { Settings } from "./mechanisms/settings.js";
+import type { Errors } from "./mechanisms/observability.js";
+import type { Access } from "./mechanisms/projects.js";
+import type { Auth } from "./mechanisms/identity.js";
 
-export interface AppDeps {
+/**
+ * What the runtime process holds after boot: the capabilities it owns for the process
+ * lifetime, and the module tree the platform built over them (src/modules). There is no
+ * flat bag of services here any more — a module names what it needs in its manifest.
+ */
+export interface ServerBoot {
   config: ServerConfig;
   db: DatabaseSync;
-  sessionsRepo: SessionsRepo;
-  prefsRepo: UiPrefsRepo;
-  /** Admin-level server-global settings (currently the proxy switches and address). */
-  serverSettingsRepo: ServerSettingsRepo;
-  authService: AuthService;
-  adminService: AdminService;
-  projectService: ProjectService;
-  projectConfigService: ProjectConfigService;
-  /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
-  modelOAuth: ModelOAuthService;
-  agentService: AgentService;
-  agentConfigService: AgentConfigService;
-  memoryService: MemoryService;
-  sessionService: SessionService;
-  traceService: TraceService;
-  /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
-  traceIndex: TraceIndexService;
-  usageService: UsageService;
-  /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
-  updateCheck: UpdateCheckService;
-  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
-  updateJob: UpdateJobService;
-  workspaceFiles: WorkspaceFilesService;
-  /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
-  previewTokens: PreviewTokenSigner;
-  benchmarks: BenchmarkService;
-  snapshots: SnapshotService;
-  schedulesRepo: SchedulesRepo;
-  errorsRepo: ErrorsRepo;
-  /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
-  messagingRepo: MessagingBindingsRepo;
-  /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
-  messaging: MessagingBridge;
-  /** QQ scan-to-connect: the in-flight bind tasks and the AES keys that never leave the server. */
-  qqScan: QQScanService;
-  /** WeChat scan-to-connect: the in-flight codes and the poll handles that never leave the server. */
-  wechatScan: WeChatScanService;
-  scheduler: Scheduler;
   channels: ChannelHub;
-  manager: SessionManager;
-  /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
-  sessionSources: SessionSources;
-  /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
-  errors: ErrorRecorder;
-  /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
+  hmr: ServerHmrHost;
+  /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
+  control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   /**
-   * Installing this build on a machine from the server's own `~/.ssh/config` (the Machines
-   * page). Business, not runtime: spawning ssh and packing an image are in-process effects,
-   * so the whole capability ships by push — see machines/service.ts.
+   * The current platform instance: re-pointed by the replace hooks at every push. The
+   * instance outlives an App re-assembly (a plugin change rebuilds the tree INSIDE it, see
+   * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
-  machines: MachinesService;
-  /** HMR host: loads/swaps/persists the platform and web bundles (park/boot kernel). */
-  hmr: HmrHost;
+  instance: Instance<PlatformApi>;
   /**
-   * Applies proxy settings to the RUNTIME's global dispatcher. A capability rather than a
-   * direct import on purpose: a pushed bundle carries its own copy of net/proxy.js (and of
-   * undici), so calling its own applyProxySettings would configure a dispatcher
-   * globalThis.fetch never routes through.
+   * The tree the running App serves — read through `instance` each time, so a plugin
+   * change's re-assembly is seen without any push. A generation that has no tree to answer
+   * with (a bare kernel, a swap mid-flight) keeps the last one resolved, as createApp's
+   * per-node resolvers do.
    */
-  proxyControl: ProxyControl;
-  /** Request log output (minimal one-liner); tests inject a noop. */
-  log: (line: string) => void;
+  readonly tree: ModuleTree;
 }
 
-export interface BuildDepsOverrides {
-  /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
-  loader?: SessionLoader;
-  /** Test double: Session title generator (avoids real LLM requests). */
-  titles?: TitleNotifier;
-  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
-  updateCheck?: UpdateCheckService;
-  /** Tests: a job service over a scripted runner, so no real `penguin update` is ever spawned. */
-  updateJob?: UpdateJobService;
-  /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
-  feishuSdk?: FeishuSdk;
-  /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
-  telegramTransport?: TelegramTransport;
-  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
-  telegramRetryDelayMs?: (failures: number) => number;
-  /** Test double: the QQ connector's OpenAPI + gateway transport (avoids real QQ network / a WebSocket). */
-  qqTransport?: QQTransport;
-  /** Test hook: how long the QQ connector withholds its coalesced tail (tests collapse it to zero). */
-  qqTailFlushMs?: number;
-  /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
-  messagingLineDelayMs?: number;
-  /** Test hook: one binding's inbound image budget, so a budget test needs no 20MB buffers. */
-  messagingInboundImageBudgetBytes?: number;
-  /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
-  qqScanTransport?: QQScanTransport;
-  /** Test double: the WeChat connector's long-poll + CDN transport (avoids real WeChat network). */
-  wechatTransport?: WeChatTransport;
-  /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
-  wechatRetryDelayMs?: (failures: number) => number;
-  /** Test double: the WeChat scan-to-connect transport (avoids real ilinkai.weixin.qq.com requests). */
-  wechatScanTransport?: WeChatScanTransport;
-  /** Test double: machines service whose ssh effects are faked (the real one reads ~/.ssh/config and spawns ssh). */
-  machines?: MachinesService;
-  /**
-   * Test double: scrypt work factor for password hashes written through this app.
-   * Omitted in production, where the KDF runs at full strength.
-   */
-  passwordHashCost?: number;
-  log?: (line: string) => void;
-  now?: () => Date;
+/** The boot's tree accessor: the instance's business tree of the moment, the last known one while it has none. */
+function liveTree(boot: Omit<ServerBoot, "tree">, initial: ModuleTree): ServerBoot {
+  let last = initial;
+  return Object.defineProperty(boot, "tree", {
+    enumerable: true,
+    get(): ModuleTree {
+      const next =
+        typeof boot.instance.api.business === "function" ? boot.instance.api.business() : null;
+      if (next !== null) last = next;
+      return last;
+    },
+  }) as ServerBoot;
 }
 
 /**
@@ -289,23 +223,41 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  *
- * `extensions` is the host index.ts's loadExtensions step filled from extensions.json — handed in
- * rather than registered by the caller because the platform boots inside this function,
- * and everything it claims has to be in the registry first. Absent (tests), the platform
- * falls back to an empty host (see extension/index.ts's extensionHostFrom).
+ * `plugins` is what index.ts's loadPlugins shim imported — handed in rather than registered
+ * by the caller because the platform boots inside this function, and everything it claims has
+ * to be in the registry first. The platform builds its own host from the Projects' closure
+ * either way (plugin/loader.ts); this only lets it reuse objects already imported, and lets a
+ * platform older than that move find a host at all.
+ *
+ * `testPlugins` is the other half of that: entries a TEST stands up in process, which no
+ * closure could name because they were never on disk. Kept apart from the line above so the
+ * production path stays "what the Projects ask for, imported", with no way for a fake to
+ * enter it.
  */
 export async function bootAppDeps(
   config: ServerConfig,
-  overrides: BuildDepsOverrides = {},
-  extensions?: ExtensionHost,
-): Promise<AppDeps> {
+  replacements: Replacements = [],
+  plugins?: PluginHost,
+  testPlugins?: PluginHost,
+  host?: ServerHmrHost,
+  control?: Hmr<PlatformApi>,
+): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
 
-  const usersRepo = new UsersRepo(db);
+  const usersRepo = wire(UsersRepo, { db: db });
 
   // Hoisted above the services so its registry can be populated before anything boots
-  // against it.
-  const hmr = new HmrHost(config.root);
+  // against it. index.ts builds both and hands them in (hmrMain owns them there); a test
+  // that boots without an entry gets the same pair here.
+  const hmr = host ?? new HmrHost<PlatformApi>(config.root, packagedPlatform);
+  // The default replace does what index.ts's does: point the boot at the new generation's
+  // instance, so what createApp resolves from `boot.tree` is the current generation's.
+  let booted: ServerBoot | null = null;
+  const ctl =
+    control ??
+    hmrControl(hmr, (instance) => {
+      if (booted !== null) booted.instance = instance;
+    });
 
   // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
   // business question: the App installs the answer itself via setActivityProbe at every
@@ -339,10 +291,24 @@ export async function bootAppDeps(
   // Here rather than per App, for the same reason the two above are: it is a fact about
   // this PROCESS's installation, and a hot-pushed platform — compiled somewhere else
   // entirely — has no way to work out where the CLI it should point at lives.
-  const shimLog = overrides.log ?? ((line: string) => console.log(line));
-  const shim = ensureCliShim(config.root, config.cliEntry);
+  // Pre-boot, so the Log mechanism is not up yet: a ConsoleLog replacement (the double a
+  // test hands the tree) is honoured here too, and the process's own console otherwise.
+  const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
+  const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
+  const shim = ensureCliShim(config.root, config.cliEntry ?? null, {
+    execArgs: config.cliLaunch?.execArgs ?? [],
+    unavailable: config.cliLaunch?.unavailable ?? null,
+    dbPath: config.dbPath,
+  });
   if (shim.kind === "written") {
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
+    // The whole command the shim runs, loader included: which CLI `penguin` is, said once.
+    const command = [...shim.execArgs, shim.entry].join(" ");
+    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command}`);
+  } else if (shim.kind === "stub") {
+    shimLog(
+      `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
+        `instead of running another installation's: ${shim.reason}`,
+    );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
@@ -351,46 +317,95 @@ export async function bootAppDeps(
     console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
   }
 
-  // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
-  // entry must be in place before ensure() below performs the first boot. The interface
-  // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
-  hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-  hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
-  hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_AUTH_STATE_RESOURCE_ID, authState);
-  hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
-  hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
-  hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
-  hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
+  // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
+  // ensure() below performs the first boot. The interface descriptor leads: it is what a
+  // bundle's handshake reads before trusting any of the rest.
+  hmr.resources.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+  hmr.resources.register(HMR_CONFIG_RESOURCE_ID, config);
+  hmr.resources.register(HMR_DB_RESOURCE_ID, db);
+  hmr.resources.register(HMR_AUTH_STATE_RESOURCE_ID, authState);
+  hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
+  hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
+  hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
+  hmr.resources.register(HMR_CONTROL_RESOURCE_ID, ctl);
+  hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
-  hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
-  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
-  // The registry sweep only STARTS extension disposal (its disposers are sync) — the
+  hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
-  if (extensions !== undefined) {
-    hmr.resources.register(EXTENSIONS_RESOURCE_ID, extensions, () => void extensions.dispose());
+  if (plugins !== undefined) {
+    hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
+  }
+  if (testPlugins !== undefined) {
+    hmr.resources.register(HMR_TEST_PLUGINS_RESOURCE_ID, testPlugins);
   }
 
   // Boot the platform now rather than on the first request: the business surface —
   // services, routes, the scheduler — is assembled inside its create(). The check reads
   // the in-process api member, not a registry entry: the instance IS the current App.
   const instance = await hmr.ensure();
-  const business = instance.api.business();
-  if (business === null) {
+  const tree = instance.api.business();
+  if (tree === null) {
     throw new Error("the packaged platform built no business surface");
   }
-  // The App's own deps, read off the booted instance — the same bag every caller of this
-  // function always received. Callers that outlive swaps (index.ts, the runtime app) may
-  // only touch its swap-stable members: the runtime singletons published above, and the
-  // stateless repos over this process's own db handle. The business machinery on it
-  // (manager, services, scheduler) belongs to THIS generation and goes stale at the next
-  // push — per-request business dispatch rides the seam, never this reference.
-  return business;
+  // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
+  // members: the runtime singletons published above, and `tree` — which follows the
+  // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
+  // Per-request business dispatch rides the seam.
+  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
+  return booted;
+}
+
+/**
+ * The layer's log handle: whichever platform is current writes the line, and the console
+ * does before there is one. Resolved per line through the host, so a swap changes where the
+ * lines go without the layer holding any generation's object.
+ */
+export function platformLog(hmr: ServerHmrHost): (line: string) => void {
+  return (line) => {
+    void hmr
+      .ensure()
+      .then((instance) => {
+        if (typeof instance.api.log === "function") instance.api.log(line);
+        else console.log(line);
+      })
+      .catch(() => console.log(line));
+  };
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
+export function createApp(boot: ServerBoot): Hono<AppEnv> {
+  // Resolved on use, from the CURRENT generation's tree — the entry's replace hook points
+  // `boot.tree` at each new one — so a node is never the first generation's for the life
+  // of the process. A generation that has no tree to resolve from (a pushed fixture, a
+  // bare kernel, a tree mid-dispose) keeps the last one resolved, as a captured node did.
+  const current = <T>(resolve: () => T): (() => T) => {
+    let last = resolve();
+    return () => {
+      try {
+        last = resolve();
+      } catch {
+        // The tree is mid-swap or belongs to a generation without one: the last node stands.
+      }
+      return last;
+    };
+  };
+  const errors = current(() => boot.tree.api<Errors>("ObservabilityModule", "Errors"));
+  const log = platformLog(boot.hmr);
+  const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
+  const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
+  const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
+  const deps = {
+    config: boot.config,
+    desktop: boot.desktop,
+    get authService() {
+      return authService();
+    },
+    hmr: boot.hmr,
+    control: boot.control,
+    channels: boot.channels,
+  };
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
@@ -398,8 +413,8 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // exceptions are logged with a stack trace and collapsed to 500), and recording
   // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, deps);
-    deps.errors.record({
+    const projectId = attributedProjectId(c, { access: access() });
+    errors().record({
       source: "http",
       err,
       ...(projectId !== undefined ? { ctx: { projectId } } : {}),
@@ -413,7 +428,21 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     const start = performance.now();
     await next();
     const ms = Math.round(performance.now() - start);
-    deps.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
+    log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
+  });
+
+  // An event stream's socket that sends nothing for STREAM_IDLE_MS is destroyed (Node lets the
+  // first expiry pass while a write is pending, so a stuck write is cut within two). A live
+  // stream pings every 20 s; it goes that quiet only when its peer stopped reading and a write
+  // never completes, and then only the socket can end it: the stream's own close queues behind
+  // that write. The abort runs the stream's teardown. Only the host holds the socket (`c.env`,
+  // passed by index.ts), hence here.
+  app.use("*", async (c, next) => {
+    await next();
+    const socket = (c.env as Partial<HttpBindings> | undefined)?.incoming?.socket;
+    if (socket && c.res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      socket.setTimeout(STREAM_IDLE_MS, () => socket.destroy());
+    }
   });
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
@@ -457,9 +486,13 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
   // admin's change takes effect immediately; the middleware itself is memoized on the resulting
   // size so the steady state allocates nothing.
+  //
+  // The Agent API is called from browsers too: its CORS header (amsp/cors.ts) has to reach these
+  // two refusals, which answer before its group runs, or a caller reads a CORS failure, not the code.
+  app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
+    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -479,40 +512,18 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", jsonOnlyWrites);
+  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
-  // Public routes (no login required).
-  app.route("/api/auth", authRoutes(deps));
-  // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
-  // session, so it mounts outside authMiddleware (and only in desktop mode).
-  if (deps.desktop) {
-    app.route("/api/desktop", desktopRoutes(deps));
-    // The client-update surface is runtime-owned like the rest of /api/desktop (the
-    // platform declines that whole prefix): it reads the updater snapshot the shell
-    // pushes over the parentPort this process wires at startup, and forwards
-    // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
-    // carries the auth middleware on its own subtree — the routes then gate on
-    // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-  }
-  // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
-  // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
-  // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
-  // above the blanket /api/* middleware rather than under it.
-  app.route("/api/hmr", hmrRoutes(deps));
+  // THE seam: every route is one the platform may take over by push — the upgrade channel
+  // included, which the platform declares and contributes like any other group
+  // (hmr/routes.ts; a generation without it is refused before commit, see packages/hmr's
+  // admitsUpgradeRoute). Declining costs one property read and lands on the layer's own
+  // tail below, which is what a platform without an `http` handler does.
+  app.use("*", platformHttpSeam(deps.control));
 
-  // THE seam: from here down, every route is one the platform may take over by push. Mounted
-  // after /api/hmr (which stays runtime-owned — see http-seam.ts) and before both the auth
-  // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
-  // ones, and decide its own authentication. Declining costs one property read and lands on
-  // the runtime's own routes below, which is what a platform without an `http` handler does.
-  app.use("*", platformHttpSeam(deps.hmr));
-
-  // Every protected business route — /api/me through /api/sessions, and /preview — is
-  // served by the platform through the seam above (see app.ts). What
-  // follows is the runtime's own tail: static hosting and the SPA fallback.
+  // Every route but /api/hmr is the platform's, served through the seam above. What follows
+  // is the layer's own tail: static hosting and the SPA fallback.
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a
@@ -789,507 +800,3 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  * claim — one live instance per process, shared with the runtime. Everything else is
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
-export function buildAppDeps(
-  caps: RuntimeCapabilities,
-  overrides: BuildDepsOverrides = {},
-): AppDeps {
-  const { config, db, authState, channels, hmr } = caps;
-  const log = overrides.log ?? ((line: string) => console.log(line));
-
-  // A pushed platform carries its own migrations, which is the only way the tables its
-  // business needs can reach a runtime older than they are — that runtime will never grow
-  // them by restarting, because it does not have them. swapPath: this boot can be rolled
-  // back, so a restart-only migration is refused here instead of being left behind.
-  migrate(db, { swapPath: true });
-
-  /**
-   * This machine's own id is minted on the first boot of this data root and stable ever
-   * after — every stored reference to this machine, here and on the machines it reaches,
-   * points at it. Behind a function so a test that passes its own service never mints one.
-   */
-  const buildMachines = (): MachinesService => {
-    const repo = new MachinesRepo(db);
-    return new MachinesService(config.root, repo.ownId(), repo, {}, () => hmr.assetsDir());
-  };
-
-  const usersRepo = new UsersRepo(db);
-  const projectsRepo = new ProjectsRepo(db);
-  const membersRepo = new MembersRepo(db);
-  // Auth is built HERE, with the App, so every rule it carries ships by push. The runtime
-  // publishes only `authState` — the values a push must not forget (auth/runtime-state.ts).
-  // `provisionInitialProject` closes over the projectService created below: seeding runs long
-  // after this returns, so the cycle costs a closure rather than an install-it-later hook.
-  const authService = new AuthService({
-    users: usersRepo,
-    authSessions: new AuthSessionsRepo(db),
-    state: authState,
-    provisionInitialProject: (user, isAdmin) =>
-      projectService.provisionInitialProject(user, isAdmin),
-    seedAdminPassword: config.seedAdminPassword,
-    sessionTtlMs: config.authSessionTtlMs,
-    sessionRenewMs: config.authSessionRenewMs,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-  const agentsRepo = new AgentsRepo(db);
-  const sessionsRepo = new SessionsRepo(db);
-  const usageRepo = new UsageRepo(db);
-  const errorsRepo = new ErrorsRepo(db);
-  const prefsRepo = new UiPrefsRepo(db);
-  const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Command-subprocess proxy policy for core, keyed on the
-  // "agent environment uses the proxy" switch (the app switch only drives the server's
-  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
-  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
-  // over whatever the environment carries; on without an address → pass the environment
-  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
-  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
-  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
-  // the manager adopts for the first Task).
-  const proxyEnv = (): ProxyEnvPolicy | null => {
-    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
-    const url = serverSettingsRepo.getProxyUrl();
-    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
-  };
-  // Harness-control env for command subprocesses of server-driven Sessions: the server's
-  // own canonical URL, its boot API token, and the Session's coordinates — what lets
-  // commands the Agent runs drive this harness back through the CLI/API. Threaded like
-  // proxyEnv through BOTH core entry paths (loader + SessionService), and evaluated per
-  // spawn: config.port is written back by index.ts once the real port is bound (PORT=0),
-  // so the URL must not be captured at assembly time. On a loopback bind the URL uses the
-  // canonical App host (`localhost`) — the counterpart name serves only /preview/*; a
-  // wildcard bind falls back to 127.0.0.1.
-  const canonicalApiUrl = (): string => {
-    const host =
-      config.host === "0.0.0.0" || config.host === "::"
-        ? "127.0.0.1"
-        : (loopbackHostRoles(config.host)?.app ?? config.host);
-    return `http://${host}:${config.port}`;
-  };
-  // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
-  // its hook scripts): the shim directory bootAppDeps wrote this harness's own `penguin`
-  // into. Derived from the config rather than passed along, so the platform half needs no
-  // new capability — and read for truth rather than for null, because a runtime older than
-  // this field publishes a config without it and wrote no shim either: no field, no
-  // directory, feature off, rather than a push declined over a PATH entry.
-  const shimDir = config.cliEntry ? cliShimDir(config.root) : null;
-  const pathPrepend = (): string[] => (shimDir === null ? [] : [shimDir]);
-  const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
-    const token = authService.localApiToken();
-    return {
-      PENGUIN_API_URL: canonicalApiUrl(),
-      ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
-      PENGUIN_PROJECT_ID: ctx.projectId,
-      PENGUIN_AGENT_ID: ctx.agentId,
-      PENGUIN_SESSION_ID: ctx.sessionId,
-    };
-  };
-  const schedulesRepo = new SchedulesRepo(db);
-
-  const projectConfigService = new ProjectConfigService(config.root);
-  // Per-App like the preview signer above: a flow holds a PKCE verifier and nothing durable,
-  // so a push or a restart costs the user one re-authorization and leaks nothing.
-  const modelOAuth = new ModelOAuthService({
-    applyGroupKey: (projectId, provider, apiKey) =>
-      projectConfigService.setGroupApiKey(projectId, provider, apiKey),
-  });
-  const agentConfigService = new AgentConfigService(config.root);
-  const snapshots = new SnapshotService(config.root);
-  const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
-  const memoryService = new MemoryService(config.root, agentConfigService);
-  // Session-origin registry: session_meta is the single source of truth (no DB column);
-  // shared by the manager (subagent registration), the loader (self-heal rebuild),
-  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
-  // listing classification.
-  const sessionSources = new SessionSources();
-  // Trace-file index: the derived cache every trace listing/locating path serves from
-  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
-  const traceIndexRepo = new TraceIndexRepo(db);
-  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
-  const traceService = new TraceService(config.root, {
-    index: traceIndex,
-    sessions: sessionsRepo,
-    sources: sessionSources,
-    // The one price table: the analysis costs a file's Requests with the lookup the cost
-    // center prices usage rows with, so the Trace panel and the toolbar never disagree.
-    lookupPricing: (projectId, provider, modelId) =>
-      projectConfigService.getPricing(projectId, provider, modelId),
-  });
-  const workspaceFiles = new WorkspaceFilesService();
-  // Per-process secret: preview tokens are short-lived, so losing them on restart is
-  // harmless and there is nothing to persist or rotate. (Per-App is the same trade at a
-  // smaller scale: a push invalidates open previews, and a preview is one reload away.)
-  const previewTokens = createPreviewTokenSigner();
-  const benchmarks = new BenchmarkService(config.root, workspaceFiles);
-  const usageService = new UsageService(
-    usageRepo,
-    errorsRepo,
-    // No clock here: a scheduled row's two rates come back together and each aggregation half
-    // is priced at the tier its own records ran in, which the query decides from their `ts`.
-    (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
-    overrides.now ?? (() => new Date()),
-  );
-  const updateCheck =
-    overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
-  const updateJob = overrides.updateJob ?? new UpdateJobService();
-
-  const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
-  const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
-  // Shared by SessionManager (run-state flips) and TitleGenerator (title updates): both are
-  // list-row facts that must reach tabs not subscribed to the Session's own channel.
-  //
-  // Audience = the Project's owner plus its members, i.e. exactly who
-  // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session they
-  // cannot open changed state or gained a title.
-  //
-  // `peek`, deliberately not `get`: a user who has never opened an event stream has no
-  // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
-  // (their next connection fetches the list, which carries the same statuses anyway).
-  const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
-    const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
-    if (ownerUserId === undefined) return;
-    const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
-    for (const userId of audience) {
-      channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-    }
-  };
-  const titles =
-    overrides.titles ??
-    new TitleGenerator({
-      sessions: sessionsRepo,
-      channels,
-      recorder,
-      errors,
-      log,
-      notifyProjectUsers,
-    });
-  const manager = new SessionManager({
-    sessions: sessionsRepo,
-    channels,
-    loader:
-      overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, pathPrepend }),
-    sources: sessionSources,
-    recorder,
-    errors,
-    titles,
-    log,
-    // Run-state flips reach the whole login session, not just the tab watching that one
-    // conversation (see the shared publisher above for the audience).
-    notifyProjectUsers,
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-
-  const projectService = new ProjectService({
-    root: config.root,
-    users: usersRepo,
-    projects: projectsRepo,
-    members: membersRepo,
-    agents: agentsRepo,
-    sessions: sessionsRepo,
-    usage: usageRepo,
-    errors: errorsRepo,
-    schedules: schedulesRepo,
-    projectConfig: projectConfigService,
-    manager,
-    traceIndex,
-  });
-  const adminService = new AdminService({
-    users: usersRepo,
-    authSessions: new AuthSessionsRepo(db),
-    projects: projectsRepo,
-    projectService,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-  const messagingRepo = new MessagingBindingsRepo(db);
-  // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
-  // via sync()/fake transports, no real network), stopped by the same create()'s dispose
-  // effect. One connector per channel; further channels register here.
-  const messaging = new MessagingBridge({
-    repo: messagingRepo,
-    sessions: sessionsRepo,
-    // The same service the Files panel reads through: mirroring a file the reply mentions
-    // must obey exactly the containment rules browsing it does, not a second copy of them.
-    files: workspaceFiles,
-    root: config.root,
-    // Read through per message, not snapshotted: these are admin-settable, and every other
-    // caller resolves them per request so a change applies without a restart.
-    attachmentLimits: () => toAttachmentLimits(serverSettingsRepo.getAttachmentLimitsMb()),
-    channels,
-    runner: manager,
-    connectors: [
-      new FeishuConnector(overrides.feishuSdk ?? createLarkSdk()),
-      new TelegramConnector(
-        overrides.telegramTransport ?? createTelegramTransport(),
-        overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
-      ),
-      new QQConnector(overrides.qqTransport ?? createQQTransport(), {
-        ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
-        ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-      }),
-      new WeChatConnector(
-        overrides.wechatTransport ?? createWeChatTransport(),
-        overrides.wechatRetryDelayMs ? { retryDelayMs: overrides.wechatRetryDelayMs } : {},
-      ),
-    ],
-    errors,
-    log,
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-    ...(overrides.messagingLineDelayMs !== undefined
-      ? { lineDelayMs: overrides.messagingLineDelayMs }
-      : {}),
-    ...(overrides.messagingInboundImageBudgetBytes !== undefined
-      ? { inboundImageBudgetBytes: overrides.messagingInboundImageBudgetBytes }
-      : {}),
-  });
-  // Scan-to-connect holds one AES key per in-flight bind task, in memory only: it decrypts
-  // an App Secret, and a task lives for the couple of minutes a person spends scanning.
-  const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-  });
-  // Same reasoning as above: what this one holds is the handle that collects a bot token
-  // rather than a key that decrypts a secret, and it is equally not worth persisting.
-  const wechatScan = new WeChatScanService(
-    overrides.wechatScanTransport ?? createWeChatScanTransport(),
-    { ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}) },
-  );
-  const sessionService = new SessionService({
-    root: config.root,
-    sessions: sessionsRepo,
-    manager,
-    projectConfig: projectConfigService,
-    sources: sessionSources,
-    traceIndex,
-    proxyEnv,
-    controlEnv,
-    pathPrepend,
-    // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
-    // the row); a point query per row keeps the repo out of the service. An unknown
-    // stored channel reads as none (same defensive skip as the bridge and the routes).
-    messagingChannel: (sessionId) => {
-      const enabled = messagingRepo.findEnabled(sessionId);
-      return enabled !== null &&
-        (enabled.channel === "feishu" ||
-          enabled.channel === "telegram" ||
-          enabled.channel === "qq" ||
-          enabled.channel === "wechat")
-        ? enabled.channel
-        : null;
-    },
-  });
-  // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
-  // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
-  const scheduler = new Scheduler({
-    root: config.root,
-    repo: schedulesRepo,
-    projects: projectsRepo,
-    sessions: sessionsRepo,
-    runner: manager,
-    sessionCreator: sessionService,
-    projectConfig: projectConfigService,
-    errors,
-    notify: (userId, event) => {
-      channels.get(userChannelKey(userId)).publish(event, "server_event");
-    },
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-  });
-
-  return {
-    config,
-    db,
-    sessionsRepo,
-    prefsRepo,
-    serverSettingsRepo,
-    authService,
-    adminService,
-    projectService,
-    projectConfigService,
-    modelOAuth,
-    agentService,
-    agentConfigService,
-    memoryService,
-    sessionService,
-    traceService,
-    traceIndex,
-    usageService,
-    updateCheck,
-    updateJob,
-    workspaceFiles,
-    previewTokens,
-    benchmarks,
-    snapshots,
-    schedulesRepo,
-    errorsRepo,
-    messagingRepo,
-    qqScan,
-    wechatScan,
-    messaging,
-    scheduler,
-    channels,
-    manager,
-    sessionSources,
-    errors,
-    desktop: caps.desktop,
-    lifecycle: caps.lifecycle,
-    // Anchored at the data root: that is where the hmr store the pushable image comes from
-    // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? buildMachines(),
-    hmr,
-    proxyControl: caps.proxyControl,
-    log,
-  };
-}
-
-/** Prefixes the runtime serves itself; the platform app declines them unconditionally. */
-const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
-
-/**
- * Assembles the platform's ONE Hono app: every route the platform serves — the terminal
- * group and the business groups — registered together, so a swap replaces the whole route
- * table as a unit (routes + auth + error shaping; no listening, no logging).
- *
- * `deps` is null when the host published no business capabilities — a declared bare kernel:
- * the terminal group still serves, everything else declines. A runtime merely too OLD to
- * publish them never reaches here; the platform refuses to boot on one (hmr/platform.ts's
- * create), because that runtime still answers the business API out of its own routes.
- */
-export function createApp(
-  deps: AppDeps | null,
-  terminals: TerminalManager,
-  identity: Identity,
-): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-
-  // Error recording is layered in a lambda wrapping onError: handleError stays a
-  // pure function with unchanged behavior (HttpError is mapped as-is, unknown
-  // exceptions are logged with a stack trace and collapsed to 500), and recording
-  // to the DB is just a side-effect layered on top — skipped when no business (and so
-  // no errors table access) is running.
-  app.onError((err, c) => {
-    if (deps !== null) {
-      const projectId = attributedProjectId(c, deps);
-      deps.errors.record({
-        source: "http",
-        err,
-        ...(projectId !== undefined ? { ctx: { projectId } } : {}),
-      });
-    }
-    return handleError(err, c);
-  });
-  app.notFound(() => declined());
-
-  // The terminal group mounts FIRST and carries its own per-route identity gate: a
-  // matched terminal route ends the chain before the cookie auth below ever runs, and an
-  // unmatched /api/terminals path falls through it into the same auth-then-decline shape
-  // as any other unknown /api path.
-  app.route("/", terminalRoutes(terminals, identity));
-
-  if (deps === null) return app;
-
-  // Runtime-owned prefixes decline before anything else runs — in particular before the
-  // auth gate below, which would otherwise 401 an unauthenticated /api/auth/login instead
-  // of letting the runtime's own public route serve it.
-  app.use("*", async (c, next) => {
-    if (RUNTIME_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
-      return declined();
-    }
-    await next();
-  });
-
-  // The provider key-minting redirect receiver, and the only business route mounted outside
-  // the auth gate below — the same shape /api/desktop/update uses in reverse, and for the
-  // mirror-image reason. A loopback OAuth callback is reached by whichever browser the
-  // provider redirected: on the desktop the shell hands the authorization page to the system
-  // browser, which holds no session cookie for this origin, so requiring one 401'd every
-  // desktop authorization. It authorizes on the flow id instead, and all it may do with one
-  // is deposit the code it carried: the exchange that writes a key runs on the owner's poll
-  // of the status route, behind this gate (see the route module).
-  //
-  // Exactly this literal path, registered here so the exemption cannot widen: the group
-  // mount below still carries /start, /:flowId/code and the status route behind the gate,
-  // and because this registration comes first, `:flowId` can never swallow "callback". Only
-  // GET is served, and the handler refuses the HEAD that Hono re-dispatches into it.
-  app.route("/api/projects/:projectId/model-oauth/callback", modelOAuthCallbackRoutes(deps));
-
-  // The data root's install identity, public: the web app compares it against what it holds
-  // in `localStorage` before React mounts, which is before it knows whether anyone is signed
-  // in — and a just-wiped root, the case the whole mechanism exists for, has nobody signed in
-  // at all. See http/routes/install.ts.
-  //
-  // Mounted in the PLATFORM rather than the runtime because a hot push carries platform + cli
-  // + web dist as ONE version and never the runtime (hmr/host.ts): the bundle that calls this
-  // route and the route itself then always move together, whereas a runtime mount would let a
-  // pushed web dist arrive on an installation whose runtime does not serve what it asks for.
-  // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
-  // platform must serve it, not decline it.
-  app.route("/api/install", installRoutes(deps));
-  // `/server/<machineId>/api/…` — a connected machine's API, forwarded over the forward held
-  // to it and addressed by the machine's OWN id. Admins only: the request is made over there
-  // as that machine's admin, with a session this server minted over the ssh access that
-  // installed it, so this server's admin session is the one credential involved.
-  const serverProxy = machinesProxy(
-    (machineId) => deps.machines.proxyTarget(machineId),
-    (machineId, outcome) => deps.machines.noteApiSeen(machineId, outcome),
-  );
-  app.all(
-    `${SERVER_PROXY_PREFIX}*`,
-    authMiddleware(deps.authService, deps.config.trustProxy),
-    async (c) => {
-      if (!c.var.user.isAdmin) {
-        throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
-      }
-      const answer = await serverProxy(c.req.raw);
-      return answer ?? c.notFound();
-    },
-  );
-
-  // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
-  app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.route("/api/me", meRoutes(deps));
-  app.route("/api/version", versionRoutes(deps));
-  app.route("/api/admin/users", adminUsersRoutes(deps));
-  app.route("/api/admin/settings", adminSettingsRoutes(deps));
-  app.route("/api/events", eventsRoutes(deps));
-  // Plugin library listing: readable once logged in, not nested under a Project prefix.
-  app.route("/api/plugins", pluginLibraryRoutes());
-  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
-  app.route("/api/projects", projectsRoutes(deps));
-  app.route("/api/projects/:projectId/members", membersRoutes(deps));
-  app.route("/api/projects/:projectId/models", modelsRoutes(deps));
-  app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
-  app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
-  app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
-  app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
-  app.route("/api/projects/:projectId/agents", agentPortingRoutes(deps));
-  app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
-  app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/plugins", agentPluginsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/hooks", agentHooksRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId", agentTransferRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/traces", agentTracesRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
-  app.route("/api/projects/:projectId/usage", usageRoutes(deps));
-  app.route("/api/sessions", sessionsRoutes(deps));
-  app.route("/api/sessions", sessionMessagingRoutes(deps));
-
-  // Workspace HTML preview on the separate preview origin: deliberately outside /api and
-  // outside the auth middleware — that origin never receives the session cookie, so the
-  // signed token in the path is the only credential.
-  app.route("/preview", previewRoutes(deps));
-
-  // An unknown /api path a logged-in caller reaches falls to notFound → decline → the
-  // runtime answers its own 404; unauthenticated callers are already 401'd above, which
-  // is the same shape the one-app assembly produced.
-  return app;
-}

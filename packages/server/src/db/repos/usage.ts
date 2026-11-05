@@ -5,8 +5,10 @@
  * so every aggregation is broken down by the `(provider, model_id)` pair and returns
  * raw Token sums (a model_id shared across providers is aggregated separately; never concatenated).
  */
-import type { DatabaseSync } from "node:sqlite";
 import type { UsageGroupBy } from "../../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { UsageStore } from "../../mechanisms/observability.js";
 
 export interface UsageRecordInsert {
   ts: string;
@@ -38,6 +40,8 @@ export interface UsageFilter {
   /** Provider filter paired with modelId (the frontend dropdown always sends them together). */
   provider?: string;
   modelId?: string;
+  /** Restrict to these sessions (company mode attributes cost by the sessions an organization owns); an empty list matches nothing. */
+  sessionIds?: readonly string[];
 }
 
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
@@ -181,8 +185,9 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
   };
 }
 
-export class UsageRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class UsageRepo implements UsageStore {
+  @Use() private readonly db!: Db;
 
   insert(r: UsageRecordInsert): void {
     this.db
@@ -243,6 +248,17 @@ export class UsageRepo {
     if (f.modelId !== undefined) {
       conds.push("model_id = :modelId");
       params.modelId = f.modelId;
+    }
+    if (f.sessionIds !== undefined) {
+      if (f.sessionIds.length === 0) {
+        conds.push("0");
+      } else {
+        const keys = f.sessionIds.map((id, i) => {
+          params[`s${i}`] = id;
+          return `:s${i}`;
+        });
+        conds.push(`session_id IN (${keys.join(", ")})`);
+      }
     }
     return { where: conds.join(" AND "), params };
   }

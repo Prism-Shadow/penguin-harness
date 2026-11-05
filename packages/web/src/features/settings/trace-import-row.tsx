@@ -1,5 +1,5 @@
 /**
- * Trace import (System settings → General): a `.jsonl` Trace exported from another install
+ * Trace import (Settings → General): a `.jsonl` Trace exported from another install
  * becomes a conversation of the chosen Agent.
  *
  * Both halves of the destination are picked here, Project included. The endpoint is
@@ -8,7 +8,9 @@
  * inherited because this dialog does not show which one is current — every other row in it
  * belongs to the account or the server — and an import that silently landed in whichever
  * Project the sidebar happened to have selected would be a hard mistake to notice. It also
- * means a Trace can be imported into a Project other than the open one.
+ * means a Trace can be imported into a Project other than the open one, as long as the viewer
+ * owns it: importing is the owner's, so the picker lists owned Projects only, and a viewer who
+ * owns none gets no row.
  *
  * The row sits beside the CLI-sessions filter because both decide what the conversation
  * list holds. Export is deliberately not here: a Trace is downloaded from the conversation
@@ -16,20 +18,46 @@
  */
 import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
+import {
+  HiddenFileInput,
+  PrefRow,
+  Select,
+  UploadIcon,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { UploadIcon } from "../../components/ui/icons";
-import { Select } from "../../components/ui/select";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { PrefRow } from "./setting-row";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Client-side pre-check before reading the picked file (the same cap as the server's import route). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
+
+/**
+ * The Projects the row offers, and the one it is on. The import route answers anyone but the
+ * Project's owner with 403, so a Project the viewer is only a member of is left out rather than
+ * offered for an import that can only fail. The pick stands while it is still one of them;
+ * otherwise the open Project, when the viewer owns it, and then the first Project they own. With
+ * none owned, `projects` is empty and `projectId` is "".
+ */
+export function traceImportTargets(
+  projects: readonly ProjectSummary[],
+  currentProjectId: string | null,
+  picked: string,
+): { projects: ProjectSummary[]; projectId: string } {
+  const owned = projects.filter((p) => p.role === "owner");
+  const isOwned = (id: string | null): id is string =>
+    id !== null && owned.some((p) => p.projectId === id);
+  const projectId = isOwned(picked)
+    ? picked
+    : isOwned(currentProjectId)
+      ? currentProjectId
+      : (owned[0]?.projectId ?? "");
+  return { projects: owned, projectId };
+}
 
 export function TraceImportRow() {
   const { projects, currentProject } = useProject();
@@ -40,11 +68,12 @@ export function TraceImportRow() {
   const [agents, setAgents] = useState<readonly AgentSummary[]>([]);
   const [importing, setImporting] = useState(false);
 
-  /** Destination Project: the explicit pick, else the open one (which may still be resolving). */
-  const projectId =
-    pickedProject !== ""
-      ? pickedProject
-      : (currentProject?.projectId ?? projects[0]?.projectId ?? "");
+  /** Destination Project, derived like the Agent below: only owned Projects are offered at all. */
+  const { projects: ownedProjects, projectId } = traceImportTargets(
+    projects,
+    currentProject?.projectId ?? null,
+    pickedProject,
+  );
   /**
    * Destination Agent, derived rather than stored: a pick that the selected Project has no
    * Agent for falls back on its own, so switching Project cannot leave a stale id behind.
@@ -59,7 +88,7 @@ export function TraceImportRow() {
     if (projectId === "") return;
     let cancelled = false;
     void api
-      .listAgents(projectId)
+      .listAgents(projectId, null)
       .then((res) => {
         if (!cancelled) setAgents(res.agents);
       })
@@ -79,7 +108,7 @@ export function TraceImportRow() {
     setImporting(true);
     try {
       await api.importAgentTrace(projectId, agentId, { dataBase64 });
-      const project = projects.find((p) => p.projectId === projectId);
+      const project = ownedProjects.find((p) => p.projectId === projectId);
       const target = `${project ? projectDisplayName(project) : projectId} · ${
         agents.find((a) => a.agentId === agentId)?.name ?? agentId
       }`;
@@ -89,7 +118,7 @@ export function TraceImportRow() {
       toastSuccess(S.settings.importTraceDone(target));
     } catch (e: unknown) {
       // Transient action failure → toast (the app's one notification rule).
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setImporting(false);
     }
@@ -113,13 +142,18 @@ export function TraceImportRow() {
     reader.readAsDataURL(file);
   };
 
+  // Nowhere the viewer may import into: no row, rather than pickers for an import that the
+  // server would refuse.
+  if (ownedProjects.length === 0) return null;
+
   return (
     <PrefRow label={S.settings.importTrace} info={S.settings.importTraceInfo}>
       {/* Each picker is boxed to a fixed width — a Select fills its container, and three
           full-width controls would stack one per line. Long names truncate in the trigger.
-          The row still wraps at phone width, where three controls do not fit side by side. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="w-32">
+          From sm up the three stay on one line (the pickers give way first, down to their minimum),
+          so the row keeps the settings rows' height; at phone width it wraps. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+        <div className="w-32 min-w-24 sm:shrink">
           <Select
             size="sm"
             value={projectId}
@@ -131,14 +165,14 @@ export function TraceImportRow() {
             }}
             aria-label={S.settings.importTraceProject}
           >
-            {projects.map((p) => (
+            {ownedProjects.map((p) => (
               <option key={p.projectId} value={p.projectId}>
                 {projectDisplayName(p)}
               </option>
             ))}
           </Select>
         </div>
-        <div className="w-32">
+        <div className="w-32 min-w-24 sm:shrink">
           <Select
             size="sm"
             value={agentId}
@@ -154,12 +188,11 @@ export function TraceImportRow() {
           </Select>
         </div>
         {/* The file pick doubles as the confirm action (button styling on a label, so the
-            native picker opens without a detour). */}
+            native picker opens without a detour). It sits in a row with the two Selects above,
+            so it carries their sm metrics rather than Button's md ones. */}
         <label
-          className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-gray-300 px-3 py-1 text-sm font-medium transition-colors duration-150 dark:border-gray-700 ${
-            busy
-              ? "pointer-events-none opacity-60"
-              : "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+          className={`inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[var(--ui-radius-control)] border border-line px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
+            busy ? "pointer-events-none opacity-60" : "hover:bg-surface-muted"
           }`}
         >
           <HiddenFileInput accept=".jsonl" disabled={busy} onChange={onPickFile} />

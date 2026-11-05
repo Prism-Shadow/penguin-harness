@@ -1,20 +1,18 @@
 /**
- * End-to-end title generation over the same HTTP path the Web App uses: create the
- * Session via POST /api/projects/:p/agents/:a/sessions, start the first Task via
- * POST /api/sessions/:id/tasks, and assert against the real wiring (real
- * SessionManager, real TitleGenerator, real ChannelHub, real DB) that
- *   1. the created row's title is NULL (the "New chat" label is a client-side
- *      display fallback, not a stored default),
- *   2. the user-input fallback title is persisted and pushed on the session's SSE
- *      channel while the run is still parked before any model output,
- *   3. the LLM title replaces it when the one-shot request resolves.
- * Only the runtime Session is faked (adopted into the manager's active table); the
- * fake's generateTitle is gated so "before any model output" is provable.
+ * Title generation over the HTTP path the Web App uses — create the Session, then start its
+ * first Task — against the real wiring (SessionManager, TitleGenerator, ChannelHub, DB); only
+ * the runtime Session is faked, with its run and its title request gated.
+ *
+ * - A new Session's stored title is NULL ("New chat" is the client's display fallback).
+ * - The first Task's input is persisted as the fallback title and pushed on the Session's
+ *   channel and on the user channel before any model output.
+ * - The model's title then replaces it, pushed on both channels too.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { userChannelKey } from "../src/http/routes/events.js";
+import { fakeSession } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -24,21 +22,15 @@ function gatedSession(
   runGate: Promise<void>,
   titleGate: Promise<void>,
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
+  return fakeSession(sessionId, {
     generateTitle: async () => {
       await titleGate;
       return { title: "Login page bug", usage: null };
     },
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
     async *run() {
       await runGate;
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("title generation over the web's HTTP path", () => {

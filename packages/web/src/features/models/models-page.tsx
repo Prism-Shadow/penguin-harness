@@ -3,31 +3,55 @@
  *
  * Model entries are persisted as two independent fields, `provider` and `model_id`;
  * the (provider, model_id) pair is the entry's unique key — **zero
- * concatenation** anywhere in the pipeline, `model_id` is sent to AgentHub verbatim as the
+ * concatenation** anywhere in the pipeline, `model_id` is sent to MMSP verbatim as the
  * upstream request id. The dialog's identity section = (group dropdown, upstream id input);
  * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
  * to migrate the credential and pointers).
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
- * name + count, collapsible), with one card per model within a group — the card shows only
- * the display name + status badges (default / vision / proxy-read), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a
- * card opens the config dialog (credentials, context, pricing, vision toggle, plus set as
- * default / set as vision model / delete); the "add model" entry point lives in each group
- * header (owner only) and reuses the same dialog — provider is pre-filled with that group;
- * the protocol follows group semantics: a first-party vendor group doesn't persist
- * client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from the
- * id), while custom / user-defined groups / gateways use a fixed OpenAI protocol, and
- * gateways (OpenRouter / SiliconFlow / Qwen Token Plan) additionally pre-fill their endpoint
- * base URL; the "get model id / API key" external links sit next to the corresponding
- * input's label (shown in both add and edit dialogs). The group list ends with an "add
- * group" action (user-defined groups share custom's semantics; the group appears once the
- * first model saves successfully — groups are carried by the model entry's provider field,
- * not persisted separately). The header also holds an owner-only "sync presets" action next
- * to the search box (union-merge with the built-in catalog, see catalog-sync.ts).
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
+ * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
+ * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
+ * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
+ * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ *
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
+ * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * in this browser, applies to search results too, and leaves the group order and the chat model
+ * picker alone.
+ *
+ * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
+ * rest under one full-width bar that folds them away (folded by default). A star on each header,
+ * shown on hover or focus, moves a group across; searching shows both areas, unfolded.
+ *
+ * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
+ * written by Connect and the group settings — and a model stores only what it overrides: every
+ * field it leaves blank follows the group (connection.ts), and a field the group leaves blank
+ * too is the client's default; the catalog is never a fallback. The dialogs say a blank field
+ * follows the group without repeating the group's value, and a card prints the key the model is
+ * actually used with. The "get model id / API key" external links sit next to the
+ * corresponding input's label in the dialogs, never in the header. A TokenDance banner above
+ * the groups offers its connect flow until the group holds a key. The group list ends with an
+ * "add group" action (user-defined groups share custom's semantics; the group appears once the
+ * first model saves successfully — groups are carried by the model entry's provider field).
+ *
+ * The page header holds two owner-only catalog actions next to the search box, both run by the
+ * server: "Add new models" adds the presets the table lacks (shown only while there are some,
+ * see catalog-sync.ts) and touches nothing else; "Restore defaults", behind a danger
+ * confirmation, puts every built-in model back to the catalog while keeping keys and the
+ * user's own models. Nothing else ever rewrites an existing row's catalog facts.
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
- * means keep the existing value); only the owner can edit.
+ * means keep the existing value); only the owner can edit. The config dialog's Save (Add, for a
+ * new model) is live once something changed and nothing is wrong; the dialog waits for the
+ * write and closes only once it landed — a refused one leaves the table as it was and the draft
+ * in the dialog — and closing it with unsaved edits asks first.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
@@ -40,47 +64,85 @@ import type {
   ModelTestRequest,
   ModelUpdateEntry,
   ModelVisionDetectRequest,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
+import {
+  Pill,
+  Button,
+  Card,
+  Checkbox,
+  Chevron,
+  ChevronFlip,
+  ConfirmModal,
+  EmptyState,
+  FieldError,
+  FieldLabel,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Input,
+  Link,
+  Modal,
+  NAV_FILL,
+  NoticeStrip,
+  PageFrame,
+  PageHeader,
+  PasswordInput,
+  ProviderLogo,
+  ROW_HOVER_BUTTON,
+  Segmented,
+  Select,
+  SkeletonList,
+  Spinner,
+  Switch,
+  TodoNotice,
+  WallpaperSurface,
+  buttonClass,
+  setDragPreview,
+  toastError,
+  toastInfo,
+  toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { FieldError, FieldLabel } from "../../components/ui/field";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ProviderLogo } from "../../components/ui/provider-logo";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { EmptyState } from "../../components/ui/empty-state";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
-  canonicalClientType,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   fastModeProtocol,
+  isAddableGroup,
+  isVendorGroup,
   modelHomepageUrl,
-  providerClientType,
   providerInfo,
-  resolveModelEnv,
-} from "@prismshadow/penguin-core/model-catalog";
-import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+  unroutableVendorModel,
+} from "@prismshadow/penguin-server/model-catalog";
+import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
+import type {
+  FastModeProtocol,
+  ModelProviderBridgeAuth,
+  ModelProviderInfo,
+} from "@prismshadow/penguin-server/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
+  fractionOff,
   groupModelRows,
-  hasConfiguredKey,
   isFreeModel,
   sameModelRef,
   userProviderInfo,
@@ -90,39 +152,114 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "./model-group-order";
+import { TAG_TONE, modelTags } from "./model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
-  envHintClientType,
+  envHintFor,
+  keylessFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
   protocolForPersist,
   protocolSelectorValue,
 } from "./protocol-types";
-import type { ProtocolClientType } from "./protocol-types";
+import type { InheritedProtocol, ProtocolClientType } from "./protocol-types";
 import {
   isGroupExpanded,
   loadExpandedProviders,
   saveExpandedProviders,
   toggleExpandedProvider,
 } from "./model-group-expansion";
+import {
+  initialModelGroupPins,
+  initialModelGroupsFolded,
+  isModelGroupPinned,
+  modelGroupLayout,
+  pinsAfterDrop,
+  storeModelGroupPins,
+  storeModelGroupsFolded,
+  withModelGroupPinned,
+} from "./model-group-pins";
+import type { ModelGroupPins } from "./model-group-pins";
 import { clearDraftModelRef } from "../chat/draft-cache";
-import { syncRowsWithCatalog } from "./catalog-sync";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
-import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { UpdateDot } from "../../components/ui/update-dot";
-import { TodoNotice } from "../../components/ui/todo-notice";
-import { buildImportedRows } from "./group-import";
+import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
+import type { PresetSyncHost } from "./preset-sync";
+import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
+import { ImportPickList } from "./group-import-picker";
+import {
+  applyProviderUpdate,
+  groupKeyMissesRow,
+  groupShape,
+  inheritedConnection,
+  rowKey,
+} from "./connection";
+import type { ProviderConnections } from "./connection";
+import { ProviderSettingsDialog } from "./provider-settings-dialog";
+import { GroupSettingsControl } from "./group-settings-menu";
+import {
+  initialModelGroupSorts,
+  modelGroupSortOf,
+  sortModelGroups,
+  storeModelGroupSorts,
+  withModelGroupSort,
+} from "./model-sort";
+import type { ModelGroupSort } from "./model-sort";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk, toneStrip } from "../../lib/tone";
-import { InfoPopover } from "../../components/ui/info-popover";
+import { toneInk } from "../../lib/tone";
+import { KeyAuthDialog } from "./key-auth-dialog";
+import type { KeyAuthTexts } from "./key-auth-dialog";
+import {
+  HEADER_BUTTON,
+  HEADER_LABEL,
+  HEADER_SQUARE,
+  groupHeaderActions,
+  groupKeyFromEnv,
+  groupKeyStored,
+} from "./group-header";
+import type { GroupHeaderAction } from "./group-header";
+import { GroupBalance } from "./group-balance";
+import { DisconnectConfirm, GroupConnection } from "./group-connection";
+import { DetailsFold, MODEL_DIALOG_SLOTS, foldedErrors, foldedSlots } from "./model-dialog-details";
+import type { ModelDialogSlot } from "./model-dialog-details";
+import { isPinned, usePinnedBalance } from "./balance";
+import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { toastApiError } from "../../lib/toast-api-error";
+
+/**
+ * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
+ * group's catalog descriptor. Everything the two differ in lives here — the four
+ * endpoint calls and the copy — because everything else about the dialog is shared, and a
+ * group picks its entry by carrying `bridgeAuth` rather than by being named in this file.
+ */
+const KEY_AUTH: Record<
+  ModelProviderBridgeAuth["flow"],
+  { endpoints: api.KeyAuthEndpoints; texts: KeyAuthTexts }
+> = {
+  "penguin-go": {
+    endpoints: api.platformAuthEndpoints,
+    texts: {
+      intro: S.models.platformKeyIntro,
+      appliedBody: S.models.platformKeyAppliedBody,
+      errors: S.models.platformKeyErrors,
+    },
+  },
+  modelscope: {
+    endpoints: api.modelScopeAuthEndpoints,
+    texts: {
+      intro: S.models.modelScopeKeyIntro,
+      appliedBody: S.models.modelScopeKeyAppliedBody,
+      errors: S.models.modelScopeKeyErrors,
+    },
+  },
+};
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -164,23 +301,6 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
 
-/** Group-header action glyphs (24x24 line paths): add, bulk key, external link, gauge for speed test. */
-const PLUS_ICON = "M12 5v14M5 12h14";
-/** Trash can (same drawing as the agent cards' delete action). */
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-const KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
-const EXTERNAL_LINK_ICON =
-  "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
-/** Arrow entering a door: authorize with the provider and come back with a key. */
-const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
-
-/** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
-const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
-const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
-const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
-
 /** Metric tone -> text color classes for the card speed badges. */
 const TONE_CLASS: Record<SpeedTone, string> = {
   green: toneInk.success,
@@ -194,8 +314,19 @@ const TONE_CLASS: Record<SpeedTone, string> = {
  */
 const refMapKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
-/** Default context window (tokens) for custom models when left unset. */
-const CUSTOM_CONTEXT_DEFAULT = 128000;
+/**
+ * Context window (tokens) recorded for a custom or user-group model whose field is left blank.
+ *
+ * A million, not the 128000 the rest of the app assumes for an *unknown* window. The two answer
+ * different questions: the assumption exists so a model with nothing on file still gets a
+ * conservative compaction threshold, while this is a value the dialog is about to WRITE, on an
+ * entry the user is adding by hand — and models being added by hand today are large-window ones.
+ * Guessing low there costs real capacity (the ring reads full, compaction fires early) for a
+ * model that can hold far more; guessing high costs a number the user narrows once, when the
+ * endpoint turns out to serve less. Preset entries left blank still mean "unknown" and stay
+ * blank.
+ */
+const CUSTOM_CONTEXT_DEFAULT = 1000000;
 
 /** Numeric input filter: context window keeps digits only. */
 export function digitsOnly(v: string): string {
@@ -210,21 +341,28 @@ export function decimalOnly(v: string): string {
 }
 
 /**
- * The client type an entry carries after it is moved into `provider`.
+ * The client type an entry carries of its own after it is moved into `provider`, where
+ * `inherited` is the protocol a row there follows when it sets none (the group's table; none by
+ * default).
  *
- * A group that pins a protocol takes it unconditionally — that is what the pin means, and
- * the entry the user dragged in has to speak what the rest of the group speaks. Moving to
- * Custom keeps a generic protocol client type (protocol detection / the in-field picker
- * manage those) and otherwise switches to the generic OpenAI Chat Completions client — an
- * unroutable or vendor-pinned type must not leak into a custom group. Every other group
- * keeps the current value: a first-party group auto-routes by id, and a gateway's rows
- * carry the pin their preset already gave them.
+ * A group that decides a protocol is followed: the entry drops whatever it carried and stores
+ * nothing, so it speaks what the rest of the group speaks and keeps following a later change of
+ * the group's protocol. A custom-like group is the exception for a generic protocol the entry
+ * already chose — protocol detection and the in-field picker manage those, and the choice stays.
+ * Moving to Custom with nothing to follow keeps a generic protocol and otherwise switches to
+ * the generic OpenAI Chat Completions client — an unroutable or vendor-pinned type must not
+ * leak into a custom group. Every other group keeps the current value: a first-party group
+ * auto-routes by id.
  */
-export function clientTypeAfterProviderChange(provider: string, current: string): string {
-  const pinned = providerClientType(provider);
-  if (pinned !== undefined) return pinned;
+export function clientTypeAfterProviderChange(
+  provider: string,
+  current: string,
+  inherited: InheritedProtocol = {},
+): string {
+  const generic = current.trim() !== "" && isGenericProtocolClientType(current);
+  if (inherited.clientType?.trim()) return isCustomLikeGroup(provider) && generic ? current : "";
   if (provider !== "custom") return current;
-  return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai-chat";
+  return generic ? current : "openai-chat";
 }
 
 /**
@@ -232,6 +370,17 @@ export function clientTypeAfterProviderChange(provider: string, current: string)
  * failure, a save-triggered one reports the fallback it is proceeding with.
  */
 type DetectMode = "manual" | "save";
+
+/**
+ * What a detection run yields. The server probes neighbouring forms of the URL that was
+ * typed, so it reports back which one actually served the protocol; `baseUrl` carries that
+ * form only when it differs from what the field held, i.e. only when the field needs
+ * correcting.
+ */
+interface DetectOutcome {
+  clientType: string;
+  baseUrl?: string;
+}
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
@@ -242,7 +391,7 @@ export interface RowState {
    * displayed (see model-grouping).
    */
   provider: string;
-  /** Upstream model id (i.e. the stored model_id, sent to AgentHub verbatim). */
+  /** Upstream model id (i.e. the stored model_id, sent to MMSP verbatim). */
   modelId: string;
   /**
    * The identity as loaded (paired reference): differing from the current (provider,
@@ -250,44 +399,61 @@ export interface RowState {
    * server uses to migrate the credential and pointers. null for a new entry.
    */
   original: ModelRefDto | null;
-  /** Display name from the built-in catalog; absent for custom models. */
+  /**
+   * What the model is called: the user's own name, or the built-in catalog's. Absent means the
+   * model has no name (a custom one, or a catalog row loaded before the name was filled in) and
+   * asks the server to inherit the catalog's; the empty string means a name the user cleared,
+   * which is a different request — see rowToEntry.
+   */
   displayName?: string;
   /**
-   * Whether to treat this as a vision model (effective semantics): the server already
-   * resolves this via "TOML vision annotation -> built-in catalog -> default support";
-   * preset models are annotated by the catalog, custom models are editable (supported by
-   * default).
+   * Whether to treat this as a vision model: the row's `vision` annotation, absent meaning
+   * supported (a new Project writes `false` where the catalog says a preset takes no images);
+   * custom models are editable here.
    */
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  /** Masked preview of the env-fallback value (only for a keyless row with no base URL anywhere; the plaintext never leaves the server). */
   envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
   /**
-   * Per-model fast mode (premium faster serving tier, AgentHub `fast_mode`): off by default;
+   * Per-model fast mode (premium faster serving tier, MMSP `fast_mode`): off by default;
    * user-only, never preset by the catalog, editable on every model (preset ones included).
    * Models without a fast tier reject requests carrying it, hence the standing hint while ON.
    */
   fastMode: boolean;
   /**
-   * AgentHub client protocol. Empty for preset models (auto-routed from the model id) and
-   * for a NEW custom model, which starts with nothing selected until the user picks from
-   * the base URL field's suffix or a detection run fills it in; gateway groups start on
-   * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
+   * The row's OWN MMSP client type — an override of its group's. Empty means the row follows its
+   * group (connection.ts): a gateway preset follows its group's protocol, a vendor preset is
+   * routed by the vendor family its id begins with, and a NEW custom model starts with nothing
+   * selected until the user picks from the base URL field's suffix or a detection run fills it
+   * in. Never persisted empty for a custom-like entry that would otherwise resolve to no
+   * protocol — see protocolForPersist.
    */
   clientType: string;
+  /** Price buckets in USD per million tokens: the list price, any promotion kept in `discount`. */
   cacheRead: string;
   cacheWrite: string;
   output: string;
-  /** Current base_url input; compared against originalBaseUrl to decide omit/override/clear (null). */
+  /**
+   * The running promotion the server reports for this row: a fraction off the list price above
+   * (0.5 = half price), stored outside the config file and applied when usage is priced. Absent
+   * when the row has none.
+   */
+  discount?: number;
+  /**
+   * The row's OWN base URL input (empty = follow the group, else the client's default endpoint);
+   * compared against originalBaseUrl to decide omit/override/clear (null).
+   */
   baseUrl: string;
   originalBaseUrl: string;
-  /** Newly entered API key; empty means keep the existing value. */
+  /** Newly entered API key of the row's own; empty means keep the existing value. */
   apiKeyInput: string;
   clearApiKey: boolean;
+  /** The row's OWN stored key (masked) and base URL; a group key is in the page's providers map. */
   credential?: CredentialInfo;
 }
 
@@ -354,30 +520,72 @@ function isPreset(row: RowState): boolean {
 }
 
 /**
- * Whether this row already has (or will have, after this edit) an API key: the shared
- * hasConfiguredKey rule — a stored key or an env fallback the server proved is set — plus the two
- * edit-only notions the DTO shape cannot carry. A key typed into the dialog counts before it is
- * saved, and `clearApiKey` drops the **stored** key only: an environment variable cannot be
- * cleared from here, so an env-backed row keeps its key through a clear.
+ * MMSP's compatible clients that speak an OpenAI protocol, plus the deprecated bare `openai`
+ * alias: an entry pinned to one of them names no vendor, so its endpoint cannot be inferred
+ * (see the dialog's base URL policy). `openai-official` is deliberately absent — it is
+ * OpenAI's own client, with OpenAI's default endpoint.
  */
-export function hasKey(row: RowState): boolean {
-  if (row.clearApiKey) return hasConfiguredKey({ ...row, credential: undefined });
-  return row.apiKeyInput.trim() !== "" || hasConfiguredKey(row);
+const OPENAI_COMPATIBLE_CLIENT_TYPES: ReadonlySet<string> = new Set([
+  "openai",
+  "openai-chat",
+  "openai-responses",
+  "openai-chat-vllm-adapter",
+  "openai-embedding",
+]);
+
+/**
+ * What to tell the owner of an entry its vendor group cannot route — `null` when there is
+ * nothing wrong with it, `"custom"` when there is: an id of no vendor family MMSP knows, added
+ * by hand into a group that routes by id, belongs under a custom group where a protocol can be
+ * picked or detected. `clientType` is the protocol the entry is used with — its own, else its
+ * group's — since a group protocol set in the group settings routes it too.
+ *
+ * Judged on the CURRENT reference rather than the identity as loaded (isPreset): an id the
+ * user has just retyped is a different model.
+ */
+export function unroutableFix(
+  provider: string,
+  modelId: string,
+  clientType: string,
+): "custom" | null {
+  return unroutableVendorModel(provider, modelId, clientType) ? "custom" : null;
 }
 
 /**
- * The model card's key status line, most specific first: a stored key (not being cleared) shows
- * its mask; a key typed but not yet saved has no mask of its own and just reads as configured;
- * otherwise a detected first-party env fallback shows that variable's value under the same mask
- * (the server reports envKeyMasked for official vendor entries only), so an env-backed row reads
- * like a configured one. hasKey guards the whole ladder, so the card and the chat model picker can
- * never disagree about which rows count as "not configured".
+ * Whether this row already has (or will have, after this edit) an API key: its own, a key typed
+ * into the dialog and not saved yet, its group's, or an env fallback the server proved is set —
+ * the ladder connection.ts's rowKey walks, with the group's stored connection beside it.
+ * `clearApiKey` drops the row's OWN key only, so a row whose group holds a key keeps a key
+ * through a clear.
  */
-export function keyStatusText(row: RowState): string {
-  if (!hasKey(row)) return S.models.noKey;
-  if (row.credential?.apiKeyMasked && !row.clearApiKey) return row.credential.apiKeyMasked;
-  if (row.apiKeyInput.trim() !== "") return S.models.keyConfigured;
-  return row.envKeyMasked ?? S.models.keyConfigured;
+export function hasKey(row: RowState, group?: ProviderConnectionDto): boolean {
+  return rowKey(row, group).source !== "none";
+}
+
+/**
+ * The model card's key status line, most specific first: a key typed but not yet saved has no
+ * mask of its own and just reads as configured; otherwise the mask of the key the row is used
+ * with — its own, its group's, or a detected env fallback's (the server reports that one only
+ * where the environment may lend it) — so every source of a key reads alike, and "not
+ * configured" only where there is none. The source is the card's tooltip's business
+ * (keyStatusNote), not this line's.
+ */
+export function keyStatusText(row: RowState, group?: ProviderConnectionDto): string {
+  const key = rowKey(row, group);
+  if (key.source === "none") return S.models.noKey;
+  return key.masked ?? S.models.keyConfigured;
+}
+
+/**
+ * The quiet note on a card's key status naming where an inherited key comes from — the group's
+ * key, or the environment — and nothing for a key that is the model's own (or typed in), which
+ * needs no explaining.
+ */
+export function keyStatusNote(row: RowState, group?: ProviderConnectionDto): string | undefined {
+  const { source } = rowKey(row, group);
+  if (source === "provider") return S.models.keyFromGroup;
+  if (source === "env") return S.models.readFromEnv;
+  return undefined;
 }
 
 /**
@@ -426,10 +634,10 @@ export function modelLabelOf(displayName: string | undefined, modelId: string): 
  *
  * Loading rounds the stored USD to four decimals so it is typeable (`usdToInput`), so
  * re-encoding an untouched field would commit that rounding as the new price: a silent edit of
- * a number nobody changed. Small, but not nothing — a catalog row billed at CNY 0.05 per
- * million lands on $0.0071 instead of $0.00714285…, enough to move a promoted row off the
- * figure its seller bills and drop the discount mark that says so. Editing the field is what
- * makes the typed value authoritative.
+ * a number nobody changed. Small, but not nothing — a catalog row listed at CNY 0.05 per
+ * million lands on $0.0071 instead of $0.00714285…, which is a price change: the save would
+ * cancel the row's promotion, and a scheduled row would leave the catalog's peak price and
+ * lose its off-peak mark. Editing the field is what makes the typed value authoritative.
  */
 export function priceToSubmit(
   formValue: string,
@@ -469,6 +677,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
+  if (m.discount !== undefined) row.discount = m.discount;
   return row;
 }
 
@@ -492,31 +701,41 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  * Whether the model dialog offers the fast-mode switch for a draft row, and on which protocol
  * the parameter would travel.
  *
- * `protocol` is AgentHub's own answer (see fastModeProtocol): `undefined` means the routed
- * client rejects `fast_mode` — or the id routes to no client at all — so arming the switch
- * could only produce a turn-killing error, and it is not offered. `show` adds the one
- * exception: a row that already stores fast mode keeps its switch regardless, because a
+ * `protocol` is the routed MMSP client's own answer (see fastModeProtocol): `undefined`
+ * means that client rejects `fast_mode` — or the id routes to no client at all — so arming
+ * the switch could only produce a turn-killing error, and it is not offered. `show` adds
+ * the one exception: a row that already stores fast mode keeps its switch regardless, because a
  * value that arrived another way (a hand-edited config, `penguin config model add
  * --fast-mode`, or an upstream id renamed afterwards) has to remain switchable off — the
  * runtime rejection tells the user to turn it off in the model settings, and that has to be
  * true. `protocol` also picks the warning copy: only Anthropic's fast mode is a gated
  * research preview.
  *
- * The client type is resolved through protocolForPersist — the one the entry will actually
- * be SAVED with — rather than the raw field, for the same reason envHintClientType exists: a
- * custom-like group leaves the protocol empty until detection or a manual pick fills it in,
- * and fastModeProtocol then falls back to routing by model id. Typing an id that routes to a
- * client with no fast tier (`kimi-k3`, `gemini-3-pro`) into a custom group would hide a
- * switch that the persisted `openai-chat` entry can in fact serve. An empty result keeps the
- * id-based routing the preset and vendor groups genuinely use.
+ * The client type and base URL are the ones the entry will actually be USED with — its own,
+ * else what it inherits from its group (`inherited`, none by default) — and for a custom-like
+ * entry that resolves to none, the compatible client it will be saved on: a custom-like group
+ * leaves the protocol empty until detection or a manual pick fills it in, and fastModeProtocol
+ * would then
+ * fall back to routing by model id. Typing an id that routes to a client with no fast tier
+ * (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a switch that the persisted
+ * `openai-chat` entry can in fact serve. An empty result keeps the id-based routing the preset
+ * and vendor groups genuinely use.
  */
 export function fastModeState(
   row: Pick<RowState, "provider" | "modelId" | "clientType" | "baseUrl" | "fastMode">,
+  inherited: {
+    clientType?: string | undefined;
+    baseUrl?: string | undefined;
+  } = {},
 ): { protocol: FastModeProtocol | undefined; show: boolean } {
+  const clientType =
+    row.clientType.trim() ||
+    inherited.clientType?.trim() ||
+    (isCustomLikeGroup(row.provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : "");
   const protocol = fastModeProtocol(
     row.modelId.trim(),
-    protocolForPersist(row.provider, row.clientType) || undefined,
-    row.baseUrl.trim() || undefined,
+    clientType || undefined,
+    row.baseUrl.trim() || inherited.baseUrl?.trim() || undefined,
   );
   return { protocol, show: protocol !== undefined || row.fastMode };
 }
@@ -540,8 +759,58 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
   return { show: present.vision || present.fastMode, cellClass: both ? undefined : "col-span-2" };
 }
 
-/** Row edit state -> wire entry (exported for unit tests): the single funnel into the config PUT. */
-export function rowToEntry(row: RowState): ModelUpdateEntry {
+/**
+ * What the model dialogs' API key and base URL fields say while blank (exported for unit tests).
+ * Where the group's setting covers a blank field, the field says so and nothing more — not the
+ * group's URL, not its masked key: those are the group's, shown in its settings.
+ *
+ * - API key, most specific first: a key of the model's own means keep it; a group key that
+ *   reaches the model (connection.ts) means it follows the group; a variable the environment
+ *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
+ *   group key that does NOT reach the model — its own base URL is on another origin — is said
+ *   outright, since the card will read "not configured"; a model its client calls without a key
+ *   (`keyless`: an open MMSP or vLLM server) says a blank sends none; otherwise the field asks
+ *   for a key.
+ * - Base URL: the group's setting where it has one; else, where the field is required (it
+ *   cannot be saved blank), a request to enter one; else that a blank one uses the default,
+ *   without naming it.
+ */
+export function connectionPlaceholders(
+  draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
+  group: ProviderConnectionDto | undefined,
+  {
+    envKey,
+    keyless = false,
+    baseUrlRequired,
+  }: { envKey?: string | undefined; keyless?: boolean; baseUrlRequired: boolean },
+): { apiKey: string; baseUrl: string } {
+  const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
+  const apiKey = draft.credential?.apiKeyMasked
+    ? S.models.apiKeyKeepHint
+    : inherited.apiKeySource === "provider"
+      ? S.models.inheritFromGroup
+      : envKey !== undefined
+        ? S.models.apiKeyEnvHint(envKey)
+        : groupKeyMissesRow(draft.baseUrl, group)
+          ? S.models.keyNotReachedNote
+          : keyless
+            ? S.models.apiKeyKeylessHint
+            : S.models.apiKeyEnterHint;
+  const baseUrl =
+    inherited.baseUrl !== undefined
+      ? S.models.inheritFromGroup
+      : baseUrlRequired
+        ? S.models.baseUrlEnterHint
+        : S.models.baseUrlDefault;
+  return { apiKey, baseUrl };
+}
+
+/**
+ * Row edit state -> wire entry (exported for unit tests): the single funnel into the config PUT.
+ * A model sends only what it sets of its own; `group` is its group's stored connection, against
+ * which a blank protocol is judged (see protocolForPersist).
+ */
+export function rowToEntry(row: RowState, group?: ProviderConnectionDto): ModelUpdateEntry {
   // provider and modelId are always submitted as separate fields ((provider, modelId) is the entry's unique key, no concatenation).
   const entry: ModelUpdateEntry = { provider: row.provider, modelId: row.modelId };
   // Rename (either provider or model_id changing is a key change): include the original paired reference so the server
@@ -549,13 +818,21 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.original && !sameModelRef(row.original, rowRef(row))) {
     entry.renamedFrom = row.original;
   }
-  // Display name: the server only persists it when it differs from the built-in catalog (keeps preset model configs clean).
-  if (row.displayName?.trim()) entry.displayName = row.displayName.trim();
+  // Display name: submitted whenever the row carries one at all, the empty string included —
+  // absent means "inherit whatever the catalog calls this model" and empty means "the user
+  // cleared it", so a row that simply has no name must not travel as a deletion. The server
+  // only persists a name that differs from the built-in catalog (keeps preset configs clean).
+  if (row.displayName !== undefined) entry.displayName = row.displayName.trim();
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
-  // Never persists an empty protocol for a custom-like entry (that entry could not start —
-  // see protocolForPersist); preset / vendor rows keep "" so AgentHub infers from the id.
-  const clientType = protocolForPersist(row.provider, row.clientType);
+  // Only the row's own protocol: a blank one follows the group. The exception is a custom-like
+  // entry that would resolve to none, which could not start (see protocolForPersist); preset /
+  // vendor rows keep "" so MMSP routes by the id's vendor family.
+  const clientType = protocolForPersist(
+    row.provider,
+    row.clientType,
+    inheritedConnection(row.provider, row.modelId, group),
+  );
   if (clientType) entry.clientType = clientType;
   // Supported by default: submit false only when explicitly marked "unsupported" (preset vision models and checked custom models aren't persisted).
   if (!row.vision) entry.vision = false;
@@ -577,6 +854,8 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   ) {
     entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
+  // The promotion is never sent: the server keeps the stored one unless this entry renames
+  // the row or changes its price.
   if (row.apiKeyInput.trim()) entry.apiKey = row.apiKeyInput.trim();
   if (row.clearApiKey) entry.clearApiKey = true;
   const baseUrl = row.baseUrl.trim();
@@ -609,17 +888,17 @@ const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 
 export function ModelsPage() {
   useDocumentTitle(S.models.title);
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
+  /** The Models trail's raised badge, or undefined — "Add new models" and the notice appear with it. */
   const todo = useUpdateBadges().todos.models;
   /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
   const syncNote = todo ? S.todo.presetUpdates(todo.count) : "";
-  /** The notice's two counts, both off the delta the sync action itself computes. */
-  const syncCounts = todo ? noticeCounts(todo) : null;
-  /** The notice's sync confirmation is open (it lists the refs the delta named). */
+  /** The notice's confirmation of adding the new presets is open (it lists the refs the delta named). */
   const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  /** "Restore defaults" is waiting on its danger confirmation. */
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const userId = useAuth().user?.userId ?? null;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
@@ -628,13 +907,31 @@ export function ModelsPage() {
   const [speedFor, setSpeedFor] = useState<string | null>(null);
   /** Group currently being speed-tested (provider id); tests run strictly one model at a time. */
   const [speedRunning, setSpeedRunning] = useState<string | null>(null);
+  /**
+   * The running test was asked to stop. A ref for the loop, which reads it between probes; the
+   * state mirror disables the stop button meanwhile, since the probe in flight still has to
+   * come back before the loop can see it.
+   */
+  const speedStopRef = useRef(false);
+  const [speedStopping, setSpeedStopping] = useState(false);
+  /** The balance pinned beside the user name, so its group's header keeps the pin to undo it. */
+  const pinnedBalance = usePinnedBalance();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
+  /** Every group's stored connection (`[providers.<id>]`), off the same responses as `rows`. */
+  const [providers, setProviders] = useState<ProviderConnections>({});
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
+  /**
+   * Whether the dialog about to open should already have moved its row into the custom
+   * group: set by a card's "move to custom group" action, which is a shortcut into the
+   * config dialog rather than a write of its own — the move needs a protocol and a base URL,
+   * and the dialog is where those are picked and confirmed.
+   */
+  const [editingMovedToCustom, setEditingMovedToCustom] = useState(false);
   /** Target group (provider id) for adding a model: taken from the group header entry point, falling back to custom when empty. */
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -661,6 +958,28 @@ export function ModelsPage() {
     setGroupOrder(loadModelGroupOrder(projectId));
   }, [projectId]);
   /**
+   * Which groups stay out of the fold: the user's differences from the default pinned set
+   * (model-group-pins.ts), per browser like the sidebar nav's, so not re-read on a Project switch.
+   */
+  const [groupPins, setGroupPins] = useState(initialModelGroupPins);
+  /**
+   * How each group orders its models, where the user changed it from price low to high
+   * (model-sort.ts); per browser like the pins, so not re-read on a Project switch.
+   */
+  const [groupSorts, setGroupSorts] = useState(initialModelGroupSorts);
+  /** The UI language, which a sort by name collates in. */
+  const { locale } = useLocale();
+  /** Whether the collapsible groups are folded away under their bar; folded by default, remembered per browser. */
+  const [groupsFolded, setGroupsFolded] = useState(initialModelGroupsFolded);
+  /**
+   * The group whose star takes focus once its header re-mounts in the other area: moving a
+   * group moves its section to another container, and the star that had focus goes with the
+   * old one — a keyboard user would be dropped onto <body>.
+   */
+  const lockFocusRef = useRef<string | null>(null);
+  /** The fold bar: where focus goes when the moved group lands in the folded (inert) area. */
+  const foldBarRef = useRef<HTMLButtonElement | null>(null);
+  /**
    * Whether the reorder gesture is offered at all. A stored order still APPLIES without
    * it: the arrangement is per Project and implicit, so there is nothing to degrade —
    * a phone renders what its owner arranged at a desk.
@@ -675,8 +994,10 @@ export function ModelsPage() {
   /** Group header being dragged (its provider id) and the live drop hint (target group + which edge). */
   const [dragGroup, setDragGroup] = useState<string | null>(null);
   const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
-  /** Vendor group (provider id) currently having its API key configured in bulk. */
-  const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
+  /** Group (provider id) whose Disconnect confirmation is open (its Connected menu's last row). */
+  const [disconnectFor, setDisconnectFor] = useState<string | null>(null);
+  /** Group (provider id) whose settings dialog (the header's gear) is open. */
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /** Vendor group (provider id) whose authorization dialog is open (groups that publish a key-minting flow only). */
   const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
@@ -685,6 +1006,8 @@ export function ModelsPage() {
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
+  const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -700,6 +1023,14 @@ export function ModelsPage() {
   const [usedTokens, setUsedTokens] = useState<Map<string, number>>(new Map());
   const hourTick = useHourTick();
 
+  /** Takes in a table the server answered with: the rows, the groups' connections, the two refs. */
+  const adopt = useCallback((res: ModelsResponse) => {
+    setRows(res.models.map(toRow));
+    setProviders(res.providers ?? {});
+    setDefaultModel(res.defaultModel);
+    setVisionModel(res.visionModel);
+  }, []);
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setRows(null);
@@ -709,10 +1040,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      const res = await api.getModels(projectId);
-      setRows(res.models.map(toRow));
-      setDefaultModel(res.defaultModel);
-      setVisionModel(res.visionModel);
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
@@ -726,16 +1054,17 @@ export function ModelsPage() {
       // that could not be read is shown as absent rather than as an error the user cannot act on.
       setUsedTokens(new Map());
     }
-  }, [projectId]);
+  }, [projectId, adopt]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   /**
-   * Changes save immediately (dialog confirm / set default / set vision model / delete):
-   * avoids the trap of "still have to click save after confirming". On failure, the error
-   * is echoed back and local changes are kept so the user can fix and retry.
+   * Writes the whole table (the dialog's Save / Add, set default, set vision model, delete).
+   * Resolves with whether it landed. On failure the table on screen stays as the server last
+   * answered — nothing that was not written shows as if it had been — and the error is a toast;
+   * a dialog that asked keeps its draft open for a retry.
    */
   const persist = async (
     nextRows: RowState[],
@@ -743,6 +1072,8 @@ export function ModelsPage() {
     nextVision: ModelRefDto | undefined,
     /** Success toast text (defaults to "saved"); on failure this function shows an error toast instead. */
     successText?: string,
+    /** Group connections written in the same request (an import writes its group's once). */
+    providerUpdates?: Record<string, ProviderConnectionUpdate>,
   ): Promise<boolean> => {
     if (!projectId) return false;
     setBusy(true);
@@ -751,14 +1082,20 @@ export function ModelsPage() {
       nextVision && nextRows.some((r) => sameModelRef(rowRef(r), nextVision) && r.vision)
         ? nextVision
         : undefined;
+    // Each row's blank fields are judged against its group as this request will leave it.
+    const groupAfter = (id: string) =>
+      providerUpdates?.[id] !== undefined
+        ? applyProviderUpdate(providers[id], providerUpdates[id]!)
+        : providers[id];
     try {
-      const body: ModelsUpdateRequest = { models: nextRows.map(rowToEntry) };
+      const body: ModelsUpdateRequest = {
+        models: nextRows.map((r) => rowToEntry(r, groupAfter(r.provider))),
+      };
+      if (providerUpdates !== undefined) body.providers = providerUpdates;
       if (nextDefault) body.defaultModel = nextDefault;
       if (effectiveVision) body.visionModel = effectiveVision;
       const res = await api.putModels(projectId, body);
-      setRows(res.models.map(toRow));
-      setDefaultModel(res.defaultModel);
-      setVisionModel(res.visionModel);
+      adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat
       // follows the new default (a stored pick would otherwise pin the old model forever).
       if (userId && res.defaultModel && !sameModelRef(res.defaultModel, defaultModel)) {
@@ -767,19 +1104,23 @@ export function ModelsPage() {
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
-      setRows(nextRows);
-      if (nextDefault !== undefined) setDefaultModel(nextDefault);
-      if (effectiveVision !== undefined) setVisionModel(effectiveVision);
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
     }
   };
 
+  /**
+   * The groups on screen, each one's models in that group's sort. `hourTick` re-sorts on the
+   * hour: a price sort reads the rate billed right now, which an off-peak tier changes.
+   */
   const groups = useMemo(
-    () => (rows ? groupModelRows(rows, query, groupOrder) : []),
-    [rows, query, groupOrder],
+    () =>
+      rows
+        ? sortModelGroups(groupModelRows(rows, query, groupOrder), groupSorts, new Date(), locale)
+        : [],
+    [rows, query, groupOrder, groupSorts, locale, hourTick],
   );
   /**
    * Every group the library could show, empty built-ins included — the sequence a drop is
@@ -793,45 +1134,53 @@ export function ModelsPage() {
   const searching = query.trim() !== "";
 
   /**
-   * "Sync presets": merge the built-in catalog into the current table (union; the catalog
-   * wins on differing preset entries, local additions and API keys stay untouched — see
-   * catalog-sync.ts). No-op with a toast when everything is already up to date.
+   * What the two catalog actions (preset-sync.tsx) run against: this Project's saved table, the
+   * page's busy flag, and the Models badge re-probe. Null until a Project is open.
    */
-  const syncPresets = async () => {
-    if (!rows) return;
-    const merged = syncRowsWithCatalog(rows);
-    if (merged.added === 0 && merged.updated === 0) {
-      toastInfo(S.models.syncUpToDate);
-      // Re-probe here too: the badge is gated on a cached probe, and an entry brought back into
-      // line by a hand edit leaves that probe claiming a change this sync has just found none
-      // of. Without it the notice keeps offering a button that can only answer "already
-      // up to date" — a loop the user gets out of only by dismissing or reloading.
-      refreshProjectTodos(projectId);
-      return;
+  const presetHost: PresetSyncHost | null = projectId
+    ? {
+        projectId,
+        adopt,
+        setBusy,
+        refreshTodos: () => refreshProjectTodos(projectId),
+      }
+    : null;
+
+  const syncPlatformModels = async () => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      const res = await api.syncPlatformModels(projectId);
+      adopt(res);
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.platformUpToDate);
+      else toastSuccess(S.models.platformSyncResult(res.added, res.updated));
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
+        keyLanded.current = false;
+        setOauthFor(PENGUIN_GO_PROVIDER_ID);
+      } else {
+        toastApiError(error);
+      }
+    } finally {
+      setBusy(false);
     }
-    await persist(
-      merged.rows,
-      defaultModel,
-      visionModel,
-      S.models.syncDone(merged.added, merged.updated),
-    );
-    // The Models nav badge is gated on the SAVED table, which this page holds only as row
-    // state: re-probe it so the dot goes down on the server's answer rather than on the
-    // assumption that the write covered everything the catalog offered.
-    refreshProjectTodos(projectId);
   };
 
   /**
    * Group speed test: one real request per model, strictly sequential (concurrent probes
    * trip provider rate limits), each result written to the card as it lands. The
    * confirmation dialog (speedFor) has already warned about quota by the time this runs.
+   * A stop takes effect between probes: the one in flight is not abandoned (its request is
+   * already billed), its result lands like the others, and no further probe starts.
    */
   const runSpeedTest = async (providerId: string) => {
     if (!projectId || !rows) return;
     const targets = rows.filter((r) => r.provider === providerId);
+    speedStopRef.current = false;
     setSpeedRunning(providerId);
     try {
       for (const row of targets) {
+        if (speedStopRef.current) break;
         const key = refMapKey(row.provider, row.modelId);
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
@@ -852,37 +1201,39 @@ export function ModelsPage() {
       }
     } finally {
       setSpeedRunning(null);
+      setSpeedStopping(false);
     }
   };
 
+  const stopSpeedTest = () => {
+    speedStopRef.current = true;
+    setSpeedStopping(true);
+  };
+
   /**
-   * Import-mode landing from the add-group dialog: one table PUT with the appended rows,
-   * then the new group is opened so the result is visible immediately. Returns persist's
-   * verdict so the dialog stays up (fields intact) when saving failed.
-   *
-   * A failed save is rolled back to the table as it stood: persist otherwise keeps the
-   * attempted rows on screen (right for a field edit the user is still holding), which
-   * here would show the whole group as if it existed and make the dialog's own name check
+   * Import-mode landing from the add-group dialog: one table PUT carrying the group's connection
+   * (base URL, protocol, key — written once, in `[providers.<name>]`) and the appended rows,
+   * which store nothing of it and follow the group; then the new group is opened so the result is
+   * visible immediately. Returns persist's verdict so the dialog stays up (fields intact) when
+   * saving failed; the table then stays as it stood, so the dialog's own name check does not
    * report the name as taken on the retry.
    */
   const importGroup = async (
     nextRows: RowState[],
     name: string,
+    connection: ProviderConnectionUpdate,
     added: number,
     skipped: number,
   ): Promise<boolean> => {
     if (!projectId) return false;
-    const before = rows;
     const ok = await persist(
       nextRows,
       defaultModel,
       visionModel,
       S.models.groupImported(added, skipped),
+      { [name]: connection },
     );
-    if (!ok) {
-      setRows(before);
-      return false;
-    }
+    if (!ok) return false;
     if (!expanded.has(name)) {
       const next = new Set(expanded);
       next.add(name);
@@ -894,6 +1245,11 @@ export function ModelsPage() {
   };
   const editingRow =
     editing !== null ? rows?.find((r) => sameModelRef(rowRef(r), editing)) : undefined;
+  const closeModelDialog = () => {
+    setEditing(null);
+    setEditingMovedToCustom(false);
+    setAddingTo(null);
+  };
 
   if (!projectId) return null;
 
@@ -909,6 +1265,28 @@ export function ModelsPage() {
     const next = toggleExpandedProvider(expanded, id);
     setExpanded(next);
     saveExpandedProviders(projectId, next);
+  };
+
+  /** Adopts new pin choices — the header's star and a drop across the areas — unless nothing changed. */
+  const savePins = (next: ModelGroupPins) => {
+    if (next === groupPins) return;
+    storeModelGroupPins(next);
+    setGroupPins(next);
+  };
+
+  /** Adopts a group's sort from its gear menu (store-then-set), unless it is the current one. */
+  const chooseSort = (id: string, sort: ModelGroupSort) => {
+    const next = withModelGroupSort(groupSorts, id, sort);
+    if (next === groupSorts) return;
+    storeModelGroupSorts(next);
+    setGroupSorts(next);
+  };
+
+  /** Fold or unfold the collapsible groups (store-then-set, as toggleGroup). */
+  const toggleGroupsFolded = () => {
+    const next = !groupsFolded;
+    storeModelGroupsFolded(next);
+    setGroupsFolded(next);
   };
 
   /**
@@ -934,13 +1312,16 @@ export function ModelsPage() {
         draggable: true,
         onDragStart: (e: ReactDragEvent) => {
           // dragstart fires AT the source node, so target === currentTarget exactly when
-          // the header row itself is what the browser picked up. The row also carries the
-          // provider's external key link, which is natively draggable: a drag begun there
-          // is a link drag, and claiming it would overwrite the link's payload and effect
-          // and turn a release over any other header into a silent reorder.
+          // the header row itself is what the browser picked up. A drag begun on anything
+          // inside it that is natively draggable (selected text, a link) belongs to that
+          // element, and claiming it would overwrite its payload and effect and turn a
+          // release over any other header into a silent reorder.
           if (e.target !== e.currentTarget) return;
           e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
           e.dataTransfer.effectAllowed = "move" as const;
+          // The browser would lift the header's own paint alone — no section edge, its dark
+          // fill let through — so the image is the header's opaque chip instead.
+          setDragPreview(e);
           setDragGroup(key);
         },
         onDragEnd: () => {
@@ -960,7 +1341,7 @@ export function ModelsPage() {
           );
         },
         // dragleave also fires when the pointer merely crosses onto one of the header's OWN
-        // children — the collapse button spans most of the row, and up to five actions
+        // children — the collapse button spans most of the row, and up to six actions
         // follow it — so clearing unconditionally strobes the indicator. relatedTarget is
         // where the drag is going: still inside means nothing changed.
         onDragLeave: (e: ReactDragEvent) => {
@@ -978,6 +1359,8 @@ export function ModelsPage() {
             setGroupOrder(next);
             saveModelGroupOrder(projectId, next);
           }
+          // A drop on a header in the other area moves the group into that area too.
+          savePins(pinsAfterDrop(groupPins, dragging, key));
           setDragGroup(null);
           setGroupDropHint(null);
         },
@@ -991,381 +1374,519 @@ export function ModelsPage() {
     };
   };
 
-  return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-              {S.models.title}
-              {!isOwner && (
-                <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
-              )}
-            </h1>
-            {/* The header holds search plus the owner-only "sync presets" action (add-model
-                entry points live in each group header); on narrow screens (flex-wrap wraps it
-                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
-            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
-              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-                <Input
-                  size="sm"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={S.models.searchPlaceholder}
-                />
-              </div>
-              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
-                  button the trail ends at, and a mark that moved off it would point at nothing.
-                  Owner-only, like the button — the gate never raises this for a member. The dot
-                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
-                  and is decorative: the sr-only sentence folds what is waiting into the button's
-                  accessible name, in the wording the trail carried down. */}
-              {isOwner && (
-                <Button
-                  size="sm"
-                  className="relative"
-                  onClick={() => void syncPresets()}
-                  disabled={busy || rows === null}
-                  title={
-                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
-                  }
-                >
-                  {S.models.syncCatalog}
-                  {todo && (
-                    <>
-                      <UpdateDot
-                        size="inline"
-                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                      />
-                      <span className="sr-only"> · {syncNote}</span>
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-          {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
-              directly under the title, naming what is waiting, carrying the sync itself, and
-              carrying the way down for someone who has looked and decided to stay off the
-              catalog. This is the one page whose two counts are both real — the catalog is a
-              list of entries, so an entry the table lacks is genuinely new — and both come off
-              the delta the sync action itself computes (catalog-sync.ts), never a second count.
-              The toolbar's "sync presets" button is unchanged and still runs it directly. */}
-          {isOwner && todo && syncCounts && (
-            <TodoNotice
-              text={
-                syncCounts.added === null
-                  ? S.todo.changesUpgradable(syncCounts.updated)
-                  : S.todo.changesWithAdded(syncCounts.added, syncCounts.updated)
-              }
-              actionLabel={S.todo.updateNow}
-              busy={syncing}
-              onAction={() => setSyncConfirmOpen(true)}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
-            />
-          )}
-        </div>
+  // Which dialog the open authorization runs: the group's descriptor decides, so a group with
+  // a bridge flow gets the shared bridge dialog and every other authorizable group gets the
+  // PKCE one. Null means the open group authorizes some other way (or none).
+  const oauthFlow = oauthFor === null ? undefined : providerInfo(oauthFor)?.bridgeAuth?.flow;
+  const oauthKeyAuth = oauthFlow === undefined ? null : KEY_AUTH[oauthFlow];
 
-        {rows === null ? (
-          <SkeletonList rows={4} />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            title={S.models.empty}
-            action={
-              isOwner && <Button onClick={() => setAddingTo("custom")}>{S.models.addCustom}</Button>
-            }
+  /** TokenDance's rows, for the banner: shown while the group has models and no key of its own. */
+  const tokenDanceRows = rows?.filter((row) => row.provider === TOKENDANCE_PROVIDER_ID) ?? [];
+  const showTokenDanceBanner =
+    tokenDanceRows.length > 0 && !groupKeyStored(providers[TOKENDANCE_PROVIDER_ID]);
+  /**
+   * How many of a group's models use its group key: those with no key of their own that the key
+   * reaches (no base URL of their own, or one on the group's origin).
+   */
+  const groupKeyUsers = (id: string) =>
+    rows?.filter(
+      (r) =>
+        r.provider === id &&
+        !r.credential?.apiKeyMasked &&
+        groupKeyReaches(r.originalBaseUrl, providers[id]?.baseUrl),
+    ).length ?? 0;
+
+  /**
+   * One of a group header's actions (group-header.ts decides which, and in what order). Every
+   * button keeps an accessible name of "action group" and a title; on a narrow header the ones
+   * that carry words drop them and keep their icon.
+   */
+  const renderGroupAction = (
+    group: (typeof groups)[number],
+    action: GroupHeaderAction,
+    keyStored: boolean,
+  ): ReactNode => {
+    const { provider } = group;
+    switch (action) {
+      case "balance":
+        return <GroupBalance projectId={projectId} provider={provider} />;
+      case "connect":
+        // One control: "Not connected", which connects when pressed, or a "Connected" menu (Sync
+        // models on Penguin Go, Reconnect, Disconnect); a member reads the status alone.
+        return (
+          <GroupConnection
+            provider={provider}
+            connected={keyStored}
+            isOwner={isOwner}
+            busy={busy}
+            actions={{
+              onConnect: () => {
+                keyLanded.current = false;
+                setOauthFor(group.provider.id);
+              },
+              onSyncModels: () => void syncPlatformModels(),
+              onDisconnect: () => setDisconnectFor(group.provider.id),
+            }}
           />
-        ) : groups.length === 0 ? (
-          <EmptyState title={S.models.noSearchResults} />
-        ) : (
-          <div className="space-y-3">
-            {groups.map((group) => {
-              const open = isGroupExpanded(expanded, group.provider.id, searching);
-              const drag = groupDragProps(group.provider.id);
-              return (
-                // The drop indicator is drawn against the WHOLE group, so "below" reads as
-                // after this group and its model cards rather than between the header and
-                // its own first card. It needs this wrapper to live in: the section clips
-                // its children (overflow-hidden carries the expand/collapse transition).
-                // Absolutely positioned, so it costs no layout width and cannot push the
-                // header's up-to-five actions out of a narrow page.
-                <div key={group.provider.id} className="relative">
-                  {drag.dropEdge !== null && (
-                    <div
-                      aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
-                        drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
-                      }`}
-                    />
-                  )}
-                  <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    {/* Group header: collapse button (logo + vendor name + count) + group-level
-                      actions on the right. Actions are separate elements because buttons can't
-                      nest. The row is a size container: the sidebar can narrow it while the
-                      viewport remains desktop-sized, so action labels must respond to this
-                      row's actual width rather than viewport breakpoints. Narrow rows never
-                      hide an action — each one keeps its icon (with aria-label + title) and
-                      only sheds its text label. The row is also the drag handle for
-                      reordering the group (groupDragProps). */}
-                    <div
-                      {...drag.header}
-                      className={`@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => toggleGroup(group.provider.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
-                      >
-                        <ProviderLogo
-                          provider={group.provider.id}
-                          className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
-                        />
-                        {/* The vendor name is the only thing in this row allowed to take the
-                            remaining space, and the only one that truncates. Giving it a
-                            minimum width is what made a narrow row overlap: the items beside
-                            it never shrink, so once their widths plus that floor exceeded the
-                            button, the whole group overflowed the box and ran under the
-                            actions. The floor is gone; what gives way instead is the two marks
-                            after it, which drop out on a narrow row (below, and the actions'
-                            labels do the same at @3xl). The name then always has the leftovers
-                            to itself and truncates inside them, so nothing can overlap. */}
-                        <span className="min-w-0 truncate text-sm font-semibold">
-                          {group.provider.label}
-                        </span>
-                        <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-gray-400 @xl:inline">
-                          {S.models.modelCount(group.rows.length)}
-                        </span>
-                        {/* The recommendation rides the collapse bar itself, so it is read with
-                            the group's name rather than as a caption floating above the
-                            section. `shrink-0` keeps it whole: the vendor name beside it is
-                            the element allowed to truncate on a narrow page. */}
-                        {group.provider.recommended && (
-                          // Not a `Badge`: its `brand` tone is deliberately gray — neutral
-                          // emphasis outside the status vocabulary — and an endorsement is
-                          // neither a status nor neutral, which is the category tone.ts keeps
-                          // out on purpose. Unfilled, like the card marks below it: an outline
-                          // is enough to make it a pill, and a block of colour on the collapse
-                          // bar competes with the vendor name it is endorsing. It holds on
-                          // longer than the model count beside it and gives way before the
-                          // name does.
-                          //
-                          // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
-                          // rung that still clears 4.5:1 against this bar's gray-50 — 11px bold
-                          // is not WCAG "large text", so the brighter golds above it are not
-                          // available in light mode. Dark mode takes yellow-400, the bright
-                          // gold, which clears it comfortably on this app's near-black. The
-                          // ring is the text's own hue at 40%, in both themes: a ring brighter
-                          // than the words it encloses reads as a highlighter, not as gold.
-                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-[11px] font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
-                            {S.models.recommendedGroup}
-                          </span>
-                        )}
-                      </button>
-                      {isOwner && (
-                        // Add-model entry point: present on every group header (including
-                        // custom), new models belong to that group. Narrow rows never hide a
-                        // group action — they drop its label and keep the icon (same pattern
-                        // for every action in this row), so the button stays reachable.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.addToGroup} ${group.provider.label}`}
-                          title={S.models.addToGroup}
-                          onClick={() => setAddingTo(group.provider.id)}
-                        >
-                          <GlyphIcon d={PLUS_ICON} size={13} />
-                          <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
-                        </Button>
-                      )}
-                      {isOwner && group.provider.oauth && (
-                        // Authorize-a-key action: rendered off the group's own catalog
-                        // descriptor, so a provider gains this button by publishing a flow
-                        // rather than by being named here. Same narrow-row rule as its
-                        // neighbours — the label goes, the icon and its names stay. It leads the
-                        // manual key action: where a group can mint a key, that is the shorter path.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                          title={S.models.oauthKey}
-                          onClick={() => setOauthFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={SIGN_IN_ICON} size={13} />
-                          <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
-                        </Button>
-                      )}
-                      {isOwner && group.provider.id !== "custom" && (
-                        // Bulk key action: icon-only while this row is narrow, labeled from
-                        // @3xl up. The button itself never disappears — aria-label + title
-                        // carry the name while the visible label is dropped.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
-                          title={S.models.groupApiKey}
-                          onClick={() => setGroupKeyFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={KEY_ICON} size={13} />
-                          <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
-                        </Button>
-                      )}
-                      {isOwner && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy || speedRunning !== null}
-                          aria-label={`${S.models.speedTest} ${group.provider.label}`}
-                          title={
-                            speedRunning === group.provider.id
-                              ? S.models.speedPending
-                              : S.models.speedTest
-                          }
-                          onClick={() => setSpeedFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={GAUGE_ICON} size={13} />
-                          {/* Compact rows keep this accessible action icon-only. */}
-                          <span className="hidden @3xl:inline">
-                            {speedRunning === group.provider.id
-                              ? S.models.speedPending
-                              : S.models.speedTest}
-                          </span>
-                        </Button>
-                      )}
-                      {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
-                        // Whole-group delete, user-defined groups only: a built-in group is
-                        // catalog identity (its rows delete one by one), a user-defined group
-                        // exists solely through its rows and can go as a unit.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
-                          title={S.models.deleteGroup}
-                          onClick={() => setDeleteGroupFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={TRASH_ICON} size={13} />
-                          <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
-                        </Button>
-                      )}
-                      {group.provider.apiKeyUrl && (
-                        // External link: its label is the last one admitted as space grows
-                        // (@4xl); below that it collapses to the external-link glyph with a
-                        // small padding bump for a usable touch target.
-                        <a
-                          href={group.provider.apiKeyUrl}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                          title={S.models.getApiKey}
-                          className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
-                        >
-                          <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
-                          <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
-                        </a>
-                      )}
-                      {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        aria-label={group.provider.label}
-                        onClick={() => toggleGroup(group.provider.id)}
-                        className="shrink-0 p-1.5"
-                      >
-                        <Chevron open={open} className="text-gray-400" />
-                      </button>
-                    </div>
+        );
+      case "speedTest": {
+        // One icon for both directions: it starts a run (after the confirmation) and, while
+        // its own group's run is going, stops it — the gauge turns into the registry's square in
+        // a circle. Every other group's waits its turn.
+        const running = speedRunning === group.provider.id;
+        const verb = running ? S.models.speedTestStop : S.models.speedTest;
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_SQUARE}
+            disabled={busy || (running ? speedStopping : speedRunning !== null)}
+            aria-label={`${verb} ${provider.label}`}
+            title={verb}
+            onClick={() => (running ? stopSpeedTest() : setSpeedFor(group.provider.id))}
+          >
+            <GlyphIcon
+              d={running ? ICONS.stopCircle : ICONS.gauge}
+              size={ICON_SIZE.groupHeaderAction}
+            />
+          </Button>
+        );
+      }
+      case "addModel":
+        // Only the groups that take hand-added models: custom, vLLM, the four gateways that
+        // list a fraction of what they serve, and user-defined ones. The rest carry the catalog's
+        // presets, which the server enforces too (model_not_addable). An icon, like the speed
+        // test and the gear it stands beside.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_SQUARE}
+            disabled={busy}
+            aria-label={`${S.models.addToGroup} ${provider.label}`}
+            title={S.models.addToGroup}
+            onClick={() => setAddingTo(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
+          </Button>
+        );
+      case "deleteGroup":
+        // Whole-group delete, user-defined groups only: a built-in group is catalog identity
+        // (its rows delete one by one), a user-defined group exists solely through its rows.
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={HEADER_BUTTON}
+            disabled={busy}
+            aria-label={`${S.models.deleteGroup} ${provider.label}`}
+            title={S.models.deleteGroup}
+            onClick={() => setDeleteGroupFor(group.provider.id)}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.groupHeaderAction} />
+            <span className={HEADER_LABEL}>{S.models.deleteGroup}</span>
+          </Button>
+        );
+      case "settings":
+        // The gear, icon only like the speed test it stands beside: the pair closes every header
+        // at the same right edge. Its menu holds the group's sort, which every member has and a
+        // busy page never blocks, and, for the owner, the group's connection settings in full
+        // (base URL, key, protocol).
+        return (
+          <GroupSettingsControl
+            provider={provider}
+            sort={modelGroupSortOf(groupSorts, group.provider.id)}
+            onSort={(sort) => chooseSort(group.provider.id, sort)}
+            onSettings={isOwner ? () => setSettingsFor(group.provider.id) : undefined}
+            busy={busy}
+          />
+        );
+    }
+  };
 
-                    {/* Expand/collapse height transition: grid-template-rows tweens between
-                      0fr and 1fr, with the inner overflow-hidden handling clipping — pure
-                      CSS, no need to measure content height. Content stays in the DOM while
-                      collapsed (height is 0), so both directions animate. */}
-                    <div
-                      className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-                    >
-                      {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
-                      <div className="overflow-hidden" inert={!open}>
-                        <div
-                          className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
-                        >
-                          {group.rows.length === 0 ? (
-                            // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
-                            <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
-                              {S.models.groupEmptyHint}
-                            </p>
-                          ) : (
-                            group.rows.map((row) => (
-                              <ModelCard
-                                key={`${row.provider}:${row.modelId}`}
-                                row={row}
-                                currency={currency}
-                                isDefault={sameModelRef(rowRef(row), defaultModel)}
-                                isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                                speed={speedResults.get(refMapKey(row.provider, row.modelId))}
-                                usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
-                                hourTick={hourTick}
-                                onOpen={() => setEditing(rowRef(row))}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              );
-            })}
-            {isOwner && query.trim() === "" && (
-              // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
+  /**
+   * One group: its header — the collapse button (logo, name, count, chevron, the recommended
+   * pill), the star that moves it between the favourites and the collapsible area, and its
+   * actions — and its cards.
+   */
+  const renderGroup = (group: (typeof groups)[number]) => {
+    const open = isGroupExpanded(expanded, group.provider.id, searching);
+    const pinned = isModelGroupPinned(group.provider.id, groupPins);
+    const drag = groupDragProps(group.provider.id);
+    const keyStored = groupKeyStored(providers[group.provider.id]);
+    const actions = groupHeaderActions(group.provider, {
+      isOwner,
+      keyStored,
+      keyFromEnv: groupKeyFromEnv(group.rows),
+      balancePinned: isPinned(pinnedBalance, projectId, group.provider.id),
+    });
+    return (
+      // The drop indicator is drawn against the WHOLE group, so "below" reads as
+      // after this group and its model cards rather than between the header and
+      // its own first card. It needs this wrapper to live in: the section clips
+      // its children (overflow-hidden carries the expand/collapse transition).
+      // Absolutely positioned, so it costs no layout width and cannot push the
+      // header's actions out of a narrow page.
+      <div key={group.provider.id} className="relative">
+        {drag.dropEdge !== null && (
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
+              drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
+            }`}
+          />
+        )}
+        <WallpaperSurface className="overflow-hidden rounded-md border border-line bg-surface">
+          {/* Group header: collapse button (logo + vendor name + count + chevron) +
+              the group's actions on the right, in group-header.ts's order. Actions are
+              separate elements because buttons can't nest. The row is a size
+              container: the sidebar can narrow it while the viewport remains
+              desktop-sized, so labels respond to this row's actual width rather than
+              viewport breakpoints. Narrow rows never hide an action — each one keeps
+              its icon (with aria-label + title) and only sheds its text. When even the
+              icons leave the name too little room to be read whole, the actions move to
+              a line of their own below it, as one block: the left cluster's flex
+              basis is its content, so a short name is never truncated to keep the
+              actions beside it. Only a name wider than the whole row truncates, down to
+              a floor, so it is never squeezed to nothing. The row is also the drag
+              handle for reordering the group (groupDragProps), and the `group` its star
+              shows on. */}
+          <div
+            {...drag.header}
+            className={`group @container flex flex-wrap items-center gap-x-2 bg-control-well pr-1.5 transition-colors duration-150 hover:bg-control-hover${canDrag && !searching ? " cursor-grab" : ""}`}
+          >
+            {/* The left cluster: the collapse button, sized to what it shows, the star right
+                  after it, and the rest of the cluster, which folds the group on a click as the
+                  button does (the button is the keyboard's way). */}
+            <div className="flex min-w-[10rem] flex-auto items-center">
               <button
                 type="button"
-                onClick={() => setAddGroupOpen(true)}
-                className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
+                aria-expanded={open}
+                onClick={() => toggleGroup(group.provider.id)}
+                className="flex min-w-0 items-center gap-2 py-2 pl-3 pr-2 text-left"
               >
-                ＋ {S.models.addGroup}
+                <ProviderLogo
+                  provider={group.provider.id}
+                  className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
+                />
+                {/* The vendor name is the only thing in this button allowed to take
+                    the remaining space, and the only one that truncates. */}
+                <span className="min-w-0 truncate text-sm font-semibold">
+                  {group.provider.label}
+                </span>
+                {/* The count as the model picker's rail writes it: a bare number, with
+                    the words kept for assistive tech. */}
+                <span
+                  aria-hidden
+                  className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                >
+                  {group.rows.length}
+                </span>
+                <span className="sr-only">{S.models.modelCount(group.rows.length)}</span>
+                {/* The chevron follows the name and its count rather than the row's far
+                    edge, so it reads as part of the group it folds. */}
+                <Chevron open={open} className="text-gray-400" />
+                {/* The recommendation rides the collapse bar itself, so it is read with
+                    the group's name rather than as a caption floating above the
+                    section. `shrink-0` keeps it whole: the vendor name beside it is
+                    the element allowed to truncate on a narrow page. */}
+                {group.provider.recommended && (
+                  // The theme's tag, outlined like the card marks below it: an outline is
+                  // enough to make it a tag, and a block of colour on the collapse bar
+                  // competes with the vendor name it is endorsing. `attention` asks the
+                  // reader to look here, and is the tone nearest the gold this mark has
+                  // always worn. It gives way on a narrow row before the name does.
+                  <span className="hidden shrink-0 @lg:inline-flex">
+                    <Pill tone="attention">{S.models.recommendedGroup}</Pill>
+                  </span>
+                )}
               </button>
+              {/* The favourite star: solid while the group is a favourite (always shown), an
+                  outline while it is collapsible (under the fold bar). The sidebar nav's row
+                  toggle — flat, shown on the header's hover or its own focus, always where
+                  nothing hovers since it is then the only way to move a group — and it keeps
+                  its place at rest, so nothing shifts when it shows. A view preference, so
+                  members have it too. */}
+              <button
+                ref={(el) => {
+                  if (el === null || lockFocusRef.current !== group.provider.id) return;
+                  lockFocusRef.current = null;
+                  el.focus();
+                  // A group that lands in the folded (inert) area cannot take focus: the bar
+                  // that unfolds it is the nearest place to stand. Read once this commit is
+                  // done, since it may be mounting the bar together with the group.
+                  if (document.activeElement !== el) {
+                    queueMicrotask(() => foldBarRef.current?.focus());
+                  }
+                }}
+                type="button"
+                aria-label={`${S.models.pinGroup} ${group.provider.label}`}
+                aria-pressed={pinned}
+                data-tooltip={pinned ? S.models.unpinGroup : S.models.pinGroup}
+                onClick={(e) => {
+                  // A keyboard toggle follows its group into the other area (lockFocusRef).
+                  if (e.currentTarget.matches(":focus-visible")) {
+                    lockFocusRef.current = group.provider.id;
+                  }
+                  savePins(withModelGroupPinned(groupPins, group.provider.id, !pinned));
+                }}
+                className={`${ROW_HOVER_BUTTON} hover:text-fg [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
+              >
+                <GlyphIcon d={ICONS.star} size={ICON_SIZE.iconButton} filled={pinned} />
+              </button>
+              <span
+                aria-hidden
+                className="min-w-0 flex-auto self-stretch"
+                onClick={() => toggleGroup(group.provider.id)}
+              />
+            </div>
+            {actions.length > 0 && (
+              <div className="ml-auto flex shrink-0 items-center gap-2 py-1">
+                {actions.map((action) => (
+                  <Fragment key={action}>{renderGroupAction(group, action, keyStored)}</Fragment>
+                ))}
+              </div>
             )}
           </div>
-        )}
 
-        {loadError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>}
+          {/* Expand/collapse: grid-template-rows goes between 0fr and 1fr — no need to
+              measure content height. The grid carries the theme's layout motion, which
+              decides how the fold moves (and stills it under reduced motion). The clip is on
+              the grid's own box, not on the row inside it: between 0fr and 1fr the box gets f
+              of the content's height but the row only f² of it, so a body clipped at the row
+              vanished ahead of the space it left, a blank band under it (CollapsibleSection
+              has the same fix). Content stays in the DOM while collapsed (height is 0), so
+              both directions animate. The section keeps its own head rather than being a
+              CollapsibleSection: the head is the group's drag handle and a size container,
+              and its chevron follows the group's name. */}
+          <div
+            data-layout-motion
+            className={`grid overflow-clip ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+          >
+            {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
+            <div className="min-h-0" inert={!open}>
+              <div
+                className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+              >
+                {group.rows.length === 0 ? (
+                  // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
+                  <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.groupEmptyHint}
+                  </p>
+                ) : (
+                  group.rows.map((row) => (
+                    <ModelCard
+                      key={`${row.provider}:${row.modelId}`}
+                      row={row}
+                      group={providers[row.provider]}
+                      currency={currency}
+                      isDefault={sameModelRef(rowRef(row), defaultModel)}
+                      isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                      speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                      usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
+                      hourTick={hourTick}
+                      onOpen={() => {
+                        setEditingMovedToCustom(false);
+                        setEditing(rowRef(row));
+                      }}
+                      onMoveToCustom={
+                        isOwner
+                          ? () => {
+                              setEditingMovedToCustom(true);
+                              setEditing(rowRef(row));
+                            }
+                          : undefined
+                      }
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </WallpaperSurface>
       </div>
+    );
+  };
 
-      {rows && groupKeyFor && (
-        <GroupKeyDialog
-          // A user-defined group isn't in the catalog list: synthesize vendor info with custom semantics (label is the group name).
-          provider={
-            MODEL_PROVIDERS.find((p) => p.id === groupKeyFor) ?? userProviderInfo(groupKeyFor)
+  /** The two areas (model-group-pins.ts), each in the page's group order. */
+  const layout = modelGroupLayout(groups, (group) => group.provider.id, groupPins, {
+    searching,
+    folded: groupsFolded,
+  });
+
+  return (
+    <PageFrame>
+      {/* The header holds search, the owner-only catalog pair — "Add new models" and "Restore
+          defaults" — and the pair of create buttons: the AI path and the group form, offered side
+          by side (per-model entry points still live in each group header); on narrow screens the
+          actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
+          A member reads why nothing here is editable behind the title's "?". */}
+      <PageHeader
+        title={S.models.title}
+        info={isOwner ? undefined : S.models.readOnlyHint}
+        actions={
+          <>
+            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+              <Input
+                size="sm"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={S.models.searchPlaceholder}
+              />
+            </div>
+            {/* "Add new models" appears only while new presets are actually waiting, and the
+                accent says so — adding nothing is a no-op, and a permanent button spent the
+                header's width on one. That is also why the dot is gone: it marked this button as
+                the end of the models trail, and on a button that exists only when the trail does,
+                it would be lit every time it was seen. The sr-only sentence stays, folding what is
+                waiting into the accessible name in the wording the trail carried down.
+                Owner-only — the gate never raises this for a member. */}
+            {isOwner && todo && presetHost && (
+              <AddNewModelsButton
+                onOpen={() => setSyncConfirmOpen(true)}
+                disabled={busy || rows === null}
+                note={syncNote}
+              />
+            )}
+            {/* Always there for the owner, and quiet: it resets the whole model configuration
+                but the API keys, so it waits behind a danger confirmation that says so. */}
+            {isOwner && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setRestoreOpen(true)}
+                disabled={busy || rows === null}
+              >
+                {S.models.restoreDefaults}
+              </Button>
+            )}
+            {isOwner && (
+              <AiCreateButtons
+                size="sm"
+                // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
+                // without it the manual button would be a dead click. The AI path is left live
+                // precisely because a failed load is one of the things it can repair.
+                manualDisabled={rows === null}
+                onAi={() => setAiAddOpen(true)}
+                onManual={() => setAddGroupOpen(true)}
+              />
+            )}
+          </>
+        }
+      >
+        {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
+            directly under the title, naming what is waiting, carrying the add itself, and
+            carrying the way down for someone who has looked and decided to stay off the
+            catalog. Only new presets are counted (catalog-sync.ts): a stored model that differs
+            from the catalog may be the user's own edit, and nothing offers to put it back. The
+            toolbar's "Add new models" runs the same add directly. */}
+        {isOwner && todo && (
+          <TodoNotice
+            text={syncNote}
+            actionLabel={S.todo.updateNow}
+            busy={syncing}
+            onAction={() => setSyncConfirmOpen(true)}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
+          />
+        )}
+      </PageHeader>
+
+      {/* Above every group, while the TokenDance group has models but no key: its own connect
+          flow, pitched as the way to skip setting keys by hand. */}
+      {isOwner && showTokenDanceBanner && (
+        <TokenDanceBanner
+          onConnect={() => {
+            keyLanded.current = false;
+            setOauthFor(TOKENDANCE_PROVIDER_ID);
+          }}
+        />
+      )}
+
+      {rows === null ? (
+        <SkeletonList rows={4} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={S.models.empty}
+          action={
+            isOwner && <Button onClick={() => setAddingTo("custom")}>{S.models.addCustom}</Button>
           }
-          count={rows.filter((r) => r.provider === groupKeyFor).length}
+        />
+      ) : groups.length === 0 ? (
+        <EmptyState title={S.models.noSearchResults} />
+      ) : (
+        <div className="space-y-3">
+          {layout.shown.map(renderGroup)}
+          {layout.fold !== null && (
+            <>
+              {/* The bar that folds the collapsible groups away, the sidebar nav's toggle with
+                  the count of what it holds. It stands above them, so it stays put while they
+                  open and close. A search shows every match and no bar (modelGroupLayout). */}
+              <button
+                ref={foldBarRef}
+                type="button"
+                aria-expanded={!layout.fold.folded}
+                aria-controls="models-collapsible-groups"
+                onClick={toggleGroupsFolded}
+                className={`flex h-6 w-full items-center justify-center ${ICON_GAP.tight} rounded-md ${NAV_FILL.selected} text-xs text-fg-subtle transition-colors duration-150 hover:bg-fg/10 hover:text-fg`}
+              >
+                {S.models.foldedGroups(layout.fold.groups.length)}
+                <ChevronFlip up={!layout.fold.folded} />
+              </button>
+              {/* The fold: the nav's height tween, groups kept mounted but inert while folded,
+                  clipped on the grid's box rather than its row (the blank-band fix above). Its
+                  own bottom padding, not the list's gap, spaces it from what follows, so a
+                  folded area adds no second gap under the bar. */}
+              <div
+                id="models-collapsible-groups"
+                data-layout-motion
+                className={`mb-0 grid overflow-clip ${layout.fold.folded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
+              >
+                <div className="min-h-0" inert={layout.fold.folded}>
+                  <div
+                    className={`space-y-3 pb-3 transition-opacity duration-200 ${layout.fold.folded ? "opacity-0" : "opacity-100"}`}
+                  >
+                    {layout.fold.groups.map(renderGroup)}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+          {isOwner && query.trim() === "" && (
+            // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
+            <button
+              type="button"
+              onClick={() => setAddGroupOpen(true)}
+              className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
+            >
+              ＋ {S.models.addGroup}
+            </button>
+          )}
+        </div>
+      )}
+
+      {loadError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>}
+
+      {disconnectFor !== null && (
+        <DisconnectConfirm
+          host={{ projectId, adopt, setBusy }}
+          provider={providerInfo(disconnectFor) ?? userProviderInfo(disconnectFor)}
+          busy={busy}
+          onClose={() => setDisconnectFor(null)}
+        />
+      )}
+
+      {rows && settingsFor !== null && (
+        <ProviderSettingsDialog
+          projectId={projectId}
+          provider={providerInfo(settingsFor) ?? userProviderInfo(settingsFor)}
+          group={providers[settingsFor]}
+          rows={rows.filter((r) => r.provider === settingsFor)}
           detectedEnvKeys={envKeysDetected}
-          onClose={() => setGroupKeyFor(null)}
-          onSubmit={(key) => {
-            const target = groupKeyFor;
-            setGroupKeyFor(null);
-            const affected = rows.filter((r) => r.provider === target);
-            if (affected.length === 0) return;
-            const nextRows = rows.map((r) =>
-              r.provider === target ? { ...r, apiKeyInput: key, clearApiKey: false } : r,
-            );
-            // Success toast is shown inside persist (with "configured N" text); on failure
-            // only an error toast is shown, no false success report (persist swallows the
-            // error and doesn't reject, so a .then can't unconditionally report success).
-            void persist(
-              nextRows,
-              defaultModel,
-              visionModel,
-              S.models.groupKeyApplied(affected.length),
-            );
+          onClose={() => setSettingsFor(null)}
+          onSaved={(res) => {
+            adopt(res);
+            setSettingsFor(null);
           }}
         />
       )}
@@ -1376,30 +1897,50 @@ export function ModelsPage() {
           opens a NEW authorization, which is how a completed authorization ended up offering
           itself again. `count` is only read while the flow is still running, so a reload's
           momentary absence of rows reads as zero and is never seen. */}
-      {projectId && oauthFor !== null && (
-        <ModelOAuthDialog
-          projectId={projectId}
-          provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
-          count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
-          onClose={() => {
-            setOauthFor(null);
-            // The reload waits for the dismissal rather than racing the open dialog: the key
-            // was written server-side, so the table in hand is stale in exactly one place, and
-            // reloading brings the masked key back. Gated on a key having landed, because
-            // `load` also drops this Project's speed results — measurements that cost real API
-            // quota and live only in page memory — and a cancelled flow changed nothing.
-            if (keyLanded.current) void load();
-            keyLanded.current = false;
-          }}
-          onApplied={() => {
-            // The dialog stays open and reports the outcome itself (its `done` phase), because
-            // the authorization ran in another tab and a toast would be announced to a window
-            // nobody is looking at. All this seam does is record that the dismissal has a
-            // reload to do.
-            keyLanded.current = true;
-          }}
-        />
-      )}
+      {projectId &&
+        oauthFor !== null &&
+        (oauthKeyAuth !== null ? (
+          <KeyAuthDialog
+            projectId={projectId}
+            providerLabel={
+              MODEL_PROVIDERS.find((provider) => provider.id === oauthFor)?.label ?? oauthFor
+            }
+            count={groupKeyUsers(oauthFor)}
+            endpoints={oauthKeyAuth.endpoints}
+            texts={oauthKeyAuth.texts}
+            onClose={() => {
+              setOauthFor(null);
+              if (keyLanded.current) void load();
+              keyLanded.current = false;
+            }}
+            onApplied={() => {
+              keyLanded.current = true;
+            }}
+          />
+        ) : (
+          <ModelOAuthDialog
+            projectId={projectId}
+            provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
+            count={groupKeyUsers(oauthFor)}
+            onClose={() => {
+              setOauthFor(null);
+              // The reload waits for the dismissal rather than racing the open dialog: the key
+              // was written server-side, so the table in hand is stale in exactly one place, and
+              // reloading brings the masked key back. Gated on a key having landed, because
+              // `load` also drops this Project's speed results — measurements that cost real API
+              // quota and live only in page memory — and a cancelled flow changed nothing.
+              if (keyLanded.current) void load();
+              keyLanded.current = false;
+            }}
+            onApplied={() => {
+              // The dialog stays open and reports the outcome itself (its `done` phase), because
+              // the authorization ran in another tab and a toast would be announced to a window
+              // nobody is looking at. All this seam does is record that the dismissal has a
+              // reload to do.
+              keyLanded.current = true;
+            }}
+          />
+        ))}
 
       {rows && deleteGroupFor !== null && (
         <ConfirmModal
@@ -1421,6 +1962,8 @@ export function ModelsPage() {
               S.models.groupDeleted(removed.length),
             );
           }}
+          confirmLabel={S.common.delete}
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {/* Offered on user-defined groups only, whose display info is always synthesized. */}
@@ -1432,39 +1975,28 @@ export function ModelsPage() {
         </ConfirmModal>
       )}
 
-      {/* The notice's bulk sync. Same union the toolbar button runs (syncPresets), but
-          confirm-first: the button on the notice is reached from a block announcing a batch, and
-          a sync rewrites the catalog-owned fields of every entry it names. The body is the
-          toolbar button's own description of those semantics, verbatim — the wording that has
-          always stated what a sync keeps and what it overwrites. */}
-      {todo && syncConfirmOpen && (
-        <ConfirmModal
-          open
+      {/* The add, confirm-first from both entries — the header button and the notice: the
+          body is what an add does and leaves alone, over the list of exactly what it adds. */}
+      {todo && syncConfirmOpen && presetHost && (
+        <AddNewModelsConfirm
+          host={presetHost}
           title={S.todo.modelsConfirmTitle(todo.count)}
-          tone="primary"
-          confirmLabel={S.models.syncCatalog}
+          items={todo.items}
           busy={syncing}
+          setSyncing={setSyncing}
           onClose={() => setSyncConfirmOpen(false)}
-          onConfirm={() => {
-            setSyncing(true);
-            void syncPresets().finally(() => {
-              setSyncing(false);
-              setSyncConfirmOpen(false);
-            });
-          }}
-        >
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300">{S.models.syncCatalogHint}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
-            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-              {todo.items.map((ref) => (
-                <li key={ref} className="px-3 py-1.5 font-mono text-xs">
-                  {ref}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </ConfirmModal>
+        />
+      )}
+
+      {/* Restore defaults: it rewrites every built-in model, so the body says, item by item,
+          what goes back to the catalog and what is kept, and that it is final. */}
+      {restoreOpen && presetHost && (
+        <RestoreDefaultsConfirm
+          host={presetHost}
+          busy={syncing}
+          setSyncing={setSyncing}
+          onClose={() => setRestoreOpen(false)}
+        />
       )}
 
       {speedFor !== null && (
@@ -1472,9 +2004,14 @@ export function ModelsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.models.speedTestConfirm(rows?.filter((r) => r.provider === speedFor).length ?? 0)}
           </p>
+          {/* This dialog builds its action row in the body rather than through Modal's
+              `footer`, so it carries the footer's sm rung itself. */}
           <div className="mt-4 flex justify-end gap-2">
-            <Button onClick={() => setSpeedFor(null)}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={() => setSpeedFor(null)}>
+              {S.common.cancel}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 const id = speedFor;
@@ -1487,6 +2024,22 @@ export function ModelsPage() {
           </div>
         </Modal>
       )}
+      {/* The AI path for what the group import cannot read: a listing page that is not an
+          OpenAI-compatible /models endpoint, or a service described in words. The table reloads
+          on every mount, so the group the agent adds is there when the page is next visited. */}
+      {projectId !== null && (
+        <AiCreateModal
+          open={aiAddOpen}
+          onClose={() => setAiAddOpen(false)}
+          title={S.models.aiAddTitle}
+          intro={S.models.aiAddIntro}
+          placeholder={S.models.aiAddPlaceholder}
+          examples={S.models.aiAddExamples}
+          tail={S.models.aiAddTail(projectId)}
+          agents={agents}
+        />
+      )}
+
       {rows && addGroupOpen && (
         <AddGroupDialog
           projectId={projectId}
@@ -1505,48 +2058,50 @@ export function ModelsPage() {
           projectId={projectId}
           row={addingTo !== null ? null : (editingRow ?? null)}
           addProvider={addingTo ?? "custom"}
+          movedToCustom={editingMovedToCustom}
           existingRefs={rows.map(rowRef)}
+          providers={providers}
           detectedEnvKeys={envKeysDetected}
           currency={currency}
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
-          onClose={() => {
-            setEditing(null);
-            setAddingTo(null);
-          }}
-          onSubmit={(next, action) => {
+          onClose={closeModelDialog}
+          // The dialog stays open, its draft intact, until the write answers; it closes only
+          // once the table holds what it sent.
+          onSubmit={async (next, action) => {
             const isNew = addingTo !== null;
-            setEditing(null);
-            setAddingTo(null);
+            let ok: boolean;
             if (action === "remove") {
               // Filter by the **identity as loaded**: rows / pointers are both keyed by the
               // paired reference as loaded. If the user edited identity fields before
               // deleting, next's current reference wouldn't match any row -> nothing gets
               // deleted while it still reports "saved".
               const removed = next.original;
-              void persist(
+              ok = await persist(
                 rows.filter((r) => !sameModelRef(rowRef(r), removed)),
                 sameModelRef(removed, defaultModel) ? undefined : defaultModel,
                 sameModelRef(removed, visionModel) ? undefined : visionModel,
               );
-              return;
+            } else {
+              const nextRows = isNew
+                ? [...rows, next]
+                : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
+              const ptr = nextPointers({
+                editing: isNew ? null : editing,
+                ref: rowRef(next),
+                action,
+                defaultModel,
+                visionModel,
+              });
+              ok = await persist(nextRows, ptr.defaultModel, ptr.visionModel);
             }
-            const nextRows = isNew
-              ? [...rows, next]
-              : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
-            const ptr = nextPointers({
-              editing: isNew ? null : editing,
-              ref: rowRef(next),
-              action,
-              defaultModel,
-              visionModel,
-            });
-            void persist(nextRows, ptr.defaultModel, ptr.visionModel);
+            if (ok) closeModelDialog();
+            return ok;
           }}
         />
       )}
-    </div>
+    </PageFrame>
   );
 }
 
@@ -1564,12 +2119,21 @@ export function ModelsPage() {
  *   dialog's field rhythm: API key first, then the base URL with the detect action at its
  *   top-right and the in-field protocol picker as manual override (ProtocolSuffixMenu —
  *   the same one-to-one path menu). Only once a protocol is determined (detected or
- *   picked) does the "import all models" action appear; it lists the endpoint
- *   (POST models/list) and hands the appended rows to the page for one table PUT.
+ *   picked) does the "fetch model list" action appear; it lists the endpoint
+ *   (POST models/list) into a pick list (ImportPickList), every model ticked, and the
+ *   action becomes "import N models", held while nothing is ticked. That one hands the
+ *   group's connection and the rows of the ticked models to the page for one table PUT: the
+ *   base URL, protocol and key are written once, as the group's, and the rows store nothing
+ *   of them. The list answers for the key, base URL and protocol it was fetched with: it is
+ *   hidden, and the fetch action is back, while any of them differs from those, and it returns
+ *   with its ticks once all three match again. The three are locked while a fetch or the save
+ *   runs, so a request never answers for values that changed under it.
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
- * nothing persists until a listing succeeded.
+ * nothing persists until a listing succeeded. A name the rule refuses, or one already taken,
+ * is said under the field as it is typed, and holds both actions until it is fixed. Closing
+ * the dialog with anything typed asks first; nothing closes it while an import is running.
  */
 function AddGroupDialog({
   projectId,
@@ -1583,45 +2147,61 @@ function AddGroupDialog({
   onClose: () => void;
   /** Create-only confirm: open the add-model dialog for the named group. */
   onManual: (name: string) => void;
-  /** Import landing: persist the appended rows; resolves false when saving failed (the dialog stays open). */
+  /** Import landing: persist the group's connection and the appended rows; resolves false when saving failed (the dialog stays open). */
   onImport: (
     nextRows: RowState[],
     name: string,
+    connection: ProviderConnectionUpdate,
     added: number,
     skipped: number,
   ) => Promise<boolean>;
 }) {
-  const [name, setName] = useState("");
-  const [nameError, setNameError] = useState<string | null>(null);
+  /**
+   * What is typed or found: the name, and for an import the key, the base URL and the protocol
+   * the import will speak (null until a detection lands or the user picks one). The mode is how
+   * the dialog is used, not something typed, so switching it asks nothing on the way out.
+   */
+  const form = useFormDraft<{
+    name: string;
+    apiKey: string;
+    baseUrl: string;
+    clientType: ProtocolClientType | null;
+  }>({ name: "", apiKey: "", baseUrl: "", clientType: null });
+  const { name, apiKey, baseUrl, clientType } = form.draft;
   const [mode, setMode] = useState<"create" | "import">("create");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  /** The protocol the import will speak: null until a detection lands or the user picks one. */
-  const [clientType, setClientType] = useState<ProtocolClientType | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectFailed, setDetectFailed] = useState(false);
   /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
   const [importing, setImporting] = useState<string | null>(null);
+  /**
+   * The fetched listing: the endpoint it answers for, the ids on offer, how many listing entries
+   * offered nothing (for the toast), and the ticked ids. The ticks are part of the dialog's form
+   * and commit with Import; null until a listing landed.
+   */
+  const [listing, setListing] = useState<{
+    endpoint: string;
+    ids: string[];
+    dropped: number;
+    picked: Set<string>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
 
-  const validName = (): string | null => {
-    const trimmed = name.trim();
-    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(trimmed)) {
-      setNameError(S.models.groupNameInvalid);
-      return null;
-    }
-    if (MODEL_PROVIDERS.some((p) => p.id === trimmed) || rows.some((r) => r.provider === trimmed)) {
-      setNameError(S.models.groupNameExists);
-      return null;
-    }
-    return trimmed;
-  };
+  const trimmed = name.trim();
+  /** What is wrong with the name as typed; an empty one is only marked required. */
+  const nameError =
+    trimmed === ""
+      ? null
+      : !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(trimmed)
+        ? S.models.groupNameInvalid
+        : MODEL_PROVIDERS.some((p) => p.id === trimmed) || rows.some((r) => r.provider === trimmed)
+          ? S.models.groupNameExists
+          : null;
+  const nameValid = trimmed !== "" && nameError === null;
 
   const confirmCreate = () => {
-    const n = validName();
-    if (n) onManual(n);
+    if (nameValid) onManual(trimmed);
   };
 
   const detect = async () => {
@@ -1643,8 +2223,17 @@ function AddGroupDialog({
       if (seq !== detectSeq.current) return;
       const detected = res.detected !== undefined ? protocolSelectorValue(res.detected) : null;
       if (detected !== null) {
-        setClientType(detected);
-        toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+        form.patch({ clientType: detected });
+        const name = S.models.protocolNames[detected] ?? detected;
+        // The protocol may have answered on a tidied-up form of the URL (a `/v1` added or
+        // dropped, a pasted endpoint path removed); the import must speak to that one, so
+        // the field takes it and the toast says so.
+        if (res.baseUrl !== undefined && res.baseUrl !== url) {
+          form.patch({ baseUrl: res.baseUrl });
+          toastSuccess(S.models.detectedProtocolAndUrl(name, res.baseUrl));
+        } else {
+          toastSuccess(S.models.detectedProtocol(name));
+        }
       } else {
         setDetectFailed(true);
         // Same condition the model dialog reports, so it gets the same sentence.
@@ -1664,12 +2253,22 @@ function AddGroupDialog({
     setDetecting(false);
     setDetectFailed(false);
     setError(null);
-    setClientType(t);
+    form.patch({ clientType: t });
   };
 
-  const runImport = async () => {
-    const n = validName();
-    if (!n || clientType === null) return;
+  /** The endpoint a listing answers for: the key, base URL and protocol as they would be sent. */
+  const endpointOf = (url: string, protocol: string, key: string) =>
+    JSON.stringify([url, protocol, key]);
+  /** The listing on screen: only while the fields still name the endpoint it came from. */
+  const list =
+    listing !== null &&
+    clientType !== null &&
+    listing.endpoint === endpointOf(baseUrl.trim(), clientType, apiKey.trim())
+      ? listing
+      : null;
+
+  const fetchList = async () => {
+    if (!nameValid || clientType === null) return;
     const url = baseUrl.trim();
     if (!detectableBaseUrl(url)) {
       setError(S.models.groupImportNeedUrl);
@@ -1692,17 +2291,39 @@ function AddGroupDialog({
         );
         return;
       }
-      const built = buildImportedRows(rows, n, listed.models, {
-        baseUrl: url,
-        clientType,
-        apiKey: key,
-      });
-      if (built.added === 0) {
+      const { ids, dropped } = pickableModelIds(listed.models);
+      if (ids.length === 0) {
         setError(S.models.groupImportEmpty);
         return;
       }
-      setImporting(S.models.groupImportSaving(built.added));
-      await onImport([...rows, ...built.rows], n, built.added, built.skipped);
+      setListing({
+        endpoint: endpointOf(url, clientType, key),
+        ids,
+        dropped,
+        picked: new Set(ids),
+      });
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const runImport = async () => {
+    if (!nameValid || clientType === null || list === null || list.picked.size === 0) return;
+    const n = trimmed;
+    const chosen = list.ids.filter((id) => list.picked.has(id));
+    const built = buildImportedRows(rows, n, chosen);
+    setError(null);
+    setImporting(S.models.groupImportSaving(built.added));
+    try {
+      await onImport(
+        [...rows, ...built.rows],
+        n,
+        groupImportConnection({ baseUrl: baseUrl.trim(), clientType, apiKey: apiKey.trim() }),
+        built.added,
+        list.dropped + built.skipped,
+      );
     } catch (e) {
       setError(apiErrorText(e));
     } finally {
@@ -1711,32 +2332,61 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
+  /**
+   * An import needs an endpoint: a blank base URL holds Import and Detect, and is said under the
+   * field once something is typed (the other required base URL fields' rule).
+   */
+  const baseUrlMissing = baseUrl.trim() === "";
+  const baseUrlError = form.dirty && baseUrlMissing ? S.models.baseUrlRequired : null;
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
-    clientType === null ? S.models.protocolUnset : protocolPathForModel(name.trim(), clientType);
+    clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
 
   return (
     <Modal
       open
       title={S.models.addGroupTitle}
-      onClose={() => !busy && onClose()}
-      widthClass="sm:max-w-sm"
+      onClose={requestClose}
+      // The group settings' width: the group's base URL and its protocol path read whole.
+      widthClass="sm:max-w-3xl"
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
             {S.common.cancel}
           </Button>
           {mode === "create" ? (
-            <Button variant="primary" onClick={confirmCreate}>
+            <Button size="sm" variant="primary" disabled={!nameValid} onClick={confirmCreate}>
               {S.common.confirm}
             </Button>
           ) : (
-            // The import action exists only once the protocol is determined (detected or
-            // hand-picked): before that there is nothing meaningful to run.
-            clientType !== null && (
-              <Button variant="primary" disabled={busy} onClick={() => void runImport()}>
-                {S.models.groupImportAll}
+            // The import actions exist only once the protocol is determined (detected or
+            // hand-picked): before that there is nothing meaningful to run. Fetch the list
+            // first; once it is on screen, import what is ticked.
+            clientType !== null &&
+            (list === null ? (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid || baseUrlMissing}
+                onClick={() => void fetchList()}
+              >
+                {S.models.groupImportFetch}
               </Button>
-            )
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid || list.picked.size === 0}
+                // Fetch and Import are one button in one place, and the list lands within a
+                // double-click: the second click of a double-click on Fetch must not import.
+                // A keyboard press reports detail 0 and a single click 1.
+                onClick={(e) => {
+                  if (e.detail <= 1) void runImport();
+                }}
+              >
+                {S.models.groupImportPicked(list.picked.size)}
+              </Button>
+            ))
           )}
         </>
       }
@@ -1750,11 +2400,8 @@ function AddGroupDialog({
             infoLabel={S.models.groupNameLabel}
             required
             value={name}
-            invalid={Boolean(nameError)}
-            onChange={(e) => {
-              setName(e.target.value);
-              setNameError(null);
-            }}
+            invalid={nameError !== null}
+            onChange={(e) => form.patch({ name: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === "Enter" && mode === "create") confirmCreate();
             }}
@@ -1779,8 +2426,11 @@ function AddGroupDialog({
               size="sm"
               label={S.models.apiKey}
               value={apiKey}
+              // Locked while a fetch or save runs, like the base URL: the request speaks with
+              // this key, and the list it brings back answers for it.
+              disabled={busy}
               onChange={(e) => {
-                setApiKey(e.target.value);
+                form.patch({ apiKey: e.target.value });
                 setError(null);
               }}
               className="font-mono"
@@ -1794,21 +2444,18 @@ function AddGroupDialog({
                 <FieldLabel required block={false}>
                   {S.models.baseUrl}
                 </FieldLabel>
-                <button
-                  type="button"
-                  disabled={detecting || busy}
+                <Button
+                  variant="link"
+                  size="sm"
+                  loading={detecting}
+                  disabled={busy || baseUrlMissing}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
-                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                  title={baseUrlMissing ? S.models.detectNeedsBaseUrl : S.models.detectProtocolHint}
+                  data-tooltip-extra
+                  className="shrink-0"
                 >
-                  {detecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                    />
-                  )}
                   {detecting ? S.models.detecting : S.models.detectProtocol}
-                </button>
+                </Button>
               </span>
               <div className="relative">
                 <Input
@@ -1817,6 +2464,7 @@ function AddGroupDialog({
                   required
                   value={baseUrl}
                   disabled={busy}
+                  invalid={baseUrlError !== null}
                   onChange={(e) => {
                     // An edited URL retires the previous verdict: protocol and failure tone
                     // both described the old endpoint.
@@ -1824,12 +2472,12 @@ function AddGroupDialog({
                     setDetecting(false);
                     setDetectFailed(false);
                     setError(null);
-                    setBaseUrl(e.target.value);
+                    form.patch({ baseUrl: e.target.value });
                   }}
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
                   title={S.models.baseUrlSuffixTitle}
-                  placeholder="https://…"
+                  placeholder={S.models.baseUrlEnterHint}
                 />
                 <div className="absolute inset-y-0 right-1 flex items-center">
                   <ProtocolSuffixMenu
@@ -1837,11 +2485,21 @@ function AddGroupDialog({
                     path={suffixLabel}
                     detecting={detecting}
                     tone={detectFailed ? "warn" : null}
+                    disabled={busy}
                     onPick={pickProtocol}
                   />
                 </div>
               </div>
+              {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
+            {list !== null && (
+              <ImportPickList
+                ids={list.ids}
+                picked={list.picked}
+                disabled={busy}
+                onChange={(picked) => setListing({ ...list, picked })}
+              />
+            )}
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
             )}
@@ -1858,42 +2516,16 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card tag palette. Every mark wears one small neutral pill — the same faint surface and border
- * whatever it says — and the hue survives only in the text. Six marks filling six coloured
- * chips turned a row of tags into confetti; on a page whose job is scanning names, the marks
- * are meant to be noticed second.
- *
- * Three inks, so the row groups instead of enumerating: what the model IS (its default status),
- * what it CAN do, and what it COSTS. Identity is carried by the words in every case — the ink
- * only sorts them at a glance, and never alone says which mark this is.
- *
- * These are identities, not judgements, which is why they are spelled here instead of in
- * `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
- * `category-colors.ts` and `update-dot.tsx` keep their own colours. Contrast against the
- * surfaces a card sits on (white and gray-50 in light; this app's overridden gray-950 `#000000`
- * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
- * so it is not held to 3:1.
- */
-/** The pill itself: no fill at all, so a row of marks sits on the card rather than on top of it. */
-const TAG_SHAPE =
-  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
-const TAG_INK = {
-  /** This model's standing in the Project. */
-  status: "text-brand-700 dark:text-brand-300",
-  /** What it can do. */
-  capability: "text-emerald-700 dark:text-emerald-400",
-  /** What it costs. */
-  price: "text-amber-700 dark:text-amber-400",
-} as const;
-
-/**
  * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
- * title row's right edge. The whole card is clickable (the model homepage link lives in the
- * config dialog).
+ * title row's right edge. All three lines are one click target opening the config dialog (the
+ * model homepage link lives in there); a row whose model id its group cannot route adds a
+ * warning strip below them, which carries its own action and therefore its own click target. A
+ * click anywhere else on the card opens the dialog as well.
  */
-function ModelCard({
+export function ModelCard({
   row,
+  group,
   currency,
   isDefault,
   isVisionModel,
@@ -1901,8 +2533,11 @@ function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  onMoveToCustom,
 }: {
   row: RowState;
+  /** The row's group's stored connection: what its blank fields follow. */
+  group?: ProviderConnectionDto | undefined;
   currency: Currency;
   isDefault: boolean;
   isVisionModel: boolean;
@@ -1912,20 +2547,38 @@ function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
+  /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
+  onMoveToCustom?: () => void;
 }) {
+  /**
+   * A stored entry that sits in a vendor group under an id MMSP cannot place, judged on the
+   * protocol it is actually used with (its own, else its group's). Saving one is refused now,
+   * so this can only be a row that predates that rule — it stays in the config untouched, and
+   * the card is where its owner finds out, because every other sign of it arrives as a failed
+   * request minutes into a conversation.
+   */
+  const fix = unroutableFix(
+    row.provider,
+    row.modelId,
+    row.clientType.trim() ||
+      (inheritedConnection(row.provider, row.modelId, group).clientType ?? ""),
+  );
+  /** Where an inherited key comes from (the group, or the environment), as the key's hover note. */
+  const keyNote = keyStatusNote(row, group);
   const priced = row.cacheRead || row.cacheWrite || row.output;
   /**
-   * A promoted catalog row. `discountedPrice` returns nothing once the price has been edited
-   * away from the catalog's, and nothing for a row on a time-of-day schedule while it is inside
-   * its peak windows — at peak it is simply at list price, which is what is stored.
+   * What is taken off this row's list price right now: its running promotion, its live
+   * off-peak tier, or both. `discountedPrice` returns nothing for a row with neither — no
+   * promotion, and a schedule that is inside its peak windows or on a price edited away from
+   * the catalog's peak price.
    *
-   * `hourTick` is in the dependency list for that second case: a scheduled row's price changes
-   * on the hour with nobody touching the page, and a card left open would otherwise keep
-   * printing a rate that stopped applying.
+   * `hourTick` is in the dependency list for the schedule: a scheduled row's price changes on
+   * the hour with nobody touching the page, and a card left open would otherwise keep printing
+   * a rate that stopped applying.
    */
   const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
-  // The buckets to print: what the seller bills right now. They differ from the stored numbers
-  // only for a scheduled discount, whose stored price is the peak one.
+  // The buckets to print: what the seller bills right now. The stored numbers are the list
+  // price, so they differ whenever a discount applies.
   const shownPrice = discount
     ? {
         cacheRead: String(discount.billed.cacheRead),
@@ -1934,75 +2587,21 @@ function ModelCard({
       }
     : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
   /**
-   * Every standing mark this row carries, in one horizontal row of its own.
+   * Every standing mark this row carries (model-tags.ts, shared with the model picker's rows),
+   * in one horizontal row of its own.
    *
    * They had been sharing the title's line, where each was width the model's NAME had to give
    * up — a long name truncated to make room for a mark that could have been read anywhere. A
    * row of their own costs one line and gives the name the whole of the first.
-   *
-   * Order is fixed rather than by which happen to be true, so the eye can learn where to look:
-   * what this Project chose (default, vision proxy) before what the model is (vision, fast,
-   * free) before what it costs today (the discount).
    */
-  const tags: Array<{ key: string; label: string; title?: string; className: string }> = [
-    ...(isDefault
-      ? [
-          {
-            key: "default",
-            label: S.models.default,
-            className: TAG_INK.status,
-          },
-        ]
-      : []),
-    ...(row.vision
-      ? [
-          {
-            key: "vision",
-            label: S.models.visionBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isVisionModel
-      ? [
-          {
-            key: "visionModel",
-            label: S.models.visionModelBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(row.fastMode
-      ? [
-          {
-            key: "fastMode",
-            label: S.models.fastModeBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isFreeModel(row)
-      ? [
-          {
-            key: "free",
-            label: S.models.freeBadge,
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-    ...(discount
-      ? [
-          {
-            key: "discount",
-            label: S.models.discountBadge(discount.percent),
-            title: discount.scheduled
-              ? S.models.offPeakTitle(discount.percent)
-              : S.models.discountTitle(discount.percent),
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-  ];
+  const tags = modelTags({
+    isDefault,
+    vision: row.vision,
+    isVisionModel,
+    fastMode: row.fastMode,
+    free: isFreeModel(row),
+    discount,
+  });
 
   const priceLine = (a: string, b: string, c: string): string =>
     `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
@@ -2015,98 +2614,138 @@ function ModelCard({
     priced ? (
       <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
     ) : null,
-    // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
-    // "configured" for a key typed but not yet saved, or "not configured".
-    keyStatusText(row),
+    // Key status (see keyStatusText): the mask of the key the model is used with — its own, its
+    // group's or a detected env fallback's — a plain "configured" for a key typed but not yet
+    // saved, or "not configured". An inherited key says where it comes from on hover only: the
+    // line reads the same whatever the source, and the source is a detail.
+    keyNote !== undefined ? (
+      <span data-tooltip={keyNote}>{keyStatusText(row, group)}</span>
+    ) : (
+      keyStatusText(row, group)
+    ),
   ].filter((v) => v !== null);
 
   const speedBadges =
     speed === "pending" ? (
-      <span className="shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
+      <span className="shrink-0 text-xs text-gray-400">{S.models.speedPending}</span>
     ) : speed ? (
       speed.ok ? (
-        <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
           {speed.ttftMs !== undefined && (
             <span
-              className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
-              title={S.models.ttftTitle}
+              className={`flex items-center gap-1 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
+              data-tooltip={S.models.ttftTitle}
             >
-              <GlyphIcon d={CLOCK_ICON} size={11} />
+              <GlyphIcon d={ICONS.clock} size={11} />
               {Math.round(speed.ttftMs)}ms
             </span>
           )}
           {speed.tps !== undefined && (
             <span
-              className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
-              title={S.models.tpsTitle}
+              className={`flex items-center gap-1 ${TONE_CLASS[tpsTone(speed.tps)]}`}
+              data-tooltip={S.models.tpsTitle}
             >
-              <GlyphIcon d={ZAP_ICON} size={11} />
+              <GlyphIcon d={ICONS.zap} size={11} />
               {speed.tps} tok/s
             </span>
           )}
         </span>
       ) : (
         <span
-          className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
-          title={speed.message}
+          className="shrink-0 text-xs font-medium text-red-600 dark:text-red-400"
+          data-tooltip={speed.message}
+          data-tooltip-extra
         >
           {S.models.speedFailed}
         </span>
       )
     ) : null;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full flex-col gap-1 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+    // The card is a box holding the button rather than being one: the routing warning below
+    // carries an action of its own, and buttons cannot nest (the group header solves the same
+    // problem the same way). A click on the rest of the box opens the dialog too
+    // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
+    <Card
+      padding="none"
+      interactive
+      onClick={cardBodyClick(onOpen)}
+      className="flex w-full flex-col"
     >
-      {/* 1. What the model is called — the name alone. The upstream id used to share this row,
-          but it is a detail you go looking for rather than one you scan by, and it is a click
-          away in the config dialog; the width it was taking now belongs to the name. */}
-      <span className="flex w-full min-w-0 items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-          {modelLabelOf(row.displayName, row.modelId)}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full flex-1 flex-col gap-1 px-3 py-2.5 text-left"
+      >
+        {/* 1. What the model is called — the name alone. The upstream id used to share this row,
+            but it is a detail you go looking for rather than one you scan by, and it is a click
+            away in the config dialog; the width it was taking now belongs to the name. */}
+        <span className="flex w-full min-w-0 items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {modelLabelOf(row.displayName, row.modelId)}
+          </span>
+          {/* What this model has spent over its whole life, on the row's right edge. Recessive by
+              design — grey, on the small rung below the name: it is context for a name you are
+              scanning past, not a figure the page is about. A model that has never run shows
+              nothing rather than a zero, which would read as a measurement instead of an
+              absence. */}
+          {usedTokens !== undefined && usedTokens > 0 && (
+            <span
+              className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+              data-tooltip={S.models.usedTokensTitle}
+            >
+              {S.models.usedTokens(humanizeTokens(usedTokens))}
+            </span>
+          )}
         </span>
-        {/* What this model has spent over its whole life, on the row's right edge. Recessive by
-            design — grey and a size below the meta line: it is context for a name you are
-            scanning past, not a figure the page is about. A model that has never run shows
-            nothing rather than a zero, which would read as a measurement instead of an
-            absence. */}
-        {usedTokens !== undefined && usedTokens > 0 && (
-          <span
-            className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
-            title={S.models.usedTokensTitle}
-          >
-            {S.models.usedTokens(humanizeTokens(usedTokens))}
-          </span>
-        )}
-      </span>
-      {/* 2. Every standing mark, on one row of its own (see `tags`). The row is rendered even
-          when empty: most models carry no mark at all, and letting it collapse would leave the
-          grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
-          absent line shows up as uneven padding rather than as a shorter card. Its height is
-          the tags' own, so a card with marks and a card without are exactly as tall. */}
-      <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
-        {tags.map((tag) => (
-          <span key={tag.key} title={tag.title} className={`${TAG_SHAPE} ${tag.className}`}>
-            {tag.label}
-          </span>
-        ))}
-      </span>
-      {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
-          non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
-      <span className="flex w-full items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
-          {meta.map((part, i) => (
-            <Fragment key={i}>
-              {i > 0 && " · "}
-              {part}
-            </Fragment>
+        {/* 2. Every standing mark, on one row of its own (see `tags`). The row is rendered even
+            when empty: most models carry no mark at all, and letting it collapse would leave the
+            grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
+            absent line shows up as uneven padding rather than as a shorter card. Its height is
+            the tags' own — an empty row holds one invisible tag, which is that height in every
+            theme — so a card with marks and a card without are exactly as tall. */}
+        <span className="flex w-full flex-wrap items-center gap-1">
+          {tags.map((tag) => (
+            <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
+              {tag.label}
+            </Pill>
           ))}
+          {tags.length === 0 && (
+            <span aria-hidden className="invisible flex">
+              <Pill>&nbsp;</Pill>
+            </span>
+          )}
         </span>
-        {speedBadges}
-      </span>
-    </button>
+        {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
+            non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
+        <span className="flex w-full items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
+            {meta.map((part, i) => (
+              <Fragment key={i}>
+                {i > 0 && " · "}
+                {part}
+              </Fragment>
+            ))}
+          </span>
+          {speedBadges}
+        </span>
+      </button>
+      {/* The routing warning and its way out (see unroutableFix): the move the config dialog's
+          own button performs, so the owner lands where the problem is fixed rather than on a
+          second explanation. */}
+      {fix !== null && (
+        <NoticeStrip
+          tone="attention"
+          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs"
+        >
+          <span className="min-w-0">{S.models.vendorRowUnroutable}</span>
+          {onMoveToCustom && (
+            <Button size="sm" className="shrink-0" onClick={onMoveToCustom}>
+              {S.models.moveToCustomGroup}
+            </Button>
+          )}
+        </NoticeStrip>
+      )}
+    </Card>
   );
 }
 
@@ -2116,25 +2755,41 @@ function ModelCard({
 
 type DialogAction = "save" | "setDefault" | "setVisionModel" | "remove";
 
-/** Confirmation text per action (S is a live runtime binding, must be read at render time, not frozen at module scope). */
+/**
+ * Confirmation text per action (S is a live runtime binding, must be read at render time, not
+ * frozen at module scope). A save is confirmed only when it cancels the row's running
+ * promotion — the one thing it destroys besides the fields it writes; an ordinary save writes
+ * at once.
+ */
 const CONFIRM_TITLE: Record<DialogAction, () => string> = {
-  save: () => S.models.confirmSaveTitle,
+  save: () => S.models.confirmCancelPromotionTitle,
   setDefault: () => S.models.confirmDefaultTitle,
   setVisionModel: () => S.models.confirmVisionModelTitle,
   remove: () => S.models.confirmDeleteTitle,
 };
-const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
-  save: (n) => S.models.confirmSave(n),
+const CONFIRM_BODY: Record<DialogAction, (name: string, promotionPct: number) => string> = {
+  save: (n, pct) => S.models.confirmCancelPromotion(n, pct),
   setDefault: (n) => S.models.confirmDefault(n),
   setVisionModel: (n) => S.models.confirmVisionModel(n),
   remove: (n) => S.models.confirmDelete(n),
 };
 
+/** A draft as a save sends it, for telling a real edit from typing the stored value back. */
+const trimmedRow = (row: RowState): RowState =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.trim() : value,
+    ]),
+  ) as unknown as RowState;
+
 function ModelDialog({
   projectId,
   row,
   addProvider,
+  movedToCustom,
   existingRefs,
+  providers,
   detectedEnvKeys,
   currency,
   canEdit,
@@ -2147,7 +2802,11 @@ function ModelDialog({
   row: RowState | null;
   /** Target group for add mode (row is null): the group of the header entry point / falls back to custom when empty. */
   addProvider: string;
+  /** Edit mode: open with the row already moved into the custom group (a card's "move to custom group" action). */
+  movedToCustom: boolean;
   existingRefs: ModelRefDto[];
+  /** Every group's stored connection: what the form's blank fields follow, shown as placeholders. */
+  providers: ProviderConnections;
   /** Env-fallback variables the server reported a value for (see detectedEnvKeys): the only ones the key hint may promise. */
   detectedEnvKeys: ReadonlySet<string>;
   currency: Currency;
@@ -2155,65 +2814,81 @@ function ModelDialog({
   isDefault: boolean;
   isVisionModel: boolean;
   onClose: () => void;
-  onSubmit: (row: RowState, action: DialogAction) => void;
+  /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
+  onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
 }) {
-  // Pricing input is displayed/entered in the current currency; converted back to USD storage on submit (RowState always stores USD).
-  const [form, setForm] = useState<RowState>(() => {
+  // What the dialog opens on, and what a close compares the draft with: the stored row, the row
+  // already moved into the custom group when the dialog was opened to make that move, or a blank
+  // model. Pricing input is displayed/entered in the current currency; converted back to USD
+  // storage on submit (RowState always stores USD).
+  const [opening] = useState<RowState>(() => {
     if (row) {
       return {
         ...row,
         cacheRead: usdToInput(row.cacheRead, currency),
         cacheWrite: usdToInput(row.cacheWrite, currency),
         output: usdToInput(row.output, currency),
+        // Opened from a card's "move to custom group": the same edit the dialog's own button
+        // makes, applied before the form is first painted so the user arrives at the protocol
+        // control instead of having to find the move again in here.
+        ...(movedToCustom
+          ? {
+              provider: "custom",
+              clientType: clientTypeAfterProviderChange(
+                "custom",
+                row.clientType,
+                inheritedConnection("custom", row.modelId, providers.custom),
+              ),
+            }
+          : {}),
       };
     }
-    // New model: protocol follows group semantics — a group that pins one (vLLM) hands it
-    // to the new entry outright; a first-party vendor group doesn't persist client_type
-    // (AgentHub auto-routes by upstream id, with env fallback resolved live from the id);
-    // custom / user-defined groups / gateways use a fixed openai-chat protocol (env fallback
-    // OPENAI_*), and gateways additionally pre-fill their endpoint base URL. provider keeps
-    // the entry point's original value (a user-defined group must not collapse into custom),
-    // stored as a separate field from model_id, with no concatenation on save.
-    const info = providerInfo(addProvider);
-    const pinnedClientType = providerClientType(addProvider);
-    const vendorAdd =
-      info !== undefined &&
-      info.id !== "custom" &&
-      info.gatewayBaseUrl === undefined &&
-      pinnedClientType === undefined;
+    // New model: the base URL, the key and the protocol start blank, and blank means "follow
+    // the group" — the endpoint, protocol and key its `[providers.<id>]` table holds (a new
+    // Project writes a gateway's there). The fields say so in their placeholders, and typing
+    // into one makes it this model's own. A custom / user-defined group with nothing to inherit
+    // leaves the protocol to detection or a manual pick. provider keeps the entry point's
+    // original value (a user-defined group must not collapse into custom), stored as a separate
+    // field from model_id, with no concatenation on save.
+    //
+    // A first-party vendor group cannot be reached here at all: it carries the built-in
+    // catalog and nothing else, so no entry point opens this dialog on one (the group
+    // headers drop the action, the empty state opens custom, and a new group's name may not
+    // collide with a built-in id).
     return {
       provider: addProvider,
       modelId: "",
       original: null,
       // A new custom model claims no vision support until it is detected or switched on by
-      // hand (per maintainer). Vendor and gateway adds keep the old optimistic default:
-      // their ids are catalog-known, so the capability is already established for them.
+      // hand (per maintainer). A model added to a gateway or vLLM keeps the optimistic default.
       vision: !isCustomLikeGroup(addProvider),
       contextWindow: "",
       maxTokens: "",
       fastMode: false,
-      // No protocol is preselected for a custom / user-defined group: it is detected from
-      // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
-      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
-      clientType:
-        pinnedClientType ?? (vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat"),
+      clientType: "",
       cacheRead: "",
       cacheWrite: "",
       output: "",
-      baseUrl: info?.gatewayBaseUrl ?? "",
+      baseUrl: "",
       originalBaseUrl: "",
       apiKeyInput: "",
       clearApiKey: false,
     };
   });
-  /** Field-level validation errors: text below the corresponding input, input highlighted red — closer to the error site than a top-level banner. */
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const draft = useFormDraft(opening, { normalize: trimmedRow });
+  const form = draft.draft;
+  /**
+   * The Details fold (model-dialog-details.tsx): closed whenever the dialog opens, never
+   * remembered. A wrong field inside it opens it.
+   */
+  const [detailsOpen, setDetailsOpen] = useState(false);
   /** Connectivity test in progress. */
   const [testing, setTesting] = useState(false);
+  /** The write is in flight (its protocol probe included): the dialog waits for its answer. */
+  const [saving, setSaving] = useState(false);
   /**
-   * Action pending confirmation: anything that writes to the Project config goes through a
-   * confirmation step — save config / set as default / set as vision proxy model / delete.
-   * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
+   * Action pending confirmation: set as default / set as vision proxy model / delete, and a
+   * save that would cancel the row's running promotion. An ordinary save is not confirmed.
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
   /** Fast mode is being switched ON and awaits the premium-billing warning's confirmation. */
@@ -2237,17 +2912,28 @@ function ModelDialog({
    * probe: clicking Detect while the save path is already probing (or vice versa) must not
    * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
    */
-  const detectInFlight = useRef<Promise<string | null> | null>(null);
+  const detectInFlight = useRef<Promise<DetectOutcome | null> | null>(null);
   /** Vision probe in progress (its own control, so its own busy state). */
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+  /** The loaded row's running promotion, explained under the price fields. */
+  const promotion = fractionOff(row?.discount);
+  /**
+   * The draft's group's stored connection, and what a blank field of this draft follows: the
+   * group's table and nothing else. The draft's own base URL decides whether the group's key
+   * reaches it (a base URL on another origin than the group's endpoint gets none).
+   */
+  const group = providers[form.provider];
+  const inherited = inheritedConnection(form.provider, form.modelId, group, form.baseUrl);
+  /** The protocol the draft is used with: its own, else the inherited one ("" = routed by id). */
+  const effectiveClientType = form.clientType.trim() || inherited.clientType || "";
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
-  const { protocol: fastProtocol, show: showFastMode } = fastModeState(form);
+  const { protocol: fastProtocol, show: showFastMode } = fastModeState(form, inherited);
 
   // Vision support and fast mode share one row; either can be missing, so the row's own
   // presence and the cell width follow from which switches are actually there (capabilityRow).
@@ -2257,14 +2943,26 @@ function ModelDialog({
     fastMode: showFastMode,
   });
 
-  const set = (patch: Partial<RowState>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
-    // Clear the error marker for whichever field was changed (keys match RowState field names).
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      for (const k of Object.keys(patch)) delete next[k as keyof FieldErrors];
-      return next;
-    });
+  const set = (patch: Partial<RowState>) => draft.patch(patch);
+
+  /**
+   * What a failed probe says. An entry its group cannot place fails upstream with MMSP's own
+   * sentence — `No client for model "<id>": its family is not known`, or `Unknown client
+   * type "<type>"` for a pin MMSP does not have, then the list of client types it does have —
+   * which names an internal vocabulary and leaves the reader to infer what to do about it.
+   * That case gets a message naming the problem and the fix its own shape calls for
+   * (unroutableFix, which reads the config rather than matching that text); every
+   * other failure still relays the upstream text, which is what makes a wrong key or a wrong
+   * endpoint diagnosable. The relayed sentence is not lost either way: it goes to the console,
+   * where a developer looking into a report can still read it.
+   */
+  const reportTestFailure = (message: string) => {
+    if (unroutableFix(form.provider, form.modelId, effectiveClientType) === null) {
+      toastError(S.models.testFailed(message));
+      return;
+    }
+    console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
+    toastError(S.models.testNotRoutable);
   };
 
   /**
@@ -2282,7 +2980,8 @@ function ModelDialog({
       // - API key: use it if newly typed; if "clear" is checked, send clearApiKey (the
       //   server won't fall back to the stored key); only if neither applies does the server
       //   read the stored key (the frontend never sees the plaintext key, only its mask).
-      // - base URL isn't sensitive, so the frontend always sends the form's current value (empty means null = explicitly no base URL).
+      // - base URL isn't sensitive, so the frontend always sends the form's current value (empty
+      //   means null = none of the model's own, so the group's applies).
       const key = form.apiKeyInput.trim();
       const bu = form.baseUrl.trim();
       const body: ModelTestRequest = {
@@ -2299,16 +2998,16 @@ function ModelDialog({
       body.fastMode = form.fastMode;
       const res = await api.testModel(projectId, body);
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
-      else toastError(S.models.testFailed(res.message ?? ""));
+      else reportTestFailure(res.message ?? "");
     } catch (e) {
-      toastError(S.models.testFailed(apiErrorText(e)));
+      reportTestFailure(apiErrorText(e));
     } finally {
       setTesting(false);
     }
   };
 
   /**
-   * Protocol detection: POST /models/detect probes the base URL for the three generic
+   * Protocol detection: POST /models/detect probes the base URL for the three detectable
    * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
    * the result to the form's clientType. Resolves to the detected client type, or null
    * when nothing matched / the probe failed, so the save path can decide from the same run
@@ -2335,7 +3034,7 @@ function ModelDialog({
    * A stale run (superseded by a manual pick or a newer run) discards its result instead
    * of clobbering the form, and stays silent.
    */
-  const detectOnce = async (mode: DetectMode): Promise<string | null> => {
+  const detectOnce = async (mode: DetectMode): Promise<DetectOutcome | null> => {
     // What an empty result means depends on who asked. A manual run simply failed; a save
     // run silently resolves to the compatible client and says so, because the save it was
     // serving is still going through.
@@ -2344,7 +3043,9 @@ function ModelDialog({
       if (mode === "save") toastInfo(S.models.detectFellBack);
       else toastError(S.models.detectFailedBody);
     };
-    const baseUrl = form.baseUrl.trim();
+    // The model's own base URL, or — left blank — the one it follows, so a model in a group
+    // whose settings name the endpoint can be probed without retyping it.
+    const baseUrl = form.baseUrl.trim() || inherited.baseUrl?.trim() || "";
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
@@ -2367,8 +3068,14 @@ function ModelDialog({
       const res = await api.detectProtocol(projectId, body);
       if (seq !== detectSeq.current) return null;
       if (res.detected) {
-        set({ clientType: res.detected });
-        return res.detected;
+        // The protocol may have answered on a tidied-up form of the URL (a `/v1` added or
+        // dropped, a pasted endpoint path removed). Saving the typed form would persist a
+        // base URL the detected protocol is not served at, so the field takes the one that
+        // answered and the outcome carries it on to the save path.
+        const served = res.baseUrl;
+        const patch = served !== undefined && served !== baseUrl ? { baseUrl: served } : {};
+        set({ clientType: res.detected, ...patch });
+        return { clientType: res.detected, ...patch };
       }
       failed();
       return null;
@@ -2384,7 +3091,7 @@ function ModelDialog({
    * Single-flight wrapper: a second trigger joins the run already in progress rather than
    * starting a rival probe (the button while the save path is probing, or vice versa).
    */
-  const runDetect = (mode: DetectMode): Promise<string | null> => {
+  const runDetect = (mode: DetectMode): Promise<DetectOutcome | null> => {
     if (detectInFlight.current) return detectInFlight.current;
     const run = detectOnce(mode).finally(() => {
       detectInFlight.current = null;
@@ -2401,7 +3108,12 @@ function ModelDialog({
   const detectFromButton = async () => {
     const detected = await runDetect("manual");
     if (detected === null) return; // detectOnce already raised the failure toast
-    toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+    const name = S.models.protocolNames[detected.clientType] ?? detected.clientType;
+    toastSuccess(
+      detected.baseUrl === undefined
+        ? S.models.detectedProtocol(name)
+        : S.models.detectedProtocolAndUrl(name, detected.baseUrl),
+    );
   };
 
   /**
@@ -2439,10 +3151,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailed);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailed);
       } finally {
         setVisionDetecting(false);
       }
@@ -2454,14 +3166,15 @@ function ModelDialog({
   };
 
   /**
-   * Manual protocol override from the in-field picker. Bumping the run counter supersedes
-   * any in-flight detection, so a late result cannot clobber a choice the user just made.
+   * Manual protocol override from the in-field picker — a protocol of the model's own, or null
+   * to drop it and follow the group again. Bumping the run counter supersedes any in-flight
+   * detection, so a late result cannot clobber a choice the user just made.
    */
-  const pickProtocol = (clientType: ProtocolClientType) => {
+  const pickProtocol = (clientType: ProtocolClientType | null) => {
     detectSeq.current++;
     setDetecting(false);
     setDetectFailed(false);
-    set({ clientType });
+    set({ clientType: clientType ?? "" });
   };
 
   /**
@@ -2470,20 +3183,25 @@ function ModelDialog({
    * top-level banner: it's too far from the error site, and with three price fields it's
    * hard to tell which one is wrong).
    */
-  // base URL required-field policy: an OpenAI-protocol endpoint can't be
-  // inferred — required for custom / user-defined groups and entries with an explicit
-  // openai protocol (gateway groups already have it pre-filled); optional for entries
-  // auto-routed within a first-party vendor group (the client has its own official
-  // default endpoint). Shared by validation and the label's required "*" mark.
+  // base URL required-field policy: an endpoint behind a compatible OpenAI-protocol client
+  // can't be inferred — needed for custom / user-defined groups and entries using one of those
+  // clients; not for entries routed within a first-party vendor group, nor for an
+  // `openai-official` pin (an official client has its vendor's default endpoint). The Penguin
+  // Go relay needs one too: its shared key must never fall through to a vendor default. The
+  // FIELD is required only where nothing else supplies the endpoint — the group's settings fill
+  // a blank one, so there it may stay blank. Shared by validation and the label's required "*"
+  // mark.
   const openAiLike =
-    form.clientType.trim().toLowerCase().includes("openai") ||
+    OPENAI_COMPATIBLE_CLIENT_TYPES.has(effectiveClientType.toLowerCase()) ||
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
-  const baseUrlRequired = !preset && openAiLike;
-  // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
-  // clients: the base URL field's suffix becomes the protocol picker there, unless the
-  // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
-  // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  const baseUrlRequired =
+    (form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike)) &&
+    !inherited.baseUrl?.trim();
+  // Custom-like groups (custom + user-defined) pick among the protocol clients the picker
+  // offers (PROTOCOL_CLIENT_TYPES): the base URL field's suffix becomes the protocol picker
+  // there, unless the entry is pinned to a client outside them — that keeps the read-only note
+  // below instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
   const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
   const showProtocolSelector =
     customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
@@ -2493,30 +3211,45 @@ function ModelDialog({
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
-  // group in add mode updates it.
-  const protocolPath = protocolPathForModel(form.provider, form.clientType);
-  // Which protocol the picker shows as chosen — null while a fresh custom model has none.
+  // group in add mode, or typing an id of another vendor family, updates it.
+  const protocolPath = protocolPathForModel(form.provider, effectiveClientType, form.modelId);
+  // Which protocol the picker shows as the model's own — null while it has none.
   const protocolChoice = protocolSelectorValue(form.clientType);
-  // In the picker, an unchosen protocol has no path to show: the field would otherwise
-  // display /chat/completions and read as a decision the user never made. The placeholder
-  // takes its place until a pick or a detection lands. (The read-only suffix used by preset
-  // groups keeps showing the real path — those entries genuinely route that way.)
+  // A protocol the group decides (its settings name one): the picker's first row follows it,
+  // and with no protocol of its own the model shows the group's path.
+  const followGroup =
+    inherited.clientType !== undefined
+      ? {
+          label: S.models.protocolFollowGroup,
+          description: S.models.protocolNames[inherited.clientType] ?? inherited.clientType,
+          onPick: () => pickProtocol(null),
+        }
+      : undefined;
+  // In the picker, a protocol neither chosen nor inherited has no path to show: the field
+  // would otherwise display /chat/completions and read as a decision the user never made. The
+  // placeholder takes its place until a pick or a detection lands. (The read-only suffix used
+  // by preset groups keeps showing the real path — those entries genuinely route that way.)
   const suffixLabel =
-    showProtocolPicker && protocolChoice === null ? S.models.protocolUnset : protocolPath;
+    showProtocolPicker && protocolChoice === null && followGroup === undefined
+      ? S.models.protocolUnset
+      : protocolPath;
 
   const modelLabel = modelLabelOf(form.displayName, form.modelId);
 
-  const validated = (): RowState | null => {
+  /**
+   * What is wrong with the draft, per field — read live, since Save waits until nothing is.
+   * Each error sits below its input, which turns red: closer to the error site than a banner.
+   */
+  const fieldErrors = ((): FieldErrors => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
-    const baseUrl = form.baseUrl.trim();
     const errs: FieldErrors = {};
     if (!modelId) errs.modelId = S.common.requiredField;
     // A new or renamed (provider, modelId) must not duplicate another entry (renaming back to itself isn't a conflict).
     else if (!sameModelRef(ref, form.original) && existingRefs.some((r) => sameModelRef(r, ref))) {
       errs.modelId = S.models.modelIdExists;
     }
-    if (baseUrlRequired && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
+    if (baseUrlRequired && !form.baseUrl.trim()) errs.baseUrl = S.models.baseUrlRequired;
 
     // Under PUT full-table replace semantics, omitting pricing means deleting it: all three
     // prices must be either all empty or all filled, to avoid a partial entry silently
@@ -2544,28 +3277,68 @@ function ModelDialog({
     ) {
       errs.maxTokens = S.models.maxTokensInvalid;
     }
+    return errs;
+  })();
+  const valid = Object.keys(fieldErrors).length === 0;
+  /**
+   * Whether the dialog holds a change to save: an edit, or the move to the custom group it was
+   * opened to make (that move is where it opened, so closing asks nothing about it).
+   */
+  const changed = draft.dirty || movedToCustom;
+  // Errors show once there is something to save; an empty model id is marked by its asterisk.
+  const shownErrors: FieldErrors =
+    changed && form.modelId.trim() === ""
+      ? { ...fieldErrors, modelId: undefined }
+      : changed
+        ? fieldErrors
+        : {};
+  // A wrong field inside the closed fold opens it, so Save never waits on something out of view.
+  // Keyed on which fields are wrong: a reader who folds it again is left alone until another one is.
+  const foldedWrong = foldedErrors(shownErrors, isNew).join(" ");
+  useEffect(() => {
+    if (foldedWrong !== "") setDetailsOpen(true);
+  }, [foldedWrong]);
 
-    if (Object.keys(errs).length > 0) {
-      setFieldErrors(errs);
-      return null;
-    }
-    setFieldErrors({});
+  /** The row a save sends, from a valid draft: prices back in USD, defaults filled in. */
+  const built = ((): { row: RowState; cancelsPromotion: boolean } | null => {
+    if (!valid) return null;
+    const modelId = form.modelId.trim();
+    const contextWindow = form.contextWindow.trim();
+    const cacheRead = priceToSubmit(form.cacheRead, row?.cacheRead, currency);
+    const cacheWrite = priceToSubmit(form.cacheWrite, row?.cacheWrite, currency);
+    const output = priceToSubmit(form.output, row?.output, currency);
+    // The server cancels the promotion of a row saved with a new price or identity, so the row
+    // drops it too: the card would otherwise keep showing it until the save lands.
+    const cancelsPromotion =
+      row !== null &&
+      (cacheRead !== row.cacheRead ||
+        cacheWrite !== row.cacheWrite ||
+        output !== row.output ||
+        form.provider !== row.provider ||
+        modelId !== row.modelId);
     return {
-      ...form,
-      modelId,
-      // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
-      contextWindow:
-        !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead: priceToSubmit(form.cacheRead, row?.cacheRead, currency),
-      cacheWrite: priceToSubmit(form.cacheWrite, row?.cacheWrite, currency),
-      output: priceToSubmit(form.output, row?.output, currency),
+      row: {
+        ...form,
+        modelId,
+        // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
+        contextWindow:
+          !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
+        cacheRead,
+        cacheWrite,
+        output,
+        ...(cancelsPromotion ? { discount: undefined } : {}),
+      },
+      cancelsPromotion,
     };
-  };
+  })();
+  /** Saving now would cancel the row's running promotion, which is asked about first. */
+  const dropsPromotion = built !== null && built.cancelsPromotion && promotion !== undefined;
 
   /**
-   * Commit one dialog action. Saving a custom-like entry whose protocol is still unset
-   * detects it FIRST and continues with whatever comes back: asking the endpoint is more
-   * reliable than guessing, so it is worth the round-trip.
+   * Commit one dialog action and wait for its answer: the host closes the dialog once the write
+   * lands, and on a failure the dialog stays as it was, draft and all. Saving a custom-like
+   * entry whose protocol is still unset detects it FIRST and continues with whatever comes back:
+   * asking the endpoint is more reliable than guessing, so it is worth the round-trip.
    *
    * A probe that finds nothing no longer blocks (per maintainer: 默认都走兼容类型). The save
    * goes through on the compatible client, with a toast saying that is what happened —
@@ -2574,55 +3347,63 @@ function ModelDialog({
    * either way, because the fallback is a real client.
    *
    * The other actions (set-default / set-vision-proxy / remove) do not probe: they are not
-   * the user saying "this model is ready", and rowToEntry's fallback still applies.
+   * the user saying "this model is ready", and rowToEntry's fallback still applies. Remove
+   * names the row as loaded and writes nothing of the draft; set-default and set-vision-proxy
+   * carry the draft with them, so they wait for it to be valid like Save does.
    */
   const submit = async (action: DialogAction) => {
-    const next = validated();
-    if (!next) return;
-    if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
-      // Joins a run already started from the Detect button rather than probing twice.
-      const detected = await runDetect("save");
-      onSubmit({ ...next, clientType: detected ?? DEFAULT_CUSTOM_CLIENT_TYPE }, action);
-      return;
+    let next: RowState;
+    if (action === "remove") next = form;
+    else if (built !== null) next = built.row;
+    else return;
+    setSaving(true);
+    let closed = false;
+    try {
+      if (needsProtocolDetectOnSave(action, next.provider, next.clientType, inherited)) {
+        // Joins a run already started from the Detect button rather than probing twice.
+        const detected = await runDetect("save");
+        next = {
+          ...next,
+          clientType: detected?.clientType ?? DEFAULT_CUSTOM_CLIENT_TYPE,
+          // The draft was snapshotted before the probe, so a base URL the probe corrected
+          // has to be carried over by hand — otherwise the entry saves a URL the detected
+          // protocol is not served at.
+          ...(detected?.baseUrl !== undefined ? { baseUrl: detected.baseUrl } : {}),
+        };
+      }
+      closed = await onSubmit(next, action);
+    } finally {
+      if (!closed) setSaving(false);
     }
-    onSubmit(next, action);
   };
+  /** Every way out — Cancel, Esc, the ×, a press outside — asks first while the draft holds edits. */
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: saving });
 
   // Provider info for the current group (updates live as the group dropdown
   // changes): the "get model id / API key" links come from it (shown next to
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // env fallback resolves live from the current form (uses the same
-  // resolveModelEnv as the server's getModels): explicit client_type takes
-  // priority, otherwise auto-route by model_id; no fallback if it can't be routed.
-  //
-  // Custom and user-defined groups opt out of the model_id half (per maintainer): typing
-  // `claude-sonnet-5` into a custom group must not quietly imply the Anthropic client and
-  // its ANTHROPIC_* key. Those groups default to the compatible client, which is also what
-  // gets persisted when nothing is picked or detected — so keying the hint off it is what
-  // the entry will actually read after saving.
-  const liveEnvKey = resolveModelEnv(
-    form.modelId.trim(),
-    envHintClientType(form.provider, form.clientType),
-  )?.envKey;
-  // The protocol this group pins on every entry, user-added ones included (vLLM); undefined
-  // for every group that leaves the protocol to auto-routing, a gateway preset, or detection.
-  const pinnedGroupClientType = providerClientType(form.provider);
-  // First-party provider group (built-in, non-gateway, non-custom, no group-level pin):
-  // adding goes through auto-routing — show a hint when the id can't be routed
-  // (doesn't block saving: the routing table evolves with the AgentHub
-  // version, so it's judged at runtime).
-  const vendorGroup =
-    dialogProvider !== undefined &&
-    dialogProvider.id !== "custom" &&
-    dialogProvider.gatewayBaseUrl === undefined &&
-    pinnedGroupClientType === undefined;
-  const autoRouteMiss =
-    vendorGroup &&
-    !form.clientType.trim() &&
-    form.modelId.trim() !== "" &&
-    liveEnvKey === undefined;
+  // The variables a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvironment, which the server's masked preview reads too): what MMSP's routed
+  // client reads, which is nothing for a base URL other than its own default endpoint (a
+  // gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
+  // as its Session would, and the note below says where its requests go. The hint and the
+  // stored-mask block below follow this.
+  const liveEnv = envHintFor(
+    form.provider,
+    form.modelId,
+    form.clientType,
+    form.baseUrl,
+    groupShape(group),
+  );
+  const liveEnvKey = liveEnv.apiKeyEnv;
+  // An id this entry's group cannot place (see unroutableFix). The save is refused by the
+  // server for a new or rekeyed entry, so the warning and its way out are shown before the
+  // attempt; a row that was already stored keeps saving and carries the same warning on its
+  // card.
+  const routingFix = unroutableFix(form.provider, form.modelId, effectiveClientType);
 
   /** Identity section: upstream model id (renamable; "get model id" link next
    * to the label) + display name and group side by side (both editable;
@@ -2635,17 +3416,17 @@ function ModelDialog({
           <FieldLabel required block={false}>
             {S.models.modelId}
           </FieldLabel>
-          <span className="flex shrink-0 items-baseline gap-2.5">
+          <span className="flex shrink-0 items-baseline gap-2">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
-              <a
+              <Link
                 href={dialogProvider.modelsUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getModelIds} ↗
-              </a>
+                {S.models.getModelIds}
+              </Link>
             )}
           </span>
         </span>
@@ -2654,33 +3435,40 @@ function ModelDialog({
           required
           value={form.modelId}
           disabled={!canEdit}
-          invalid={Boolean(fieldErrors.modelId)}
+          invalid={Boolean(shownErrors.modelId)}
           onChange={(e) => set({ modelId: e.target.value })}
           className="font-mono"
           autoFocus={isNew}
           placeholder={S.models.modelIdHint}
         />
-        {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
+        {shownErrors.modelId && <FieldError>{shownErrors.modelId}</FieldError>}
       </label>
-      {autoRouteMiss && (
-        <div
+      {routingFix !== null && (
+        <NoticeStrip
+          tone="attention"
           role="alert"
-          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+          className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
         >
           <span>{S.models.autoRouteNone}</span>
-          <Button
-            size="sm"
-            className="shrink-0"
-            onClick={() =>
-              set({
-                provider: "custom",
-                clientType: clientTypeAfterProviderChange("custom", form.clientType),
-              })
-            }
-          >
-            {S.models.useCustomGroup}
-          </Button>
-        </div>
+          {canEdit && (
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() =>
+                set({
+                  provider: "custom",
+                  clientType: clientTypeAfterProviderChange(
+                    "custom",
+                    form.clientType,
+                    inheritedConnection("custom", form.modelId, providers.custom),
+                  ),
+                })
+              }
+            >
+              {S.models.useCustomGroup}
+            </Button>
+          )}
+        </NoticeStrip>
       )}
       <div className="grid grid-cols-2 gap-2">
         <Input
@@ -2698,10 +3486,25 @@ function ModelDialog({
           disabled={!canEdit}
           onChange={(e) => {
             const provider = e.target.value;
-            set({ provider, clientType: clientTypeAfterProviderChange(provider, form.clientType) });
+            set({
+              provider,
+              clientType: clientTypeAfterProviderChange(
+                provider,
+                form.clientType,
+                inheritedConnection(provider, form.modelId, providers[provider]),
+              ),
+            });
           }}
         >
-          {MODEL_PROVIDERS.map((p) => (
+          {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
+              TokenDance, SiliconFlow, Atlas Cloud, Runcrate), and the group the row was loaded
+              in — a row already in another gateway or a vendor group may stay there, but no
+              other row may be moved into one (the server refuses that as an addition,
+              model_not_addable). The current value stays listed so it is valid. */}
+          {MODEL_PROVIDERS.filter(
+            (p) =>
+              isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,
+          ).map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
             </option>
@@ -2724,220 +3527,130 @@ function ModelDialog({
     </>
   );
 
-  // The variable a blank API key would actually be covered by: no stored key, the entry
-  // routes to a variable (resolved live, so it follows the id / protocol as they are
-  // edited), and that variable is one the server reported a value for. Knowing a variable's
-  // *name* is not knowing it is set — promising an unset one would tell the user to leave
-  // the field empty and leave the model with no key at all.
+  // The variable a blank API key would actually be covered by: no key of the model's own nor
+  // of its group's, the entry routes to a variable (resolved live, so it follows the id /
+  // protocol as they are edited), and that variable is one the server reported a value for.
+  // Knowing a variable's *name* is not knowing it is set — promising an unset one would tell
+  // the user to leave the field empty and leave the model with no key at all.
   const envHintKey =
-    !form.credential?.apiKeyMasked && liveEnvKey !== undefined && detectedEnvKeys.has(liveEnvKey)
+    !form.credential?.apiKeyMasked &&
+    inherited.apiKeySource !== "provider" &&
+    liveEnvKey !== undefined &&
+    detectedEnvKeys.has(liveEnvKey)
       ? liveEnvKey
       : undefined;
-  // Hint for a blank API key: an existing key means keep the original value; a covered
-  // variable means the environment answers for it; neither means there is nothing truthful
-  // to say, so the field carries no placeholder.
-  const apiKeyHint = form.credential?.apiKeyMasked
-    ? S.models.apiKeyKeepHint
-    : envHintKey !== undefined
-      ? S.models.apiKeyEnvHint(envHintKey)
-      : undefined;
-  // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
-  // envHintKey) and this entry actually goes through the provider's own client (the
-  // resolved envKey matches the provider) — entries going through the OpenAI
-  // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
+  const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
+    envKey: envHintKey,
+    // A blank key sent as none (an open MMSP or vLLM server); the variable, where set, wins.
+    keyless: keylessFor(
+      form.provider,
+      form.modelId,
+      form.clientType,
+      form.baseUrl,
+      groupShape(group),
+    ),
+    baseUrlRequired,
+  });
+  // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
+  // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
+  // moonshot) says how to reach the other one, when this entry goes through the provider's
+  // own client (the resolved envKey matches the provider). Any other group's row on a protocol
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
-    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
-      ? S.models.providerEnvNotes[form.provider]
+    envHintKey === undefined
+      ? undefined
+      : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
+        ? S.models.providerEnvNotes[form.provider]
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
+          : undefined;
+  // The add dialog's note on the protocol a new model will speak, inside its Details: the
+  // group's (with blank fields following the group where it also names the endpoint, the user's
+  // own endpoint where it does not), or — a custom / user-defined group with nothing to follow —
+  // how to pick or detect one. A group that sets no protocol routes the model by its id, which
+  // needs no note.
+  const inheritedProtocolName =
+    inherited.clientType !== undefined
+      ? (S.models.protocolNames[inherited.clientType] ?? inherited.clientType)
       : undefined;
+  const addNote =
+    inheritedProtocolName !== undefined
+      ? inherited.baseUrl !== undefined
+        ? S.models.addProtocolHintInherit(inheritedProtocolName)
+        : S.models.addProtocolHintPinned(inheritedProtocolName)
+      : customLikeGroup
+        ? S.models.addProtocolHintDetect
+        : undefined;
 
-  return (
-    <Modal
-      open
-      title={
-        isNew
-          ? vendorGroup
-            ? S.models.addTitleVendor
-            : customLikeGroup
-              ? // Custom / user-defined groups no longer pin one protocol (detection + selector), so the title drops the "(OpenAI protocol)" suffix gateways keep.
-                S.models.addTitleCustom
-              : S.models.addTitle
-          : S.models.editTitle
-      }
-      onClose={onClose}
-      widthClass="sm:max-w-lg"
-      footer={
-        <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          {canEdit && (
-            <Button
-              variant="primary"
-              // Saving may have to probe the endpoint first (protocol still unset), which
-              // is a network round-trip: the label says so and the button locks, matching
-              // the "test connection" convention used inside this dialog.
-              disabled={detecting}
-              onClick={() => {
-                // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
-                if (!validated()) return;
-                if (isNew || row === null) {
-                  void submit("save");
-                  return;
-                }
-                // Nothing changed: report it instead of confirming a no-op write (the
-                // baseline is rebuilt exactly like the form's initial state, so a plain
-                // JSON compare is field-exact).
-                const initial: RowState = {
-                  ...row,
-                  cacheRead: usdToInput(row.cacheRead, currency),
-                  cacheWrite: usdToInput(row.cacheWrite, currency),
-                  output: usdToInput(row.output, currency),
-                };
-                if (JSON.stringify(form) === JSON.stringify(initial)) {
-                  toastInfo(S.common.noChangesToSave);
-                  return;
-                }
-                setConfirming("save");
-              }}
-            >
-              {detecting ? S.models.detecting : S.common.confirm}
-            </Button>
-          )}
-        </>
-      }
-    >
-      <div className="space-y-3">
-        {/* Header: the logo, and beside it one line each for the name, the upstream id and the
-            marks. The marks used to share the name's line, where they pushed a long name into
-            wrapping under them and left the header two ragged lines tall; on a line of their
-            own the name keeps the width it needs. Same pills the cards wear, so the list and
-            the dialog agree about what a mark looks like. The model homepage entry stays a
-            small secondary button on the right — a property of the model, not an input. */}
-        {!isNew && (
-          <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
-            <ProviderLogo
-              provider={form.provider}
-              className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
-            />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium">{modelLabel}</span>
-              {/* Upstream id in small text: when there's no display name the line above is
-                  already showing it, so don't repeat. Tested on the trimmed value, not on
-                  `undefined`: clearing the field leaves an empty string, which is just as
-                  nameless. */}
-              {form.displayName?.trim() && (
-                <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-                  {form.modelId}
-                </span>
-              )}
-              {(isDefault || form.vision || isVisionModel) && (
-                <span className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {isDefault && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.status}`}>{S.models.default}</span>
-                  )}
-                  {form.vision && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
-                      {S.models.visionBadge}
-                    </span>
-                  )}
-                  {isVisionModel && (
-                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
-                      {S.models.visionModelBadge}
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-            {row && modelHomepageUrl(row.provider, row.modelId) && (
-              <a
-                href={modelHomepageUrl(row.provider, row.modelId)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                {S.models.homepage}
-                {/* External-link glyph (opens in a new tab) */}
-                <GlyphIcon d={EXTERNAL_LINK_ICON} />
-              </a>
-            )}
-          </div>
+  /**
+   * The dialog's blocks below the identity fields, each placed in view or inside the Details fold
+   * by foldedSlots: the add dialog folds all of them (a new model follows its group, so the
+   * connection fields are overrides), the settings dialog folds the limits, the prices and the
+   * capability switches.
+   */
+  const slots: Record<ModelDialogSlot, ReactNode> = {
+    // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
+    // before saving) / set default / set as vision proxy model / remove.
+    actions: canEdit && (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
+          {testing ? S.models.testing : S.models.testConnection}
+        </Button>
+        {/* Setting the default or the vision model writes the draft with it, so those two wait
+            for it to be valid, like Save; removing writes nothing of the draft. */}
+        {!isNew && !isDefault && (
+          <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
+            {S.models.setDefault}
+          </Button>
         )}
-
-        {/* Adding a model: protocol note first (preset direct-vendor group = only the
-            vendor's official protocol, named via the group label — the in-field suffix
-            on the base URL below says which path; a group that pins a protocol = that
-            protocol, named outright, plus its own endpoint; custom / self-defined group /
-            gateway = fixed OpenAI protocol), then the identity fields ("get model id /
-            API key" links next to the respective inputs; fill in the id to test
-            connectivity — verify before saving). */}
-        {isNew && (
+        {!isNew && form.vision && !isVisionModel && (
+          <Button
+            size="sm"
+            title={S.models.visionModelHint}
+            data-tooltip-extra
+            disabled={saving || !valid}
+            onClick={() => setConfirming("setVisionModel")}
+          >
+            {S.models.setVisionModel}
+          </Button>
+        )}
+        {!isNew && (
           <>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {vendorGroup && dialogProvider
-                ? S.models.vendorProtocolHint(dialogProvider.label)
-                : pinnedGroupClientType !== undefined
-                  ? S.models.addProtocolHintPinned(pinnedGroupClientType)
-                  : customLikeGroup
-                    ? S.models.addProtocolHintDetect
-                    : S.models.addProtocolHint}
-            </p>
-            {identityFields}
+            <span className="min-w-0 flex-1" />
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={saving}
+              onClick={() => setConfirming("remove")}
+            >
+              {S.models.remove}
+            </Button>
           </>
         )}
-
-        {/* Model-level actions pinned at the top: test connectivity (for a new model,
-            fill in the id and key to verify before saving) / set default / set as
-            vision proxy model / remove. */}
-        {canEdit && (
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                disabled={testing || !form.modelId.trim()}
-                onClick={() => void runTest()}
-              >
-                {testing ? S.models.testing : S.models.testConnection}
-              </Button>
-              {!isNew && !isDefault && (
-                <Button size="sm" onClick={() => setConfirming("setDefault")}>
-                  {S.models.setDefault}
-                </Button>
-              )}
-              {!isNew && form.vision && !isVisionModel && (
-                <Button
-                  size="sm"
-                  title={S.models.visionModelHint}
-                  onClick={() => setConfirming("setVisionModel")}
-                >
-                  {S.models.setVisionModel}
-                </Button>
-              )}
-              {!isNew && (
-                <>
-                  <span className="min-w-0 flex-1" />
-                  <Button size="sm" variant="danger" onClick={() => setConfirming("remove")}>
-                    {S.models.remove}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 1) API key — the most commonly used, placed first in the field section; "get API key"
-            link next to the label. PasswordInput carries its own show/hide toggle and brings its
-            own <label> wrapper, so this outer container is a <div> (a nested <label> is invalid). */}
+      </div>
+    ),
+    // API key — "get API key" link next to the label. PasswordInput carries its own show/hide
+    // toggle and brings its own <label> wrapper, so this outer container is a <div> (a nested
+    // <label> is invalid).
+    apiKey: (
+      <div className="space-y-1">
         <div className="block">
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <FieldLabel block={false}>{S.models.apiKey}</FieldLabel>
             {dialogProvider?.apiKeyUrl && (
-              <a
+              <Link
                 href={dialogProvider.apiKeyUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getApiKey} ↗
-              </a>
+                {S.models.getApiKey}
+              </Link>
             )}
           </span>
           <PasswordInput
@@ -2962,14 +3675,11 @@ function ModelDialog({
               </span>
             )}
             {canEdit && (
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={form.clearApiKey}
-                  onChange={(e) => set({ clearApiKey: e.target.checked })}
-                />
-                {S.models.clearApiKey}
-              </label>
+              <Checkbox
+                checked={form.clearApiKey}
+                onChange={(on) => set({ clearApiKey: on })}
+                label={S.models.clearApiKey}
+              />
             )}
           </div>
         )}
@@ -2977,185 +3687,162 @@ function ModelDialog({
             rule): the created-at position says where the key comes from instead, and there is
             no clear control — an environment variable cannot be cleared from here. Typing a new
             key hides this like the stored block; once saved, the stored key takes priority and
-            the display switches to the stored form. */}
-        {!form.credential?.apiKeyMasked && form.envKeyMasked !== undefined && !form.apiKeyInput && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span className="font-mono">{form.envKeyMasked}</span>
-            <span className="text-gray-400">{S.models.readFromEnv}</span>
-          </div>
-        )}
-
-        {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
-            baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
-            client appends to the base URL — the endpoint shape a custom URL must serve; it
-            renders for every model and stays while the field is empty (hints the shape before
-            typing). Reuses the unit-adornment idiom of the context window / max tokens fields
-            below; the error text sits outside the relative wrapper (see Input.invalid).
-
-            For custom / user-defined groups that suffix IS the protocol SELECTOR (see
-            protocol-suffix.tsx): the path is one-to-one with the three generic protocol
-            clients, so picking one reuses it instead of taking a form row of its own.
-            Elsewhere (preset groups, read-only viewers) it stays the plain grey label it has
-            always been.
-
-            The detect ACTION sits at this field's top-right instead, next to the label — the
-            same idiom as the API key field's "get API key" link above (per maintainer). It is
-            gated on the API key, and a disabled row buried inside the suffix menu could not
-            say so where the user is looking.
-
-            A <div>, not a <label>: the picker is a <button>, and a label may not contain a
-            second labelable element besides its control — the click would fire the button AND
-            re-focus the input. Same shape as the API key block above; the input carries an
-            aria-label so it stays named. */}
-        <div className="block">
-          {showProtocolPicker ? (
-            <span className="mb-1 flex items-baseline justify-between gap-2">
-              <FieldLabel required={baseUrlRequired} block={false}>
-                {S.models.baseUrl}
-              </FieldLabel>
-              {/* Always live: no API key is needed (the server falls back to the stored key
-                  and then to the protocol's env var), and anything that does go wrong is
-                  explained in a popup. `detecting` only guards re-entrancy. */}
-              <button
-                type="button"
-                disabled={detecting}
-                onClick={() => void detectFromButton()}
-                title={S.models.detectProtocolHint}
-                className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
-              >
-                {detecting && (
-                  <span
-                    aria-hidden
-                    className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                  />
-                )}
-                {detecting ? S.models.detecting : S.models.detectProtocol}
-              </button>
-            </span>
-          ) : (
-            <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+            the display switches to the stored form. The mask is the SAVED row's: once the draft
+            resolves to another variable or to none (a proxy base URL typed over a vendor row),
+            it is hidden rather than left promising a key the draft will not have. */}
+        {!form.credential?.apiKeyMasked &&
+          form.envKeyMasked !== undefined &&
+          liveEnvKey === form.envKey &&
+          !form.apiKeyInput && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span className="font-mono">{form.envKeyMasked}</span>
+              <span className="text-gray-400">{S.models.readFromEnv}</span>
+            </div>
           )}
-          <div className="relative">
-            <Input
+      </div>
+    ),
+    // Base URL (required for custom / user-defined groups and explicit openai protocol — see
+    // baseUrlRequired). The in-field suffix at the right edge shows the protocol path the client
+    // appends to the base URL — the endpoint shape a custom URL must serve; it renders for every
+    // model and stays while the field is empty. For custom / user-defined groups that suffix IS
+    // the protocol SELECTOR (protocol-suffix.tsx). The detect ACTION sits at this field's
+    // top-right, next to the label. A <div>, not a <label>: the picker is a <button>, and a
+    // label may not contain a second labelable element besides its control; the input carries
+    // an aria-label so it stays named. No detection verdict is rendered under the field (both
+    // outcomes are toasts, and the suffix shows where the protocol ended up), so the idle and
+    // post-detection layouts are identical.
+    baseUrl: (
+      <div className="block">
+        {showProtocolPicker ? (
+          <span className="mb-1 flex items-baseline justify-between gap-2">
+            <FieldLabel required={baseUrlRequired} block={false}>
+              {S.models.baseUrl}
+            </FieldLabel>
+            {/* Always live: no API key is needed (the server falls back to the stored key
+                and then probes anonymously), and anything that does go wrong is
+                explained in a popup. `detecting` only guards re-entrancy. */}
+            <Button
+              variant="link"
               size="sm"
-              aria-label={S.models.baseUrl}
-              required={baseUrlRequired}
-              value={form.baseUrl}
-              disabled={!canEdit}
-              invalid={Boolean(fieldErrors.baseUrl)}
-              // Editing the URL retires the previous run's verdict: it described the old
-              // endpoint, and leaving it up would keep asserting a result for a URL that is
-              // no longer in the field.
-              onChange={(e) => {
-                setDetectFailed(false);
-                set({ baseUrl: e.target.value });
-              }}
-              // Detection on leaving the field (custom / user-defined groups): only a
-              // probeable URL the user actually changed in this dialog triggers a run —
-              // typing never fires requests, and a click-through must not rewrite a working
-              className="font-mono"
-              // Reserve room so the typed URL never slides under the suffix. Input and
-              // suffix share the same monospace size, so the suffix width is its display
-              // width in ch (CJK placeholder glyphs count double), plus the right offset
-              // and — for the interactive version — its padding, gap and chevron. The
-              // picker never changes width between states, so this holds for all of them.
-              style={{
-                paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
-              }}
-              // The read-only suffix is hover-transparent (pointer-events-none), so the
-              // explanation rides on the input's title; the picker carries its own.
-              title={S.models.baseUrlSuffixTitle}
-              placeholder={preset ? S.models.baseUrlHint : "https://…"}
-            />
-            {showProtocolPicker ? (
-              <div className="absolute inset-y-0 right-1 flex items-center">
-                <ProtocolSuffixMenu
-                  value={protocolChoice}
-                  path={suffixLabel}
-                  detecting={detecting}
-                  tone={detectFailed ? "warn" : null}
-                  onPick={pickProtocol}
-                />
-              </div>
-            ) : (
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
-                {protocolPath}
-              </span>
-            )}
-          </div>
-          {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
-          {/* No detection verdict is rendered here (per maintainer): a result must not take
-              up room in the form. Both outcomes are toasts, and where the protocol ENDED UP
-              is already visible in the suffix above, which is the thing that actually holds
-              it. Nothing conditional remains below the field, so the idle and post-detection
-              layouts are identical — no reserved height, no shift. */}
-        </div>
-
-        {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
-            sits inside each box as a muted right suffix. Placeholders cannot scroll, so at
-            this half width they carry only a short line; the full explanation lives in the
-            input's title (hover) — the owner explicitly prefers saving the vertical space
-            over a visible hint line. Only field errors appear under a cell. Max output
-            tokens: per-model cap on the request's output — when set it wins over the
-            Agent's system_config value; empty inherits it (lets a small-context local
-            model stay under its window). */}
-        <div className="grid grid-cols-2 items-start gap-2">
-          <label className="block">
-            <FieldLabel>{S.models.contextWindow}</FieldLabel>
-            <span className="relative block">
-              <Input
-                size="sm"
-                value={form.contextWindow}
-                inputMode="numeric"
-                disabled={!canEdit}
-                invalid={Boolean(fieldErrors.contextWindow)}
-                onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
-                // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
-                title={
-                  preset
-                    ? S.models.contextWindowHint
-                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                }
-                placeholder={
-                  preset
-                    ? S.models.contextWindowHint
-                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                }
+              loading={detecting}
+              onClick={() => void detectFromButton()}
+              title={S.models.detectProtocolHint}
+              data-tooltip-extra
+              className="shrink-0"
+            >
+              {detecting ? S.models.detecting : S.models.detectProtocol}
+            </Button>
+          </span>
+        ) : (
+          <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+        )}
+        <div className="relative">
+          <Input
+            size="sm"
+            aria-label={S.models.baseUrl}
+            required={baseUrlRequired}
+            value={form.baseUrl}
+            disabled={!canEdit}
+            invalid={Boolean(shownErrors.baseUrl)}
+            // Editing the URL retires the previous run's verdict: it described the old
+            // endpoint, and leaving it up would keep asserting a result for a URL that is
+            // no longer in the field.
+            onChange={(e) => {
+              setDetectFailed(false);
+              set({ baseUrl: e.target.value });
+            }}
+            className="font-mono"
+            // Reserve room so the typed URL never slides under the suffix. Input and
+            // suffix share the same monospace size, so the suffix width is its display
+            // width in ch (CJK placeholder glyphs count double), plus the right offset
+            // and — for the interactive version — its padding, gap and chevron. The
+            // picker never changes width between states, so this holds for all of them.
+            style={{
+              paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
+            }}
+            // The read-only suffix is hover-transparent (pointer-events-none), so the
+            // explanation rides on the input's title; the picker carries its own.
+            title={S.models.baseUrlSuffixTitle}
+            placeholder={baseUrlHint}
+          />
+          {showProtocolPicker ? (
+            <div className="absolute inset-y-0 right-1 flex items-center">
+              <ProtocolSuffixMenu
+                value={protocolChoice}
+                path={suffixLabel}
+                detecting={detecting}
+                tone={detectFailed ? "warn" : null}
+                follow={followGroup}
+                onPick={pickProtocol}
               />
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                {S.models.tokenUnit}
-              </span>
+            </div>
+          ) : (
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
+              {protocolPath}
             </span>
-            {fieldErrors.contextWindow && <FieldError>{fieldErrors.contextWindow}</FieldError>}
-          </label>
-          <label className="block">
-            <FieldLabel>{S.models.maxTokens}</FieldLabel>
-            <span className="relative block">
-              <Input
-                size="sm"
-                value={form.maxTokens}
-                inputMode="numeric"
-                disabled={!canEdit}
-                invalid={Boolean(fieldErrors.maxTokens)}
-                onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
-                // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
-                title={S.models.maxTokensTitle}
-                placeholder={S.models.maxTokensHint}
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                {S.models.tokenUnit}
-              </span>
-            </span>
-            {fieldErrors.maxTokens && <FieldError>{fieldErrors.maxTokens}</FieldError>}
-          </label>
+          )}
         </div>
-
-        {/* 4) Pricing: three fields side by side with self-contained labels (… price) — no
-            standalone section heading; currency and unit (/M tok) are shown inside the input.
-            Errors land right under the offending field (which is also outlined red): with
-            three fields side by side, only sticking close to the field makes clear which one it is. */}
+        {shownErrors.baseUrl && <FieldError>{shownErrors.baseUrl}</FieldError>}
+      </div>
+    ),
+    // Context window + max output tokens side by side (one row): the "Token" unit sits inside
+    // each box as a muted right suffix. Placeholders cannot scroll, so at this half width they
+    // carry only a short line; the full explanation lives in the input's title (hover). Max
+    // output tokens: per-model cap on the request's output — when set it wins over the Agent's
+    // system_config value; empty inherits it (lets a small-context local model stay under its
+    // window).
+    limits: (
+      <div className="grid grid-cols-2 items-start gap-2">
+        <Input
+          label={S.models.contextWindow}
+          size="sm"
+          value={form.contextWindow}
+          inputMode="numeric"
+          disabled={!canEdit}
+          error={shownErrors.contextWindow}
+          onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
+          // Half-width cell: the placeholder is wider than the box in English, and an input
+          // clips at its padding box, so an unclipped one runs past the value area and collides
+          // with the unit. `truncate` ends it in an ellipsis instead, which reads as "there is
+          // more" rather than as text colliding; the title has it in full.
+          className="truncate font-mono"
+          affix={{ trailing: S.models.tokenUnit }}
+          // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
+          title={
+            preset
+              ? S.models.contextWindowHint
+              : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+          }
+          placeholder={
+            preset
+              ? S.models.contextWindowHint
+              : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+          }
+        />
+        <Input
+          label={S.models.maxTokens}
+          size="sm"
+          value={form.maxTokens}
+          inputMode="numeric"
+          disabled={!canEdit}
+          error={shownErrors.maxTokens}
+          onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
+          // Truncated for the same reason as the context window beside it.
+          className="truncate font-mono"
+          affix={{ trailing: S.models.tokenUnit }}
+          // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
+          title={S.models.maxTokensTitle}
+          placeholder={S.models.maxTokensHint}
+        />
+      </div>
+    ),
+    // Pricing: three fields side by side with self-contained labels (… price) — no standalone
+    // section heading; currency and unit (/M tok) are shown inside the input. Errors land right
+    // under the offending field. The fields hold the list price, not the promotional price the
+    // card prints: the promotion is stored apart and taken off when usage is priced, which the
+    // line under them says, since typing a different price cancels it.
+    pricing: (
+      <div className="space-y-1">
         <div className="grid grid-cols-3 items-start gap-2">
           {(
             [
@@ -3164,161 +3851,251 @@ function ModelDialog({
               ["output", S.models.priceOutput, form.output],
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
           ).map(([key, label, value]) => (
-            <label key={key} className="block">
-              <FieldLabel>{label}</FieldLabel>
-              <span className="relative block">
-                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
-                  {CURRENCY_SYMBOL[currency]}
-                </span>
-                <Input
-                  size="sm"
-                  value={value}
-                  inputMode="decimal"
-                  disabled={!canEdit}
-                  invalid={Boolean(fieldErrors[key])}
-                  onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                  className="pl-4 pr-11 text-right font-mono"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                  {S.models.priceUnitShort}
-                </span>
-              </span>
-              {fieldErrors[key] && <FieldError>{fieldErrors[key]}</FieldError>}
-            </label>
+            <Input
+              key={key}
+              label={label}
+              size="sm"
+              value={value}
+              inputMode="decimal"
+              disabled={!canEdit}
+              error={shownErrors[key]}
+              onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
+              className="text-right font-mono"
+              affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+              placeholder={S.models.priceBlankHint}
+            />
           ))}
         </div>
+        {promotion !== undefined && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.models.promotionPriceHint(Math.round(promotion * 100))}
+          </p>
+        )}
+      </div>
+    ),
+    // Capability switches — vision support and fast mode side by side on one row, reusing the
+    // dialog's two-up grid. `items-start` keeps both cells top-aligned when only one of them
+    // grows a muted hint line. Each switch is optional, so the row itself is conditional and a
+    // lone switch takes the whole width (toggleCellClass).
+    capabilities: showCapabilityRow && (
+      <div className="grid grid-cols-2 items-start gap-2">
+        {/* Vision capability: for preset models it's flagged by the built-in catalog
+            (read-only, so no cell at all); custom models toggle it here — an iOS-style
+            switch sitting inline right next to the label. Only the OFF state shows one small
+            muted line: images are then read via the configured vision proxy model. */}
+        {showVision && (
+          <div className={toggleCellClass}>
+            {/* Detect sits inline after the switch, next to the setting it fills in. Always
+                clickable, single-flight, toast-only, like protocol detection; it just costs a
+                real (tiny) completion, so it never runs on its own. `flex-wrap` lets the
+                trigger drop onto its own line inside a half-width cell. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <label
+                className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
+              >
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                  {S.models.vision}
+                </span>
+                <Switch
+                  checked={form.vision}
+                  disabled={!canEdit}
+                  onChange={(vision) => set({ vision })}
+                  aria-label={S.models.vision}
+                />
+              </label>
+              {canEdit && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  loading={visionDetecting}
+                  onClick={() => void detectVisionFromButton()}
+                  title={S.models.detectVisionHint}
+                  data-tooltip-extra
+                  className="shrink-0"
+                >
+                  {visionDetecting ? S.models.detectingVision : S.models.detectVision}
+                </Button>
+              )}
+            </div>
+            {!form.vision && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.visionOffProxyHint}
+              </p>
+            )}
+          </div>
+        )}
 
-        {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
+        {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
+            pricing). Offered only where MMSP's routed client actually puts the parameter on
+            the wire (fastModeProtocol). The one small muted line appears in the non-default
+            (ON) state, and the label's hover title reveals it before toggling. Enabling is
+            confirmed (premium billing), disabling is immediate. */}
+        {showFastMode && (
+          <div className={toggleCellClass}>
+            <label
+              className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
+              data-tooltip={S.models.fastModeHint}
+              data-tooltip-extra
+            >
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.fastMode}
+              </span>
+              <Switch
+                checked={form.fastMode}
+                disabled={!canEdit}
+                onChange={(fastMode) => {
+                  // Only the ON direction is confirmed: it is the one that starts spending
+                  // at premium rates. Turning it off costs nothing and must stay one click
+                  // — it is the documented escape from a model that rejects the parameter.
+                  if (fastMode) setConfirmingFastMode(true);
+                  else set({ fastMode: false });
+                }}
+                aria-label={S.models.fastMode}
+              />
+            </label>
+            {form.fastMode && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.fastModeHint}
+              </p>
+            )}
+            {/* Reachable only for a stored annotation the rule would not have offered (a
+                hand-edited config, `--fast-mode`, or an id renamed after the fact): the
+                switch is kept visible precisely so it can be turned off, and says why it
+                should be. */}
+            {form.fastMode && fastProtocol === undefined && (
+              <p className={`mt-1 text-xs ${toneInk.attention}`}>{S.models.fastModeUnsupported}</p>
+            )}
+          </div>
+        )}
+      </div>
+    ),
+  };
+  const folded = foldedSlots(isNew);
+  /** The blocks in view (`false`) or in the fold (`true`), in the dialog's order; absent ones skipped. */
+  const slotNodes = (inFold: boolean) =>
+    MODEL_DIALOG_SLOTS.filter((slot) => folded.has(slot) === inFold && slots[slot]).map((slot) => (
+      <Fragment key={slot}>{slots[slot]}</Fragment>
+    ));
+
+  return (
+    <Modal
+      open
+      title={isNew ? S.models.addTitle : S.models.editTitle}
+      onClose={requestClose}
+      // The group settings' width: the longest catalog endpoint and its protocol path read
+      // whole in the base URL field.
+      widthClass="sm:max-w-3xl"
+      footer={
+        <>
+          <Button size="sm" disabled={saving} onClick={requestClose}>
+            {S.common.cancel}
+          </Button>
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="primary"
+              // Live once there is a change and nothing is wrong with it. Saving may have to
+              // probe the endpoint first (protocol still unset), which is a network round-trip:
+              // the label says so, matching the "test connection" convention in this dialog.
+              disabled={!changed || !valid || saving || detecting}
+              onClick={() => {
+                if (dropsPromotion) setConfirming("save");
+                else void submit("save");
+              }}
+            >
+              {detecting ? S.models.detecting : isNew ? S.models.addAction : S.common.save}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {/* Header: the logo, and beside it one line each for the name, the upstream id and the
+            marks. The marks used to share the name's line, where they pushed a long name into
+            wrapping under them and left the header two ragged lines tall; on a line of their
+            own the name keeps the width it needs. Same pills the cards wear, so the list and
+            the dialog agree about what a mark looks like. The model homepage entry stays a
+            small secondary button on the right — a property of the model, not an input. */}
+        {!isNew && (
+          <div className="flex items-center gap-3 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+            <ProviderLogo
+              provider={form.provider}
+              className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="truncate text-sm font-medium">{modelLabel}</span>
+              {/* Upstream id in small text: when there's no display name the line above is
+                  already showing it, so don't repeat. Tested on the trimmed value, not on
+                  `undefined`: clearing the field leaves an empty string, which is just as
+                  nameless. */}
+              {form.displayName?.trim() && (
+                <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                  {form.modelId}
+                </span>
+              )}
+              {(isDefault || form.vision || isVisionModel) && (
+                <span className="flex flex-wrap items-center gap-1 pt-0.5">
+                  {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
+                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
+                  {isVisionModel && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
+                  )}
+                </span>
+              )}
+            </div>
+            {row && modelHomepageUrl(row.provider, row.modelId) && (
+              <a
+                href={modelHomepageUrl(row.provider, row.modelId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${buttonClass("secondary", "sm")} shrink-0`}
+              >
+                {S.models.homepage}
+                {/* External-link glyph (opens in a new tab) */}
+                <GlyphIcon d={ICONS.externalLink} />
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Adding a model: the identity fields alone are in view (the "get model id" link next
+            to the id); everything else is in Details, since a new model follows its group. */}
+        {isNew && identityFields}
+
+        {/* In view on a saved model: its actions, the API key and the base URL. */}
+        {slotNodes(false)}
+
+        {/* Identity on a saved model: model id (renamable) + display name and group. */}
         {!isNew && identityFields}
-        {/* Legacy entries carrying a client_type other than the standard openai-chat
-            (historical config): read-only display. Compared canonically so the deprecated
-            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either,
-            skipped when the protocol selector above already represents it (generic protocol
-            types in custom-like groups are editable there), and skipped when the value IS
-            the group's own pin — that is this group's normal protocol, not a leftover from
-            an older config, and "kept as configured" would misdescribe it. */}
+        {/* An entry pinned to a protocol the dialog cannot edit — a pin outside a custom-like
+            group or a client outside the picker's (a Penguin Go row the platform added, a
+            vLLM-adapter row in a custom group), or a pin from an older config: read-only
+            display. Compared canonically so the deprecated bare "openai" spelling (pre-0.4.2
+            configs) is not flagged either, skipped when the protocol selector above already
+            represents it (the picker's protocols in custom-like groups are editable there), and
+            skipped when the value IS what the model would follow anyway — that is this group's
+            normal protocol, not a leftover from an older config, and "kept as configured" would
+            misdescribe it. */}
         {!isNew &&
           !preset &&
           !showProtocolSelector &&
           form.clientType &&
-          form.clientType !== pinnedGroupClientType &&
+          form.clientType !== inherited.clientType &&
           canonicalClientType(form.clientType) !== "openai-chat" && (
             <p className="text-xs text-gray-400 dark:text-gray-500">
               {S.models.clientTypeLocked(form.clientType)}
             </p>
           )}
 
-        {/* 6) Capability switches — vision support and fast mode side by side on one row,
-            reusing the dialog's two-up grid (same `grid grid-cols-2 items-start gap-2` as the
-            context-window / max-tokens row above, which already carries two full inputs at
-            phone width; two compact switches are strictly narrower). `items-start` keeps both
-            cells top-aligned when only one of them grows a muted hint line, and the hint text
-            wraps inside its half-width cell rather than overflowing. Each switch is optional,
-            so the row itself is conditional and a lone switch takes the whole width
-            (toggleCellClass) — the layout must not depend on both being present. */}
-        {showCapabilityRow && (
-          <div className="grid grid-cols-2 items-start gap-2">
-            {/* Vision capability: for preset models it's flagged by the built-in catalog
-                (read-only, so no cell at all); custom models toggle it here — an iOS-style
-                switch sitting inline right next to the label (per owner: no full-row stretch,
-                no standing explanation text). Only the OFF state shows one small muted line:
-                images are then read via the configured vision proxy model (read_file hands them to it). */}
-            {showVision && (
-              <div className={toggleCellClass}>
-                {/* Detect sits inline after the switch — the protocol control's idiom, but next
-                    to the setting it fills in rather than at a field's top-right, since this row
-                    has no field to hang off. Always clickable, single-flight, toast-only, like
-                    protocol detection; it just costs a real (tiny) completion, so it never runs
-                    on its own. `flex-wrap` is what lets the switch and the trigger share a
-                    half-width cell: when they do not both fit, the trigger drops onto its own
-                    line inside the cell instead of widening the grid column. */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <label
-                    className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  >
-                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                      {S.models.vision}
-                    </span>
-                    <Switch
-                      checked={form.vision}
-                      disabled={!canEdit}
-                      onChange={(vision) => set({ vision })}
-                      aria-label={S.models.vision}
-                    />
-                  </label>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      disabled={visionDetecting}
-                      onClick={() => void detectVisionFromButton()}
-                      title={S.models.detectVisionHint}
-                      className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
-                    >
-                      {visionDetecting && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                        />
-                      )}
-                      {visionDetecting ? S.models.detectingVision : S.models.detectVision}
-                    </button>
-                  )}
-                </div>
-                {!form.vision && (
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    {S.models.visionOffProxyHint}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
-                pricing). Offered only where AgentHub's routed client actually puts the
-                parameter on the wire (fastModeProtocol) — a model whose client rejects it
-                would otherwise arm a switch that kills the next turn. Same inline-switch shape
-                as vision; the one small muted line appears in the non-default (ON) state, and
-                the label's hover title reveals it before toggling. Enabling is confirmed
-                (premium billing), disabling is immediate. */}
-            {showFastMode && (
-              <div className={toggleCellClass}>
-                <label
-                  className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  title={S.models.fastModeHint}
-                >
-                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                    {S.models.fastMode}
-                  </span>
-                  <Switch
-                    checked={form.fastMode}
-                    disabled={!canEdit}
-                    onChange={(fastMode) => {
-                      // Only the ON direction is confirmed: it is the one that starts spending
-                      // at premium rates. Turning it off costs nothing and must stay one click
-                      // — it is the documented escape from a model that rejects the parameter.
-                      if (fastMode) setConfirmingFastMode(true);
-                      else set({ fastMode: false });
-                    }}
-                    aria-label={S.models.fastMode}
-                  />
-                </label>
-                {form.fastMode && (
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    {S.models.fastModeHint}
-                  </p>
-                )}
-                {/* Reachable only for a stored annotation the rule would not have offered (a
-                    hand-edited config, `--fast-mode`, or an id renamed after the fact): the
-                    switch is kept visible precisely so it can be turned off, and says why it
-                    should be. */}
-                {form.fastMode && fastProtocol === undefined && (
-                  <p className={`mt-1 text-xs ${toneInk.attention}`}>
-                    {S.models.fastModeUnsupported}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Details: the limits, the prices and the capability switches — and, when adding,
+            the connection overrides and the connectivity test too (foldedSlots). Closed on
+            every open; a wrong field inside it opens it. */}
+        <DetailsFold open={detailsOpen} onToggle={() => setDetailsOpen((open) => !open)}>
+          {isNew && addNote !== undefined && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">{addNote}</p>
+          )}
+          {slotNodes(true)}
+        </DetailsFold>
       </div>
 
       {/* Premium-billing warning, stacked on the config dialog the same way: fast mode moves
@@ -3337,6 +4114,8 @@ function ModelDialog({
             setConfirmingFastMode(false);
             set({ fastMode: true });
           }}
+          confirmLabel={S.common.confirm}
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">{S.models.fastModeConfirmBody}</p>
           {fastProtocol === "anthropic" && (
@@ -3347,101 +4126,34 @@ function ModelDialog({
         </ConfirmModal>
       )}
 
-      {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
+      {/* Confirmation before an action that writes config (set default / set as vision proxy
+          model / remove), or a save that cancels a running promotion: stacked on top of the
+          config dialog. Losing the promotion or the row is what the danger tone marks. */}
       {confirming && (
         <ConfirmModal
           open
           title={CONFIRM_TITLE[confirming]()}
-          tone={confirming === "remove" ? "danger" : "primary"}
+          tone={confirming === "remove" || confirming === "save" ? "danger" : "primary"}
           onClose={() => setConfirming(null)}
           onConfirm={() => {
             const action = confirming;
             setConfirming(null);
             void submit(action);
           }}
+          confirmLabel={
+            confirming === "remove"
+              ? S.common.delete
+              : confirming === "save"
+                ? S.common.save
+                : S.common.confirm
+          }
+          cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {CONFIRM_BODY[confirming](modelLabel)}
+            {CONFIRM_BODY[confirming](modelLabel, Math.round((promotion ?? 0) * 100))}
           </p>
         </ConfirmModal>
       )}
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Set a single API key for an entire provider group
-// ---------------------------------------------------------------------------
-
-/** Write the same API key to every model in a provider group (one account's key is usually valid for all of that provider's models). */
-function GroupKeyDialog({
-  provider,
-  count,
-  detectedEnvKeys,
-  onClose,
-  onSubmit,
-}: {
-  provider: ModelProviderInfo;
-  count: number;
-  /** Env-fallback variables the server reported a value for (see detectedEnvKeys). */
-  detectedEnvKeys: ReadonlySet<string>;
-  onClose: () => void;
-  onSubmit: (apiKey: string) => void;
-}) {
-  const [key, setKey] = useState("");
-  return (
-    <Modal
-      open
-      title={S.models.groupApiKeyTitle(provider.label)}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={!key.trim()} onClick={() => onSubmit(key.trim())}>
-            {S.common.confirm}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-2">
-        <Input
-          size="sm"
-          label={S.models.apiKey}
-          required
-          type="password"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          className="font-mono"
-          autoComplete="off"
-          autoFocus
-          // Only promise the variable when the server reported a value for it: the group's
-          // variable name is always known, which says nothing about whether it is set.
-          placeholder={
-            detectedEnvKeys.has(provider.envKey)
-              ? S.models.apiKeyEnvHint(provider.envKey)
-              : undefined
-          }
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {S.models.groupApiKeyHint(count)}
-        </p>
-        {/* Default endpoint note (zhipu / moonshot): same wording as the single-model dialog's env fallback hint. */}
-        {S.models.providerEnvNotes[provider.id] && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            {S.models.providerEnvNotes[provider.id]}
-          </p>
-        )}
-        {provider.apiKeyUrl && (
-          <a
-            href={provider.apiKeyUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-block text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
-            {S.models.getApiKey} ↗
-          </a>
-        )}
-      </div>
     </Modal>
   );
 }
@@ -3464,12 +4176,15 @@ type OAuthPhase = "starting" | "ready" | "waiting" | "failed" | "done";
 const OAUTH_POLL_MS = 2000;
 
 /**
- * Mint a fresh API key for a whole provider group by authorizing in the browser.
+ * Mint a fresh group key for a provider group by authorizing in the browser: it is written as
+ * the group's key, which every model without a key of its own uses.
  *
  * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
  * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
  * routes back — the provider redirects to the server (polled here), or, when that redirect
- * cannot reach the harness, the user carries a one-time code across by hand.
+ * cannot reach the harness, the user carries a one-time code across by hand. The server has
+ * the last word on which: it opens a manual flow when the provider would refuse to redirect to
+ * the address this page is served from, and the dialog follows the flow it was given.
  */
 function ModelOAuthDialog({
   projectId,
@@ -3480,17 +4195,26 @@ function ModelOAuthDialog({
 }: {
   projectId: string;
   provider: ModelProviderInfo;
-  /** Models in the group; every one of them gets the new key. */
+  /** Models in the group with no key of their own: the ones that will use the new group key. */
   count: number;
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  /** The route back the user picked. */
   const [manual, setManual] = useState(false);
+  /**
+   * Set once a redirect was asked for and the server opened a manual flow: the provider does not
+   * redirect to this address (plain HTTP to anything but loopback), so the code is the only way
+   * back for as long as the dialog is open, and the switch to the redirect is withdrawn.
+   */
+  const [redirectRefused, setRedirectRefused] = useState(false);
+  /** Whether the flow in hand takes the code by hand rather than through the redirect. */
+  const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
-  /** How many models the key was written to — the sentence the `done` phase reports. */
+  /** How many models use the group key the flow wrote — the sentence the `done` phase reports. */
   const [applied, setApplied] = useState(0);
   /** Bumped to reopen a flow after a failure; switching modes reopens one too (the URL differs). */
   const [attempt, setAttempt] = useState(0);
@@ -3515,6 +4239,7 @@ function ModelOAuthDialog({
           mode: manual ? "manual" : "callback",
         });
         if (cancelled) return;
+        if (!manual && res.mode === "manual") setRedirectRefused(true);
         setFlow(res);
         setPhase("ready");
       } catch (e) {
@@ -3531,7 +4256,7 @@ function ModelOAuthDialog({
   // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
   // A flow that has expired answers 404, which reads the same as never coming back.
   useEffect(() => {
-    if (phase !== "waiting" || manual || flow === null) return;
+    if (phase !== "waiting" || byHand || flow === null) return;
     let stopped = false;
     const tick = async (): Promise<void> => {
       try {
@@ -3561,12 +4286,12 @@ function ModelOAuthDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [phase, manual, flow, projectId, count]);
+  }, [phase, byHand, flow, projectId, count]);
 
   const openAuthorizePage = (): void => {
     if (flow === null) return;
     window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
-    if (!manual) setPhase("waiting");
+    if (!byHand) setPhase("waiting");
   };
 
   const submitCode = async (): Promise<void> => {
@@ -3592,11 +4317,12 @@ function ModelOAuthDialog({
 
   const primary =
     phase === "failed" ? (
-      <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+      <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
-    ) : manual ? (
+    ) : byHand ? (
       <Button
+        size="sm"
         variant="primary"
         disabled={flow === null || phase === "waiting" || !code.trim()}
         onClick={() => void submitCode()}
@@ -3604,7 +4330,7 @@ function ModelOAuthDialog({
         {S.models.oauthSubmitCode}
       </Button>
     ) : (
-      <Button variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
+      <Button size="sm" variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
         {S.models.oauthAuthorize}
       </Button>
     );
@@ -3618,10 +4344,14 @@ function ModelOAuthDialog({
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
         // is already written.
         phase === "done" ? (
-          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.close}
+          </Button>
         ) : (
           <>
-            <Button onClick={onClose}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={onClose}>
+              {S.common.cancel}
+            </Button>
             {primary}
           </>
         )
@@ -3637,10 +4367,12 @@ function ModelOAuthDialog({
             {S.models.oauthIntro(provider.label, count)}
           </p>
         )}
-        {phase !== "done" && manual && (
+        {phase !== "done" && byHand && (
           <>
-            <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
-              <GlyphIcon d={SIGN_IN_ICON} size={13} />
+            {/* In the dialog body, directly above the code Input: it takes the same rung the
+                field does, not the page-level md. */}
+            <Button size="sm" variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
+              <GlyphIcon d={ICONS.signIn} size={13} />
               {S.models.oauthAuthorize}
             </Button>
             <Input
@@ -3654,21 +4386,17 @@ function ModelOAuthDialog({
             />
           </>
         )}
-        {phase === "waiting" && !manual && (
+        {phase === "waiting" && !byHand && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {phase !== "done" && (
-          <button
-            type="button"
-            onClick={() => setManual((v) => !v)}
-            className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
+        {phase !== "done" && !redirectRefused && (
+          <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
-          </button>
+          </Button>
         )}
       </div>
     </Modal>

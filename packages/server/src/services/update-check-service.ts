@@ -12,12 +12,27 @@
  * network call), for air-gapped or privacy-sensitive deployments.
  *
  * The request mirrors the CLI's fetchLatestVersion (packages/cli/src/commands/update.ts):
- * same endpoint, same accept / user-agent header shape, same 15s timeout — the server
+ * same endpoint, same accept / user-agent headers, same 15s timeout — the server
  * cannot import the CLI package (the dependency runs the other way), hence the small
  * duplication. fetch and the clock are injectable so tests never touch the network.
  */
-import { BUILD_DATE, VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
+import {
+  BUILD_DATE,
+  VERSION,
+  compareVersions,
+  normalizeVersion,
+  userAgent,
+} from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse } from "../api/types.js";
+import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "../auth/middleware.js";
+import type { Hono } from "hono";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import { versionRoutes } from "../http/routes/version.js";
+import type { Clock, Config } from "../hmr/capabilities.js";
+import { processRestart } from "./process-restart.js";
+import type { UpdateJob } from "./update-job.js";
+import type { HarnessHistoryIface } from "./harness-history.js";
 
 /** Repository the released artifacts come from (same slug as cli/update.ts's REPO_SLUG). */
 const REPO_SLUG = "Prism-Shadow/penguin-harness";
@@ -29,27 +44,29 @@ export const SUCCESS_TTL_MS = 60 * 60 * 1000;
 /** How long a failed lookup is served from cache (short: transient failures should heal). */
 export const FAILURE_TTL_MS = 10 * 60 * 1000;
 
-export interface UpdateCheckServiceOptions {
-  /** Test double for the network call (defaults to global fetch). */
-  fetchImpl?: typeof fetch;
-  /** Injectable clock for TTL determinism in tests. */
-  now?: () => Date;
-  /** Environment to read PENGUIN_UPDATE_CHECK from (defaults to process.env). */
-  env?: Record<string, string | undefined>;
+/** The network, as the update check reaches it; a test stands in a canned one. */
+@Interface()
+export abstract class HttpFetch {
+  abstract fetch(
+    input: string,
+    init?: Opaque<"RequestInit", RequestInit>,
+  ): Promise<Opaque<"Response", Response>>;
+}
+@Component()
+export class GlobalFetch implements HttpFetch {
+  fetch(input: string, init?: RequestInit): Promise<Response> {
+    return fetch(input, init);
+  }
 }
 
-export class UpdateCheckService {
-  private readonly fetchImpl: typeof fetch;
-  private readonly now: () => Date;
-  private readonly env: Record<string, string | undefined>;
+@Component()
+export class UpdateCheckService implements UpdateCheck {
+  @Use() private readonly http!: HttpFetch;
+  @Use() private readonly clock!: Clock;
+  /** Environment to read PENGUIN_UPDATE_CHECK from; a test wires its own. */
+  private env: Record<string, string | undefined> = process.env;
   private cached: { response: UpdateCheckResponse; expiresAt: number } | null = null;
   private inflight: Promise<UpdateCheckResponse> | null = null;
-
-  constructor(options: UpdateCheckServiceOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.now = options.now ?? (() => new Date());
-    this.env = options.env ?? process.env;
-  }
 
   /**
    * Never throws; never makes a network call when disabled or (without `force`) while
@@ -71,11 +88,11 @@ export class UpdateCheckService {
         updateAvailable: false,
         releaseUrl: null,
         publishedAt: null,
-        checkedAt: this.now().toISOString(),
+        checkedAt: this.clock.now().toISOString(),
         disabled: true,
       };
     }
-    if (!force && this.cached && this.now().getTime() < this.cached.expiresAt) {
+    if (!force && this.cached && this.clock.now().getTime() < this.cached.expiresAt) {
       return this.cached.response;
     }
     this.inflight ??= this.lookup().finally(() => {
@@ -88,7 +105,7 @@ export class UpdateCheckService {
   private async lookup(): Promise<UpdateCheckResponse> {
     const response = await this.resolveLatest();
     const ttl = response.error === undefined ? SUCCESS_TTL_MS : FAILURE_TTL_MS;
-    this.cached = { response, expiresAt: this.now().getTime() + ttl };
+    this.cached = { response, expiresAt: this.clock.now().getTime() + ttl };
     return response;
   }
 
@@ -99,7 +116,7 @@ export class UpdateCheckService {
    * without a usable tag_name is "bad_response".
    */
   private async resolveLatest(): Promise<UpdateCheckResponse> {
-    const checkedAt = this.now().toISOString();
+    const checkedAt = this.clock.now().toISOString();
     const base = { currentVersion: VERSION, buildDate: BUILD_DATE, checkedAt };
     const failure = (error: "network" | "rate_limited" | "bad_response"): UpdateCheckResponse => ({
       ...base,
@@ -112,8 +129,8 @@ export class UpdateCheckService {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(LATEST_RELEASE_API, {
-        headers: { accept: "application/vnd.github+json", "user-agent": "penguin-server" },
+      res = await this.http.fetch(LATEST_RELEASE_API, {
+        headers: { accept: "application/vnd.github+json", "user-agent": userAgent() },
         signal: AbortSignal.timeout(15_000),
       });
     } catch {
@@ -137,5 +154,37 @@ export class UpdateCheckService {
       releaseUrl: typeof body.html_url === "string" ? body.html_url : null,
       publishedAt: typeof body.published_at === "string" ? body.published_at : null,
     };
+  }
+}
+
+export abstract class UpdateCheck extends Interface<Pick<UpdateCheckService, "check">>() {}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "VersionModule.routes",
+        prefix: "/api/version",
+        auth: "user",
+        order: 20,
+      },
+    ],
+  },
+})
+export class VersionRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly updateCheck!: UpdateCheck;
+  @Use() private readonly updateJob!: UpdateJob;
+  @Use() private readonly history!: HarnessHistoryIface;
+  @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = versionRoutes({
+      config: this.config,
+      updateCheck: this.updateCheck,
+      updateJob: this.updateJob,
+      // The platform's own, claimed from nothing: the environment and the process it runs in.
+      restart: processRestart(),
+      history: this.history,
+    });
   }
 }

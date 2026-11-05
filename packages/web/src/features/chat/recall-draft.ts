@@ -13,7 +13,7 @@
  *   (see ChatInput's toggleGoal), so keeping the chip would park the restored files behind
  *   a Send that can never enable — and by the time the composer sees them, their scratchpad
  *   copies are already deleted server-side, making the chips the only copy left. Images
- *   never release the chip: a goal carries them (folded into the objective as path lines).
+ *   never release the chip: a goal carries them on its round-1 message.
  */
 export interface RecalledDraftMerge {
   /** The new draft body: recalled text in front, the current draft behind. */

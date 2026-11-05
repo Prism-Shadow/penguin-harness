@@ -1,11 +1,11 @@
 ---
 title: Tools & Approval
-description: The deliberately minimal built-in toolset, its execution contract with centralized close-out, and per-call approval audited in the Trace.
+description: How the built-in tools run under one execution contract, how each call is approved and audited in the Trace, and how MCP servers join them.
 ---
 
-## Design
+PenguinHarness ships a deliberately minimal built-in toolset. Dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing, because line-numbered output and exact-string replacement beat quoting `sed` one-liners. The shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns the schema Tokens it costs.
 
-PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing — line-numbered output and exact-string replacement beat quoting `sed` one-liners — while the shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns its schema tokens.
+The Environment runs every tool call through one shared contract and handles the close-out centrally. This page covers that contract first, then the per-tool configuration, the 7 built-in tools and their background behavior, the per-call approval recorded in the Trace, and how to customize the toolset and add MCP servers.
 
 ## Execution contract
 
@@ -15,45 +15,79 @@ Every built-in tool implements the same `BuiltinTool` interface (`packages/core/
 interface BuiltinTool {
   name: string;
   definition: ToolDefinitionConfig;
+  detachable?: boolean; // has a background form a running call can be moved to (exec_command, run_subagent)
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolExecutionContext {
   workspaceDir: string;
   toolCallId: string;
   signal?: AbortSignal;
+  detachSignal?: AbortSignal; // fires when the host asks this call to continue as a background task
   approve?: ApproveFn; // forwarded to tools that spawn child Sessions (approval inheritance)
 }
 
 interface ToolResult {
-  stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
+  status?: ToolStatus; // the tool's self-reported result status (lowest priority, see below)
   note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
 ```
 
-A tool only yields incremental `partial_tool_call_output` deltas; the Environment handles the close-out centrally:
+A tool only yields incremental `partial_tool_call_output` deltas. The Environment handles the close-out centrally:
 
 - streaming framing (start / stop) and `tool_call_id` threading;
-- timeout merging, and head+tail-window truncation once output exceeds `maxOutputLength` (default 16000 characters): the budget splits in half, the head window streams live, and the last tail window arrives at finalization after a `[output truncated: kept first H and last T of C chars]` marker — the total C tells the model whether the recovery file is worth reading; output that ends past the head window but within the budget is flushed verbatim at finalization instead, with no marker;
-- stop_reason priority: user interrupt > timeout > tool throw > tool self-report;
-- never-empty output (`[no output]` is substituted when a tool produced nothing);
-- `note` (e.g. the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
+- timeouts, and head-and-tail truncation once output exceeds `maxOutputLength` (default 16000 characters);
+- the result's `status` priority: user interrupt > timeout > tool throw > tool self-report. A user interrupt ends the call as `aborted`, with the output produced so far and the interruption note; a timeout or a throw ends it as `fatal`;
+- never-empty output: `[no output]` is substituted when a call produced no text and no note;
+- `note` (for example the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
-Tools and the Environment never throw into the engine: errors collapse into `tool_call_output` messages the model can read and react to. See the [OmniMessage Protocol](/omni-message) for message structure.
+Truncation splits the budget in half. The head window streams live. At finalization, the Environment emits a `[output truncated: kept first H and last T of C chars]` marker followed by the tail window. The total `C` tells the model whether the [recovery file](#recovering-oversized-output) is worth reading. Output that ends past the head window but within the budget is flushed verbatim at finalization instead, with no marker.
+
+Tools and the Environment never throw into the engine. Errors become `tool_call_output` messages the model can read and react to. A call whose arguments do not fit the tool ends as `fatal`, and its whole output is a correction guide:
+
+- the fault;
+- the argument names received, with unknown ones called out;
+- the tool's parameters, restated from its schema;
+- the shape of a correct call.
+
+That is enough to repair the call from the output alone. For message structure, see [AMSP Records](/amsp-records).
 
 ### Recovering oversized output
 
-When tool text in an Agent Session exceeds `maxOutputLength`, the model and Web/CLI still receive the same head and tail windows, counting truncation marker, and terminal marker, and the streaming invariant that user-visible output equals model-visible output does not change. Environment also appends a short archive status/path note outside that visible-output cap and saves a Session-owned recovery file. The file is exact within the per-call archive budget and otherwise contains bounded head/tail windows. This is the complete text **received by Environment**: a producer such as a command or subagent session may already have replaced overflow with an `[..., N chars of earlier output dropped ...]` marker in its own bounded unread buffer, and the downstream archive cannot recover text lost before that point.
+When tool text in an agent Session exceeds `maxOutputLength`, the model, the Web App and the CLI still receive the same head and tail windows, the counting truncation marker and the terminal marker. The streaming invariant that user-visible output equals model-visible output does not change.
 
-The Agent can inspect ordinary multiline archives with the existing `read_file` (`offset` / `limit`). For byte tails or very long lines, it must construct a targeted shell command such as `rg` / `tail`; no dedicated retrieval tool is added. The note carries a plain absolute path, always the last element inside the bracket. On Windows it is written with forward slashes: `exec_command` runs through (Git) Bash and Node's fs APIs accept them, so one spelling works in JSON tool arguments and shell commands alike; POSIX paths pass through unchanged, and Session paths are ordinary absolute paths (never `\\?\`-prefixed), so the separator swap is lossless. As with any path, quote it inside shell commands when it contains spaces. The same spelling rule covers every path core composes for the model — the system prompt's App Data Dir / CWD lines, `[attached image/file: …]` lines and the goal-file line (`modelVisiblePath` in the SDK).
+Beyond that visible cap, the Environment appends a short archive status or path note and saves a recovery file owned by the Session. The file holds the exact text within the per-call archive budget, and bounded head and tail windows beyond it. It is the complete text **received by the Environment**: a producer such as a command or subagent session may already have replaced overflow in its own bounded unread buffer with a `[... N chars of earlier output dropped ...]` marker, and the archive cannot recover text lost before that point.
 
-Recovery files live under the Session's `scratchpad/<session-id>/truncated-tool-output/`, are created only after actual truncation, and use private permissions where the platform supports them. One call stores at most 8 MiB (the production byte limit is one byte lower so `read_file` remains below its 8 MiB scan cap); larger output keeps bounded head/tail windows in the file with an explicit middle-gap marker. The limit is per call only: a Session has no aggregate archive byte or file-count quota, and concurrent captures independently retain up to one call's budget. Files remain readable across Tasks, runtime disposal, and Session resume until explicit Session deletion removes the entire scratchpad; no separate archive cleanup lifecycle is added.
+The agent reads ordinary multiline archives with the existing `read_file` (`offset` / `limit`). For byte tails or very long lines, it builds a targeted shell command such as `rg` or `tail`; there is no dedicated retrieval tool.
 
-Recovery files contain the unredacted tool text received by Environment. Accidentally reading credentials or other sensitive data can therefore increase local at-rest retention from the visible windows to the archive budget. Trace does not duplicate those bytes, but it records the same absolute Session path shown to the model and Web/CLI, exposing the host's data-root layout. Archive-write failure never changes the original tool's `stop_reason`; the visible note and stderr warning carry only a short error code (and stderr's tool name), not the path or raw error message.
+The note carries a plain absolute path, always the last element inside the bracket. On Windows the path uses forward slashes: `exec_command` runs through (Git) Bash and Node's fs APIs accept them, so one spelling works in JSON tool arguments and shell commands alike. POSIX paths pass through unchanged, and Session paths are ordinary absolute paths (never `\\?\`-prefixed), so swapping the separator loses nothing. As with any path, quote it in shell commands when it contains spaces.
+
+The same spelling rule covers every path core composes for the model:
+
+- the system prompt's App Data Dir / CWD lines;
+- `[attached image/file: …]` lines;
+- the goal-file line (`modelVisiblePath` in the SDK).
+
+| Property | Recovery file behavior |
+| --- | --- |
+| Location | `scratchpad/<session-id>/truncated-tool-output/`, under the Session |
+| Creation | Only after actual truncation |
+| Permissions | Private where the platform supports them |
+| Per-call size | At most 8 MiB; the production byte limit is one byte lower so `read_file` stays below its 8 MiB scan cap |
+| Larger output | Bounded head and tail windows with an explicit middle-gap marker |
+| Quota | Per call only: a Session has no total byte or file-count quota, and concurrent captures each keep up to one call's budget |
+| Lifetime | Readable across Tasks, runtime disposal and Session resume, until explicit Session deletion removes the whole scratchpad; there is no separate archive cleanup |
+
+> [!WARNING]
+> Recovery files contain the unredacted tool text the Environment received. If a tool accidentally reads credentials or other sensitive data, the local copy on disk grows from the visible windows to the archive budget.
+
+The Trace does not duplicate those bytes. It does record the same absolute Session path shown to the model, the Web App and the CLI, which exposes the host's data-root layout.
+
+A failed archive write never changes the original tool's `status`. The visible note and the stderr warning carry only a short error code (plus the tool name on stderr), never the path or the raw error message.
 
 ## Configuration fields
 
@@ -65,39 +99,53 @@ Each tool is described by one `ToolDefinitionConfig`:
 | `description` | Tool description handed to the model |
 | `parameters` | JSON Schema of the arguments |
 | `permission` | `"r"` read-only / `"rw"` read-write |
-| `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models (no built-in entry sets it — `read_file` serves both classes) |
+| `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class. Omitted means available to all models. No built-in entry sets it, because `read_file` serves both classes |
 | `timeoutMs` | Per-call timeout (ms), default 120000; `<=0` disables |
 | `maxOutputLength` | Output length cap (characters); `<=0` disables |
-| `call_description` | Per-tool toggle for the `description` call argument declared in `parameters` (required while on); missing = kept, `false` filters it and its `required` entry out of the schema at assembly |
+| `call_description` | Per-tool switch for the `description` call argument declared in `parameters` (required while on). Missing means kept; `false` removes the property and its `required` entry from the schema at assembly |
 
 ## Built-in tools
 
-There are 7 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 7 built-in tools, assembled through `packages/core/src/environment/tools/registry.ts`:
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
-| `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
+| `exec_command` | rw | 120000 | Run a shell command in the Workspace (through `bash -lc` where bash exists), streaming stdout/stderr |
 | `input_command` | rw | 120000 | Drive a command session by `process_id`: write stdin, send Ctrl-C, poll output, or terminate it (`kill: true`) |
-| `read_file` | r | 60000 | Read a text file as a line-numbered (`cat -n`) window paged by offset/limit, or an image (path or URL) as image content — described in text by the `vision_model` for a text-only model |
-| `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
+| `read_file` | r | 60000 | Read a text file as a line-numbered (`cat -n`) window paged by offset/limit, or an image (path or URL) as image content; for a text-only model, the `vision_model` describes the image in text |
+| `edit_file` | rw | 30000 | Replace an exact string in an existing file, echoing a diff of the change |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
-| `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
+| `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, steer it mid-run, stop its current run, or continue it with a follow-up prompt |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (e.g. the file tools) or newer arguments (`run_in_background`, `kill`, `abort`) automatically — and entries for since-removed tools (`kill_command`, `kill_subagent`, `read_image`, `describe_image`) simply stop assembling: a model calling them gets the standard unknown-tool failure. A stored `read_file` entry from before it read images keeps its old description and timeout (the implementation behind it already reads images) — hand-edit the agent's `system_config.yaml` (copy the entries from the default definitions in `packages/core/src/state/default-config.ts`) or run the kernel update from the agent's settings page to adopt the current definitions.
+An existing agent's stored `tools.builtin` list stays exactly as written; the settings UI edits rows but adds none. As a result:
+
+- Agents created before this toolset do not pick up newer tools (for example the file tools) or newer arguments (`run_in_background`, `kill`, `abort`) automatically.
+- Entries for removed tools (`kill_command`, `kill_subagent`, `read_image`, `describe_image`) simply stop being assembled. A model that calls one gets the standard unknown-tool failure.
+- A stored `read_file` entry from before it read images keeps its old description and timeout, although the implementation behind it already reads images.
+
+To adopt the current definitions, edit the agent's `system_config.yaml` by hand, copying the entries from the defaults in `packages/core/src/state/default-config.ts`. **Update kernel** on the agent's settings page rewrites the list only while the **Tools** tab is absent or still an unedited old default; **Restore default configuration** always does, but resets the whole config. See [Kernel updates](/configuration#kernel-updates).
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command and subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, which the CLI and the Web App show while the call runs.
+
+The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml`, because tool schemas live entirely in the editable config. It is **required** there, so a tool that offers the argument always gets one. The frontends can then choose a call's display form from the schema instead of guessing while the arguments stream, and the model is asked to emit the argument first.
+
+The per-entry `call_description` field switches the whole feature. Missing means kept; `call_description: false` removes the property and its `required` entry from the schema at assembly time. This happens in memory only; the YAML is never rewritten.
+
+The file tools do not take the argument, because their `file_path` already says what the call is about.
 
 ### Command sessions
 
-`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`. With `run_in_background: true` it skips the foreground window entirely: the call returns the `process_id` immediately, and when the process exits its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)). `input_command` with `kill: true` terminates a session either way — a process is a real OS object that IS destroyed, so termination is a parameter of the access tool rather than a tool of its own:
+`exec_command` waits in the foreground first. If the command outlasts `yield_time_ms`, it moves to the background, and the call returns the output so far plus a `process_id`; from then on `input_command` drives it. With `run_in_background: true`, `exec_command` skips the foreground window: the call returns the `process_id` at once, and when the process exits, its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)).
+
+`input_command` with `kill: true` terminates a session started either way. A process is a real OS object that does get destroyed, so termination is a parameter of the access tool rather than a tool of its own:
 
 ```text
 exec_command(cmd)
   ├─ finishes within the foreground window (yield_time_ms, default 60000)
-  │        ──► full output + exit code
+  │        ──► full output (+ an exit-code or signal note when it failed)
   ├─ still running ──► backgrounds, returns output so far + process_id
   │                  │
   │  input_command(process_id[, chars]) ──► write stdin / send Ctrl-C / poll
@@ -107,12 +155,14 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
+A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; either way the call ends `completed`, because the exit status is the command's result, not the tool's failure. `fatal` is kept for the tool's own failures: a timeout, a spawn error, a throw.
+
 The tools' arguments (explicit keys):
 
 ```ts
 // exec_command
 {
-  cmd: string;             // required: the shell command to run
+  cmd: string;             // required: the shell command to run (also accepted as `command`; the schema names only `cmd`)
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
   run_in_background?: boolean; // true = return process_id immediately; completion arrives as a user message
@@ -129,13 +179,35 @@ The tools' arguments (explicit keys):
 }
 ```
 
-On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the foreground command. On Windows there is no console signal delivery to a piped child process, so Ctrl-C degrades to a hard kill of the whole command session tree (`taskkill /t /f`) — the foreground command and every child it started terminate, instead of the foreground command being interrupted.
+**Shell.** Commands run through `bash -lc` wherever a bash exists, and the system prompt tells the model which shell is active. `PENGUIN_SHELL` (an executable name or path) overrides the choice on every platform. Otherwise the shell is picked in this order:
+
+- On POSIX: `bash` on PATH, then the usual absolute bash locations, then the `$SHELL` login shell, then `sh`.
+- On Windows: a `bash` on PATH that is not the WSL launcher (for example Git for Windows), then the bundled MinGit bash, then `pwsh`, then `powershell`.
+
+**Ctrl-C.** On POSIX, Ctrl-C sends `SIGINT` to the session's process group, which interrupts the foreground command. Windows cannot deliver a console signal to a piped child process, so Ctrl-C becomes a hard kill of the whole command session tree (`taskkill /t /f`): the foreground command and every child it started terminate, instead of only the foreground command being interrupted.
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. A symlinked path is followed to the file it names — reads, edits and writes all land on that file, and the link stays a link. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
+`read_file` / `edit_file` / `write_file` are harness code, but every file-system effect they have — a stat, a read, an atomic write, a directory listing, a symlink resolution, and `read_file`'s download of an image URL — goes through a file-system port. Relative paths resolve against the Workspace, and absolute paths are allowed. A symlinked path is followed to the file it names: reads, edits and writes all land on that file, and the link stays a link. `read_file` refuses the secret stores `.vault.toml` and `.project_config.toml`, matched by file name in any directory and after following symlinks.
 
-`read_file` reads images as well as text. A png/jpeg/gif/webp file up to 5MB — recognized by its magic number, then by its extension — or an http(s) URL in `file_path` (a URL is only ever an image source; the response content-type is consulted first) takes the image branch, and what comes back depends on the Session model's vision flag: a model that accepts images gets the image itself as image content (the text output is a one-line `image/png, 123.4 kB`), while a text-only model gets the Project's configured `vision_model` answering `prompt` (default: a detailed description), streamed as the tool's text output — the image never enters that Session's history. Without a `vision_model`, an image read on a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models). The branch is decided by the `VisionDescriberService` the SDK injects into the Environment for text-only Sessions only, so one config entry (no `forModel`) serves both model classes.
+In a Session the [sandbox](/settings#sandbox) confines, the port is a helper process the same confiner wraps that wraps a command: the harness starts a Node process with the helper's program inline (`node -e …`, builtin modules only, so nothing has to ship beside a bundle) under the same policy and scope — the Workspace and the Session's scratchpad — and the tools' operations cross to it as JSON lines on its stdin and stdout. What the tools can do is then exactly what a command can: the backend that bounds the Session's commands bounds them, mask paths included, and a download follows the network level. One helper serves a Session: it starts at the first confined file operation, is reused for the rest, is started over when the Session's policy changes or after a crash, is killed when a call is aborted (the sandbox may be stalling that operation), and stops with the Session. A refused write comes back as the kernel's permission error, and the tool names the sandbox so the next attempt can take another route:
+
+```text
+Failed to write "/etc/hosts": EROFS: read-only file system, open '/etc/hosts' — refused by this session's sandbox, which does not allow that here.
+```
+
+Under the WSL backend the helper runs inside the distro, which the initialization installs `nodejs` into: Windows drive paths are mapped to their `/mnt/<drive>` spelling on the way in and back on the way out. A distro initialized before `nodejs` joined the package list needs initializing again. Without a sandbox, as when the SDK or the CLI runs standalone or the sandbox is off, the port is the harness process itself and the tools run with the user's full permissions, like the shell tool.
+
+`edit_file` and `write_file` serialize per file within the server process, keyed by the file's real path, so a symlink and its target count as one file. Parallel edits of one file are applied one after another, and an `old_string` that an earlier edit removed fails to match instead of overwriting it. Writes from other processes are outside this lock.
+
+`read_file` reads images as well as text. A file whose magic number or extension says image takes the image branch, and so does an http(s) URL in `file_path`; a URL is only ever an image source. The format is decided by the file's bytes (magic number) only: a png, jpeg, gif or webp up to 5MB is read, and anything else, such as an SVG, a HEIC photo or a renamed web page, is refused with a hint to convert it to PNG or JPEG first. Neither the extension nor the response's content-type decides the format.
+
+What comes back depends on the Session model's vision flag:
+
+- A model that accepts images gets the image itself as image content, and the text output is one line giving its format and byte size, such as `image/png, 123.4 kB`. If the provider then rejects the request, the engine sends it again without the image (see [Retryable and fatal failures](/agent-loop#retryable-and-fatal-failures)) and leaves a fixed note in the tool output saying so; the provider's error reaches the model through the retry's `[request_error]` line (see [Automatic reconnect](/agent-loop#automatic-reconnect)).
+- A text-only model gets the Project's `vision_model` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. If the vision model refuses the image, the tool output carries the same causes and advice. Without a `vision_model`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
+
+The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes. A model that accepts images is handed `read_file` without `prompt`: assembly drops the argument from the schema in memory, as `call_description: false` drops `description`, and the YAML is never rewritten.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -146,7 +218,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
@@ -171,9 +243,31 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### Subagents
 
-`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent`; the child's pending approvals surface while the poll waits. `input_subagent` covers four gestures: an empty `prompt` polls; a `prompt` sent while the child **runs** is injected mid-run as a steering message (the same mechanism as a user interjecting into the main session — delivered as a `[user_steering]` message at the child's next step, recorded in the child's Trace with sender `parent_agent`); a `prompt` sent while it is idle continues the same session with a follow-up round; and `abort: true` stops the child's **current run only** — the session survives for steering and follow-ups, and combined with a `prompt` it interrupts and redirects. The model-facing output of every `input_subagent` access is the child's **most recent complete reply** — an idempotent “what it last said” snapshot rather than an incremental drain. With `run_in_background: true` the launch returns the `subagent_id` immediately and every model-initiated round's completion arrives as an automatic user message (panel-started and explicitly aborted rounds stay silent; see [Background completion reports](#background-completion-reports)). There is **no kill for subagents**: like the main agent, a subagent session is never destroyed — releasing an idle one only frees its slot, and a released `subagent_id` **revives automatically** when messaged again (the model's access and the panel's share the same resume path).
+`run_subagent` hands a subtask you can fully specify in one prompt to a child agent. It has the same two-phase shape as a command: after the foreground window (default 300000ms) the child moves to the background with a `subagent_id`, and `input_subagent` drives it from there. The child's pending approvals surface while a poll waits.
 
-The Web App's subagents panel drives a selected child with the **same composer as the main conversation** (its subagent variant): the text body, skills and slash skill commands, a thinking-level picker (pins the child Session, effective from its next model context), the context ring (the child's own usage), the locked-model badge, and the approval-mode selector — which edits the parent session's mode, the one child approvals are actually judged by. A message is simply a user input on the child, whatever its state: steering while it runs, a follow-up round while it is idle, and a **revival** when the session was already released — the server resumes the child session (its own history, model and Workspace) and re-manages it, so the conversation just continues. The action button's stop face aborts only the child's current run. Everything converges on the same core channel as `input_subagent`, and the panel's running marks follow the server's live child states rather than the transcript.
+`input_subagent` covers four actions:
+
+1. An empty `prompt` polls.
+2. A `prompt` sent while the child **runs** is injected mid-run as a steering message. This is the same mechanism as a user interjecting in the main session: the message arrives as `[user_steering]` at the child's next step and is recorded in the child's Trace with sender `parent_agent`.
+3. A `prompt` sent while the child is idle continues the same session with a follow-up round.
+4. `abort: true` stops the child's **current run only**. The session survives for steering and follow-ups; combined with a `prompt`, it interrupts and redirects.
+
+Every `input_subagent` call returns the child's **most recent complete reply** to the model: an idempotent snapshot of what it last said, not an incremental drain.
+
+With `run_in_background: true`, the launch returns the `subagent_id` immediately, and the completion of every round the model started arrives as an automatic user message. Rounds started from the panel and rounds ended by an explicit abort stay silent (see [Background completion reports](#background-completion-reports)).
+
+There is **no kill for subagents**. Like the main agent's session, a subagent session is never destroyed. Releasing an idle one only frees its slot, and a released `subagent_id` **revives automatically** when it is messaged again; the model and the panel share the same resume path.
+
+The Web App's subagents panel drives a selected child with the **same composer as the main conversation**, in its subagent variant:
+
+- the message body;
+- Skills and slash Skill commands;
+- a thinking-level picker, which pins the child Session from its next LLM request;
+- the context ring, showing the child's own usage;
+- the locked-model badge;
+- the approval-mode selector, which edits the parent Session's mode, since that is the mode child approvals are judged by.
+
+A message is a user input to the child, whatever its state: steering while it runs, a follow-up round while it is idle, and a **revival** when the session was already released. To revive a child, the server resumes the child Session (its own history, model and Workspace) and manages it again, so the conversation simply continues. The action button's stop face aborts only the child's current run. All of this goes through the same core channel as `input_subagent`, and the panel's running marks follow the server's live child states rather than the transcript.
 
 ```ts
 // run_subagent
@@ -200,49 +294,87 @@ The Web App's subagents panel drives a selected child with the **same composer a
 ```
 
 - Depth is capped at 1: a subagent cannot spawn another subagent.
-- The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level (unless `thinking_level` picks another — lower for cheap mechanical subtasks, higher for hard analysis), and Workspace — never the Project defaults.
-- The child Session inherits the parent Agent's approval callback, so the approval mode follows the parent.
-- The child Session gets its own Trace, linked from the parent by a `subagent` pointer event; child messages stream back into the parent flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
+- The child Session follows the parent Session, never the Project defaults: its model (unless `model_id` / `provider` pick another) and its Workspace.
+- The thinking level also follows the parent unless `thinking_level` picks one (lower for cheap mechanical subtasks, higher for hard analysis). The child inherits the parent Session's level from creation, or else the level the parent's current context opened with. A level set on the parent Session mid-conversation is not passed down.
+- The child Session inherits the parent agent's approval callback, so the approval mode follows the parent.
+- The child Session gets its own Trace, linked from the parent by a `subagent` pointer event. Child messages stream back into the parent's flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
 
 ### Background completion reports
 
-A task launched with `run_in_background: true` reports its completion as a **user message injected by the harness** — the model does not need to poll. The message opens with a `[background_task_done]` marker block (kind, id, status, one-line detail) followed by what ran and the tail of its yet-undelivered output (capped at 4000 characters; the Web App collapses the block into a one-line notice). Its `text` payload carries `sender: "harness"`, distinguishing it from human input in the Trace (see [OmniMessage](/omni-message)).
+A task launched with `run_in_background: true`, and a running call the user [moved to the background](/chat#send-a-tool-call-to-the-background) from its card in the Web App, both report their completion as a **user message injected by the harness**. The model does not need to poll.
 
-Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A command terminated through `input_command`'s `kill` sends no report — that call's own result already carries the outcome — and neither does a subagent round ended by an explicit `abort` (the aborter reads the outcome directly). Reports cover **model-initiated rounds only** — the `run_in_background` launch and `input_subagent` follow-ups; a round the user starts from the subagents panel is their own conversation with the child and sends no report (its answer text stays in the model-facing buffer for the next poll).
+A call the user moved to the background says so in its own result. The note tells the model to leave the work alone (no polling, no input) and to move on to other work or end the turn. The user moved it precisely so the model would not follow it up, and the completion arrives on its own.
 
-A stop is reported, but not as a failure. A command ended on purpose reports `status: stopped` — the user's **Stop** button in the Web App's process list, a stop signal that arrived from outside (`SIGTERM`/`SIGINT`/`SIGHUP`: a Ctrl-C in a terminal sharing its process group, a `pkill`, a supervisor shutting a dev server down), or a stop the harness itself forced (a capacity eviction, an idle reap) — and its marker block says in as many words that nobody should restart it unasked. The conversation does need to hear that the dev server it started is down; worded `failed` it reads like a crash instead, and the reasonable response to a crashed dev server is to start it again, undoing the stop somebody just asked for. `failed` stays for outcomes nobody asked for: a spawn error, a non-zero exit, a hard kill or a fault signal (an OOM kill, a segfault).
+The message opens with a `[background_task_done]` marker block (kind, id, status and a one-line detail), followed by what ran and the output, capped at 4000 characters: for a command, the tail of its not-yet-delivered output; for a subagent, the end of the child's latest complete reply. The Web App shows the block as a collapsible notice. The message's `text` payload carries `sender: "harness"`, which distinguishes it from human input in the Trace (see [AMSP Records](/amsp-records)).
 
-A background subagent's lifecycle is decoupled from the call that launched it: its abort scope is its own (a per-run `abort` ends a round; the session itself leaves only with the parent Session, and even a capacity-released one can be revived), its messages stream to the frontend live through the launching Session (same origin-tagged channel a foreground window relays), and its tool approvals resolve through the launching call's own approval callback as a standing sink — so an `allow-all` launch runs unattended, and a failure still ends in a `status: failed` report rather than a child parked forever.
+When the report is delivered depends on the Session:
+
+- **A Task is running:** the report rides the next turn boundary. A final reply that is already streaming does not lose it; the Task continues for one more turn to react.
+- **The Session is idle:** the hosting server starts a new Task that carries the report. SDK embedders subscribe through `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get the report prepended to the next run.
+
+No report is sent for:
+
+- a command terminated through `input_command`'s `kill`, because that call's own result already carries the outcome;
+- a subagent round ended by an explicit `abort`, because the caller that aborted it reads the outcome directly;
+- a round the user starts from the subagents panel, which is the user's own conversation with the child. Its answer text stays in the model-facing buffer for the next poll. Reports cover **model-initiated rounds only**: the `run_in_background` launch and `input_subagent` follow-ups.
+
+**Stopped is not failed.** A command ended on purpose reports `status: stopped`, and its marker block says plainly that nobody should restart it unasked. Deliberate stops are:
+
+- the user's **Stop** button in the Web App's process list;
+- a stop signal from outside (`SIGTERM` / `SIGINT` / `SIGHUP`), such as a Ctrl-C in a terminal sharing the process group, a `pkill`, or a supervisor shutting a dev server down;
+- a stop the harness forced itself, such as a capacity eviction or an idle reap.
+
+The conversation does need to hear that the dev server it started is down. Worded as `failed`, that would read like a crash, and the reasonable response to a crashed dev server is to start it again, undoing the stop somebody just asked for. `failed` stays for outcomes nobody asked for: a spawn error, a non-zero exit, a hard kill, or a fault signal such as an OOM kill or a segfault.
+
+A background subagent's lifecycle is independent of the call that launched it:
+
+- **Aborting:** its abort scope is its own. A per-run `abort` ends a round; the session itself ends only with the parent Session, and even one released for capacity can be revived.
+- **Messages:** they stream live to the frontend through the launching Session, on the same origin-tagged channel a foreground window uses.
+- **Approvals:** they resolve through the launching call's own approval callback, which stays attached. An `allow-all` launch therefore runs unattended, and a failure still ends in a `status: failed` report rather than a child waiting forever.
 
 ### Background session caps
 
 | Session type | Cap | Eviction |
 | --- | --- | --- |
-| Command sessions | 64 | When full, exited sessions are evicted first, then idle ones by LRU |
-| Subagent sessions | 8 | Only completed ones are evicted; running subagents never — with no room, spawning is rejected |
+| Command sessions | 64 | When full, an exited session is evicted first; otherwise the least recently used session is killed and evicted |
+| Subagent sessions | 8 | Only completed sessions are evicted, never a running one; when there is no room, spawning is rejected |
 
 ## Approval
 
-Every complete `tool_call` triggers exactly one approval decision:
+Every complete `tool_call` gets exactly one approval decision:
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
 | --- | --- |
-| SDK | Pass `approve` per `session.run`; with none injected the engine denies by default (conservative — nothing gets approved unattended) |
-| CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
-| Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision (edits apply at once), while a tool's `r`/`rw` comes from the running context's toolset — permission edits apply at the next rotation (compaction); manual decisions arrive via the API |
+| SDK | Pass `approve` to each `session.run`. With none injected, the engine denies everything by default, so nothing is approved unattended |
+| CLI | `--approve` takes four modes: `allow-all` (default), `deny-all`, `read-only`, `always-ask`. `read-only` auto-approves `permission: "r"` tools and leaves the rest to a person. The flag sets the approval mode of the server Session the CLI drives; without it, a CLI running inside an agent's command inherits the calling Session's mode |
+| Web / Server | The same four modes, set per Session. The mode is re-read from the database on every decision, so a change applies at once. A tool's `r` / `rw` comes from the running context's toolset, so a permission change applies at the next rotation (compaction). Manual decisions arrive through the API |
 
-A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto recorded as `forbidden` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+Installed pre-tool-use hooks are consulted before the approval callback. A hook's `deny` refuses the call without asking, and its `allow` approves without asking, except that the [command policy](/configuration#command-policy) still vetoes an allowed call it matches. See [Pre-tool-use hooks](/agent-loop#pre-tool-use-hooks).
 
-A subagent child's approval is never auto-denied by the parent's task ending. On the Web server, a session-lifetime fallback approval sink escalates any child approval that has no active poll window and no background-launch standing sink straight to the user (the parent session sitting idle included), and a parent task ending or being stopped converges only the **main** session's pending approvals — an origin-tagged child approval stays pending, and its card stays on screen, until the user decides. Hosts that attach no such sink (the CLI) keep the poll-window-only semantics: the child's requests queue until a `run_subagent` / `input_subagent` call is active.
+A refused call gets a synthetic `aborted` `tool_call_output` for the model to react to. The wording names the decider:
 
-## Custom tools & MCP
+| Decider | Output |
+| --- | --- |
+| A person or approval mode (`deny`) | `Tool call denied by user.` |
+| The command policy (`forbidden`) | `Tool call denied by policy.` |
+| A pre-tool-use hook | `Tool call denied by the <hook> hook[: <reason>].` |
 
-The `tools.builtin` array in `system_config.yaml` declares the toolset with entries of the same `ToolDefinitionConfig` shape. The semantics are **wholesale replacement, not merging**: omit the section entirely to keep the full default toolset; once written, the default list is replaced and every tool you keep must carry its complete definition (including the `parameters` JSON Schema — a tool's schema comes entirely from config). `tools.mcpServers` carries the MCP Server configuration, covered in the next section. See also [Configuration](/configuration).
+A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [agent loop](/agent-loop).
+
+**Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active.
+
+## Customizing the toolset
+
+The `tools.builtin` array in `system_config.yaml` declares the toolset, with entries of the same `ToolDefinitionConfig` shape. It **replaces the defaults wholesale; it is not merged with them**. Omit the section to keep the full default toolset. Once you write it, the default list is gone, and every tool you keep needs its complete definition, including the `parameters` JSON Schema, because a tool's schema comes entirely from config.
+
+In the Web App, Agent settings → Tools lets you choose read-only or read-and-write permissions for each built-in tool and delete it after confirmation. Deletion saves immediately and preserves other unsaved parameters. A deleted tool is no longer available to the Agent: new conversations apply the change immediately, and existing conversations apply it when their context is next rebuilt. Deleting every tool leaves an empty toolset; it does not restore the defaults.
+
+`tools.mcpServers` holds the MCP Server configuration, covered in the next section. See also [Configuration](/configuration).
 
 ```yaml
 tools:
@@ -262,15 +394,26 @@ tools:
   mcpServers: []
 ```
 
-### MCP Servers
+## MCP Servers
 
-Each `tools.mcpServers` entry is `{ name, config }`: `name` is restricted to letters/digits/`_`/`-` (it becomes the tool-name prefix), and `config` describes the transport. Three transports are supported:
+Each `tools.mcpServers` entry is `{ name, config }`, plus `plugin` on an entry a plugin installed (see [Skills & Plugins](/skills#mcp-servers-in-a-plugin)). `name` becomes the tool-name prefix: it must start with a letter or digit and contain only letters, digits, `_` and `-`, and a duplicate name is skipped. `config` describes the transport. Three transports are supported:
 
-- `stdio` — a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env` (later wins); the Agent vault is **not** injected into MCP Server processes (unlike command subprocesses) — a variable a Server needs must be listed explicitly in the entry's `env`. `cwd` defaults to the Session's Workspace.
-- `http` — Streamable HTTP, the current spec's remote transport (`url` / `headers`).
-- `sse` — the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
+- `stdio`: a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env`, with `env` winning. Unlike command subprocesses, MCP Server processes do **not** receive the agent's Vault as a whole: list any variable a Server needs in the entry's `env`, and write a secret there as a [Vault reference](#vault-references). `cwd` defaults to the Session's Workspace. The process starts under the Session's [sandbox](/settings#sandbox) exactly as a command does: the same confiner rewrites its argv, and a policy no backend can enforce fails the Server's connect rather than starting it unconfined.
+- `http`: Streamable HTTP, the current spec's remote transport (`url` / `headers`).
+- `sse`: the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
 
-The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000), `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset) and `permission` (`auto` / `r` / `rw`, default `auto` — see the permission bullet below). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
+The `transport` field may be omitted: an entry with `command` infers `stdio`, and one with `url` infers `http`. `sse` must always be explicit.
+
+All three transports share these optional fields:
+
+| Field | Meaning |
+| --- | --- |
+| `connectTimeoutMs` | Budget for connecting and discovering tools, default 10000 |
+| `timeoutMs` | Execution timeout for every tool of that Server; the Environment default when unset |
+| `maxOutputLength` | Output cap for every tool of that Server; the Environment default when unset |
+| `permission` | `auto` / `r` / `rw`, default `auto`; see [Permission mapping](#permission-mapping) |
+
+`connectTimeoutMs`, `timeoutMs` and `maxOutputLength` must be positive numbers here; an entry with a value of 0 or less is invalid. `headers` are attached to every HTTP request to that Server, SSE stream included, so they can carry auth headers such as `Authorization`.
 
 ```yaml
 tools:
@@ -283,15 +426,44 @@ tools:
       config:
         transport: http
         url: https://mcp.linear.app/mcp
-        headers: { Authorization: "Bearer ..." }
+        headers: { Authorization: "Bearer ${LINEAR_API_KEY}" }   # read from the agent's Vault
         permission: r        # auto (default) | r | rw
 ```
 
-Behavior:
+### Vault references
 
-- Connecting is **lazy**: Session creation returns instantly, and the first `run()` connects all Servers in parallel and discovers tools once — the wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair (frontends show a connecting status; the end carries the overall status plus per-Server results), and the full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)); in the Trace all three land after the run's input, inside the new turn. Aborting mid-connect **cancels** the attempt — the next `run()` reconnects. The result is a snapshot for the model context: `tools/list_changed` notifications are ignored, and when a compaction opens the next context the Servers reconnect from the then-current config, bracketed by the same event pair (see [Compaction](/agent-loop)). An unreachable Server or invalid entry only produces a stderr warning and is skipped — **the session is never blocked**.
-- Discovered tools join the flat tool namespace as `mcp__<server>__<tool>` and go through the same [execution contract](#execution-contract) (timeout, truncation, interruption) and [approval](#approval) flow as builtin tools.
-- Permission mapping: under the default `permission: auto`, a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction. Setting the entry's `permission` to `r` or `rw` overrides the annotation for **every** tool of that Server, which is the way in for the many Servers that never set `readOnlyHint` and so land on `rw` wholesale.
-- What `permission` is: it fixes the level each of that Server's tools reports, and exactly one approval mode reads that level. Under `read-only` an `r` tool is auto-approved and an `rw` tool needs manual confirmation; `allow-all`, `deny-all` and `always-ask` never consult it, so marking an entry `rw` adds no prompt there. Beyond that the key does nothing: it does not sandbox the Server, does not restrict what its tools do when they run, is never sent to or verified against the Server, and the Server keeps whatever capabilities its transport gives it. Marking a Server `r` that can in fact write removes the confirmation `read-only` would have asked for.
-- Result mapping: text blocks concatenate into the output text; image blocks ride along as images (data URLs); audio and binary resources collapse to placeholder lines; a result with only `structuredContent` is serialized as JSON; a Server-reported `isError` lands as `stop_reason: "failed"` with the Server's error text as the content.
-- Session teardown (`Environment.dispose`) closes every MCP client; stdio child processes exit with it.
+Any string value in an entry's `config` (a header, an `env` value, an argument, an `oauth` field) may hold `${KEY}`, where `KEY` follows the Vault's key rule: a letter or `_`, then letters, digits and `_`. When the Server connects, each reference is replaced with the value of that key in the agent's Vault. `system_config.yaml`, the config API and the Trace only ever carry the reference, and only the keys an entry references reach its Server: the rest of the Vault stays out. The rule holds for every entry, the ones you write by hand as well as the ones a plugin installs.
+
+- A reference cannot sit in the host of `url`: the Vault decides what is sent to a Server, never which Server is contacted. The host is judged the way the connection parses the address, however the URL spells it. A path or a query may hold one.
+- A value is substituted once: a Vault value that itself contains `${…}` is not read again.
+- A connection test fills references only into an entry saved on the agent exactly as tested. A new or changed entry that references the Vault is neither filled in nor contacted, and the test says to save it first: otherwise anyone who can test an entry could send a Vault value to an address of their own.
+- A Server may repeat what it was sent when it fails, such as a refusal that quotes the request line or a header, or a process that prints its environment on stderr. Where such a text lands in a warning, a connect result in the Trace or a tool result the model reads, the Vault values in it are replaced with their references. A value shorter than six characters is left as it is: it is no secret, and replacing it would garble the text.
+- `${PLUGIN_ROOT}` is not a Vault key. Installing a plugin's Server replaces it with the plugin package's directory.
+- A Server whose references the Vault cannot fill is not contacted. It is skipped as **needs setup**, and its warning and connect result name the missing keys, never a value. Once the keys are in the Vault, the Server connects at the agent's next model context.
+- An entry with `config.oauth`, a Server that signs in with OAuth, is skipped as **sign-in required** when it has no `Authorization` header after substitution: this version cannot sign in yet. A Server that also accepts a token can take one as `Authorization: Bearer ${KEY}`.
+
+An existing entry that holds a literal `${…}` in a value reads it as a reference too, and is skipped as needs setup until the Vault has that key.
+
+### Connection and discovery
+
+- Connecting is **lazy**. Creating a Session returns at once; the first `run()` connects all Servers in parallel and discovers their tools once.
+- The wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair: frontends show a connecting status, and the end event carries the overall status plus per-Server results. The full tool definitions follow as a `tool_list_ready` event (see [AMSP Records](/amsp-records)). In the Trace, all three land after the run's input, inside the new turn.
+- Aborting during the connect **cancels** the attempt, and the next `run()` connects again.
+- The discovered tools are a snapshot for the model context: `tools/list_changed` notifications are ignored. When a compaction opens the next context, a Server whose entry is unchanged keeps its live connection and tools; a Vault value the entry references counts as part of it. Removed or changed Servers are closed, and new, changed or previously failed ones connect again. The connect event pair appears only when some Server needs connecting, while `tool_list_ready` is always emitted (see [Compaction](/agent-loop)).
+- An unreachable Server or an invalid entry only produces a warning on stderr and is skipped. **The Session is never blocked.** A Server skipped as needs setup or sign-in required is never contacted, and its connect result is a failure with the `mcp_needs_setup` or `mcp_sign_in_required` code.
+- Discovered tools join the flat tool namespace as `mcp__<server>__<tool>`. A tool whose full name is not a valid LLM tool name (letters, digits, `_` and `-`, at most 128 characters) or that the Server lists twice is skipped with a warning. The rest go through the same [execution contract](#execution-contract) (timeout, truncation, interruption) and [approval](#approval) flow as built-in tools.
+
+### Permission mapping
+
+- Under the default `permission: auto`, a tool the Server annotates with `readOnlyHint: true` is `r`, which the `read-only` approval mode auto-approves. Everything else is `rw`: annotations are untrusted hints, so the default leans restrictive.
+- Setting the entry's `permission` to `r` or `rw` overrides the annotation for **every** tool of that Server. This is the way to handle the many Servers that never set `readOnlyHint` and so land on `rw` entirely.
+- `permission` fixes the level each of the Server's tools reports, and exactly one approval mode reads that level. Under `read-only`, an `r` tool is auto-approved and an `rw` tool needs manual confirmation. `allow-all`, `deny-all` and `always-ask` never consult it, so marking an entry `rw` adds no prompt in those modes.
+- Beyond that, the key does nothing. It does not sandbox the Server or restrict what its tools do when they run. It is never sent to the Server or checked against it, and the Server keeps whatever capabilities its transport gives it. Marking a Server `r` when it can in fact write removes the confirmation `read-only` would have asked for.
+
+### Results and teardown
+
+- Text blocks are joined into the output text, and image blocks ride along as images (data URLs).
+- Audio and binary resources become placeholder lines; a text resource contributes its text; a `resource_link` becomes `[resource: <uri>]` plus its description; an unknown block type becomes `[unsupported content type: <type>]`.
+- When the joined text is empty, `structuredContent` is serialized as JSON.
+- A Server-reported `isError` ends the call with `status: "fatal"`, and the Server's error text as the content (`[tool reported an error with no message]` when it sent none).
+- Session teardown (`Environment.dispose`) closes every MCP client, and stdio child processes exit with it.

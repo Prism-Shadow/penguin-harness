@@ -1,31 +1,50 @@
 /**
- * Rendering dispatch for a single view-model item: user prompts are
- * right-aligned brand bubbles (including image thumbnails), thinking collapsible blocks, text
- * streamed as Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task
- * stats lines. Items have a light entrance animation.
+ * Rendering dispatch for a single view-model item: user prompts are right-aligned bubbles with
+ * the images and files they carried above them, thinking collapsible blocks, text streamed as
+ * Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task stats lines.
+ * Items have a light entrance animation.
+ *
+ * The drawing is the UI package's (MessageRow / MessageBubble / MessageAttachments / MessageMeta
+ * and the attachment tiles for what the person sent and the run's notice lines, AssistantText for
+ * a reply); what stays here is which item becomes what, the text parsing that collapses harness
+ * blocks into banners, what a model request's retry or failure line says and offers, and the
+ * Retry a failed or stopped run's last line offers.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import {
+  AssistantText,
+  AttachmentFile,
+  AttachmentImage,
+  AttachmentList,
+  CountdownText,
+  MessageAttachments,
+  MessageBubble,
+  MessageMeta,
+  MessageRow,
+  RetryActions,
+  TextAction,
+  useCountdown,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { splitAttachments } from "../../lib/attachments";
-import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
-import { Md } from "./md";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CopyButton } from "../../components/ui/copy-button";
-import { ZoomableImage } from "../../components/ui/image-zoom";
+import { attachmentFileName, splitAttachments } from "../../lib/attachments";
+import { routedUrl } from "../../lib/session-machines";
+import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
-import { ThinkingBlock } from "./thinking-block";
-import { ToolCallCard } from "./tool-call-card";
-import { SubagentChip } from "./subagent-chip";
+import { fatalFailure, ladderFailure, llmErrorNotice, requestNotice } from "./request-notice";
+import { SessionThinking } from "./thinking-block";
+import { SessionToolCall } from "./tool-call-card";
+import { SessionSubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
 import { McpConnectBanner } from "./mcp-connect-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
+import { OrgTriggerBanner } from "./org-trigger-banner";
+import { parseOrgTriggerMessage } from "./org-trigger";
 import { SkillsBanner } from "./skills-banner";
-import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
 import { HarnessInjectedBanner } from "./harness-banner";
 import {
@@ -37,153 +56,217 @@ import {
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
-import { toneInk } from "../../lib/tone";
-
-/** User glyph (24×24 line path) for the mid-run steering chip. */
-const USER_STEERING_ICON =
-  "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
 
 /**
- * Message footer: timestamp + copy. At ≥sm it is **invisible but takes up space by default**
- * (`sm:opacity-0` rather than `hidden`) — it surfaces on hovering the message list, and because
- * the space is always reserved, surfacing it never pushes content below it down (using `hidden`
- * would cause every item to jitter). Keyboard users can also reveal it via `focus-within`
- * (otherwise the copy button would be focusable but never visible). Below sm the footer is
- * always visible — hover doesn't exist on touch screens (and Tailwind v4 scopes hover: variants
- * to `@media (hover: hover)`), so a hover-revealed footer would simply never appear on phones;
- * same treatment as the AI reply's stats footer.
- *
- * When `text` is omitted, only the timestamp is shown, no copy button — there's no clear meaning
- * to copying an image message.
+ * The footer under a message the person sent (MessageMeta): its time in the reader's locale, and
+ * a copy button when there is text to copy — none for an image or a files notice, where copying
+ * has no clear meaning. The same hover reveal as the reply's stats footer, and always shown below
+ * sm, where touch has no hover.
  */
-function MessageMeta({
-  atMs,
-  text,
-  align = "left",
-}: {
-  atMs?: number;
-  text?: string;
-  align?: "left" | "right";
-}) {
+function SentMessageMeta({ atMs, copyText }: { atMs: number | undefined; copyText?: string }) {
   const { locale } = useLocale();
   return (
-    <div
-      className={`flex h-5 items-center gap-2 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 ${
-        align === "right" ? "justify-end" : "justify-start"
-      }`}
-    >
-      {atMs !== undefined && (
-        <span className="text-[11px] text-gray-400">{formatMessageTime(atMs, locale)}</span>
-      )}
-      {/* No copy button for image-only messages: copying an image message has no clear meaning. */}
-      {text !== undefined && <CopyButton text={text} label={S.chat.copyMessage} />}
-    </div>
+    <MessageMeta
+      {...(atMs !== undefined ? { time: formatMessageTime(atMs, locale) } : {})}
+      {...(copyText !== undefined ? { copy: { text: copyText, label: S.chat.copyMessage } } : {})}
+    />
   );
 }
 
-/** Countdown floor: waits shorter than this keep the plain waiting text (sub-second flashes of numbers are noise). */
+/**
+ * The images and files a message carried, as the composer showed them: the images as tiles in
+ * one row, the files as tiles in the next. `size` is the images' — `md` above a prompt's text,
+ * `sm` inside a steer's chip, where both share one row as they did in the composer. A sent file
+ * is named by its scratchpad file name; its bytes stay there for the model to open by path.
+ */
+function SentAttachments({
+  images,
+  files,
+  size,
+}: {
+  images: readonly string[];
+  files: readonly string[];
+  size: "sm" | "md";
+}) {
+  const imageTiles = images.map((src, i) => (
+    <AttachmentImage
+      key={`image-${i}`}
+      src={src}
+      alt={S.chat.imageAlt}
+      size={size}
+      lazy
+      unavailableLabel={S.chat.imageUnavailable}
+    />
+  ));
+  const fileTiles = files.map((path, i) => (
+    <AttachmentFile key={`file-${i}`} name={attachmentFileName(path)} />
+  ));
+  if (size === "sm") {
+    return (
+      <AttachmentList>
+        {imageTiles}
+        {fileTiles}
+      </AttachmentList>
+    );
+  }
+  return (
+    <MessageAttachments>
+      {imageTiles.length > 0 && <AttachmentList align="end">{imageTiles}</AttachmentList>}
+      {fileTiles.length > 0 && <AttachmentList align="end">{fileTiles}</AttachmentList>}
+    </MessageAttachments>
+  );
+}
+
+/** Countdown floor: waits shorter than this keep the plain sending text (sub-second flashes of numbers are noise). */
 const COUNTDOWN_MIN_MS = 2000;
 
 /**
- * Reconnect hint line. The live waiting state renders a COUNTDOWN to the next attempt when
- * the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
- * exponential ladder a wait can reach 30s, and a static "waiting" line reads as a hang),
- * plus two inline controls: "retry now" (skips the remaining backoff server-side; the line
- * flips to "retrying" when the request_begin arrives — no optimistic state beyond
- * disabling the buttons) and "give up" (the ordinary session abort; the engine's
- * abort-during-backoff path ends the turn and re-enables the composer). Anchored on the
- * CLIENT arrival time of the event (skew-free), ticking every 250ms with ceil'd whole
- * seconds; at zero it falls back to the plain waiting text, so a stale item can never tick
- * forever. History safety: replay delivers the following request_begin/abort immediately,
- * flipping the state, so neither the countdown nor the buttons render for replayed items;
- * the buttons are additionally main-session-only (a subagent's backoff belongs to the
- * child session, which the retry-now route does not target).
+ * The Retry the line a run ended on offers (the fatal error banner, a reconnect line that gave
+ * up, or the stop marker), or undefined for none: only on the main conversation (a subagent's
+ * run belongs to the child session, which the retry route does not target), only on the stream's
+ * last item (anything after it has already resent the unfinished turn's input) and only while no
+ * Task runs.
  */
-function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderContext }) {
-  const state = item.gaveUp ? "gaveUp" : item.retrying ? "retried" : "waiting";
+function retryOffer(ctx: StreamRenderContext, last: boolean): StreamRenderContext["onRetry"] {
+  return last && ctx.origin.length === 0 && !ctx.taskRunning ? ctx.onRetry : undefined;
+}
+
+/**
+ * "Retry" on the line a run ended on — the error banner, the stop marker, a retry ladder that
+ * gave up — as a text action at the end of the line, never a boxed button. A click disables it,
+ * and it stays disabled: the Task starting, or anything landing after the line, takes it away
+ * (and with it this state). A refused retry enables it again — the page has already said why.
+ */
+function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
+  const [acted, setActed] = useState(false);
+  return (
+    <TextAction
+      disabled={acted}
+      onClick={() => {
+        setActed(true);
+        void onRetry().catch(() => setActed(false));
+      }}
+    >
+      {S.chat.retryRun}
+    </TextAction>
+  );
+}
+
+/**
+ * The presses after a line a run ended on, or a retry line: the line's own (the retry's two, a
+ * Retry), then 「[详情]」 when the page can show the failure's details. Undefined for none, so a
+ * line with nothing to press is plain text.
+ */
+function lineActions(own: ReactNode, details: (() => void) | undefined): ReactNode {
+  if (own === null && details === undefined) return undefined;
+  return (
+    <>
+      {own}
+      {details !== undefined && (
+        <TextAction data-failure-details="" onClick={details}>
+          {S.chat.failureReport.open}
+        </TextAction>
+      )}
+    </>
+  );
+}
+
+/**
+ * A model request's retry ladder, one line per ladder (request-notice.ts says what it reads), in
+ * the stop marker's shape: a live countdown when the engine announced its planned wait
+ * (request_end.retry_in_ms ≥ 2s — with the exponential ladder a wait can reach 30s, and a static
+ * line reads as a hang), anchored on the CLIENT arrival time of the event (skew-free), whole
+ * seconds on the page's one second-aligned clock, in a slot that keeps its width as they count
+ * down. While it runs, two presses: "Retry now" (skips the remaining backoff server-side; the
+ * line flips once the request_begin arrives — no optimistic state beyond holding the presses) and
+ * "Stop retrying" (the ordinary session abort; the engine's abort-during-backoff path ends the
+ * turn and re-enables the composer). The presses belong to ONE attempt: a ladder reuses this
+ * component across all of them (the item keeps its id through the collapse, see stream-model's
+ * continuedLadder), and the attempt is part of the key that re-arms them, so one press never
+ * leaves a later attempt with dead controls. History safety: replay delivers the following
+ * request_begin/abort immediately, flipping the state, so neither the countdown nor the presses
+ * render for replayed items; the presses are additionally main-session-only (a subagent's
+ * backoff belongs to the child session, which the retry-now route does not target).
+ *
+ * A ladder that gave up ended the run, and as the stream's last item it offers the same Retry as
+ * the stop marker and the error line (see retryOffer). Every state offers its details.
+ */
+function ReconnectLine({
+  item,
+  ctx,
+  last,
+}: {
+  item: ReconnectItem;
+  ctx: StreamRenderContext;
+  last: boolean;
+}) {
   const target =
-    state === "waiting" &&
+    !item.gaveUp &&
+    !item.retrying &&
     item.plannedDelayMs !== undefined &&
     item.plannedDelayMs >= COUNTDOWN_MIN_MS &&
     item.arrivedAtMs !== undefined
       ? item.arrivedAtMs + item.plannedDelayMs
       : null;
-  const [now, setNow] = useState(() => Date.now());
-  const [acted, setActed] = useState(false);
-  // Both pieces of state belong to ONE attempt, and a ladder now reuses this component across
-  // all of them: the item keeps its id through the collapse (see stream-model's continuedLadder),
-  // so React keeps the instance rather than remounting it. Without this reset, one click on
-  // "retry now" would leave both controls disabled for every later attempt of the same ladder,
-  // and the first paint of each new countdown would render against the previous attempt's `now`.
-  useEffect(() => {
-    setActed(false);
-    setNow(Date.now());
-  }, [item.attempt]);
-  useEffect(() => {
-    if (target === null || Date.now() >= target) return;
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= target) clearInterval(timer); // stop ticking once the wait has elapsed
-    }, 250);
-    return () => clearInterval(timer);
-  }, [target]);
-  // Clamped to the wait the engine actually announced. The reset above runs after the commit,
-  // so the frame that first paints a superseded attempt still holds the previous one's `now` —
-  // unclamped that renders a countdown longer than any backoff this ladder can plan.
-  const remainingMs = target !== null ? Math.min(target - now, item.plannedDelayMs ?? 0) : 0;
-  const live = target !== null && remainingMs > 0;
-  const seconds = live ? Math.ceil(remainingMs / 1000) : undefined;
-  const showControls =
-    live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
+  const left = useCountdown(target);
+  const main = ctx.origin.length === 0;
+  const counting = target !== null && left !== null && left > 0;
+  const notice = requestNotice(item, counting ? target : null, {
+    onRetryNow: main ? ctx.onRetryNow : undefined,
+    onStop: main ? ctx.onGiveUp : undefined,
+  });
+  const retry = notice.phase === "gaveUp" ? retryOffer(ctx, last) : undefined;
+  const show = ctx.onShowFailure;
+  const own =
+    notice.retryNow !== null || notice.stop !== null ? (
+      <RetryActions
+        retry={notice.retryNow}
+        secondary={notice.stop}
+        attemptKey={`${item.attempt}:${notice.nextAt ?? ""}`}
+      />
+    ) : retry !== undefined ? (
+      <RetryRunButton onRetry={retry} />
+    ) : null;
+  // A status region, so a change of phase is announced; the seconds are not (CountdownText).
   return (
-    <p
-      className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
-    >
-      <span>
-        {S.chat.reconnect(
-          item.status,
-          state,
-          item.attempt,
-          seconds,
-          item.errorMessage,
-          item.errorCode,
+    <div role="status" data-retry-phase={notice.phase}>
+      <MessageBubble
+        variant="notice"
+        actions={lineActions(
+          own,
+          show === undefined ? undefined : () => show(ladderFailure(item, notice.phase)),
         )}
-      </span>
-      {showControls && (
-        <span className="flex shrink-0 items-center gap-1.5">
-          {ctx.onRetryNow && (
-            <button
-              type="button"
-              disabled={acted}
-              onClick={() => {
-                setActed(true);
-                ctx.onRetryNow!();
-              }}
-              className="rounded border border-amber-300 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40"
-            >
-              {S.chat.reconnectRetryNow}
-            </button>
-          )}
-          {ctx.onGiveUp && (
-            <button
-              type="button"
-              disabled={acted}
-              onClick={() => {
-                setActed(true);
-                ctx.onGiveUp!();
-              }}
-              className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
-            >
-              {S.chat.reconnectGiveUp}
-            </button>
-          )}
-        </span>
-      )}
-    </p>
+      >
+        {notice.countdown !== null && target !== null && left !== null && left > 0 ? (
+          <CountdownText sentence={notice.countdown} seconds={left} wait={target} />
+        ) : (
+          <span>{notice.text}</span>
+        )}
+      </MessageBubble>
+    </div>
   );
 }
 
-export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
+export function MessageItem({
+  item,
+  ctx,
+  last = false,
+  images: followingImages = [],
+}: {
+  item: ChatItem;
+  ctx: StreamRenderContext;
+  /**
+   * Whether this is the stream's last item (only the ended Task's stats row may follow it): the
+   * line a run ended on offers Retry only then.
+   */
+  last?: boolean;
+  /**
+   * A prompt's images that arrived as image items right behind it (`user_text` / `user_image`):
+   * drawn with it, in one row above its text. Inline bytes live, or a windowed history page's
+   * reference to the Trace record, fetched from the machine the Session lives on.
+   */
+  images?: readonly string[];
+}) {
   switch (item.kind) {
     case "user_text": {
       // Harness-injected completion notice of a run_in_background task: collapsed into a
@@ -202,67 +285,42 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // Source block for an organization trigger (a desk or ticket session's work run):
+      // collapsed into a single-line notice like the scheduled banner, the trigger body
+      // rendered as usual. A message carries at most one origin block, so the chain simply
+      // continues on whatever this leaves.
+      const orgTrigger = parseOrgTriggerMessage(item.text);
+      const afterOrgTrigger = orgTrigger ? orgTrigger.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
-      const scheduled = parseScheduledMessage(item.text);
+      const scheduled = parseScheduledMessage(afterOrgTrigger);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
       // (scheduled -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : item.text;
+      const afterScheduled = scheduled ? scheduled.rest : afterOrgTrigger;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
-      // as a path row; this pulls that out at render time and shows the actual image. Mirrors
-      // the vision-model path (user_text + user_image as separate messages) in shape: one
-      // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
-      // files come out of the same pass and collapse into one banner naming them.
+      // as a path row; this pulls that out at render time and shows the actual image. The
+      // vision-model path delivers them as image items behind the text instead (`images`); both
+      // draw the same row of tiles above the text, and uploaded files, which come out of the
+      // same pass, the row of file tiles under it — the pieces the composer showed. The files'
+      // bytes live in the session scratchpad, where the model opens them by path (goal mode
+      // never gets here: it takes text and images only).
       const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
+      const shown = [...images, ...followingImages.map(routedUrl)];
+      const carried = shown.length > 0 || files.length > 0;
       return (
         <>
+          {orgTrigger && <OrgTriggerBanner origin={orgTrigger.origin} />}
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
-          {text && (
-            <div className="anim-msg group my-4 flex flex-col items-end">
-              <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
-                {/* wrap-anywhere: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing; unlike break-words it also shrinks min-content, so a pathological token can't stretch the flex bubble itself. Normal words still only break when a token can't fit on a line. */}
-                <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">
-                  {text}
-                </p>
-              </div>
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                text={text}
-                align="right"
-              />
-            </div>
+          {(text || carried) && (
+            <MessageRow>
+              {carried && <SentAttachments images={shown} files={files} size="md" />}
+              {text && <MessageBubble variant="user">{text}</MessageBubble>}
+              <SentMessageMeta atMs={item.atMs} {...(text ? { copyText: text } : {})} />
+            </MessageRow>
           )}
-          {/* Files uploaded with this message: shown below the text in the same user-side
-              container and with the same timestamp footer as uploaded images. The bytes live in
-              the session scratchpad, where the model opens them by path (goal mode never gets
-              here: it takes text and images only). */}
-          {files.length > 0 && (
-            <div className="anim-msg group my-4 flex flex-col items-end">
-              <AttachedFilesBanner files={files} />
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                align="right"
-              />
-            </div>
-          )}
-          {images.map((src, i) => (
-            <div key={i} className="anim-msg group my-4 flex flex-col items-end">
-              <div className="max-w-[88%] rounded-lg bg-gray-100 p-1.5 md:max-w-[75%] dark:bg-gray-800">
-                <ZoomableImage
-                  src={src}
-                  alt={S.chat.imageAlt}
-                  className="max-h-48 max-w-full rounded-md"
-                />
-              </div>
-              <MessageMeta
-                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-                align="right"
-              />
-            </div>
-          ))}
         </>
       );
     }
@@ -284,68 +342,46 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // model (delivered as image messages right behind the text), or restored from the
       // [attached image: …] path lines without one — the same two shapes a user_text bubble
       // handles, so both render identically here. Files ride steering only as
-      // [attached file: …] rows (there is no item.files channel) and collapse into the same
-      // banner a full prompt uses, kept inside the chip — a files-only steering would
-      // otherwise render as an empty chip with the filenames lost.
+      // [attached file: …] rows (there is no item.files channel) and become the same file tiles
+      // a full prompt shows, in the chip's one row after the images — a files-only steering
+      // would otherwise render as an empty chip with the filenames lost.
       const {
         text: steerText,
         images: steerImages,
         files: steerFiles,
       } = splitAttachments(item.text);
-      const shown = [...steerImages, ...(item.images ?? [])];
+      // A steer's own images can be a history page's Trace references: routed to the
+      // Session's machine like the user_image below.
+      const shown = [...steerImages, ...(item.images ?? []).map(routedUrl)];
       return (
-        <div className="anim-msg group my-2 flex flex-col items-end">
-          <div className="flex max-w-[88%] flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 md:max-w-[75%] dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-start gap-1.5">
-              <GlyphIcon
-                d={USER_STEERING_ICON}
-                className="mt-1 shrink-0 text-gray-400 dark:text-gray-500"
-              />
-              <p className="wrap-anywhere whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-                <span className="mr-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  {S.chat.userSteering}
-                </span>
-                {steerText}
-              </p>
-            </div>
-            {shown.length > 0 && (
-              <div className="flex flex-wrap justify-end gap-1.5">
-                {shown.map((src, i) => (
-                  <ZoomableImage
-                    key={i}
-                    src={src}
-                    alt={S.chat.imageAlt}
-                    className="max-h-28 max-w-full rounded-md"
-                  />
-                ))}
-              </div>
-            )}
-            {steerFiles.length > 0 && (
-              <div className="flex justify-end">
-                <AttachedFilesBanner files={steerFiles} />
-              </div>
-            )}
-          </div>
-          <MessageMeta
-            {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-            text={steerText}
-            align="right"
-          />
-        </div>
+        <MessageRow spacing="steer">
+          <MessageBubble
+            variant="steering"
+            label={S.chat.userSteering}
+            {...(shown.length > 0 || steerFiles.length > 0
+              ? { attachments: <SentAttachments images={shown} files={steerFiles} size="sm" /> }
+              : {})}
+          >
+            {steerText}
+          </MessageBubble>
+          <SentMessageMeta atMs={item.atMs} copyText={steerText} />
+        </MessageRow>
       );
     }
     case "user_image":
+      // A prompt with no text: its first image, with the ones behind it. Inline bytes live, or
+      // a windowed history page's reference to the Trace record
+      // (`/api/sessions/<id>/trace-image?…`), which the browser must fetch from the machine the
+      // Session lives on.
       return (
-        <div className="anim-msg group my-4 flex flex-col items-end">
-          <div className="max-w-[88%] rounded-lg bg-gray-100 p-1.5 md:max-w-[75%] dark:bg-gray-800">
-            <ZoomableImage
-              src={item.imageUrl}
-              alt={S.chat.imageAlt}
-              className="max-h-48 max-w-full rounded-md"
-            />
-          </div>
-          <MessageMeta {...(item.atMs !== undefined ? { atMs: item.atMs } : {})} align="right" />
-        </div>
+        <MessageRow>
+          <SentAttachments
+            images={[item.imageUrl, ...followingImages].map(routedUrl)}
+            files={[]}
+            size="md"
+          />
+          <SentMessageMeta atMs={item.atMs} />
+        </MessageRow>
       );
     case "assistant_text":
       // Doesn't attach MessageMeta: this turn's reply timestamp and copy both belong to the
@@ -353,14 +389,11 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
+      // The body (Markdown, caret, the theme's reveal) is AssistantText; a nested reply's files
+      // card follows the text once it is fully revealed. How the Request ended is not the
+      // text's to say: the retry line, error banner or stop marker that follows says it.
       return (
-        <div className="md-body anim-msg my-3 text-base leading-relaxed text-gray-800 dark:text-gray-100">
-          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse, and code blocks highlight once on settle (see md.tsx). */}
-          <Md text={item.text} streaming={item.streaming} />
-          {item.streaming && <span className="animate-pulse text-gray-400">▌</span>}
-          {item.stopReason && item.stopReason !== "completed" && (
-            <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>
-          )}
+        <AssistantText text={item.text} streaming={item.streaming}>
           {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
           {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
             <MessageFilesCard
@@ -370,36 +403,86 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               onOpenFile={ctx.onOpenFile}
             />
           )}
-        </div>
+        </AssistantText>
       );
     case "thinking":
-      return <ThinkingBlock item={item} />;
+      return <SessionThinking item={item} />;
     case "tool_call":
-      return <ToolCallCard item={item} ctx={ctx} />;
+      return <SessionToolCall item={item} ctx={ctx} />;
     case "subagent":
       // Standalone child session (no run_subagent card to bind to): same full-width shortcut
       // bar as the bound site — the conversation itself lives in the subagents panel.
       return (
         <div className="anim-msg my-2">
-          <SubagentChip sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
+          <SessionSubagentChip
+            sessionId={item.sessionId}
+            model={item.model}
+            running={false}
+            ctx={ctx}
+          />
         </div>
       );
-    case "abort":
+    case "abort": {
+      // A stopped run holds its unfinished turn just as a failed one does, so its marker offers
+      // the same Retry.
+      const retry = retryOffer(ctx, last);
       return (
-        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+        <MessageBubble
+          variant="notice"
+          actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+        >
           {S.chat.aborted(item)}
-        </p>
+        </MessageBubble>
       );
-    case "llm_error":
+    }
+    case "llm_error": {
+      const retry = retryOffer(ctx, last);
+      const show = ctx.onShowFailure;
       return (
-        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.llmError(item.errorMessage)}
-        </p>
+        <MessageBubble
+          variant="notice"
+          actions={lineActions(
+            retry ? <RetryRunButton onRetry={retry} /> : null,
+            show === undefined ? undefined : () => show(fatalFailure(item)),
+          )}
+        >
+          {llmErrorNotice(item)}
+        </MessageBubble>
       );
+    }
     case "reconnect":
-      return <ReconnectLine item={item} ctx={ctx} />;
+      return <ReconnectLine item={item} ctx={ctx} last={last} />;
     case "compaction":
       return <CompactionBanner item={item} />;
+    case "model_change": {
+      // A slim divider between two contexts on different models (an in-session model switch),
+      // named by model id: it renders from the Trace alone, so a model removed from the
+      // configuration since still reads. One id under two providers is told apart by the pair.
+      const sameId = item.from.modelId === item.to.modelId;
+      const name = (m: { provider: string; modelId: string }): string =>
+        sameId ? `${m.provider} / ${m.modelId}` : m.modelId;
+      // A switch that handed the history over by Trace path says so, and names the file on hover.
+      const handover = item.handover;
+      return (
+        <div className="anim-msg my-3 flex items-center gap-3 text-xs text-fg-muted">
+          <span aria-hidden className="h-px flex-1 bg-line" />
+          <span
+            className="min-w-0 break-words text-center"
+            {...(handover
+              ? {
+                  "data-tooltip": S.chat.modelChangedByTraceHint(handover.tracePath),
+                  "data-tooltip-extra": true,
+                }
+              : {})}
+          >
+            {handover
+              ? S.chat.modelChangedByTrace(name(item.from), name(item.to))
+              : S.chat.modelChanged(name(item.from), name(item.to))}
+          </span>
+          <span aria-hidden className="h-px flex-1 bg-line" />
+        </div>
+      );
+    }
     case "mcp_connect":
       return <McpConnectBanner item={item} />;
     case "task_stats":
@@ -431,7 +514,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}
-            cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
+            cost={item.stats ? (ctx.taskCost?.(item.stats, item.model) ?? null) : null}
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
             {...(ctx.origin.length === 0 && item.forkable && ctx.onFork
               ? { onFork: ctx.onFork }

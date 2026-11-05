@@ -98,6 +98,22 @@ export interface HarnessInfo {
     cli: string | null;
     web: string | null;
   };
+  /**
+   * The committed native-assets directory, relative to `<root>/hmr` and named by its content
+   * like the bundles; null when the version carries no assets. Only the version report fills
+   * it — absent from the history's records, which identify a version by its three bundles.
+   * With it, a pusher can tell "the target already runs exactly this build" without pushing:
+   * a change to a builtin plugin moves this pointer and none of the three bundles.
+   */
+  assets?: string | null;
+}
+
+/** What a stored interface table says about itself, without reading it. */
+export interface IfacesSummary {
+  hash: string;
+  nodes: number;
+  interfaces: number;
+  types: number;
 }
 
 /**
@@ -109,6 +125,49 @@ export interface HarnessInfo {
  * `harness` describes the data root's store, so only a caller that knows which root is in
  * play can fill it.
  */
+/**
+ * One harness version, as the platform that WAS that version recorded it at its boot: the
+ * runtime's commit record (provenance, commit time, bundles) plus the interface table the
+ * platform was built from. The runtime only commits; what was pushed is written by the
+ * pushed code itself, so the record is complete on any runtime that can boot it.
+ */
+export interface HarnessHistoryEntry {
+  /** The version's identity in the history: derived from its bundles (or its table, for a packaged boot). */
+  id: string;
+  /** Whether the platform kept this version's artifacts, so it can be pushed back. */
+  rollbackable: boolean;
+  source: HarnessSource | null;
+  /** When the version was committed (ISO 8601); null for a commit that predates the record. */
+  pushedAt: string | null;
+  bundles: HarnessInfo["bundles"];
+  ifaces: IfacesSummary | null;
+}
+
+/**
+ * The harness versions that have booted on this data root, newest first, and the one the
+ * runtime currently has committed. Kept by the platform under `<root>/harness-history/`,
+ * apart from the runtime's store.
+ */
+export interface HarnessHistory {
+  current: HarnessInfo | null;
+  entries: HarnessHistoryEntry[];
+  /**
+   * The last push back the runtime refused, or null. A refused rollback leaves the platform
+   * that asked for it running, so it is the one that can say why; a rollback that lands
+   * replaces that platform, and the new one reports nothing here.
+   */
+  lastRollback: RollbackFailure | null;
+}
+
+/** Why a rollback did not happen, in the runtime's own words. */
+export interface RollbackFailure {
+  /** The version that was to be pushed back. */
+  id: string;
+  error: string;
+  /** When the refusal came (ISO 8601). */
+  at: string;
+}
+
 export interface VersionReport extends BuildInfo {
   harness: HarnessInfo | null;
 }

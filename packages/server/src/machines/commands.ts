@@ -17,13 +17,17 @@
  * disappear entirely.
  *
  * Two further rules encoded here:
- * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
- *   key passphrase would hang forever with nothing to type into. BatchMode turns that into an
- *   immediate, readable failure — v1 is key/agent auth, exactly as the design says.
+ * - **Nothing is ever typed.** A GUI app has no terminal: an ssh that decides to ask for a
+ *   password or a key passphrase would hang forever with nothing to type into. A machine that
+ *   signs in with keys runs in BatchMode, which turns any question into an immediate, readable
+ *   failure. A machine with a stored password signs in with that password and nothing else: ssh
+ *   takes it from the askpass helper (transport/login.ts), keys are not offered, and one wrong
+ *   answer per method ends the attempt.
  * - **The user override rides the command line, never the config.** `-o User=…` selects the
  *   account for this connection; `~/.ssh/config` is read-only to us.
  */
 import type { RemotePlatform } from "./detect.js";
+import type { RemoteLayout } from "./layout.js";
 
 /** Wraps a value for a POSIX remote shell. Single quotes are literal there, except `'` itself. */
 export function shQuote(value: string): string {
@@ -45,33 +49,74 @@ export interface RemoteTarget {
   alias: string;
   /** Login account. Empty means "whatever ssh resolves", i.e. no -o User override. */
   user: string;
+  /**
+   * Present when this machine signs in with a password this server stores for its alias. The
+   * password itself is not here: `read` fetches it at the moment a connection opens, and it
+   * reaches ssh only through that child's environment (transport/login.ts).
+   */
+  password?: PasswordLogin;
+  /**
+   * Present when the target was built for this server's own automatic work on the machine (a
+   * reconnect attempt, a connection check, a hand-over): aborted when that work is cut, which
+   * ends the command it has running and answers every later one without starting it.
+   */
+  signal?: AbortSignal;
+}
+
+/** How a machine that signs in with a password gets it to ssh. */
+export interface PasswordLogin {
+  /** The askpass helper: prints the password ssh's child environment carries. Holds no secret. */
+  askpass: string;
+  /** The stored password now; null when none is stored any more. */
+  read: () => string | null;
 }
 
 function connectionOptions(target: RemoteTarget): string[] {
+  const user = target.user === "" ? [] : ["-o", `User=${target.user}`];
+  if (target.password === undefined) {
+    return ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", ...user];
+  }
+  // A password, and only a password: BatchMode would refuse to ask the helper, and an account
+  // that locks after a few failures must not be offered keys or asked twice per method. Each
+  // option is spelled even where it is ssh's default, because the command line wins over a
+  // config that says otherwise (`Host *` with `BatchMode yes` or `PasswordAuthentication no`).
+  // No X11 channel: older OpenSSH needs DISPLAY set to ask the helper at all.
   return [
     "-o",
-    "BatchMode=yes",
+    "BatchMode=no",
+    "-o",
+    "PreferredAuthentications=password,keyboard-interactive",
+    "-o",
+    "PubkeyAuthentication=no",
+    "-o",
+    "PasswordAuthentication=yes",
+    "-o",
+    "KbdInteractiveAuthentication=yes",
+    "-o",
+    "NumberOfPasswordPrompts=1",
+    "-o",
+    "ForwardX11=no",
     "-o",
     "ConnectTimeout=10",
-    ...(target.user === "" ? [] : ["-o", `User=${target.user}`]),
+    ...user,
   ];
 }
 
 /**
- * The far side's program directory, and the launcher inside it that everything here runs.
- * Absolute, because sshd's non-login shell has no `~/.local/bin` on PATH — the symlink the
- * installer drops there is for a person at a terminal, not for us.
- *
- * `$HOME/.penguin` is where install.sh puts it (`PENGUIN_INSTALL_DIR`, defaulting there),
- * laid out as bin/ lib/ web/ node/, with the launcher exec'ing `node/bin/node lib/dist/…`
- * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
- * a non-interactive ssh, so the default is the only thing this side can assume — the same
- * assumption detect.ts makes to find the manifest.
- */
-export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
-
-/**
  * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
+ *
+ * Run out of the layout's program directory by absolute path, because sshd's non-login
+ * shell has no `~/.local/bin` on PATH — the symlink the installer drops there is for a
+ * person at a terminal, not for us. The directory is laid out as bin/ lib/ web/ node/ by
+ * install.sh (`PENGUIN_INSTALL_DIR`, which runInstallScriptCommand names), with the
+ * launcher exec'ing `node/bin/node lib/dist/…` (scripts/launchers/penguin). The data root
+ * rides along as PENGUIN_HOME: the CLI's `server status`, `server stop` and `auth token`
+ * all act on the root they are given, and the profile's root is not the default one.
+ * The profile rides along too, as PENGUIN_PROFILE: the server started by this command
+ * reaches machines of its own, and it reads its layout from that variable (layout.ts) —
+ * without it a dev-profile server would reach the NEXT machine's release installation.
+ * Named for the release profile as well, so an account that exports the variable cannot
+ * turn a release server into a dev one.
  *
  * `bin/penguin` is the released program, and a release only carries the subcommands this
  * side asks for (`server status`, `auth token`, `server --detach`) once a release has
@@ -83,28 +128,29 @@ export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
  * shipped in the archive since long before any of this, so a machine installed by any
  * release can run the current CLI. What it cannot do is run one that was never pushed: a
  * machine with an empty store answers `no CLI pushed to <root>`, and the remedy is to
- * install — which replicates the store on its way through (install-server.ts).
+ * install — which replicates the store on its way through (install-server.ts). Every install
+ * carries one: a pushed server's own state, the image a release ships (shipped-image.ts), or
+ * the image a checkout builds (checkout-image.ts).
  *
  * Invoked through the bundled runtime rather than the launcher, because there is no
  * launcher for this entry. Machines installed from here always carry that runtime: the
  * install runs install.sh without `--universal`, which is the only mode that omits it.
+ *
+ * Spelled in the dialect of the shell that will read it. A Windows sshd hands a command to
+ * cmd.exe, where `$HOME` is four literal characters and the bundled runtime is
+ * `node\node.exe` (scripts/launchers/penguin.cmd) — so the POSIX form is not "not found"
+ * there, it is a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
  */
-export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
-
-/**
- * The same program directory as cmd.exe names it. A Windows sshd hands a command to cmd.exe,
- * where `$HOME` is four literal characters and the bundled runtime is `node\node.exe`
- * (scripts/launchers/penguin.cmd) — so the POSIX form above is not "not found" there, it is
- * a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
- */
-export const REMOTE_PROGRAM_DIR_WINDOWS = "%USERPROFILE%\\.penguin";
-
-/** The pushed CLI, invoked in the dialect of the shell that will read the command. */
-export function remotePenguin(platform: "linux" | "darwin" | "win32"): string {
+export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): string {
   if (platform === "win32") {
-    return `"${REMOTE_PROGRAM_DIR_WINDOWS}\\node\\node.exe" "${REMOTE_PROGRAM_DIR_WINDOWS}\\lib\\dist\\penguin-hmr.js"`;
+    const dir = layout.programDir.win;
+    return `set "PENGUIN_HOME=${layout.dataRoot.win}" & set "PENGUIN_PROFILE=${layout.profile}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
   }
-  return REMOTE_PENGUIN;
+  const dir = layout.programDir.posix;
+  // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
+  // and nohup takes the first word as the program — a bare assignment there is "no such
+  // command", and the server never starts.
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" PENGUIN_PROFILE=${layout.profile} "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
@@ -134,23 +180,49 @@ export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: s
  * the command at all. Its delete is chained on rather than costing another handshake, and
  * `-ExecutionPolicy Bypass` covers client Windows defaulting to Restricted.
  *
- * `versionTag` is a release tag (`v` + semver); the caller validated the spelling, and the
- * quoting here keeps it one word regardless.
+ * `release` names what the installer installs: a release tag (`v` + semver; the caller
+ * validated the spelling, and the quoting here keeps it one word regardless), which it then
+ * downloads itself, or — POSIX only — a package already on that machine (`archive`, a path
+ * there), which this server carried over because the machine cannot reach the release
+ * sources. install.sh takes one or the other, never both.
  */
 export function runInstallScriptCommand(
-  versionTag: string,
+  release: string | { archive: string },
   where: { platform: "linux" | "darwin" } | { platform: "win32"; scriptPath: string },
+  layout: RemoteLayout,
 ): { command: string; scriptOnStdin: boolean } {
+  const versionTag = typeof release === "string" ? release : null;
+  // The program directory is named on every install, release profile included: the
+  // installer's default happens to match that profile, but the far side's own override of
+  // PENGUIN_INSTALL_DIR would not be visible here, and the rest of these commands assume
+  // the layout they were given.
+  //
+  // `--no-modify-path` for a layout that does not own the machine's `penguin` command: the
+  // installer would otherwise repoint `~/.local/bin/penguin` (or extend the user Path) at
+  // this program directory, and a person typing `penguin` there would run the dev program
+  // against the release data root.
   if (where.platform === "win32") {
+    if (versionTag === null) throw new Error("a carried package installs on POSIX machines only");
     const script = cmdQuote(where.scriptPath);
     return {
       command:
+        `set "PENGUIN_INSTALL_DIR=${layout.programDir.win}" & ` +
         `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
+        (layout.ownsCommand ? "" : " -NoModifyPath") +
         ` & del /q ${script}`,
       scriptOnStdin: false,
     };
   }
-  return { command: `PENGUIN_VERSION=${shQuote(versionTag)} sh -s`, scriptOnStdin: true };
+  const source =
+    versionTag === null
+      ? `PENGUIN_ARCHIVE=${shQuote((release as { archive: string }).archive)}`
+      : `PENGUIN_VERSION=${shQuote(versionTag)}`;
+  return {
+    command:
+      `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" ${source} sh -s` +
+      (layout.ownsCommand ? "" : " -- --no-modify-path"),
+    scriptOnStdin: true,
+  };
 }
 
 /**
@@ -165,12 +237,12 @@ export function runInstallScriptCommand(
  * `<root>/hmr` — and the machine goes on answering with whatever it held before, so the
  * replication reports success and achieves nothing.
  */
-export function unpackStoreCommand(platform: RemotePlatform): string {
+export function unpackStoreCommand(platform: RemotePlatform, layout: RemoteLayout): string {
   if (platform === "win32") {
-    const root = "%USERPROFILE%\\.penguin\\data\\hmr";
+    const root = `${layout.dataRoot.win}\\hmr`;
     return `(if not exist ${cmdQuote(root)} mkdir ${cmdQuote(root)}) & tar -xzf - -C ${cmdQuote(root)}`;
   }
-  const root = "$HOME/.penguin/data/hmr";
+  const root = `${layout.dataRoot.posix}/hmr`;
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
 
@@ -178,19 +250,68 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
  * Starts the installed server in the background and returns at once; readiness is the
  * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
  * and the log is the far side's own words when it comes up and dies.
+ *
+ * Prints the launched process's pid (`$!`) as its only output, so the caller can tell a
+ * server that is still coming up from one that already died (launchedPid, isAliveCommand).
  */
-export function startServerCommand(port: number): string {
+export function startServerCommand(port: number, layout: RemoteLayout): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
-  const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
+  const root = layout.dataRoot.posix;
   // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --host 127.0.0.1 --port ${port} >> ${log} 2>&1 < /dev/null &`;
+  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
+}
+
+/** The pid startServerCommand printed; null when the output holds none. */
+export function launchedPid(stdout: string): number | null {
+  const lines = stdout.trim().split(/\r?\n/);
+  const last = lines[lines.length - 1]?.trim() ?? "";
+  return /^[1-9]\d*$/.test(last) ? Number(last) : null;
+}
+
+/** Answers `alive` or `gone` for a pid on the far side. */
+export function isAliveCommand(pid: number): string {
+  if (!Number.isInteger(pid) || pid < 1) throw new Error(`bad pid ${pid}`);
+  return `kill -0 ${pid} 2>/dev/null && echo alive || echo gone`;
+}
+
+/**
+ * Removes the installed program from a POSIX machine — what install.sh put in the layout's
+ * program directory (`bin`, `lib`, `web`, `node`, and the staging and backup directories an
+ * interrupted install can leave) — and, with `removeData`, the data root inside it. Nothing
+ * else in that directory is touched, and the directory itself goes only if it is left empty.
+ * The release layout also owns the machine's `penguin` command: its symlink goes when it still
+ * points into this program directory, and is left alone when something else has taken the name.
+ *
+ * Its server must be stopped first; this does not stop it. Prints one line per thing removed.
+ */
+export function uninstallCommand(layout: RemoteLayout, removeData: boolean): string {
+  const parts = [
+    `dir="${layout.programDir.posix}"`,
+    `[ -d "$dir" ] || { echo "nothing installed at $dir"; exit 0; }`,
+    `rm -rf "$dir/bin" "$dir/lib" "$dir/web" "$dir/node" "$dir"/.staging.* "$dir"/.old.* || exit 1`,
+    `echo "removed $dir/bin, lib, web and node"`,
+  ];
+  if (layout.ownsCommand) {
+    parts.push(
+      `link="$HOME/.local/bin/penguin"`,
+      `if [ -L "$link" ] && [ "$(readlink "$link")" = "$dir/bin/penguin" ]; then rm -f "$link" && echo "removed $link"; fi`,
+    );
+  }
+  if (removeData) {
+    parts.push(`rm -rf "$dir/data" || exit 1`, `echo "removed $dir/data"`);
+  }
+  // An empty directory is all that is left when nothing else lived there.
+  parts.push(`rmdir "$dir" 2>/dev/null && echo "removed $dir"; exit 0`);
+  return parts.join("; ");
 }
 
 /** The last lines of that log, for a start that did not answer. */
-export const SERVER_LOG_TAIL = `tail -n 20 "${REMOTE_PROGRAM_DIR}/data/server.log" 2>/dev/null`;
+export function serverLogTail(layout: RemoteLayout): string {
+  return `tail -n 20 "${layout.dataRoot.posix}/server.log" 2>/dev/null`;
+}
 
 // --- tunnelling to that server ---------------------------------------------------------------
 
@@ -236,14 +357,21 @@ export const DIR_LIST_MARK = "---penguin-dirs---";
  *
  * Hidden directories are dropped, matching what the local browser shows, and everything is
  * quoted for the remote shell by the caller's quoting rules.
+ *
+ * Exit 3 means there is no such directory; exit 4 means there is one and it may not be read
+ * (a folder without the search bit, or one macOS privacy protection holds back — `ls` fails
+ * there while `[ -r ]` still says yes, so the listing itself is what is tested). The listing
+ * is taken before anything is printed, so a refusal leaves no half-written answer behind.
  */
 export function listDirsCommand(dir: string): string {
   const target = dir === "" ? '"$HOME"' : shQuote(dir);
   return [
-    `cd ${target} 2>/dev/null || exit 3`,
+    `[ -d ${target} ] || exit 3`,
+    `cd ${target} 2>/dev/null || exit 4`,
+    `listing=$(ls -1p 2>/dev/null) || exit 4`,
     `pwd -P`,
     `echo ${DIR_LIST_MARK}`,
     // -1 one per line, trailing slash marks directories, then keep only those.
-    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+    `printf '%s\\n' "$listing" | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
   ].join("; ");
 }

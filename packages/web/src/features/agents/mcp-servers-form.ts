@@ -3,8 +3,10 @@
  * stored `tools.mcpServers` entries (`{ name, config }`).
  *
  * The form covers the known transport fields; unknown `config` keys an entry may carry
- * (hand-written YAML, future fields) ride along in `extras` and are merged back on save,
- * so the form never destroys what it does not understand. Validation errors come back as
+ * (hand-written YAML, future fields, a plugin's `oauth`) ride along in `extras` and are merged
+ * back on save, so the form never destroys what it does not understand — nor the entry's
+ * `plugin` provenance, which an edit keeps so the plugin's reinstall or uninstall still finds
+ * it. Validation errors come back as
  * codes (plus a line number for the multiline fields); the component maps them to
  * localized messages.
  */
@@ -40,6 +42,8 @@ export interface McpServerFormState {
   permission: McpPermissionMode;
   /** Unrecognized config keys of the entry being edited; merged back verbatim on save. */
   extras: Record<string, unknown>;
+  /** The plugin that installed the entry being edited (absent for the user's own); written back on save. */
+  plugin?: string;
 }
 
 export type McpFormField =
@@ -180,6 +184,7 @@ export function serverToForm(entry: MCPServerConfig): McpServerFormState {
     ),
     permission: permissionOf(entry),
     extras,
+    ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
   };
 }
 
@@ -268,5 +273,42 @@ export function formToServer(form: McpServerFormState): McpFormResult {
   if (form.permission !== MCP_PERMISSION_DEFAULT) config["permission"] = form.permission;
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, server: { name, config } };
+  return {
+    ok: true,
+    server: { name, ...(form.plugin !== undefined ? { plugin: form.plugin } : {}), config },
+  };
+}
+
+/** A JSON value as one string, object keys sorted: two values print alike exactly when they are the same data. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * The entry the edit dialog's test sends: the saved entry itself while the form still says what
+ * it says, else the form's entry (with formToServer's errors, when it has any). The server fills
+ * vault values only into an entry saved exactly as tested, and the form's rebuild of an unchanged
+ * entry is not byte for byte the saved one — it names the transport, leaves defaults out, trims —
+ * so an untouched saved entry is tested as saved, and any change makes it a new entry.
+ */
+export function entryToTest(
+  form: McpServerFormState,
+  saved: MCPServerConfig | undefined,
+): McpFormResult {
+  const built = formToServer(form);
+  if (!built.ok || saved === undefined) return built;
+  const unchanged = formToServer(serverToForm(saved));
+  return unchanged.ok &&
+    unchanged.server.name === built.server.name &&
+    canonicalJson(unchanged.server.config) === canonicalJson(built.server.config)
+    ? { ok: true, server: saved }
+    : built;
 }

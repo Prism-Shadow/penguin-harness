@@ -1,13 +1,23 @@
 /**
- * session-order.ts unit tests: the sidebar's row sort mode and manual drag order. The
- * sort mode is one global preference defaulting to "recent" (a fresh profile looks
- * unchanged); the manual order is one per-Project id array where only the relative
- * order of ids co-rendered in a partition matters. Ordering composes with the row
- * pins: the pinned cluster is always first, manual order applies within each pin
- * partition independently, and a drop commits the partition's sequence to the front
- * of the stored array without disturbing other groups' relative order. Newcomers
- * (ids not stored) surface at the TOP of their partition in recency order; stale
- * stored ids are inert; deletion prunes with a same-reference fast path.
+ * The sidebar's row order (lib/session-order.ts): the global sort mode and the per-Project
+ * manual drag order, composed with the row pins.
+ *
+ * - The sort mode defaults to recent (nothing stored, an unknown value, a throwing storage)
+ *   and round-trips manual and back.
+ * - Given no Project or nothing stored, the manual order is empty and reading writes nothing;
+ *   an order saved per Project and grouping mode reads back for exactly that pair.
+ * - A malformed stored order reads as empty, keeping the well-formed ids; a storage whose
+ *   getter throws degrades instead of escaping.
+ * - Stored rows take their stored positions, unstored newcomers come first in recency order,
+ *   and stale stored ids are inert.
+ * - Recent mode sorts by last activity (ties by id descending) without mutating the input;
+ *   stamps and ids compare by code point, the order the watermark cuts in, so rows revealed
+ *   by a page that tie with shown ones land below them.
+ * - Manual mode applies the stored order inside each pin partition, newcomers on top of theirs.
+ * - A drop moves one id before or after another, and a drop that moves nothing returns the
+ *   input so nothing is written; committing a partition fronts it and keeps the others'
+ *   relative order, including rows past the display cap.
+ * - Deleting a Session prunes its id, returning the same array when it was not stored.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -24,41 +34,25 @@ import {
   storeSessionSortMode,
 } from "../src/lib/session-order";
 import type { SessionOrderStorage } from "../src/lib/session-order";
-
-/** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
-function memStorage(): SessionOrderStorage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k) => map.get(k) ?? null,
-    setItem: (k, v) => void map.set(k, v),
-  };
-}
+import { cutAtWatermark } from "../src/lib/session-grouping";
+import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;
 
 describe("sort-mode store (one global preference)", () => {
   it("default is recent: nothing stored, unrecognized values, and throwing storage all read as recent", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(initialSessionSortMode(s)).toBe("recent");
     for (const raw of ["", "MANUAL", "drag", "true"]) {
       s.map.set(SESSION_SORT_MODE_KEY, raw);
       expect(initialSessionSortMode(s)).toBe("recent");
     }
-    const broken: SessionOrderStorage = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    };
-    expect(initialSessionSortMode(broken)).toBe("recent");
-    expect(() => storeSessionSortMode("manual", broken)).not.toThrow();
+    expect(initialSessionSortMode(blockedStorage())).toBe("recent");
+    expect(() => storeSessionSortMode("manual", blockedStorage())).not.toThrow();
   });
 
   it("round-trips manual and back", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     storeSessionSortMode("manual", s);
     expect(s.map.get(SESSION_SORT_MODE_KEY)).toBe("manual");
     expect(initialSessionSortMode(s)).toBe("manual");
@@ -69,7 +63,7 @@ describe("sort-mode store (one global preference)", () => {
 
 describe("manual-order store (per-Project × grouping-mode localStorage)", () => {
   it("nothing stored — or no Project yet — is empty, reading never writes, saving without a Project is a no-op", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     expect(loadSessionOrder("p1", "workspace", s)).toEqual([]);
     expect(loadSessionOrder(null, "workspace", s)).toEqual([]);
     expect(s.map.size).toBe(0);
@@ -78,7 +72,7 @@ describe("manual-order store (per-Project × grouping-mode localStorage)", () =>
   });
 
   it("save → load round-trips per Project; Projects are isolated", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveSessionOrder("p1", "workspace", ["b", "a"], s);
     saveSessionOrder("p2", "workspace", ["c"], s);
     expect(loadSessionOrder("p1", "workspace", s)).toEqual(["b", "a"]);
@@ -87,7 +81,7 @@ describe("manual-order store (per-Project × grouping-mode localStorage)", () =>
   });
 
   it("the two grouping modes keep separate orders (their partitions differ, so one array would scramble the other)", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     saveSessionOrder("p1", "workspace", ["b", "a"], s);
     saveSessionOrder("p1", "agent", ["a", "b"], s);
     expect(loadSessionOrder("p1", "workspace", s)).toEqual(["b", "a"]);
@@ -96,7 +90,7 @@ describe("manual-order store (per-Project × grouping-mode localStorage)", () =>
   });
 
   it("malformed JSON / non-array shapes degrade to empty; junk array elements are dropped", () => {
-    const s = memStorage();
+    const s = memoryStorage();
     for (const raw of ["{not json", '"a"', "42", "null", "{}", ""]) {
       s.map.set(sessionOrderKey("p1", "workspace"), raw);
       expect(loadSessionOrder("p1", "workspace", s)).toEqual([]);
@@ -176,6 +170,31 @@ describe("orderSessionRows recency (最近更新 = last ACTIVITY, not creation)"
     });
     expect(out.map((r) => r.id)).toEqual(["c", "b", "a"]);
     expect(tied.map((r) => r.id)).toEqual(["a", "c", "b"]); // input untouched
+  });
+
+  it("rows sharing a stamp keep the watermark's code-point order, so a page revealing a tied row appends it below", () => {
+    // Four conversations touched in the same millisecond; ids a collation ranks the other way
+    // round (case, `_` against `-`). The server pages them and the watermark cuts them by code
+    // point, so the display must too.
+    const stamp = "2026-08-14T09:00:00.000Z";
+    const tied = ["session-ABCD", "session-a-b", "session-abcd", "session-a_b"].map(
+      (sessionId) => ({ sessionId, lastActiveAt: stamp }),
+    );
+    const show = (rows: readonly { sessionId: string; lastActiveAt: string }[]) =>
+      orderSessionRows(rows, (r) => r.sessionId, {
+        ...plain,
+        sortMode: "recent",
+        recencyOf: (r) => r.lastActiveAt,
+      }).map((r) => r.sessionId);
+
+    // Before a load: the cursor stopped at `session-a_b`, so only the rows at or above it show.
+    const before = show(cutAtWatermark(tied, { lastActiveAt: stamp, sessionId: "session-a_b" }));
+    // After it: every stream is exhausted and all four show.
+    const after = show(cutAtWatermark(tied, null));
+
+    expect(before).toEqual(["session-abcd", "session-a_b"]);
+    expect(after).toEqual(["session-abcd", "session-a_b", "session-a-b", "session-ABCD"]);
+    expect(after.slice(0, before.length)).toEqual(before);
   });
 
   it("recency also decides where manual-mode newcomers land, and never crosses the pin boundary", () => {

@@ -13,14 +13,26 @@
  *
  * Comparisons hash both sides first so timingSafeEqual gets equal-length buffers.
  *
- * The service is also the shell↔web relay for client updates: the shell pushes its
- * updater snapshot over the utilityProcess message channel (index.ts wires the port),
- * the web reads it at GET /api/desktop/update and posts check/download/install commands
- * that are forwarded back to the shell. The window itself stays a plain browser — every
- * capability flows through this HTTP surface, never a renderer IPC bridge.
+ * The service is also the shell↔web relay for two shell-owned surfaces: client updates
+ * and the tray icon. In both directions it is the same utilityProcess message channel
+ * (index.ts wires the port) — the shell pushes its current state, the web reads it at
+ * GET /api/desktop/update or /api/desktop/tray and writes back a command that is
+ * forwarded to the shell. The window itself stays a plain browser — every capability
+ * flows through this HTTP surface, never a renderer IPC bridge.
+ *
+ * The same channel carries the Workspace picker's macOS folder access: a request the shell
+ * answers (its main process reads a folder in the app's own name), and a command that opens
+ * System Settings at a privacy pane.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { DesktopUpdateStatus, DesktopUpdaterCommandMessage } from "../api/types.js";
+import type {
+  DesktopFolderAccessResult,
+  DesktopPrivacyPane,
+  DesktopTrayPatch,
+  DesktopTrayStatus,
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+} from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
@@ -88,4 +100,65 @@ export class DesktopService {
     this.updateCommandSender(action);
     return true;
   }
+
+  // --- tray-icon relay -------------------------------------------------------
+
+  private trayStatus: DesktopTrayStatus | null = null;
+  private trayCommandSender: ((patch: DesktopTrayPatch) => void) | null = null;
+
+  /** Latest shell push; null until the shell's first one lands (the page then reads it as on). */
+  getTrayStatus(): DesktopTrayStatus | null {
+    return this.trayStatus;
+  }
+
+  /** index.ts stores each shell push here (already validated at the message port). */
+  setTrayStatus(status: DesktopTrayStatus): void {
+    this.trayStatus = status;
+  }
+
+  /** index.ts registers the message-port sender; absent outside a shell-forked process. */
+  onTrayCommand(sender: (patch: DesktopTrayPatch) => void): void {
+    this.trayCommandSender = sender;
+  }
+
+  /** Invoked by the tray route; false when no shell port is wired (tests, plain runs). */
+  requestTrayCommand(patch: DesktopTrayPatch): boolean {
+    if (!this.trayCommandSender) return false;
+    this.trayCommandSender(patch);
+    return true;
+  }
+
+  // --- macOS folder-access relay ----------------------------------------------
+
+  private folderAccessSender: FolderAccessSender | null = null;
+  private privacySettingsSender: ((pane: DesktopPrivacyPane) => void) | null = null;
+
+  /** index.ts registers the message-port request; absent outside a shell-forked process. */
+  onFolderAccessRequest(sender: FolderAccessSender): void {
+    this.folderAccessSender = sender;
+  }
+
+  /**
+   * Invoked by the dirs access route: has the shell read `path` in the app's own name. Null
+   * when no shell port is wired (tests, plain runs); the promise resolves null when the shell
+   * does not answer in time.
+   */
+  requestFolderAccess(path: string): Promise<DesktopFolderAccessResult | null> | null {
+    return this.folderAccessSender?.(path) ?? null;
+  }
+
+  /** index.ts registers the message-port sender; absent outside a shell-forked process. */
+  onPrivacySettingsCommand(sender: (pane: DesktopPrivacyPane) => void): void {
+    this.privacySettingsSender = sender;
+  }
+
+  /** Invoked by the privacy-settings route; false when no shell port is wired (tests, plain runs). */
+  requestPrivacySettings(pane: DesktopPrivacyPane): boolean {
+    if (!this.privacySettingsSender) return false;
+    this.privacySettingsSender(pane);
+    return true;
+  }
 }
+
+/** Asks the shell to read one folder; resolves with its answer, or null when none came in time. */
+export type FolderAccessSender = (path: string) => Promise<DesktopFolderAccessResult | null>;

@@ -6,11 +6,50 @@ export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 /**
+ * The host names this site is served from. A link in a post to one of them is a page of this
+ * site, not a site the reader is leaving for (see lib/post-links.ts); the page adds the host it is
+ * actually running on, so a preview deployment counts as itself.
+ */
+export const SITE_HOSTS: readonly string[] = ["penguin.ooo", "www.penguin.ooo"];
+
+/**
  * Docs site: a sibling SPA deployed under the landing page's own base ("/<repo>/docs/",
  * see scripts/build-site.mjs). A plain href — it is a separate app, not a router route.
  * In local dev this resolves to "/docs/", which only exists in the assembled build.
  */
 export const DOCS_URL = `${import.meta.env.BASE_URL}docs/`;
+
+/**
+ * Component gallery: the real Web App and its components framed against an in-browser demo API,
+ * another sibling SPA deployed under the landing page's base ("/<repo>/gallery/", see
+ * scripts/build-site.mjs). A plain href, as for the docs, and likewise only in the assembled build.
+ */
+export const GALLERY_URL = `${import.meta.env.BASE_URL}gallery/`;
+
+/**
+ * The gallery opened in the site's language. The gallery reads `lang` from its query before the
+ * language it remembers, so a reader arrives in the language they are reading the site in.
+ */
+export function galleryUrl(locale: "zh" | "en"): string {
+  return `${GALLERY_URL}?lang=${locale}`;
+}
+
+/** The AMSP page's outside links: the SDK on npm and its source, and MMSP's own site. */
+/** Where the Plugins page reads its packages: this repository's plugins/ directory. */
+export const PLUGINS_SOURCE = `${REPO_URL}/tree/main/plugins`;
+/** Where the Benchmarks and Leaderboards pages read their files. */
+export const BENCHMARK_REPO_URL = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
+export const AMSP_NPM_URL = "https://www.npmjs.com/package/@prismshadow/amsp";
+export const AMSP_SOURCE_URL = `${REPO_URL}/tree/main/packages/amsp`;
+export const MMSP_URL = "https://mmsp.penguin.ooo/";
+
+/**
+ * MMSP's model index in the site's language. MMSP serves Chinese under `/zh/` and English at its
+ * root, with no `/en/` prefix (`/en/models/` is a 404).
+ */
+export function mmspModelsUrl(locale: "zh" | "en"): string {
+  return locale === "zh" ? `${MMSP_URL}zh/models/` : `${MMSP_URL}models/`;
+}
 
 /**
  * One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime).
@@ -75,8 +114,8 @@ const COMMUNITY_RAW =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main";
 
 /**
- * Demo videos: ~9 MB each, against a whole repo history of ~17 MB — committing them here
- * would triple what every contributor clones. raw.githubusercontent sends
+ * Demo videos: several megabytes each — committing them here would multiply what every
+ * contributor clones. raw.githubusercontent sends
  * `accept-ranges: bytes`, so seeking works. The `application/octet-stream` content type
  * does not block playback — `nosniff` is only enforced for scripts and styles, and
  * `<video>` sniffs the container itself (verified in Chromium).

@@ -37,6 +37,7 @@ import {
   type SystemConfig,
 } from "../src/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 let root: string;
 let restoreKeys: () => void;
@@ -44,6 +45,8 @@ let restoreKeys: () => void;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sections-"));
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(root);
 });
 
 afterEach(async () => {
@@ -61,7 +64,7 @@ function withConfig(state: AgentState, patch: Partial<SystemConfig>): AgentState
   return { ...state, systemConfig: { ...state.systemConfig, ...patch } };
 }
 
-const DEMO_SKILL = { name: "demo", description: "Demo skill.", version: "2026-08-01.1" };
+const DEMO_SKILL = { name: "demo", description: "Demo skill.", version: "2026.08.01.1" };
 
 /** A complete Environment section, so the rendered prompt carries every `- Label: value` line. */
 const SESSION_ENVIRONMENT = {

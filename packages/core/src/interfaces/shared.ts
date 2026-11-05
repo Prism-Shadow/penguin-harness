@@ -12,15 +12,19 @@
 import type {
   ApprovalDecision,
   ErrorCode,
-  OmniMessage,
+  AmspRecord,
   ToolCallPayload,
-} from "../omnimessage/types.js";
+} from "@prismshadow/amsp/records";
 
-// ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
-export type { ToolDefinition } from "../omnimessage/types.js";
+// ToolDefinition is defined with the records (@prismshadow/amsp: the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
+export type { ToolDefinition } from "@prismshadow/amsp/records";
 
-/** Thinking level of one request. Shared: the LLM takes it per request and as a construction default, and a spawned child Session inherits or overrides it. */
-export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+/**
+ * Thinking level of one request. Shared: the LLM takes it per request and as a construction
+ * default, and a spawned child Session inherits or overrides it. Defined with the records
+ * (`request_begin.thinking_level` records it), re-exported here at its old path.
+ */
+export type { ThinkingLevelName } from "@prismshadow/amsp/records";
 
 /**
  * How a run was cut off early, returned as the **return value** of the run generators
@@ -32,9 +36,9 @@ export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "
  * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;
  * `compaction_failure` a compaction given up mid-task (at a Task boundary the same
  * failure is advisory and the run returns null); `max_turns` the Task's turn cap — the
- * engine closes the Task with its own notice and holds the pending input as carry-over for
- * the next run. The error pair mirrors the terminal record's `error_code` / `error_message`
- * (none for `max_turns`).
+ * engine closes the Task with an `abort` record coded `max_turns` and holds the pending input
+ * as carry-over for the next run. The error pair mirrors the terminal record's `error_code` /
+ * `error_message`.
  */
 export interface RunCutoff {
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
@@ -51,7 +55,7 @@ export interface RunCutoff {
  * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
  * Docs: /docs/interfaces § "ApproveFn".
  */
-export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+export type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 
 /**
  * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the
@@ -63,7 +67,7 @@ export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<Appr
  * are the deciding hook's, for the denied output line the model reads.
  */
 export interface PreToolUseOutcome {
-  events: OmniMessage[];
+  events: AmspRecord[];
   decision: "allow" | "deny" | null;
   name?: string;
   reason?: string;
@@ -77,8 +81,32 @@ export interface PreToolUseOutcome {
  * Docs: /docs/agent-loop § "Hooks".
  */
 export type PreToolUseFn = (
-  toolCall: OmniMessage<ToolCallPayload>,
+  toolCall: AmspRecord<ToolCallPayload>,
 ) => Promise<PreToolUseOutcome | null>;
+
+/**
+ * What one pass over the user-prompt hooks produced, handed to `context_engine` by the
+ * Session-wired {@link UserPromptFn}: the records in hook order — one harness-stamped user
+ * text per non-empty `context` a hook answered, one `hook` event per hook that failed. The
+ * engine yields and writes them right behind the Prompt; the user texts join the Task's
+ * first request input.
+ */
+export interface UserPromptOutcome {
+  records: AmspRecord[];
+}
+
+/**
+ * User-prompt hook consult: called by `context_engine` once at the start of a run, after
+ * the Prompt is written and before the first request, with the run's new input. Wired by
+ * the Session from the Agent's installed hook packages (`hooks.json` `user_prompt`
+ * commands); answers null when the input carries no text of the user's own or no hook is
+ * due, and the engine then sends the Prompt as it is.
+ * Docs: /docs/agent-loop § "User-prompt hooks".
+ */
+export type UserPromptFn = (
+  input: AmspRecord[],
+  signal?: AbortSignal,
+) => Promise<UserPromptOutcome | null>;
 
 /**
  * One command-policy deny rule — plain project-editable data: a name (identifies the rule

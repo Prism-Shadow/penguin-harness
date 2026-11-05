@@ -1,18 +1,31 @@
 /**
- * WeChat scan-to-connect — the only way this channel is ever bound, so these tests cover
- * more than QQ's equivalent: there is no typed fallback behind them.
+ * WeChat scan-to-connect — the only way this channel is ever bound, so these cases cover more
+ * than QQ's equivalent: there is no typed fallback behind them. Three layers, each faked at a
+ * different depth on purpose: the protocol runs the real transport against the suite's fetch
+ * fake (the request shape and status vocabulary are what a seam fake would stop testing); the
+ * service and the routes run over a fake transport, the service being a state machine no wire
+ * can express. The one invariant spanning all three: the platform's poll handle, which is what
+ * collects a bot token, never reaches the browser.
  *
- * Three layers, each fake at a different depth on purpose. The protocol layer drives the
- * real transport against a stubbed `globalThis.fetch`, because the request shape and the
- * status vocabulary are exactly what a seam fake would stop testing. The service layer uses
- * a fake transport, because what it owns is a state machine — claims, the pairing code, the
- * IDC redirect, the TTL — that no wire can express. The route layer uses the same fake, and
- * asserts the one invariant that spans all three: the platform's poll handle, which is what
- * collects a bot token, never appears in anything the browser is given.
+ * - The protocol asks for a code under the bot type offering no local tokens; maps every
+ *   status the platform reports onto one the browser can render (an unknown one reads as
+ *   pending); puts the pairing code on the status query; reads a confirmed scan's credentials
+ *   and assigned host (the entry host when none is named); refuses a confirmation without
+ *   credentials; reads a long poll that closed silently as pending.
+ * - The service hands out a handle of its own; answers an overlapping poll `pending`; holds a
+ *   pairing code for the next poll and stops resending it once accepted; refuses a code for
+ *   another Session's task; follows an IDC redirect silently; spends the task on a completed
+ *   scan and on every other end the platform declares, but keeps it pollable when the request
+ *   failed; keeps Sessions' tasks apart, evicting only the caller's own oldest at its ceiling;
+ *   sweeps abandoned tasks and forgets a Session's tasks wholesale.
+ * - The routes hand the browser a task, a URL and an interval, never the handle; a completed
+ *   poll saves the binding with the bot id as the account and no token in the answer; a
+ *   pairing code is reported and taken (404 for a task that is gone); a scan is refused while
+ *   the connection is live; a platform failure is a 502; an abandoned scan can be cancelled;
+ *   every route is owner-only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeChatScanPollResponse, WeChatScanStartResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import { WECHAT_API_BASE } from "../src/runtime/messaging/wechat-api.js";
 import type {
   WeChatScanPollResult,
@@ -28,6 +41,8 @@ import type {
   WeChatCredentials,
   WeChatTransport,
 } from "../src/runtime/messaging/wechat-api.js";
+import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
+import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -42,69 +57,30 @@ const SCANNER = "ilink_user_aaa";
 /** The platform's poll handle. It turns into a bot token, so no response may carry it. */
 const QRCODE = "qrcode-handle-SECRET";
 
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // The protocol, against a stubbed fetch
 // ---------------------------------------------------------------------------
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-async function withFetch<T>(
-  answer: (url: string, init: RequestInit | undefined) => Response,
-  body: (urls: string[]) => Promise<T>,
-): Promise<T> {
-  const urls: string[] = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    urls.push(String(input));
-    return answer(String(input), init);
-  }) as typeof fetch;
-  try {
-    return await body(urls);
-  } finally {
-    globalThis.fetch = original;
-  }
-}
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("the WeChat scan protocol", () => {
   it("asks for a code under the bot type and offers no local tokens", async () => {
     let sentBody = "";
-    await withFetch(
-      (_url, init) => {
-        sentBody = String(init?.body ?? "");
-        return jsonResponse({ qrcode: QRCODE, qrcode_img_content: "https://weixin.qq.com/q/abc" });
-      },
-      async (urls) => {
-        const res = await createWeChatScanTransport().createQrCode();
-        expect(urls[0]).toBe(`${WECHAT_API_BASE}/ilink/bot/get_bot_qrcode?bot_type=3`);
-        // Offering the tokens this server already holds would hand one binding's credential
-        // to another binding's flow.
-        expect(JSON.parse(sentBody)).toEqual({ local_token_list: [] });
-        // The handle and the URL are different things: the URL goes into the QR, the handle
-        // collects the token.
-        expect(res.qrcode).toBe(QRCODE);
-        expect(res.qrUrl).toBe("https://weixin.qq.com/q/abc");
-      },
-    );
+    const { calls } = stubFetch((call) => {
+      sentBody = call.body;
+      return jsonResponse({ qrcode: QRCODE, qrcode_img_content: "https://weixin.qq.com/q/abc" });
+    });
+    const res = await createWeChatScanTransport().createQrCode();
+    expect(calls[0]!.url).toBe(`${WECHAT_API_BASE}/ilink/bot/get_bot_qrcode?bot_type=3`);
+    // Offering the tokens this server already holds would hand one binding's credential
+    // to another binding's flow.
+    expect(JSON.parse(sentBody)).toEqual({ local_token_list: [] });
+    // The handle and the URL are different things: the URL goes into the QR, the handle
+    // collects the token.
+    expect(res.qrcode).toBe(QRCODE);
+    expect(res.qrUrl).toBe("https://weixin.qq.com/q/abc");
   });
 
   it("maps every status the platform reports onto one the browser can render", async () => {
@@ -120,101 +96,77 @@ describe("the WeChat scan protocol", () => {
       ["something_new_from_tencent", "pending"],
     ];
     for (const [wire, expected] of cases) {
-      await withFetch(
-        () => jsonResponse({ status: wire }),
-        async () => {
-          const res = await createWeChatScanTransport().pollQrStatus({
-            baseUrl: WECHAT_API_BASE,
-            qrcode: QRCODE,
-          });
-          expect(res.status).toBe(expected);
-        },
-      );
+      stubFetch(() => jsonResponse({ status: wire }));
+      const res = await createWeChatScanTransport().pollQrStatus({
+        baseUrl: WECHAT_API_BASE,
+        qrcode: QRCODE,
+      });
+      expect(res.status).toBe(expected);
     }
   });
 
   it("puts the pairing code on the status query, which is where the platform takes it", async () => {
-    await withFetch(
-      () => jsonResponse({ status: "scaned" }),
-      async (urls) => {
-        await createWeChatScanTransport().pollQrStatus({
-          baseUrl: WECHAT_API_BASE,
-          qrcode: QRCODE,
-          verifyCode: "8421",
-        });
-        expect(urls[0]).toContain("verify_code=8421");
-        expect(urls[0]).toContain(`qrcode=${encodeURIComponent(QRCODE)}`);
-      },
-    );
+    const { calls } = stubFetch(() => jsonResponse({ status: "scaned" }));
+    await createWeChatScanTransport().pollQrStatus({
+      baseUrl: WECHAT_API_BASE,
+      qrcode: QRCODE,
+      verifyCode: "8421",
+    });
+    expect(calls[0]!.url).toContain("verify_code=8421");
+    expect(calls[0]!.url).toContain(`qrcode=${encodeURIComponent(QRCODE)}`);
   });
 
   it("reads a confirmed scan's credentials, and the API host it assigned", async () => {
-    await withFetch(
-      () =>
-        jsonResponse({
-          status: "confirmed",
-          bot_token: BOT_TOKEN,
-          ilink_bot_id: BOT_ID,
-          ilink_user_id: SCANNER,
-          baseurl: "https://idc-7.ilinkai.weixin.qq.com",
-        }),
-      async () => {
-        const res = await createWeChatScanTransport().pollQrStatus({
-          baseUrl: WECHAT_API_BASE,
-          qrcode: QRCODE,
-        });
-        expect(res.bot).toEqual({
-          botId: BOT_ID,
-          botToken: BOT_TOKEN,
-          baseUrl: "https://idc-7.ilinkai.weixin.qq.com",
-          userId: SCANNER,
-        });
-      },
+    stubFetch(() =>
+      jsonResponse({
+        status: "confirmed",
+        bot_token: BOT_TOKEN,
+        ilink_bot_id: BOT_ID,
+        ilink_user_id: SCANNER,
+        baseurl: "https://idc-7.ilinkai.weixin.qq.com",
+      }),
     );
+    const res = await createWeChatScanTransport().pollQrStatus({
+      baseUrl: WECHAT_API_BASE,
+      qrcode: QRCODE,
+    });
+    expect(res.bot).toEqual({
+      botId: BOT_ID,
+      botToken: BOT_TOKEN,
+      baseUrl: "https://idc-7.ilinkai.weixin.qq.com",
+      userId: SCANNER,
+    });
   });
 
   it("falls back to the entry host when a confirmed scan names none", async () => {
-    await withFetch(
-      () => jsonResponse({ status: "confirmed", bot_token: BOT_TOKEN, ilink_bot_id: BOT_ID }),
-      async () => {
-        const res = await createWeChatScanTransport().pollQrStatus({
-          baseUrl: WECHAT_API_BASE,
-          qrcode: QRCODE,
-        });
-        expect(res.bot?.baseUrl).toBe(WECHAT_API_BASE);
-      },
+    stubFetch(() =>
+      jsonResponse({ status: "confirmed", bot_token: BOT_TOKEN, ilink_bot_id: BOT_ID }),
     );
+    const res = await createWeChatScanTransport().pollQrStatus({
+      baseUrl: WECHAT_API_BASE,
+      qrcode: QRCODE,
+    });
+    expect(res.bot?.baseUrl).toBe(WECHAT_API_BASE);
   });
 
   it("refuses a confirmation that carried no credentials rather than storing a blank one", async () => {
-    await withFetch(
-      () => jsonResponse({ status: "confirmed", ilink_bot_id: BOT_ID }),
-      async () => {
-        await expect(
-          createWeChatScanTransport().pollQrStatus({ baseUrl: WECHAT_API_BASE, qrcode: QRCODE }),
-        ).rejects.toThrow(/no credentials/);
-      },
-    );
+    stubFetch(() => jsonResponse({ status: "confirmed", ilink_bot_id: BOT_ID }));
+    await expect(
+      createWeChatScanTransport().pollQrStatus({ baseUrl: WECHAT_API_BASE, qrcode: QRCODE }),
+    ).rejects.toThrow(/no credentials/);
   });
 
   it("reads a long poll that closed with nothing to say as pending, not as a failure", async () => {
     // A window that expires and a client-side timeout are the same thing here: nothing
     // changed, ask again. Only that keeps a transient close from taking the code down.
-    const original = globalThis.fetch;
-    globalThis.fetch = (async () => {
-      const err = new Error("aborted");
-      err.name = "TimeoutError";
-      throw err;
-    }) as typeof fetch;
-    try {
-      const res = await createWeChatScanTransport().pollQrStatus({
-        baseUrl: WECHAT_API_BASE,
-        qrcode: QRCODE,
-      });
-      expect(res).toEqual({ status: "pending" });
-    } finally {
-      globalThis.fetch = original;
-    }
+    stubFetch(() => {
+      throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    });
+    const res = await createWeChatScanTransport().pollQrStatus({
+      baseUrl: WECHAT_API_BASE,
+      qrcode: QRCODE,
+    });
+    expect(res).toEqual({ status: "pending" });
   });
 });
 
@@ -450,7 +402,7 @@ describe("wechat scan routes", () => {
     });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID, PROJECT));
+    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId: PROJECT }));
   });
   afterEach(async () => {
     await t.cleanup();

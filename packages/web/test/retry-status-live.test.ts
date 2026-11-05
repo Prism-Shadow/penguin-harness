@@ -1,0 +1,113 @@
+// @vitest-environment jsdom
+/**
+ * The machine's retry row as it lives on a page — the UI package's `RetryStatus`, which the
+ * Machines card and dialog and a conversation on an unreachable machine show — across renders,
+ * on a fake clock.
+ *
+ * - Given a wait 40 s out, a second later the sentence says a second less; when the moment comes
+ *   the seconds go and the row says the attempt is being tried.
+ * - Given a wait 10 s out, the seconds keep two digits' room as they tick to 9, so nothing after
+ *   them moves (the conversation's retry line counts down through the same slot).
+ * - Given Retry now pressed twice, one retry is asked for; the button stays held until the next
+ *   attempt begins, and then takes a press again.
+ * - Given a retry the server refused (its promise rejects), the button takes a press again at once.
+ */
+import { act, createElement as h } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RetryStatus } from "@prismshadow/penguin-ui";
+import type { RetryStatusProps } from "@prismshadow/penguin-ui";
+import { mount, unmountAll } from "./helpers/dom";
+
+const NOW = Date.parse("2026-10-18T09:00:00.000Z");
+
+const waiting = (over: Partial<RetryStatusProps> = {}): RetryStatusProps => ({
+  phase: "waiting",
+  label: "Reconnecting (attempt 4/5)",
+  nextAt: NOW + 40_000,
+  countdown: (s) => `Reconnecting in ${s} s (attempt 4/5)`,
+  ...over,
+});
+
+/** A click as the pointer delivers it; the fake clock leaves the DOM helper's settling out. */
+async function press(element: Element): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  });
+}
+async function elapse(ms: number): Promise<void> {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+const seconds = (root: Element) =>
+  root.querySelector("[data-retry-countdown]")?.textContent?.trim() ?? null;
+const retryButton = (root: Element) =>
+  root.querySelector<HTMLButtonElement>('[data-retry-action="retry"]')!;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(async () => {
+  await unmountAll();
+  vi.useRealTimers();
+});
+
+describe("the retry status on a page", () => {
+  it("counts down a second at a time, and drops the seconds when the moment comes", async () => {
+    const { container } = await mount(h(RetryStatus, waiting()));
+    expect(seconds(container)).toBe("Reconnecting in 40 s (attempt 4/5)");
+    await elapse(1_100);
+    expect(seconds(container)).toBe("Reconnecting in 39 s (attempt 4/5)");
+    await elapse(40_000);
+    expect(seconds(container)).toBeNull();
+    expect(container.textContent).toBe("Reconnecting (attempt 4/5)");
+  });
+
+  it("keeps the seconds' room from 10 s down to 9 s, so nothing after them moves", async () => {
+    const { container } = await mount(h(RetryStatus, waiting({ nextAt: NOW + 10_000 })));
+    const slot = () => container.querySelector("[data-retry-countdown] [data-digits]");
+    expect(slot()?.textContent).toBe("10");
+    expect(slot()?.getAttribute("data-digits")).toBe("00");
+    await elapse(1_100);
+    expect(slot()?.textContent).toBe("9");
+    expect(slot()?.getAttribute("data-digits")).toBe("00");
+  });
+
+  it("asks once for two presses, holds the button until the next attempt, then takes a press again", async () => {
+    const onClick = vi.fn(async () => {});
+    const shown = await mount(h(RetryStatus, waiting({ retry: { label: "Retry now", onClick } })));
+    await press(retryButton(shown.container));
+    await press(retryButton(shown.container));
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(retryButton(shown.container).disabled).toBe(true);
+    // The server's answer: that attempt ran and failed, and the next one is scheduled.
+    await shown.rerender(
+      h(
+        RetryStatus,
+        waiting({
+          label: "Reconnecting (attempt 5/5)",
+          nextAt: NOW + 80_000,
+          retry: { label: "Retry now", onClick },
+        }),
+      ),
+    );
+    expect(retryButton(shown.container).disabled).toBe(false);
+    await press(retryButton(shown.container));
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes a press again at once when the server refused the retry", async () => {
+    const onClick = vi.fn(() => Promise.reject(new Error("refused")));
+    const { container } = await mount(
+      h(RetryStatus, waiting({ retry: { label: "Retry now", onClick } })),
+    );
+    await press(retryButton(container));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(retryButton(container).disabled).toBe(false);
+    await press(retryButton(container));
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
+});

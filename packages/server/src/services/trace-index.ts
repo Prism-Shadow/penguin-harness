@@ -39,15 +39,22 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentsDir, isSessionMeta, tracesDir } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  isSessionMeta,
+  normalizeSessionSource,
+  tracesDir,
+} from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
-import { asSessionSource } from "../runtime/session-sources.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Paths } from "../hmr/capabilities.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -80,7 +87,7 @@ function factsFromRecords(
   projectId: string,
   agentId: string,
   sessionId: string,
-  records: OmniMessage[],
+  records: AmspRecord[],
 ): TraceSessionRow {
   const meta = records.find(isSessionMeta);
   let firstPrompt: string | null = null;
@@ -96,7 +103,13 @@ function factsFromRecords(
     sessionId,
     projectId,
     agentId,
-    source: meta ? (asSessionSource(meta.payload.source) ?? null) : null,
+    // Narrowed (an old head's `benchmark` reads as `cli`), except that a head recording no source
+    // keeps none: what it reads as depends on the Session's index row (readRecordedSource).
+    // Without a meta the value means nothing, and every reader checks metaRead first.
+    source:
+      meta === undefined || meta.payload.source === undefined
+        ? null
+        : normalizeSessionSource(meta.payload.source),
     workspace: meta && typeof meta.payload.workspace === "string" ? meta.payload.workspace : "",
     title: firstPrompt !== null ? fallbackTitle(firstPrompt) : null,
     provider: meta && typeof meta.payload.provider === "string" ? meta.payload.provider : null,
@@ -112,7 +125,8 @@ interface SeenDirs {
   dates: Map<string, number>;
 }
 
-export class TraceIndexService {
+@Component()
+export class TraceIndexService implements TraceIndex {
   private readonly seen = new Map<string, SeenDirs>();
   private readonly inflight = new Map<string, Promise<void>>();
   /**
@@ -122,12 +136,13 @@ export class TraceIndexService {
    */
   readonly counters = { gateStats: 0, dirScans: 0, headReads: 0 };
 
-  constructor(
-    private readonly root: string,
-    readonly repo: TraceIndexRepo,
-    /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
-    private readonly sources?: SessionSources,
-  ) {}
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
+  @Use() readonly repo!: TraceIndexStore;
+  /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
+  @Use() private readonly sources?: SessionOrigins;
 
   /**
    * Brings one Agent's index in step with disk. Hot path: one root stat, then the
@@ -159,6 +174,8 @@ export class TraceIndexService {
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */
   async reconcileProject(projectId: string, opts: { force?: boolean } = {}): Promise<void> {
     for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
+      // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+      if (agentId.startsWith(".")) continue;
       await this.reconcileAgent(projectId, agentId, opts);
     }
   }
@@ -266,7 +283,7 @@ export class TraceIndexService {
     const earliest = files[0];
     if (earliest === undefined) return;
     this.counters.headReads += 1;
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       records = await readTraceHead(traceFilePath(this.root, earliest));
     } catch {
@@ -289,7 +306,7 @@ export class TraceIndexService {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void {
     this.repo.upsertFile({
       projectId: args.projectId,

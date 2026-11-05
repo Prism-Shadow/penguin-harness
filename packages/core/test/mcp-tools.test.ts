@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
@@ -8,7 +9,9 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { z } from "zod";
+import { VERSION } from "../src/index.js";
 import { Environment } from "../src/environment/index.js";
+import { rmEventually } from "./rm-eventually.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
 import { Session } from "../src/session.js";
 import {
@@ -18,9 +21,9 @@ import {
   toolCall,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { mcpConnectOutcome } from "../src/internal/session-support.js";
-import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
 import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
@@ -30,29 +33,8 @@ function fixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
   return { name: "fx", config: { command: process.execPath, args: [FIXTURE], ...extra } };
 }
 
-/**
- * Removes a test dir, retrying transient Windows locks: the dir is the stdio server child's
- * cwd, `dispose()` kills that child fire-and-forget, and Windows keeps a directory locked
- * (EBUSY/EPERM on rmdir) while it is any live process's working directory — the lock lifts
- * once the child finishes exiting. A genuinely stuck dir still fails, one deadline later.
- */
-async function rmEventually(dir: string, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      await rm(dir, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      const transient = code === "EBUSY" || code === "ENOTEMPTY" || code === "EPERM";
-      if (!transient || Date.now() > deadline) throw err;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
-}
-
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const out: OmniMessage[] = [];
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
   for await (const msg of gen) out.push(msg);
   return out;
 }
@@ -60,16 +42,16 @@ async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]>
 interface FinalPayload {
   type?: string;
   output?: string;
-  stop_reason?: string;
+  status?: string;
   images?: string[];
 }
 
-function finalPayload(messages: OmniMessage[]): FinalPayload {
+function finalPayload(messages: AmspRecord[]): FinalPayload {
   return messages[messages.length - 1]!.payload as FinalPayload;
 }
 
 /** Joins the streamed content deltas (to compare against the complete message). */
-function streamedText(messages: OmniMessage[]): string {
+function streamedText(messages: AmspRecord[]): string {
   return messages
     .map((m) => m.payload as { type?: string; event_type?: string; output?: string })
     .filter((p) => p.type === "partial_tool_call_output" && p.event_type === "delta")
@@ -82,7 +64,7 @@ function runTool(
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
-): Promise<OmniMessage[]> {
+): Promise<AmspRecord[]> {
   const call = toolCall({ name, arguments: JSON.stringify(args), toolCallId: "mcp-call-1" });
   return collect(env.executeTool({ toolCall: call, ...(signal ? { signal } : {}) }));
 }
@@ -146,7 +128,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     expect(env.mcpConnectResults()).toEqual([]);
     expect(await env.listTools()).toEqual([]);
     const gone = finalPayload(await runTool(env, "mcp__fx__echo", { text: "x" }));
-    expect(gone.stop_reason).toBe("fatal");
+    expect(gone.status).toBe("fatal");
     expect(gone.output).toContain("Unknown tool: mcp__fx__echo");
 
     // A context with the server under a new name: connected afresh, lazily, on listTools —
@@ -162,7 +144,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
       expect.objectContaining({ server: "fx2", status: "completed" }),
     ]);
     const echoed = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "hi" }));
-    expect(echoed.stop_reason).toBe("completed");
+    expect(echoed.status).toBe("completed");
     expect(echoed.output).toBe("echo: hi");
 
     // The same entry again — a Session compacting every turn must not respawn its servers:
@@ -193,6 +175,198 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     ]);
     expect(finalPayload(await runTool(env, "mcp__fx2__probe", {})).output).toMatch(/^v2\|/);
   }, 30_000);
+});
+
+describe("MCP servers whose entry references the Agent's vault", () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-vault-")));
+  });
+
+  afterAll(async () => {
+    await rmEventually(dir);
+  }, 30_000);
+
+  it("reports a server whose vault key is missing without contacting it, and connects it with the value once the vault has the key", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const toolConfig = {
+      customTools: [],
+      mcpServers: [fixtureEntry({ env: { FIXTURE_SECRET: "${FIXTURE_SECRET}" } })],
+    };
+    const env = new Environment({ workspaceDir: dir, toolConfig });
+    try {
+      // Needs setup: reported like a failed server, with no time spent on it.
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      expect(await env.listTools()).toEqual([]);
+      expect(env.mcpConnectResults()).toEqual([
+        {
+          server: "fx",
+          transport: "stdio",
+          status: "fatal",
+          duration_ms: 0,
+          error_code: "mcp_needs_setup",
+          error_message: "needs setup: vault key FIXTURE_SECRET is not set",
+        },
+      ]);
+      const printed = () => stderr.mock.calls.map((call) => String(call[0])).join("");
+      expect(printed()).toContain(
+        'MCP server "fx" skipped: needs setup: vault key FIXTURE_SECRET is not set',
+      );
+
+      // The next context has the key: the server connects, and its process gets the value.
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "first-value" } });
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      let probe = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      expect(probe.output).toMatch(/^first-value\|/);
+
+      // Same value: the connection is kept. A changed value is a changed server: it reconnects.
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "first-value" } });
+      expect(env.pendingMcpServerNames()).toEqual([]);
+      env.reconfigure({ toolConfig, vault: { FIXTURE_SECRET: "second-value" } });
+      expect(env.pendingMcpServerNames()).toEqual(["fx"]);
+      probe = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      expect(probe.output).toMatch(/^second-value\|/);
+
+      expect(printed()).not.toContain("first-value");
+      expect(printed()).not.toContain("second-value");
+    } finally {
+      env.dispose();
+      stderr.mockRestore();
+    }
+  });
+});
+
+describe("MCP servers whose failures repeat what they were sent", () => {
+  const token = "token-value-never-shown";
+  const team = "team-value-never-shown";
+  const vault = { ECHO_TOKEN: token, TEAM: team };
+  const headers = { Authorization: "Bearer ${ECHO_TOKEN}" };
+  let dir: string;
+  let httpServer: Server;
+  let transport: NodeStreamableHTTPServerTransport;
+  let base: string;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-echo-")));
+    // A refusal repeats the request line and its credentials, as a debugging proxy or a
+    // careless framework does: `/refuse/…` refuses everything, `/mcp` only the tool calls.
+    httpServer = createServer((req, res) => {
+      const refuse = () => {
+        res.writeHead(400, { "content-type": "text/plain" });
+        res.end(`refused ${req.method} ${req.url} for ${req.headers.authorization}`);
+      };
+      if (req.url?.startsWith("/refuse/")) return refuse();
+      if (req.method !== "POST") return void transport.handleRequest(req, res);
+      let raw = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => (raw += chunk));
+      req.on("end", () => {
+        const body = JSON.parse(raw) as { method?: string };
+        if (body.method === "tools/call") refuse();
+        else void transport.handleRequest(req, res, body);
+      });
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+  });
+
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "echo-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
+    await transport.close();
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => httpServer.close(resolve));
+    await rmEventually(dir);
+  }, 30_000);
+
+  /** Runs `body` with stderr captured; returns what was printed. */
+  async function printedWhile(body: () => Promise<void>): Promise<string> {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await body();
+      return stderr.mock.calls.map((call) => String(call[0])).join("");
+    } finally {
+      stderr.mockRestore();
+    }
+  }
+
+  it("reports a refused connect, and a stdio server's dying words, with the references in place of the vault values", async () => {
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: {
+        customTools: [],
+        mcpServers: [
+          { name: "refused", config: { url: `${base}/refuse/\${TEAM}`, headers } },
+          {
+            name: "dying",
+            config: {
+              command: process.execPath,
+              args: [
+                "-e",
+                "process.stderr.write('started with ' + process.env.LEAK); setTimeout(() => process.exit(1), 50)",
+              ],
+              env: { LEAK: "${ECHO_TOKEN}" },
+            },
+          },
+        ],
+      },
+      vault,
+    });
+    try {
+      const printed = await printedWhile(async () => {
+        expect(await env.listTools()).toEqual([]);
+      });
+      const [refused, dying] = env.mcpConnectResults();
+      expect(refused).toMatchObject({ status: "fatal", error_code: "connect_failed" });
+      expect(dying).toMatchObject({ status: "fatal", error_code: "connect_failed" });
+      // Both did repeat what they were sent: the references stand where the values were.
+      expect(refused!.error_message).toContain("/refuse/${TEAM} for Bearer ${ECHO_TOKEN}");
+      expect(dying!.error_message).toContain("started with ${ECHO_TOKEN}");
+      expect(printed).toContain("started with ${ECHO_TOKEN}");
+      for (const text of [JSON.stringify(env.mcpConnectResults()), printed]) {
+        expect(text).not.toContain(token);
+        expect(text).not.toContain(team);
+      }
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("fails a call whose refusal repeats the request with the references in place of the vault values", async () => {
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: {
+        customTools: [],
+        mcpServers: [{ name: "web", config: { url: `${base}/mcp?team=\${TEAM}`, headers } }],
+      },
+      vault,
+    });
+    try {
+      expect((await env.listTools()).map((t) => t.name)).toEqual(["mcp__web__add"]);
+      const final = finalPayload(await runTool(env, "mcp__web__add", { a: 2, b: 3 }));
+      expect(final.status).toBe("fatal");
+      expect(final.output).toContain("/mcp?team=${TEAM} for Bearer ${ECHO_TOKEN}");
+      expect(final.output).not.toContain(token);
+      expect(final.output).not.toContain(team);
+    } finally {
+      env.dispose();
+    }
+  });
 });
 
 describe("MCP over stdio through Environment", () => {
@@ -238,20 +412,20 @@ describe("MCP over stdio through Environment", () => {
     expect(first.event_type).toBe("start");
     const final = finalPayload(messages);
     expect(final.type).toBe("tool_call_output");
-    expect(final.stop_reason).toBe("completed");
+    expect(final.status).toBe("completed");
     expect(final.output).toBe("echo: hi");
     expect(streamedText(messages)).toBe(final.output);
   });
 
   it("maps a tool-level isError result to failed with the server's message", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__fail", {}));
-    expect(final.stop_reason).toBe("fatal");
+    expect(final.status).toBe("fatal");
     expect(final.output).toBe("boom");
   });
 
   it("carries image content as data-URL images alongside the text", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__pic", {}));
-    expect(final.stop_reason).toBe("completed");
+    expect(final.status).toBe("completed");
     expect(final.output).toBe("a tiny image");
     expect(final.images).toHaveLength(1);
     expect(final.images![0]).toMatch(/^data:image\/png;base64,/);
@@ -276,8 +450,88 @@ describe("MCP over stdio through Environment", () => {
 
   it("collapses an unknown MCP name into the unknown-tool reply", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__nope", {}));
-    expect(final.stop_reason).toBe("fatal");
+    expect(final.status).toBe("fatal");
     expect(final.output).toContain("Unknown tool: mcp__fx__nope");
+  });
+});
+
+describe("MCP over stdio — under the Session's sandbox", () => {
+  const RUNNER = fileURLToPath(new URL("./fixtures/mcp-runner.mjs", import.meta.url));
+  let tmp: string;
+  beforeAll(async () => {
+    tmp = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-sandbox-")));
+  });
+  afterAll(async () => {
+    await rmEventually(tmp);
+  });
+
+  it("starts a server through the Session's confiner, with the runner's environment laid over the server's", async () => {
+    const scopes: unknown[] = [];
+    const env = new Environment({
+      workspaceDir: tmp,
+      sessionScratchpadDir: path.join(tmp, "scratchpad", "s1"),
+      toolConfig: {
+        customTools: [],
+        mcpServers: [fixtureEntry({ env: { FIXTURE_SECRET: "from-entry" } })],
+      },
+      confineSpawn: () => (argv, opts) => {
+        scopes.push(opts);
+        return {
+          argv: [argv[0]!, RUNNER, ...argv.slice(1)],
+          env: { FIXTURE_SECRET: "from-runner" },
+        };
+      },
+    });
+    try {
+      const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      // The runner's entry lies over the entry's own, and the runner saw it first.
+      expect(final.output).toMatch(/^via-runner:from-runner\|/);
+      // The first spawn the confiner saw is the server's (the file tools' helper is asked
+      // about at every tool call, after the server connected).
+      expect(scopes[0]).toEqual({
+        cwd: tmp,
+        workspaceDir: tmp,
+        scratchpadDir: path.join(tmp, "scratchpad", "s1"),
+      });
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("fails that server's connect when the confiner cannot enforce the policy, and starts nothing", async () => {
+    const provider = new McpToolProvider([fixtureEntry()], {
+      workspaceDir: tmp,
+      confineSpawn: () => () => {
+        throw new Error("no sandbox backend is mounted");
+      },
+      warn: () => {},
+    });
+    try {
+      expect(await provider.listTools()).toEqual([]);
+      const [result] = provider.connectResults();
+      expect(result).toMatchObject({
+        server: "fx",
+        transport: "stdio",
+        status: "fatal",
+        error_code: "connect_failed",
+      });
+      expect(result!.error_message).toContain("sandbox: no sandbox backend is mounted");
+    } finally {
+      await provider.close();
+    }
+  });
+
+  it("starts a server unconfined while the confiner getter answers null", async () => {
+    const provider = new McpToolProvider([fixtureEntry()], {
+      workspaceDir: tmp,
+      confineSpawn: () => null,
+      warn: () => {},
+    });
+    try {
+      expect((await provider.listTools()).length).toBeGreaterThan(0);
+    } finally {
+      await provider.close();
+    }
   });
 });
 
@@ -303,7 +557,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ maxOutputLength: 100 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__spam", {}));
-      expect(final.stop_reason).toBe("completed");
+      expect(final.status).toBe("completed");
       expect(final.output).toBe(
         `${"x".repeat(50)}\n[output truncated: kept first 50 and last 50 of 500 chars]\n${"x".repeat(50)}`,
       );
@@ -316,7 +570,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ timeoutMs: 300 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }));
-      expect(final.stop_reason).toBe("fatal");
+      expect(final.status).toBe("fatal");
       expect(final.output).toContain("[tool timeout: exceeded 300ms]");
     } finally {
       env.dispose();
@@ -329,7 +583,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
       const ac = new AbortController();
       setTimeout(() => ac.abort(), 150);
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }, ac.signal));
-      expect(final.stop_reason).toBe("aborted");
+      expect(final.status).toBe("aborted");
       expect(final.output).toContain("[interrupted: tool aborted by user]");
     } finally {
       env.dispose();
@@ -468,13 +722,13 @@ describe("Session first-run bootstrap events", () => {
   });
 
   const fakeLLM: LLMInterface = {
-    async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+    async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
       yield assistantText("done");
       return { status: "completed" };
     },
   };
 
-  function makeSession(env: Environment, written: OmniMessage[]): Session {
+  function makeSession(env: Environment, written: AmspRecord[]): Session {
     const meta: SessionMetaPayload = {
       session_id: "s-mcp",
       provider: "custom",
@@ -483,6 +737,7 @@ describe("Session first-run bootstrap events", () => {
       system_prompt: "sp",
       agent_state: tmp,
       workspace: tmp,
+      source: "user",
     };
     return new Session({
       meta,
@@ -512,43 +767,48 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = makeSession(env, written);
     try {
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
-      const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types.slice(0, 3)).toEqual([
+      const types = streamed.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
+      // The Session's meta and the Task's opening first, then the bootstrap as it happens.
+      expect(types.slice(0, 5)).toEqual([
+        "session_meta",
+        "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
       expect(types).toContain("text");
-      const begin = streamed[0]!.payload as { servers?: string[] };
+      const begin = streamed[2]!.payload as { servers?: string[] };
       expect(begin.servers).toEqual(["fx"]);
-      const end = streamed[1]!.payload as {
+      const end = streamed[3]!.payload as {
         status?: string;
         results?: { server: string; status: string; tools?: number; duration_ms: number }[];
       };
       expect(end.status).toBe("completed");
       expect(end.results).toHaveLength(1);
       expect(end.results![0]).toMatchObject({ server: "fx", status: "completed", tools: 6 });
-      const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
+      const toolsMsg = streamed[4]!.payload as { tools?: { name: string }[] };
       expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
       // Trace ordering: the engine writes the bootstrap records AFTER the run's input, so
-      // the connect phase belongs to the new turn — meta, the user text, then the pair.
+      // the connect phase belongs to the new turn — meta, the Task's opening record, the user
+      // text, then the pair.
       const writtenTypes = written.map(
         (m) => (m.payload as { type?: string }).type ?? "session_meta",
       );
-      expect(writtenTypes.slice(0, 5)).toEqual([
+      expect(writtenTypes.slice(0, 6)).toEqual([
         "session_meta",
+        "task_begin",
         "text",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
       // Second run: the bootstrap already happened — no repeated events.
-      const second: OmniMessage[] = [];
+      const second: AmspRecord[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes).not.toContain("mcp_connect_begin");
@@ -563,13 +823,13 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = makeSession(env, written);
     try {
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
-      const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types[0]).toBe("tool_list_ready");
+      const types = streamed.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
+      expect(types.slice(0, 3)).toEqual(["session_meta", "task_begin", "tool_list_ready"]);
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
@@ -586,11 +846,11 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     // Capturing LLM: the carry-over assertion below reads what the request delivered.
-    const requests: OmniMessage[][] = [];
+    const requests: AmspRecord[][] = [];
     const capturingLLM: LLMInterface = {
-      async *streamGenerate(parameters): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(parameters): AsyncGenerator<AmspRecord, LLMOutcome> {
         requests.push(parameters.newMessages);
         yield assistantText("done");
         return { status: "completed" };
@@ -605,6 +865,7 @@ describe("Session first-run bootstrap events", () => {
         system_prompt: "sp",
         agent_state: tmp,
         workspace: tmp,
+        source: "user",
       },
       bootstrap: async ({ emit }) => {
         calls += 1;
@@ -626,21 +887,31 @@ describe("Session first-run bootstrap events", () => {
     });
     try {
       const ac = new AbortController();
-      const first: OmniMessage[] = [];
+      const first: AmspRecord[] = [];
       const run = (async () => {
         for await (const msg of session.run([userText("go")], { signal: ac.signal })) {
           first.push(msg);
         }
       })();
-      // Wait for the begin event to stream, then interrupt mid-connect.
-      for (let i = 0; i < 100 && first.length === 0; i += 1) {
+      // Wait for the connect begin event to stream, then interrupt mid-connect.
+      const connecting = () =>
+        first.some((m) => (m.payload as { type?: string }).type === "mcp_connect_begin");
+      for (let i = 0; i < 100 && !connecting(); i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       ac.abort();
       await run;
-      const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
-      expect(firstTypes).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
-      expect((first[1]!.payload as { status?: string }).status).toBe("aborted");
+      const firstTypes = first.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
+      // A stopped Task still closes its pair.
+      expect(firstTypes).toEqual([
+        "session_meta",
+        "task_begin",
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "abort",
+        "task_end",
+      ]);
+      expect((first[3]!.payload as { status?: string }).status).toBe("aborted");
       // The aborted turn is RECORDED: the Session itself writes the input, the aborted
       // connect pair and the abort event (no engine exists to do it) — the analysis page
       // shows the interruption and a reload/restart keeps the message.
@@ -649,23 +920,26 @@ describe("Session first-run bootstrap events", () => {
       );
       expect(writtenTypes).toEqual([
         "session_meta",
+        "task_begin",
         "text",
         "mcp_connect_begin",
         "mcp_connect_end",
         "abort",
+        "task_end",
       ]);
-      expect((written.at(-2)!.payload as { status?: string }).status).toBe("aborted");
+      expect((written.at(-3)!.payload as { status?: string }).status).toBe("aborted");
 
       release();
-      const second: OmniMessage[] = [];
+      const second: AmspRecord[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
-      expect(secondTypes.slice(0, 3)).toEqual([
+      expect(secondTypes.slice(0, 4)).toEqual([
+        "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
-      expect((second[1]!.payload as { status?: string }).status).toBe("completed");
+      expect((second[2]!.payload as { status?: string }).status).toBe("completed");
       expect(secondTypes).toContain("text");
       // Abort cancels the attempt: the next run started a FRESH bootstrap (reconnect).
       expect(calls).toBe(2);
@@ -756,14 +1030,6 @@ describe("MCP over Streamable HTTP", () => {
   const seenHeaders: IncomingHttpHeaders[] = [];
 
   beforeAll(async () => {
-    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
-    mcp.registerTool(
-      "add",
-      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
-      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
-    );
-    transport = new NodeStreamableHTTPServerTransport();
-    await mcp.connect(transport);
     httpServer = createServer((req, res) => {
       seenHeaders.push(req.headers);
       void transport.handleRequest(req, res);
@@ -772,30 +1038,52 @@ describe("MCP over Streamable HTTP", () => {
     url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`;
   });
 
-  afterAll(async () => {
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
     await transport.close();
+  });
+
+  afterAll(async () => {
     await new Promise((resolve) => httpServer.close(resolve));
   });
 
-  it("discovers and calls tools over http, sending the configured headers on every request", async () => {
+  it("discovers and calls tools over http, sending the configured headers — vault references filled in — and PenguinHarness's User-Agent on every request", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "penguin-mcp-http-"));
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: {
         customTools: [],
         mcpServers: [
-          { name: "web", config: { transport: "http", url, headers: { "x-penguin-test": "yes" } } },
+          {
+            name: "web",
+            config: { transport: "http", url, headers: { "x-penguin-test": "${WEB_HEADER}" } },
+          },
         ],
       },
+      vault: { WEB_HEADER: "yes" },
     });
     try {
       const tools = await env.listTools();
       expect(tools.map((t) => t.name)).toEqual(["mcp__web__add"]);
       const final = finalPayload(await runTool(env, "mcp__web__add", { a: 2, b: 3 }));
-      expect(final.stop_reason).toBe("completed");
+      expect(final.status).toBe("completed");
       expect(final.output).toBe("5");
       expect(seenHeaders.length).toBeGreaterThan(0);
       expect(seenHeaders.every((h) => h["x-penguin-test"] === "yes")).toBe(true);
+      expect(seenHeaders.every((h) => h["user-agent"] === `penguinharness/${VERSION}`)).toBe(true);
     } finally {
       env.dispose();
       await rmEventually(tmp);

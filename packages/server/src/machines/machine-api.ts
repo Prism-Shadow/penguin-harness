@@ -1,6 +1,6 @@
 /**
  * A client for one machine's own API, dialled through the connection this side holds. Every piece
- * of work this server does ON a machine goes through here — the hot update, the model sync.
+ * of work this server does ON a machine goes through here — the hot update, the config sync.
  *
  * node:http rather than fetch: the Host header has to be the canonical app host
  * (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch ignores an explicit
@@ -13,7 +13,7 @@ import http from "node:http";
 /** The machine's own API, reached through its tunnel as an authenticated caller. */
 export interface MachineApi {
   request(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     body?: unknown,
   ): Promise<{ status: number; text: string }>;
@@ -27,11 +27,22 @@ export interface MachineApi {
     contentType: string,
     body: Buffer,
     timeoutMs: number,
+    /** Request headers beyond the ones every call carries. */
+    headers?: Record<string, string>,
   ): Promise<{ status: number; text: string }>;
 }
 
-/** One client per (machine, session): `agent` dials the machine's server through its session, `port` is the server's port over there. */
-export function machineApi(agent: http.Agent, port: number, cookie: string): MachineApi {
+/**
+ * One client per (machine, session): `agent` dials the machine's server through its session,
+ * `port` is the server's port over there. `headers` ride on every call (the adoption time a
+ * reading of that machine's Sessions carries, see runtime/session-sources.ts).
+ */
+export function machineApi(
+  agent: http.Agent,
+  port: number,
+  cookie: string,
+  headers: Record<string, string> = {},
+): MachineApi {
   /** One request, answered whole — so both shapes agree on Host, cookie and what a failure is. */
   const send = (
     method: string,
@@ -39,6 +50,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
     payload: Buffer | null,
     contentType: string,
     timeoutMs: number,
+    extra: Record<string, string> = {},
   ): Promise<{ status: number; text: string }> =>
     new Promise((resolve, reject) => {
       const req = http.request(
@@ -49,6 +61,8 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
           path,
           method,
           headers: {
+            ...headers,
+            ...extra,
             host: `localhost:${port}`,
             cookie,
             ...(payload === null
@@ -95,7 +109,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
         "application/json",
         30_000,
       ),
-    postBytes: (path, contentType, body, timeoutMs) =>
-      send("POST", path, body, contentType, timeoutMs),
+    postBytes: (path, contentType, body, timeoutMs, headers) =>
+      send("POST", path, body, contentType, timeoutMs, headers),
   };
 }

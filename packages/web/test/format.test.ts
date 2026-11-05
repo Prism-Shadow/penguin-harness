@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cacheHitRate,
   computeTps,
+  formatAverage,
   formatBytes,
   formatDateTime,
   formatMoney,
@@ -12,9 +13,12 @@ import {
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
+  formatRelativeLong,
   formatRelativeShort,
   formatScore,
+  formatShortDateTime,
   formatTps,
+  formatYearMonthDay,
   humanizeDuration,
   humanizeTokens,
   signedDelta,
@@ -166,6 +170,21 @@ describe("cacheHitRate (shared by the Trace summaries and the Cost center's cach
   });
 });
 
+describe("formatAverage (the Trace summary's tool calls per round)", () => {
+  it("keeps one decimal place, so an average never reads as the count beside it", () => {
+    expect(formatAverage(17, 5)).toBe("3.4");
+    expect(formatAverage(12, 3)).toBe("4.0");
+    expect(formatAverage(0, 3)).toBe("0.0"); // rounds with no tool call at all: a real average
+    expect(formatAverage(10, 3)).toBe("3.3"); // 3.33… rounds down
+    expect(formatAverage(20, 3)).toBe("6.7"); // 6.66… rounds up
+  });
+
+  it("count 0 (an empty Trace) leaves the average undefined and shows —", () => {
+    expect(formatAverage(0, 0)).toBe("—");
+    expect(formatAverage(7, 0)).toBe("—");
+  });
+});
+
 describe("formatBytes", () => {
   it("byte abbreviation", () => {
     expect(formatBytes(812)).toBe("812B");
@@ -249,6 +268,22 @@ describe("formatRelativeDays", () => {
   });
 });
 
+/**
+ * Run `fn` as a reader in `tz`. Node re-reads `process.env.TZ` per call, so this pins the
+ * zone a date assertion depends on instead of inheriting the test box's — the ambient zone
+ * would make a local-vs-UTC bug invisible on a UTC runner and loud everywhere else.
+ */
+function withTimeZone(tz: string, fn: () => void): void {
+  const real = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    fn();
+  } finally {
+    if (real === undefined) delete process.env.TZ;
+    else process.env.TZ = real;
+  }
+}
+
 describe("formatRelativeShort", () => {
   // Fix "now" (the sidebar row's compact last-active time is measured from it).
   beforeEach(() => {
@@ -276,14 +311,91 @@ describe("formatRelativeShort", () => {
   });
 
   it("a week or older — and future times (clock skew) — fall back to the absolute month-day", () => {
-    expect(formatRelativeShort("2026-07-01T00:00:00.000Z", "zh")).toBe("7 月 1 日");
-    expect(formatRelativeShort("2026-01-02T00:00:00.000Z", "en")).toBe("Jan 2");
-    expect(formatRelativeShort("2026-07-20T00:00:00.000Z", "en")).toBe("Jul 20");
+    expect(formatRelativeShort(at(6, 1, 0, 0), "zh")).toBe("7月1日");
+    expect(formatRelativeShort(at(0, 2, 0, 0), "en")).toBe("Jan 2");
+    expect(formatRelativeShort(at(6, 20, 0, 0), "en")).toBe("Jul 20");
+  });
+
+  it("that month-day is the reader's own calendar day, not the timestamp's UTC day", () => {
+    // One instant, two readers. Its UTC day (the 5th) is the Shanghai reader's 6th, and
+    // reading the date straight off the `...Z` string would hand both of them the 5th.
+    const iso = "2026-06-05T23:00:00.000Z";
+    withTimeZone("Asia/Shanghai", () => {
+      expect(formatRelativeShort(iso, "zh")).toBe("6月6日");
+    });
+    withTimeZone("America/New_York", () => {
+      expect(formatRelativeShort(iso, "en")).toBe("Jun 5");
+    });
   });
 
   it("unparsable input yields the empty string (the row hides the slot instead of showing garbage)", () => {
     expect(formatRelativeShort("not-a-date", "zh")).toBe("");
     expect(formatRelativeShort("", "en")).toBe("");
+  });
+});
+
+describe("formatRelativeLong (a fact in a dialog: when a machine was last checked)", () => {
+  // Local wall-clock times, each read when its case runs: the clock and the times it measures
+  // must share one time zone, and a case may run under another than the file was loaded in
+  // (on Windows, the zone `withTimeZone` set can outlive it).
+  const at = (mo: number, d: number, h: number, mi: number, s = 0) =>
+    new Date(2026, mo, d, h, mi, s).toISOString();
+  const noon = () => new Date(2026, 6, 15, 12, 0, 0).getTime();
+
+  it("under a minute reads as just now", () => {
+    expect(formatRelativeLong(at(6, 15, 11, 59, 30), "zh", noon())).toBe("刚刚");
+    expect(formatRelativeLong(at(6, 15, 12, 0), "en", noon())).toBe("just now");
+  });
+
+  it("minutes, hours and days in words, floored, one of a unit said in the singular", () => {
+    expect(formatRelativeLong(at(6, 15, 11, 57), "zh", noon())).toBe("3 分钟前");
+    expect(formatRelativeLong(at(6, 15, 11, 59), "en", noon())).toBe("1 minute ago");
+    expect(formatRelativeLong(at(6, 15, 11, 1), "en", noon())).toBe("59 minutes ago");
+    expect(formatRelativeLong(at(6, 15, 9, 30), "zh", noon())).toBe("2 小时前");
+    expect(formatRelativeLong(at(6, 15, 11, 0), "en", noon())).toBe("1 hour ago");
+    expect(formatRelativeLong(at(6, 14, 11, 0), "zh", noon())).toBe("1 天前");
+    expect(formatRelativeLong(at(6, 9, 12, 0), "en", noon())).toBe("6 days ago");
+  });
+
+  it("a week or older — and a future time (clock skew) — is the absolute date and time", () => {
+    expect(formatRelativeLong(at(6, 8, 12, 0), "zh", noon())).toBe("2026-07-08 12:00");
+    expect(formatRelativeLong(at(6, 15, 12, 5), "en", noon())).toBe("2026-07-15 12:05");
+  });
+
+  it("unparsable input yields the empty string", () => {
+    expect(formatRelativeLong("not-a-date", "zh", noon())).toBe("");
+    expect(formatRelativeLong("", "en", noon())).toBe("");
+  });
+
+  describe("with no clock given", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(noon());
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("measures from the present", () => {
+      expect(formatRelativeLong(at(6, 15, 11, 57), "en")).toBe("3 minutes ago");
+    });
+  });
+});
+
+describe("formatShortDateTime (the time beside how long ago a machine was last checked)", () => {
+  it("is the reader's own month, day and time, zero-padded, without the year", () => {
+    // One instant, two readers: its UTC day (the 5th) is the Shanghai reader's 6th.
+    const iso = "2026-06-05T23:04:00.000Z";
+    withTimeZone("Asia/Shanghai", () => {
+      expect(formatShortDateTime(iso)).toBe("06-06 07:04");
+    });
+    withTimeZone("America/New_York", () => {
+      expect(formatShortDateTime(iso)).toBe("06-05 19:04");
+    });
+  });
+
+  it("unparsable input comes back unchanged", () => {
+    expect(formatShortDateTime("not-a-date")).toBe("not-a-date");
   });
 });
 
@@ -328,14 +440,14 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
 describe("formatMonthDay (version-line 'last updated' date)", () => {
   it("formats a date-only string per locale, matching the owner-specified wording", () => {
     expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
-    expect(formatMonthDay("2026-07-26", "zh")).toBe("7 月 26 日");
+    expect(formatMonthDay("2026-07-26", "zh")).toBe("7月26日");
     expect(formatMonthDay("2026-01-05", "en")).toBe("Jan 5");
-    expect(formatMonthDay("2026-12-31", "zh")).toBe("12 月 31 日");
+    expect(formatMonthDay("2026-12-31", "zh")).toBe("12月31日");
   });
 
   it("reads only the date part of a full ISO timestamp — no timezone round-trip that could shift a day", () => {
     expect(formatMonthDay("2026-07-01T00:00:00Z", "en")).toBe("Jul 1");
-    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5 月 5 日");
+    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5月5日");
   });
 
   it("returns unparsable or out-of-range input unchanged", () => {
@@ -344,5 +456,14 @@ describe("formatMonthDay (version-line 'last updated' date)", () => {
     expect(formatMonthDay("2026-07-26x", "en")).toBe("2026-07-26x");
     expect(formatMonthDay("2026-13-01", "en")).toBe("2026-13-01");
     expect(formatMonthDay("2026-00-10", "zh")).toBe("2026-00-10");
+  });
+});
+
+describe("formatYearMonthDay (a release's date in the release notes)", () => {
+  it("a release date reads as the month, day and year in each language", () => {
+    expect(formatYearMonthDay("2026-09-15", "en")).toBe("Sep 15, 2026");
+    expect(formatYearMonthDay("2026-09-15", "zh")).toBe("2026年9月15日");
+    expect(formatYearMonthDay("not-a-date", "en")).toBe("not-a-date");
+    expect(formatYearMonthDay("2026-13-01", "zh")).toBe("2026-13-01");
   });
 });

@@ -17,6 +17,7 @@
  * file header.
  */
 import type {
+  CostParts,
   UsageAgentSeries,
   UsageBucket,
   UsageErrors,
@@ -29,14 +30,9 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
-import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
-import {
-  catalogEntryFor,
-  offPeakAt,
-  offPeakScheduledRefs,
-} from "@prismshadow/penguin-core/model-catalog";
+import type { ErrorFilter } from "../db/repos/errors.js";
+import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
-  UsageRepo,
   UsageModelSums,
   UsageGroupModelSums,
   UsageSeriesModelSums,
@@ -51,9 +47,13 @@ import {
   localDateMinusDays,
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Clock } from "../hmr/capabilities.js";
+import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
 /**
- * Number of most-recent entries kept in the error detail table. Also the page size the whole
+ * Number of most-recent rows kept in the error detail table. Also the page size the whole
  * feature runs on, but nothing needs to hard-code it: `errors.recent` is exactly this many rows
  * whenever a second page exists, so the client derives its page size from the response instead
  * of holding a constant that could drift out of step with this one.
@@ -107,6 +107,12 @@ export interface UsageQuery {
    */
   fromTs?: string;
   toTs?: string;
+  /**
+   * The viewer's offset east of UTC, in minutes: the calendar day the error table folds a
+   * day's repeats by (see ErrorsRepo.recent). Nothing else in the response reads it; absent,
+   * the day is the server's own.
+   */
+  utcOffsetMinutes?: number;
 }
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
@@ -123,6 +129,8 @@ export interface UsageErrorsQuery {
   kind?: string;
   /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
   includeGlobalErrors?: boolean;
+  /** The viewer's offset east of UTC, in minutes (see {@link UsageQuery}). */
+  utcOffsetMinutes?: number;
 }
 
 /**
@@ -154,6 +162,33 @@ export function requestCostUsd(
   );
 }
 
+/** A cost split with nothing in any bucket: where a running sum of splits starts. */
+export const ZERO_COST_PARTS: CostParts = { cacheRead: 0, cacheWrite: 0, output: 0 };
+
+/**
+ * {@link requestCostUsd} kept bucket by bucket: each bucket's Tokens at its own rate, in USD.
+ * Given the rates a cost was priced at, the parts add up to that cost.
+ */
+export function requestCostParts(
+  counts: { cacheRead: number; cacheWrite: number; output: number },
+  rates: PricingRates,
+): CostParts {
+  return {
+    cacheRead: (counts.cacheRead * rates.cacheRead) / 1e6,
+    cacheWrite: (counts.cacheWrite * rates.cacheWrite) / 1e6,
+    output: (counts.output * rates.output) / 1e6,
+  };
+}
+
+/** Two cost splits added bucket by bucket. */
+export function sumCostParts(a: CostParts, b: CostParts): CostParts {
+  return {
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    output: a.output + b.output,
+  };
+}
+
 /**
  * The rates one usage record is billed at, decided from the record's own timestamp: the
  * off-peak tier when the reference carries a catalog schedule and `at` falls outside its peak
@@ -180,18 +215,24 @@ function costOf(sums: UsageModelSums, tiered: TieredRates): number {
   return requestCostUsd(sums, sums.peak ? tiered.peak : tiered.offPeak);
 }
 
+/** {@link costOf} split by bucket, at the same tier. */
+function costPartsOf(sums: UsageModelSums, tiered: TieredRates): CostParts {
+  return requestCostParts(sums, sums.peak ? tiered.peak : tiered.offPeak);
+}
+
 /** In-process Map key for a paired reference (\0-separated, the same style as session-manager's agentKey; never persisted). */
 function refKey(provider: string, modelId: string): string {
   return `${provider}\0${modelId}`;
 }
 
-export class UsageService {
-  constructor(
-    private readonly usage: UsageRepo,
-    private readonly errors: ErrorsRepo,
-    private readonly lookupPricing: PricingLookup,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+@Component()
+export class UsageService implements UsageQueries {
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly clock!: Clock;
+  private lookupPricing: PricingLookup = (projectId, provider, modelId) =>
+    this.projectConfig.getPricing(projectId, provider, modelId);
 
   /**
    * The catalog's time-based schedules, as the aggregations want them.
@@ -210,8 +251,75 @@ export class UsageService {
     }));
   }
 
+  /**
+   * Period cost per session, for company mode's attribution by the sessions an organization
+   * owns: sums by paired reference priced at the current rates (each half at the tier its own
+   * records ran in). `unpriced` says some usage ran on a model without pricing, so the numbers
+   * are a lower bound.
+   */
+  async costBySession(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<{ bySession: Map<string, number>; unpriced: boolean }> {
+    const bySession = new Map<string, number>();
+    if (sessionIds.length === 0) return { bySession, unpriced: false };
+    const rows = this.usage.groupsByModel(
+      projectId,
+      "session",
+      { sessionIds, fromTs, toTs },
+      this.tiers(),
+    );
+    const rates = new Map<string, TieredRates | undefined>();
+    let unpriced = false;
+    for (const r of rows) {
+      const key = refKey(r.provider, r.modelId);
+      if (!rates.has(key)) {
+        rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+      }
+      const rate = rates.get(key);
+      if (!rate) {
+        unpriced = true;
+        continue;
+      }
+      bySession.set(r.key, (bySession.get(r.key) ?? 0) + costOf(r, rate));
+    }
+    return { bySession, unpriced };
+  }
+
+  /** Daily cost of a set of sessions over a window (the organization finance trend). */
+  async dailyCostForSessions(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<Array<{ date: string; cost: number }>> {
+    if (sessionIds.length === 0) return [];
+    const rows = this.usage.seriesByModel(
+      projectId,
+      "day",
+      { sessionIds, fromTs, toTs },
+      this.tiers(),
+    );
+    const rates = new Map<string, TieredRates | undefined>();
+    const byDate = new Map<string, number>();
+    for (const r of rows) {
+      const key = refKey(r.provider, r.modelId);
+      if (!rates.has(key)) {
+        rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+      }
+      const rate = rates.get(key);
+      if (!rate) continue;
+      byDate.set(r.key, (byDate.get(r.key) ?? 0) + costOf(r, rate));
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, cost]) => ({ date, cost }));
+  }
+
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
-    const today = formatLocalDate(this.now());
+    const today = formatLocalDate(this.clock.now());
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).
     const base: UsageFilter = {};
     if (q.agentId !== undefined) base.agentId = q.agentId;
@@ -235,7 +343,7 @@ export class UsageService {
     const todayRows = this.usage.bucketByModel(projectId, win(today, today), tiers);
     const last7dRows = this.usage.bucketByModel(
       projectId,
-      win(localDateMinusDays(this.now(), 6)),
+      win(localDateMinusDays(this.clock.now(), 6)),
       tiers,
     );
     const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
@@ -248,7 +356,7 @@ export class UsageService {
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
-    const seriesFrom = q.from ?? localDateMinusDays(this.now(), 29);
+    const seriesFrom = q.from ?? localDateMinusDays(this.clock.now(), 29);
     const seriesTo = q.to ?? today;
     // The series is zero-filled over the whole effective range: cap the bucket
     // count so an arbitrary range × precision combination cannot materialize an
@@ -338,7 +446,7 @@ export class UsageService {
       series: this.foldSeries(bucketKeys, seriesRows, rates),
       byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),
       byModelSeries: foldModelSeries(bucketKeys, modelBucketRows),
-      errors: this.foldErrors(projectId, errorFilter),
+      errors: this.foldErrors(projectId, errorFilter, q.utcOffsetMinutes),
       agentIds: this.usage.distinctAgentIds(projectId),
       models: this.usage.distinctModels(projectId),
     };
@@ -347,8 +455,9 @@ export class UsageService {
   /**
    * One page of the error detail table, newest first. The dashboard's own response already
    * carries the first page (`errors.recent`); this serves the "show me earlier ones" paging,
-   * where refetching the whole aggregate to move one page would be wasteful. `total` is the
-   * filtered row count, so the caller knows when it has reached the end.
+   * where refetching the whole aggregate to move one page would be wasteful. `rows` is the
+   * filtered row count, so the caller knows when it has reached the end; `total` counts the
+   * records behind those rows, the occurrences the badge reports.
    *
    * Takes the same filter the dashboard applies — date + agent, and admin-only visibility of
    * unattributed errors — so a page never widens what the summary above it counted.
@@ -370,8 +479,9 @@ export class UsageService {
       ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
     };
     return {
-      items: this.errors.recent(projectId, f, q.limit, q.offset),
+      items: this.errors.recent(projectId, f, q.limit, q.offset, q.utcOffsetMinutes),
       total: this.errors.summary(projectId, f).total,
+      rows: this.errors.rowCount(projectId, f, q.utcOffsetMinutes),
     };
   }
 
@@ -396,14 +506,15 @@ export class UsageService {
     });
   }
 
-  /** Error statistics: summary info (total / unexpected / most common error code) + the last N entries, all filtered by the selected range. */
-  private foldErrors(projectId: string, f: ErrorFilter): UsageErrors {
+  /** Error statistics: summary info (total / unexpected / most common error code) + the table's first N rows and its row count, all filtered by the selected range. */
+  private foldErrors(projectId: string, f: ErrorFilter, utcOffsetMinutes?: number): UsageErrors {
     const { total, unexpected } = this.errors.summary(projectId, f);
     return {
       total,
       unexpected,
       topCode: this.errors.topCode(projectId, f),
-      recent: this.errors.recent(projectId, f, ERROR_RECENT_N),
+      recent: this.errors.recent(projectId, f, ERROR_RECENT_N, 0, utcOffsetMinutes),
+      rows: this.errors.rowCount(projectId, f, utcOffsetMinutes),
     };
   }
 
@@ -452,7 +563,7 @@ export class UsageService {
       groupBy === "model" ? refKey(r.provider, r.key) : r.key;
     const byKey = new Map<string, UsageGroupRow>();
     for (const r of rows) {
-      const acc = byKey.get(keyOf(r)) ?? {
+      const acc: UsageGroupRow = byKey.get(keyOf(r)) ?? {
         key: r.key,
         ...(groupBy === "model" ? { provider: r.provider } : {}),
         cacheRead: 0,
@@ -469,8 +580,12 @@ export class UsageService {
       acc.total += r.total;
       acc.requests += r.requests;
       const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
-      else acc.hasUncosted = true;
+      if (rate) {
+        acc.cost = (acc.cost ?? 0) + costOf(r, rate);
+        acc.costParts = sumCostParts(acc.costParts ?? ZERO_COST_PARTS, costPartsOf(r, rate));
+      } else {
+        acc.hasUncosted = true;
+      }
       byKey.set(keyOf(r), acc);
     }
     const out = [...byKey.values()];

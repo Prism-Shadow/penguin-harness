@@ -1,47 +1,51 @@
 /**
  * GenerativeModel —— the SDK's LLM interface implementation.
  *
- * Responsibilities (protocol translation + streaming aggregation):
- *   1. Merge a group of OmniMessages that **share the same role** into a single AgentHub `UniMessage`;
- *   2. Issue the request via `AutoLLMClient.streamingResponseStateful` (stateful — AgentHub
- *      maintains history internally), translating streamed `UniEvent`s back into OmniMessages:
- *        - text/thinking/tool-call deltas → `partial_*` (before the first delta of each segment
- *          `yield` a `start`; after the segment ends `yield` a `stop`);
- *        - after a segment ends, append the full `model_msg` (thinking / text / tool_call);
- *        - a `token_usage` event_msg is produced **only on normal completion**
- *          (observability/Token).
- *   3. Interruption/error handling: `finishInterrupted` first closes any open
- *      streaming segments and backfills the complete message, then the output ends — never
- *      leaking a malformed structure. This interface **never retries internally** — it only
- *      classifies, and `context_engine` owns the retry policy: `retryable` rides the
- *      engine's reconnect ladder, `fatal` stops the run. The split is an allowlist of
- *      certainty: only failures a retry provably cannot fix are `fatal` — a provider 4xx
- *      rejection (408/429 excluded, see `isFatalProviderRejection`), a credentials failure
- *      (`isAuthenticationError`), AgentHub's fast-mode UnsupportedParameterError
- *      (`isFastModeUnsupportedError`), and input that fails to assemble into a request at
- *      all. Everything else — network/transport drops, timeouts, 429/5xx, AgentHub parse
- *      errors and truncated streams, and every unclassifiable error — ends `retryable`,
- *      with the concrete failure on `errorMessage`. User interruption ends with `aborted`.
+ * Responsibilities (protocol translation):
+ *   1. Merge a group of records that **share the same role** into a single MMSP `UniMessage`;
+ *   2. Issue the request via `AutoLLMClient.streamingResponseStateful` (stateful — MMSP
+ *      maintains history internally), translating streamed `UniEvent`s back into records.
+ *      MMSP streams every item as `.delta` fragments closed by its `.done` item, one item at a
+ *      time, and ends the stream with one `stop` event; the translation is one to one:
+ *        - a text / thinking / tool-call `.delta` → `partial_*` (a `start` before the item's
+ *          first fragment, a `stop` when it ends);
+ *        - a `.done` item → the full `model_msg` (thinking / text / tool_call);
+ *        - the `stop` event → a `token_usage` event_msg, produced **only on normal
+ *          completion** (observability/Token) and on a response cut off; a finish reason other
+ *          than `stop` / `tool_call` makes the request `retryable` (`output_truncated` at the
+ *          output cap) — still metered, but the turn MMSP had already recorded is taken back out
+ *          of its history.
+ *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming and
+ *      backfills its complete message, then the output ends — never leaking a malformed
+ *      structure. This interface **never retries
+ *      internally** — it only classifies, and `context_engine` owns the retry policy:
+ *      `retryable` rides the engine's reconnect ladder, `fatal` stops the run.
+ *      The split is an allowlist of certainty: only failures a retry provably cannot fix are
+ *      `fatal` — a provider 4xx rejection (408/429 excluded, see
+ *      `isFatalProviderRejection`), a credentials failure (`isAuthenticationError`), MMSP's
+ *      fast-mode UnsupportedParameterError (`isFastModeUnsupportedError`), and input that
+ *      fails to assemble into a request at all. Everything else — network/transport drops,
+ *      timeouts, 429/5xx, MMSP's stream errors and truncated streams, and every
+ *      unclassifiable error — ends `retryable`, with the concrete failure on `errorMessage`.
+ *      User interruption ends with `aborted`.
  *
- * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
+ * `context_engine` only consumes AMSP records; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
-import {
-  AutoLLMClient,
-  EmptyResponseError,
-  ThinkingLevel,
-  ToolCallArgumentParseError,
-  UnsupportedParameterError,
-} from "@prismshadow/agenthub";
+import { ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
 import type {
+  AutoLLMClient,
   ContentItem,
-  FinishReason,
+  TextDoneItem,
+  ThinkingDoneItem,
+  ToolCallDeltaItem,
+  ToolCallDoneItem,
   ToolSchema,
   UniConfig,
   UniEvent,
   UniMessage,
   UsageMetadata,
-} from "@prismshadow/agenthub";
+} from "@prismshadow/mmsp";
 
 import {
   addTokenCounts,
@@ -53,14 +57,13 @@ import {
   thinkingMessage,
   tokenUsage,
   toolCall,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   CompleteModelPayload,
   Fidelity,
-  OmniMessage,
-  StopReason,
+  AmspRecord,
   TokenCounts,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   GenerativeModelConfig,
   GenerativeModelParameters,
@@ -69,7 +72,11 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
 } from "../interfaces/index.js";
-import { attributionHeaders } from "../state/model-catalog.js";
+import { markInterruptedToolCall } from "../interfaces/llm.js";
+import { userAgent } from "../index.js";
+import { attributionHeaders } from "./app-attribution.js";
+import { newAutoLLMClient } from "./model-client.js";
+import type { AutoLLMClientOptions } from "./model-client.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
   approximateMessagesTokens,
@@ -79,12 +86,12 @@ import {
 } from "./context-limits.js";
 
 // ---------------------------------------------------------------------------
-// Pure conversion function: OmniMessage[] → a single UniMessage (unit-testable, no network)
+// Pure conversion function: AmspRecord[] → a single UniMessage (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
 /**
  * Tool arguments JSON string → object. History only ever contains tool_calls from committed
- * turns (non-completed turns are discarded on replay); bad JSON already throws during AgentHub
+ * turns (non-completed turns are discarded on replay); bad JSON already throws during MMSP
  * parsing and reconnects via malformed, so it never enters history — hence we parse directly
  * with no fallback tolerance; an empty string is treated as no arguments.
  */
@@ -94,31 +101,15 @@ function parseToolArguments(raw: string): Record<string, unknown> {
   return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
 }
 
-/**
- * Whether a fidelity payload carries at least one key (mirrors AgentHub's baseClient helper —
- * an absent and an empty fidelity are equivalent).
- */
-function hasFidelity(fidelity?: Fidelity): boolean {
-  return fidelity != null && Object.keys(fidelity).length > 0;
-}
-
-/**
- * Compare two fidelity payloads by value (mirrors AgentHub's baseClient helper). Fidelity
- * objects are built with a stable key order by each AgentHub client, so JSON serialization is
- * a faithful equality check.
- */
-function fidelityEquals(a?: Fidelity, b?: Fidelity): boolean {
-  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
-}
-
 /** Spread helper: attach `fidelity` only when it carries at least one key. */
 function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
-  return hasFidelity(fidelity) ? { fidelity } : {};
+  return fidelity != null && Object.keys(fidelity).length > 0 ? { fidelity } : {};
 }
 
 /**
- * Maps a complete OmniMessage payload to an AgentHub `ContentItem`.
- * Only complete model_msg payloads are supported; `partial_*` is an output-only protocol.
+ * Maps a complete AmspRecord payload to an MMSP `ContentItem` — a message holds complete
+ * items only, typed with the `.done` suffix. Only complete model_msg payloads are supported;
+ * `partial_*` is an output-only protocol.
  */
 function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
   // The provider-fidelity payload is opaque and restored verbatim — some models require it
@@ -127,38 +118,34 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
   // Session recovery.
   switch (payload.type) {
     case "text":
-      return {
-        type: "text",
-        text: payload.text,
-        ...fidelityProp(payload.fidelity),
-      };
+      return { type: "text.done", text: payload.text, ...fidelityProp(payload.fidelity) };
     case "image_url":
-      return { type: "image_url", image_url: payload.image_url };
+      return { type: "image_url.done", image_url: payload.image_url };
     case "inline_data":
       return {
-        type: "inline_data",
+        type: "inline_data.done",
         data: Buffer.from(payload.data, "base64"),
         mime_type: payload.mime_type,
         ...fidelityProp(payload.fidelity),
       };
     case "inline_thinking":
       return {
-        type: "inline_thinking",
+        type: "inline_thinking.done",
         data: Buffer.from(payload.data, "base64"),
         mime_type: payload.mime_type,
         ...fidelityProp(payload.fidelity),
       };
     case "thinking":
       return {
-        type: "thinking",
+        type: "thinking.done",
         thinking: payload.thinking,
         ...fidelityProp(payload.fidelity),
       };
     case "tool_call":
       return {
-        type: "tool_call",
+        type: "tool_call.done",
         name: payload.name,
-        // OmniMessage stores arguments as a JSON string; UniMessage uses an object.
+        // AmspRecord stores arguments as a JSON string; UniMessage uses an object.
         arguments: parseToolArguments(payload.arguments),
         // On the way back, strip the uniqueness suffix to restore the provider's original id (see tool-call-ids.ts).
         tool_call_id: stripToolCallIdSuffix(payload.tool_call_id),
@@ -166,12 +153,12 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
       };
     case "tool_call_output":
       return {
-        type: "tool_result",
+        type: "tool_result.done",
         text: payload.output,
-        // Images carried by the tool output (data URL array) → AgentHub tool_result.images
+        // Images carried by the tool output (data URL array) → MMSP tool_result.images
         // (natively supported).
         ...(payload.images && payload.images.length > 0 ? { images: payload.images } : {}),
-        // Gemini pairs by using tool_call_id as functionResponse.name, so it must be restored to the original id (the function name).
+        // A provider that pairs by function name (Gemini generateContent) needs the original id back.
         tool_call_id: stripToolCallIdSuffix(payload.tool_call_id),
       };
     default: {
@@ -185,13 +172,13 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
 }
 
 /**
- * Groups a replayed, complete OmniMessage history into a sequence of UniMessages by
+ * Groups a replayed, complete AmspRecord history into a sequence of UniMessages by
  * **adjacent same-role** runs (used for the setHistory injection during Session recovery).
  * One committed turn = a group of user-side input + a group of
- * assistant output, matching exactly the adjacent user / assistant UniMessages in AgentHub history.
+ * assistant output, matching exactly the adjacent user / assistant UniMessages in MMSP history.
  */
-export function groupHistoryToUniMessages(history: OmniMessage[]): UniMessage[] {
-  const groups: OmniMessage[][] = [];
+export function groupHistoryToUniMessages(history: AmspRecord[]): UniMessage[] {
+  const groups: AmspRecord[][] = [];
   let currentRole: string | null = null;
   for (const msg of history) {
     const role = (msg.payload as { role?: string }).role;
@@ -204,17 +191,17 @@ export function groupHistoryToUniMessages(history: OmniMessage[]): UniMessage[] 
     }
     groups[groups.length - 1]!.push(msg);
   }
-  return groups.map(mergeOmniToUniMessage);
+  return groups.map(mergeRecordsToUniMessage);
 }
 
 /**
- * Merges a group of OmniMessages into **a single** UniMessage.
+ * Merges a group of records into **a single** UniMessage.
  *
  * Constraint: all messages in the array must share the same
  * role; the role of the first payload is used as the UniMessage's role (a tool_call_output
  * group has role "user"). Throws if roles are mixed.
  */
-export function mergeOmniToUniMessage(messages: OmniMessage[]): UniMessage {
+export function mergeRecordsToUniMessage(messages: AmspRecord[]): UniMessage {
   if (messages.length === 0) {
     throw new Error("streamGenerate requires at least one input message");
   }
@@ -241,9 +228,9 @@ export function mergeOmniToUniMessage(messages: OmniMessage[]): UniMessage {
 // ---------------------------------------------------------------------------
 
 /**
- * Converts AgentHub `UsageMetadata` into PenguinHarness `TokenCounts`.
+ * Converts MMSP `UsageMetadata` into PenguinHarness `TokenCounts`.
  *
- * Conversion rules (AgentHub UsageMetadata → OmniMessage TokenCounts, null treated as 0):
+ * Conversion rules (MMSP UsageMetadata → the records' TokenCounts, null treated as 0):
  *   - `cache_read  = cached_tokens` (input tokens served from cache hits);
  *   - `cache_write = prompt_tokens` (input tokens on a cache miss);
  *   - `output     = thoughts_tokens + response_tokens`;
@@ -268,33 +255,42 @@ export function usageToTokenCounts(usage: UsageMetadata): TokenCounts {
 }
 
 // ---------------------------------------------------------------------------
-// Pure translator: UniEvent[] → OmniMessage[] (unit-testable, no network)
+// Pure translator: UniEvent[] → AmspRecord[] (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
-interface ToolCallAccumulator {
+/** The item streaming now, from its first visible fragment: MMSP streams one item at a time. */
+interface OpenItem {
+  kind: "text" | "thinking" | "tool_call";
+  /** What its fragments carried so far — all an interrupted stream leaves of it. */
+  content: string;
+  /** A tool call's name and its Session-unique id (a `#n` suffix when the provider's id was already taken). */
   name: string;
-  /** Accumulated arguments delta fragments (JSON string); used as a fallback when no complete tool_call arrives. */
-  argsBuffer: string;
-  /** If a complete tool_call appears in an event, its JSON.stringify'd arguments are recorded here. */
-  completeArgs: string | null;
-  /** Session-unique id emitted to OmniMessage (with a `#n` suffix on provider id collisions). */
   toolCallId: string;
-  /** The original tool_call_id reported by the provider (the attribution key for inbound events). */
-  providerKey: string;
-  /** Provider-fidelity payload (kept verbatim, produced alongside the complete tool_call). */
-  fidelity: Fidelity | undefined;
-  /** Whether this tool_call's complete message has already been emitted eagerly in `pushEvent` (avoids duplicate emission in finish). */
-  emitted: boolean;
+}
+
+/** A `partial_*` message of the open item (a tool call's name rides on its `start` alone). */
+function partial(open: OpenItem, eventType: "start" | "delta" | "stop", content = ""): AmspRecord {
+  if (open.kind === "tool_call") {
+    const name = eventType === "start" ? open.name : "";
+    return partialToolCall({ eventType, name, arguments: content, toolCallId: open.toolCallId });
+  }
+  return (open.kind === "text" ? partialText : partialThinking)(eventType, content);
 }
 
 /**
- * Streaming translator. Feed `UniEvent`s one at a time into `pushEvent`, which yields
- * incremental OmniMessages (`partial_*`); after the stream ends, call `finish` to produce
- * `stop`, the complete `model_msg`, and `token_usage`.
+ * Streaming translator. Feed `UniEvent`s one at a time into `pushEvent`, which yields the
+ * records they stand for. MMSP's grammar does the aggregation — an item streams as
+ * `.delta` fragments closed by its `.done` item, items never interleave, and one `stop` event
+ * ends the stream — so the mapping is one to one:
  *
- * Split into its own class to make unit testing easier (feed a constructed array of UniEvents,
- * assert on emission order / aggregation / token counts).
- * Docs: /docs/omni-message § "The streaming discipline".
+ *   - a `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment;
+ *   - a `.done` becomes the partial `stop` and the complete `model_msg`, read off the done
+ *     item alone (the streamed fragments are never reconciled against it);
+ *   - the `stop` event carries the request's usage and finish reason. No record carries the
+ *     finish reason: a finish other than `stop` / `tool_call` makes the request `retryable`,
+ *     which the request's `request_end` records with its code.
+ *
+ * Docs: /docs/amsp-records § "The streaming discipline".
  */
 export class EventTranslator {
   /**
@@ -304,182 +300,45 @@ export class EventTranslator {
    */
   constructor(private readonly toolCallIds: ToolCallIdAllocator = new ToolCallIdAllocator()) {}
 
-  // Whether each segment type has already yielded its `start`.
-  private textStarted = false;
-  private thinkingStarted = false;
-  // Tool-call partial starts, tracked by the (uniqueness-resolved) tool_call_id.
-  private toolStarted = new Set<string>();
-  // Some providers' tool argument deltas don't carry a tool_call_id; attribute them to the most recently opened tool call (by provider id key).
-  private activeToolCallId: string | null = null;
-
-  // Buffers needed for the complete message.
-  private textBuffer = "";
-  private thinkingBuffer = "";
-  // Provider-fidelity payloads of the currently open segments. Segmentation mirrors AgentHub's
-  // baseClient aggregation: a thinking block is closed by its fidelity payload (a run of equal
-  // fidelity is one block); a text segment is closed by a `fidelity.signature` and split by a
-  // differing `fidelity.phase`.
-  private thinkingFidelity: Fidelity | undefined;
-  private textFidelity: Fidelity | undefined;
-  /** Provider id keys saved in order of appearance, so complete tool_calls are emitted in a stable order. */
-  private toolOrder: string[] = [];
-  /** provider's original tool_call_id → the accumulator for the **latest** call under that id. */
-  private tools = new Map<string, ToolCallAccumulator>();
-
-  private finishReason: FinishReason | null = null;
-  /** Token usage for this request (a snapshot from the most recent usage report). */
+  private open: OpenItem | null = null;
+  private stopSeen = false;
+  /** The `stop` event's finish reason when it was not a normal one (`length`, `unknown`). */
+  private cutBy: string | null = null;
   private requestTokens: TokenCounts = emptyTokenCounts();
 
-  /** Consumes one UniEvent, yielding 0..n streaming OmniMessages. */
-  *pushEvent(event: UniEvent): Generator<OmniMessage> {
-    if (event.finish_reason != null) {
-      this.finishReason = event.finish_reason;
+  /** Consumes one UniEvent, yielding 0..n records. */
+  *pushEvent(event: UniEvent): Generator<AmspRecord> {
+    if (event.event_type === "stop") {
+      this.stopSeen = true;
+      if (event.usage_metadata) this.requestTokens = usageToTokenCounts(event.usage_metadata);
+      // "length" and "unknown" mean the provider did not finish the response the normal way:
+      // the response was cut off (see `truncatedBy`), retried rather than committed.
+      const normal = event.finish_reason === "stop" || event.finish_reason === "tool_call";
+      if (!normal) this.cutBy = event.finish_reason ?? "unknown";
+      // Every item closes with its done item before the stop. One still open ends with the
+      // response: a normal finish closes it as its done item would (the turn MMSP records holds
+      // it), a cut-off closes it early.
+      yield* this.closeOpen(!normal);
+      return;
     }
-    if (event.usage_metadata) {
-      // The same request may report usage multiple times, always as a **cumulative snapshot**
-      // (Gemini reports one per chunk, as do some OpenAI-compatible endpoints; Claude/GPT-5,
-      // aggregated by AgentHub, report only once at the end). Overwrite with the latest snapshot
-      // — never accumulate: summing snapshots chunk by chunk would inflate usage by roughly the
-      // number of chunks.
-      this.requestTokens = this.usageOnce(event.usage_metadata);
-    }
-
     for (const item of event.content_items) {
       switch (item.type) {
-        case "text": {
-          // Mirrors AgentHub baseClient text aggregation. A `fidelity.phase` marker can arrive
-          // as an increment with **empty text** (e.g. GPT-5's segment markers): a phase
-          // differing from the current segment's phase starts a new segment — providers split
-          // by phase when replaying history, so mixing segments would break fidelity. A
-          // `fidelity.signature` closes the segment: any further content starts a new one.
-          // On merge, fidelity keys accumulate ({...current, ...incoming}).
-          const curPhase = (this.textFidelity as { phase?: unknown } | undefined)?.phase ?? null;
-          const inPhase = (item.fidelity as { phase?: unknown } | undefined)?.phase ?? null;
-          const signatureClosed =
-            (this.textFidelity as { signature?: unknown } | undefined)?.signature != null;
-          if (
-            (signatureClosed && (item.text || hasFidelity(item.fidelity))) ||
-            (inPhase != null && inPhase !== curPhase)
-          ) {
-            yield* this.flushThinking("completed");
-            yield* this.flushText("completed");
-          }
-          if (hasFidelity(item.fidelity)) {
-            this.textFidelity = { ...this.textFidelity, ...item.fidelity };
-          }
-          if (!item.text) break;
-          // Type boundary: before a text segment starts, flush any unclosed thinking
-          // segment, so the complete-message order matches generation order (thinking → text).
-          // The boundary flush uses completed: that thinking segment's stop reason is "switched
-          // to text", not "Request ended".
-          yield* this.flushThinking("completed");
-          if (!this.textStarted) {
-            this.textStarted = true;
-            yield partialText("start");
-          }
-          this.textBuffer += item.text;
-          yield partialText("delta", item.text);
+        case "text.delta":
+          yield* this.fragment("text", item.text);
           break;
-        }
-        case "thinking": {
-          // Mirrors AgentHub baseClient thinking aggregation: a thinking block is closed by its
-          // fidelity payload (Claude's signature_delta is empty text + fidelity{signature};
-          // redacted blocks carry sentinel text + fidelity; GPT-5 encrypted reasoning is empty
-          // text + fidelity{id, encrypted_content}), and **a run of equal fidelity is one
-          // block** — OpenAI-compatible clients stamp every delta with the same
-          // fidelity{reasoning_field}, which must not split blocks. Content arriving after a
-          // different fidelity is set starts a new block, so each block's fidelity stays
-          // independently faithful when history is replayed.
-          if (
-            hasFidelity(this.thinkingFidelity) &&
-            !fidelityEquals(this.thinkingFidelity, item.fidelity) &&
-            (item.thinking || hasFidelity(item.fidelity))
-          ) {
-            yield* this.flushThinking("completed");
-          }
-          if (hasFidelity(item.fidelity)) this.thinkingFidelity = item.fidelity;
-          if (!item.thinking) break;
-          // Type boundary: before a thinking segment starts, flush any unclosed text
-          // segment, so the complete-message order matches generation order (text → thinking).
-          // The boundary flush uses completed: that text segment's stop reason is "switched to
-          // thinking", not "Request ended".
-          yield* this.flushText("completed");
-          if (!this.thinkingStarted) {
-            this.thinkingStarted = true;
-            yield partialThinking("start");
-          }
-          this.thinkingBuffer += item.thinking;
-          yield partialThinking("delta", item.thinking);
+        case "thinking.delta":
+          yield* this.fragment("thinking", item.thinking);
           break;
-        }
-        case "partial_tool_call": {
-          // Some providers' argument deltas don't carry a tool_call_id; attribute them to the most
-          // recently opened tool call. If there's no open tool call yet, skip — don't fabricate a
-          // tool_call with an empty id.
-          const providerKey = item.tool_call_id || this.activeToolCallId;
-          if (!providerKey) break;
-          if (item.tool_call_id) this.activeToolCallId = item.tool_call_id;
-          const acc = this.ensureTool(providerKey, item.name);
-          if (item.name) acc.name = item.name;
-          if (hasFidelity(item.fidelity)) acc.fidelity = item.fidelity;
-          // Externally always use the uniqueness-resolved id (with a `#n` suffix on provider id collisions), matching the complete tool_call.
-          if (!this.toolStarted.has(acc.toolCallId)) {
-            // Type boundary: before a new tool_call starts, flush any unclosed thinking/text
-            // segment. Only triggered on the tool's first delta (!toolStarted.has); continuation
-            // deltas (including id-less increments attributed via activeToolCallId) don't re-trigger the flush.
-            yield* this.flushThinking("completed");
-            yield* this.flushText("completed");
-            this.toolStarted.add(acc.toolCallId);
-            yield partialToolCall({
-              eventType: "start",
-              name: acc.name,
-              toolCallId: acc.toolCallId,
-            });
-          }
-          // Only emit a delta when there's an arguments increment (an empty increment carries
-          // no information, consistent with how empty text/thinking increments are handled).
-          // The delta doesn't repeat the name — leave it blank; tool identity is established by
-          // the start segment and tool_call_id.
-          if (item.arguments) {
-            acc.argsBuffer += item.arguments;
-            yield partialToolCall({
-              eventType: "delta",
-              name: "",
-              arguments: item.arguments,
-              toolCallId: acc.toolCallId,
-            });
-          }
+        case "tool_call.delta":
+          yield* this.fragment("tool_call", item.arguments, item);
           break;
-        }
-        case "tool_call": {
-          // Complete tool-call content item: record the authoritative name/arguments and
-          // **eagerly emit** the tool's partial(stop) and complete tool_call. This lets the
-          // engine start approval/execution as soon as the first tool arrives, without waiting
-          // for the whole turn to finish — key for async/incremental tool calls (see comment
-          // #24). An empty id is invalid; skip it.
-          if (!item.tool_call_id) break;
-          // The model may think/output text before calling a tool: flush any buffered
-          // thinking/text complete messages before emitting the complete tool_call, so the
-          // complete-message order is thinking → text → tool_call. finish_reason isn't known
-          // yet here; the boundary flush uses completed, with the stop reason attributed to
-          // the tool_call itself.
-          yield* this.flushThinking("completed");
-          yield* this.flushText("completed");
-          // The same provider id already emitted a complete call and now another complete tool_call
-          // arrives: not a duplicate delivery but **another** call from a name-as-id provider (e.g.
-          // Gemini using the function name as id) — start a fresh accumulator, allocate a new unique id,
-          // and emit as usual; never drop it (otherwise parallel same-name calls in one turn would lack
-          // tool execution and paired output).
-          let acc = this.tools.get(item.tool_call_id);
-          if (!acc || acc.emitted) acc = this.createTool(item.tool_call_id, item.name);
-          acc.name = item.name;
-          acc.completeArgs = JSON.stringify(item.arguments ?? {});
-          if (hasFidelity(item.fidelity)) acc.fidelity = item.fidelity;
-          yield* this.emitCompleteTool(acc);
+        case "text.done":
+        case "thinking.done":
+        case "tool_call.done":
+          yield* this.complete(item);
           break;
-        }
-        // Other content items (image_url / inline_data / inline_thinking /
-        // tool_result / embedding) are not treated as model streaming output.
+        // Other items (inline data, inline thinking, embeddings) are not model streaming
+        // output here.
         default:
           break;
       }
@@ -487,203 +346,96 @@ export class EventTranslator {
   }
 
   /**
-   * Stream-end finalization: first `yield` the `stop` and complete message for the text/thinking
-   * segments, then backfill partial(stop) + complete tool_call for tool_calls that **haven't
-   * been emitted eagerly yet** (i.e. the fallback case — no complete tool_call content item was
-   * received, only deltas). Tools already emitted eagerly in `pushEvent` are not repeated here.
+   * Interruption finalization: even when interrupted or on error, the structure closes as
+   * `start → delta → stop → complete message` — every streamed item has its complete record.
+   * The item still streaming gets its partial `stop` and a complete message holding what had
+   * arrived (a tool call's raw argument text, which may not parse). No later item of the
+   * response follows it, and the request ends without `completed`: its `request_end` says how,
+   * the model history never holds it, and the engine never dispatches a call closed this way.
+   * Produces no `token_usage` (a cut-off request's comes after it): an interrupted Request
+   * has no usage to report.
    */
-  *finish(): Generator<OmniMessage> {
-    const stopReason = this.omniStopReason();
-
-    // 1. Close out the **last** unflushed thinking / text segment (earlier segments were already
-    //    flushed at their respective type boundaries or before the first tool_call).
-    //    Since boundaries already flush, at most one buffer is non-empty here, so call
-    //    order doesn't matter — the other call is a no-op; the final finish_reason is used as
-    //    the stop_reason here.
-    yield* this.flushThinking(stopReason);
-    yield* this.flushText(stopReason);
-
-    // 2. Fallback path: for tools that never received a complete tool_call content item,
-    //    backfill using the accumulated deltas.
-    for (const id of this.toolOrder) {
-      if (!id) continue; // Defensive: an invalid tool call with an empty id (its result can't be routed).
-      const acc = this.tools.get(id)!;
-      if (acc.emitted) continue; // Already emitted eagerly in pushEvent; don't repeat.
-      yield* this.emitCompleteTool(acc);
-    }
+  *finishInterrupted(): Generator<AmspRecord> {
+    yield* this.closeOpen(true);
   }
 
   /**
-   * Interruption finalization: even when interrupted or on error, close the structure
-   * as `start → delta → stop → complete message`. Closes any unclosed thinking/text segments and
-   * backfills their complete messages, then backfills partial(stop) + complete tool_call for
-   * tool_calls that only have deltas and were never emitted eagerly. All backfilled messages are
-   * uniformly tagged with the interruption `stopReason` (`aborted` / `retryable` / `fatal`), to
-   * distinguish them from normal completion (`completed`).
-   *
-   * Differs from `finish`: doesn't read `finish_reason`, and doesn't produce `token_usage` (an
-   * interrupted Request has no usage to report); backfilled incomplete tool_calls carry the
-   * interruption stop_reason, so `context_engine` won't dispatch them for execution.
+   * Closes the open item from its fragments: its partial `stop`, then a complete message holding
+   * what had arrived. `early` marks a tool call closed this way with `markInterruptedToolCall`,
+   * so the engine never dispatches it.
    */
-  *finishInterrupted(stopReason: StopReason): Generator<OmniMessage> {
-    yield* this.flushThinking(stopReason);
-    yield* this.flushText(stopReason);
-    for (const id of this.toolOrder) {
-      if (!id) continue;
-      const acc = this.tools.get(id)!;
-      if (acc.emitted) continue; // A tool_call already emitted eagerly keeps its `tool_call` semantics and is left unchanged.
-      yield* this.emitCompleteTool(acc, stopReason);
+  private *closeOpen(early: boolean): Generator<AmspRecord> {
+    const open = this.open;
+    this.open = null;
+    if (!open) return;
+    yield partial(open, "stop");
+    if (open.kind === "text") yield assistantText(open.content);
+    else if (open.kind === "thinking") yield thinkingMessage(open.content);
+    else {
+      const { name, content, toolCallId } = open;
+      const call = toolCall({ name, arguments: content, toolCallId });
+      yield early ? markInterruptedToolCall(call) : call;
     }
   }
 
-  /**
-   * Eagerly emits the finalization of a tool_call: partial(stop) (without name) + complete
-   * tool_call. Marks `emitted` to prevent duplicate emission in finish. `stopReason` defaults to
-   * `completed` (a normal request); when called during interruption finalization
-   * (`finishInterrupted`), the interruption reason is passed in, letting `context_engine`
-   * distinguish "a real tool request" from "an incomplete tool_call backfilled to close the
-   * structure on interruption" by stop_reason, and dispatch only the former.
-   */
-  private *emitCompleteTool(
-    acc: ToolCallAccumulator,
-    stopReason: StopReason = "completed",
-  ): Generator<OmniMessage> {
-    acc.emitted = true;
-    if (this.toolStarted.has(acc.toolCallId)) {
-      // stop doesn't carry name (tool identity is established by start and tool_call_id).
-      yield partialToolCall({
-        eventType: "stop",
-        name: "",
-        toolCallId: acc.toolCallId,
-        stopReason,
-      });
-    }
-    yield toolCall({
-      name: acc.name,
-      arguments: acc.completeArgs ?? acc.argsBuffer,
-      toolCallId: acc.toolCallId,
-      stopReason,
-      ...(acc.fidelity !== undefined ? { fidelity: acc.fidelity } : {}),
-    });
-    // activeToolCallId holds the provider id key (used to attribute id-less deltas); reset it by providerKey.
-    if (this.activeToolCallId === acc.providerKey) {
-      this.activeToolCallId = null;
-    }
+  /** Whether the `stop` event arrived: a fully delivered response. */
+  get stopped(): boolean {
+    return this.stopSeen;
   }
 
-  /**
-   * Closes out the currently buffered thinking segment and appends the complete thinking
-   * message, then clears the buffer and resets the start flag. May be called before eagerly
-   * emitting the first complete tool_call (`pushEvent`) or at stream end (`finish`), which
-   * guarantees the complete-message order is thinking → text → tool_call.
-   *
-   * "Flush then reset" rather than a one-shot guard: once the buffer is cleared, a repeated call
-   * is a no-op (each segment is emitted exactly once); if the model outputs new thinking after a
-   * tool_call (interleaved/multi-segment models), that new segment accumulates again and gets
-   * correctly flushed at the next tool_call or `finish`, without being lost.
-   *
-   * The complete thinking message passes through the given stop_reason just like partial(stop)
-   * (aligned with flushText — streamed concatenation == complete message): at type boundaries the
-   * caller passes completed (the stop reason belongs to the following tool_call/text);
-   * finish/finishInterrupted follow the actual end reason.
-   */
-  private *flushThinking(stopReason: StopReason): Generator<OmniMessage> {
-    if (this.thinkingStarted) {
-      yield partialThinking("stop", "", stopReason);
-      this.thinkingStarted = false;
-    }
-    // A thinking block with empty text but a fidelity payload (GPT-5 encrypted reasoning)
-    // still produces a complete message — the fidelity is required when replaying history.
-    if (this.thinkingBuffer || hasFidelity(this.thinkingFidelity)) {
-      yield thinkingMessage(this.thinkingBuffer, stopReason, this.thinkingFidelity);
-      this.thinkingBuffer = "";
-      this.thinkingFidelity = undefined;
-    }
+  /** The finish reason of a delivered response the provider did not finish normally (`length`, `unknown`), else null. */
+  get truncatedBy(): string | null {
+    return this.cutBy;
   }
 
-  /**
-   * Closes out the currently buffered text segment and appends the complete text message, then
-   * clears the buffer and resets the start flag. Uses the same "flush then reset" approach as
-   * `flushThinking` to support new text segments after a tool_call. When emitted before the
-   * first complete tool_call, finish_reason is unknown and the caller passes completed; when
-   * emitted in `finish`, the final `omniStopReason()` is passed (consistent with prior behavior).
-   */
-  private *flushText(stopReason: StopReason): Generator<OmniMessage> {
-    if (this.textStarted) {
-      yield partialText("stop", "", stopReason);
-      this.textStarted = false;
-    }
-    // A text segment with empty text but a fidelity payload (e.g. Gemini carrying a
-    // thoughtSignature on a text part, or a GPT-5 phase marker with no text) still produces a
-    // complete message — aligned with flushThinking, so the fidelity isn't lost or leaked into
-    // a later segment just because the buffer is empty.
-    if (this.textBuffer || hasFidelity(this.textFidelity)) {
-      yield assistantText(this.textBuffer, stopReason, this.textFidelity);
-      this.textBuffer = "";
-      this.textFidelity = undefined;
-    }
-  }
-
-  /** Whether finish_reason (the terminal event) has been received: signals a fully delivered response (see the defensive branch in streamGenerate). */
-  sawFinishReason(): boolean {
-    return this.finishReason !== null;
-  }
-
-  /** Token usage for this request (read after finish). */
+  /** Token usage for this request (the `stop` event's). */
   getRequestTokens(): TokenCounts {
     return this.requestTokens;
   }
 
-  private ensureTool(providerKey: string, name: string): ToolCallAccumulator {
-    return this.tools.get(providerKey) ?? this.createTool(providerKey, name);
-  }
-
   /**
-   * Create an accumulator for a new call: the emitted id is made unique via the Session-level registry
-   * (kept as-is when the provider id is free, with a `#n` suffix on collision). Creating again under the
-   * same provider id (another call with a duplicate id) replaces the old Map entry — the old call has
-   * finished emitting, so later inbound events are attributed to the latest call.
+   * One fragment of the item streaming now. The item opens on its first visible fragment — a
+   * call's name (which only its first fragment carries), or any text — so one that carries
+   * only fidelity (a signature, encrypted reasoning) shows nothing on screen.
    */
-  private createTool(providerKey: string, name: string): ToolCallAccumulator {
-    const acc: ToolCallAccumulator = {
-      name: name ?? "",
-      argsBuffer: "",
-      completeArgs: null,
-      toolCallId: this.toolCallIds.allocate(providerKey),
-      providerKey,
-      fidelity: undefined,
-      emitted: false,
-    };
-    this.tools.set(providerKey, acc);
-    this.toolOrder.push(providerKey);
-    return acc;
-  }
-
-  private usageOnce(usage: UsageMetadata): TokenCounts {
-    return usageToTokenCounts(usage);
-  }
-
-  /**
-   * Converts an AgentHub finish_reason into an OmniMessage stop_reason. "stop",
-   * "tool_call", and null are treated as completed; length or unknown reasons map to
-   * `fatal` — the request itself committed, so nothing retries, but the segment ended
-   * abnormally in a way only a human can fix (raise the output cap), which is what the
-   * abnormal terminal label tells the render layers.
-   */
-  private omniStopReason(): StopReason {
-    if (
-      this.finishReason == null ||
-      this.finishReason === "stop" ||
-      this.finishReason === "tool_call"
-    ) {
-      return "completed";
+  private *fragment(
+    kind: OpenItem["kind"],
+    content: string,
+    call?: ToolCallDeltaItem,
+  ): Generator<AmspRecord> {
+    if (!this.open) {
+      if (kind === "tool_call" ? !call?.name : !content) return;
+      const toolCallId = call ? this.toolCallIds.allocate(call.tool_call_id) : "";
+      this.open = { kind, content: "", name: call?.name ?? "", toolCallId };
+      yield partial(this.open, "start");
     }
-    return "fatal";
+    if (!content) return;
+    this.open.content += content;
+    yield partial(this.open, "delta", content);
+  }
+
+  /** A done item: the open item's partial `stop`, then the complete message read off the done item. */
+  private *complete(
+    done: TextDoneItem | ThinkingDoneItem | ToolCallDoneItem,
+  ): Generator<AmspRecord> {
+    const open = this.open;
+    this.open = null;
+    if (open) yield partial(open, "stop");
+    if (done.type === "tool_call.done") {
+      const toolCallId = open?.toolCallId ?? this.toolCallIds.allocate(done.tool_call_id);
+      const args = JSON.stringify(done.arguments);
+      const { name, fidelity } = done;
+      yield toolCall({ name, arguments: args, toolCallId, ...fidelityProp(fidelity) });
+    } else if (done.type === "text.done") {
+      yield assistantText(done.text, done.fidelity);
+    } else {
+      yield thinkingMessage(done.thinking, done.fidelity);
+    }
   }
 }
 
 /**
- * One-shot translation: folds a batch of UniEvents into an OmniMessage sequence (including
+ * One-shot translation: folds a batch of UniEvents into an AmspRecord sequence (including
  * complete messages and token_usage). A pure function for easy unit testing; the live streaming
  * path is wired up by `GenerativeModel.streamGenerate`.
  *
@@ -695,16 +447,15 @@ export function translateEvents(
   events: UniEvent[],
   sessionTokensBefore: TokenCounts = emptyTokenCounts(),
 ): {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   requestTokens: TokenCounts;
   sessionTokens: TokenCounts;
 } {
   const translator = new EventTranslator();
-  const out: OmniMessage[] = [];
+  const out: AmspRecord[] = [];
   for (const event of events) {
     for (const msg of translator.pushEvent(event)) out.push(msg);
   }
-  for (const msg of translator.finish()) out.push(msg);
 
   const requestTokens = translator.getRequestTokens();
   const sessionTokens = addTokenCounts(sessionTokensBefore, requestTokens);
@@ -746,68 +497,39 @@ export function describeError(error: unknown): string {
   return parts.join(": ") || error.message || String(error);
 }
 
-/**
- * Determines whether an error is an AgentHub / Provider "response delivered but unusable"
- * parse or validation error. Two shapes (@prismshadow/agenthub 0.4.x):
- *
- * - A raw `SyntaxError` from `JSON.parse` on a response body;
- * - AgentHub's own error classes: `ToolCallArgumentParseError` (streamed tool-call arguments
- *   are not valid JSON — e.g. a stream truncated mid-arguments) and `EmptyResponseError`
- *   (a completed response carrying thinking only, which cannot be replayed).
- *
- * In every case the turn was **not committed** to AgentHub history: this is not an
- * auth/parameter failure but an incomplete LLM Request, and should end `retryable` and
- * be handed to the engine to reconnect and retry. Judged by exception type with a `name`
- * fallback (covers cross-realm or deserialization-reconstructed errors), probing down the
- * `cause` chain for wrapped errors.
- */
-export function isMalformedJsonParseError(error: unknown): boolean {
-  if (error == null) return false;
-  if (
-    error instanceof SyntaxError ||
-    error instanceof ToolCallArgumentParseError ||
-    error instanceof EmptyResponseError
-  ) {
-    return true;
-  }
-  const err = error as { name?: string; cause?: unknown };
-  if (
-    err.name === "SyntaxError" ||
-    err.name === "ToolCallArgumentParseError" ||
-    err.name === "EmptyResponseError"
-  ) {
-    return true;
-  }
-  if (err.cause && err.cause !== error) {
-    return isMalformedJsonParseError(err.cause);
-  }
-  return false;
-}
+/** The errors that mean "a response arrived and cannot be used": a JSON parse failure, and MMSP's own stream errors. */
+const UNUSABLE_RESPONSE_ERRORS: ReadonlySet<string> = new Set([
+  "SyntaxError",
+  "ToolCallArgumentParseError",
+  "EmptyResponseError",
+  "StreamProtocolError",
+]);
 
 /**
- * Determines whether an error is AgentHub's "incomplete stream" validation error: when a
- * server/proxy terminates the stream early **cleanly** at an event boundary (no network error
- * thrown), AgentHub's `_validateLastEvent` reports the missing or incomplete final event as a
- * plain `Error` ("Streaming response yielded no events" / "Last event must carry
- * usage_metadata|finish_reason"). This is not an auth/parameter failure but an incomplete LLM
- * Request, and should end `retryable` and be handed to the engine to reconnect and retry.
- * AgentHub doesn't provide an error type for this, so we match by message prefix
- * (verified against @prismshadow/agenthub 0.4.x), probing down the `cause` chain.
+ * Determines whether an error means the response was delivered but cannot be used:
+ *
+ * - a raw `SyntaxError` from `JSON.parse` on a response body;
+ * - MMSP's stream errors, thrown in place of the item or the `stop` event they spoil:
+ *   `ToolCallArgumentParseError` (streamed tool-call arguments are not a JSON object — e.g. a
+ *   stream truncated mid-arguments), `EmptyResponseError` (a completed response carrying
+ *   thinking only, which cannot be replayed) and `StreamProtocolError` (a client broke the
+ *   stream grammar);
+ * - a stream a server/proxy ended early but **cleanly**, leaving MMSP no usage or finish reason
+ *   to close it with: a plain `Error` MMSP gives no type, matched by its message
+ *   ("Streaming response ended without usage_metadata|finish_reason", @prismshadow/mmsp 0.5.0).
+ *
+ * In every case the turn was **not committed** to MMSP's history: an incomplete LLM Request,
+ * which ends `retryable` and is handed to the engine to reconnect and retry. Judged by the
+ * error's `name` (so cross-realm or reconstructed errors match too), down the `cause` chain.
  */
-export function isIncompleteStreamError(error: unknown): boolean {
-  if (error == null) return false;
-  const err = error as { message?: string; cause?: unknown };
-  const msg = err.message ?? "";
-  if (
-    msg.startsWith("Streaming response yielded no events") ||
-    msg.startsWith("Last event must carry")
-  ) {
-    return true;
-  }
-  if (err.cause && err.cause !== error) {
-    return isIncompleteStreamError(err.cause);
-  }
-  return false;
+export function isUnusableResponseError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const { name, message } = level as { name?: unknown; message?: unknown };
+    return (
+      UNUSABLE_RESPONSE_ERRORS.has(String(name)) ||
+      String(message ?? "").startsWith("Streaming response ended without")
+    );
+  });
 }
 
 /** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
@@ -875,14 +597,14 @@ export function isAuthenticationError(error: unknown): boolean {
 }
 
 /**
- * Determines whether an error is AgentHub's `UnsupportedParameterError` for `fast_mode`:
+ * Determines whether an error is MMSP's `UnsupportedParameterError` for `fast_mode`:
  * clients without a fast tier (and claude5 on Bedrock / Claude 4.6 ids) reject the
  * parameter by throwing **before any network I/O**, so with the same frozen config the
  * failure is deterministic — retrying the identical request can never succeed. Deliberately
  * scoped to `parameter === "fast_mode"`: other UnsupportedParameterError sources keep the
  * default `retryable` classification (and the engine's ladder) unchanged. Judged by exception
  * type with a `name` fallback (covers cross-realm or deserialization-reconstructed errors,
- * same approach as isMalformedJsonParseError), probing down the `cause` chain.
+ * same approach as isUnusableResponseError), probing down the `cause` chain.
  */
 export function isFastModeUnsupportedError(error: unknown): boolean {
   return anyInCauseChain(error, (level) => {
@@ -894,12 +616,27 @@ export function isFastModeUnsupportedError(error: unknown): boolean {
 }
 
 /**
- * Actionable tail appended to a fast-mode rejection's error text: the raw AgentHub message
+ * Actionable tail appended to a fast-mode rejection's error text: the raw MMSP message
  * says what is unsupported ("Kimi does not support fast mode."); this says where the switch
  * lives. Exported for the outcome-classification tests.
  */
 export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
+
+/**
+ * Whether any level of the error chain is an HTTP **429** — the provider's rate limit, or a
+ * quota that is exhausted for now. The outcome stays `retryable` (a short burst is exactly
+ * what the reconnect ladder is for), but it is classified apart from a transport drop: the
+ * code is what lets a host tell "the wire blipped" from "this model has no quota left", and
+ * act on the second.
+ */
+export function isRateLimitError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown };
+    const status = typeof err.status === "number" ? err.status : err.statusCode;
+    return status === 429;
+  });
+}
 
 /**
  * Determines whether an error is a definitive provider rejection of the request itself —
@@ -926,21 +663,26 @@ export function isFatalProviderRejection(error: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * A stateful LLM object attached to a Session. AgentHub's `streamingResponseStateful` maintains
- * conversation history internally; this class is only responsible for protocol translation,
- * streaming aggregation, and token accumulation. **It never retries internally** — retries are
- * handled by `context_engine`.
+ * A stateful LLM object attached to a Session. MMSP's `streamingResponseStateful` maintains
+ * conversation history internally; this class is only responsible for protocol translation
+ * and token accounting. **It never retries internally** — retries are handled by
+ * `context_engine`.
  */
 export class GenerativeModel implements LLMInterface {
-  private readonly client: AutoLLMClient;
+  private client: AutoLLMClient;
+  private readonly clientOptions: Omit<AutoLLMClientOptions, "apiKey">;
+  private currentApiKey: string | undefined;
+  private readonly resolveApiKey: (() => Promise<string | undefined>) | undefined;
   private readonly uniConfig: UniConfig;
   /**
    * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
    * effective level is resolved per request (`params.thinkingLevel ?? default`), so a turn can
    * override it without rebuilding the model object — the thinking level is a per-turn
-   * parameter, not a Session invariant.
+   * parameter, not a Session invariant. Public through `LLMInterface`: the engine reads it to
+   * resolve, send and record each request's effective level itself; the fallback in
+   * `requestConfig` still serves callers outside the engine (titles, the vision describer).
    */
-  private readonly defaultThinkingLevel: ThinkingLevelName | undefined;
+  readonly defaultThinkingLevel: ThinkingLevelName | undefined;
   /** Streaming idle timeout (milliseconds); <= 0 disables it. A timeout is treated as needing reconnection. */
   private readonly requestTimeoutMs: number;
   /**
@@ -974,26 +716,45 @@ export class GenerativeModel implements LLMInterface {
   private lastWarnedCap: number | undefined;
 
   constructor(config: GenerativeModelConfig) {
-    // Omit apiKey / baseUrl when undefined, letting AgentHub read them from environment
+    // Omit apiKey / baseUrl when undefined, letting MMSP read them from environment
     // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
     // Chat Completions compatible; the bare `openai` spelling is a deprecated upstream alias);
-    // when omitted, AgentHub infers it from model_id, so it only needs to be specified
-    // explicitly for custom-named models. `defaultHeaders` carries the app attribution the
-    // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
-    // the routed client makes, and endpoints with no attribution scheme get no extra headers
-    // at all.
-    const headers = attributionHeaders(config.baseUrl);
-    this.client = new AutoLLMClient({
+    // when omitted, MMSP infers it from model_id, so it only needs to be specified
+    // explicitly for custom-named models. `defaultHeaders` goes on every request the routed
+    // client makes. It names PenguinHarness in the User-Agent, which each provider SDK lets
+    // replace its own; the name is spelled `User-Agent` exactly, because the Gemini SDK
+    // merges these into its own defaults as a plain object, where `user-agent` would sit
+    // beside its `User-Agent` and both values would go out joined. It also carries the app
+    // attribution the configured endpoint reads (see attributionHeaders), and an endpoint with
+    // no attribution scheme gets nothing beyond the User-Agent. The Session's id rides along
+    // for the schemes that name the conversation rather than the app; without one,
+    // attributionHeaders mints a fresh id. Computed once and kept in clientOptions, so every
+    // request of this instance — across a rotated credential too — names the same
+    // conversation.
+    this.clientOptions = {
       model: config.modelId,
-      ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
       ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
-      ...(headers ? { defaultHeaders: headers } : {}),
-    });
+      defaultHeaders: {
+        "User-Agent": userAgent(),
+        ...attributionHeaders(config.baseUrl, config.sessionId),
+      },
+    };
+    this.currentApiKey = config.apiKey;
+    this.resolveApiKey = config.resolveApiKey;
+    // MMSP refuses a keyless base URL its client's environment key may not go to here, at
+    // construction; newAutoLLMClient words that refusal as a ModelCredentialError.
+    this.client = newAutoLLMClient(
+      {
+        ...this.clientOptions,
+        ...(this.currentApiKey !== undefined ? { apiKey: this.currentApiKey } : {}),
+      },
+      config.modelId,
+    );
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 300000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 600000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
     this.configuredMaxTokens = config.maxTokens;
     this.contextWindow = resolveContextWindow(config.contextWindow);
@@ -1001,6 +762,21 @@ export class GenerativeModel implements LLMInterface {
       approximateTokens(config.systemPrompt ?? "") +
       approximateTokens(JSON.stringify(this.uniConfig.tools ?? []));
     this.lastRequestTotal = this.baseInputTokens;
+  }
+
+  /** Swap a rotated credential into MMSP without losing its stateful conversation. */
+  private async refreshApiKey(): Promise<void> {
+    if (this.resolveApiKey === undefined) return;
+    const nextApiKey = await this.resolveApiKey();
+    if (nextApiKey === undefined || nextApiKey === this.currentApiKey) return;
+    const history = this.client.getHistory();
+    const next = newAutoLLMClient(
+      { ...this.clientOptions, apiKey: nextApiKey },
+      this.clientOptions.model,
+    );
+    if (history.length > 0) next.setHistory(history);
+    this.client = next;
+    this.currentApiKey = nextApiKey;
   }
 
   /**
@@ -1012,7 +788,7 @@ export class GenerativeModel implements LLMInterface {
    */
   private requestConfig(
     override: ThinkingLevelName | undefined,
-    newMessages: OmniMessage[],
+    newMessages: AmspRecord[],
   ): UniConfig {
     const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
     const maxTokens = this.effectiveMaxTokens(newMessages);
@@ -1047,7 +823,7 @@ export class GenerativeModel implements LLMInterface {
    * once per distinct value on stderr with the numbers involved, so a shaved `max_tokens`
    * is diagnosable from the log instead of surfacing only as an opaque failed/short turn.
    */
-  private effectiveMaxTokens(newMessages: OmniMessage[]): number | undefined {
+  private effectiveMaxTokens(newMessages: AmspRecord[]): number | undefined {
     const estimatedInput = this.lastRequestTotal + approximateMessagesTokens(newMessages);
     const derived = effectiveMaxOutputTokens(
       this.configuredMaxTokens,
@@ -1072,26 +848,32 @@ export class GenerativeModel implements LLMInterface {
   /**
    * Streaming generation (a single attempt, no internal retry). Merges
    * `params.newMessages` into one UniMessage to issue a stateful request, translating streamed
-   * UniEvents into OmniMessages.
+   * UniEvents into records.
    *
    * **Never throws to `context_engine`**: whether it ends normally or is interrupted/errors out,
-   * every `partial_*` segment is closed as `start → delta → stop → complete message`,
-   * and the terminal state is then returned as `LLMOutcome`:
-   *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
-   *     produced in this case) → `completed`;
-   *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
+   * every `partial_*` segment is closed as `start → delta → stop → complete message`, and the
+   * terminal state is then returned as `LLMOutcome`:
+   *   - **Normal completion**: the `stop` event closed every item; `token_usage` is produced
+   *     (only in this case) → `completed`;
+   *   - **Cut off**: the `stop` event arrived with a finish reason other than `stop` /
+   *     `tool_call`: the turn MMSP recorded is removed from its history, its `token_usage` is
+   *     produced (the provider billed it) → `retryable`, coded `output_truncated` for `length`
+   *     (the output cap) and `malformed` for a finish reason MMSP does not map, with an
+   *     `errorMessage` naming it — retried on the ladder like any other `retryable`;
+   *   - **User interruption**: `finishInterrupted()` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
    *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
    *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
    *     this config enables `fast_mode` on a model without a fast tier), or input that never
-   *     assembled into a request: `finishInterrupted("fatal")` closes out, produces no usage
+   *     assembled into a request: `finishInterrupted()` closes out, produces no usage
    *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
    *     retrying — the identical request can never succeed, so the ladder would only delay
-   *     the actionable message;
+   *     the actionable message. The engine makes one exception: a provider 4xx on an input
+   *     that holds images is retried with the images replaced (`image_rejected`);
    *   - **Every other failure** — idle timeout, network/transport drops, 408/429/5xx,
-   *     AgentHub parse errors and truncated streams, and anything unclassifiable:
-   *     `finishInterrupted("retryable")` closes out, produces no usage → `retryable`
+   *     MMSP parse errors and truncated streams, and anything unclassifiable:
+   *     `finishInterrupted()` closes out, produces no usage → `retryable`
    *     (carrying `errorMessage` when a concrete error was caught), reconnected by
    *     `context_engine` within the same run. Unclassifiable errors stay retryable on
    *     purpose: the fatal detector is an allowlist, and a gateway phrasing a transient
@@ -1101,9 +883,7 @@ export class GenerativeModel implements LLMInterface {
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
    * (merged with user interruption into a single internal AbortController).
    */
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     const userSignal = params.signal;
 
     // Already interrupted before issuing: no streaming segment has been opened, so nothing to close out.
@@ -1115,7 +895,7 @@ export class GenerativeModel implements LLMInterface {
     // and never throw to context_engine.
     let uniMessage: UniMessage;
     try {
-      uniMessage = mergeOmniToUniMessage(params.newMessages);
+      uniMessage = mergeRecordsToUniMessage(params.newMessages);
     } catch (err) {
       return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
@@ -1167,8 +947,13 @@ export class GenerativeModel implements LLMInterface {
     // Terminal-state classification: retryable (transport/parse failures) / fatal (definitive
     // rejections) / aborted (user). null means it ended normally.
     let outcome: LLMOutcome | null = null;
+    // The stateful history's length before this request: a response cut off is cut back to it.
+    let historyLength = 0;
+    let it: AsyncIterator<UniEvent> | undefined;
     try {
-      const it = this.openStream(
+      await this.refreshApiKey();
+      historyLength = this.client.getHistory().length;
+      it = this.openStream(
         uniMessage,
         ac.signal,
         this.requestConfig(params.thinkingLevel, params.newMessages),
@@ -1199,21 +984,23 @@ export class GenerativeModel implements LLMInterface {
           clearTimer();
         }
         if (res === STOPPED) {
-          // Upstream never settled after the abort. Abandon it rather than await it: ask it to
-          // close (best effort — a stream that ignored the signal may ignore this too, so the
-          // rejection is swallowed and the promise is not awaited) and classify by trigger.
-          void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
+          // Upstream never settled after the abort. Cleanup below is best effort and does
+          // not wait on a stream that may also ignore return(). Classify by trigger.
           outcome = userSignal?.aborted
             ? { status: "aborted" }
             : { status: "retryable", errorCode: "timeout" };
           break;
         }
         if (res.done) break;
-        if (userSignal?.aborted) {
+        // `stop` is always the last event, and MMSP committed the turn to its history before
+        // yielding it: with that event in hand the request is complete, whatever the abort
+        // signal says.
+        if (userSignal?.aborted && res.value.event_type !== "stop") {
           outcome = { status: "aborted" };
           break;
         }
         for (const msg of translator.pushEvent(res.value)) yield msg;
+        if (translator.stopped) break;
       }
     } catch (error) {
       // User interruption **takes priority**: even if the idle timer fires at the same time,
@@ -1222,9 +1009,9 @@ export class GenerativeModel implements LLMInterface {
         outcome = { status: "aborted" };
       } else if (timedOut) {
         outcome = { status: "retryable", errorCode: "timeout" }; // Idle timeout -> needs reconnection
-      } else if (isMalformedJsonParseError(error) || isIncompleteStreamError(error)) {
-        // A response JSON parse error, or a cleanly truncated stream (AgentHub's final-event
-        // validation failed): both are an incomplete LLM Request — the turn was never
+      } else if (isUnusableResponseError(error)) {
+        // An unusable response, or a cleanly truncated stream (MMSP had no usage or finish
+        // reason to close it with): both are an incomplete LLM Request — the turn was never
         // committed, so the engine reconnects and retries. Checked before the fatal
         // detectors: these carry no HTTP status, but the explicit branch keeps the message
         // and the intent readable.
@@ -1240,7 +1027,7 @@ export class GenerativeModel implements LLMInterface {
         // from the current Project config on load), after which the Session continues.
         outcome = { status: "fatal", errorCode: "auth", errorMessage: describeError(error) };
       } else if (this.uniConfig.fast_mode === true && isFastModeUnsupportedError(error)) {
-        // Fast mode rejected by a model without a fast tier: AgentHub throws its
+        // Fast mode rejected by a model without a fast tier: MMSP throws its
         // UnsupportedParameterError before any network I/O, so with this object's frozen
         // config the failure is deterministic — fatal, so the engine surfaces the message
         // immediately instead of burning the reconnect ladder on a request that can never
@@ -1254,11 +1041,25 @@ export class GenerativeModel implements LLMInterface {
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
         // fails identically on every retry, so stop now with the provider's own message.
+        // Nothing here reads that message: whether the request carried an image is the
+        // engine's knowledge, and it treats any 4xx on such a request as the image's
+        // (`image_rejected`) and sends the rest again with the provider's text in place of
+        // the image, for the model to judge.
         outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
+      } else if (isRateLimitError(error)) {
+        // A 429: the provider's rate limit, or a quota with nothing left in it. Retryable
+        // like a transport drop — the ladder may well outlast a burst — but classified
+        // apart, because a host that has somewhere else to run the Session can tell the two
+        // apart and move it.
+        outcome = {
+          status: "retryable",
+          errorCode: "rate_limited",
+          errorMessage: describeError(error),
+        };
       } else {
-        // Everything else — network/transport drops, 429/5xx, and anything unclassifiable —
+        // Everything else — network/transport drops, 5xx, and anything unclassifiable —
         // retries on the engine's ladder. The detail rides on the outcome so observability
         // (request_end -> the Cost center's errors panel) shows the real reason behind a
         // retried request.
@@ -1267,32 +1068,72 @@ export class GenerativeModel implements LLMInterface {
     } finally {
       clearTimer();
       userSignal?.removeEventListener("abort", onUserAbort);
+      // Leaving before the stop (at a yield, on an error, or abandoning an upstream that never
+      // settled) must cancel generation, even without a caller-owned signal, and close the
+      // upstream iterator to release it. Once the stop arrived nothing is cancelled: the turn
+      // is committed and billed, and the transport may still be reading the stream's end
+      // (MMSP yields the stop before `[DONE]`); closing it here would drop the connection.
+      if (!translator.stopped) {
+        ac.abort();
+        // Do not let a broken or unresponsive cleanup replace the outcome or hold it open.
+        try {
+          void Promise.resolve(it?.return?.()).catch(() => undefined);
+        } catch {
+          // A synchronous cleanup failure is no more authoritative than a rejected promise.
+        }
+      }
     }
 
-    // Defensive: when the underlying stream responds to an abort with a **graceful end (done)**
-    // rather than throwing, it must still be closed out as interrupted/timed out, and must not be
+    // Defensive: a stream that ended without its `stop` event and without throwing — an
+    // upstream answering an abort with a graceful end — was never committed, and must not be
     // misjudged as completed (priority matches the catch classification: user interruption >
-    // timeout). Exception: if finish_reason was already received before the stream ended (the
-    // response was fully delivered and AgentHub has already committed this turn into stateful
-    // history), close out as completed — if the interruption race lands exactly during the wait
-    // on the final next() and gets misjudged as aborted, the already-committed tool_use turn
-    // would be cleaned up by context_engine as "incomplete" flatten, losing the tool_result
-    // pairing; subsequent requests would all be rejected by the provider as an unanswered
-    // tool_use (400), and the engine has no fix-up path left that touches LLM history.
-    if (!outcome && !translator.sawFinishReason()) {
+    // timeout). The opposite mistake is ruled out above: once `stop` arrived the turn is in
+    // MMSP's history, and treating it as aborted would have the engine flatten an
+    // already-committed tool_use turn, leaving every later request rejected as an unanswered
+    // tool_use (400) with no fix-up path that reaches the LLM history.
+    if (!outcome && !translator.stopped) {
       if (userSignal?.aborted) outcome = { status: "aborted" };
       else if (timedOut) outcome = { status: "retryable", errorCode: "timeout" };
+      else {
+        outcome = {
+          status: "retryable",
+          errorCode: "malformed",
+          errorMessage: "The response stream ended without a stop event.",
+        };
+      }
     }
 
     if (outcome) {
-      // Interrupted/errored: close any opened streaming segments and backfill the complete message, producing no token_usage.
-      const reason: StopReason = outcome.status === "completed" ? "retryable" : outcome.status;
-      for (const msg of translator.finishInterrupted(reason)) yield msg;
+      // Interrupted/errored: close the item still streaming, producing no token_usage.
+      for (const msg of translator.finishInterrupted()) yield msg;
       return outcome;
     }
 
-    // Normal completion: backfill stop + the complete model_msg, and produce token_usage.
-    for (const msg of translator.finish()) yield msg;
+    // Delivered whole but not finished the normal way (the output cap, or a finish reason MMSP
+    // does not map): MMSP recorded the turn before yielding its stop, so it is taken back out —
+    // only a completed request may enter the history, and the context size stays. The provider
+    // billed the attempt and reported its usage, so its token_usage goes out like any finished
+    // request's.
+    const cutBy = translator.truncatedBy;
+    if (cutBy !== null) {
+      const history = this.client.getHistory();
+      if (history.length > historyLength) this.client.setHistory(history.slice(0, historyLength));
+      const cutTokens = translator.getRequestTokens();
+      yield tokenUsage(cutTokens, cutTokens);
+      return cutBy === "length"
+        ? {
+            status: "retryable",
+            errorCode: "output_truncated",
+            errorMessage: "the response stopped at the output limit (finish_reason: length)",
+          }
+        : {
+            status: "retryable",
+            errorCode: "malformed",
+            errorMessage: `the response ended without a normal finish (finish_reason: ${cutBy})`,
+          };
+    }
+
+    // Normal completion: the `stop` event closed every item; produce token_usage.
     const requestTokens = translator.getRequestTokens();
     // The provider-measured context size, feeding the next request's output-cap clamp
     // (see effectiveMaxTokens). Only a completed request updates it: an interrupted or
@@ -1307,14 +1148,14 @@ export class GenerativeModel implements LLMInterface {
 
   /**
    * Injects the replayed history in one shot when resuming a Session: converts the complete
-   * OmniMessage history, grouped by adjacent same role, into
-   * AgentHub UniMessages and calls AgentHub's setHistory, so subsequent Requests continue from a
+   * AmspRecord history, grouped by adjacent same role, into
+   * MMSP UniMessages and calls MMSP's setHistory, so subsequent Requests continue from a
    * history exactly matching the original conversation. **Called only once, on a fresh context
    * object, during resumption**; not used during normal operation, where the incremental context
-   * is maintained by AgentHub itself.
+   * is maintained by MMSP itself.
    * Docs: /docs/sessions-and-traces § "Session recovery".
    */
-  setHistory(history: OmniMessage[]): void {
+  setHistory(history: AmspRecord[]): void {
     if (history.length === 0) return;
     // Resume seeding: register tool_call_ids already used in history into the uniqueness registry. A
     // name-as-id provider (e.g. Gemini) only gets a new suffix when it calls the same tool again after
@@ -1335,7 +1176,7 @@ export class GenerativeModel implements LLMInterface {
   }
 
   /**
-   * Opens the underlying AgentHub stream (a testing seam): defaults to
+   * Opens the underlying MMSP stream (a testing seam): defaults to
    * `streamingResponseStateful`; unit tests can subclass and override this method, feeding in a
    * controlled UniEvent stream to verify the outcome classification for timeout/network
    * drop/interruption/error (without a real API). `config` is this request's resolved
@@ -1358,7 +1199,7 @@ export class GenerativeModel implements LLMInterface {
 // UniConfig pre-construction
 // ---------------------------------------------------------------------------
 
-/** Maps a ThinkingLevelName to the AgentHub ThinkingLevel enum; returns undefined if not found. */
+/** Maps a ThinkingLevelName to the MMSP ThinkingLevel enum; returns undefined if not found. */
 export function mapThinkingLevel(name: ThinkingLevelName | undefined): ThinkingLevel | undefined {
   if (name === undefined) return undefined;
   const table: Record<ThinkingLevelName, ThinkingLevel> = {
@@ -1372,7 +1213,7 @@ export function mapThinkingLevel(name: ThinkingLevelName | undefined): ThinkingL
   return table[name];
 }
 
-/** Maps ToolDefinition[] to AgentHub ToolSchema[]. */
+/** Maps ToolDefinition[] to MMSP ToolSchema[]. */
 export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] {
   return tools.map((tool) => ({
     name: tool.name,
@@ -1387,7 +1228,7 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  * When the tool list is empty (connectivity probe, bare/meta LLM, vision describer), `tools`
  * is omitted entirely instead of set to `[]`: strict OpenAI-compatible servers (e.g. vLLM)
  * reject an empty array with a 400 ("tools must not be an empty array"), and omission is the
- * protocol equivalent. `tool_choice` is likewise never set — AgentHub only puts it on the wire
+ * protocol equivalent. `tool_choice` is likewise never set — MMSP only puts it on the wire
  * when UniConfig defines it, and leaving it off preserves the protocol default ("auto" when
  * tools are present).
  *
@@ -1411,14 +1252,14 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   }
   // Fast mode (the model entry's `fast_mode` annotation): only ever set when enabled — the
   // key stays off the config otherwise, so models without a fast tier are unaffected by
-  // default (AgentHub rejects the parameter wherever no fast tier exists).
+  // default (MMSP rejects the parameter wherever no fast tier exists).
   if (config.fastMode === true) {
     uniConfig.fast_mode = true;
   }
   // Thought summaries, always requested. Two things ride on it: the user gets to watch the
   // model reason, and — because the request timeout is an idle budget between upstream events
   // — a reasoning phase that reaches the wire keeps resetting that timer instead of counting
-  // as one long silence. No model rejects the flag (unlike fast_mode): AgentHub maps it where
+  // as one long silence. No model rejects the flag (unlike fast_mode): MMSP maps it where
   // it exists and drops it where it doesn't, so the only cost of asking is on families that
   // answer with a summarized thinking stream (Claude) instead of the raw one.
   uniConfig.thinking_summary = true;

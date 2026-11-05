@@ -1,0 +1,101 @@
+# No AI slop: the UI and the copy look chosen, not generated
+
+AI slop is the look a generated product falls into when nobody decides anything: every default
+switched on at once — a gradient, a glow, emoji, a pill on every row, a card around every card,
+"it's not just X — it's Y". It reads as designed in a thumbnail and falls apart on a second look.
+The Web App, the landing site, the docs and the Electron shell are all written by agents, which is
+exactly why they drift there; this page is the brake.
+
+It applies to **every** change that renders something or says something to a user: a component,
+a class list, a string in `strings-en.ts` / `strings.ts`, a docs page, a blog post, a changelog
+entry, a PR body.
+
+## The six rules, held on every change
+
+1. **Decide before you decorate.** Every visual choice must be explainable in one sentence. "It
+   looked empty" is not a reason.
+2. **One accent, one voice.** The theme's tokens carry colour; no new hues, no second accent, no
+   gradient.
+3. **Hierarchy from scale and space.** Not from colouring or bolding scattered words, not from
+   swapping fonts.
+4. **Subtract first.** The first move toward better is removing something — a border, a badge, a
+   shadow, a sentence.
+5. **Specific beats punchy.** Copy says the concrete thing: what happened, what to do, with what.
+6. **Decoration must mean something.** An icon, badge, callout or colour is a signal; if it
+   signals nothing, it goes.
+
+## What this repo already decided (these win over any generic rule)
+
+- Status is a labelled pill (`Pill`: the state's word in its tone, no glyph) or an icon whose tooltip /
+  `aria-label` names it — never a bare coloured dot the reader has to decode (owner, 2026-10-15),
+  no textual `[failed]` markers, no red warning prose. Icon-only buttons are flat: no fill at rest or on hover, the glyph deepens.
+- Info and action sections are ruled (a divider, title left, actions right), not boxed in cards.
+  Labels small and grey, values dark and semibold.
+- List rows are one line: logo, name, the library's own pills right after the name, no raw ids
+  (a tooltip at most). A pane is sized to its rows.
+- Dense lists (settings shortcuts, pickers) use small type and no rule under every row; the group
+  heading is the only divider.
+- Colour comes from the theme tokens and the `tone*` helpers (`lib/tone.ts`), which already exist
+  for attention / danger / success — reuse them, never hand-pick a Tailwind hue.
+- A gradient only where it carries the data's shape, a state transition or one deliberate
+  emphasis, never as atmosphere: the running step's sweep, the streaming veil, a chart area's
+  fade, the context bar's hatch and the TokenDance banner's brand-name sweep are the ones kept,
+  and Frost's sidebar is flat (owner, 2026-10-11 and 2026-10-12). The frontend skill lists each
+  one's job; de-slop rule 18 holds the hook recipes to it.
+- A note under a figure or a control is added only where it is needed: to explain a mark on
+  screen (the uncosted note behind a cost's `*`) or to head off a misreading that would cost the
+  reader something. A breakdown does not get a caveat sentence by default ("two measurements of
+  the same span: they can overlap, and they need not add up") — the numbers carry it, and the
+  subtlety belongs in the code comment and the spec, not under every reading.
+- A state sentence (why a control is greyed, what a machine is doing) says the reason in plain
+  words and stops. No "reason + colon + the controls it affects" template —
+  「这台机器正在处理任务，完成后可用：启用。」, "Cannot reach this machine, so these wait for now:
+  Stop, Restart." — the greyed controls already show which ones; write 「正在执行其他操作，请等它
+  完成。」 / "Another action is running on this machine." The same goes for a list glued onto a
+  notice: one sentence that says what to do beats an inventory (the full list belongs in a log).
+- zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
+  "Agent"); prose hygiene for anything published is in `authoring.md`.
+- From the owner's checklist (2026-11-02), held by the de-slop guard in the package, the Web App
+  and the landing (`packages/landing/test/deslop.test.ts`): no text below 12px (rule 23; the
+  chart marks' 9/11 px labels are allowlisted until the charts are re-laid out); items in a line
+  stand apart by space or the sentence's own punctuation, never a middle dot (rule 24); no
+  uppercase or letter-spaced label, and no eyebrow over a section title — a public site's group
+  label is sentence case, small, semibold and muted; no coloured bar down a box's left edge, at
+  any width (rule 8). On the landing, sections hold still while the page scrolls, a demo's
+  caption states a fact (what it cost), not what the video shows, and a small chart is laid out
+  at the width it is shown at so its labels keep the page's sizes.
+
+## How to check a change
+
+Read the diff once as a user would see it, against the six rules and the list above. Then run the
+scanner over what you touched — it is dependency-free Node and never edits anything:
+
+```sh
+node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/web/src
+node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/landing --only=14,15,29
+node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <dir> --json   # for triage
+```
+
+Every hit is a lead, not a verdict: open the file and decide **slop vs. chosen**. A deliberate
+brand element, a logo, the theme's own tokens stay. Pin a hit you confirmed as intentional with
+an id-scoped comment (`deslop-ignore-next-line 06`) so new tells still surface. A new hit in your
+own diff is yours to remove before the PR, or to name in the PR body with the reason it stays.
+
+Do not sweep the codebase on your own: when a scan turns up existing slop outside your change,
+list it in the PR body or tell the user, and fix it only when asked — the diff stays about its
+subject.
+
+## The catalogue
+
+Vendored verbatim from [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop) (`skill/`,
+commit `f6e2ae32b304`, Apache-2.0 — `ai-slop/LICENSE`). The three references still say
+`references/` and `scripts/` for their own layout; here they all sit in `ai-slop/`.
+
+| Read | For |
+| --- | --- |
+| `ai-slop/taxonomy.md` | The 35 tells — colour, type, copy, components, motion, layout — what each is, why it reads as machine-made, the fix |
+| `ai-slop/detection.md` | The patterns the scanner greps for, and their common false positives |
+| `ai-slop/fixes.md` | Before → after remediation per tell |
+| `ai-slop/scan.mjs` | The scanner (`--only`, `--skip`, `--exclude`, `--json`) |
+
+To refresh from upstream, copy the same four files over and update the commit above.

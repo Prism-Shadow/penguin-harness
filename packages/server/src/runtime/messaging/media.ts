@@ -133,12 +133,30 @@ export class MessagingPermissionError extends Error {
  *
  * It matters beyond the wording: `error-kind.ts` files it as `expected`, so a channel refusing
  * what it was never able to do stops being counted among the errors that need someone to look.
- * `message` must say what could not be carried and why, because that text reaches the chat.
+ * `message` must say what could not be carried and why, because that text is what the error
+ * record says about it.
  */
 export class MessagingUnsupportedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "MessagingUnsupportedError";
+  }
+}
+
+/**
+ * A file a reply mentioned that the bridge held back at one of its OWN outbound caps — the
+ * per-file byte ceiling or the per-reply count — rather than one the channel refused.
+ *
+ * Its own class so `error-kind.ts` can file it as `expected` by type at the two capture points
+ * that record it (`messaging_file_too_large`, `messaging_files_skipped`): the caps are known
+ * limits, nothing is broken, and the Web App still has every file. `message` must name the
+ * files (or how many), the channel and the cap, because that text is the whole of what the
+ * error record says — none of it is posted into the chat.
+ */
+export class MessagingOutboundCapError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MessagingOutboundCapError";
   }
 }
 

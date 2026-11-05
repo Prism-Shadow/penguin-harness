@@ -51,7 +51,7 @@ The metadata block sits directly under the H1, one field per bullet, always in t
 
 Omit a field that does not apply rather than writing a placeholder. A change with no PR or issue (pre-convention entries, or work landed outside a PR) simply has no such line.
 
-A cross-repository reference is written as a full link too, and named: `agenthub [#162](https://github.com/Prism-Shadow/agenthub/pull/162)`. A bare `#162` in the prose reads as this repository's #162, which is a different change entirely.
+A cross-repository reference is written as a full link too, and named: `MMSP [#162](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/162)`. A bare `#162` in the prose reads as this repository's #162, which is a different change entirely.
 
 ### Body
 

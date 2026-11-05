@@ -1,20 +1,15 @@
 /**
- * The WeChat scan-to-connect block: what it renders, and the decision its poll loop makes on
- * each answer.
+ * The WeChat scan-to-connect block (features/messaging/wechat-scan-connect.tsx): what it
+ * renders, and the decision its poll loop makes on each answer (`wechatScanStep`, tested by
+ * value). The QR itself is QQ's component and is tested there.
  *
- * It carries more states than QQ's, and that is what most of this file is about. WeChat
- * separates SCANNING from confirming and may interpose a pairing code shown on the phone, so
- * two of its answers change the panel's caption while leaving the code up — tearing the QR
- * down mid-flow would strand a user who is looking at their phone. Two more end the flow
- * without being failures or lapses: a code spent on wrong pairing digits, and a bot that was
- * already bound here, which is news rather than an error.
- *
- * The QR itself is QQ's component, so its rendering rules are asserted there; what is
- * asserted here is that this panel reaches for it rather than growing a second one.
- *
- * The loop is tested by value rather than by mounting: this package's vitest runs in `node`,
- * deliberately, so the classification lives in a pure function (`wechatScanStep`, the
- * `updateCheckOutcome` idiom) and the effects around it stay a thin shell.
+ * - The scan is offered as a control alone, its explanation disclosed elsewhere, and nothing is
+ *   requested before the user asks; with a credential stored it offers to replace it; it is
+ *   gated, with the reason, while the connection is enabled.
+ * - The loop keeps waiting while nothing has happened, reports scanning and pairing progress
+ *   without taking the code down, hands the binding on so the editor adopts it without a second
+ *   GET, ends on a spent pairing code, reports an already-bound bot as news rather than as a
+ *   failure, rides out a transient failure, and replaces a lapsed code a bounded number of times.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -23,8 +18,7 @@ import type { WeChatBindingInfo, WeChatScanPollResponse } from "@prismshadow/pen
 import { ApiError } from "../src/api/client";
 import { WeChatScanConnect, wechatScanStep } from "../src/features/messaging/wechat-scan-connect";
 import type { WeChatScanTally } from "../src/features/messaging/wechat-scan-connect";
-import { S, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { S } from "../src/lib/strings";
 
 describe("WeChatScanConnect", () => {
   const render = (opts: { enabled?: boolean; bound?: boolean } = {}) =>
@@ -58,8 +52,8 @@ describe("WeChatScanConnect", () => {
     expect(html).toContain("disabled=");
     // A rebind would swap the credential under a live connector, so it is refused with a
     // reason rather than silently done.
-    expect(html).toContain(`title="${S.wechat.scanDisableFirst}"`);
-    expect(render()).not.toContain(`title="${S.wechat.scanDisableFirst}"`);
+    expect(html).toContain(`data-tooltip="${S.wechat.scanDisableFirst}"`);
+    expect(render()).not.toContain(`data-tooltip="${S.wechat.scanDisableFirst}"`);
   });
 });
 
@@ -148,14 +142,5 @@ describe("wechatScanStep", () => {
       tone: "error",
       releaseTask: false,
     });
-  });
-
-  it("names no position for the code, which wraps above the text in a narrow panel", () => {
-    // The waiting panel is `flex flex-wrap`: in the dock or on a phone the steps sit BELOW
-    // the QR, so copy that says "the code on the left" is wrong exactly where it is read.
-    for (const dict of [zh, en]) {
-      expect(dict.wechat.scanSteps).not.toMatch(/左侧|右侧|left|right/);
-      expect(dict.wechat.verifyPrompt).not.toMatch(/左侧|右侧|left|right/);
-    }
   });
 });

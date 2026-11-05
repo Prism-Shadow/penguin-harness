@@ -1,14 +1,13 @@
 /**
- * PATCH /api/projects/:projectId — renaming a Project's display name.
+ * Renaming a Project (PATCH /api/projects/:projectId): the display name is the only mutable
+ * field, since the id names the directory, the Workspace paths and every stored reference.
  *
- * The display name is the only mutable field of a Project: the id names the directory, the
- * Workspace paths and every stored reference, so it stays immutable and there is no route that
- * changes it. These tests pin the three things that could quietly go wrong: who is allowed to
- * rename (owner only, with a non-member unable to tell the Project exists), that the write is a
- * read-modify-write of project_config.toml rather than a replacement — models and their
- * credentials must survive a rename — and that a blank name is refused rather than stored.
+ * - The owner renames: the response, the Project list and the toml carry the new name, trimmed.
+ * - The write is read-modify-write: models and their credentials survive.
+ * - Only the owner renames; a member gets 403 and a non-member 404 (existence is not leaked).
+ * - A missing, blank or over-long name is refused.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -27,7 +26,7 @@ describe("project rename", () => {
   let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
@@ -35,16 +34,22 @@ describe("project rename", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  // Every case works in a Project of its own.
+  let projects = 0;
+  beforeEach(async () => {
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-shared", name: "Before" })
+      await owner.post("/api/projects", { projectId: `owner_a-shared_${projects}`, name: "Before" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("owner renames: the response, the Project list and the toml all carry the new name", async () => {

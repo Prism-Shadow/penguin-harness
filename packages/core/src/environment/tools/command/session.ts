@@ -27,6 +27,8 @@
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
+import type { ConfinedSpawn } from "../../../interfaces/index.js";
+import { runnerLineFilter } from "./runner-lines.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 import { sessionShell } from "./shell.js";
 import { pathPrependPrefix } from "./path-prepend.js";
@@ -80,6 +82,14 @@ export interface SpawnOptions {
    * is spawned exactly as given.
    */
   pathPrepend?: readonly string[];
+  /**
+   * Sandbox-confinement seam: receives the exact argv about to be spawned and returns
+   * the argv to spawn instead. A throw aborts the spawn — fail-closed — and surfaces as
+   * the command's spawn error. The manager binds the Session-level context (the
+   * Workspace root) before handing the confiner down, so this narrower shape only
+   * carries what the spawn itself knows (see `SpawnConfiner` in interfaces.ts).
+   */
+  confine?: (argv: readonly string[], opts: { cwd: string }) => ConfinedSpawn;
 }
 
 export class ManagedSession {
@@ -111,9 +121,20 @@ export class ManagedSession {
     // what the model is shown; only the string actually handed to the shell carries the
     // PATH statement in front of it.
     const prefix = pathPrependPrefix(shell.name, opts.pathPrepend ?? []);
-    this.child = spawn(shell.command, [...shell.args, prefix + opts.cmd], {
+    // The confinement seam runs BEFORE spawn on the exact argv (shell included), so a
+    // confiner that cannot enforce its policy aborts the spawn by throwing (fail-closed)
+    // rather than letting the command run unconfined. The rewritten argv is spawned in
+    // place of the original; env assembly is unaffected (the runner inherits it), except
+    // for the entries the runner itself asked for, which go on top.
+    const argv = [shell.command, ...shell.args, prefix + opts.cmd];
+    const confined = opts.confine ? opts.confine(argv, { cwd: opts.cwd }) : { argv };
+    const program = confined.argv[0];
+    if (program === undefined) {
+      throw new Error("spawn confiner returned an empty argv");
+    }
+    this.child = spawn(program, confined.argv.slice(1), {
       cwd: opts.cwd,
-      env: opts.env,
+      env: confined.env === undefined ? opts.env : { ...opts.env, ...confined.env },
       detached: SUPPORTS_PROCESS_GROUP, // Become the process-group leader, so the whole group can be signaled
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true, // No flashing console window on Windows (ignored elsewhere)
@@ -125,7 +146,20 @@ export class ManagedSession {
     // as an unhandled error.
     this.child.stdin?.on("error", () => {});
     this.child.stdout?.on("data", (c: string) => this.handleData(c));
-    this.child.stderr?.on("data", (c: string) => this.handleData(c));
+    // The runner's own report lines (ConfinedSpawn.runnerLines) are not the command's output.
+    const runner = runnerLineFilter(confined.runnerLines);
+    if (runner === null) {
+      this.child.stderr?.on("data", (c: string) => this.handleData(c));
+    } else {
+      this.child.stderr?.on("data", (c: string) => {
+        const out = runner.push(c);
+        if (out !== "") this.handleData(out);
+      });
+      this.child.stderr?.on("end", () => {
+        const out = runner.flush();
+        if (out !== "") this.handleData(out);
+      });
+    }
     // exit follows waitpid semantics: it fires as soon as bash exits, without waiting for
     // stdout/stderr pipe EOF — background child processes that inherit and hold the pipe open
     // won't hold up termination.
@@ -408,11 +442,18 @@ export function isStopSignal(signal: NodeJS.Signals | null | undefined): boolean
   return signal != null && STOP_SIGNALS.has(signal);
 }
 
-/** Converts exit info into a tool result (the terminal marker is appended via `note`, outside the truncation, so it isn't lost with long output). */
+/**
+ * Converts exit info into a tool result. A command that ran is a completed tool call whatever its
+ * exit status: the status is the command's result, not the tool's failure — `grep` exits 1 when
+ * nothing matches, `test -f` when the file is absent, and a process killed by a signal still ran.
+ * The status reaches the model and the reader as a note on the output's last line (appended via
+ * `note`, outside the truncation, so it isn't lost with long output). `fatal` belongs to the
+ * Environment's own failures — a timeout, a throw, a spawn error — and never comes from here.
+ */
 export function resultForExit(exit: ProcessExit | null): ToolResult {
-  if (!exit) return { stopReason: "completed" };
-  if (exit.signal) return { stopReason: "fatal", note: `[terminated by signal ${exit.signal}]` };
+  if (!exit) return { status: "completed" };
+  if (exit.signal) return { status: "completed", note: `[terminated by signal ${exit.signal}]` };
   if (exit.code !== 0)
-    return { stopReason: "fatal", note: `[exit code: ${exit.code ?? "unknown"}]` };
-  return { stopReason: "completed" };
+    return { status: "completed", note: `[exit code: ${exit.code ?? "unknown"}]` };
+  return { status: "completed" };
 }

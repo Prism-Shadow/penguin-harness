@@ -9,11 +9,7 @@
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
-import {
-  partialToolCall,
-  partialToolCallOutput,
-  type OmniMessage,
-} from "@prismshadow/penguin-core";
+import { partialToolCall, partialToolCallOutput, type AmspRecord } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -148,7 +144,7 @@ describe("chat /thinking (the Session's pinned thinking level, applied per model
   });
 
   it("/clear carries the Session's latest pin to the replacement Session", async () => {
-    await driveChat(["/thinking high", "/clear", "after", "/exit"], ["--thinking", "low"]);
+    await driveChat(["go", "/thinking high", "/clear", "after", "/exit"], ["--thinking", "low"]);
     const sessions = [...server.sessions.values()];
     expect(sessions).toHaveLength(2);
     // Pinned low at creation, re-pinned high by /thinking; the replacement inherits the
@@ -161,7 +157,7 @@ describe("chat /thinking (the Session's pinned thinking level, applied per model
 
 describe("chat /verbose (tool-output collapsing)", () => {
   /** One exec_command call whose output streams 12 lines (l1..l12). */
-  function longToolOutput(): OmniMessage[] {
+  function longToolOutput(): AmspRecord[] {
     const id = "call_c9";
     return [
       partialToolCall({ eventType: "start", name: "exec_command", toolCallId: id }),
@@ -210,7 +206,8 @@ describe("chat caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => 
       thinkingLevel: "xhigh",
     });
     process.env.PENGUIN_SESSION_ID = caller.sessionId;
-    const out = await driveChat(["/thinking", "/exit"]);
+    // The values are read at start and shown by /thinking; the Session is created by "go".
+    const out = await driveChat(["/thinking", "go", "/exit"]);
     const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
     expect(created.workspace).toBe("/callers/dir");
     expect(created.modelId).toBe("caller-model");

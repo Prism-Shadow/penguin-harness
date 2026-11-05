@@ -40,7 +40,7 @@ export default defineConfig({
   sourcemap: true,
   splitting: false,
   // Load-bearing: bundled CJS dependencies reference `require` (yaml, tar, smol-toml,
-  // commander, agenthub) and `__dirname` (@larksuiteoapi/node-sdk) inside their own wrapper,
+  // commander, mmsp) and `__dirname` (@larksuiteoapi/node-sdk) inside their own wrapper,
   // and an ESM bundle supplies neither. scripts/deploy.mjs uses the same banner.
   banner: { js: ESM_CJS_BANNER },
   // `electron` is a runtime builtin inside the Electron main process, and its npm package is

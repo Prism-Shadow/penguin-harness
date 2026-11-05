@@ -13,16 +13,31 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { isMap, isSeq, parseDocument, parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { YAMLSeq } from "yaml";
 import {
+  libraryPluginPackage,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  type HookCommand,
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
 } from "../plugins/index.js";
-import type { ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
+import type { MCPServerConfig, ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
+import {
+  PLUGIN_ROOT_REF,
+  collectVaultRefs,
+  mapConfigStrings,
+  needsSignIn,
+  readsVaultReferences,
+} from "../environment/mcp/config.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
+import {
+  assertPluginWorkbenchesInstallable,
+  installPluginWorkbenches,
+} from "./plugin-workbenches.js";
+import { loadAgentVault } from "./agent-vault.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -65,8 +80,8 @@ import {
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
-import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
+  agentDir,
   agentsMdPath,
   agentStateDir,
   DEFAULT_AGENT_ID,
@@ -226,13 +241,23 @@ export async function loadAgentState(opts?: {
     preset === undefined && agentId === DEFAULT_AGENT_ID
       ? loadPreinstalledPlugins()
       : (preset?.plugins ?? []);
+  await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
+  // A plugin's MCP servers join the config written below, not a file of their own (see
+  // installPlugin for the rules they are merged by).
+  if (plugins.some((plugin) => plugin.mcpServers.length > 0)) {
+    systemConfig.tools = {
+      ...systemConfig.tools,
+      mcpServers: plugins.reduce<unknown[]>(
+        (entries, plugin) => withPluginMcpServers(entries, plugin, agentId),
+        systemConfig.tools?.mcpServers ?? [],
+      ) as MCPServerConfig[],
+    };
+  }
+  // The Project's Benchmarks are no Agent's to write, default_agent's included: they are
+  // written when the Project is created (project-benchmarks.ts), never on this path.
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
-    ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
-    // The example Benchmark is only provisioned alongside default_agent (so the evaluation
-    // center has data out of the box): idempotently skipped if benchmarks/ already exists,
-    // and not created for plain Agents.
-    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId, agentId)] : []),
+    ...plugins.map((plugin) => installPluginFiles(root, projectId, agentId, plugin)),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run
@@ -243,7 +268,7 @@ export async function loadAgentState(opts?: {
 }
 
 /**
- * Initializes a Project's built-in Agent (the only built-in Agent: default_agent).
+ * Initializes a Project's built-in Agents and their workbenches.
  *
  * Calls the init-enabled `loadAgentState` for each one: an Agent whose directory already
  * exists (including a default_agent created earlier by the CLI) is only loaded, never
@@ -255,7 +280,9 @@ export async function provisionProjectAgents(opts?: {
   projectId?: string;
 }): Promise<string[]> {
   const agentIds: string[] = [];
-  for (const { agentId, preset } of builtinProjectAgentPresets()) {
+  for (const { agentId, preset } of builtinProjectAgentPresets(
+    opts?.projectId ?? DEFAULT_PROJECT_ID,
+  )) {
     await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
@@ -276,7 +303,8 @@ export async function provisionProjectAgents(opts?: {
  * `description` and the Agent State `version` (an invalid or missing version normalizes
  * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
- * `mcpServers`). Keys outside the default schema are dropped, and YAML comments are not
+ * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
+ * outside the default schema are dropped, and YAML comments are not
  * preserved (the file is rewritten from the default object). Other Agent State files
  * (AGENTS.md, skills/, vault, memory/ …) are untouched. Returns the config written.
  *
@@ -622,11 +650,19 @@ export async function listInstalledSkills(
 }
 
 /**
- * Installs one library plugin: every skill it ships through `installSkill`, and its hook
- * package (when it has one) through `installHook` — the same writers the library routes use,
- * so a plugin picked at Agent creation and one installed from the library land identically.
- * The plugin's icon lands with both: stamped onto each skill by the loader, and written beside
- * the hook package's manifest here.
+ * Installs one library plugin: every skill it ships through `installSkill`, its hook package
+ * (when it has one) through `installHook` — the same writers the library routes use, so a
+ * plugin picked at Agent creation and one installed from the library land identically — and its
+ * MCP servers into the Agent's `tools.mcpServers`. The plugin's icon lands with the skills and
+ * the hook package: stamped onto each skill by the loader, and written beside the hook package's
+ * manifest here.
+ *
+ * The servers are checked before anything is written: a name the Agent already has from someone
+ * else — the user or another plugin — refuses the whole install (McpServerNameTakenError), since
+ * renaming the plugin's server would rename its tools away from what its skills say. They are
+ * then merged into system_config.yaml in place (comments and the user's entries kept): every
+ * entry this plugin installed before is replaced, so an update drops a server the new version no
+ * longer ships and overwrites one the user edited, as it does a skill.
  */
 export async function installPlugin(
   root: string,
@@ -634,6 +670,22 @@ export async function installPlugin(
   agentId: string,
   plugin: LibraryPlugin,
 ): Promise<void> {
+  await assertPluginMcpServersInstallable(root, projectId, agentId, [plugin]);
+  await assertPluginWorkbenchesInstallable(root, projectId, agentId, [plugin]);
+  await installPluginFiles(root, projectId, agentId, plugin);
+  if (plugin.mcpServers.length > 0) {
+    await writePluginMcpServers(root, projectId, agentId, plugin);
+  }
+}
+
+/** A plugin's files on the Agent: its skills and its hook package (see installPlugin). */
+async function installPluginFiles(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: LibraryPlugin,
+): Promise<void> {
+  await installPluginWorkbenches(root, projectId, agentId, plugin);
   for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
   if (plugin.hooks) {
     await installHook(
@@ -648,12 +700,270 @@ export async function installPlugin(
 }
 
 /**
+ * An MCP server name a plugin would install that the Agent already has from someone else. The
+ * install is refused whole, before anything is written: `ownedBy` is the plugin the existing
+ * entry belongs to, or null for an entry the user added.
+ */
+export class McpServerNameTakenError extends Error {
+  constructor(
+    readonly server: string,
+    readonly agentId: string,
+    readonly ownedBy: string | null,
+  ) {
+    super(
+      `MCP server '${server}' already exists on agent '${agentId}' ` +
+        (ownedBy !== null ? `and belongs to plugin '${ownedBy}'` : "and was added by hand") +
+        "; rename or remove it first. Nothing was installed.",
+    );
+    this.name = "McpServerNameTakenError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The `tools.mcpServers` entries installing `plugin` writes: its servers in manifest order, each
+ * carrying the plugin's name as provenance and with `${PLUGIN_ROOT}` replaced by the package's
+ * directory on this machine — the one reference resolved at install time; the `${KEY}` vault
+ * references stay as written.
+ */
+export function pluginMcpServerEntries(plugin: LibraryPlugin): MCPServerConfig[] {
+  const rooted = plugin.mcpServers.some((server) =>
+    JSON.stringify(server.config).includes(PLUGIN_ROOT_REF),
+  );
+  const dir = rooted ? libraryPluginPackage(plugin.name)?.dir : undefined;
+  if (rooted && dir === undefined) {
+    throw new Error(
+      `Plugin ${plugin.name}: an MCP server refers to ${PLUGIN_ROOT_REF}, but the plugin's package is not in the library on this machine.`,
+    );
+  }
+  return plugin.mcpServers.map((server) => ({
+    name: server.name,
+    plugin: plugin.name,
+    config:
+      dir === undefined
+        ? server.config
+        : (mapConfigStrings(server.config, (text) =>
+            text.split(PLUGIN_ROOT_REF).join(dir),
+          ) as Record<string, unknown>),
+  }));
+}
+
+/**
+ * `entries` (an Agent's `tools.mcpServers` as stored) with `plugin`'s servers in place: every
+ * entry it installed before removed, its servers appended. Throws McpServerNameTakenError for a
+ * server name another owner holds.
+ */
+function withPluginMcpServers(
+  entries: readonly unknown[],
+  plugin: LibraryPlugin,
+  agentId: string,
+): unknown[] {
+  if (plugin.mcpServers.length === 0) return [...entries];
+  const own = pluginMcpServerEntries(plugin);
+  const kept = entries.filter((entry) => !(isRecord(entry) && entry.plugin === plugin.name));
+  for (const server of own) {
+    const taken = kept.find((entry) => isRecord(entry) && entry.name === server.name);
+    if (taken !== undefined) {
+      const owner = (taken as Record<string, unknown>).plugin;
+      throw new McpServerNameTakenError(
+        server.name,
+        agentId,
+        typeof owner === "string" ? owner : null,
+      );
+    }
+  }
+  return [...kept, ...own];
+}
+
+/** An Agent's `tools.mcpServers` as stored; anything but a list reads as none. */
+async function storedMcpServers(root: string, projectId: string, agentId: string) {
+  const parsed = parseYaml(
+    await fs.readFile(systemConfigPath(root, projectId, agentId), "utf8"),
+  ) as unknown;
+  const list = isRecord(parsed) && isRecord(parsed.tools) ? parsed.tools.mcpServers : undefined;
+  return Array.isArray(list) ? (list as unknown[]) : [];
+}
+
+/**
+ * Checks that installing `plugins`, in order, could write their MCP servers on the Agent — each
+ * server name free, or already the same plugin's, on the Agent and among the plugins before it
+ * — without writing anything. Throws what installPlugin would: McpServerNameTakenError, or the
+ * error of a `${PLUGIN_ROOT}` with no package to resolve to. A request installing several
+ * plugins runs it first, so a refusal leaves nothing half-installed.
+ */
+export async function assertPluginMcpServersInstallable(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugins: readonly LibraryPlugin[],
+): Promise<void> {
+  if (!plugins.some((plugin) => plugin.mcpServers.length > 0)) return;
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  plugins.reduce<unknown[]>(
+    (entries, plugin) => withPluginMcpServers(entries, plugin, agentId),
+    await storedMcpServers(root, projectId, agentId),
+  );
+}
+
+/** Merges a plugin's MCP servers into system_config.yaml in place (see installPlugin), checked again on the file as it is now. */
+async function writePluginMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: LibraryPlugin,
+): Promise<void> {
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const js = doc.toJS() as unknown;
+  const stored = isRecord(js) && isRecord(js.tools) ? js.tools.mcpServers : undefined;
+  withPluginMcpServers(Array.isArray(stored) ? stored : [], plugin, agentId);
+  const current = doc.getIn(["tools", "mcpServers"]);
+  const list = isSeq(current) ? current : (doc.createNode([]) as YAMLSeq);
+  list.items = list.items.filter((item) => !(isMap(item) && item.get("plugin") === plugin.name));
+  for (const entry of pluginMcpServerEntries(plugin)) list.items.push(doc.createNode(entry));
+  // The default config writes an empty list in flow style (`[]`); entries read as a block.
+  list.flow = false;
+  if (list !== current) doc.setIn(["tools", "mcpServers"], list);
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+}
+
+/**
+ * Removes the MCP server `name` from the Agent's `tools.mcpServers`, whoever added it; false
+ * when the Agent has none by that name. The rest of the file, comments included, is kept.
+ */
+export async function uninstallMcpServer(
+  root: string,
+  projectId: string,
+  agentId: string,
+  name: string,
+): Promise<boolean> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const list = doc.getIn(["tools", "mcpServers"]);
+  if (!isSeq(list)) return false;
+  const index = list.items.findIndex((item) => isMap(item) && item.get("name") === name);
+  if (index < 0) return false;
+  list.items.splice(index, 1);
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+  return true;
+}
+
+/** One `tools.mcpServers` entry of an Agent, with what stands between it and a connection. */
+export interface InstalledMcpServer {
+  entry: MCPServerConfig;
+  /** The `${KEY}` references of its config the Agent's vault does not hold (names only): the server is skipped until they are set. */
+  missingKeys: string[];
+  /** It needs an OAuth sign-in, which this version cannot do: the server is skipped. */
+  signIn: boolean;
+}
+
+/**
+ * The Agent's MCP servers as stored, in order, each with the vault keys it is missing and
+ * whether it needs a sign-in — what decides at connect time whether it is contacted at all. The
+ * vault is read for its key names only. An entry without a name or a config object is not
+ * listed.
+ */
+export async function listInstalledMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<InstalledMcpServer[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const [stored, vault] = await Promise.all([
+    storedMcpServers(root, projectId, agentId),
+    loadAgentVault(root, projectId, agentId),
+  ]);
+  const servers: InstalledMcpServer[] = [];
+  for (const raw of stored) {
+    if (!isRecord(raw) || typeof raw.name !== "string" || !isRecord(raw.config)) continue;
+    const entry: MCPServerConfig = {
+      name: raw.name,
+      config: raw.config,
+      ...(typeof raw.plugin === "string" ? { plugin: raw.plugin } : {}),
+    };
+    const refs = readsVaultReferences(entry) ? collectVaultRefs(entry.config) : [];
+    servers.push({
+      entry,
+      missingKeys: refs.filter((key) => !Object.hasOwn(vault, key)),
+      signIn: needsSignIn(entry.config),
+    });
+  }
+  return servers;
+}
+
+/**
+ * One hook point's command list as a manifest on disk spells it, read tolerantly: anything
+ * but an array is no commands, and an entry is kept only when it names a script inside the
+ * package directory `dir`. A `timeout` that is not a positive number and a `trigger` that is
+ * not one of the two known values are dropped rather than failing the entry.
+ */
+function readHookCommands(dir: string, value: unknown): HookCommand[] {
+  if (!Array.isArray(value)) return [];
+  const commands: HookCommand[] = [];
+  for (const entry of value as unknown[]) {
+    if (entry === null || typeof entry !== "object") continue;
+    const { command, timeout, trigger } = entry as Record<string, unknown>;
+    if (typeof command !== "string" || command === "") continue;
+    const relative = path.relative(dir, path.resolve(dir, command));
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    commands.push({
+      command,
+      ...(typeof timeout === "number" && timeout > 0 ? { timeout } : {}),
+      ...(trigger === "prompt" || trigger === "host" ? { trigger } : {}),
+    });
+  }
+  return commands;
+}
+
+/**
+ * The manifest of the hook package directory `dir`, or null when `hooks.json` is missing or
+ * is not a JSON object (then it is not a hook package). Read tolerantly, because a package
+ * is not only what an installer writes: an Agent or a person may have written the directory
+ * by hand. A hook point the manifest does not list has no commands, display fields that are
+ * not strings read as absent, and unknown keys are left behind — every reader downstream
+ * finds the three lists as arrays.
+ */
+async function readHookManifest(dir: string): Promise<HookManifest | null> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const manifest = raw as Record<string, unknown>;
+  return {
+    name: typeof manifest.name === "string" ? manifest.name : "",
+    description: typeof manifest.description === "string" ? manifest.description : "",
+    ...(typeof manifest.description_zh === "string"
+      ? { description_zh: manifest.description_zh }
+      : {}),
+    version: typeof manifest.version === "string" ? manifest.version : "",
+    stop: readHookCommands(dir, manifest.stop),
+    pre_tool_use: readHookCommands(dir, manifest.pre_tool_use),
+    user_prompt: readHookCommands(dir, manifest.user_prompt),
+  };
+}
+
+/** Serializes a manifest the way every writer of `hooks.json` does (pretty-printed, trailing newline). */
+function hookManifestText(manifest: HookManifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+/**
  * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's
  * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
  * installed skill does), plus the package's files (relative path → content, subdirectories
  * preserved), replacing the whole directory like a skill install does. Each file path is
  * checked to stay within the directory.
- * Docs: /docs/skills § "Hooks".
+ * Docs: /docs/skills § "Hook packages".
  */
 export async function installHook(
   root: string,
@@ -669,7 +979,7 @@ export async function installHook(
   for (const rel of Object.keys(files)) assertSafeSkillFile(rel);
   const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
   await replaceSkillDirectory(dir, [
-    ["hooks.json", `${JSON.stringify(manifest, null, 2)}\n`],
+    ["hooks.json", hookManifestText(manifest)],
     ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
     ...Object.entries(files),
   ]);
@@ -700,10 +1010,11 @@ export interface InstalledHook extends HookManifest {
 
 /**
  * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json` and
- * reads the optional icon.svg beside it. The manifest is the installer's own output
- * (installHook writes a HookManifest), so it is read back as one; a directory without a
- * hooks.json is not a hook package, and the directory name is the identity (a manifest
- * naming something else is corrected). Sorted by name; [] when hooks/ doesn't exist.
+ * reads the optional icon.svg beside it. A package is whatever directory carries a manifest —
+ * an installer's output or one written by hand — so the manifest is read tolerantly (see
+ * readHookManifest); a directory without a readable hooks.json is not a hook package, and
+ * the directory name is the identity (a manifest naming something else is corrected).
+ * Sorted by name; [] when hooks/ doesn't exist.
  */
 export async function listInstalledHooks(
   root: string,
@@ -723,14 +1034,8 @@ export async function listInstalledHooks(
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const dir = path.join(base, entry.name);
-    let manifest: HookManifest;
-    try {
-      manifest = JSON.parse(
-        await fs.readFile(path.join(dir, "hooks.json"), "utf8"),
-      ) as HookManifest;
-    } catch {
-      continue;
-    }
+    const manifest = await readHookManifest(dir);
+    if (manifest === null) continue;
     let icon: string | undefined;
     try {
       icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");
@@ -933,8 +1238,13 @@ export function assembleSystemPrompt(
  * Filters builtin tool entries by the session model's type: entries with `forModel: "vision"` are
  * only used for models that support images (vision models), `forModel: "text-only"` is only for
  * text-only models; unlabeled entries are available to all models. The built-in defaults label
- * no entry (read_file serves both classes), so this only acts on configs that declare their own
- * per-class entries.
+ * no entry (read_file serves both classes), so the filter only acts on configs that declare
+ * their own per-class entries.
+ *
+ * A vision model is also handed read_file without its `prompt` argument: the argument is the
+ * question put to the Project's vision model, which reads images only for a text-only model, so
+ * a model that views images itself would only ever fill it in vain. Like the call_description
+ * toggle this trims an in-memory clone; an entry declaring no `prompt` passes through unchanged.
  * Docs: /docs/tools § "Configuration fields".
  */
 export function selectBuiltinToolsForModel(
@@ -942,7 +1252,28 @@ export function selectBuiltinToolsForModel(
   modelVision: boolean,
 ): ToolDefinitionConfig[] {
   const kind = modelVision ? "vision" : "text-only";
-  return tools.filter((t) => t.forModel === undefined || t.forModel === kind);
+  const selected = tools.filter((t) => t.forModel === undefined || t.forModel === kind);
+  if (!modelVision) return selected;
+  return selected.map((t) => (t.name === "read_file" ? withoutArgument(t, "prompt") : t));
+}
+
+/**
+ * The entry with one property dropped from its parameter schema, `required` along with it — on
+ * a clone, the stored config is never rewritten. Entries without a parameter schema, or whose
+ * properties do not declare `name`, come back as they are.
+ */
+function withoutArgument(def: ToolDefinitionConfig, name: string): ToolDefinitionConfig {
+  const params = def.parameters;
+  if (params === undefined) return def;
+  const properties = params["properties"];
+  if (properties === null || typeof properties !== "object") return def;
+  if (!(name in (properties as Record<string, unknown>))) return def;
+  const { [name]: _dropped, ...rest } = properties as Record<string, unknown>;
+  const required = params["required"];
+  const trimmed = Array.isArray(required)
+    ? { required: required.filter((entry) => entry !== name) }
+    : {};
+  return { ...def, parameters: { ...params, properties: rest, ...trimmed } };
 }
 
 /**
@@ -957,18 +1288,7 @@ export function selectBuiltinToolsForModel(
  * (old configs predating the field are a no-op).
  */
 function applyCallDescriptionToggle(def: ToolDefinitionConfig): ToolDefinitionConfig {
-  if (def.call_description !== false) return def;
-  const params = def.parameters;
-  if (params === undefined) return def;
-  const properties = params["properties"];
-  if (properties === null || typeof properties !== "object") return def;
-  if (!("description" in (properties as Record<string, unknown>))) return def;
-  const { description: _dropped, ...rest } = properties as Record<string, unknown>;
-  const required = params["required"];
-  const trimmed = Array.isArray(required)
-    ? { required: required.filter((name) => name !== "description") }
-    : {};
-  return { ...def, parameters: { ...params, properties: rest, ...trimmed } };
+  return def.call_description === false ? withoutArgument(def, "description") : def;
 }
 
 export function buildToolConfig(state: AgentState): ToolConfig {

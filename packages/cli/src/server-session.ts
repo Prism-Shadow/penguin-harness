@@ -1,6 +1,6 @@
 /**
- * Session/agent API helpers shared by the server-backed commands (run / chat / ls /
- * input / logs / schedule). DTO shapes come from `@prismshadow/penguin-server/api`
+ * Session/agent API helpers shared by the server-backed commands (run / chat / the
+ * `session` group / schedule). DTO shapes come from `@prismshadow/penguin-server/api`
  * (type-only — nothing of the server is loaded at runtime).
  */
 import path from "node:path";
@@ -8,12 +8,14 @@ import type {
   AgentsResponse,
   AgentSummary,
   MessagesResponse,
+  ModelRefDto,
+  ModelsResponse,
   SessionCreateResponse,
   SessionInfo,
   SessionResponse,
   SessionsResponse,
 } from "@prismshadow/penguin-server/api";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { resolveSessionRef, ServerClient } from "./client.js";
 import { dim } from "./render.js";
 import type { Messages } from "./i18n.js";
@@ -60,6 +62,8 @@ export interface CreateSessionArgs {
   modelId?: string;
   provider?: string;
   approvalMode?: string;
+  /** `cli` for a Session `penguin run` creates; absent (`penguin chat`) is a person's conversation, `user`. */
+  source?: "cli";
 }
 
 /** POST .../sessions with the CLI's client hint. */
@@ -76,6 +80,26 @@ export async function createServerSession(
   return res.session;
 }
 
+/**
+ * The Project's default model (`defaultModel` of GET models): what a Session created without a
+ * model runs on. A read only — nothing is created. Null when the Project has none, or when it
+ * cannot be read; the caller then names it generically.
+ */
+export async function projectDefaultModel(
+  client: ServerClient,
+  projectId: string,
+): Promise<ModelRefDto | null> {
+  try {
+    const res = await client.request<ModelsResponse>(
+      "GET",
+      `/api/projects/${enc(projectId)}/models`,
+    );
+    return res.defaultModel ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** PATCHes the Session's thinking level: the pin core applies from the Session's next LLM request. */
 export async function pinThinkingLevel(
   client: ServerClient,
@@ -83,6 +107,43 @@ export async function pinThinkingLevel(
   level: string,
 ): Promise<void> {
   await client.request("PATCH", `/api/sessions/${enc(sessionId)}`, { thinkingLevel: level });
+}
+
+/**
+ * The longest manual title the server accepts (`PATCH /api/sessions/:id`, which the Web
+ * App's "Rename chat" calls too). The server is the authority; checking here first means a
+ * bad title costs no request and leaves no unnamed Session behind.
+ */
+export const SESSION_TITLE_MAX = 120;
+
+/**
+ * A `--title` value as the server will store it — runs of whitespace collapsed to one
+ * space, then trimmed — or null when the result is empty or longer than
+ * SESSION_TITLE_MAX, after printing the error and setting a non-zero exit code. Control
+ * and bidi-override characters are left for the server to refuse.
+ */
+export function checkSessionTitle(raw: string, t: Messages): string | null {
+  const title = raw.replace(/\s+/g, " ").trim();
+  if (title.length > 0 && title.length <= SESSION_TITLE_MAX) return title;
+  process.stderr.write(`${t.error(t.common.titleInvalid(title.length, SESSION_TITLE_MAX))}\n`);
+  process.exitCode = 1;
+  return null;
+}
+
+/**
+ * PATCHes the Session's title — the manual rename the Web App's "Rename chat" does, which
+ * the auto-title generator never overwrites. The PATCH response re-reads the row, so the
+ * returned SessionInfo already carries the title as stored (no follow-up GET).
+ */
+export async function renameSession(
+  client: ServerClient,
+  sessionId: string,
+  title: string,
+): Promise<SessionInfo> {
+  const res = await client.request<SessionResponse>("PATCH", `/api/sessions/${enc(sessionId)}`, {
+    title,
+  });
+  return res.session;
 }
 
 export async function getSessionInfo(
@@ -111,9 +172,10 @@ export async function listAgentSessions(
 }
 
 /**
- * The session `logs` / `input` act on: an explicit reference (full id or unique
- * fragment) resolves as everywhere else, and omitting it means the agent's most recent
- * session — the same default `chat --resume` carries, off the same newest-first listing.
+ * The session `session log` / `input` / `rename` act on: an explicit reference (full id or
+ * unique fragment) resolves as everywhere else, and omitting it means the agent's most
+ * recent session — the same default `chat --resume` carries, off the same newest-first
+ * listing. (`rename` passes PENGUIN_SESSION_ID as the reference when it is set.)
  * The chosen id is announced on stderr as a dim `[latest]` line so the target is never
  * ambiguous and `--json` on stdout stays parseable.
  *
@@ -141,12 +203,12 @@ export async function resolveSessionTarget(
 export async function getSessionMessages(
   client: ServerClient,
   sessionId: string,
-): Promise<OmniMessage[]> {
+): Promise<AmspRecord[]> {
   const res = await client.request<MessagesResponse>(
     "GET",
     `/api/sessions/${enc(sessionId)}/messages`,
   );
-  // MessagesResponse messages are OmniMessages plus an optional tracePosition tag the
+  // MessagesResponse messages are records plus an optional tracePosition tag the
   // renderer ignores.
-  return res.messages as unknown as OmniMessage[];
+  return res.messages as unknown as AmspRecord[];
 }

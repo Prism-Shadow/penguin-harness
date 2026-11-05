@@ -1,15 +1,17 @@
 ---
-title: "PenguinHarness 0.1.5: offline installs, richer input, and runs that recover"
+title: "PenguinHarness 0.1.5: offline installs, file attachments, and runs that recover"
 date: 2026-07-30
 category: news
-excerpt: 0.1.5 widens where PenguinHarness runs and what it can take in. Five self-contained offline bundles install it on machines with no network at all; the composer attaches any file and images now reach steering and goal objectives; nearly every LLM failure recovers inside the run instead of killing the turn; and the built-in skills learned a second visual language plus the thinking and image message kinds. Here is what shipped.
+excerpt: 0.1.5 adds five self-contained offline install bundles, lets the composer attach any file and send images with steering and goals, and retries nearly every LLM failure inside the run. The web-design Skill gains a second visual theme, and penguin-sdk documents thinking and image messages.
 ---
 
-PenguinHarness 0.1.5 is out. The release widens both ends of the pipe: where the harness can be installed — including machines that never touch the internet — and what you can hand it once it is running. In between, runs got sturdier: almost every LLM failure now recovers inside the run, and a mid-request Stop can no longer strand a Session. Feature by feature:
+PenguinHarness 0.1.5 is out. You can now install it on machines with no network at all, attach any type of file in the Web composer, and send images with steering messages and goal objectives. Runs are sturdier too: almost every LLM failure now recovers inside the run, and pressing Stop mid-request can no longer leave a Session stuck.
 
-## Install with no network at all
+## Install without a network
 
-Every GitHub Release now attaches **five self-contained offline bundles** — Linux and macOS in x64 and arm64, Windows in x64. Each bundle carries the program archive, its SHA256 checksum and the platform's own installer, so the whole flow is: download on any networked machine, copy to the target, run one command.
+The 0.1.5 GitHub Release attaches five self-contained offline bundles: Linux and macOS, each for x64 and arm64, and Windows for x64. Each bundle carries the program archive, its SHA256 checksum and the platform's own installer. Download a bundle on any machine with network access, copy it to the target machine, and run one command.
+
+On Linux or macOS, extract the bundle and run its installer. For the Linux x64 bundle:
 
 ```bash
 mkdir penguin-offline
@@ -17,44 +19,61 @@ tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
 ./penguin-offline/install.sh
 ```
 
-On Windows, unzip `penguin-win32-x64-offline.zip` and double-click `install.cmd` — or run `.\install.ps1` in PowerShell. Offline installs verify the SHA256 unconditionally (there is no network to re-download from, so a corrupted archive must be caught, not tolerated), the POSIX bundles pass their payload to the installer explicitly rather than letting a script scan its directory, and a renamed archive still installs because platform packages now carry a target manifest inside.
+On Windows, unzip `penguin-win32-x64-offline.zip` and double-click `install.cmd`, or run `.\install.ps1` in PowerShell.
 
-The Windows package also grew a floor to stand on: it bundles MinGit under `git/`, so `exec_command` has a real bash even on a machine with no Git for Windows installed. Your own Git for Windows still wins when present — its MSYS userland is the fuller one — and the GPLv2 obligations are recorded in the new root `THIRD-PARTY-NOTICES.md`.
+Offline installs always verify the SHA256 checksum. With no network to download the archive again, a corrupted archive has to stop the install. A renamed archive still installs, because each package now records its target platform inside.
 
-The install story around the bundles is redone to match: the README now spells out every method — Linux, macOS, Windows, npm, and the offline packages — each as a complete copy-paste block, and the landing page's install sections switch by OS and method instead of listing everything at once.
+The Windows package also bundles MinGit under `git/`, so `exec_command` has a real bash even on a machine without Git for Windows. If you have Git for Windows installed, it still takes precedence, because its MSYS userland is more complete. MinGit's GPLv2 obligations are recorded in a new `THIRD-PARTY-NOTICES.md` at the repository root.
 
-## Attach anything, steer with images
+The install instructions were rewritten to match. The README now gives every method as a complete block you can copy and paste: Linux, macOS, Windows, npm and the offline bundles. The landing page's install section switches by operating system and method instead of listing everything at once.
 
-The Web composer can now attach **files of any type**, not just images. Attachments are written into the Session scratchpad and handed to the model as `[attached file: <path>]` lines — non-ASCII filenames preserved — so the model reads them with its normal file tools, and the same attachment flow works mid-run.
+## Attach any file, steer with images
 
-Images, meanwhile, now reach **every** input. Mid-run steering carries them (an image with no caption is a complete steering message by itself), and a goal objective accepts images as scratchpad paths — re-injected as text every round, they work on every model, vision or not.
+The Web composer now attaches files of any type, not just images. Attachments are written to the Session scratchpad and passed to the model as `[attached file: <path>]` lines, with non-ASCII file names preserved, so the model reads them with its usual file tools.
 
-The composer's `@` mention grew up into an `/agent` command, and both switch commands (`/agent`, `/model`) now stage their pick as a chip beside the text — cached with the draft, applied only when Enter sends, and session-only.
+Images now reach every kind of input. A steering message sent mid-run can carry images, and an image with no caption is a complete steering message on its own. Steering does not carry files; an attached file waits for your next regular message. A goal objective accepts images as scratchpad paths. The paths are re-injected as text every round, so they work with every model, with or without vision.
 
-## Runs that recover instead of dying
+The composer's `@` mention is now an `/agent` command. Both switch commands, `/agent` and `/model`, are available inside an existing Session, not on a new-chat draft, and each places your pick as a chip above the text. The chip is saved with the draft and takes effect only when you press Enter to send: an agent chip hands the conversation off to a new chat with that agent, and a model chip forks the conversation onto the chosen model.
 
-The classifier separating transient from permanent LLM failures used to be an allowlist: a gateway that worded a transient fault its own way killed the turn. 0.1.5 inverts it — **every failure except a rejected credential now retries inside the run**, with the retry visible in both frontends as a live countdown, compaction retrying under its own shorter budget, and a recovered failure no longer reported to the operator as an incident.
+## Runs that recover instead of failing
 
-Two companions to that: pressing Stop mid-request can no longer leave a Session running forever when a provider's stream neither yields nor rejects after the abort; and the Cost center's error table now pages back through the whole history, stops recording an ordinary non-zero exit (`grep` finding nothing) as an error, and labels environment-sourced entries `[env]`.
+The classifier that separates transient LLM failures from permanent ones used to work from a list of known errors, so a gateway that described a transient fault in its own words ended the turn. 0.1.5 turns this around: every failure except a rejected credential now retries inside the run. The Web App shows the retry as a live countdown, and the CLI prints a `[retry]` line. Compaction retries under its own shorter budget, and a failure that recovers is no longer reported to the operator as an incident.
 
-## Skills that design — and build — better apps
+Two related fixes:
 
-The built-in skill library took two big steps this release:
+- Pressing **Stop** mid-request no longer leaves a Session running forever when a provider's stream neither returns data nor fails after the abort.
+- In the **Cost Center**, the error table pages back through the whole history, no longer records an ordinary non-zero exit (such as `grep` finding nothing) as an error, and marks entries that come from the environment with `[env]`.
 
-- **web-design** now carries a second complete visual language — an opt-in *paper editorial* theme with warm paper tones, system-serif display headings and mono micro-labels — next to the default GitHub-style simplicity, plus a "ship complete" contract: a one-line request is the whole spec, and every delivered page includes dark mode, loading/empty/error states, a working keyboard path and zero external requests, unasked. Chat interfaces gained recipes for a collapsible reasoning block and composer image attachments.
-- **penguin-sdk** documents the message kinds modern models actually emit and accept: stream `partial_thinking` into its own collapsed channel, build image input with `imageUrlMessage` (with the config `vision` flag degrading gracefully through the project's `vision_model`), fix the output format in the persona instead of shipping a Markdown renderer, and bridge cross-language BM25 retrieval with an ingest-time bilingual keyword map.
+## Skills that design and build better apps
 
-On top of both, the Web App's draft page gained an end-to-end **agent tuning example** — create, benchmark and optimize an Agent through isolated CLI sessions — and its example prompts got shorter, because the skills now carry the knowledge the prompts used to spell out.
+Two built-in Skills took large steps in this release.
+
+### web-design
+
+`web-design` now carries a second complete visual language next to its default GitHub-style simplicity: an opt-in *paper editorial* theme with warm paper tones, system serif display headings and small monospace labels.
+
+It also follows a "ship complete" contract. A one-line request is the whole spec, and every page it delivers includes dark mode, loading/empty/error states, a working keyboard path and zero external requests, without being asked. For chat interfaces, it adds recipes for a collapsible reasoning block and image attachments in the composer.
+
+### penguin-sdk
+
+`penguin-sdk` now documents the thinking and image message kinds that current models emit and accept, along with patterns for building on them:
+
+- Stream `partial_thinking` into its own collapsed channel.
+- Build image input with `imageUrlMessage`. When the model config's `vision` flag is off, the image is passed as a file path that the built-in image tools read through the Project's `vision_model`, so the app still works.
+- Fix the output format in the persona instead of shipping a Markdown renderer.
+- Bridge cross-language BM25 retrieval with a bilingual keyword map built at ingest time.
+
+Because these two Skills now carry the knowledge the draft page's example prompts used to spell out, those prompts are shorter. The draft page also adds an end-to-end example of tuning an agent, built on the agent creation, Benchmark design, evaluation and optimization Skills: it creates, benchmarks and optimizes an agent through isolated CLI sessions.
 
 ## Also in 0.1.5
 
-- The default system prompt is about a tenth shorter (1087 → 969 words), pins replies to the user's language, and directs shared tooling into a per-Agent `shared_env/` directory. Existing Agents keep their own prompt.
-- Navigation entries settle on one name each; the Workspace and Agents panels share one width and one open/closed lifetime; Project display names are editable; the draft page's examples became a fixed-height folder shelf.
-- The chat header's elapsed chip survives reloads and counts in-flight events — anchored to the server's clock, so live and replayed views agree.
-- Pasting CJK or emoji into `penguin chat` no longer corrupts characters torn across stdin chunks.
-- Duration and byte formatting carry into the next unit instead of printing `1m60s` or `1024KB`.
-- `PORT` / `HOST` no longer leak into commands the Agent runs, and the development backend moved to port 7368, out of the installed `penguin web`'s way.
-- Docs catch up in three reference blocks: `run_subagent`'s `provider` argument, the gateway credential table, and the Project model entry's `max_tokens`.
+- The default system prompt is about a tenth shorter (1087 → 969 words). It tells the model to reply in the user's language and to install shared tooling into a per-agent `shared_env/` directory. Existing agents keep their own prompt.
+- Each navigation entry now has a single name. The Workspace and Agents panels share one width and the same open/closed behavior, Project display names are editable, and the draft page's examples become a fixed-height folder shelf.
+- The elapsed-time chip in the chat header survives reloads and counts in-flight events. It follows the server's clock, so live and replayed views agree.
+- Pasting CJK text or emoji into `penguin chat` no longer corrupts characters that arrive split across stdin chunks.
+- Durations and byte sizes roll over into the next unit instead of printing `1m60s` or `1024KB`.
+- `PORT` and `HOST` no longer leak into the commands an agent runs, and the development backend moved to port 7368, out of the way of an installed `penguin web`.
+- Three reference blocks in the docs caught up with the code: `run_subagent`'s `provider` argument, the gateway credential table and the Project model entry's `max_tokens`.
 
 ## Install or upgrade
 
@@ -70,4 +89,4 @@ irm https://penguin.ooo/install.ps1 | iex
 penguin web
 ```
 
-Or `npm install -g @prismshadow/penguin-cli` with Node >= 24 — and from this release, fully offline from the [Release assets](https://github.com/Prism-Shadow/penguin-harness/releases). Full detail per change: [changelog/0.1.5](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.5).
+You can also install from npm with Node >= 24: `npm install -g @prismshadow/penguin-cli`. From this release, you can also install fully offline with the bundles attached to the [v0.1.5 Release](https://github.com/Prism-Shadow/penguin-harness/releases/tag/v0.1.5); the steps are under "Install without a network" above. Every change is described in detail in [changelog/0.1.5](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.5).

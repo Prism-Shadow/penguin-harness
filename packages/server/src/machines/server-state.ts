@@ -7,6 +7,7 @@
  * it IS the answer "cannot reach this machine", carrying OpenSSH's diagnostic.
  */
 import { remotePenguin } from "./commands.js";
+import type { RemoteLayout } from "./layout.js";
 import { jsonAnswer } from "./answer.js";
 import type { RemoteTarget } from "./commands.js";
 import type { RemotePlatform } from "./detect.js";
@@ -18,8 +19,8 @@ import type { MachineStatus } from "../machine-status.js";
  * that is not there) comes back as text rather than being swallowed by the shared shell,
  * which merges the streams and reports an empty stderr.
  */
-export function readServerStateCommand(platform: RemotePlatform): string {
-  return `${remotePenguin(platform)} server status 2>&1`;
+export function readServerStateCommand(platform: RemotePlatform, layout: RemoteLayout): string {
+  return `${remotePenguin(platform, layout)} server status 2>&1`;
 }
 
 type MachineServerState =
@@ -86,6 +87,7 @@ export function parseProbe(stdout: string): MachineProbe {
  */
 export async function probeServerState(
   target: RemoteTarget,
+  layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   /**
    * The dialect to ask in — what the install found the machine to be. Null when nothing is
@@ -95,18 +97,39 @@ export async function probeServerState(
    */
   platform: RemotePlatform | null = null,
 ): Promise<MachineProbe> {
-  const first = await probeIn(target, exec, platform ?? "linux");
+  const first = await probeIn(target, layout, exec, platform ?? "linux");
   if (platform !== null || first.state.kind !== "unreachable") return first;
-  const second = await probeIn(target, exec, "win32");
+  const second = await probeIn(target, layout, exec, "win32");
   return second.state.kind === "unreachable" ? first : second;
+}
+
+/**
+ * What a machine's `penguin-hmr` says when its data root's store holds no CLI it can run
+ * (packages/cli/src/penguin-hmr.ts): `no CLI pushed to <root>; use \`penguin\` instead`, or
+ * `the CLI pushed to <root> is unusable: <why>`. Every release ships that entry with these
+ * words, and an install is what puts a CLI there — so this is the one far-side answer whose
+ * remedy is known here, and the advice to run `penguin` is not one a person on the Machines
+ * page can take.
+ */
+const NO_PUSHED_CLI =
+  /^(no CLI pushed to \S.*; use `penguin` instead|the CLI pushed to \S.* is unusable: .*)$/m;
+
+/** The page's sentence for a machine whose store has no CLI to run, with the far side's words after it. */
+export function noPushedCliDetail(said: string): string | null {
+  const line = NO_PUSHED_CLI.exec(said)?.[0];
+  return line === undefined
+    ? null
+    : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Reinstall): that puts the build there. " +
+        `(It said: ${line})`;
 }
 
 async function probeIn(
   target: RemoteTarget,
+  layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   platform: RemotePlatform,
 ): Promise<MachineProbe> {
-  const result = await exec(target, readServerStateCommand(platform));
+  const result = await exec(target, readServerStateCommand(platform, layout));
   if (result.code !== 0) {
     // stdout as the fallback, not just stderr: over the shared shell the two streams are
     // merged and stderr arrives empty (ssh-session.ts), so reading only stderr threw away
@@ -116,7 +139,8 @@ async function probeIn(
     return {
       state: {
         kind: "unreachable",
-        detail: detail === "" ? "ssh exited without a message." : detail,
+        detail:
+          detail === "" ? "ssh exited without a message." : (noPushedCliDetail(detail) ?? detail),
       },
       machineId: null,
     };

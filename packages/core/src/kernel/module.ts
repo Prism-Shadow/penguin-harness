@@ -1,0 +1,663 @@
+/**
+ * Module tree boot: manifests decide the wiring, code only provides implementations.
+ *
+ * A module is a manifest ({@link Manifest}) plus one `create`. Boot runs {@link checkTree}
+ * over the manifests first — nothing is created while a problem stands — then creates
+ * modules in dependency order: a module boots after everything it `requires` and after
+ * every module that contributes to one of its slots WITH A CODE HALF (that half is the
+ * contributor's `bind[id]`, which exists only once the contributor is created). A data-only
+ * contribution is manifest data, there before anything is created, so it orders nothing — a
+ * module may declare data on a slot and require the slot's owner.
+ *
+ * The tree shape is scope, not order: siblings are created in whatever order their
+ * edges allow, and a cycle is a boot error naming the modules in it.
+ *
+ * Parked state: each module's `park()` result is stored under its name; `bootModules`
+ * takes that map back and hands each module its own document after running the
+ * module's migrations. This is the platform node's `modules` field.
+ */
+import { type } from "arktype";
+import type { Json, JsonObject } from "./json.js";
+import { isJsonObject } from "./json.js";
+import type { Resources } from "./boot.js";
+import type { IfaceDecl, TableLike } from "./sig.js";
+import { satisfies, tableOf } from "./sig.js";
+import type { ContextDecl, Manifest, Requirement } from "./manifest.js";
+import { splitSlotKey } from "./manifest.js";
+import type { ManifestNode, Problem, Published } from "./check.js";
+import { checkTree, describeProblem } from "./check.js";
+import type { Meta, ModuleClass } from "./decorators.js";
+import { fieldsOf, metaOf } from "./decorators.js";
+
+/** One contribution as the consuming module receives it. */
+export interface Contributed<D = JsonObject, C = unknown> {
+  id: string;
+  /** The contributor module's name. */
+  from: string;
+  data: D;
+  /** The contributor's `bind[id]`, when the slot declares a code half. */
+  code?: C;
+}
+
+export interface ModuleCtx<Use = Record<string, unknown>> {
+  /** Resolved requirements, by the manifest's alias. */
+  use: Use;
+  /** Contributions to this module's slots, by slot name. */
+  contributions: Record<string, Contributed[]>;
+  resources: Resources;
+  /** Self-cleaning registration; drained at dispose in reverse order, children first. */
+  effect(dispose: () => void): void;
+}
+
+export interface ModuleInstance<Api = Record<string, unknown>> {
+  /** Provided implementations, by the manifest's provides alias. */
+  api: Api;
+  /** Implementations of this module's own contributions, by contribution id. */
+  bind?: Record<string, unknown>;
+  park?(): Json;
+}
+
+export interface ModuleDef<
+  M extends Manifest = Manifest,
+  Use = Record<string, unknown>,
+  Api = Record<string, unknown>,
+> {
+  manifest: M;
+  /** Context migrations by from-version, chained (1→2→3). */
+  migrations?: Record<number, (old: Json) => Json>;
+  create(ctx: ModuleCtx<Use>, context: Json): ModuleInstance<Api> | Promise<ModuleInstance<Api>>;
+  children?: ModuleDef[];
+}
+
+type RefKey<Ref, Mod extends string> = Ref extends `${string}#${string}`
+  ? Ref
+  : Ref extends string
+    ? `${Mod}#${Ref}`
+    : never;
+type Lookup<Reg, K> = K extends keyof Reg ? Reg[K] : unknown;
+
+/**
+ * Interface key (`<module>#<Export>`) → TypeScript type: a registry a package
+ * may declare over its interface classes, and `moduleDefiner<ThatRegistry>()` is how a manifest literal
+ * gets to type its own `use` and `api`.
+ */
+export type IfaceRegistry = object;
+
+/** The `use` a manifest's `requires` resolves to, by alias. */
+export type UseOf<M extends Manifest, Reg extends IfaceRegistry = IfaceRegistry> = {
+  [A in keyof M["requires"]]: Lookup<Reg, RefKey<M["requires"][A]["iface"], M["name"]>>;
+};
+/** The `api` a manifest's `provides` demands, by alias. */
+export type ApiOf<M extends Manifest, Reg extends IfaceRegistry = IfaceRegistry> = {
+  [A in keyof M["provides"]]: Lookup<Reg, RefKey<M["provides"][A], M["name"]>>;
+};
+
+export interface ModuleImplOf<M extends Manifest, Reg extends IfaceRegistry> {
+  migrations?: Record<number, (old: Json) => Json>;
+  create(
+    ctx: ModuleCtx<UseOf<M, Reg>>,
+    context: Json,
+  ): ModuleInstance<ApiOf<M, Reg>> | Promise<ModuleInstance<ApiOf<M, Reg>>>;
+  children?: ModuleDef[];
+}
+
+/**
+ * A `defineModule` bound to an interface registry. A module is its manifest as a literal
+ * (the static half — the generator extracts it without executing the file) and its
+ * create; `use` and `api` are typed FROM the manifest through the registry, so the two
+ * cannot drift: an alias renamed in `requires` is a type error at every `ctx.use.<alias>`,
+ * and an interface named in `provides` is what `api` must satisfy. A key the registry
+ * does not carry types as `unknown` (a plugin requiring a host interface it has no
+ * types for still boots; the host checks the signature).
+ */
+export function moduleDefiner<Reg extends IfaceRegistry>() {
+  return function defineModule<const M extends Manifest>(
+    manifest: M,
+    impl: ModuleImplOf<M, Reg>,
+  ): ModuleDef<M, UseOf<M, Reg>, ApiOf<M, Reg>> {
+    return { manifest, ...impl };
+  };
+}
+
+/** `defineModule` with no registry: every requirement is `unknown` at compile time. */
+export const defineModule = moduleDefiner<IfaceRegistry>();
+
+// ───────────────────────── class form: @Module / @Use / @Provide / @Bind ─────────────────────────
+
+// The decorators themselves live in decorators.ts (no imports, so a plugin bundles just them);
+// this file reads what they recorded.
+export type { ComponentMeta, IfaceClass, ModuleClass, ModuleMeta } from "./decorators.js";
+export { Bind, Component, Module, Provide, Use, wire } from "./decorators.js";
+
+/** What a module class's `create` receives: everything in {@link ModuleCtx} except `use` — requirements are fields. */
+export type ClassCtx = Omit<ModuleCtx, "use">;
+
+/** The meta a class was decorated with; throws for an undecorated class. */
+export function moduleMetaOf(cls: ModuleClass): Meta {
+  const m = metaOf(cls);
+  if (m === undefined)
+    throw new ModuleBootError(`class '${cls.name}' is not a @Module or @Component`);
+  return m;
+}
+
+/** The manifests the generator extracted, by module name — the `modules` section of the table. */
+export type ManifestTable = Readonly<Record<string, Manifest>>;
+
+/**
+ * Turns a module class (and, recursively, its children) into the {@link ModuleDef} the
+ * booter runs. The string manifest is the generator's (`table.modules[name]` — it read the
+ * field annotations statically); the class is checked against it: every `@Use` field must
+ * be a requirement there with the same `from`, every `@Provide` field a provision, every
+ * child class a child. A mismatch means the table is stale, and says so. `instances`
+ * supplies pre-built instances for classes whose constructor takes arguments.
+ */
+export function moduleDefOf(
+  cls: ModuleClass,
+  opts: {
+    manifests: ManifestTable;
+    instances?: ReadonlyMap<ModuleClass, object>;
+    extra?: ModuleDef[];
+    /**
+     * Definitions standing in for nodes, by name — an extension's replacements. A
+     * replaced class is not looked at (its table entry, its fields): the definition is
+     * taken as it is, and the assembled tree is what gets checked.
+     */
+    replace?: ReadonlyMap<string, ModuleDef>;
+  },
+): ModuleDef {
+  const meta = moduleMetaOf(cls);
+  const replacement = opts.replace?.get(meta.name);
+  if (replacement !== undefined) {
+    if (replacement.manifest.name !== meta.name) {
+      throw new ModuleBootError(
+        `replacement for '${meta.name}' is named '${replacement.manifest.name}' — a replacement keeps the name of the node it stands in for`,
+      );
+    }
+    return replacement;
+  }
+  const manifest = opts.manifests[meta.name];
+  if (manifest === undefined) {
+    throw new ModuleBootError(`${meta.name}: not in the generated manifest table — run gen:ifaces`);
+  }
+  // The field decorators record a class's @Use / @Provide / @Bind fields when an instance
+  // is constructed. A replacement (a test double standing in for the class) is not one,
+  // so the class is probed once to learn its fields before the double is checked against
+  // them; the node classes' constructors only store what they are given.
+  const supplied = opts.instances?.get(cls);
+  if (
+    supplied !== undefined &&
+    fieldsOf(cls).use.size + fieldsOf(cls).provide.size + fieldsOf(cls).bind.size === 0
+  ) {
+    try {
+      new (cls as unknown as new () => object)();
+    } catch {
+      // A class that cannot be built without arguments keeps whatever was recorded.
+    }
+  }
+  const instance = (supplied ?? new (cls as unknown as new () => object)()) as Record<
+    string,
+    unknown
+  > & {
+    setup?: (ctx: ClassCtx, context: Json) => void | Promise<void>;
+    park?: () => Json;
+    migrations?: Record<number, (old: Json) => Json>;
+  };
+  const f = fieldsOf(cls);
+  const stale = (what: string) =>
+    new ModuleBootError(
+      `${meta.name}: ${what} — the generated manifest table is stale; run gen:ifaces`,
+    );
+  for (const [field, from] of f.use) {
+    const r = manifest.requires[field];
+    if (r === undefined) throw stale(`@Use field '${field}' is not a requirement in the table`);
+    // `@Use()` with no argument leaves the wiring to the table (the generator wires a field
+    // typed by a component class to that component); an explicit argument must agree.
+    const fromName = from === undefined ? undefined : moduleMetaOf(from).name;
+    if (fromName !== undefined && r.from !== fromName)
+      throw stale(
+        `@Use field '${field}' is wired to '${fromName}' in code, '${r.from}' in the table`,
+      );
+  }
+  for (const field of Object.keys(manifest.requires)) {
+    if (!f.use.has(field)) throw stale(`requirement '${field}' in the table has no @Use field`);
+  }
+  // A component's provisions are all the instance: itself, and every interface it
+  // `implements` (the generator records both).
+  const selfAliases = meta.kind === "component" ? Object.keys(manifest.provides) : [];
+  if (meta.kind === "component" && manifest.provides[cls.name] === undefined)
+    throw stale(`component '${cls.name}' does not provide itself in the table`);
+  for (const field of f.provide) {
+    if (manifest.provides[field] === undefined)
+      throw stale(`@Provide field '${field}' is not a provision in the table`);
+  }
+  const forwarded = new Set(manifest.exports ?? []);
+  for (const field of Object.keys(manifest.provides)) {
+    if (selfAliases.includes(field) || forwarded.has(field)) continue;
+    if (!f.provide.has(field))
+      throw stale(`provision '${field}' in the table has no @Provide field`);
+  }
+  const childNames = (meta.children ?? []).map((c) => moduleMetaOf(c).name);
+  const declared = manifest.children
+    .map((c) => (typeof c === "string" ? c : c.keyed))
+    .filter((c) => c !== "*");
+  if (childNames.join(",") !== declared.join(",")) {
+    throw stale(
+      `children are [${childNames.join(", ")}] in code, [${declared.join(", ")}] in the table`,
+    );
+  }
+  const extra = opts.extra ?? [];
+  const def: ModuleDef = {
+    manifest: {
+      ...manifest,
+      children: [...manifest.children.filter((c) => c !== "*"), ...(extra.length > 0 ? ["*"] : [])],
+    },
+    async create(ctx, context) {
+      // A supplied instance (a double) keeps the fields it came with; the tree fills the
+      // rest, so a double may be partial.
+      for (const field of f.use.keys())
+        if (supplied === undefined || instance[field] === undefined)
+          instance[field] = (ctx.use as Record<string, unknown>)[field];
+      if (typeof instance.setup === "function") await instance.setup(ctx, context);
+      const api: Record<string, unknown> = {};
+      for (const alias of selfAliases) api[alias] = instance;
+      for (const field of f.provide) {
+        if (instance[field] === undefined) {
+          throw new ModuleBootError(
+            `${meta.name}: setup() left @Provide field '${field}' unassigned`,
+          );
+        }
+        api[field] = instance[field];
+      }
+      const bind: Record<string, unknown> = {};
+      for (const [field, id] of f.bind) {
+        if (instance[field] === undefined) {
+          throw new ModuleBootError(
+            `${meta.name}: create() left @Bind field '${field}' ('${id}') unassigned`,
+          );
+        }
+        bind[id] = instance[field];
+      }
+      const out: ModuleInstance = { api, bind };
+      if (typeof instance.park === "function") out.park = () => instance.park!();
+      return out;
+    },
+    children: [
+      ...(meta.children ?? []).map((child) => moduleDefOf(child, { ...opts, extra: undefined })),
+      ...extra,
+    ],
+  };
+  if (instance.migrations !== undefined) def.migrations = instance.migrations;
+  return def;
+}
+
+export class ModuleBootError extends Error {
+  constructor(
+    message: string,
+    readonly problems: Problem[] = [],
+  ) {
+    super(message);
+    this.name = "ModuleBootError";
+  }
+}
+
+/** A booted tree. */
+export interface ModuleTree {
+  /** A module's provided api by module name and alias. */
+  api<T = unknown>(module: string, alias: string): T;
+  has(module: string): boolean;
+  /** Every module's parked document, by name — the platform node stores this. */
+  park(): Record<string, Json>;
+  /** Reverse creation order. */
+  dispose(): void;
+}
+
+export interface BootModulesOptions {
+  ifaces: TableLike;
+  /** What the host publishes: interface declarations AND the live values behind them. */
+  published?: { ifaces: Published; values: Record<string, Record<string, unknown>> };
+  resources: Resources;
+  /** Parked documents from the previous generation, by module name. */
+  parked?: Record<string, Json>;
+}
+
+interface Flat {
+  def: ModuleDef;
+  parent: Flat | null;
+  childrenDefs: ModuleDef[];
+  /** Module names above this one; a node never wires to an ancestor (its exports are for outsiders). */
+  ancestors: Set<string>;
+}
+
+function flatten(root: ModuleDef): { nodes: Flat[]; tree: ManifestNode } {
+  const nodes: Flat[] = [];
+  const walk = (def: ModuleDef, parent: Flat | null): ManifestNode => {
+    const flat: Flat = {
+      def,
+      parent,
+      childrenDefs: def.children ?? [],
+      ancestors: new Set(parent ? [...parent.ancestors, parent.def.manifest.name] : []),
+    };
+    nodes.push(flat);
+    return { manifest: def.manifest, children: flat.childrenDefs.map((c) => walk(c, flat)) };
+  };
+  const tree = walk(root, null);
+  return { nodes, tree };
+}
+
+/** The module each `requires` alias wires to, after the check has proven it unique. */
+function wiring(
+  manifest: Manifest,
+  provides: Record<string, Record<string, IfaceDecl>>,
+  ifaces: TableLike,
+  ancestors: ReadonlySet<string> = new Set(),
+): Record<string, { from: string; alias: string }> {
+  const out: Record<string, { from: string; alias: string }> = {};
+  for (const [alias, need] of Object.entries(manifest.requires)) {
+    const required =
+      tableOf(ifaces).ifaces[
+        need.iface.includes("#") ? need.iface : `${manifest.name}#${need.iface}`
+      ]!;
+    const candidates = need.from !== undefined ? [need.from] : Object.keys(provides);
+    // checkTree already established a unique satisfier — a provision DECLARING the very
+    // interface (the same table entry) wins over one that merely has the shape.
+    for (const exact of [true, false]) {
+      for (const from of candidates) {
+        if (from === manifest.name || ancestors.has(from)) continue;
+        for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
+          if (exact ? decl === required : satisfiesQuick(decl, required, ifaces)) {
+            out[alias] = { from, alias: pAlias };
+            break;
+          }
+        }
+        if (out[alias] !== undefined) break;
+      }
+      if (out[alias] !== undefined) break;
+    }
+  }
+  return out;
+}
+
+function satisfiesQuick(offered: IfaceDecl, required: IfaceDecl, table: TableLike): boolean {
+  return satisfies(offered, required, table).length === 0;
+}
+
+function migrateContext(def: ModuleDef, doc: Json | undefined): Json {
+  const decl = def.manifest.context;
+  if (decl === undefined || doc === undefined) return null; // No context, or a fresh boot: nothing to migrate.
+  let version = 1;
+  let self: Json = null;
+  if (isJsonObject(doc) && typeof doc.v === "number" && "self" in doc) {
+    version = doc.v;
+    self = doc.self;
+  } else if (doc !== undefined) {
+    self = doc;
+  }
+  if (version > decl.version) {
+    throw new ModuleBootError(
+      `${def.manifest.name}: parked under context v${version}, newer than this module's v${decl.version}`,
+    );
+  }
+  while (version < decl.version) {
+    const migrate = def.migrations?.[version];
+    if (migrate === undefined) {
+      throw new ModuleBootError(
+        `${def.manifest.name}: no context migration from v${version} to v${decl.version}`,
+      );
+    }
+    self = migrate(self);
+    version += 1;
+  }
+  if (decl.schema !== undefined && self !== null) {
+    const out = type.raw(decl.schema).onUndeclaredKey("reject")(self);
+    if (out instanceof type.errors) {
+      throw new ModuleBootError(
+        `${def.manifest.name}: parked context does not fit: ${out.summary}`,
+      );
+    }
+  }
+  return self;
+}
+
+export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Promise<ModuleTree> {
+  const { nodes, tree } = flatten(root);
+  // The manifest's `children` is the declared shape; the defs are what boots. They must
+  // agree — except that a manifest listing "*" accepts modules supplied at runtime
+  // beyond the ones it names (plugin modules under the platform root).
+  for (const n of nodes) {
+    const declared = n.def.manifest.children.map((c) => (typeof c === "string" ? c : c.keyed));
+    const open = declared.includes("*");
+    const named = declared.filter((c) => c !== "*").sort();
+    const actual = n.childrenDefs.map((c) => c.manifest.name).sort();
+    const missing = named.filter((c) => !actual.includes(c));
+    const extra = actual.filter((c) => !named.includes(c));
+    if (missing.length > 0 || (!open && extra.length > 0)) {
+      throw new ModuleBootError(
+        `${n.def.manifest.name}: manifest declares children [${declared.join(", ")}] but the code supplies [${actual.join(", ")}]`,
+      );
+    }
+  }
+  const publishedIfaces = opts.published?.ifaces ?? {};
+  const { problems, provides } = checkTree(tree, opts.ifaces, publishedIfaces);
+  if (problems.length > 0) {
+    throw new ModuleBootError(
+      `module tree rejected:\n${problems.map((p) => `  - ${describeProblem(p)}`).join("\n")}`,
+      problems,
+    );
+  }
+  const byName = new Map(nodes.map((n) => [n.def.manifest.name, n]));
+  const wires = new Map<string, Record<string, { from: string; alias: string }>>();
+  for (const n of nodes)
+    wires.set(n.def.manifest.name, wiring(n.def.manifest, provides, opts.ifaces, n.ancestors));
+
+  /**
+   * Where an exported alias actually comes from: the child declaring the interface (else
+   * the one child whose provision satisfies it), followed through nested exports. A
+   * module's exports are a scope's outward face, not a gate — a consumer waits for the
+   * child, never for the whole group, which is what keeps two groups that need one
+   * another's children from being a cycle.
+   */
+  const exportTarget = (module: string, alias: string): { module: string; alias: string } => {
+    const n = byName.get(module);
+    if (n === undefined || !(n.def.manifest.exports ?? []).includes(alias))
+      return { module, alias };
+    const wanted = provides[module]![alias]!;
+    const found: Array<{ module: string; alias: string }> = [];
+    for (const exact of [true, false]) {
+      for (const child of n.childrenDefs) {
+        const name = child.manifest.name;
+        for (const [cAlias, decl] of Object.entries(provides[name] ?? {})) {
+          if (exact ? decl === wanted : satisfiesQuick(decl, wanted, opts.ifaces)) {
+            found.push({ module: name, alias: cAlias });
+            break;
+          }
+        }
+      }
+      if (found.length > 0) break;
+    }
+    if (found.length !== 1) {
+      throw new ModuleBootError(
+        `${module}: exports '${alias}' but ${found.length === 0 ? "no child provides it" : `${found.map((f) => f.module).join(", ")} all do`}`,
+      );
+    }
+    return exportTarget(found[0]!.module, found[0]!.alias);
+  };
+
+  // Edges: a module comes after what it requires (resolved through exports to the node
+  // that provides it), after what contributes code to it, and after its children.
+  const after = new Map<string, Set<string>>();
+  for (const n of nodes) after.set(n.def.manifest.name, new Set());
+  for (const n of nodes) {
+    const name = n.def.manifest.name;
+    for (const w of Object.values(wires.get(name)!)) {
+      if (byName.has(w.from)) after.get(name)!.add(exportTarget(w.from, w.alias).module);
+    }
+    for (const slotKey of Object.keys(n.def.manifest.contributes)) {
+      const split = splitSlotKey(slotKey)!;
+      if (!byName.has(split.module)) continue;
+      const slotDecl = Object.values(provides[split.module] ?? {})
+        .map((d) => d.slots[split.slot])
+        .find((s) => s !== undefined);
+      if (slotDecl?.code !== undefined) after.get(split.module)!.add(name);
+    }
+    for (const child of n.childrenDefs) after.get(name)!.add(child.manifest.name);
+  }
+  const order: Flat[] = [];
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (name: string, stack: string[]) => {
+    const s = state.get(name);
+    if (s === "done") return;
+    if (s === "visiting") {
+      throw new ModuleBootError(`module dependency cycle: ${[...stack, name].join(" → ")}`);
+    }
+    state.set(name, "visiting");
+    for (const dep of after.get(name)!) visit(dep, [...stack, name]);
+    state.set(name, "done");
+    order.push(byName.get(name)!);
+  };
+  for (const n of nodes) visit(n.def.manifest.name, []);
+
+  const instances = new Map<string, { inst: ModuleInstance; disposers: Array<() => void> }>();
+  const created: string[] = [];
+  const apiOf = (module: string, alias: string): unknown => {
+    const inst = instances.get(module);
+    if (inst !== undefined) return inst.inst.api[alias];
+    const value = opts.published?.values[module]?.[alias];
+    if (value === undefined) throw new ModuleBootError(`no api '${alias}' on module '${module}'`);
+    return value;
+  };
+  /** Runs every disposer, newest first, through failures; the failures come back together. */
+  const drain = (disposers: Array<() => void>): unknown[] => {
+    const failures: unknown[] = [];
+    for (const dispose of disposers.reverse()) {
+      try {
+        dispose();
+      } catch (err) {
+        failures.push(err);
+      }
+    }
+    disposers.length = 0;
+    return failures;
+  };
+  const disposeAll = () => {
+    const failures: unknown[] = [];
+    try {
+      for (const name of [...created].reverse())
+        failures.push(...drain(instances.get(name)!.disposers));
+    } finally {
+      created.length = 0;
+      instances.clear();
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, `${failures.length} disposers failed`);
+  };
+  try {
+    for (const n of order) {
+      const mf = n.def.manifest;
+      const use: Record<string, unknown> = {};
+      for (const [alias, w] of Object.entries(wires.get(mf.name)!)) {
+        const t = exportTarget(w.from, w.alias);
+        use[alias] = apiOf(t.module, t.alias);
+      }
+      const contributions: Record<string, Contributed[]> = {};
+      for (const other of nodes) {
+        for (const [slotKey, entries] of Object.entries(other.def.manifest.contributes)) {
+          const split = splitSlotKey(slotKey)!;
+          if (split.module !== mf.name) continue;
+          const slotDecl = Object.values(provides[mf.name] ?? {})
+            .map((d) => d.slots[split.slot])
+            .find((s) => s !== undefined);
+          const list = (contributions[split.slot] ??= []);
+          const contributor = instances.get(other.def.manifest.name);
+          for (const entry of entries) {
+            const { id, ...data } = entry;
+            const item: Contributed = { id, from: other.def.manifest.name, data };
+            if (slotDecl?.code !== undefined) {
+              const code = contributor?.inst.bind?.[id];
+              if (code === undefined) {
+                throw new ModuleBootError(
+                  `${other.def.manifest.name}: contribution '${id}' to '${slotKey}' declared but not bound`,
+                );
+              }
+              item.code = code;
+            }
+            list.push(item);
+          }
+        }
+      }
+      const disposers: Array<() => void> = [];
+      const ctx: ModuleCtx = {
+        use,
+        contributions,
+        resources: opts.resources,
+        effect: (dispose) => disposers.push(dispose),
+      };
+      const context = migrateContext(n.def, opts.parked?.[mf.name]);
+      // Effects registered while this module is being created are its own to release when
+      // it fails — the outer cleanup only knows the modules that made it into `instances`.
+      let inst: ModuleInstance;
+      try {
+        inst = await n.def.create(ctx, context);
+      } catch (err) {
+        drain(disposers);
+        throw err;
+      }
+      // Exports: the alias is forwarded from the child that declares the interface — else
+      // from the one child whose provision satisfies it — so the subtree offers it as one.
+      for (const alias of mf.exports ?? []) {
+        const t = exportTarget(mf.name, alias);
+        inst.api[alias] = apiOf(t.module, t.alias);
+      }
+      const validate = () => {
+        for (const alias of Object.keys(mf.provides)) {
+          const value = inst.api[alias];
+          if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+            throw new ModuleBootError(`${mf.name}: create() returned no api for provides.${alias}`);
+          }
+          const decl = provides[mf.name]![alias]!;
+          const missing = Object.keys(decl.methods).filter(
+            (m) => typeof (value as Record<string, unknown>)[m] !== "function",
+          );
+          const absent = Object.entries(decl.fields ?? {})
+            .filter(([, expr]) => !("maybe" in expr))
+            .filter(([f]) => (value as Record<string, unknown>)[f] === undefined)
+            .map(([f]) => f);
+          if (missing.length > 0 || absent.length > 0) {
+            throw new ModuleBootError(
+              `${mf.name}: api '${alias}' does not satisfy '${decl.name}': missing [${[...missing, ...absent].join(", ")}]`,
+            );
+          }
+        }
+      };
+      try {
+        validate();
+      } catch (err) {
+        drain(disposers);
+        throw err;
+      }
+      instances.set(mf.name, { inst, disposers });
+      created.push(mf.name);
+    }
+  } catch (err) {
+    try {
+      disposeAll();
+    } catch {
+      // The original failure is what the caller needs.
+    }
+    throw err;
+  }
+  return {
+    api: <T>(module: string, alias: string) => apiOf(module, alias) as T,
+    has: (module) => instances.has(module),
+    park() {
+      const out: Record<string, Json> = {};
+      for (const [name, entry] of instances) {
+        const decl = byName.get(name)!.def.manifest.context;
+        if (decl === undefined || entry.inst.park === undefined) continue;
+        out[name] = { v: decl.version, self: entry.inst.park() };
+      }
+      return out;
+    },
+    dispose: disposeAll,
+  };
+}

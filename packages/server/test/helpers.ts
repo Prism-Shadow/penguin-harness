@@ -3,27 +3,151 @@
  * requests via app.request() + building Trace files.
  * None of these tests listen on a port or make real LLM requests.
  */
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { OmniMessage } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp } from "../src/app.js";
-import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import { bootAppDeps, createApp } from "../src/app.js";
+import type { ServerBoot } from "../src/app.js";
+import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
+import type { DatabaseSync } from "node:sqlite";
+import type { ServerHmrHost } from "../src/hmr/platform.js";
+import type { ChannelHub } from "../src/runtime/channel.js";
+import type { DesktopService } from "../src/services/desktop-service.js";
+import type { AuthService } from "../src/auth/service.js";
+import type { AdminService } from "../src/services/admin-service.js";
+import type { ProjectService } from "../src/services/project-service.js";
+import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
+import type { ProjectAccess } from "../src/services/project-access.js";
+import type { ProjectConfigService } from "../src/services/project-config-service.js";
+import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
+import type { AgentService } from "../src/services/agent-service.js";
+import type { AgentConfigService } from "../src/services/agent-config-service.js";
+import type { MemoryService } from "../src/services/memory-service.js";
+import type { SessionService } from "../src/services/session-service.js";
+import type { PricingLookup, UsageService } from "../src/services/usage-service.js";
+import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import type { PreviewTokenSigner } from "../src/services/preview-token.js";
+import type { BenchmarkService } from "../src/services/benchmark-service.js";
+import type { SnapshotService } from "../src/services/snapshot-service.js";
+import type { SessionsRepo } from "../src/db/repos/sessions.js";
+import type { UiPrefsRepo } from "../src/db/repos/ui-prefs.js";
+import type { ServerSettingsRepo } from "../src/db/repos/server-settings.js";
+import type { SchedulesRepo } from "../src/db/repos/schedules.js";
+import type { ErrorsRepo } from "../src/db/repos/errors.js";
+import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
+import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
+import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
+import type { Scheduler } from "../src/runtime/scheduler.js";
+import type { OrganizationService } from "../src/runtime/organization/service.js";
+import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
+import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
+import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
+import type { MachinesService } from "../src/machines/service.js";
 import { openDatabase } from "../src/db/database.js";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { TraceIndexService } from "../src/services/trace-index.js";
 import { TraceService } from "../src/services/trace-service.js";
 import type { TraceSessionIndex } from "../src/services/trace-service.js";
-import type { PricingLookup } from "../src/services/usage-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
+import type { PluginHost } from "../src/plugin/host.js";
+import type { Replacements } from "../src/hmr/capabilities.js";
+import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
+import { hashPassword, ScryptHasher } from "../src/auth/password.js";
+import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
+import type { TitleNotifier } from "../src/runtime/title-generator.js";
+import { UpdateCheckService } from "../src/services/update-check-service.js";
+import { RevealService } from "../src/services/reveal-path.js";
+import { NpmPluginPackages } from "../src/plugin/install.js";
+import type { PluginPackages } from "../src/mechanisms/plugins.js";
+import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
+import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
+import type { FeishuSdk } from "../src/runtime/messaging/feishu-sdk.js";
+import { TelegramTransportProvider } from "../src/runtime/messaging/telegram-connector.js";
+import type { TelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+import { QQTransportProvider } from "../src/runtime/messaging/qq-connector.js";
+import type { QQTransport } from "../src/runtime/messaging/qq-api.js";
+import { QQScanTransportProvider } from "../src/runtime/messaging/qq-scan.js";
+import { WeChatTransportProvider } from "../src/runtime/messaging/wechat-connector.js";
+import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
+import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
+import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
+import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
+import { OrganizationModule } from "../src/runtime/organization/service.js";
+import { machinesRoutes } from "../src/http/routes/machines.js";
+import { MachineEventHub } from "../src/machines/event-hub.js";
+import { MachineSockets } from "../src/machines/machine-sockets.js";
+import { machineSessionForward } from "../src/machines/session-forward.js";
+import { machineHistory } from "../src/machines/history-routes.js";
+import type { HistorySync } from "../src/machines/history-sync.js";
+import { TraceCache } from "../src/machines/trace-cache.js";
+import type { Access } from "../src/mechanisms/projects.js";
+import { ProcessShellPort } from "../src/builtin-browser/module.js";
+import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
+/** The roots {@link makeTempRoot} handed out that nothing has removed yet. */
+const tempRoots = new Set<string>();
+
+/**
+ * A fresh directory under the OS temp directory. Remove it with {@link removeTempRoot} when the
+ * test is done; whatever a test file leaves is removed when the file ends
+ * (test/setup/temp-roots.ts), and what even that cannot remove is reported by the run's teardown
+ * (test/setup/run-temp-dir.ts).
+ */
 export async function makeTempRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+  tempRoots.add(root);
+  return root;
+}
+
+/**
+ * Removes a root. maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's
+ * own just-closed files (SQLite, trace writers) are still being released — Node's rm retries
+ * these codes with a delay. A plain rm was the top cause of ci-windows cascades (cleanup throws →
+ * hook timeout → "database is not open" in later files).
+ */
+export async function removeTempRoot(root: string): Promise<void> {
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  tempRoots.delete(root);
+}
+
+/** Removes every root still handed out; one that cannot be removed is left for the report. */
+export async function removeTempRoots(): Promise<void> {
+  await Promise.all([...tempRoots].map((root) => removeTempRoot(root).catch(() => {})));
+}
+
+let symlinkCapability: boolean | undefined;
+
+/**
+ * Whether this process can create symbolic links at all. Windows denies symlink creation
+ * without a privilege or Developer Mode (EPERM), so tests that need a real symlink skip when
+ * the probe fails — and still run wherever the capability exists (Linux/macOS, elevated or
+ * Developer-Mode Windows) instead of vanishing on every Windows machine. The probe tries once
+ * in a temp directory and caches the answer.
+ */
+export function canCreateSymlink(): boolean {
+  if (symlinkCapability === undefined) {
+    const probeDir = mkdtempSync(path.join(os.tmpdir(), "penguin-symlink-probe-"));
+    try {
+      // A directory link, the variant the guarded cases create; the privilege gate is the
+      // same for file links.
+      symlinkSync(probeDir, path.join(probeDir, "probe"), "dir");
+      symlinkCapability = true;
+    } catch {
+      symlinkCapability = false;
+    } finally {
+      // maxRetries for the same ci-windows cascade reason createTestApp's cleanup documents.
+      rmSync(probeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }
+  return symlinkCapability;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +173,10 @@ export function testConfig(root: string): ServerConfig {
     port: 7364,
     dbPath: ":memory:",
     previewOrigin: null,
+    penguinGoOrigin: "https://token.penguin.ooo",
+    // The production bridge address, path prefix included. Nothing reaches it in tests: the
+    // ModelScope cases construct the service themselves with a stubbed fetch.
+    modelscopeBridgeUrl: "https://go.penguin.ooo/modelscope",
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.
@@ -58,64 +186,387 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
-    supervised: false,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,
+    // Off by default: no test may reach the network to list plugins.
+    pluginIndexUrl: null,
+  };
+}
+
+/**
+ * The module tree, flattened under the names tests have always used. Production has no
+ * such object — a module names what it needs in its manifest — but a test reaches into
+ * any service directly, and this view is the one place that maps the old names.
+ */
+export interface TestDeps {
+  config: ServerConfig;
+  db: DatabaseSync;
+  hmr: ServerHmrHost;
+  channels: ChannelHub;
+  desktop: DesktopService | null;
+  tree: ModuleTree;
+  sessionsRepo: SessionsRepo;
+  prefsRepo: UiPrefsRepo;
+  serverSettingsRepo: ServerSettingsRepo;
+  authService: AuthService;
+  adminService: AdminService;
+  projectService: ProjectService;
+  access: ProjectAccess;
+  projectConfigService: ProjectConfigService;
+  modelOAuth: ModelOAuthService;
+  agentService: AgentService;
+  agentConfigService: AgentConfigService;
+  memoryService: MemoryService;
+  sessionService: SessionService;
+  traceService: TraceService;
+  traceIndex: TraceIndexService;
+  usageService: UsageService;
+  updateCheck: UpdateCheckService;
+  workspaceFiles: WorkspaceFilesService;
+  previewTokens: PreviewTokenSigner;
+  benchmarks: BenchmarkService;
+  snapshots: SnapshotService;
+  schedulesRepo: SchedulesRepo;
+  errorsRepo: ErrorsRepo;
+  messagingRepo: MessagingBindingsRepo;
+  messaging: MessagingBridge;
+  qqScan: QQScanService;
+  scheduler: Scheduler;
+  /** Company mode: the organization runtime and its caches. */
+  orgService: OrganizationService;
+  orgCacheRepo: OrgCacheRepo;
+  manager: SessionManager;
+  sessionSources: SessionSources;
+  errors: ErrorRecorder;
+  machines: MachinesService;
+}
+
+export function flattenForTests(boot: ServerBoot): TestDeps {
+  const { tree } = boot;
+  // Read through the groups' exports, never an implementation node by name: a test that
+  // replaces a node (or a whole group) still gets what the tree actually serves.
+  const api = <T>(module: string, alias: string): T => tree.api<T>(module, alias);
+  return {
+    config: boot.config,
+    db: boot.db,
+    hmr: boot.hmr,
+    channels: boot.channels,
+    desktop: boot.desktop,
+    tree,
+    sessionsRepo: api("SessionRuntimeModule", "SessionIndex"),
+    prefsRepo: api("SettingsModule", "UiPrefsStore"),
+    serverSettingsRepo: api("SettingsModule", "Settings"),
+    authService: api("IdentityModule", "Auth"),
+    adminService: api("IdentityModule", "Admin"),
+    projectService: api("ProjectsModule", "ProjectLifecycle"),
+    access: api("ProjectsModule", "Access"),
+    projectConfigService: api("ProjectsModule", "ProjectConfigStore"),
+    modelOAuth: api("ProjectsModule", "ModelOAuth"),
+    agentService: api("AgentsModule", "AgentLifecycle"),
+    agentConfigService: api("AgentsModule", "AgentConfig"),
+    memoryService: api("AgentsModule", "Memory"),
+    sessionService: api("SessionRuntimeModule", "SessionServiceIface"),
+    traceService: api("TracesModule", "Traces"),
+    traceIndex: api("TracesModule", "TraceIndex"),
+    usageService: api("ObservabilityModule", "UsageQueries"),
+    updateCheck: api("ApiModule", "UpdateCheck"),
+    workspaceFiles: api("WorkspaceModule", "WorkspaceFiles"),
+    previewTokens: api("WorkspaceModule", "PreviewTokens"),
+    benchmarks: api("AgentsModule", "Benchmarks"),
+    snapshots: api("AgentsModule", "Snapshots"),
+    schedulesRepo: api("SessionRuntimeModule", "Schedules"),
+    errorsRepo: api("ObservabilityModule", "ErrorLog"),
+    messagingRepo: api("MessagingHubModule", "MessagingBindings"),
+    messaging: api("MessagingHubModule", "Messaging"),
+    qqScan: api("MessagingHubModule", "QQScan"),
+    scheduler: api("SessionRuntimeModule", "Scheduling"),
+    orgService: api("CompanyModule", "OrgService"),
+    orgCacheRepo: api("CompanyModule", "OrgCache"),
+    manager: api("SessionRuntimeModule", "Sessions"),
+    sessionSources: api("SessionRuntimeModule", "SessionOrigins"),
+    errors: api("ObservabilityModule", "Errors"),
+    machines: api("MachinesModule", "machines"),
   };
 }
 
 export interface TestApp {
   app: Hono<AppEnv>;
-  deps: AppDeps;
+  deps: TestDeps;
+  /** The boot as the runtime holds it: `boot.tree` follows the App across swaps and re-assemblies, where `deps.tree` is the first generation's. */
+  boot: ServerBoot;
   root: string;
   /** Initial password of the seeded admin (TEST_ADMIN_PASSWORD unless overridden via `config.seedAdminPassword`). */
   adminPassword: string;
   cleanup(): Promise<void>;
 }
 
-export interface TestAppOptions extends BuildDepsOverrides {
+/**
+ * What a test stands in for, by the name it has always used; each becomes a node
+ * Replacement (the platform boots the given instance instead of the class it names).
+ */
+export interface TestAppOptions {
+  /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
+  loader?: SessionLoader;
+  /** Test double: Session title generator (avoids real LLM requests). */
+  titles?: TitleNotifier;
+  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  updateCheck?: UpdateCheckService;
+  /** Test double: the Feishu connector's SDK (avoids real Lark network / long connections). */
+  feishuSdk?: FeishuSdk;
+  /** Test double: the Telegram connector's Bot API transport. */
+  telegramTransport?: TelegramTransport;
+  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
+  telegramRetryDelayMs?: (failures: number) => number;
+  /** Test double: the QQ connector's OpenAPI + gateway transport. */
+  qqTransport?: QQTransport;
+  /** Test hook: how long the QQ connector withholds its coalesced tail. */
+  qqTailFlushMs?: number;
+  /** Test hook: the bridge's pace between a per-line reply's messages. */
+  messagingLineDelayMs?: number;
+  /** Test hook: one binding's inbound image budget. */
+  messagingInboundImageBudgetBytes?: number;
+  /** Test double: the QQ scan-to-connect transport. */
+  qqScanTransport?: QQScanTransport;
+  /** Test double: the WeChat connector's long-poll + CDN transport. */
+  wechatTransport?: WeChatTransport;
+  /** Test double: the WeChat scan-to-connect transport. */
+  wechatScanTransport?: WeChatScanTransport;
+  /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
+  wechatRetryDelayMs?: (failures: number) => number;
+  /** Test double: machines service whose ssh effects are faked. */
+  machines?: MachinesService;
+  /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
+  orgService?: OrganizationService;
+  /** Test double: the desktop reveal, so a test never opens a file manager. */
+  reveal?: (filePath: string) => Promise<void>;
+  /** Test double: how plugin packages reach the data root's prefix, so a test never runs npm. */
+  pluginPackages?: PluginPackages;
+  /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
+  browserShellPort?: BrowserShellPort;
+  /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
+  passwordHashCost?: number;
+  /**
+   * Write the shipped built-in Benchmarks into every Project the app creates, as production
+   * does. Off by default: they are several hundred files and directories per Project — most
+   * of what a boot or a provisioned user writes — and only the scenarios about them read them.
+   */
+  builtinBenchmarks?: boolean;
+  log?: (line: string) => void;
+  now?: () => Date;
+  /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
+  plugins?: PluginHost;
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
   config?: Partial<ServerConfig>;
+  /**
+   * Keep the database in a file under the root instead of in memory, so that
+   * {@link restartTestApp} can boot the next process on it.
+   */
+  durableDatabase?: boolean;
+}
+
+/** The history sync of each replaced machines node, by data root, closed with its App. */
+const replacedHistorySyncs = new Map<string, HistorySync>();
+
+/** The node each option stands in for. */
+/** A stand-in Project gate for a replaced machines node: every test that supplies one is an admin's. */
+function accessDouble(): Access {
+  return {
+    requireProjectAccess: () => ({}) as never,
+    requireProjectOwner: () => ({}) as never,
+  } as unknown as Access;
+}
+
+export function replacementsFor(
+  o: TestAppOptions,
+  /** The data root, where a replaced machines node keeps its copy of the machines' history. */
+  root?: string,
+): Replacements {
+  const out: Array<readonly [ModuleClass, object]> = [];
+  if (o.log) out.push([ConsoleLog, { line: o.log }]);
+  if (o.now) out.push([SystemClock, { now: o.now }]);
+  if (!o.builtinBenchmarks) out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: [] }]);
+  if (o.passwordHashCost !== undefined) {
+    const cost = o.passwordHashCost;
+    out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
+  }
+  if (o.loader) {
+    const loader = o.loader;
+    out.push([CoreSessionLoaders, { create: () => loader }]);
+  }
+  if (o.titles) {
+    const titles = o.titles;
+    out.push([DefaultTitleGenerators, { create: () => titles }]);
+  }
+  if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
+  if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
+  if (o.pluginPackages) out.push([NpmPluginPackages, o.pluginPackages]);
+  if (o.browserShellPort) {
+    const port = o.browserShellPort;
+    out.push([ProcessShellPort, { current: () => port }]);
+  }
+  if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
+  if (o.telegramTransport)
+    out.push([
+      TelegramTransportProvider,
+      { telegramTransport: { transport: o.telegramTransport } },
+    ]);
+  if (o.qqTransport) out.push([QQTransportProvider, { qqTransport: { transport: o.qqTransport } }]);
+  if (o.qqScanTransport)
+    out.push([QQScanTransportProvider, { qqScanTransport: { transport: o.qqScanTransport } }]);
+  if (o.wechatTransport)
+    out.push([WeChatTransportProvider, { wechatTransport: { transport: o.wechatTransport } }]);
+  if (o.wechatScanTransport)
+    out.push([
+      WeChatScanTransportProvider,
+      { wechatScanTransport: { transport: o.wechatScanTransport } },
+    ]);
+  const tuning: Record<string, unknown> = {};
+  if (o.messagingLineDelayMs !== undefined) tuning.lineDelayMs = o.messagingLineDelayMs;
+  if (o.messagingInboundImageBudgetBytes !== undefined)
+    tuning.inboundImageBudgetBytes = o.messagingInboundImageBudgetBytes;
+  if (o.qqTailFlushMs !== undefined) tuning.qqTailFlushMs = o.qqTailFlushMs;
+  if (o.telegramRetryDelayMs) tuning.retryDelayMs = o.telegramRetryDelayMs;
+  if (o.wechatRetryDelayMs) tuning.retryDelayMs = o.wechatRetryDelayMs;
+  if (Object.keys(tuning).length > 0) out.push([DefaultMessagingTuning, tuning]);
+  if (o.orgService) {
+    // The whole node stands in: the module provides the service and its scheduler together,
+    // and a suite that fakes the service wants no pass running against the real files.
+    out.push([
+      OrganizationModule,
+      {
+        orgService: o.orgService,
+        orgScheduler: { start: async () => {}, stop: () => {} },
+      },
+    ]);
+  }
+  if (o.machines) {
+    const machines = o.machines;
+    // The generation's socket cache and event hub, as the module's own setup builds them
+    // (machines/service.ts): the proxy's streams and the aggregate event stream share both.
+    const sockets = new MachineSockets(() => undefined);
+    const events = new MachineEventHub(sockets, () => undefined);
+    // The history answers over the same sockets, as the module's own setup builds them.
+    const wired =
+      root === undefined
+        ? null
+        : machineHistory({
+            cache: new TraceCache(path.join(root, "machines", "traces")),
+            sockets,
+            target: (machineId) => machines.proxyTarget(machineId),
+            log: () => undefined,
+          });
+    const history = wired?.history;
+    // Closed with the App, as the module's own generation closes it (test cleanup).
+    if (wired !== null && root !== undefined) replacedHistorySyncs.set(root, wired.sync);
+    out.push([
+      MachinesModule,
+      {
+        machines,
+        routes: machinesRoutes({ machines, access: accessDouble(), events }),
+        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events, history }),
+        sessionForward: machineSessionForward(machines, { sockets, events, history }),
+      },
+    ]);
+  }
+  return out;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const { beforeSeed, config, ...overrides } = options;
+  const { beforeSeed, config, durableDatabase, ...rest } = options;
   const root = await makeTempRoot();
-  if (beforeSeed) await beforeSeed(root);
-  const finalConfig = { ...testConfig(root), ...config };
-  const deps = await bootAppDeps(finalConfig, {
-    log: () => {},
-    passwordHashCost: TEST_PASSWORD_HASH_COST,
-    // The bridge's per-line pace is a real wait in production; every test but the one
-    // about the pacing itself collapses it to nothing.
-    messagingLineDelayMs: 0,
-    ...overrides,
-  });
-  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
-  await deps.authService.seedAdmin();
+  const finalConfig = {
+    ...testConfig(root),
+    ...(durableDatabase === true ? { dbPath: path.join(root, "web.db") } : {}),
+    ...config,
+  };
+  try {
+    if (beforeSeed) await beforeSeed(root);
+    return await bootTestApp(finalConfig, root, rest);
+  } catch (error) {
+    // A boot a scenario expects to be refused still wrote the root it was given.
+    await removeTempRoot(root).catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Stops `t` the way a server process stops — its runs drained, the App disposed, the database
+ * closed — and boots a new App on the same root and database file, as the next process would.
+ * `t` must have been created with `durableDatabase`: an in-memory database ends with the process
+ * that held it. The new App owns the root from then on, so clean up that one instead of `t`.
+ */
+export async function restartTestApp(
+  t: TestApp,
+  options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase"> = {},
+): Promise<TestApp> {
+  if (t.boot.config.dbPath === ":memory:") {
+    throw new Error("restartTestApp needs an app created with durableDatabase: true");
+  }
+  await t.deps.manager.shutdown();
+  t.deps.hmr.dispose();
+  t.deps.channels.dispose();
+  t.deps.db.close();
+  return bootTestApp(t.boot.config, t.root, options);
+}
+
+/**
+ * Boots an App on `config` and seeds its admin. `root` is the temp root the App owns — what its
+ * `cleanup` removes — which a scenario sharing a root of its own across apps (`config.root`)
+ * keeps apart from that one. The caller owns removing it when the boot fails.
+ */
+async function bootTestApp(
+  config: ServerConfig,
+  root: string,
+  options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase">,
+): Promise<TestApp> {
+  const { plugins, ...overrides } = options;
+  let boot: ServerBoot | undefined;
+  try {
+    boot = await bootAppDeps(
+      config,
+      replacementsFor(
+        {
+          log: () => {},
+          passwordHashCost: TEST_PASSWORD_HASH_COST,
+          // The bridge's per-line pace is a real wait in production; every test but the one
+          // about the pacing itself collapses it to nothing.
+          messagingLineDelayMs: 0,
+          ...overrides,
+        },
+        config.root,
+      ),
+      undefined,
+      plugins,
+    );
+    // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+    await flattenForTests(boot).authService.seedAdmin();
+  } catch (error) {
+    if (boot !== undefined) flattenForTests(boot).db.close();
+    throw error;
+  }
+  const deps = flattenForTests(boot);
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
-  const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
-  const app = createRuntimeApp(deps);
+  const adminPassword = config.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
+  const app = createApp(boot);
   return {
     app,
     deps,
+    boot,
     root,
     adminPassword,
     cleanup: async () => {
+      replacedHistorySyncs.get(config.root)?.close();
+      replacedHistorySyncs.delete(config.root);
       // Terminals are real child processes owned by the platform: disposing the hot host
       // sweeps its resource registry, which is where every live pty is registered.
       deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();
-      // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
-      // just-closed files (SQLite, trace writers) are still being released — Node's rm
-      // retries these codes with a delay. A plain rm was the top cause of ci-windows
-      // cascades (cleanup throws → hook timeout → "database is not open" in later files).
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await removeTempRoot(root);
     },
   };
 }
@@ -124,8 +575,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
 export const TEST_DESKTOP_TOKEN = "test-desktop-token";
 
 /** A test app running in desktop mode (desktop.test.ts, desktop-update.test.ts). */
-export function createDesktopApp(): Promise<TestApp> {
-  return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
+export function createDesktopApp(options: TestAppOptions = {}): Promise<TestApp> {
+  return createTestApp({
+    ...options,
+    config: { desktopToken: TEST_DESKTOP_TOKEN, ...options.config },
+  });
 }
 
 /** Redeems the shell's one-shot token for a `sessionVia: "desktop"` cookie. */
@@ -186,17 +640,37 @@ export async function provisionUser(
 
 /** JSON request client that carries the cookie. */
 export function apiClient(app: Hono<AppEnv>, cookie: string) {
+  return clientWith(app, { cookie });
+}
+
+/**
+ * JSON request client as a Session's tool subprocess calls the server: the boot's local API
+ * token (`t.deps.authService.localApiToken()`) as a Bearer header, and no cookie.
+ */
+export function tokenClient(app: Hono<AppEnv>, token: string) {
+  return clientWith(app, { authorization: `Bearer ${token}` });
+}
+
+/** A browser cookie exchanged from the same API token an Agent's commands receive. */
+export async function remoteSessionCookie(app: Hono<AppEnv>, token: string): Promise<string> {
+  const res = await tokenClient(app, token).post("/api/remote/session", {});
+  if (res.status !== 200) throw new Error(`Remote exchange failed with ${res.status}`);
+  const session = (await res.json()) as { cookieName: string; sessionToken: string };
+  return `${session.cookieName}=${session.sessionToken}`;
+}
+
+function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
   const call = (method: string) => (apiPath: string, body?: unknown) =>
     app.request(apiPath, {
       method,
       headers: {
-        cookie,
+        ...credential,
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   return {
-    get: (apiPath: string) => app.request(apiPath, { headers: { cookie } }),
+    get: (apiPath: string) => app.request(apiPath, { headers: credential }),
     post: call("POST"),
     put: call("PUT"),
     patch: call("PATCH"),
@@ -226,14 +700,17 @@ export function makeTraceHarness(
 } {
   const db = openDatabase(":memory:");
   const sources = opts.sources ?? new SessionSources();
-  const traceIndex = new TraceIndexService(root, new TraceIndexRepo(db), sources);
+  const repo = wire(TraceIndexRepo, { db });
+  const traceIndex = wire(TraceIndexService, { paths: { root }, repo, sources });
   const shardReads: string[] = [];
-  const service = new TraceService(root, {
+  const service = wire(TraceService, {
+    paths: { root },
     index: traceIndex,
+    store: repo,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
     ...(opts.lookupPricing !== undefined ? { lookupPricing: opts.lookupPricing } : {}),
     sources,
-    observeShardRead: (p) => shardReads.push(p),
+    observeShardRead: (p: string) => shardReads.push(p),
   });
   return { traceIndex, service, sources, shardReads, close: () => db.close() };
 }
@@ -246,7 +723,7 @@ export async function writeTraceFile(
   dateDir: string,
   sessionId: string,
   index: number,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
 ): Promise<string> {
   const dir = path.join(root, projectId, "agents", agentId, "traces", dateDir);
   await fs.mkdir(dir, { recursive: true });

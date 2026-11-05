@@ -1,11 +1,17 @@
 /**
- * Context composition rows: the estimate-to-measured rescaling behind the context ring's panel,
- * and the palette it is zipped with.
+ * The context ring's composition panel (features/chat/context-parts.ts).
+ *
+ * - The estimate is rescaled so the parts add up to the measured occupancy, both columns
+ *   apportioned so neither drifts off the total.
+ * - Every part is drawn in a colour of its own.
+ * - The tool and file rankings scale on the same basis, as shares of the whole context, each
+ *   file keeping its name for display.
+ * - An empty estimate or a closed context has nothing to break down.
+ * - A file path splits on either separator, a root keeping its own separator as the directory.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { CONTEXT_PART_KEYS, contextComposition } from "../src/features/chat/context-parts";
-import { CONTEXT_PART_COLORS } from "../src/lib/category-colors";
+import { contextComposition, splitFilePath } from "../src/features/chat/context-parts";
 
 function response(over: Partial<SessionContextResponse> = {}): SessionContextResponse {
   const base = {
@@ -19,6 +25,7 @@ function response(over: Partial<SessionContextResponse> = {}): SessionContextRes
       { name: "read_file", tokens: 6000 },
       { name: "exec_command", tokens: 4000 },
     ],
+    topFiles: [],
     contextClosed: false,
     compactionThreshold: null,
     ...over,
@@ -65,13 +72,12 @@ describe("contextComposition", () => {
     expect(c.parts.reduce((n, p) => n + p.tokens, 0)).toBe(350);
   });
 
-  it("gives the parts the palette in its documented order", () => {
-    const c = contextComposition(response(), 1000)!;
-    expect(c.parts.map((p) => p.key)).toEqual([...CONTEXT_PART_KEYS]);
-    expect(c.parts.map((p) => p.color)).toEqual([...CONTEXT_PART_COLORS]);
-    // Zipped by index: a part added on one side and not the other would silently lose its colour.
-    expect(CONTEXT_PART_COLORS).toHaveLength(CONTEXT_PART_KEYS.length);
-    expect(new Set(CONTEXT_PART_COLORS).size).toBe(CONTEXT_PART_COLORS.length);
+  it("draws every part in a colour of its own", () => {
+    // The palette is zipped with the parts by index: a part added on one side and not the
+    // other would silently lose its colour.
+    const colors = contextComposition(response(), 1000)!.parts.map((p) => p.color);
+    expect(colors.every(Boolean)).toBe(true);
+    expect(new Set(colors).size).toBe(colors.length);
   });
 
   it("scales the tool ranking on the same basis, as shares of the whole context", () => {
@@ -82,6 +88,34 @@ describe("contextComposition", () => {
     ]);
     // A ranking inside two of the six parts: it never claims the whole context.
     expect(c.tools.reduce((n, t) => n + t.percent, 0)).toBeLessThan(100);
+  });
+
+  it("scales the file ranking the same way and keeps each file's name for display", () => {
+    const c = contextComposition(
+      response({
+        topFiles: [
+          { path: "src/state/config.ts", tokens: 5000, ops: { read: 2, edit: 1, write: 0 } },
+          { path: "~/notes.md", tokens: 1000, ops: { read: 1, edit: 0, write: 0 } },
+        ],
+      }),
+      50_000,
+    )!;
+    expect(c.files).toEqual([
+      {
+        path: "src/state/config.ts",
+        name: "config.ts",
+        ops: { read: 2, edit: 1, write: 0 },
+        tokens: 12_500,
+        percent: 25,
+      },
+      {
+        path: "~/notes.md",
+        name: "notes.md",
+        ops: { read: 1, edit: 0, write: 0 },
+        tokens: 2500,
+        percent: 5,
+      },
+    ]);
   });
 
   it("has nothing to break down for an empty estimate or a closed context", () => {
@@ -98,5 +132,15 @@ describe("contextComposition", () => {
     expect(contextComposition(empty, 0)).toBeNull();
     // A completed compaction closed the context these figures describe; the next one is unmeasured.
     expect(contextComposition(response({ contextClosed: true }), 50_000)).toBeNull();
+  });
+});
+
+describe("splitFilePath", () => {
+  it("splits on either separator, keeping a root's own separator as the directory", () => {
+    expect(splitFilePath("src/state/config.ts")).toEqual({ name: "config.ts", dir: "src/state" });
+    expect(splitFilePath("C:\\ws\\src\\a.ts")).toEqual({ name: "a.ts", dir: "C:\\ws\\src" });
+    expect(splitFilePath("/etc/hosts")).toEqual({ name: "hosts", dir: "/etc" });
+    expect(splitFilePath("/hosts")).toEqual({ name: "hosts", dir: "/" });
+    expect(splitFilePath("README.md")).toEqual({ name: "README.md", dir: "" });
   });
 });

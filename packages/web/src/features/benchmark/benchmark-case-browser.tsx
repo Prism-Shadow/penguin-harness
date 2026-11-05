@@ -1,91 +1,126 @@
+/**
+ * The Benchmark case dialog's files: the shared read-only browser (the one the plugin detail
+ * Modal draws) over a case's two materials. The tree's two top-level directories are the
+ * materials themselves — the task materials the tested agent is given, and the rubric it never
+ * sees — both open from the start, each listed one directory per level as it is opened, the
+ * way the Workspace files panel lists.
+ *
+ * Row paths carry the material they belong to (`statement/README.md`), since the two are
+ * separate file spaces whose paths would otherwise collide; every request splits the material
+ * back off before asking for a path inside it. The statement's own README opens by itself once
+ * its listing arrives, so the dialog lands on what the case is about.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   BenchmarkCaseSummary,
   CaseMaterial,
   WorkspaceFileEntry,
-  WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
-import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
+import { FileBrowser, Pill } from "@prismshadow/penguin-ui";
+import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
+import { useReaderFind } from "../../lib/reader-find";
 import { S } from "../../lib/strings";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { CodeBlock } from "../chat/code-block";
+import { useLocale } from "../../state/locale";
+import {
+  ancestorDirs,
+  baseName,
+  expandTo,
+  parentDir,
+  previewKindOf,
+  withExpanded,
+} from "../../lib/workspace-tree";
+import type { Listings } from "../../lib/workspace-tree";
 
-const TEXT_EXTS = new Set([
-  "txt",
-  "md",
-  "json",
-  "js",
-  "mjs",
-  "cjs",
-  "ts",
-  "tsx",
-  "jsx",
-  "py",
-  "sh",
-  "bash",
-  "yaml",
-  "yml",
-  "toml",
-  "css",
-  "html",
-  "htm",
-  "csv",
-  "log",
-  "xml",
-  "ini",
-  "conf",
-  "sql",
-  "svg",
-]);
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
-const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
-const HIGHLIGHT_LIMIT = 64 * 1024;
-
-interface Preview {
+/** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
+export interface CaseTreeRow extends FileTreeRow {
   material: CaseMaterial;
-  path: string;
-  name: string;
-  kind: "text" | "md" | "image" | "pdf" | "unsupported";
-  content?: string;
-  truncated?: boolean;
-  loading?: boolean;
-  error?: string;
+  /** Bytes on a file row, 0 on a directory. */
+  sizeBytes: number;
 }
 
-interface Props {
-  projectId: string;
-  agentId: string;
-  benchmarkId: string;
-  caseSummary: BenchmarkCaseSummary;
-}
-
-interface MaterialGroupProps extends Props {
+/** A material as the tree draws it: which one, and the name of the folder it stands under. */
+export interface CaseMaterialSpec {
   material: CaseMaterial;
   label: string;
-  hiddenLabel?: string;
-  defaultOpen?: boolean;
-  /** Auto-preview this group's root readme.md on first load. Exactly one group (the statement)
-   *  may carry it: both groups now open by default, and two racing auto-previews would leave the
-   *  preview pane on whichever listing happened to resolve last. */
-  autoPreviewReadme?: boolean;
-  onPreview: (material: CaseMaterial, path: string) => void;
 }
 
-function extOf(name: string): string {
-  const index = name.lastIndexOf(".");
-  return index >= 0 ? name.slice(index + 1).toLowerCase() : name.toLowerCase();
+/** The two materials' own tree paths, which are also the directories the tree opens with. */
+const MATERIAL_PATHS = ["statement", "rubric"];
+
+/**
+ * The rows the tree draws, top to bottom: one directory row per material, then a depth-first
+ * walk into every open directory whose listing has arrived. An open directory that is still
+ * loading contributes its own row and no children — `loaded: false` is what tells the tree so.
+ *
+ * `listings` and `expanded` are keyed by tree path, a material's own row being its bare name,
+ * so one map and one set cover both materials without either shadowing the other.
+ */
+export function caseTreeRows(
+  materials: readonly CaseMaterialSpec[],
+  listings: Listings,
+  expanded: ReadonlySet<string>,
+): CaseTreeRow[] {
+  const rows: CaseTreeRow[] = [];
+  const walk = (material: CaseMaterial, dir: string, depth: number): void => {
+    const entries = listings.get(dir) ?? [];
+    for (const [index, entry] of entries.entries()) {
+      const path = joinWorkspacePath(dir, entry.name);
+      const isDir = entry.kind === "dir";
+      const open = isDir && expanded.has(path);
+      const children = isDir ? listings.get(path) : undefined;
+      rows.push({
+        path,
+        name: entry.name,
+        kind: entry.kind,
+        depth,
+        posInSet: index + 1,
+        setSize: entries.length,
+        expanded: open,
+        loaded: !isDir || children !== undefined,
+        empty: isDir && children !== undefined && children.length === 0,
+        material,
+        sizeBytes: entry.sizeBytes,
+      });
+      if (open && children !== undefined) walk(material, path, depth + 1);
+    }
+  };
+  for (const [index, spec] of materials.entries()) {
+    const children = listings.get(spec.material);
+    const open = expanded.has(spec.material);
+    rows.push({
+      path: spec.material,
+      name: spec.label,
+      kind: "dir",
+      depth: 0,
+      posInSet: index + 1,
+      setSize: materials.length,
+      expanded: open,
+      loaded: children !== undefined,
+      empty: children !== undefined && children.length === 0,
+      material: spec.material,
+      sizeBytes: 0,
+    });
+    if (open && children !== undefined) walk(spec.material, spec.material, 1);
+  }
+  return rows;
 }
 
-function dirOf(filePath: string): string {
-  return filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : "";
+/** The material a tree path belongs to, and the path inside it ("" for the material's own row). */
+function splitTreePath(treePath: string): { material: CaseMaterial; path: string } {
+  const cut = treePath.indexOf("/");
+  const head = cut < 0 ? treePath : treePath.slice(0, cut);
+  return {
+    material: head === "rubric" ? "rubric" : "statement",
+    path: cut < 0 ? "" : treePath.slice(cut + 1),
+  };
 }
 
+/** A reference written inside a file, resolved against the directory that file sits in. */
 function resolveRelative(baseDir: string, ref: string): string {
   const out = ref.startsWith("/") || baseDir === "" ? [] : baseDir.split("/");
   for (const segment of ref.split("/")) {
@@ -96,176 +131,35 @@ function resolveRelative(baseDir: string, ref: string): string {
   return out.join("/");
 }
 
-function languageFor(name: string): string {
-  const ext = extOf(name);
-  return (
-    {
-      json: "json",
-      md: "markdown",
-      js: "javascript",
-      mjs: "javascript",
-      cjs: "javascript",
-      jsx: "jsx",
-      ts: "typescript",
-      tsx: "tsx",
-      py: "python",
-      sh: "shellscript",
-      bash: "shellscript",
-      yaml: "yaml",
-      yml: "yaml",
-      toml: "toml",
-      css: "css",
-      html: "html",
-      htm: "html",
-      xml: "xml",
-      sql: "sql",
-      svg: "xml",
-    }[ext] ?? "text"
-  );
+interface Props {
+  projectId: string;
+  benchmarkId: string;
+  caseSummary: BenchmarkCaseSummary;
+  /**
+   * The machine whose disk holds this Case's files; null for this server. A Benchmark's Cases
+   * can be read off any machine that has them, and the listing this browser was opened from
+   * recorded which one — asking a different server for the same path is asking about a
+   * directory it may not have.
+   */
+  machineId: string | null;
 }
 
-function MaterialGroup({
-  projectId,
-  agentId,
-  benchmarkId,
-  caseSummary,
-  material,
-  label,
-  hiddenLabel,
-  defaultOpen = false,
-  autoPreviewReadme = false,
-  onPreview,
-}: MaterialGroupProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [path, setPath] = useState("");
-  /** Bound to the path it was fetched for: entry targets join against `base`, so a click on a
-   *  row that is momentarily stale (the fetch effect nulls the listing, but the state update
-   *  commits one frame later) cannot compound segments onto an already-advanced `path`. */
-  const [listing, setListing] = useState<{ base: string; res: WorkspaceFilesResponse } | null>(
-    null,
-  );
+export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, machineId }: Props) {
+  const { locale } = useLocale();
+  /** Listings by tree path; a missing key means "not fetched yet". */
+  const [listings, setListings] = useState<Listings>(() => new Map());
+  /** Both materials start open, so the case's files are in view without a click. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(MATERIAL_PATHS));
+  const [loadingDirs, setLoadingDirs] = useState<ReadonlySet<string>>(() => new Set());
   const [listError, setListError] = useState<string | null>(null);
-  const initialReadmeOpened = useRef(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setListing(null);
-    setListError(null);
-    let cancelled = false;
-    api
-      .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
-      .then((data) => {
-        if (cancelled) return;
-        setListing({ base: path, res: data });
-        if (autoPreviewReadme && path === "" && !initialReadmeOpened.current) {
-          initialReadmeOpened.current = true;
-          const readme = data.entries.find(
-            (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
-          );
-          if (readme) onPreview(material, readme.name);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setListError(apiErrorText(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    projectId,
-    agentId,
-    benchmarkId,
-    caseSummary.id,
-    material,
-    autoPreviewReadme,
-    onPreview,
-    open,
-    path,
-  ]);
-
-  const crumbs = path === "" ? [] : path.split("/");
-
-  const openEntry = (entry: WorkspaceFileEntry) => {
-    if (listing === null) return; // rows only render out of a loaded listing
-    const target = joinWorkspacePath(listing.base, entry.name);
-    if (entry.kind === "dir") {
-      setPath(target);
-      return;
-    }
-    onPreview(material, target);
-  };
-
-  return (
-    <div className="border-b border-gray-200 last:border-b-0 dark:border-gray-800">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800/60"
-      >
-        <span className="text-xs text-gray-400">{open ? "▾" : "▸"}</span>
-        <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
-        {hiddenLabel && (
-          <span className="shrink-0 rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-            {hiddenLabel}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div>
-          {crumbs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 px-5 py-1.5 dark:border-gray-800/70">
-              <button
-                type="button"
-                onClick={() => setPath("")}
-                className="rounded px-1 py-0.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                {label}
-              </button>
-              {crumbs.map((segment, index) => (
-                <span key={`${segment}-${index}`} className="flex min-w-0 items-center gap-1">
-                  <span className="text-gray-300 dark:text-gray-700">/</span>
-                  <button
-                    type="button"
-                    onClick={() => setPath(crumbs.slice(0, index + 1).join("/"))}
-                    className="max-w-24 truncate rounded px-1 py-0.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    {segment}
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {listError && <p className="px-6 py-2 text-xs text-red-500">{listError}</p>}
-          {!listing && !listError && <SkeletonList rows={3} />}
-          {listing?.res.entries.length === 0 && (
-            <p className="px-6 py-2 text-xs text-gray-400">{S.files.empty}</p>
-          )}
-          {listing?.res.entries.map((entry) => (
-            <button
-              key={`${entry.kind}/${entry.name}`}
-              type="button"
-              onClick={() => openEntry(entry)}
-              className="flex w-full items-center gap-2 border-t border-gray-100 px-6 py-2 text-left hover:bg-gray-100 dark:border-gray-800/70 dark:hover:bg-gray-800/60"
-            >
-              <span className="text-sm text-gray-400">{entry.kind === "dir" ? "▸" : "·"}</span>
-              <span className="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
-              {entry.kind === "file" && (
-                <span className="shrink-0 text-[11px] text-gray-400">
-                  {formatBytes(entry.sizeBytes)}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
-  const [preview, setPreview] = useState<Preview | null>(null);
+  /** The directory whose subtree the tree should animate — the one just clicked. */
+  const [toggled, setToggled] = useState<TreeToggle | null>(null);
+  const [preview, setPreview] = useState<FileBrowserPreview | null>(null);
+  /** Answers to superseded preview requests are dropped rather than painted over the new one. */
   const previewRequest = useRef(0);
+  /** Per-directory request counter, for the same reason, one listing at a time. */
+  const dirRequest = useRef<Map<string, number>>(new Map());
+  const readmeOpened = useRef(false);
 
   const fileUrl = useCallback(
     (
@@ -273,216 +167,219 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
       filePath: string,
       options?: { download?: boolean; preview?: boolean },
     ) =>
-      api.benchmarkCaseFileUrl(
-        projectId,
-        agentId,
-        benchmarkId,
-        caseSummary.id,
-        filePath,
-        material,
-        options,
-      ),
-    [projectId, agentId, benchmarkId, caseSummary.id],
+      api.benchmarkCaseFileUrl(projectId, benchmarkId, caseSummary.id, filePath, material, {
+        ...options,
+        machineId,
+      }),
+    [projectId, benchmarkId, caseSummary.id, machineId],
   );
 
-  const previewPath = useCallback(
-    async (material: CaseMaterial, filePath: string) => {
-      const request = ++previewRequest.current;
-      const name = filePath.includes("/")
-        ? filePath.slice(filePath.lastIndexOf("/") + 1)
-        : filePath;
-      const ext = extOf(name);
-      if (IMAGE_EXTS.has(ext)) {
-        setPreview({ material, path: filePath, name, kind: "image" });
-        return;
-      }
-      if (ext === "pdf") {
-        setPreview({ material, path: filePath, name, kind: "pdf" });
-        return;
-      }
-      const isMarkdown = ext === "md";
-      if (!TEXT_EXTS.has(ext)) {
-        setPreview({ material, path: filePath, name, kind: "unsupported" });
-        return;
-      }
-      setPreview({
-        material,
-        path: filePath,
-        name,
-        kind: isMarkdown ? "md" : "text",
-        loading: true,
-      });
+  /**
+   * Fetches one directory's listing into the tree, keyed by its tree path. Resolves with the
+   * entries, or null when the request failed or a newer one for the same directory overtook it.
+   */
+  const loadDir = useCallback(
+    async (treePath: string): Promise<readonly WorkspaceFileEntry[] | null> => {
+      const { material, path } = splitTreePath(treePath);
+      const seq = (dirRequest.current.get(treePath) ?? 0) + 1;
+      dirRequest.current.set(treePath, seq);
+      const current = (): boolean => dirRequest.current.get(treePath) === seq;
+      setLoadingDirs((s) => new Set(s).add(treePath));
       try {
-        const response = await fetch(fileUrl(material, filePath, { preview: true }), {
+        const res = await api.listBenchmarkCaseFiles(
+          projectId,
+          benchmarkId,
+          caseSummary.id,
+          path,
+          material,
+          machineId,
+        );
+        if (!current()) return null;
+        setListings((m) => new Map(m).set(treePath, res.entries));
+        setListError(null);
+        return res.entries;
+      } catch (error) {
+        if (!current()) return null;
+        setListError(apiErrorText(error));
+        return null;
+      } finally {
+        if (current()) {
+          setLoadingDirs((s) => {
+            const next = new Set(s);
+            next.delete(treePath);
+            return next;
+          });
+        }
+      }
+    },
+    [projectId, benchmarkId, caseSummary.id, machineId],
+  );
+
+  /** Opens a file in the preview pane: the text kinds are read, the rest are served by URL. */
+  const openFile = useCallback(
+    async (treePath: string): Promise<void> => {
+      const { material, path } = splitTreePath(treePath);
+      const name = baseName(path);
+      const kind = previewKindOf(name);
+      const base: FileBrowserPreview = {
+        path: treePath,
+        name,
+        kind,
+        url: fileUrl(material, path),
+        downloadUrl: fileUrl(material, path, { download: true }),
+      };
+      const request = ++previewRequest.current;
+      if (kind !== "text" && kind !== "md") {
+        setPreview(base);
+        return;
+      }
+      setPreview({ ...base, loading: true });
+      try {
+        const response = await fetch(fileUrl(material, path, { preview: true }), {
           credentials: "same-origin",
         });
         if (!response.ok) throw new Error(String(response.status));
         const content = await response.text();
         if (request !== previewRequest.current) return;
         setPreview({
-          material,
-          path: filePath,
-          name,
-          kind: isMarkdown ? "md" : "text",
+          ...base,
           content,
           truncated: response.headers.get("x-content-truncated") === "1",
         });
       } catch (error) {
         if (request !== previewRequest.current) return;
-        setPreview({
-          material,
-          path: filePath,
-          name,
-          kind: isMarkdown ? "md" : "text",
-          error: apiErrorText(error),
-        });
+        setPreview({ ...base, error: apiErrorText(error) });
       }
     },
     [fileUrl],
   );
 
-  const downloadUrl = preview ? fileUrl(preview.material, preview.path, { download: true }) : null;
-  const previewMaterialLabel =
-    preview?.material === "rubric" ? S.benchmark.rubric : S.benchmark.taskMaterials;
+  // A different case is a different set of files: nothing of the last one carries over.
+  useEffect(() => {
+    setListings(new Map());
+    setExpanded(new Set(MATERIAL_PATHS));
+    setLoadingDirs(new Set());
+    setListError(null);
+    setToggled(null);
+    setPreview(null);
+    // The request counters are deliberately not reset: a listing still in flight for the case
+    // being left would otherwise match the new case's first request and land in its tree.
+    readmeOpened.current = false;
+  }, [projectId, benchmarkId, caseSummary.id, machineId]);
 
-  const markdownComponents: Components = {
-    img: ({ src, alt }) => (
-      <img
-        src={
-          typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-            ? fileUrl(
-                preview?.material ?? "statement",
-                resolveRelative(dirOf(preview?.path ?? ""), src),
-              )
-            : src
-        }
-        alt={alt ?? ""}
-        loading="lazy"
-        className="max-w-full"
-      />
-    ),
-    a: ({ href, children }) => {
-      if (typeof href !== "string" || href.startsWith("#")) return <a href={href}>{children}</a>;
-      if (EXTERNAL_REF_RE.test(href)) {
-        return (
-          <a href={href} target="_blank" rel="noreferrer">
-            {children}
-          </a>
-        );
-      }
-      const target = resolveRelative(dirOf(preview?.path ?? ""), href);
-      const material = preview?.material ?? "statement";
-      return (
-        <a
-          href={fileUrl(material, target)}
-          onClick={(event) => {
-            event.preventDefault();
-            void previewPath(material, target);
-          }}
-        >
-          {children}
-        </a>
+  useEffect(() => {
+    void loadDir("rubric");
+    // The statement's own README is what the case is about, so it opens by itself; the rubric
+    // side carries no such auto-preview, or the two listings would race for the pane.
+    void loadDir("statement").then((entries) => {
+      if (entries === null || readmeOpened.current) return;
+      const readme = entries.find(
+        (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
       );
-    },
+      if (readme === undefined) return;
+      readmeOpened.current = true;
+      void openFile(joinWorkspacePath("statement", readme.name));
+    });
+  }, [loadDir, openFile]);
+
+  /** Opens or closes a directory; a first open fetches its listing. */
+  const toggleDir = (dir: string): void => {
+    const open = !expanded.has(dir);
+    setExpanded((s) => withExpanded(s, dir, open));
+    // The serial makes toggling the same directory again a new event for the tree to animate.
+    setToggled((last) => ({ dir, open, serial: (last?.serial ?? 0) + 1 }));
+    if (open && !listings.has(dir)) void loadDir(dir);
   };
 
-  return (
-    <div className="grid min-h-[58vh] grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[240px_minmax(0,1fr)] dark:border-gray-800">
-      <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
-        <div className="max-h-44 overflow-y-auto md:max-h-[53vh]">
-          <MaterialGroup
-            projectId={projectId}
-            agentId={agentId}
-            benchmarkId={benchmarkId}
-            caseSummary={caseSummary}
-            material="statement"
-            label={S.benchmark.taskMaterials}
-            defaultOpen
-            autoPreviewReadme
-            onPreview={previewPath}
-          />
-          <MaterialGroup
-            projectId={projectId}
-            agentId={agentId}
-            benchmarkId={benchmarkId}
-            caseSummary={caseSummary}
-            material="rubric"
-            label={S.benchmark.rubric}
-            hiddenLabel={S.benchmark.agentHidden}
-            defaultOpen
-            onPreview={previewPath}
-          />
-        </div>
-      </aside>
+  /**
+   * Opens a file and makes its row reachable: a link inside a Markdown file can point at a
+   * directory the tree has never listed, and a preview of a file with no row to highlight
+   * would leave the tree pointing at the file before it.
+   */
+  const openAndReveal = (treePath: string): void => {
+    setExpanded((s) => expandTo(s, treePath));
+    for (const dir of ancestorDirs(treePath)) {
+      if (dir !== "" && !listings.has(dir)) void loadDir(dir);
+    }
+    void openFile(treePath);
+  };
 
-      <section className="min-w-0">
-        <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs text-gray-500">
-              {preview ? `${previewMaterialLabel} / ${preview.path}` : caseSummary.id}
-            </p>
-          </div>
-          {downloadUrl && preview && (
-            <a
-              href={downloadUrl}
-              download={preview.name}
-              className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {S.files.download}
-            </a>
-          )}
-        </div>
-        <div className="max-h-[52vh] min-h-[52vh] overflow-auto p-3">
-          {!preview ? (
-            <p className="text-sm text-gray-400">{S.benchmark.caseFileUnavailable}</p>
-          ) : preview.loading ? (
-            <SkeletonList rows={8} />
-          ) : preview.error ? (
-            <p className="text-sm text-red-500">{preview.error}</p>
-          ) : preview.kind === "image" ? (
-            <img
-              src={fileUrl(preview.material, preview.path)}
-              alt={preview.name}
-              loading="lazy"
-              className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
-            />
-          ) : preview.kind === "pdf" ? (
-            <iframe
-              src={fileUrl(preview.material, preview.path)}
-              title={preview.name}
-              className="h-[50vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
-            />
-          ) : preview.kind === "md" ? (
-            <>
-              <div className="md-body text-sm text-gray-800 dark:text-gray-100">
-                <ReactMarkdown
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
-                  components={markdownComponents}
-                >
-                  {preview.content ?? ""}
-                </ReactMarkdown>
-              </div>
-              {preview.truncated && (
-                <p className="mt-2 text-xs text-gray-400">{S.files.previewTruncated}</p>
-              )}
-            </>
-          ) : preview.kind === "text" ? (
-            <>
-              <CodeBlock
-                language={languageFor(preview.name)}
-                code={preview.content ?? ""}
-                highlight={(preview.content?.length ?? 0) <= HIGHLIGHT_LIMIT}
-              />
-              {preview.truncated && (
-                <p className="mt-2 text-xs text-gray-400">{S.files.previewTruncated}</p>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>
-          )}
-        </div>
-      </section>
-    </div>
+  /** A relative reference in a previewed Markdown file, resolved within its own material. */
+  const resolveRef = useCallback(
+    (ref: string): { url: string; treePath?: string } | null => {
+      if (preview === null) return null;
+      const { material, path } = splitTreePath(preview.path);
+      const target = resolveRelative(parentDir(path), ref);
+      return { url: fileUrl(material, target), treePath: joinWorkspacePath(material, target) };
+    },
+    [preview, fileUrl],
+  );
+
+  const materials: CaseMaterialSpec[] = [
+    { material: "statement", label: S.benchmark.taskMaterials },
+    { material: "rubric", label: S.benchmark.rubric },
+  ];
+
+  /** The header names the material and the path inside it, not the prefixed tree path. */
+  const headerPath = (): string | undefined => {
+    if (preview === null) return undefined;
+    const { material, path } = splitTreePath(preview.path);
+    const label = material === "rubric" ? S.benchmark.rubric : S.benchmark.taskMaterials;
+    return `${label} / ${path}`;
+  };
+
+  const readerFind = useReaderFind();
+
+  const rowTrailing = (row: CaseTreeRow): ReactNode => {
+    // The rubric is what the case is scored against, and the tested agent never sees it: the
+    // badge says so where the folder is, rather than in a note under the tree.
+    if (row.depth === 0) {
+      if (row.material !== "rubric") return null;
+      return (
+        <span className="shrink-0">
+          <Pill>{S.benchmark.agentHidden}</Pill>
+        </span>
+      );
+    }
+    if (row.kind !== "file") return null;
+    return (
+      <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
+        {formatBytes(row.sizeBytes)}
+      </span>
+    );
+  };
+
+  // One fixed width per language, so opening or closing a folder never moves the preview beside
+  // the tree. It is sized to the rubric folder's row, whose name shares the row with the
+  // hidden-from-agent badge: the English pair takes about 370px at the default 18px root and the
+  // Chinese pair about 260px. A longer file name is cut, and its row's tooltip holds the path.
+  return (
+    <FileBrowser
+      rows={caseTreeRows(materials, listings, expanded)}
+      treeLabel={S.files.treeLabel}
+      selectedPath={preview?.path ?? null}
+      loadingDirs={loadingDirs}
+      toggled={toggled}
+      rowTrailing={rowTrailing}
+      treeLoading={listings.size === 0 && listError === null}
+      treeError={listError}
+      headerFallback={caseSummary.id}
+      headerPath={headerPath()}
+      preview={preview}
+      emptyPreview={S.benchmark.caseFileUnavailable}
+      emptyDirLabel={S.files.empty}
+      truncatedLabel={S.files.previewTruncated}
+      unsupportedLabel={S.files.previewUnsupported}
+      downloadLabel={S.files.download}
+      resolveRef={resolveRef}
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
+      treeWidth={locale === "en" ? 380 : 270}
+      treeMaxHeight={53}
+      previewHeight={52}
+      minHeight={58}
+      onToggleDir={toggleDir}
+      onOpenFile={openAndReveal}
+    />
   );
 }

@@ -3,12 +3,14 @@
  * with JSON-encoded values. An absent row means the setting's built-in default, so
  * settings added after a web.db was formed need no migration.
  */
-import type { DatabaseSync } from "node:sqlite";
 import {
   clampAttachmentMb,
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
 } from "../../services/attachment-limits.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
@@ -32,9 +34,17 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+/** Key of the company-mode master switch; default off (see getCompanyMode). */
+const COMPANY_MODE_KEY = "companyMode";
+/** Key of the Chrome extension switch; default on (see getBrowserExtensionsEnabled). */
+export const BROWSER_EXTENSIONS_KEY = "browserExtensionsEnabled";
+/** Key of the Agent API switch; default on (see getAgentApiEnabled). */
+const AGENT_API_KEY = "agentApiEnabled";
 
-export class ServerSettingsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class ServerSettingsRepo implements Settings {
+  @Use() private readonly db!: Db;
+  private readonly watchers = new Set<(key: string) => void>();
 
   /** Returns the raw JSON-encoded value; null if never set. */
   get(key: string): string | null {
@@ -49,6 +59,18 @@ export class ServerSettingsRepo {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       )
       .run(key, value);
+    for (const watcher of [...this.watchers]) {
+      try {
+        watcher(key);
+      } catch {
+        // A watcher's failure is its own; the write stands.
+      }
+    }
+  }
+
+  watch(listener: (key: string) => void): () => void {
+    this.watchers.add(listener);
+    return () => this.watchers.delete(listener);
   }
 
   /** Shared switch read: this key if present, else the legacy single switch, else the default: on. */
@@ -142,5 +164,49 @@ export class ServerSettingsRepo {
       attachmentMaxMb: this.getAttachmentMaxMb(),
       attachmentTotalMb: this.getAttachmentTotalMb(),
     };
+  }
+
+  /**
+   * Company mode master switch (default OFF): an absent row — and an unreadable one — means
+   * off, so the whole mode stays out of the way until an admin turns it on under
+   * System settings > Server > Company mode.
+   */
+  getCompanyMode(): boolean {
+    const raw = this.get(COMPANY_MODE_KEY);
+    if (raw === null) return false;
+    try {
+      return JSON.parse(raw) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  setCompanyMode(value: boolean): void {
+    this.set(COMPANY_MODE_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * Whether users may drive their own Chrome through the extension (default ON): only a stored
+   * `false` turns it off, so an unreadable row leaves the feature as it ships.
+   */
+  getBrowserExtensionsEnabled(): boolean {
+    return this.get(BROWSER_EXTENSIONS_KEY) !== "false";
+  }
+
+  setBrowserExtensionsEnabled(value: boolean): void {
+    this.set(BROWSER_EXTENSIONS_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * Whether external programs may reach Agents through the Agent API (default ON): only a stored
+   * `false` turns it off, so an unreadable row leaves the feature as it ships. Read per request
+   * by the `/api/amsp/v1` gate, so flipping it needs no restart.
+   */
+  getAgentApiEnabled(): boolean {
+    return this.get(AGENT_API_KEY) !== "false";
+  }
+
+  setAgentApiEnabled(value: boolean): void {
+    this.set(AGENT_API_KEY, JSON.stringify(value));
   }
 }

@@ -14,27 +14,148 @@
  * added to session-manager's active table (state idle).
  */
 import fs from "node:fs/promises";
-import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  createAgent,
+  isSessionMeta,
+  normalizeSessionSource,
+} from "@prismshadow/penguin-core";
+import type {
+  AgentAssembly,
+  ControlEnvContext,
+  ProxyEnvPolicy,
+  SpawnConfiner,
+  ThinkingLevelName,
+} from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   MessagingChannel,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
+  SessionSandbox,
+  SessionSandboxPreset,
   SessionSource,
+  ServerEvent,
+  UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { asSessionSource } from "../runtime/session-sources.js";
-import type { SessionSources } from "../runtime/session-sources.js";
+import {
+  listCategory,
+  listingMarksOf,
+  readRecordedSource,
+  sourceSeenBy,
+  unrunSource,
+} from "../runtime/session-sources.js";
+import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
+
+/** A stored policy's network level as the composer names it. */
+function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
+  return policy.network ?? "open";
+}
+
+/**
+ * A stored policy as the composer sees it, with which of its levels this server can enforce:
+ * `dimensions` is what the mounted sandbox backends implement between them — none on a
+ * deployment that has not installed one. `unavailable` is each backend that is enabled but
+ * failed to load or failed its check, with why; one for another platform is not among them.
+ * `presets` is the Sandbox card's table the composer names levels by, when there is one; the
+ * policy is `advanced` when it holds what no preset shows (masked paths, a read-only temp).
+ * `switchOn` is the card's switch, when the server reports it. Given the server's settings
+ * (`ceiling`), each preset wider than them is marked `aboveCeiling`, by the comparison
+ * `applySandboxPick` refuses a non-admin's pick with.
+ */
+export function sessionSandboxOf(
+  policy: SandboxSettings,
+  dimensions: readonly SandboxDimension[] = [],
+  unavailable: readonly UnavailableSandboxBackend[] = [],
+  presets?: readonly SessionSandboxPreset[],
+  switchOn?: boolean,
+  ceiling?: SandboxSettings,
+): SessionSandbox {
+  const masksPaths = (policy.maskPaths ?? []).length > 0;
+  const advanced = masksPaths || policy.writableTemp === false;
+  const above = (p: SessionSandboxPreset) =>
+    ceiling !== undefined &&
+    aboveSandboxCeiling(p, { mode: ceiling.mode, network: networkOf(ceiling) }) !== null;
+  return {
+    mode: policy.mode,
+    network: networkOf(policy),
+    confinementSupported: dimensions.includes("fs-write"),
+    noNetworkSupported: dimensions.includes("network"),
+    localNetworkSupported: dimensions.includes("network-local"),
+    maskPathsSupported: dimensions.includes("mask-paths"),
+    ...(masksPaths ? { masksPaths: true } : {}),
+    unavailableBackends: unavailable.map(({ name, reason }) => ({ name, reason })),
+    ...(presets !== undefined
+      ? { presets: presets.map((p) => ({ ...p, ...(above(p) ? { aboveCeiling: true } : {}) })) }
+      : {}),
+    ...(advanced ? { advanced: true } : {}),
+    ...(switchOn !== undefined ? { switchOn } : {}),
+  };
+}
+
+/**
+ * `base` with the composer's picks laid over it — the mask paths and the temp directory stay
+ * what the snapshot holds. A non-admin may tighten but never loosen past the server's settings
+ * (`defaults`): the admin's sandbox is the ceiling for everyone else, per Session or not.
+ */
+export function applySandboxPick(
+  base: SandboxSettings,
+  pick: Partial<SessionSandbox>,
+  defaults: SandboxSettings,
+  isAdmin: boolean,
+  localNetworkSupported = false,
+): SandboxSettings {
+  const mode = pick.mode ?? base.mode;
+  const network = pick.network ?? networkOf(base);
+  // Picking a level no backend here can enforce would make every command fail closed; say so
+  // now instead. A policy that already holds it (a backend went away) fails at the command.
+  if (pick.network === "local" && !localNetworkSupported) {
+    throw new HttpError(
+      400,
+      "sandbox_unsupported",
+      "No sandbox backend on this server can limit the network to localhost.",
+    );
+  }
+  if (!isAdmin) {
+    const above = aboveSandboxCeiling(
+      { mode, network },
+      { mode: defaults.mode, network: networkOf(defaults) },
+    );
+    if (above === "mode") {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
+      );
+    }
+    if (above === "network") {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        `Only an administrator can give a Session more network access than the server's sandbox settings (${networkOf(defaults)}).`,
+      );
+    }
+  }
+  const { network: _dropped, ...rest } = base;
+  return { ...rest, mode, ...(network === "open" ? {} : { network }) };
+}
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
+
+/** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
+const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
@@ -45,15 +166,64 @@ export function sessionIdCreatedAt(sessionId: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/**
+ * The order a Session list is served in: `created` (the default) is newest creation first;
+ * `activity` is most recent `lastActiveAt` first — the order the sidebar displays, and the only
+ * one an {@link ActivityCursor} pages.
+ */
+export type SessionListOrder = "created" | "activity";
+
+/** A row's place in the activity order; as a `before` cursor, the last row the client holds. */
+export interface ActivityCursor {
+  lastActiveAt: string;
+  sessionId: string;
+}
+
+/** One row the listing rule files as archived (SessionService.archivedRows). */
+export interface ArchivedRow {
+  row: SessionRow;
+  /** The source the row was classified by; absent while its Trace head is unread. */
+  source?: SessionSource;
+  /** Whether a Trace record exists: what toInfo takes for this row. */
+  hasTrace: boolean;
+}
+
+/**
+ * The activity order: `lastActiveAt` descending, ties broken by `sessionId` descending; negative
+ * when `a` is the more recent. Plain `<` / `>` on both fields, never `localeCompare`: the client
+ * derives the cursor from a row and the server slices on it, so both sides must agree on one
+ * total order, and ICU collation (case, punctuation) is not one they can share. Stamps are ISO
+ * 8601 and ids ASCII, so this is code-point order.
+ */
+export function compareActivityDesc(a: ActivityCursor, b: ActivityCursor): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  if (a.sessionId !== b.sessionId) return a.sessionId > b.sessionId ? -1 : 1;
+  return 0;
+}
+
+/** The `created` order, unchanged since before the activity order existed. */
+function compareCreatedDesc(a: SessionRow, b: SessionRow): number {
+  return b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId);
+}
+
+/**
+ * A slice of a Session list: `offset` rows skipped (the `created` contract, also accepted under
+ * `activity`), or every row strictly below `before` in the activity order.
+ */
+export type SessionListPaging =
+  { offset: number; limit: number } | { before: ActivityCursor; limit: number };
+
 export interface SessionServiceDeps {
   root: string;
-  sessions: SessionsRepo;
+  sessions: SessionIndex;
   manager: SessionManager;
-  projectConfig: ProjectConfigService;
+  projectConfig: ProjectConfigStore;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
-  sources: SessionSources;
+  sources: SessionOrigins;
   /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
-  traceIndex: TraceIndexService;
+  traceIndex: TraceIndex;
+  /** The index rows themselves (files and sessions), for the reads the service does directly. */
+  traceStore: TraceIndexStore;
   /**
    * Admin proxy-settings threading (same getter the session loader passes, see
    * createCoreSessionLoader): the runtime created here is adopted by the manager and
@@ -72,6 +242,14 @@ export interface SessionServiceDeps {
    */
   pathPrepend?: () => string[];
   /**
+   * Tells every user of a Project that a Session now exists. The list only ever learns
+   * about rows it did not create itself from this: a Session started by the CLI, by
+   * another tab, by a schedule, or by an agent spawning a child sat invisible until the
+   * next full reload without it. Optional so the service keeps unit-testing without a
+   * channel registry; absent means nobody is told.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
+  /**
    * The channel of the Session's ENABLED messaging binding, or null when none is enabled
    * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
    * disabled configs stay off the row). A lookup lambda rather than the repo, so the
@@ -79,20 +257,140 @@ export interface SessionServiceDeps {
    * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
+  /**
+   * Company mode: the organization owning a Session (a desk session, or a session
+   * contributing to a ticket), for `SessionInfo.orgId` — development mode's list hides
+   * those rows, the company sidebar groups them. Two shapes because the two flows cost
+   * differently: the single-Session GET asks about one id, a list asks once for the whole
+   * Project and looks its rows up in the returned map, so a long list never costs a query
+   * per row. Lambdas rather than the repo, so the service stays decoupled from the
+   * company-mode caches; absent (older assemblies/tests) means the field is never set.
+   */
+  orgIdOfSession?: (sessionId: string) => string | undefined;
+  orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
+  /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
+  confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+  /** The server's Sandbox settings: what a new Session's policy is snapshotted from. */
+  sandboxDefaults?: () => SandboxSettings;
+  /** Host-owned model-request hooks, forwarded to core for every Session LLM. */
+  assembly?: AgentAssembly;
+  /** The dimensions the mounted sandbox backends implement between them (none when absent). */
+  sandboxDimensions?: () => readonly SandboxDimension[];
+  /** The enabled sandbox backends that failed to load or failed their check, with why. */
+  sandboxUnavailable?: () => readonly UnavailableSandboxBackend[];
+  /** The names of the sandbox backends in use, in routing preference (none when absent). */
+  sandboxBackends?: () => readonly string[];
+  /** The Sandbox card's presets table, in table order (absent: the view carries none). */
+  sandboxPresets?: () => readonly SessionSandboxPreset[];
+  /** The Sandbox card's switch: whether new Sessions start confined (absent: not reported). */
+  sandboxSwitchOn?: () => boolean;
+  /** The approval mode a new Session starts with when its request names none (the default preset's). */
+  sandboxDefaultApproval?: () => ApprovalMode | undefined;
 }
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  /** The policy a new Session starts with: the server's Sandbox settings. */
+  defaultSandbox(): SandboxSettings {
+    return this.deps.sandboxDefaults?.() ?? { mode: "danger-full-access" };
+  }
+
+  /** Whether this server can enforce the `local` network level right now. */
+  localNetworkSupported(): boolean {
+    return this.sandboxDimensions().includes("network-local");
+  }
+
+  private sandboxDimensions(): readonly SandboxDimension[] {
+    return this.deps.sandboxDimensions?.() ?? [];
+  }
+
+  /** A policy as the composer sees it, with which of its levels this server can enforce. */
+  sandboxView(policy: SandboxSettings): SessionSandbox {
+    const backends = this.deps.sandboxBackends?.() ?? [];
+    return {
+      ...sessionSandboxOf(
+        policy,
+        this.sandboxDimensions(),
+        this.deps.sandboxUnavailable?.() ?? [],
+        this.deps.sandboxPresets?.(),
+        this.deps.sandboxSwitchOn?.(),
+        this.defaultSandbox(),
+      ),
+      ...(backends.length > 0 ? { backendsInUse: [...backends] } : {}),
+    };
+  }
+
+  /**
+   * What a new Session starts from, as the composer's draft reads it (the chat defaults): the
+   * settings' policy, plus the approval mode the default preset gives a request naming none.
+   */
+  defaultsView(): SessionSandbox {
+    const approval = this.deps.sandboxDefaultApproval?.();
+    return {
+      ...this.sandboxView(this.defaultSandbox()),
+      ...(approval !== undefined ? { defaultApprovalMode: approval } : {}),
+    };
+  }
+
+  /**
+   * The approval mode a Session created without one starts with. An organization's Session
+   * keeps `allow-all`: its runtime names the mode it wants, and nobody is there to answer an
+   * ask a preset might bring. The other unattended creators — a scheduled run, a workbench —
+   * pass `allow-all` themselves (scheduler.ts, workbenches/service.ts).
+   */
+  private startApproval(requested: ApprovalMode | undefined, client?: string): ApprovalMode {
+    if (requested !== undefined) return requested;
+    if (client === "org") return "allow-all";
+    return this.deps.sandboxDefaultApproval?.() ?? "allow-all";
+  }
+
+  /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
+  sandboxOf(row: SessionRow): SandboxSettings {
+    return row.sandbox ?? this.defaultSandbox();
+  }
+
+  /**
+   * The policy a pick would give one Session, checked — the non-admin ceiling and what this
+   * server can enforce — and not written: a PATCH checks every field before it writes any.
+   */
+  pickSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
+    return applySandboxPick(
+      this.sandboxOf(row),
+      pick,
+      this.defaultSandbox(),
+      isAdmin,
+      this.localNetworkSupported(),
+    );
+  }
+
+  /** Stores one Session's policy (`pickSandbox`'s): its next command runs under it. */
+  updateSandbox(sessionId: string, policy: SandboxSettings): void {
+    this.deps.sessions.updateSandbox(sessionId, policy);
+  }
 
   /**
    * DB row -> SessionInfo (run status and pending approval count come from session-manager).
    * Async because `source` is derived from session_meta: a registry miss (Session predating
    * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
    * list flow's one-walk discovery result; without it a miss locates the shard itself.
+   * `archived` is the listing rule's answer (listCategory), not the bare mark: a background
+   * Session the user never kept reads archived, and a subagent with a stray mark does not.
+   *
+   * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
+   * organization is a point lookup, which is what the single-Session paths want. `view` is who
+   * is reading (sourceSeenBy): a server that adopted this one sees its earlier Sessions as CLI
+   * tasks, in `source` and `archived` alike.
    */
-  async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
-    const source = await this.sourceOf(row, hasTrace);
+  async toInfo(
+    row: SessionRow,
+    hasTrace: boolean,
+    orgIds?: ReadonlyMap<string, string>,
+    view?: ListingView,
+  ): Promise<SessionInfo> {
+    const source = await this.sourceOf(row, hasTrace, view);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
@@ -102,6 +400,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      sandbox: this.sandboxView(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -111,29 +410,45 @@ export class SessionService {
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
-      archived: (row.archivedAt ?? null) !== null,
+      archived: listCategory(source, listingMarksOf(row)) === "archived",
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(orgId !== undefined ? { orgId } : {}),
+      ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
 
   /**
-   * A Session's origin, with session_meta as the single source of truth: the in-process
-   * registry answers first (populated at creation / subagent registration / adoption /
+   * A Session's source, with session_meta as the single source of truth: the in-process
+   * registry answers first (populated at creation / subagent registration / forks / adoption /
    * index registration); on a miss (a Session created before this process started) the
    * trace index's registration-time facts answer — the reconciler head-read the earliest
-   * shard once when the file first appeared, so no file is touched here. A Session with
-   * no Trace yet stays unknown and is NOT cached negatively — its meta may appear with
-   * the first run.
+   * shard once when the file first appeared, so no file is touched here. A head that records
+   * no source is read with the row's client (readRecordedSource). A Session with no Trace yet
+   * is NOT cached — its meta appears with the first run — and reads as its row says
+   * (unrunSource): the organization runtime's as `company`, the Agent API's as `api`, any other
+   * as unknown. What the reader sees of it (sourceSeenBy) is applied last and never cached.
    */
-  private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
+  private async sourceOf(
+    row: SessionRow,
+    hasTrace: boolean,
+    view?: ListingView,
+  ): Promise<SessionSource | undefined> {
+    return sourceSeenBy(await this.recordedSourceOf(row, hasTrace), row.createdAt, view);
+  }
+
+  /** The source as recorded (see sourceOf), whoever reads it. */
+  private async recordedSourceOf(
+    row: SessionRow,
+    hasTrace: boolean,
+  ): Promise<SessionSource | undefined> {
     const known = this.deps.sources.get(row.sessionId);
-    if (known !== undefined) return known ?? undefined;
-    if (!hasTrace) return undefined;
-    const facts = this.deps.traceIndex.repo.getSession(row.sessionId);
+    if (known !== undefined) return readRecordedSource(known, row.client);
+    if (!hasTrace) return unrunSource(row.client);
+    const facts = this.deps.traceStore.getSession(row.sessionId);
     if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
     this.deps.sources.set(row.sessionId, facts.source);
-    return facts.source ?? undefined;
+    return readRecordedSource(facts.source, row.client);
   }
 
   /** Whether this Session already has a Trace record (a Task has been run): answered by the index (reconciled first). */
@@ -142,20 +457,34 @@ export class SessionService {
   }
 
   /**
-   * The list category of a row: archived wins (an explicit user action), then the
-   * origin's bucket, and no/unknown source is `active` — the same precedence the
-   * sidebar's partition applies to loaded rows, so server filtering and client
-   * rendering can never disagree.
+   * The list category of a row (see listCategory): none for a `subagent` or `company` Session,
+   * whatever its marks, which the list never serves; otherwise archived when the user archived
+   * it or when a program opened it and the user has not kept it, else active.
    */
-  private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory> {
-    if ((row.archivedAt ?? null) !== null) return "archived";
-    return (await this.sourceOf(row, hasTrace)) ?? "active";
+  private async categoryOf(
+    row: SessionRow,
+    hasTrace: boolean,
+    view?: ListingView,
+  ): Promise<SessionCategory | null> {
+    return listCategory(await this.sourceOf(row, hasTrace, view), listingMarksOf(row));
   }
 
   /**
-   * List, sorted by createdAt descending. Every row is served **straight from the DB**,
-   * whichever client created it, with no Trace directory scanning — the answer to
-   * many-session sidebar reloads re-walking the filesystem on every request (#139).
+   * Where one row is listed, for a caller holding just the row (a PATCH, the archive page's
+   * batches). A row the registry already classified costs nothing; any other is looked up
+   * through the trace index once (hasTrace reconciles the Agent), so a subagent Session is
+   * known for one even before any list has walked it.
+   */
+  async listingOf(row: SessionRow, view?: ListingView): Promise<SessionCategory | null> {
+    const known = this.deps.sources.get(row.sessionId) !== undefined;
+    return this.categoryOf(row, known ? row.hasTrace === true : await this.hasTrace(row), view);
+  }
+
+  /**
+   * List, sorted by createdAt descending — or, with `order: "activity"`, by lastActiveAt
+   * descending (ties by sessionId, see {@link compareActivityDesc}). Every row is served
+   * **straight from the DB**, whichever client created it, with no Trace directory scanning —
+   * the answer to many-session sidebar reloads re-walking the filesystem on every request (#139).
    * Sessions living only in the Trace directory were adopted into the index by the
    * boot-time sweep (`adoptUnmanagedTraceSessions`), so listing never discovers. One
    * lazy discovery walk still runs for a list call that contains rows this process has
@@ -167,45 +496,209 @@ export class SessionService {
    * "has more"); slicing happens before toInfo, so per-request source derivation (lazy
    * Trace-head reads) stays bounded by the page size.
    *
-   * `category` filters to one sidebar bucket **before** paging, so offset/limit page
-   * within the category. Filtering needs each walked row's category (a possible
-   * Trace-head read per row, cached in the sources registry); without `withCounts`
-   * the walk stops as soon as the requested page is complete. `withCounts` classifies
-   * every row and returns per-category totals over the whole list — plus the same
-   * totals broken down by Workspace path — so the sidebar can label the collapsed
-   * folders (and a workspace group can know its own share) without loading them.
+   * The `before` form pages the activity order by cursor: only rows strictly below it are
+   * walked and served. An offset cannot page that order, because a row below the offset that
+   * becomes active moves above it and the next page would skip a row; a cursor stays put — the
+   * moved row is simply not served again (the client learns of it from `session_state`). The
+   * offset form keeps serving the `created` order exactly as before.
+   *
+   * `category` filters to one list (the sidebar's `active`, the archive page's `archived`)
+   * **before** paging, so offset/limit page within the category. Filtering needs each walked
+   * row's category (a possible Trace-head read per row, cached in the sources registry);
+   * without `withCounts` the walk stops as soon as the requested page is complete.
+   * `withCounts` classifies every row, a cursor or not, and returns per-category totals over
+   * the whole list — plus the same totals broken down by Workspace path, and each path's
+   * newest Session's `createdAt`, once over every category (`workspaceLatest`, the Workspace
+   * picker's "recently used") and once over the active ones (`workspaceLatestActive`) — so the
+   * sidebar can list every Workspace that holds active Sessions (not only the ones its loaded
+   * pages happen to touch) and place the groups by the recency of what they show, all without
+   * loading them.
    *
    * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
    * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
    * sharing one per-Agent cursor — without it, one group's "load more" consumes the page
    * its siblings were about to read, and their rows move on screen untouched. The two
    * filters compose; the returned counts stay whole-Agent either way.
+   *
+   * A `subagent` or `company` Session — a child its parent's Agent panel opens, company mode's
+   * desk and ticket Sessions — belongs to no category (listCategory), whatever its marks: every
+   * classified form of the list (`category`, `workspaceGroup` or `withCounts`) leaves it out of
+   * the page, the totals, the Workspace breakdown and its stamps alike. The plain form, which
+   * classifies nothing, still serves every row.
+   *
+   * `excludeOrg` drops the rows an organization owns (its desk and ticket sessions, and the
+   * sub-sessions they spawned) from the stream BEFORE anything else looks at it — the page,
+   * `counts`, `workspaceCounts`, both Workspace stamps and the limit+1 "has more" all describe the
+   * same own-rows stream. It is what development mode's list asks for: that list draws the
+   * user's own conversations, and a total or a stamp that still counted a desk or a ticket
+   * session would make its Workspace appear as a group the list can never fill. The rule above
+   * does not replace it: a person's conversation attached to a ticket is stamped `org` but
+   * stays `user`, and a row the organization caches name before the reconcile pass stamps it
+   * reads as `user`. Without the flag every row is served, whichever client created it, but
+   * for that rule.
+   *
+   * `view` is who reads the list (sourceSeenBy): every row is classified and served as that
+   * reader sees it.
    */
   async listSessions(
     projectId: string,
     agentId: string,
     opts: {
-      paging?: { offset: number; limit: number };
+      paging?: SessionListPaging;
+      order?: SessionListOrder;
       category?: SessionCategory;
       workspaceGroup?: string;
       withCounts?: boolean;
+      excludeOrg?: boolean;
+      view?: ListingView;
     } = {},
   ): Promise<{
     sessions: SessionInfo[];
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
+    workspaceLatest?: Record<string, string>;
+    workspaceLatestActive?: Record<string, string>;
   }> {
-    const { paging, category, workspaceGroup, withCounts } = opts;
+    const {
+      paging,
+      order = "created",
+      category,
+      workspaceGroup,
+      withCounts,
+      excludeOrg,
+      view,
+    } = opts;
+    const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
+
+    const sorted = [...rows.values()].sort(
+      order === "activity" ? compareActivityDesc : compareCreatedDesc,
+    );
+    // The rows a cursor leaves to serve are a suffix of the activity order: those from `start` on.
+    const before = paging && "before" in paging ? paging.before : undefined;
+    let start = 0;
+    if (before) {
+      const below = sorted.findIndex((row) => compareActivityDesc(row, before) > 0);
+      start = below === -1 ? sorted.length : below;
+    }
+    const skip = paging && "offset" in paging ? paging.offset : 0;
+    const rowHasTrace = (row: SessionRow): boolean =>
+      traces ? traces.has(row.sessionId) : row.hasTrace === true;
+    const toPage = (page: SessionRow[]) =>
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds, view)));
+
+    // No classification asked for: slice straight away (the pre-category behavior).
+    if (category === undefined && workspaceGroup === undefined && !withCounts) {
+      const from = start + skip;
+      return {
+        sessions: await toPage(paging ? sorted.slice(from, from + paging.limit) : sorted),
+      };
+    }
+
+    const want = paging ? skip + paging.limit : Infinity;
+    const counts: SessionCategoryCounts = { active: 0, archived: 0 };
+    const workspaceCounts: Record<string, SessionCategoryCounts> = {};
+    const workspaceLatest: Record<string, string> = {};
+    const workspaceLatestActive: Record<string, string> = {};
+    const matched: SessionRow[] = [];
+    for (const [i, row] of sorted.entries()) {
+      // Rows above a cursor are the client's already: never served, and classified only for
+      // the totals, which are whole-list.
+      const servable = i >= start;
+      if (!servable && !withCounts) continue;
+      if (!withCounts && matched.length >= want) break;
+      const cat = await this.categoryOf(row, rowHasTrace(row), view);
+      // A subagent or company Session is in no category: neither served nor counted, nor
+      // stamped on its Workspace, so no total describes a row the list cannot serve.
+      if (cat === null) continue;
+      counts[cat] += 1;
+      if (withCounts) {
+        const ws = (workspaceCounts[row.workspace] ??= { active: 0, archived: 0 });
+        ws[cat] += 1;
+        // A path's newest Session by creation, whichever order the walk is in — and apart, its
+        // newest active one: an archived Session must not move a sidebar group it is not in.
+        const latest = workspaceLatest[row.workspace];
+        if (latest === undefined || row.createdAt.localeCompare(latest) > 0) {
+          workspaceLatest[row.workspace] = row.createdAt;
+        }
+        const latestActive = workspaceLatestActive[row.workspace];
+        if (
+          cat === "active" &&
+          (latestActive === undefined || row.createdAt.localeCompare(latestActive) > 0)
+        ) {
+          workspaceLatestActive[row.workspace] = row.createdAt;
+        }
+      }
+      const wanted =
+        servable &&
+        (category === undefined || cat === category) &&
+        (workspaceGroup === undefined || matchesWorkspaceGroup(row.workspace, workspaceGroup));
+      if (wanted && matched.length < want) matched.push(row);
+    }
+    const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
+    return withCounts
+      ? { sessions, counts, workspaceCounts, workspaceLatest, workspaceLatestActive }
+      : { sessions };
+  }
+
+  /**
+   * The archive page's walk (services/archived-sessions-service.ts): every row of the Agent the
+   * listing rule files as archived — the rows `listSessions` serves with `category: "archived"`
+   * and `excludeOrg`, classified the same way — with the source each was classified by and
+   * whether it has a Trace. It builds no SessionInfo: the page makes one (toInfo) only for the
+   * rows a response carries, so a request costs a classification per archived row, not a full
+   * row view per archived row. `view` is who reads it, as for listSessions.
+   */
+  async archivedRows(
+    projectId: string,
+    agentId: string,
+    view?: ListingView,
+  ): Promise<ArchivedRow[]> {
+    const { rows, traces } = await this.walkRows(projectId, agentId, true);
+    const out: ArchivedRow[] = [];
+    for (const row of rows.values()) {
+      const hasTrace = traces ? traces.has(row.sessionId) : row.hasTrace === true;
+      const source = await this.sourceOf(row, hasTrace, view);
+      if (listCategory(source, listingMarksOf(row)) !== "archived") continue;
+      out.push({ row, hasTrace, ...(source !== undefined ? { source } : {}) });
+    }
+    return out;
+  }
+
+  /**
+   * The rows a list walk starts from: the Agent's index rows, an organization's left out when
+   * `excludeOrg` asks (see listSessions), with the Project's organization map; and when any row
+   * predates this process, the one reconciled Trace discovery (`traces`) that lets every row be
+   * classified without per-row work and backfills the `has_trace` cache. Steady state —
+   * every row classified — skips the discovery and leaves `traces` absent.
+   */
+  private async walkRows(
+    projectId: string,
+    agentId: string,
+    excludeOrg: boolean,
+  ): Promise<{
+    rows: Map<string, SessionRow>;
+    orgIds: ReadonlyMap<string, string>;
+    traces: ReadonlySet<string> | undefined;
+  }> {
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
+    // One query for the whole Project's organization-owned sessions, looked up per row
+    // below: the company caches are small, and a lookup per row would put a statement
+    // behind every entry of a long sidebar list.
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    if (excludeOrg) {
+      // The durable `client` stamp answers first: it survives the organization and is
+      // inherited by sub-sessions, which no cache names. The caches catch a row the
+      // reconcile pass has not stamped yet.
+      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
+    }
 
     let traces: ReadonlySet<string> | undefined;
     if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
       // Hydration pass: some rows predate this process and are unclassified — one
       // reconciled index read supplies discovery so sourceOf's facts lookups and the
-      // has_trace cache need no per-row work. Steady state (everything classified)
-      // skips this.
+      // has_trace cache need no per-row work.
       traces = await this.discoverTraces(projectId, agentId);
       for (const row of rows.values()) {
         if (!row.hasTrace && traces.has(row.sessionId)) {
@@ -214,48 +707,7 @@ export class SessionService {
         }
       }
     }
-
-    const sorted = [...rows.values()].sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
-    );
-    const rowHasTrace = (row: SessionRow): boolean =>
-      traces ? traces.has(row.sessionId) : row.hasTrace === true;
-    const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
-
-    // No classification asked for: slice straight away (the pre-category behavior).
-    if (category === undefined && workspaceGroup === undefined && !withCounts) {
-      return {
-        sessions: await toPage(
-          paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted,
-        ),
-      };
-    }
-
-    const want = paging ? paging.offset + paging.limit : Infinity;
-    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
-    const workspaceCounts: Record<string, SessionCategoryCounts> = {};
-    const matched: SessionRow[] = [];
-    for (const row of sorted) {
-      if (!withCounts && matched.length >= want) break;
-      const cat = await this.categoryOf(row, rowHasTrace(row));
-      counts[cat] += 1;
-      if (withCounts) {
-        const ws = (workspaceCounts[row.workspace] ??= {
-          active: 0,
-          subagent: 0,
-          schedule: 0,
-          archived: 0,
-        });
-        ws[cat] += 1;
-      }
-      const wanted =
-        (category === undefined || cat === category) &&
-        (workspaceGroup === undefined || matchesWorkspaceGroup(row.workspace, workspaceGroup));
-      if (wanted && matched.length < want) matched.push(row);
-    }
-    const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts } : { sessions };
+    return { rows, orgIds, traces };
   }
 
   /**
@@ -283,7 +735,7 @@ export class SessionService {
     // this used to walk the Agent's ENTIRE trace history on every agents-list request):
     // the date is the shard's date directory (local yyyy-mm-dd, core's writing convention).
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       mark(f.date, f.sessionId);
     }
     // DB index: the creation day also counts as active (a Session that hasn't run a Task yet produces no Trace).
@@ -319,21 +771,35 @@ export class SessionService {
     /** The provider group for `modelId`; always paired with modelId, never inferred. */
     provider?: string;
     workspace?: string;
+    thinkingLevel?: ThinkingLevelName;
     approvalMode?: ApprovalMode;
-    /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
-    source?: "schedule";
+    /** The composer's sandbox picks; omitted halves take the server's settings. */
+    sandbox?: Partial<SessionSandbox>;
+    /** Whether the creator is an administrator (may loosen past the settings). Default false. */
+    isAdmin?: boolean;
+    /**
+     * What kind of conversation this is, recorded in the Session's session_meta: `schedule`
+     * from the scheduler, `company` from the organization runtime, `cli` from `penguin run`
+     * (the only source a request may name), `api` from an Agent API run; absent means `user`,
+     * a person's conversation.
+     */
+    source?: SessionSource;
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
-     * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer
-     * filter on it.
+     * "cli" from the CLI, defaulting to "web". "org" and "api" are not accepted over HTTP —
+     * the organization runtime and the Agent API's run handler call this method directly and
+     * are the only callers that pass them, so no request can claim either provenance for
+     * itself ("api" is what lets the Agent API continue a Session).
      */
-    client?: "web" | "cli";
+    client?: "web" | "cli" | "org" | "api" | "workbench";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
         "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
       );
     }
+    // Checked before anything is created: a refused pick must not leave a Session behind.
+    const sandbox = this.snapshotSandbox(args);
     let modelId: string;
     let provider: string;
     if (args.modelId !== undefined && args.provider !== undefined) {
@@ -359,6 +825,8 @@ export class SessionService {
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
       ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
+      ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
+      ...(this.deps.assembly ? { assembly: this.deps.assembly } : {}),
     });
     let session;
     try {
@@ -366,7 +834,8 @@ export class SessionService {
         modelId,
         provider,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
-        // The origin is also recorded in core session_meta (Trace), not just the index row.
+        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+        // The source is recorded in core session_meta (Trace); the index row stores none.
         ...(args.source !== undefined ? { source: args.source } : {}),
       });
     } catch (err) {
@@ -380,14 +849,14 @@ export class SessionService {
         err instanceof Error ? err.message : String(err),
       );
     }
-    // The origin is derived from the just-created core Session's session_meta (the single
+    // The source is read from the just-created core Session's session_meta (the single
     // source of truth) rather than echoing args.source back: what the registry serves is
     // exactly what the Trace will record.
     const metaMsg = session.metaMessage;
-    this.deps.sources.set(
-      session.sessionId,
-      isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
+    const source = normalizeSessionSource(
+      isSessionMeta(metaMsg) ? metaMsg.payload.source : undefined,
     );
+    this.deps.sources.set(session.sessionId, source);
     const createdAt = new Date().toISOString();
     const row: SessionRow = {
       sessionId: session.sessionId,
@@ -396,11 +865,14 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
-      approvalMode: args.approvalMode ?? "allow-all",
+      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+      approvalMode: this.startApproval(args.approvalMode, args.client),
+      sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
-      // otherwise "web" (schedule runs included). NULL means a legacy row, treated as
-      // web. Informational only — lists serve every row.
+      // "org" when the organization runtime opened a desk or a ticket session, "api" when an
+      // Agent API run did, otherwise "web" (schedule runs included). NULL means a legacy row,
+      // treated as web.
       client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,
@@ -408,7 +880,32 @@ export class SessionService {
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
+    // After the insert: a reader who reacts by fetching the list must find the row there.
+    this.deps.notifyProjectUsers?.(args.projectId, {
+      type: "session_created",
+      projectId: args.projectId,
+      agentId: args.agentId,
+      sessionId: row.sessionId,
+      source,
+    });
     return this.toInfo(row, false);
+  }
+
+  /** A new Session's snapshot: the settings, with the creator's picks (checked) on top. */
+  private snapshotSandbox(args: {
+    sandbox?: Partial<SessionSandbox>;
+    isAdmin?: boolean;
+  }): SandboxSettings {
+    const defaults = this.defaultSandbox();
+    return args.sandbox === undefined
+      ? defaults
+      : applySandboxPick(
+          defaults,
+          args.sandbox,
+          defaults,
+          args.isAdmin ?? false,
+          this.localNetworkSupported(),
+        );
   }
 
   /**
@@ -420,20 +917,12 @@ export class SessionService {
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {
     await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId);
-    let files = this.deps.traceIndex.repo.listFilesBySession(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-    );
+    let files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     if (files.length === 0) {
       // Index miss with disk possibly ahead: one forced diff, then retry (the consumers'
       // rule — a stale index costs one extra scan, never a missing resume shard).
       await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId, { force: true });
-      files = this.deps.traceIndex.repo.listFilesBySession(
-        row.projectId,
-        row.agentId,
-        row.sessionId,
-      );
+      files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     }
     const latest = files.at(-1);
     return latest === undefined ? undefined : traceFilePath(this.deps.root, latest);
@@ -448,7 +937,7 @@ export class SessionService {
   private async discoverTraces(projectId: string, agentId: string): Promise<Set<string>> {
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
     const out = new Set<string>();
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       out.add(f.sessionId);
     }
     return out;
@@ -470,6 +959,8 @@ export class SessionService {
     for (const projectId of await listChildDirs(this.deps.root)) {
       const agentIds = await listChildDirs(agentsDir(this.deps.root, projectId));
       for (const agentId of agentIds) {
+        // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+        if (agentId.startsWith(".")) continue;
         const known = new Set(
           this.deps.sessions.listByAgent(projectId, agentId).map((r) => r.sessionId),
         );
@@ -492,14 +983,15 @@ export class SessionService {
     agentId: string,
     sessionId: string,
   ): SessionRow | null {
-    const facts = this.deps.traceIndex.repo.getSession(sessionId);
+    const facts = this.deps.traceStore.getSession(sessionId);
     if (!facts?.metaRead) return null; // Corrupt/unreadable head: skip (does not block the list; retried by a later reconcile)
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption
     // (core will give a clear error on resume; the product hasn't launched yet, so
     // old data can simply be deleted and recreated).
     if (facts.provider === null || facts.modelId === null) return null;
-    // Registration already narrowed the origin; record it in the registry (single source of truth).
+    // Registration already narrowed the source (a head without one stays `null`, read with the
+    // row's client); record it in the registry (single source of truth).
     this.deps.sources.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
     const row: SessionRow = {

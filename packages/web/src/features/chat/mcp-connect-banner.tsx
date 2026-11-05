@@ -1,22 +1,24 @@
 /**
  * MCP connect row: between mcp_connect_begin and mcp_connect_end the first run is
  * connecting the configured MCP Servers — without this row the pre-first-request wait
- * reads as a silent hang. One StepBanner across all states (the same shell as the
- * reasoning-&-tools group header, shared with the compaction row): connecting shows the
- * server list with a live tick; once settled the header leads with the discovered-tool
- * count (failed servers are named, but only named — reasons live in the groups).
- * Expanding shows ONE GROUP PER SERVER — status icon, tool count / per-server connect
- * time — and expanding a group shows that server's tool list, or the full failure detail
- * for a server that could not connect (non-fatal either way, matching core's
- * warn-and-skip stance).
+ * reads as a silent hang. One ActivityGroup of the event kind across all states (the activity
+ * card, shared with the work group and the compaction row): connecting shows the server list
+ * with a live tick; once settled the header leads with the discovered-tool count (failed
+ * servers are named, but only named — reasons live in the server rows).
+ * Expanding shows ONE ROW PER SERVER, hung off the banner's head as a work group's steps hang
+ * off its header — status icon, tool count / per-server connect time — and expanding a row
+ * shows that server's tool list, or the full failure detail for a server that could not
+ * connect (non-fatal either way, matching core's warn-and-skip stance). A server that was not
+ * contacted at all — the Agent's vault lacks a key it needs, or it needs an OAuth sign-in —
+ * reads as waiting on the user rather than as a failed connection, with the keys in its detail:
+ * its row's mark is the hourglass, and the header names it apart from the failed servers and
+ * stays settled rather than failed — an Agent with such a server shows the row at the start of
+ * every conversation, and a red mark there would be an alarm about nothing that went wrong.
  */
-import { useState } from "react";
+import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { Chevron } from "../../components/ui/chevron";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/omni/stream-model";
-import { StepBanner } from "./step-banner";
+import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/amsp/stream-model";
 
 /**
  * Owner server of a prefixed tool name (`mcp__<server>__<tool>`), matched against the
@@ -31,110 +33,118 @@ function serverOf(toolName: string, servers: string[]): string | null {
   return best;
 }
 
-/** One server's group: a collapsible row; the body is its tool list, or the failure detail. */
+/**
+ * One server's row: a disclosure row of the connection event, whose body is its tool list or
+ * its failure detail; a server with nothing to show is the same line, held still. The row has
+ * no label: its name and its counts are details, set as written in every theme. Stacked
+ * sticky, second level (the thinking/tool-row idiom): while its expanded body scrolls, the row
+ * pins right below the banner's own sticky header, opaque so scrolling tool rows can't bleed
+ * through.
+ */
 function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: McpToolSummary[] }) {
-  const [open, setOpen] = useState(false);
   const failed = outcome.status === "fatal" || (outcome.status as string) === "failed";
+  // Skipped before any connection: waiting on a vault value or a sign-in, not broken.
+  const skipped =
+    outcome.errorCode === "mcp_needs_setup" || outcome.errorCode === "mcp_sign_in_required";
   // A failed server expands into its error; a connected one into its tools (when any).
   const expandable = failed ? outcome.error !== undefined : tools.length > 0;
-  const meta = failed ? S.chat.mcpServerFailed : S.chat.mcpToolsCount(outcome.tools ?? 0);
-
-  const row = (
-    <>
-      <StatusIcon state={failed ? "failed" : "done"} size={11} />
-      <code className="shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">
-        {outcome.server}
-      </code>
-      <span className="min-w-0 truncate font-mono text-xs text-gray-400">{meta}</span>
-      {outcome.durationMs > 0 && (
-        <span className="shrink-0 font-mono text-xs text-gray-400">
-          {humanizeDuration(outcome.durationMs)}
-        </span>
-      )}
-      <span className="min-w-0 flex-1" />
-      {expandable && <Chevron open={open} size={12} className="text-gray-400" />}
-    </>
+  const meta = !failed
+    ? S.chat.mcpToolsCount(outcome.tools ?? 0)
+    : outcome.errorCode === "mcp_needs_setup"
+      ? S.chat.mcpServerNeedsSetup
+      : outcome.errorCode === "mcp_sign_in_required"
+        ? S.chat.mcpServerSignIn
+        : S.chat.mcpServerFailed;
+  const body = !expandable ? undefined : failed ? (
+    <p className="anim-fade px-3 pt-0.5 pb-2 pl-8 font-mono text-xs break-all text-fg-muted">
+      {outcome.error}
+    </p>
+  ) : (
+    <ul className="anim-fade pb-1">
+      {tools.map((tool) => (
+        <li key={tool.name} className="flex items-baseline gap-2 py-1 pr-3 pl-8">
+          <code className="shrink-0 font-mono text-xs text-fg">{tool.name}</code>
+          {tool.description !== undefined && (
+            <span
+              data-tooltip={tool.description}
+              data-tooltip-content="text"
+              className="min-w-0 truncate text-xs text-fg-subtle"
+            >
+              {tool.description}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 
-  if (!expandable) {
-    return <div className="flex w-full items-center gap-2 px-3 py-1.5">{row}</div>;
-  }
   return (
-    <div>
-      {/* Stacked sticky, second level (the thinking/tool-row idiom): while this group's
-          expanded body scrolls, its row pins right below the banner's own sticky header
-          (top-4 = the header's -top-4 plus its height), opaque so scrolling tool rows
-          can't bleed through. */}
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="sticky top-4 z-[4] flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
-      >
-        {row}
-      </button>
-      {open &&
-        (failed ? (
-          <p className="anim-fade px-3 pt-0.5 pb-2 pl-8 font-mono text-xs break-all text-gray-500 dark:text-gray-400">
-            {outcome.error}
-          </p>
-        ) : (
-          <ul className="anim-fade pb-1">
-            {tools.map((tool) => (
-              <li key={tool.name} className="flex items-baseline gap-2 py-1 pr-3 pl-8">
-                <code className="shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">
-                  {tool.name}
-                </code>
-                {tool.description !== undefined && (
-                  <span
-                    title={tool.description}
-                    className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500"
-                  >
-                    {tool.description}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ))}
-    </div>
+    <DisclosureRow
+      sticky
+      activity={{ kind: "event", state: failed && !skipped ? "error" : "done" }}
+      icon={<StatusIcon state={skipped ? "waiting" : failed ? "failed" : "done"} size="sm" />}
+      // No label: the server's name is a detail, so no theme recases it.
+      trailing={
+        <>
+          <code data-slot="detail" className="shrink-0 font-mono text-xs text-fg">
+            {outcome.server}
+          </code>
+          <span data-slot="detail" className="min-w-0 truncate font-mono text-xs text-fg-subtle">
+            {meta}
+          </span>
+          {outcome.durationMs > 0 && (
+            <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-subtle">
+              {humanizeDuration(outcome.durationMs)}
+            </span>
+          )}
+        </>
+      }
+    >
+      {body}
+    </DisclosureRow>
   );
 }
 
 export function McpConnectBanner({ item }: { item: McpConnectItem }) {
   if (item.running) {
     return (
-      <StepBanner
+      <ActivityGroup
+        kind="event"
         state="running"
         title={S.chat.mcpConnectTitle}
         detail={S.chat.mcpServerList(item.servers)}
-        {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
+        {...(item.beginTsMs !== undefined ? { startMs: item.beginTsMs } : {})}
       />
     );
   }
+  // A server waiting on the user is named in the detail, not counted as a failure.
   const failed = item.aborted || (item.failed?.length ?? 0) > 0;
   const detail = item.aborted
     ? S.chat.mcpConnectAborted
-    : S.chat.mcpConnectResult(item.toolCount ?? 0, item.failed ?? []);
+    : S.chat.mcpConnectResult(item.toolCount ?? 0, item.failed ?? [], item.waiting ?? []);
   const results = item.results ?? [];
   const tools = item.tools ?? [];
   const serverNames = results.map((r) => r.server);
   return (
-    <StepBanner
+    <ActivityGroup
+      kind="event"
       state={failed ? "failed" : "done"}
       title={S.chat.mcpConnectTitle}
       detail={detail}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
-    >
-      {results.length > 0
-        ? results.map((outcome) => (
-            <ServerGroup
-              key={outcome.server}
-              outcome={outcome}
-              tools={tools.filter((t) => serverOf(t.name, serverNames) === outcome.server)}
-            />
-          ))
-        : undefined}
-    </StepBanner>
+      {...(results.length > 0
+        ? {
+            rows: results.map((outcome) => ({
+              key: outcome.server,
+              content: (
+                <ServerGroup
+                  outcome={outcome}
+                  tools={tools.filter((t) => serverOf(t.name, serverNames) === outcome.server)}
+                />
+              ),
+            })),
+          }
+        : {})}
+    />
   );
 }

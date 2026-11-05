@@ -2,13 +2,18 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
-import { toolCall } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
+import { toolCall } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
+import type {
+  ProxyEnvPolicy,
+  SpawnConfiner,
+  ToolConfig,
+  ToolDefinitionConfig,
+} from "../src/interfaces/index.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
@@ -54,25 +59,25 @@ function sessionConfig(): ToolConfig {
 
 interface FinalOutput {
   output: string;
-  stopReason?: string;
+  status?: string;
 }
 
-/** Runs one tool call and returns the final tool_call_output's content and stop_reason. */
+/** Runs one tool call and returns the final tool_call_output's content and status. */
 async function runTool(
   env: Environment,
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<FinalOutput> {
-  let last: OmniMessage | null = null;
+  let last: AmspRecord | null = null;
   for await (const msg of env.executeTool({
     toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId: `call_${name}` }),
     ...(signal ? { signal } : {}),
   })) {
     if ((msg.payload as { type?: string }).type === "tool_call_output") last = msg;
   }
-  const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
-  return { output: p.output ?? "", stopReason: p.stop_reason };
+  const p = (last?.payload ?? {}) as { output?: string; status?: string };
+  return { output: p.output ?? "", status: p.status };
 }
 
 function extractProcessId(output: string): string {
@@ -110,7 +115,7 @@ describe("exec_command — long-running command sessions", () => {
     expect(elapsed).toBeLessThan(2000);
     expect(res.output).toContain("hello");
     expect(res.output).not.toContain("process running with process_id");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("streams output incrementally while the command is running", async () => {
@@ -140,7 +145,7 @@ describe("exec_command — long-running command sessions", () => {
       cmd: "sleep 30",
       yield_time_ms: 300,
     });
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     expect(res.output).toContain("process running with process_id proc-");
   });
 
@@ -157,7 +162,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 2000,
     });
     expect(res.output).toContain("got:penguin");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("input_command with an empty chars polls new output without writing", async () => {
@@ -174,7 +179,7 @@ describe("exec_command — long-running command sessions", () => {
     });
     // The command finishes during polling, yielding the remaining output and exit status.
     expect(res.output).toContain("line3");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("input_command sends Ctrl-C (U+0003) to interrupt a running session", async () => {
@@ -193,7 +198,9 @@ describe("exec_command — long-running command sessions", () => {
     const elapsed = Date.now() - startedAt;
     expect(elapsed).toBeLessThan(3000); // Did not wait for the full sleep 30
     expect(res.output).not.toContain("still running");
-    expect(res.stopReason).toBe("fatal"); // Interrupted by signal -> non-zero exit
+    // The interrupted command ran: its exit status is the result's last note, not a tool failure.
+    expect(res.status).toBe("completed");
+    expect(res.output.trimEnd()).toMatch(/\[(terminated by signal \w+|exit code: \d+)\]$/);
   });
 
   it("input_command rejects chars mixing U+0003 with other content", async () => {
@@ -209,7 +216,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 2000,
     });
     expect(res.output).toContain('send "\\u0003" alone');
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
 
     // The session was not mistakenly killed: still running.
     const poll = await runTool(env, "input_command", { process_id: pid, yield_time_ms: 300 });
@@ -219,7 +226,7 @@ describe("exec_command — long-running command sessions", () => {
   it("input_command reports an unknown process_id without throwing", async () => {
     const res = await runTool(env, "input_command", { process_id: "proc-deadbeef" });
     expect(res.output).toContain("unknown process_id proc-deadbeef");
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
   });
 
   it("input_command ignores writes to a closed stdin pipe without crashing", async () => {
@@ -235,7 +242,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 300,
     });
     expect(res.output).toContain(`process still running with process_id ${pid}`);
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("runs commands through pipes, not a TTY (isTTY=false)", async () => {
@@ -244,7 +251,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 3000,
     });
     expect(res.output).toContain("false");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("hardens the child env against interactive hangs (editor/credentials/pager)", async () => {
@@ -253,7 +260,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 3000,
     });
     expect(res.output).toContain("true|0|cat|dumb");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 
   it("does not start new command sessions after the environment is disposed", async () => {
@@ -264,7 +271,7 @@ describe("exec_command — long-running command sessions", () => {
     });
     expect(res.output).toContain("command session manager disposed");
     expect(res.output).not.toContain("should-not-run");
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
   });
 
   it("delivers output arriving while the consumer is suspended without waiting out the window", async () => {
@@ -487,6 +494,113 @@ describe("harness environment variables never reach a spawned command", () => {
       if (savedInherited === undefined) delete process.env.PENGUIN_API_URL;
       else process.env.PENGUIN_API_URL = savedInherited;
     }
+  });
+});
+
+describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
+  // The hosting server's platform layer supplies a SpawnConfiner getter through
+  // Agent -> Environment -> CommandSessionManager: the confiner sees the exact argv
+  // (shell included) and returns the argv to spawn instead; a throw fails the spawn
+  // closed. Standalone Environments (no getter) keep the historical direct spawn.
+  let confiner: SpawnConfiner | null = null;
+  let confinedEnv: Environment;
+
+  beforeEach(() => {
+    confiner = null;
+    confinedEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      confineSpawn: () => confiner,
+    });
+  });
+  afterEach(() => {
+    confinedEnv.dispose();
+  });
+
+  it("the confiner receives the exact argv plus cwd, and its rewrite is what runs", async () => {
+    let seen: { argv: readonly string[]; cwd: string; workspaceDir: string } | null = null;
+    confiner = (argv, opts) => {
+      seen = { argv, cwd: opts.cwd, workspaceDir: opts.workspaceDir };
+      // Stand-in runner: replaces the invocation wholesale and prints a marker, proving
+      // the child that actually ran is the rewritten argv, not the original shell.
+      return {
+        argv: [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"],
+      };
+    };
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("CONFINED wrapped=");
+    expect(res.output).not.toContain("original\n");
+    expect(seen).not.toBeNull();
+    // The exact argv contract: last element is the command string, preceded by the shell.
+    expect(seen!.argv.at(-1)).toBe("echo original");
+    expect(seen!.argv.length).toBeGreaterThanOrEqual(2);
+    expect(seen!.cwd).toBe(tmp);
+    expect(seen!.workspaceDir).toBe(tmp);
+  });
+
+  it("the Session's scratchpad rides beside the Workspace in the confiner's opts; without one there is no such key", async () => {
+    const scratchpadDir = path.join(tmp, "scratchpad", "session-1");
+    const seen: Array<{ cwd: string; workspaceDir: string; scratchpadDir?: string }> = [];
+    confiner = (_argv, opts) => {
+      seen.push({ ...opts });
+      return { argv: [process.execPath, "-e", "console.log('CONFINED')"] };
+    };
+    const withScratchpad = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      sessionScratchpadDir: scratchpadDir,
+      confineSpawn: () => confiner,
+    });
+    try {
+      const res = await runTool(withScratchpad, "exec_command", { cmd: "echo original" });
+      expect(res.output).toContain("CONFINED");
+    } finally {
+      withScratchpad.dispose();
+    }
+    await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(seen).toStrictEqual([
+      { cwd: tmp, workspaceDir: tmp, scratchpadDir },
+      { cwd: tmp, workspaceDir: tmp },
+    ]);
+  });
+
+  it("a throwing confiner fails the spawn closed: reported as spawn error, nothing runs", async () => {
+    confiner = () => {
+      throw new Error('sandbox mode "workspace-write" requested but no backend is usable');
+    };
+    const res = await runTool(confinedEnv, "exec_command", {
+      cmd: "echo leaked > confine-leak.txt",
+    });
+    expect(res.status).toBe("fatal");
+    expect(res.output).toContain('[spawn error: sandbox mode "workspace-write"');
+    // Fail-closed means the command never executed — not even unconfined.
+    await expect(access(path.join(tmp, "confine-leak.txt"))).rejects.toThrow();
+  });
+
+  it("the getter is re-read at every spawn, so a hot-swapped confiner needs no new Environment", async () => {
+    const first = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(first.output).toContain("unconfined-run");
+    confiner = () => ({ argv: [process.execPath, "-e", "console.log('CONFINED')"] });
+    const second = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(second.output).toContain("CONFINED");
+    expect(second.output).not.toContain("unconfined-run");
+  });
+
+  it("the entries a confiner asks for reach the runner, on top of the assembled environment", async () => {
+    // A runner that is a script must be able to tell its interpreter how to behave (the
+    // desktop app's binary runs a script only under ELECTRON_RUN_AS_NODE); the argv alone
+    // cannot say so. The rest of the environment is still the manager's.
+    confiner = () => ({
+      argv: [
+        process.execPath,
+        "-e",
+        "console.log('RUNNER=' + process.env.PENGUIN_RUNNER_MARK + ' PATH=' + (process.env.PATH ?? '').length)",
+      ],
+      env: { PENGUIN_RUNNER_MARK: "set-by-confiner" },
+    });
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("RUNNER=set-by-confiner");
+    expect(res.output).not.toMatch(/PATH=0\b/);
   });
 });
 
@@ -778,7 +892,7 @@ describe("exec_command — a working directory that is not there", () => {
     expect(res.output).toContain(tmp);
     expect(res.output).not.toContain("ENOENT");
     expect(res.output).not.toContain("spawn bash");
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
   });
 
   it("names a workdir argument that does not resolve, rather than the shell", async () => {
@@ -802,6 +916,6 @@ describe("exec_command — a working directory that is not there", () => {
   it("still runs normally when the Workspace is there", async () => {
     const res = await runTool(env, "exec_command", { cmd: "echo test" });
     expect(res.output).toContain("test");
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Installing THIS server's build onto another machine, from inside the server process —
- * platform code, so the whole capability travels by hot push (see ../hmr/README.md).
+ * platform code, so the whole capability travels by hot push (see packages/hmr/README.md).
  *
  * Nothing installable is produced here. The far side runs the ordinary release installer
  * ONLINE, pinned to this server's own base release, so the program tree — launchers, libs,
@@ -17,17 +17,100 @@
  * directory, the `~/.local/bin/penguin` symlink on POSIX, and the data root's hmr/ state.
  * No sudo, no service units, no profile edits, and the rest of the data root is untouched.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as tar from "tar";
 import { runInstallScriptCommand, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
+import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { connectionTo, looksLikeAuthFailure, runBytes } from "./transport/index.js";
+import type { RemoteLayout } from "./layout.js";
+import { connectionTo } from "./transport/index.js";
+import { sshFailureText, sshRefusal } from "./ssh-failure.js";
+import { parseReleaseReach, releaseReachCommand } from "./diagnose.js";
 import type { MachineChannel } from "./transport/index.js";
+
+/**
+ * The hmr state an install replicates — `harness.json` and `store/` of `hmrDir` — as one
+ * tar.gz, packed in this process rather than by this machine's `tar`.
+ *
+ * In process because the far side is another kind of machine. macOS's bsdtar adds an
+ * AppleDouble `._<name>` member for every file that carries extended attributes (which
+ * files written on a Mac usually do: `com.apple.provenance`), and the far side extracts
+ * those as files: an `archives/._node-pty.tgz` beside the real archive is then "an
+ * archive" the platform tries to unpack at boot. `portable` also drops this machine's
+ * owners and ids, which mean nothing over there. Modes are kept: an exec bit is the one
+ * piece of metadata the store needs (hmr/pushed-build.ts).
+ */
+export async function packHmrState(hmrDir: string): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  const stream = tar.c({ gzip: true, cwd: hmrDir, portable: true }, ["harness.json", "store"]);
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks);
+}
+
+/** The uplink a transfer's deadline is sized for: a slow home line, 256 kbit/s. */
+const SLOW_UPLINK_BYTES_PER_SECOND = 32 * 1024;
+
+/**
+ * How long sending `payload` over the session may take before it counts as hung: the bulk
+ * default, or longer for a payload that would not cross a slow uplink in it — base64 on the
+ * wire (4/3), which is how the session carries stdin (transport/ssh-session.ts).
+ */
+export function transferTimeoutMs(payload: Buffer): number {
+  const seconds = (payload.byteLength * 4) / 3 / SLOW_UPLINK_BYTES_PER_SECOND;
+  return Math.max(10 * 60_000, Math.ceil(seconds * 1000));
+}
+
+/**
+ * One line of the installer's output as a person should see it in the job log, or null for
+ * none. curl's progress bar redraws itself with carriage returns, so its whole run arrives as
+ * one "line" of bars and percentages: what a terminal would show is the last redraw, and a
+ * bare bar says nothing the next line ("Bundle checksum OK.") does not.
+ */
+export function installerLine(raw: string): string | null {
+  const shown = raw
+    .split("\r")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .pop();
+  if (shown === undefined) return null;
+  if (/^[#=O\-\s]*\d+(?:\.\d+)?%$/.test(shown) || /^[#=O\-\s]+$/.test(shown)) return null;
+  return shown;
+}
+
+/**
+ * Why the installer stopped, as its own words: its `error:` lines when it said any (every
+ * refusal it makes is one — install.sh's `fail`), else its last few lines. When the refusal
+ * points at "the error above" — the program it unpacked would not run — the lines just before
+ * it lead: they are the program's own error, such as a C library too old for its Node. The
+ * whole transcript is already in the job log, line by line; a failure's message is what it says.
+ */
+export function installerFailure(output: string): string {
+  const lines = output
+    .split("\n")
+    .map((line) => installerLine(line))
+    .filter((line): line is string => line !== null);
+  const isError = (line: string) => /^error:/i.test(line);
+  const first = lines.findIndex(isError);
+  if (first === -1) {
+    const said = lines.slice(-3).join("\n");
+    return said === "" ? "the installer stopped without a message." : said;
+  }
+  const errors = lines.filter(isError);
+  // The installer's own "… checksum OK." lines come just before the program runs; a line
+  // that says something went well is not the error it points at.
+  const above = errors.some((line) => /\bthe error above\b/i.test(line))
+    ? lines.slice(Math.max(0, first - ABOVE_LINES), first).filter((line) => !/\bOK\.?$/.test(line))
+    : [];
+  return [...above, ...errors].join("\n");
+}
+
+/** How many lines above an installer refusal that points above itself may be the program's own. */
+const ABOVE_LINES = 3;
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -63,46 +146,217 @@ export interface PushPlan {
 }
 
 /**
- * The pushed-state suffix for a display version: the platform bundle's content sha out of a
- * harness.json (`store/platform/<sha>.mjs`), shortened. Falls back to a bare marker for a
- * manifest whose shape this build does not recognize — the suffix is display, not identity;
- * equality checks compare the harness text itself.
+ * The pushed-state suffix of a version: which HARNESS this is — the platform bundle, the CLI
+ * bundle and the web artifact, by the content shas a harness.json names them with
+ * (`store/platform/<sha>.mjs`, `store/cli/<sha>.mjs`, `store/web/<sha>.webz`), folded into one
+ * and shortened. It is what `syncOutOfDate` compares, so it has to move whenever any of the
+ * three does: read off the platform bundle alone, a push that changed only the web app or the
+ * CLI left every machine "up to date" and was never handed over.
+ *
+ * The assets are deliberately no part of it. They are what a harness loads — plugins, the
+ * native modules it pins — not the harness, and are pushed on their own.
+ *
+ * A manifest that names the platform bundle alone keeps that bundle's sha; one whose shape
+ * this build does not recognize gets a bare marker.
  */
 function harnessSuffix(harnessText: string): string {
   try {
-    const parsed = JSON.parse(harnessText) as { platform?: { bundle?: string } };
-    const sha = /([0-9a-f]{8,})\.mjs$/.exec(parsed.platform?.bundle ?? "")?.[1];
-    if (sha !== undefined) return `+hmr.${sha.slice(0, 12)}`;
+    const parsed = JSON.parse(harnessText) as {
+      platform?: { bundle?: string };
+      cli?: { bundle?: string };
+      web?: { manifest?: string };
+    };
+    return suffixOfHarness(parsed.platform?.bundle, parsed.cli?.bundle, parsed.web?.manifest);
   } catch {
-    /* fall through */
+    return "+hmr";
   }
-  return "+hmr";
 }
 
 /**
- * Resolves what this server would install elsewhere.
+ * The suffix for a harness named by its three files, as harnessSuffix describes it: read off a
+ * harness.json here, and off a machine's GET /api/version (runningBuild), whose `bundles` are the
+ * same three paths — so what a machine says it runs is spelled the way a plan's version is.
+ */
+function suffixOfHarness(
+  platformBundle: string | undefined,
+  cliBundle: string | undefined,
+  webManifest: string | undefined,
+): string {
+  const shaOf = (file: string | undefined) => /([0-9a-f]{8,})\.[a-z]+$/.exec(file ?? "")?.[1];
+  const platform = shaOf(platformBundle);
+  if (platform === undefined) return "+hmr";
+  const rest = [shaOf(cliBundle), shaOf(webManifest)].filter(
+    (sha): sha is string => sha !== undefined,
+  );
+  const id =
+    rest.length === 0
+      ? platform
+      : createHash("sha256")
+          .update([platform, ...rest].join("\n"))
+          .digest("hex");
+  return `+hmr.${id.slice(0, 12)}`;
+}
+
+/** The platform bundle's content sha, shortened, out of its path (`store/platform/<sha>.mjs`). */
+function platformSha(bundle: string | undefined): string | null {
+  return /([0-9a-f]{8,})\.mjs$/.exec(bundle ?? "")?.[1]?.slice(0, 12) ?? null;
+}
+
+/** What a machine's server says it runs, read from its GET /api/version. */
+export interface RunningBuild {
+  /** The version of the code answering — what runs there, whatever its disk holds. */
+  release: string;
+  /** For a person, in the spelling a plan uses: `<release>` or `<release>+hmr.<id12>`. */
+  version: string;
+  /** The pushed platform it names (its sha, shortened), or null when nothing is pushed there. */
+  platform: string | null;
+  /**
+   * The code answering is a release while a pushed build of something else is committed on
+   * that machine's disk: the process is not running that build. A server started from the
+   * release's own entry on a root this server pushed to is this case — a release runtime
+   * cannot boot a newer pushed platform and falls back to the one it carries, while the
+   * report's `harness`, which is read from disk, still names the pushed build.
+   *
+   * A source build (a deploy.mjs push, a checkout's image) is never release-stamped, so a
+   * release answering beside one is not it. The image a release build ships IS
+   * release-stamped, and records that release as its revision (deploy.mjs's pushSource): a
+   * release answering beside its own release's image runs that very release's code, whichever
+   * of the two copies it loaded, and is not foreign.
+   */
+  foreign: boolean;
+}
+
+/**
+ * Reads a machine's GET /api/version answer (untrusted text off a wire, so the shape is checked
+ * rather than assumed); null when it holds no version.
+ */
+export function runningBuild(report: unknown): RunningBuild | null {
+  if (report === null || typeof report !== "object") return null;
+  const { version, channel, describe, harness } = report as {
+    version?: unknown;
+    channel?: unknown;
+    describe?: unknown;
+    harness?: unknown;
+  };
+  if (typeof version !== "string" || version === "") return null;
+  if (harness === null || harness === undefined || typeof harness !== "object") {
+    return { release: version, version, platform: null, foreign: false };
+  }
+  const { bundles, source } = harness as {
+    bundles?: { platform?: unknown; cli?: unknown; web?: unknown };
+    source?: { revision?: unknown } | null;
+  };
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  const bundle = text(bundles?.platform);
+  const ownImage = text(describe) !== undefined && text(source?.revision) === describe;
+  return {
+    release: version,
+    version: version + suffixOfHarness(bundle, text(bundles?.cli), text(bundles?.web)),
+    platform: platformSha(bundle) ?? "",
+    foreign: channel === "release" && !ownImage,
+  };
+}
+
+/**
+ * Whether a machine's server runs what `plan` installs: the same pushed platform (its content
+ * sha), or — for a plan with nothing pushed — the same release with nothing pushed either. The
+ * release half of a pushed build's version is not compared: it is the VERSION of the checkout
+ * the build came from, which need not be the release a packaged server stands on.
+ */
+export function runsPlan(running: RunningBuild, plan: PushPlan): boolean {
+  if (plan.harness === null)
+    return running.platform === null && running.version === plan.baseVersion;
+  let ours: string | null = null;
+  try {
+    ours = platformSha(
+      (JSON.parse(plan.harness) as { platform?: { bundle?: string } }).platform?.bundle,
+    );
+  } catch {
+    /* a record this build cannot read: compared by its display version below */
+  }
+  return ours === null ? running.version === plan.version : running.platform === ours;
+}
+
+/**
+ * Whether two harness.json texts name the same build: the same platform, CLI, web and assets
+ * files — the parts, not the record. A machine that took a build through its update channel
+ * writes a harness.json of its own, with its own `pushedAt`, so one build reads as two texts
+ * on two machines while the content-named files they point at are the same. A text this build
+ * cannot read as a harness is compared as text.
+ */
+export function sameBuild(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  const parts = (text: string): string => {
+    try {
+      const h = JSON.parse(text) as {
+        platform?: { bundle?: unknown };
+        cli?: { bundle?: unknown };
+        web?: { manifest?: unknown };
+        assets?: { dir?: unknown };
+      };
+      if (typeof h.platform?.bundle !== "string") return text;
+      return JSON.stringify([
+        h.platform.bundle,
+        h.cli?.bundle ?? null,
+        h.web?.manifest ?? null,
+        h.assets?.dir ?? null,
+      ]);
+    } catch {
+      return text;
+    }
+  };
+  return parts(a) === parts(b);
+}
+
+/**
+ * What this server installs elsewhere when it has been hot-pushed: the release it stands on,
+ * with the pushed state of its data root over it. Null when nothing was pushed here, and for
+ * a server that stands on no installed release (installedRelease).
  *
- * The base release is read from the running install's own tree — the tarball layout
- * (`<root>/lib/dist/penguin.js` under a `lib/`) or the desktop app's staged payload — the
- * same way `penguin --version` would answer. A development checkout has neither, and
- * answers null: it stands on no release the remote could download.
+ * A server nothing was pushed to installs the image its release shipped instead
+ * (shipped-image.ts), and a source checkout builds one (checkout-image.ts): never the bare
+ * release, because every command this side runs on a machine goes through the CLI in that
+ * machine's store (commands.ts's remotePenguin), and a bare release leaves the store empty.
  */
 export function resolvePushPlan(
   dataRoot: string | null,
   argv1: string | undefined = process.argv[1],
 ): PushPlan | null {
-  const baseVersion = baseReleaseVersion(argv1);
-  if (baseVersion === null) return null;
+  const release = installedRelease(argv1);
+  if (release === null || dataRoot === null) return null;
+  const plan = planOver(release.version, path.join(dataRoot, "hmr"));
+  return plan.harness === null ? null : plan;
+}
+
+/** The install image a release build ships, in its program's `dist/` beside the entry. */
+export const SHIPPED_IMAGE = "install-image.gz";
+
+/**
+ * The install image the running release shipped — the body the hot push's packer writes
+ * (`scripts/deploy.mjs --out`), built from the release's own sources — and the release it
+ * stands on. Null for a server that stands on no installed release, and for a release
+ * packaged without one.
+ */
+export function shippedImage(
+  argv1: string | undefined = process.argv[1],
+): { baseVersion: string; body: string } | null {
+  const release = installedRelease(argv1);
+  if (release === null) return null;
+  const body = path.join(release.dir, "dist", SHIPPED_IMAGE);
+  return fs.existsSync(body) ? { baseVersion: release.version, body } : null;
+}
+
+/**
+ * A plan for this base release plus whatever hmr state `hmrDir` holds — the bare release
+ * when it holds none. The one place a plan's version is spelled, for a packaged server's own
+ * store and a checkout's image alike.
+ */
+export function planOver(baseVersion: string, hmrDir: string | null): PushPlan {
   let harness: string | null = null;
-  let hmrDir: string | null = null;
-  if (dataRoot !== null) {
-    const dir = path.join(dataRoot, "hmr");
+  if (hmrDir !== null) {
     try {
-      const text = fs.readFileSync(path.join(dir, "harness.json"), "utf8").trim();
-      if (text !== "") {
-        harness = text;
-        hmrDir = dir;
-      }
+      const text = fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8").trim();
+      if (text !== "") harness = text;
     } catch {
       /* never pushed to: the plan is the bare release */
     }
@@ -110,33 +364,44 @@ export function resolvePushPlan(
   return {
     baseVersion,
     harness,
-    hmrDir,
+    hmrDir: harness === null ? null : hmrDir,
     version: harness === null ? baseVersion : baseVersion + harnessSuffix(harness),
   };
 }
 
 /**
- * The base release version around the process entry, or null when this process stands on no
- * published release. Read from disk rather than from the running artifact's own build info,
- * because a hot-pushed server must still report the BASE it was installed from.
+ * The installed release around the process entry — its version, and the program directory
+ * that holds the entry's `dist/` — or null when this process stands on no published release.
+ * Read from disk rather than from the running artifact's own build info, because a
+ * hot-pushed server must still report the BASE it was installed from.
  */
-function baseReleaseVersion(argv1: string | undefined): string | null {
+export function installedRelease(
+  argv1: string | undefined = process.argv[1],
+): { version: string; dir: string } | null {
   if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
   const parent = path.dirname(path.dirname(argv1));
+  const release = (version: string | null) => (version === null ? null : { version, dir: parent });
 
   // Tarball install: <root>/lib/dist/<entry>.js. lib/package.json is the CLI package's own
   // manifest, and keeps naming the base release while this process runs a pushed bundle.
   if (path.basename(parent) === "lib") {
-    return versionOfManifest(path.join(parent, "package.json"));
+    return release(versionOfManifest(path.join(parent, "package.json")));
   }
 
   // Packaged desktop app: <resources>/app/dist/server.js — the app forks the server as one
   // bundled file (packages/desktop/tsup.config.ts), and asar is off, so these are real files.
+  // <resources> is `resources/` beside the executable on Windows and Linux and
+  // `Contents/Resources/` inside a macOS bundle, so its name is compared without case: an
+  // exact match read every Mac's app as standing on no release, and refused every install.
   // The app's own manifest names the release it was published under, app and tarballs
   // shipping from one tag. A source run sits at packages/desktop rather than under
-  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch.
-  if (path.basename(parent) === "app" && path.basename(path.dirname(parent)) === "resources") {
-    return versionOfManifest(path.join(parent, "package.json"));
+  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch,
+  // and builds its image from the checkout instead (checkout-image.ts).
+  if (
+    path.basename(parent) === "app" &&
+    path.basename(path.dirname(parent)).toLowerCase() === "resources"
+  ) {
+    return release(versionOfManifest(path.join(parent, "package.json")));
   }
   return null;
 }
@@ -149,27 +414,28 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
  */
 export async function detectRemote(
   target: RemoteTarget,
+  layout: RemoteLayout,
   channel?: MachineChannel,
 ): Promise<{ identity: RemoteIdentity } | { error: string }> {
   const conn = channel ?? connectionTo(target);
-  const posix = await conn.exec(POSIX_PROBE);
+  const posix = await conn.exec(posixProbe(layout));
   const identity = parseProbeOutput(posix.stdout);
   if (identity) return { identity };
   // The session's output is merged, so ssh's own words arrive as stdout.
   const said = posix.stdout.trim();
-  if (posix.code !== 0 && looksLikeAuthFailure({ ...posix, stderr: said })) {
-    return {
-      error: `${said}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
-  const windows = await conn.oneShot(WINDOWS_PROBE, { timeoutMs: 30_000 });
+  // ssh itself got no session — a host key, a key, a name, a route — so there is no shell to
+  // ask in either dialect, and a second connection would only wait for the same refusal. The
+  // transport leads such words with what they mean (ssh-session.ts); said again here only
+  // when they did not come through it.
+  const signIn = { password: target.password !== undefined };
+  const refused = posix.code !== 0 ? sshRefusal(said, target.alias, signIn) : null;
+  if (refused !== null) return { error: refused };
+  const windows = await conn.oneShot(windowsProbe(layout), { timeoutMs: 30_000 });
   const identityWin = parseProbeOutput(windows.stdout);
   if (identityWin) return { identity: identityWin };
-  if (windows.code !== 0 && looksLikeAuthFailure(windows)) {
-    return {
-      error: `${windows.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
+  const refusedWin =
+    windows.code !== 0 ? sshFailureText(windows.stderr, target.alias, signIn) : null;
+  if (refusedWin !== null) return { error: refusedWin };
   const words = said || windows.stderr.trim();
   return {
     error:
@@ -177,6 +443,18 @@ export async function detectRemote(
       (words === "" ? "" : ` It said: ${words}`),
   };
 }
+
+/**
+ * Fetches release `version`'s package for `target` (`linux-x64`, `darwin-arm64`…) on this
+ * side: its file, or why there is none.
+ */
+export type CarryRelease = (
+  version: string,
+  target: string,
+) => Promise<{ ok: true; file: string } | { ok: false; detail: string }>;
+
+/** A scratch directory name mktemp made over there: absolute, and nothing a shell would read. */
+const SCRATCH_DIR = /^\/[A-Za-z0-9._/-]+$/;
 
 export type RemoteInstallOutcome =
   | { kind: "already-installed"; version: string; identity: RemoteIdentity }
@@ -216,15 +494,23 @@ export async function installOnRemote(opts: {
    * what puts the machine back within reach.
    */
   forceInstaller?: boolean;
+  /** Which installation on that machine this is: the profile's program directory and root. */
+  layout: RemoteLayout;
+  /**
+   * The release package for a machine that cannot download it itself — fetched (or read
+   * from cache) on THIS side, as a local file (machines/release-cache.ts). Absent, a POSIX
+   * install is not checked for reach: the installer downloads, or fails in its own words.
+   */
+  carryRelease?: CarryRelease;
 }): Promise<RemoteInstallOutcome> {
-  const { target, plan } = opts;
+  const { target, plan, layout } = opts;
   const conn = opts.channel ?? connectionTo(target);
   const say = opts.onProgress ?? (() => {});
 
   let identity = opts.identity;
   if (identity === undefined) {
     say("Asking what that machine is…");
-    const detected = await detectRemote(target, conn);
+    const detected = await detectRemote(target, layout, conn);
     if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
     identity = detected.identity;
     say(`${identity.platform}-${identity.arch}.`);
@@ -232,16 +518,22 @@ export async function installOnRemote(opts: {
 
   const baseCurrent =
     identity.installedVersion === plan.baseVersion && opts.forceInstaller !== true;
-  if (baseCurrent && identity.harness === plan.harness) {
+  if (baseCurrent && sameBuild(identity.harness, plan.harness)) {
     return { kind: "already-installed", version: plan.version, identity };
   }
-  if (baseCurrent) {
+  if (baseCurrent && identity.harness !== null) {
     // Same release, different pushed state: a hot update, not an install. Handing it over
     // as files and restarting the process would swap the code under a server that may not
     // be able to claim it — a runtime older than the pushed platform warns, falls back to
     // its packaged default, and carries on serving, so the restart looks like a success
     // from here and the machine is recorded at a version it is not running. The update
     // channel asks the machine itself and comes back with its answer, refusals included.
+    //
+    // Not for a machine whose store is EMPTY. Nothing this side runs there can answer — every
+    // command goes through the CLI in that store (commands.ts's remotePenguin), so no update
+    // channel was ever started — and a release server installed without its harness ended
+    // exactly so. The store is replicated below instead, with no installer, and the install
+    // restarts the server onto it.
     return { kind: "state-only", identity };
   }
 
@@ -259,6 +551,8 @@ export async function installOnRemote(opts: {
   }
 
   let windowsTmp: { local: string; remote: string } | null = null;
+  /** A scratch directory over there holding a carried release package, removed on the way out. */
+  let scratch: string | null = null;
   try {
     const output: string[] = [];
     if (!baseCurrent) {
@@ -279,7 +573,7 @@ export async function installOnRemote(opts: {
         };
       }
 
-      say(`Installing release ${plan.baseVersion} (downloaded on the remote)…`);
+      say(`Installing release ${plan.baseVersion}…`);
       // Where the script ends up decides how it is invoked, so resolve that first and let the
       // command itself say whether stdin has to carry it.
       let where: Parameters<typeof runInstallScriptCommand>[1];
@@ -297,47 +591,69 @@ export async function installOnRemote(opts: {
       } else {
         where = { platform: identity.platform };
       }
-      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where);
+      // Where the release comes from. The machine downloads it itself when it reaches GitHub
+      // or the mirror; when it reaches neither — an air-gapped host, a network that blocks
+      // both — this side fetches the package and carries it over the session, and the
+      // installer installs that file (`--archive`) with no network at all.
+      let release: string | { archive: string } = `v${plan.baseVersion}`;
+      if (identity.platform !== "win32" && opts.carryRelease !== undefined) {
+        const carried = await carryOver(
+          conn,
+          target,
+          plan.baseVersion,
+          identity,
+          opts.carryRelease,
+          say,
+        );
+        if ("failed" in carried) return { kind: "failed", ...carried.failed };
+        if (carried.archive !== null) {
+          scratch = carried.scratch;
+          release = { archive: carried.archive };
+        }
+      }
+      const step = runInstallScriptCommand(release, where, layout);
       // The script rides the session's stdin as a heredoc, and the far side's own progress
       // is relayed as it arrives rather than after the minutes an install can take. A Windows
       // host runs its copied script on a connection of its own (no session to ride).
       const install = step.scriptOnStdin
-        ? await conn.stream(step.command, { input: installer, onLine: say })
+        ? await conn.stream(step.command, {
+            input: installer,
+            onLine: (line) => {
+              const shown = installerLine(line);
+              if (shown !== null) say(shown);
+            },
+          })
         : await conn.oneShot(step.command);
       if (install.code !== 0) {
         return {
           kind: "failed",
           step: "install",
-          detail: `${install.stdout.trim()}\n${install.stderr.trim()}`.trim(),
+          detail: installerFailure(`${install.stdout}\n${install.stderr}`),
         };
       }
       output.push(install.stdout.trim());
     }
 
-    if (plan.hmrDir !== null && identity.harness !== plan.harness) {
+    if (plan.hmrDir !== null && !sameBuild(identity.harness, plan.harness)) {
       say("Replicating the pushed version…");
       // harness.json and store/ only: uploads/ is this machine's scratch, not state. Packed
       // here, then handed to the machine's tar on the session's stdin.
-      const packed = await runBytes("tar", [
-        "-czf",
-        "-",
-        "-C",
-        plan.hmrDir,
-        "harness.json",
-        "store",
-      ]);
-      if (packed.code !== 0) {
+      let packed: Buffer;
+      try {
+        packed = await packHmrState(plan.hmrDir);
+      } catch (err) {
         return {
           kind: "failed",
           step: "replicate the pushed version",
-          detail: packed.stderr.trim() || `tar exited ${packed.code}`,
+          detail: err instanceof Error ? err.message : String(err),
         };
       }
-      const unpack = unpackStoreCommand(identity.platform);
+      say(`Sending it (${(packed.byteLength / 1048576).toFixed(1)} MB)…`);
+      const unpack = unpackStoreCommand(identity.platform, layout);
       const sync =
         identity.platform === "win32"
-          ? await conn.oneShot(unpack, { input: packed.stdout })
-          : await conn.stream(unpack, { input: packed.stdout });
+          ? await conn.oneShot(unpack, { input: packed })
+          : await conn.stream(unpack, { input: packed, timeoutMs: transferTimeoutMs(packed) });
       if (sync.code !== 0) {
         return {
           kind: "failed",
@@ -358,7 +674,7 @@ export async function installOnRemote(opts: {
     // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
     // have tried again. A false success here does not just mislead, it seals itself in.
     say("Checking what it ended up with…");
-    const after = await detectRemote(target, conn);
+    const after = await detectRemote(target, layout, conn);
     if ("error" in after) {
       return {
         kind: "failed",
@@ -383,7 +699,7 @@ export async function installOnRemote(opts: {
     // has to still make it true afterwards. Scoped to a plan that HAD a pushed state: a
     // base-only install neither carries nor removes one, and must not be failed for a remote
     // hmr directory it was never asked to touch.
-    if (plan.hmrDir !== null && after.identity.harness !== plan.harness) {
+    if (plan.hmrDir !== null && !sameBuild(after.identity.harness, plan.harness)) {
       return {
         kind: "failed",
         step: "verify the install",
@@ -395,8 +711,85 @@ export async function installOnRemote(opts: {
 
     return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {
-    // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
-    // one deletes its own copy as part of the install command; this is the local original.
+    // Nothing else to clean on a POSIX remote: the installer was never a file there. A
+    // Windows one deletes its own copy as part of the install command; this is the local
+    // original.
     if (windowsTmp !== null) fs.rmSync(windowsTmp.local, { force: true });
+    if (scratch !== null) await conn.exec(`rm -rf "${scratch}"`);
   }
+}
+
+/**
+ * Settles where a POSIX machine's release comes from: nothing to carry when it reaches a
+ * source (`archive: null`), a refusal when both sources answered and neither has the release,
+ * else the package fetched here and sent into a scratch directory there.
+ */
+async function carryOver(
+  conn: MachineChannel,
+  target: RemoteTarget,
+  version: string,
+  identity: RemoteIdentity,
+  carryRelease: CarryRelease,
+  say: (line: string) => void,
+): Promise<
+  | { archive: null }
+  | { archive: string; scratch: string }
+  | { failed: { step: string; detail: string } }
+> {
+  const platform = `${identity.platform}-${identity.arch}`;
+  const asked = await conn.exec(releaseReachCommand(version));
+  const reach = parseReleaseReach(asked.stdout);
+  if (reach.oss === "ok" || reach.github === "ok") return { archive: null };
+  if (reach.oss === "missing" && reach.github === "missing") {
+    return {
+      failed: {
+        step: "download the release",
+        detail:
+          `release v${version} has no ${platform} package on GitHub or the mirror — it is not ` +
+          `published (yet). A source checkout installs the release its VERSION names.`,
+      },
+    };
+  }
+  say(
+    `${target.alias} cannot reach GitHub or the release mirror; fetching release ${version} ` +
+      `for ${platform} here to send it over ssh…`,
+  );
+  const fetched = await carryRelease(version, platform);
+  if (!fetched.ok) {
+    return {
+      failed: {
+        step: "download the release",
+        detail:
+          `${target.alias} cannot reach GitHub or the release mirror, and this computer could ` +
+          `not fetch release ${version} for it either: ${fetched.detail}`,
+      },
+    };
+  }
+  const made = await conn.exec(`mktemp -d "\${TMPDIR:-/tmp}/penguin-release.XXXXXX"`);
+  const scratch = made.stdout.trim().split("\n").pop()?.trim() ?? "";
+  if (made.code !== 0 || !SCRATCH_DIR.test(scratch)) {
+    return {
+      failed: {
+        step: "send the release",
+        detail: `could not make a scratch directory there: ${made.stdout.trim() || "mktemp said nothing"}`,
+      },
+    };
+  }
+  const bytes = fs.readFileSync(fetched.file);
+  const archive = `${scratch}/${path.basename(fetched.file)}`;
+  say(`Sending release ${version} (${(bytes.byteLength / 1048576).toFixed(1)} MB)…`);
+  const sent = await conn.stream(`cat > "${archive}"`, {
+    input: bytes,
+    timeoutMs: transferTimeoutMs(bytes),
+  });
+  if (sent.code !== 0) {
+    await conn.exec(`rm -rf "${scratch}"`);
+    return {
+      failed: {
+        step: "send the release",
+        detail: sent.stdout.trim() || `the copy exited ${sent.code}`,
+      },
+    };
+  }
+  return { archive, scratch };
 }

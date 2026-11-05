@@ -9,14 +9,16 @@
  * through long files.
  *
  * Images (png/jpeg/gif/webp, ≤5MB; `file_path` may also be an http(s) URL, which is only ever
- * an image source) are recognized by magic number, then — for a URL — the response
- * content-type, then the extension, and loaded through image-source.ts. What happens next is
- * decided by the injected `services.visionDescriber`, present exactly when the session model
- * does not accept images:
+ * an image source) take the image branch by magic number or extension and are loaded through
+ * image-source.ts, where the format is decided by the bytes (magic number) alone — anything
+ * else is refused with a hint to convert it first. What happens next is decided by the
+ * injected `services.visionDescriber`, present exactly when the session model does not
+ * accept images:
  * - absent (the session model views images): yields a one-line `image/png, 123.4 kB` delta and
  *   returns the image via `ToolResult.images` for Environment to attach (a single streaming
  *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);
- * - present: the image and the caller's `prompt` (default: a detailed description) go in one
+ * - present: the image and the caller's `prompt` (default: a detailed description; only a
+ *   text-only model is handed the argument, see selectBuiltinToolsForModel) go in one
  *   one-off request to the Project's `vision_model`, whose text deltas stream back as this
  *   tool's own output; nothing of that request (thinking, token_usage) leaks into the parent
  *   session stream. Some providers flatly 400 on a tool_result carrying an image, which is why
@@ -47,9 +49,11 @@
  */
 import { modelVisiblePath } from "../../internal/model-visible-path.js";
 import path from "node:path";
-import { open, realpath, stat } from "node:fs/promises";
-import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { realpath } from "node:fs/promises";
+import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
+import type { FsPort } from "./fs-port.js";
+import { imageUrlMessage, partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type {
   EnvironmentServices,
   LLMInterface,
@@ -59,6 +63,7 @@ import type {
 } from "../../interfaces/index.js";
 import { formatSize, isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
 import { missingPathHint } from "./path-hint.js";
+import { describeArgumentError } from "./tool-arguments.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -180,6 +185,7 @@ async function scanWindow(
   filePath: string,
   offset: number,
   limit: number,
+  fs: FsPort,
   signal?: AbortSignal,
 ): Promise<ScanOutcome> {
   const end = offset + limit - 1;
@@ -219,57 +225,54 @@ async function scanWindow(
     currentHasBytes = false;
   };
 
-  const fd = await open(filePath, "r");
-  try {
-    const chunk = Buffer.alloc(CHUNK_BYTES);
-    let prevByte = -1; // For CRLF detection across chunk boundaries
-    for (;;) {
-      if (signal?.aborted) {
-        out.aborted = true;
-        return out;
-      }
-      const toRead = Math.min(CHUNK_BYTES, READ_FILE_SCAN_CAP_BYTES - scanned);
-      if (toRead <= 0) {
-        // Scan cap: with no window line produced the request cannot be served (fails with
-        // guidance); with a partial window, return it plus a lower-bound total.
-        out.capBeforeWindow = out.lines.length === 0;
-        out.total = completedLines + (currentHasBytes ? 1 : 0);
-        return out;
-      }
-      const { bytesRead } = await fd.read(chunk, 0, toRead, scanned);
-      if (bytesRead === 0) {
-        // EOF: a final line without a trailing newline still counts.
-        if (currentHasBytes) finishLine();
-        out.total = completedLines;
-        out.totalKnown = true;
-        return out;
-      }
-      scanned += bytesRead;
-      let from = 0;
-      for (let i = 0; i < bytesRead; i += 1) {
-        const b = chunk[i]!;
-        if (b === 0) {
-          out.binary = true;
-          return out;
-        }
-        if (b === 0x0a) {
-          if (prevByte === 0x0d) out.sawCRLF = true;
-          if (i > from) {
-            currentHasBytes = true;
-            if (inWindow()) appendRun(chunk, from, i);
-          }
-          finishLine();
-          from = i + 1;
-        }
-        prevByte = b;
-      }
-      if (from < bytesRead) {
-        currentHasBytes = true;
-        if (inWindow()) appendRun(chunk, from, bytesRead);
-      }
+  let prevByte = -1; // For CRLF detection across chunk boundaries
+  for (;;) {
+    if (signal?.aborted) {
+      out.aborted = true;
+      return out;
     }
-  } finally {
-    await fd.close();
+    const toRead = Math.min(CHUNK_BYTES, READ_FILE_SCAN_CAP_BYTES - scanned);
+    if (toRead <= 0) {
+      // Scan cap: with no window line produced the request cannot be served (fails with
+      // guidance); with a partial window, return it plus a lower-bound total.
+      out.capBeforeWindow = out.lines.length === 0;
+      out.total = completedLines + (currentHasBytes ? 1 : 0);
+      return out;
+    }
+    // One chunk per round trip through the port: a confined Session reads through its
+    // sandboxed helper, so the loop asks for a range rather than holding a descriptor.
+    const chunk = await fs.readRange(filePath, scanned, toRead);
+    const bytesRead = chunk.length;
+    if (bytesRead === 0) {
+      // EOF: a final line without a trailing newline still counts.
+      if (currentHasBytes) finishLine();
+      out.total = completedLines;
+      out.totalKnown = true;
+      return out;
+    }
+    scanned += bytesRead;
+    let from = 0;
+    for (let i = 0; i < bytesRead; i += 1) {
+      const b = chunk[i]!;
+      if (b === 0) {
+        out.binary = true;
+        return out;
+      }
+      if (b === 0x0a) {
+        if (prevByte === 0x0d) out.sawCRLF = true;
+        if (i > from) {
+          currentHasBytes = true;
+          if (inWindow()) appendRun(chunk, from, i);
+        }
+        finishLine();
+        from = i + 1;
+      }
+      prevByte = b;
+    }
+    if (from < bytesRead) {
+      currentHasBytes = true;
+      if (inWindow()) appendRun(chunk, from, bytesRead);
+    }
   }
 }
 
@@ -295,8 +298,8 @@ async function* readImageSource(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
   describer: VisionDescriberService | undefined,
-  delta: (output: string) => OmniMessage,
-): AsyncGenerator<OmniMessage, ToolResult | void> {
+  delta: (output: string) => AmspRecord,
+): AsyncGenerator<AmspRecord, ToolResult | void> {
   const { signal } = ctx;
   let proxy: ConfiguredDescriber | null = null;
   if (describer !== undefined) {
@@ -305,15 +308,16 @@ async function* readImageSource(
       // Checked before loading: an unreadable image is not what stands between this session
       // and image reading, the missing vision model is.
       yield delta(NO_VISION_MODEL_MESSAGE);
-      return { stopReason: "fatal" };
+      return { status: "fatal" };
     }
   }
 
-  const res = await loadImage(source, ctx.workspaceDir, signal);
+  const fs = ctx.fs ?? localFsPort;
+  const res = await loadImage(source, ctx.workspaceDir, signal, fs, fs.sandboxed);
   if (!res.ok) {
-    if (res.reason === "aborted") return { stopReason: "aborted" };
+    if (res.reason === "aborted") return { status: "aborted" };
     yield delta(res.message);
-    return { stopReason: "fatal" };
+    return { status: "fatal" };
   }
   const dataUrl = `data:${res.mime};base64,${res.bytes.toString("base64")}`;
 
@@ -356,8 +360,10 @@ async function* readImageSource(
       yield delta(p.text);
     }
   }
-  if (signal?.aborted) return { stopReason: "aborted" };
-  if (!outcome || outcome.status !== "completed") {
+  if (signal?.aborted) return { status: "aborted" };
+  // A description stopped at its output cap is still the text that streamed: the model reads
+  // what arrived.
+  if (!outcome || (outcome.status !== "completed" && outcome.errorCode !== "output_truncated")) {
     const detail =
       outcome && "errorMessage" in outcome && outcome.errorMessage
         ? `: ${outcome.errorMessage}`
@@ -365,7 +371,7 @@ async function* readImageSource(
     yield delta(
       `${streamedAny ? "\n" : ""}Vision model (${proxy.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
     );
-    return { stopReason: "fatal" };
+    return { status: "fatal" };
   }
   if (!streamedAny) yield delta("[vision model returned no text]");
 }
@@ -388,37 +394,54 @@ export function createReadFileTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
-        yield delta(`Missing required argument "file_path" for ${definition.name}.`);
-        return { stopReason: "fatal" };
+        yield delta(
+          describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
+        );
+        return { status: "fatal" };
       }
       const offsetArg = coerceCount(args["offset"], 1);
       if (!offsetArg.ok) {
-        yield delta(`Invalid "offset": expected a number (got ${JSON.stringify(args["offset"])}).`);
-        return { stopReason: "fatal" };
+        yield delta(
+          describeArgumentError(definition, args, {
+            argument: "offset",
+            kind: "invalid",
+            detail: `expected a number (got ${JSON.stringify(args["offset"])})`,
+          }),
+        );
+        return { status: "fatal" };
       }
       const offset = Math.max(1, offsetArg.value);
       const limitArg = coerceCount(args["limit"], DEFAULT_READ_FILE_LIMIT);
       if (!limitArg.ok || limitArg.value <= 0) {
         yield delta(
-          `Invalid "limit": expected a positive number (got ${JSON.stringify(args["limit"])}).`,
+          describeArgumentError(definition, args, {
+            argument: "limit",
+            kind: "invalid",
+            detail: `expected a positive number (got ${JSON.stringify(args["limit"])})`,
+          }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const limit = limitArg.value;
 
-      // A URL is only ever an image source: no path resolution, no text window.
+      // A URL is only ever an image source: no path resolution, no text window. It is
+      // fetched through the Session's port, so a confined Session's network level holds.
       if (isHttpUrl(filePath)) {
         return yield* readImageSource(filePath, args, ctx, describer, delta);
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // Every file-system effect goes through the Session's port: its sandboxed helper
+      // when the Session is confined, this process otherwise (see fs-port.ts).
+      const fs = ctx.fs ?? localFsPort;
+      const { sandboxed } = fs;
       // Secret stores are refused by name: read_file is auto-approved under read-only
       // approval, so it needs its own guard (aligned with the system prompt's ban).
       // secretStoreHit resolves symlinks and compares case-insensitively — the lexical
@@ -429,61 +452,59 @@ export function createReadFileTool(
         yield delta(
           `Refusing to read "${filePath}": ${secretHit} holds the user's secrets and must never enter the conversation.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       let size: number;
       try {
-        const st = await stat(resolved);
-        if (st.isDirectory()) {
+        const st = await fs.stat(resolved);
+        if (st.isDirectory) {
           yield delta(
             `Cannot read "${filePath}": it is a directory. Pass the path of a file inside it.`,
           );
-          return { stopReason: "fatal" };
+          return { status: "fatal" };
         }
         size = st.size;
       } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
-        const code = (err as NodeJS.ErrnoException).code;
+        if (signal?.aborted) return { status: "aborted" };
+        const code = errorCode(err);
         // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
         // so it gets the same diagnosis instead of a raw errno message.
         if (code === "ENOENT" || code === "ENOTDIR") {
-          const hint = await missingPathHint(resolved);
+          const hint = await missingPathHint(resolved, fs);
           yield delta(
             `File not found: "${filePath}". Absolute paths are supported; relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).${hint}`,
           );
         } else {
-          const message = err instanceof Error ? err.message : String(err);
-          yield delta(`Failed to read "${filePath}": ${message}`);
+          yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
         }
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
       if (size === 0) {
         yield delta(`"${filePath}" is an empty file (0 lines).`);
         return;
       }
 
       // Images take the image branch whatever offset/limit say; everything else is text.
-      if (await looksLikeImageFile(resolved)) {
+      if (await looksLikeImageFile(resolved, fs)) {
         return yield* readImageSource(filePath, args, ctx, describer, delta);
       }
 
       let scan: ScanOutcome;
       try {
-        scan = await scanWindow(resolved, offset, limit, signal);
+        scan = await scanWindow(resolved, offset, limit, fs, signal);
       } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
-        const message = err instanceof Error ? err.message : String(err);
-        yield delta(`Failed to read "${filePath}": ${message}`);
-        return { stopReason: "fatal" };
+        if (signal?.aborted) return { status: "aborted" };
+        yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
+        return { status: "fatal" };
       }
-      if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };
+      if (scan.aborted || signal?.aborted) return { status: "aborted" };
       if (scan.binary) {
         yield delta(
           `"${filePath}" looks like a binary file (contains NUL bytes) and is not a supported image (png/jpeg/gif/webp). Use shell commands to inspect it.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (scan.capBeforeWindow) {
         const mb = Math.round(READ_FILE_SCAN_CAP_BYTES / (1024 * 1024));
@@ -492,13 +513,13 @@ export function createReadFileTool(
             `(scanned ${scan.total} line${scan.total === 1 ? "" : "s"}). The offset is too deep or the file has extremely long ` +
             `lines — use shell commands (e.g. sed -n '${offset},${offset + limit - 1}p') for this file.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (scan.totalKnown && offset > scan.total) {
         yield delta(
           `Offset ${offset} is past the end of "${filePath}" (${scan.total} line${scan.total === 1 ? "" : "s"} total).`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // Render the window, self-budgeted below the tool's output cap so the trailing notes
