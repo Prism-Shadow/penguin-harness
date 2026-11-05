@@ -204,6 +204,7 @@ export * from "./components/navigation/nav-list/nav-list";
 // frame with its geometry, and the charts built on them — the token donut, the sparkline, the
 // ring gauge and the legend.
 export * from "./components/charts/chart-style";
+export * from "./components/charts/chart-defs";
 export * from "./components/charts/marks/geom";
 export * from "./components/charts/marks/marks";
 export * from "./components/charts/marks/timeline-bar";

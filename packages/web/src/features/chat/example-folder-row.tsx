@@ -14,6 +14,9 @@
  * is placed by grid line rather than by DOM order, so the DOM keeps the panel right after its
  * folder's row, which is the order a phone shows it in — one column, the panel under the row,
  * as an accordion — and the order a screen reader walks.
+ *
+ * Both callers' rows are the start page's `folder` slot (`ui-start`), so a theme dresses the
+ * built-in folders and the shortcuts folder alike.
  */
 import { Chevron, GlyphIcon, ICONS, NAV_FILL, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 
@@ -48,6 +51,7 @@ export function ExampleFolderRow({
   return (
     <button
       type="button"
+      data-slot="folder"
       aria-expanded={open}
       onClick={onOpen}
       className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-2 text-left text-sm transition-colors duration-150 @md:col-start-1 ${

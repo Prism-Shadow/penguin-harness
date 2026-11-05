@@ -17,9 +17,12 @@
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
  * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
  * style, of which the theme's CSS shows its own), the seventeenth, `ui-widget` (a reply's
- * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04), and the eighteenth,
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04), the eighteenth,
  * `ui-edge` (the edge of a boxed button, a text field or the person's own bubble, which Doodle
- * draws by hand; 2026-11-04). This suite holds the source to it:
+ * draws by hand; 2026-11-04), and the nineteenth to twenty-third, the section hooks `ui-start`,
+ * `ui-library`, `ui-ledger`, `ui-empty` and `ui-run` (a section a theme may dress as a whole: the
+ * start page, the model library, a ledger of figures, an empty state, the run indicator;
+ * 2026-11-05). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -41,16 +44,26 @@
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
  *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
- *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
- *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
- *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
- *   wherever a `data-fold` is written.
+ *   wherever a `data-part` is written, and a drawing's sets are the ones a recipe shows (a glyph's
+ *   `line`, `octicons` and `pixel`, the spinner's `arc` and `scribble`, an empty state's art's
+ *   `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which the foundation's
+ *   layout motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
+ *   wherever a `data-fold` is written; the run indicator's state is `running` and an empty
+ *   state's form `page` or `slot`;
+ * - every slot a section hook's anatomy names is written by one of the modules that draw the
+ *   section, so a theme's recipe never styles a part that does not exist.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HOOKS } from "../src/hooks";
-import { analyzeFile, matchesPolicyPath, scanSourceRoots, unscannedRoots } from "../src/testing";
+import {
+  analyzeFile,
+  findSourceFile,
+  matchesPolicyPath,
+  scanSourceRoots,
+  unscannedRoots,
+} from "../src/testing";
 import type { ClassToken, FileAnalysis, JsxElementInfo, SourceFile } from "../src/testing";
 import { REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
 
@@ -74,6 +87,11 @@ const APPENDIX_A = [
   "ui-glyph",
   "ui-widget",
   "ui-edge",
+  "ui-start",
+  "ui-library",
+  "ui-ledger",
+  "ui-empty",
+  "ui-run",
 ];
 
 /**
@@ -93,7 +111,7 @@ const APPENDIX_A = [
  * for a settings row;
  * activity for the transcript's work in progress and the harness's events — the activity card's
  * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
- * one-line note.
+ * one-line note; and each section hook for the one component that draws its section.
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
@@ -194,7 +212,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // blocks render on, and the chart and resources blocks (2026-10-19).
   "ui-widget": ["WidgetSurface"],
   // A box's own edge (2026-11-04): a button with a fill or a line, the text fields and select
-  // triggers on the shared control look, and the person's own message bubble.
+  // triggers on the shared control look, and the person's own message bubble; and (2026-11-05)
+  // a badge and its numeric form, a checkbox's box and a radio's disc, native and drawn, and the
+  // start page's Agent and Workspace pickers' pills.
   "ui-edge": [
     "Button",
     "Input",
@@ -204,8 +224,75 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "SearchInput",
     "FormPickerTrigger",
     "MessageBubble",
+    "Badge",
+    "Count",
+    "Checkbox",
+    "CheckboxBox",
+    "Radio",
+    "RadioDisc",
+    "AgentSelect",
+    "WorkspaceSelect",
   ],
+  // The section hooks (2026-11-05): the start page, the model library, a ledger of figures (the
+  // usage summary card, the company KPI tile, a Benchmark card's score), an empty state and the
+  // chat toolbar's run indicator.
+  "ui-start": ["StartDashboard"],
+  "ui-library": ["ModelsPage"],
+  "ui-ledger": ["SummaryCard", "StatTile", "BenchmarkCard"],
+  "ui-empty": ["EmptyState"],
+  "ui-run": ["RunStatus"],
 };
+
+/**
+ * A section hook's anatomy: the slots its recipes may style, and the modules that write them. A
+ * slot is written where its part is drawn, so the start page's modules include its folder rows'
+ * and the composer card's (whose own `data-slot="composer"` is the page's composer slot).
+ */
+const SECTIONS: Readonly<Record<string, { slots: readonly string[]; modules: readonly string[] }>> =
+  {
+    "ui-start": {
+      slots: [
+        "brand",
+        "title",
+        "tagline",
+        "version",
+        "counts",
+        "count",
+        "composer",
+        "examples",
+        "folders",
+        "folder",
+        "rows",
+        "row",
+      ],
+      modules: [
+        "packages/web/src/features/chat/start-dashboard.tsx",
+        "packages/web/src/features/chat/example-folder-row.tsx",
+        "packages/web/src/features/chat/shortcuts-folder.tsx",
+        "packages/ui/src/components/chat/composer/composer.tsx",
+      ],
+    },
+    "ui-library": {
+      slots: ["group", "head", "cards", "card", "name", "tags", "price", "state"],
+      modules: ["packages/web/src/features/models/models-page.tsx"],
+    },
+    "ui-ledger": {
+      slots: ["row", "tile", "label", "figure"],
+      modules: [
+        "packages/web/src/features/usage/usage-page.tsx",
+        "packages/ui/src/components/data/stat-tile/stat-tile.tsx",
+        "packages/web/src/features/benchmark/benchmark-page.tsx",
+      ],
+    },
+    "ui-empty": {
+      slots: ["art", "title", "description", "action"],
+      modules: ["packages/ui/src/components/feedback/empty-state/empty-state.tsx"],
+    },
+    "ui-run": {
+      slots: ["mark", "label"],
+      modules: ["packages/web/src/features/chat/run-status.tsx"],
+    },
+  };
 
 /** CSS keywords that start with `ui-` and are not classes. */
 const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded"]);
@@ -224,13 +311,19 @@ const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
 const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart", "resources"]);
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
+const RUN_STATES = new Set(["running"]);
+const EMPTY_FORMS = new Set(["page", "slot"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
 const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
-/** A glyph's one part (the duotone body under its line drawing), and its three sets. */
+/** A glyph's one part (the duotone body under its line drawing). */
 const GLYPH_PARTS = new Set(["duo"]);
-const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/**
+ * The sets a drawing made in every style at once is drawn in: a glyph's three, the spinner's
+ * arc and scribble, and an empty state's art in the line set and as a doodle.
+ */
+const DRAWING_SETS = new Set(["line", "octicons", "pixel", "arc", "scribble", "doodle"]);
 /** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
 const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
@@ -274,6 +367,14 @@ function componentOf(analysis: FileAnalysis, token: ClassToken): string | null {
   return owners[0]?.name ?? null;
 }
 
+/** Every literal `data-slot` a module writes, on an element or a component, wherever it sits. */
+function slotsWritten(file: SourceFile): string[] {
+  return analyzeFile(file).elements.flatMap((element) => {
+    const slot = element.attributes.get("data-slot");
+    return typeof slot === "string" ? [slot] : [];
+  });
+}
+
 /** The literal `data-slot` values of an element's direct children, with the child. */
 function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementInfo }[] {
   return element.children.flatMap((child) => {
@@ -286,7 +387,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the eighteen of Appendix A, each with its hosts", () => {
+  it("are the twenty-three of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -471,8 +572,17 @@ describe("style hooks", () => {
           );
         }
         const set = element.attributes.get("data-set");
-        if (typeof set === "string" && !GLYPH_SETS.has(set)) {
-          problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
+        if (typeof set === "string" && !DRAWING_SETS.has(set)) {
+          problems.push(`${at} data-set="${set}" is not line|octicons|pixel|arc|scribble|doodle`);
+        }
+        // A section names its state or form as a literal the recipes select on, or an expression.
+        const runState = element.attributes.get("data-state");
+        if (names.has("ui-run") && typeof runState === "string" && !RUN_STATES.has(runState)) {
+          problems.push(`${at} .ui-run data-state="${runState}" is not running`);
+        }
+        const form = element.attributes.get("data-form");
+        if (names.has("ui-empty") && typeof form === "string" && !EMPTY_FORMS.has(form)) {
+          problems.push(`${at} .ui-empty data-form="${form}" is not page or slot`);
         }
         const fold = element.attributes.get("data-fold");
         if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {
@@ -499,6 +609,30 @@ describe("style hooks", () => {
       }),
     );
     expect(broken).toEqual([]);
+  });
+
+  it("write every slot a section's anatomy names, in the modules that draw the section", () => {
+    const missing = Object.entries(SECTIONS).flatMap(([hook, { slots, modules }]) => {
+      const written = new Set<string>();
+      const unscanned: string[] = [];
+      for (const id of modules) {
+        const file = findSourceFile(SCAN, id);
+        if (file === undefined) {
+          unscanned.push(`${hook}: ${id} is not a scanned module`);
+          continue;
+        }
+        for (const slot of slotsWritten(file)) written.add(slot);
+      }
+      return [
+        ...unscanned,
+        ...slots.filter((slot) => !written.has(slot)).map((slot) => `${hook}: no "${slot}"`),
+      ];
+    });
+    expect(
+      missing,
+      "A section hook's anatomy names only the slots its modules write: a recipe styling a slot " +
+        "no host writes styles nothing.",
+    ).toEqual([]);
   });
 
   it("name only hosts that exist", () => {
@@ -625,6 +759,26 @@ describe("the hook checks, on known shapes", () => {
     const phases = analysis.elements.map((e) => e.attributes.get("data-fold"));
     expect(phases).toEqual(["closing", "shut", null]);
     expect(phases.filter((p) => typeof p === "string" && !FOLD_PHASES.has(p))).toEqual(["shut"]);
+  });
+
+  it("read a section's literal slots on an element, a component or a branch, never an expression", () => {
+    const slots = slotsWritten(
+      file(
+        "f.tsx",
+        [
+          "export function Start({ open }: { open: boolean }) {",
+          "  return (",
+          '    <div className="ui-start">',
+          '      <Heading level={1} data-slot="title">Name</Heading>',
+          '      {open && <ul data-slot="rows" />}',
+          '      <p data-slot={open ? "row" : undefined} />',
+          "    </div>",
+          "  );",
+          "}",
+        ].join("\n"),
+      ),
+    );
+    expect(slots).toEqual(["title", "rows"]);
   });
 
   it("read a stream's state and its caret as the recipes do", () => {

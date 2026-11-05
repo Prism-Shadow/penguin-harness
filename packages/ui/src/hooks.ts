@@ -27,7 +27,7 @@
  * |                    | sites' `SiteToc` and `SiteSidebarNav` section labels     |                                                       |
  * | `ui-display`      | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
- * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
+ * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`; the spinner draws twice, direct children `data-set="arc" \| "scribble"` |
  * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
  * |                    | hosts: the transcript's cards and harness notes, the     |                                                       |
@@ -46,7 +46,7 @@
  * |                    | event of the harness's (an `event` `ActivityGroup`,      |                                                       |
  * |                    | `TranscriptNote`)                                        |                                                       |
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
- * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
+ * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"`; a filled mark (bar, area, point) carries its paint as `--_paint`; `ChartDefs` holds the patterns `#ui-hatch-1` … `#ui-hatch-8`, `#ui-hatch-cache-read`, `#ui-hatch-cache-write`, `#ui-hatch-output` and the filter `#ui-rough` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
  * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"` (and `data-settling` for the moments a settled host eases its veil away); while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends; under a `fade` reveal, runs of text that just arrived (or elements that arrived whole) carry `data-arrive` until they have faded in |
  * |                    | reply, a thinking row, a compaction summary, a tool's    |                                                       |
@@ -58,9 +58,22 @@
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
  * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>` |
  * |                    | a button with a fill or a line, a text field or a select |                                                       |
- * |                    | trigger, the person's own message bubble; hosts:         |                                                       |
- * |                    | `Button`, `Input`, `Textarea`, `Select`, `OptionMenu`,   |                                                       |
- * |                    | `SearchInput`, `FormPickerTrigger`, `MessageBubble`      |                                                       |
+ * |                    | trigger, the person's own message bubble, a badge, a     |                                                       |
+ * |                    | checkbox's box and a radio's disc; hosts: `Button`,      |                                                       |
+ * |                    | `Input`, `Textarea`, `Select`, `OptionMenu`,             |                                                       |
+ * |                    | `SearchInput`, `FormPickerTrigger`, `MessageBubble`,     |                                                       |
+ * |                    | `Badge`, `Count`, `Checkbox`, `CheckboxBox`, `Radio`,    |                                                       |
+ * |                    | `RadioDisc`, and the start page's pickers, `AgentSelect` |                                                       |
+ * |                    | and `WorkspaceSelect`                                    |                                                       |
+ * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`; the open folder is `aria-expanded="true"` |
+ * |                    | `StartDashboard`                                         |                                                       |
+ * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "tags" \| "price" \| "state"`; a pinned group `data-pinned="true"` |
+ * |                    | `ModelsPage`                                             |                                                       |
+ * | `ui-ledger`        | a reading of numbers set apart as a ledger; hosts:       | its readings are `data-slot="row"` (a label beside its figure) or `data-slot="tile"` (the two stacked), each holding a `data-slot="label"` and a `data-slot="figure"` |
+ * |                    | `SummaryCard`, `StatTile`, `BenchmarkCard`               |                                                       |
+ * | `ui-empty`         | an empty state; host: `EmptyState`                       | `data-form="page" \| "slot"`; descendants carry `data-slot="art" \| "title" \| "description" \| "action"`; the page form's `art` holds one drawing per style, direct children `data-set="line" \| "doodle"` |
+ * | `ui-run`           | the conversation's run indicator in the chat toolbar;    | `data-state="running"`; descendants carry `data-slot="mark" \| "label"` |
+ * |                    | host: `RunStatus`                                        |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -240,7 +253,33 @@
  * bubble. The host writes the class and nothing else; a field that failed validation already
  * says so in `aria-invalid`. Primer, Frost and Console leave it alone. Doodle draws every such
  * edge, and the frames, overlays, notices and widgets the other hooks name, as a pen line laid
- * over the host's 1px border (`themes/cartoon.css`).
+ * over the host's 1px border (`themes/cartoon.css`). Since 2026-11-05 it also names a badge (a
+ * pill a person reads, and its numeric form, `Count`) and a checkbox's box and a radio's disc (a box
+ * a person presses), in their native form and as the drawing a pressable option holds
+ * (`CheckboxBox`, `RadioDisc`), so a theme that draws one draws every form of it; and the start
+ * page's Agent and Workspace pickers, whose triggers are pills a person presses.
+ *
+ * The five section hooks (2026-11-05) — `ui-start`, `ui-library`, `ui-ledger`, `ui-empty` and
+ * `ui-run` — let a theme dress a whole section its own way where tokens and the hooks above reach
+ * only its parts: the start page, the model library, a ledger of figures, an empty state and the
+ * run indicator. The host writes the class and names its parts in `data-slot`s, as `ui-shell`
+ * does for the window, and keeps every string, link, handler and accessible name; a theme
+ * arranges and decorates what is there and never adds content. A slot is written wherever its
+ * part is drawn, which is not always in the host's own module: the start page's folder rows are
+ * `example-folder-row.tsx`'s and its composer slot is the composer card's own `data-slot`. Primer,
+ * Frost and Console leave all five alone. The run indicator is drawn only while a turn runs —
+ * a compaction is the stream's banner, and a settled conversation shows nothing — so `running` is
+ * the one state it writes.
+ *
+ * A small drawing that carries no data is drawn in every style at once, and the theme's CSS shows
+ * its own, as `ui-glyph` draws an icon: the spinner is an arc on a track (`data-set="arc"`) and a
+ * pencil spiral (`data-set="scribble"`), which theme.css hides until a theme shows it; an empty
+ * state's art is a line drawing (`data-set="line"`) beside a theme's own, and theme.css hides the
+ * whole art slot, so no theme shows art until it says so; and the chart patterns and filter
+ * (`ChartDefs`, mounted once by `AppShell`) are in every document a chart is drawn in and used by
+ * a theme's chart recipe alone. A filled chart mark takes its fill from `--_paint`, its own colour
+ * as the primitive resolved it, so a recipe may fill the mark with a pattern and still outline it
+ * in that colour.
  */
 export const HOOKS = [
   "ui-glass",
@@ -261,6 +300,11 @@ export const HOOKS = [
   "ui-glyph",
   "ui-widget",
   "ui-edge",
+  "ui-start",
+  "ui-library",
+  "ui-ledger",
+  "ui-empty",
+  "ui-run",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

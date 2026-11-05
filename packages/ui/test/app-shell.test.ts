@@ -56,7 +56,17 @@ describe("AppShell", () => {
 
   it("mounts its overlays beside the columns, in no slot", () => {
     const html = shell({ overlays: text("Dialog") });
-    expect(html).toMatch(/<span>Page<\/span><\/div><span>Dialog<\/span><\/div>$/);
+    expect(html).toMatch(/<span>Page<\/span><\/div><span>Dialog<\/span>/);
+  });
+
+  it("defines the chart patterns and filter once, out of flow and unannounced", () => {
+    const html = shell();
+    expect(html.match(/id="ui-rough"/g)).toHaveLength(1);
+    expect(html).toContain('id="ui-hatch-1"');
+    expect(html).toContain('id="ui-hatch-output"');
+    const defs = html.slice(html.lastIndexOf("<svg", html.indexOf('id="ui-hatch-1"')));
+    expect(defs).toMatch(/^<svg aria-hidden="true" width="0" height="0"/);
+    expect(classTokens(defs)).toEqual(expect.arrayContaining(["absolute", "pointer-events-none"]));
   });
 });
 

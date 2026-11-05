@@ -12,7 +12,9 @@
  *
  * Each primitive writes `data-part` (and `data-series` where a series index exists), so a theme
  * may still restyle a part in CSS — a dashed grid, square points (a point is a rect whose `rx`
- * is its radius, so `rx: 0` squares it), round joins.
+ * is its radius, so `rx: 0` squares it), round joins. A filled mark (a bar, an area, a point)
+ * carries its paint as `--_paint` and takes its fill from it in theme.css, so a theme may fill it
+ * with something else (a hatch from `ChartDefs`) and still draw its outline in the mark's colour.
  *
  * A mark's colour is a `ChartPaint`: a palette slot, one of the named roles (the reference line,
  * the Token kinds), or an `ink` — a Tailwind text class the mark paints with as currentColor,
@@ -48,6 +50,17 @@ export function resolvePaint(
 /** `data-series` for a paint: the 1-based slot, like the tokens (none for a role or an ink). */
 const seriesAttr = (paint: ChartPaint) =>
   "series" in paint ? { "data-series": paint.series + 1 } : {};
+
+/**
+ * A filled mark's style: its colour, which an outline drawn in `currentColor` reads, and the
+ * same paint as `--_paint`, which theme.css fills it from — `currentColor` for an ink, whose
+ * colour is its class's.
+ */
+const fillStyle = (color: string | undefined): CSSProperties =>
+  ({
+    ...(color !== undefined ? { color } : {}),
+    "--_paint": color ?? "currentColor",
+  }) as CSSProperties;
 
 /** The gap a flush bar leaves to its neighbour, px. */
 const FLUSH_SEAM = 1;
@@ -113,11 +126,10 @@ export function ChartBar({
     "data-part": "bar",
     ...seriesAttr(paint),
     className: `${ink} ${className}`.trim(),
-    fill: "currentColor",
     ...(chart.barOpacity < 1 ? { fillOpacity: chart.barOpacity } : {}),
     ...outline,
     opacity,
-    style: color !== undefined ? { color } : undefined,
+    style: fillStyle(color),
   };
   const d = top && !flush ? barPath(x, y, width, height, chart.barRadius) : null;
   return d === null ? (
@@ -203,11 +215,10 @@ export function ChartArea({
       data-part="area"
       {...seriesAttr(paint)}
       d={`${curvePath(points, chart.curve)} ${back} Z`}
-      fill="currentColor"
       stroke="none"
       opacity={chart.areaOpacity * strength}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }
@@ -244,10 +255,9 @@ export function ChartPoint({
       width={2 * r}
       height={2 * r}
       rx={r}
-      fill="currentColor"
       opacity={opacity}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }

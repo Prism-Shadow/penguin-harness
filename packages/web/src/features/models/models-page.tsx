@@ -1536,7 +1536,11 @@ export function ModelsPage() {
             }`}
           />
         )}
-        <WallpaperSurface className="overflow-hidden rounded-md border border-line bg-surface">
+        <WallpaperSurface
+          data-slot="group"
+          data-pinned={pinned || undefined}
+          className="overflow-hidden rounded-md border border-line bg-surface"
+        >
           {/* Group header: collapse button (logo + vendor name + count + chevron) +
               the group's actions on the right, in group-header.ts's order. Actions are
               separate elements because buttons can't nest. The row is a size
@@ -1553,6 +1557,7 @@ export function ModelsPage() {
               shows on. */}
           <div
             {...drag.header}
+            data-slot="head"
             className={`group @container flex flex-wrap items-center gap-x-2 bg-control-well pr-1.5 transition-colors duration-150 hover:bg-control-hover${canDrag && !searching ? " cursor-grab" : ""}`}
           >
             {/* The left cluster: the collapse button, sized to what it shows, the star right
@@ -1666,6 +1671,7 @@ export function ModelsPage() {
             {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
             <div className="min-h-0" inert={!open}>
               <div
+                data-slot="cards"
                 className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
               >
                 {group.rows.length === 0 ? (
@@ -1815,7 +1821,8 @@ export function ModelsPage() {
       ) : groups.length === 0 ? (
         <EmptyState title={S.models.noSearchResults} />
       ) : (
-        <div className="space-y-3">
+        // ui-library: the model library as a whole — its groups, their heads and their cards.
+        <div className="ui-library space-y-3">
           {layout.shown.map(renderGroup)}
           {layout.fold !== null && (
             <>
@@ -2612,16 +2619,20 @@ export function ModelCard({
     // answers no question a reader of this list is asking, and spending the meta line's width
     // on it pushes out the figures that do.
     priced ? (
-      <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
+      <span data-slot="price">
+        {priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}
+      </span>
     ) : null,
     // Key status (see keyStatusText): the mask of the key the model is used with — its own, its
     // group's or a detected env fallback's — a plain "configured" for a key typed but not yet
     // saved, or "not configured". An inherited key says where it comes from on hover only: the
     // line reads the same whatever the source, and the source is a detail.
     keyNote !== undefined ? (
-      <span data-tooltip={keyNote}>{keyStatusText(row, group)}</span>
+      <span data-slot="state" data-tooltip={keyNote}>
+        {keyStatusText(row, group)}
+      </span>
     ) : (
-      keyStatusText(row, group)
+      <span data-slot="state">{keyStatusText(row, group)}</span>
     ),
   ].filter((v) => v !== null);
 
@@ -2666,6 +2677,7 @@ export function ModelCard({
     // problem the same way). A click on the rest of the box opens the dialog too
     // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
     <Card
+      data-slot="card"
       padding="none"
       interactive
       onClick={cardBodyClick(onOpen)}
@@ -2680,7 +2692,7 @@ export function ModelCard({
             but it is a detail you go looking for rather than one you scan by, and it is a click
             away in the config dialog; the width it was taking now belongs to the name. */}
         <span className="flex w-full min-w-0 items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
@@ -2703,7 +2715,7 @@ export function ModelCard({
             absent line shows up as uneven padding rather than as a shorter card. Its height is
             the tags' own — an empty row holds one invisible tag, which is that height in every
             theme — so a card with marks and a card without are exactly as tall. */}
-        <span className="flex w-full flex-wrap items-center gap-1">
+        <span data-slot="tags" className="flex w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
             <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
               {tag.label}

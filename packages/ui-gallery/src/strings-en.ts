@@ -378,7 +378,14 @@ export const en: GalleryStrings = {
       "ui-widget":
         "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
       "ui-edge":
-        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, their own message bubble",
+        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, their own message bubble, a badge, a checkbox, a radio, a picker's pill",
+      "ui-start":
+        "the start page (a new conversation) as a whole: the brand, three counts, the composer and the example folders",
+      "ui-library": "the model library: a provider's group box and the model cards in it",
+      "ui-ledger":
+        "figures set apart as a ledger: the usage summary cards, a company KPI tile, a Benchmark card's score",
+      "ui-empty": "an empty state: its art, title, description and action",
+      "ui-run": "the run indicator in a conversation's toolbar: the glyph and the word Running",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream":
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",

@@ -11,8 +11,9 @@
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
  * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
- * with, which icon set a `ui-glyph` shows until a theme says, and (animations.css) the entrance
- * and exit classes the components name. Token VALUES live only in
+ * with, which icon set a `ui-glyph` (and which drawing the spinner and an empty state) shows
+ * until a theme says, the chart marks' fill from their `--_paint`, and (animations.css) the
+ * entrance and exit classes the components name. Token VALUES live only in
  * `themes/*.css`, and so do the user's accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
  * `ACCENT_PRESETS`).
  *
@@ -276,6 +277,17 @@
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* A filled chart mark (a bar, the fill under a line, a point) carries its paint as `--_paint`,
+     the colour the chart primitive resolved or `currentColor` for an ink, and takes its fill from
+     it here. It sits in the base layer, the step a presentation attribute had, so any theme recipe
+     or utility that fills a mark wins without `!important`, while the mark keeps its own colour
+     to outline it in. `--_paint` is private to the primitives and the recipes (not a token). */
+  :is(rect, path)[data-part="bar"],
+  path[data-part="area"],
+  rect[data-part="point"] {
+    fill: var(--_paint);
   }
 
   /*
@@ -661,6 +673,17 @@
   }
   .ui-glyph [data-part="duo"] {
     opacity: var(--ui-icon-duo-opacity, 0);
+  }
+
+  /* The other drawings made in every style at once: every theme starts from the spinner's arc and
+     from no empty-state art at all, and a theme that draws its own shows it in its own file — the
+     scribble in place of the arc, or the art slot with its own drawing in place of the line one. */
+  .ui-live[data-live="spinner"] > [data-set="scribble"] {
+    display: none;
+  }
+  .ui-empty [data-slot="art"],
+  .ui-empty [data-slot="art"] > [data-set="doodle"] {
+    display: none;
   }
 
   /* A stream host whose edge is live (the caret is its last child) says so as a number a theme's
