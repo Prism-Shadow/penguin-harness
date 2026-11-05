@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `skills`
+- **PR:** [#1489](https://github.com/Prism-Shadow/penguin-harness/pull/1489)
 
 [中文版](2026-11-04-workbench-or-app-question.zh.md)
 
