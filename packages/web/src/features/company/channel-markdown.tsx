@@ -13,6 +13,9 @@
  * - **Line breaks.** A composer with Shift+Enter for a new line makes single newlines
  *   meaningful; Markdown folds them into spaces. They become hard breaks here.
  *
+ * The organization's files a message cites are drawn as path capsules (path-capsule.tsx), by
+ * that module's pass running first: a path is never split at an `@` in it.
+ *
  * A mention reaches the renderer as `<data value="agent:ceo">`: mdast has no mention node, no
  * Markdown syntax produces a `<data>` element (so claiming it in the components map collides
  * with nothing the parser or KaTeX emits), and it is the one HTML element that already means "a
@@ -25,6 +28,7 @@ import type { Components, Options } from "react-markdown";
 import { Md } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
+import { PATH_COMPONENTS, remarkPathCapsules } from "./path-capsule";
 import {
   mentionIsMe,
   mentionLabel,
@@ -196,16 +200,22 @@ function MentionNode({ value }: { value?: string | number | readonly string[] })
   );
 }
 
-/** The one element a channel body overrides; the chat renderer's `pre` and `a` stay as they are. */
-export const CHANNEL_COMPONENTS: Components = { [MENTION_TAG]: MentionNode };
+/** The elements a channel body overrides; the chat renderer's `pre` and `a` stay as they are. */
+export const CHANNEL_COMPONENTS: Components = { ...PATH_COMPONENTS, [MENTION_TAG]: MentionNode };
 
-/** A message body. The caller supplies the `md-body md-compact` container it renders into. */
-export function ChannelMessageBody({ text }: { text: string }) {
+/**
+ * A message body, in the Project `projectId` (whose data paths become capsules). The caller
+ * supplies the `md-body md-compact` container it renders into.
+ */
+export function ChannelMessageBody({ text, projectId }: { text: string; projectId: string }) {
   const reader = useContext(ReaderContext);
-  // The plugin list is rebuilt only when the names change: a new array is a new pipeline.
+  // The plugin list is rebuilt only when its inputs change: a new array is a new pipeline.
   const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
-    () => [[remarkChannelMessage, { names: mentionNameHandles(reader.names) }]],
-    [reader.names],
+    () => [
+      [remarkPathCapsules, { projectId }],
+      [remarkChannelMessage, { names: mentionNameHandles(reader.names) }],
+    ],
+    [projectId, reader.names],
   );
   return <Md text={text} extraPlugins={plugins} components={CHANNEL_COMPONENTS} />;
 }

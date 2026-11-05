@@ -4,6 +4,11 @@
  * Project's data directory, a code span holding one path — where one stops against the
  * punctuation and CJK around it, folder or file, and the capsules the ticket Markdown draws
  * for them (react-dom/server static markup, node env).
+ *
+ * A writer may name the path: `[label](<app_data_dir>/…)`, which CommonMark leaves as text, and a
+ * Markdown link whose destination is a data path both draw one capsule reading the label, while a
+ * link anywhere else stays a link. An organization's conversation draws its replies' paths the
+ * same way through PathCapsulesProvider, and any other conversation leaves them as written.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -16,7 +21,8 @@ import {
   splitPaths,
 } from "../src/features/company/path-capsules";
 import type { PathPiece } from "../src/features/company/path-capsules";
-import { PathMarkdown, PathText } from "../src/features/company/path-capsule";
+import { Md } from "@prismshadow/penguin-ui";
+import { PathCapsulesProvider, PathMarkdown, PathText } from "../src/features/company/path-capsule";
 import { S } from "../src/lib/strings";
 
 const scope = { projectId: "default_project" };
@@ -144,6 +150,28 @@ describe("splitPaths", () => {
     expect(paths(`构建到${site}了`)).toEqual([site]);
   });
 
+  it("reads a labelled citation as one path carrying its label", () => {
+    expect(
+      splitPaths(`Details: [Weekly submissions](${LAB}/workspace/growth/weekly.md).`, scope),
+    ).toEqual([
+      { kind: "text", text: "Details: " },
+      {
+        kind: "path",
+        path: `${LAB}/workspace/growth/weekly.md`,
+        label: "Weekly submissions",
+      },
+      { kind: "text", text: "." },
+    ]);
+  });
+
+  it("reads a citation with a blank label as a bare path, and still finds the bare paths around it", () => {
+    expect(splitPaths(`[ ](${LAB}/a.md) and ${LAB}/b.md`, scope)).toEqual([
+      { kind: "path", path: `${LAB}/a.md` },
+      { kind: "text", text: " and " },
+      { kind: "path", path: `${LAB}/b.md` },
+    ]);
+  });
+
   it("keeps a whole <placeholder> segment inside the path", () => {
     expect(paths("<app_data_dir>/agents/<agent_id>/agent_state/skills/")).toEqual([
       "<app_data_dir>/agents/<agent_id>/agent_state/skills/",
@@ -257,6 +285,31 @@ describe("ticket Markdown with capsules", () => {
     expect(capsuleCount(html)).toBe(0);
   });
 
+  it("draws a labelled citation as one capsule reading its label, the full path in the tooltip", () => {
+    const path = `${LAB}/workspace/growth/weekly-submissions.md`;
+    const html = render(`Details: [Weekly submissions](${path})`);
+    expect(capsuleCount(html)).toBe(1);
+    expect(html).toContain(">Weekly submissions</span></button>");
+    expect(html).toContain(`data-tooltip="${attr(S.company.pathCapsule.hint(path))}"`);
+    expect(html).not.toContain("](");
+  });
+
+  it("keeps a citation's label when code follows it directly", () => {
+    const html = render(`[Weekly](${LAB}/workspace/weekly.md)\`run\``);
+    expect(capsuleCount(html)).toBe(1);
+    expect(html).toContain(">Weekly</span></button>");
+    expect(html).toContain("<code>run</code>");
+  });
+
+  it("draws a link to a path in the data directory as a capsule reading its label, and leaves other links as links", () => {
+    const path = "/home/ada/.penguin/data/default_project/organizations/co_lab/handbook/hiring.md";
+    const html = render(`[Hiring](${path}) · [Docs](https://example.test/docs)`);
+    expect(capsuleCount(html)).toBe(1);
+    expect(html).toContain(">Hiring</span></button>");
+    expect(html).toContain('href="https://example.test/docs"');
+    expect(html).not.toContain(`href="${path}"`);
+  });
+
   it("finds paths inside list items and emphasis", () => {
     const html = render(`- **Data**: ${LAB}/workspace/data/\n- ${LAB}/workspace/b.csv`);
     expect(html).toContain(">data</span></button>");
@@ -290,6 +343,30 @@ describe("ticket Markdown with capsules", () => {
     expect(capsuleCount(html)).toBe(1);
     const copied = S.company.pathCapsule.copy(`${LAB}/workspace/my_notes/`);
     expect(html).toContain(`aria-label="${attr(copied)}"`);
+  });
+});
+
+describe("an organization's conversation", () => {
+  const reply = `Done. [Report](${LAB}/workspace/report.md) and ${LAB}/workspace/data/`;
+  const render = (projectId: string | null) =>
+    renderToStaticMarkup(
+      createElement(PathCapsulesProvider, {
+        projectId,
+        children: createElement(Md, { text: reply }),
+      }),
+    );
+
+  it("draws the paths its replies cite as capsules", () => {
+    const html = render("default_project");
+    expect(capsuleCount(html)).toBe(2);
+    expect(html).toContain(">Report</span></button>");
+    expect(html).toContain(">data</span></button>");
+  });
+
+  it("leaves them as written in any other conversation", () => {
+    const html = render(null);
+    expect(capsuleCount(html)).toBe(0);
+    expect(html).toContain("[Report](&lt;app_data_dir&gt;/organizations/");
   });
 });
 

@@ -593,7 +593,7 @@ export function ChannelView() {
               timeLabel={S.company.channels.sentAt(at)}
               footer={renderRefs(m)}
             >
-              <ChannelMessageBody text={m.text} />
+              <ChannelMessageBody text={m.text} projectId={projectId} />
             </ChannelBubble>
           );
         })}
