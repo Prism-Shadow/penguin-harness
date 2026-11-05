@@ -9,15 +9,24 @@
  * travels as it is on disk, minus what never travels in any package (agent-state-layout.ts) and,
  * for workbenches, the server's own files beside their source (`.build/`, `.harness/`,
  * `.plugin.json`, `node_modules/`) and their data unless it is selected. Only regular files
- * travel: a link is left out, so nothing outside the Agent State can leak through one. A name
- * this server's own import would refuse (one Windows cannot hold) is left out too.
+ * travel: a link is left out — a part's own directory too, when it is one (the preview notes
+ * it) — so nothing outside the Agent State can leak through one. A name this server's own
+ * import would refuse (one Windows cannot hold) is left out too. In the Trace files, the
+ * Agent's vault values are replaced (vault-scrub.ts) and counted in `manifest.redacted`, which is
+ * why `manifest.json` is the zip's last entry.
+ *
+ * An export is bounded by what an import accepts: a selection past the import's entry cap, past
+ * what it inflates, or holding a file past its per-entry cap is refused (413), and the preview
+ * says so first.
  */
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { Zip, ZipDeflate } from "fflate";
 import { agentDir, agentStateDir, buildInfo, loadAgentVault } from "@prismshadow/penguin-core";
 import type {
+  AgentArchiveNote,
   AgentArchiveManifest,
   AgentArchiveParts,
   AgentArchivePreview,
@@ -30,7 +39,9 @@ import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { isWorkbenchId } from "../workbenches/store.js";
 import { ARCHIVE_FORMAT, DIR_PARTS, MANIFEST_FILE, PART_DIRS, SESSIONS_FILE } from "./manifest.js";
 import type { DirPart } from "./manifest.js";
+import { MAX_ENTRIES, MAX_ENTRY_BYTES, MAX_INFLATED_BYTES } from "./limits.js";
 import { redactSystemConfig } from "./mcp-credentials.js";
+import { VaultScrub, vaultPatterns } from "./vault-scrub.js";
 import { selectSessions } from "./traces.js";
 import type { SelectedSession, TraceSelectionDeps } from "./traces.js";
 
@@ -44,12 +55,17 @@ export interface ArchiveEntry {
   source: { file: string } | { bytes: Uint8Array };
   size: number;
   mtime: Date;
+  /** A Trace file: the vault's values are taken out of it on the way. */
+  trace?: true;
 }
 
 export interface PlannedArchive {
+  /** Written last, once the Trace files' vault values are counted. */
   manifest: AgentArchiveManifest;
-  /** `manifest.json` first. */
+  /** Every entry but `manifest.json`, in zip order. */
   entries: ArchiveEntry[];
+  /** The values `zipStream` takes out of the Trace files. */
+  vault: Readonly<Record<string, string>>;
   preview: AgentArchivePreview;
   /** `<agentId>-<yyyymmdd>.zip`, the local date of the export. */
   fileName: string;
@@ -182,8 +198,22 @@ export async function planArchive(
       }),
     );
   }
+  const notes: AgentArchiveNote[] = [];
+  /** Whether `dir` (relative to `agent_state/`) is a real directory to walk; a link is noted. */
+  const walkable = async (dir: string): Promise<boolean> => {
+    const stat = await fs.lstat(path.join(stateDir, dir)).catch(() => null);
+    if (stat === null || stat.isDirectory()) return stat !== null;
+    if (stat.isSymbolicLink()) {
+      notes.push({
+        code: "link_skipped",
+        subject: dir,
+        message: `agent_state/${dir} is a link, so the export leaves it out.`,
+      });
+    }
+    return false;
+  };
   const tools: FoundFile[] = [];
-  await walk(path.join(stateDir, "tools"), "tools", () => true, tools);
+  if (await walkable("tools")) await walk(path.join(stateDir, "tools"), "tools", () => true, tools);
   entries.push(...tools.map(fileEntry));
 
   const preview: AgentArchivePreview = {
@@ -196,14 +226,17 @@ export async function planArchive(
     },
     traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
     totalBytes: 0,
+    entries: 0,
     vaultKeys: [],
     redacted: config.redacted,
+    notes,
   };
   for (const part of DIR_PARTS) {
     if (!parts[part]) continue;
     const found: FoundFile[] = [];
     const dir = PART_DIRS[part];
-    await walk(path.join(stateDir, dir), dir, partFilter(part, parts), found);
+    if (await walkable(dir))
+      await walk(path.join(stateDir, dir), dir, partFilter(part, parts), found);
     preview.parts[part] = {
       files: found.length,
       bytes: found.reduce((sum, file) => sum + file.size, 0),
@@ -234,6 +267,7 @@ export async function planArchive(
           source: { file: file.path },
           size: file.size,
           mtime: now,
+          trace: true,
         });
         preview.traces.files += 1;
         preview.traces.bytes += file.size;
@@ -248,7 +282,8 @@ export async function planArchive(
     preview.traces.newest = topLevel.length > 0 ? sessionRef(topLevel.at(-1)!) : null;
   }
 
-  const vaultKeys = Object.keys(await loadAgentVault(deps.root, projectId, agentId)).sort();
+  const vault = await loadAgentVault(deps.root, projectId, agentId);
+  const vaultKeys = Object.keys(vault).sort();
   preview.vaultKeys = vaultKeys;
   const manifest: AgentArchiveManifest = {
     format: ARCHIVE_FORMAT,
@@ -262,20 +297,32 @@ export async function planArchive(
     vaultKeys,
     redacted: config.redacted,
   };
-  const manifestBytes = encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`);
-  entries.unshift({
-    name: `${prefix}${MANIFEST_FILE}`,
-    source: { bytes: manifestBytes },
-    size: manifestBytes.byteLength,
-    mtime: now,
-  });
-  preview.totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+  const manifestBytes = manifestOf(manifest).byteLength;
+  preview.entries = entries.length + 1;
+  preview.totalBytes = entries.reduce((sum, entry) => sum + entry.size, manifestBytes);
+  const oversized = entries.find((entry) => entry.size > MAX_ENTRY_BYTES);
+  if (preview.entries > MAX_ENTRIES) {
+    preview.refusal = { reason: "entries", limit: MAX_ENTRIES };
+  } else if (preview.totalBytes > MAX_INFLATED_BYTES) {
+    preview.refusal = { reason: "inflated", limit: MAX_INFLATED_BYTES };
+  } else if (oversized !== undefined) {
+    preview.refusal = {
+      reason: "entry",
+      limit: MAX_ENTRY_BYTES,
+      subject: oversized.name.slice(prefix.length),
+    };
+  }
   return {
     manifest,
     entries,
+    vault,
     preview,
     fileName: `${agentId}-${formatLocalDate(now).replaceAll("-", "")}.zip`,
   };
+}
+
+function manifestOf(manifest: AgentArchiveManifest): Uint8Array {
+  return encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 /** A zip records a DOS timestamp: 1980 to 2099, local time. */
@@ -288,6 +335,8 @@ function zipTime(date: Date): Date {
 }
 
 const READ_CHUNK = 64 * 1024;
+/** `O_NOFOLLOW` where the platform has it (Windows has none; its listing returns no link as a file). */
+const NO_FOLLOW = fsConstants.O_NOFOLLOW ?? 0;
 
 /** One entry's deflate stream, stamped with its file's time. */
 function deflated(entry: ArchiveEntry): ZipDeflate {
@@ -296,8 +345,12 @@ function deflated(entry: ArchiveEntry): ZipDeflate {
   return file;
 }
 
-/** The zip's bytes, entry after entry, each file read from disk as it is written. */
-async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint8Array> {
+/**
+ * The zip's bytes, entry after entry, each file read from disk as it is written and each Trace
+ * file scrubbed of the vault's values on the way; `manifest.json` last, its `redacted` naming
+ * how many values were taken out.
+ */
+async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
   const queue: Uint8Array[] = [];
   let failure: Error | null = null;
   const zip = new Zip((err, data) => {
@@ -317,7 +370,9 @@ async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint
     queue.length = 0;
     return out;
   };
-  for (const entry of entries) {
+  const patterns = vaultPatterns(plan.vault);
+  let scrubbed = 0;
+  for (const entry of plan.entries) {
     if ("bytes" in entry.source) {
       const file = deflated(entry);
       zip.add(file);
@@ -325,15 +380,18 @@ async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint
     } else {
       let handle: FileHandle;
       try {
-        handle = await fs.open(entry.source.file, "r");
+        // A link put where a listed file was is not followed.
+        handle = await fs.open(entry.source.file, fsConstants.O_RDONLY | NO_FOLLOW);
       } catch (err) {
         // Listed a moment ago and gone by now (an Agent's edit, a Session deleted): left out.
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ELOOP") continue;
         throw err;
       }
       try {
         const file = deflated(entry);
         zip.add(file);
+        const scrub = entry.trace === true && patterns !== null ? new VaultScrub(patterns) : null;
         // Up to the size listed: a Session still running exports the prefix written by then.
         let left = entry.size;
         while (left > 0) {
@@ -341,11 +399,13 @@ async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint
           const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, null);
           if (bytesRead === 0) break;
           left -= bytesRead;
-          file.push(chunk.subarray(0, bytesRead));
+          const read = chunk.subarray(0, bytesRead);
+          file.push(scrub === null ? read : scrub.push(read));
           const out = produced();
           if (out !== null) yield out;
         }
-        file.push(new Uint8Array(0), true);
+        file.push(scrub === null ? new Uint8Array(0) : scrub.end(), true);
+        scrubbed += scrub?.count ?? 0;
       } finally {
         await handle.close();
       }
@@ -353,6 +413,21 @@ async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint
     const out = produced();
     if (out !== null) yield out;
   }
+  const manifest: AgentArchiveManifest =
+    scrubbed > 0
+      ? {
+          ...plan.manifest,
+          redacted: [...plan.manifest.redacted, `traces:vault-values:${scrubbed}`],
+        }
+      : plan.manifest;
+  const last = deflated({
+    name: `${plan.manifest.agentId}/${MANIFEST_FILE}`,
+    source: { bytes: new Uint8Array(0) },
+    size: 0,
+    mtime: new Date(plan.manifest.exportedAt),
+  });
+  zip.add(last);
+  last.push(manifestOf(manifest), true);
   zip.end();
   const out = produced();
   if (out !== null) yield out;
@@ -364,10 +439,10 @@ async function* zipChunks(entries: readonly ArchiveEntry[]): AsyncGenerator<Uint
  * an error, which the client sees as a cut-off download, and is logged.
  */
 export function zipStream(
-  entries: readonly ArchiveEntry[],
+  plan: PlannedArchive,
   log: (line: string) => void,
 ): ReadableStream<Uint8Array> {
-  const chunks = zipChunks(entries);
+  const chunks = zipChunks(plan);
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {

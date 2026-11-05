@@ -4833,10 +4833,41 @@ export interface AgentArchivePreview {
     newest: AgentArchiveSessionRef | null;
     oldest: AgentArchiveSessionRef | null;
   };
-  /** Uncompressed bytes of everything the zip would hold, config included. */
+  /**
+   * Uncompressed bytes of everything the zip would hold, config included. The upload cap
+   * (`AGENT_ARCHIVE_MAX_UPLOAD_BYTES`) applies to the compressed zip, which is smaller: compare
+   * against it as "uncompressed".
+   */
   totalBytes: number;
+  /** How many entries the zip would hold. */
+  entries: number;
+  /**
+   * Why the export would be refused (413 `archive_too_large`), when it would: the selection is
+   * past what an import accepts — more entries than its entry cap (`entries`), more bytes than it
+   * inflates (`inflated`), or one file past its per-entry cap (`entry`, `subject` naming it).
+   * `limit` is the cap in entries or bytes.
+   */
+  refusal?: { reason: "entries" | "inflated" | "entry"; limit: number; subject?: string };
   vaultKeys: string[];
   redacted: string[];
+  /** What the export leaves out besides the rules, e.g. a part whose directory is a link. */
+  notes: AgentArchiveNote[];
+}
+
+/** What an archive note is about, for a client to say in its own language. */
+export type AgentArchiveNoteCode =
+  /** The definition named a built-in tool this install does not ship (`subject`: the tool). */
+  | "unknown_tool"
+  /** None of the definition's built-in tools exist here; the toolset was kept. */
+  | "no_known_tools"
+  /** A part's directory (or `tools/`) is a link, so the export leaves it out (`subject`: the directory). */
+  | "link_skipped";
+
+/** One note of a preview or an import: a code to localize, what it is about, and an English sentence. */
+export interface AgentArchiveNote {
+  code: AgentArchiveNoteCode;
+  subject?: string;
+  message: string;
 }
 
 export interface AgentArchiveImportResponse {
@@ -4857,12 +4888,15 @@ export interface AgentArchiveImportResponse {
     schedules: number;
     traces: { sessions: number; files: number };
   };
-  /** `exists`: a Session with that id is already in this install; `invalid`: its files are missing or do not match. */
-  skippedTraces: Array<{ sessionId: string; reason: "exists" | "invalid" }>;
+  /**
+   * `exists`: a Session with that id (letter case aside) is already in this install; `invalid`:
+   * its files or its row do not hold up, or it could not be moved in (`detail` says which).
+   */
+  skippedTraces: Array<{ sessionId: string; reason: "exists" | "invalid"; detail?: string }>;
   /** What the user must set: vault key names and blanked MCP values (as in `AgentArchiveManifest.redacted`). */
   toFill: string[];
   /** Anything else worth saying, e.g. a built-in tool the definition named that this install lacks. */
-  notes: string[];
+  notes: AgentArchiveNote[];
 }
 
 // ---------------------------------------------------------------------------
