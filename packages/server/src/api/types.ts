@@ -5008,14 +5008,14 @@ export interface HookItem {
 }
 
 /**
- * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
- * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * One library plugin as the listing describes it: its package.json's npm fields and its card
+ * contribution, plus what it ships (skill bodies and scripts are never sent).
  * Every field but the identity, the version and the contents is optional: a field the package
  * does not carry is missing here, and the page says so rather than inventing one.
  */
 export interface PluginItem {
   name: string;
-  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  /** Display name (the card's `title`, `titleZh`); absent → the page shows `name`. */
   title?: string;
   titleZh?: string;
   /** English one-liner (package.json `description`); "" when the package carries none. */
@@ -5039,13 +5039,13 @@ export interface PluginItem {
   workbenches?: Array<{ name: string; version: string }>;
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or the card's `icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
-  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
+  /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
-  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
+  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }
 
@@ -5233,8 +5233,8 @@ export interface PluginIndexEntry {
   shortDescriptionZh?: string;
   /**
    * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own package.json (its `penguin`
-   * block) and icon when the package is on this server, over whatever the index row says.
+   * listing fills these display fields from the package's own card contribution (in its
+   * ifaces.json) and icon when the package is on this server, over whatever the index row says.
    */
   icon?: string;
   authors: string[];
@@ -5578,6 +5578,31 @@ export type DesktopPrivacyPane = "files" | "fullDisk";
 export interface DesktopOpenPrivacySettingsMessage {
   type: "desktop-open-privacy-settings";
   pane: DesktopPrivacyPane;
+}
+
+/**
+ * A native action the host process can run on the page's behalf — what the desktop shell's
+ * application menu used to offer, reached from the command palette instead (the menu bar
+ * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ */
+export const HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommand[];
+}
+
+/** `GET /api/command` (admin): the commands the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  commands: HostCommand[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: HostCommand;
 }
 
 /**
