@@ -2,6 +2,10 @@
  * memory-nav.ts unit tests: entry routing (locate target → detail, panel entry → list),
  * back behavior, the list view-model (markers; deleted topics absent once the listing is
  * loaded; change-derived rows while it is not), and the deleted-key filter set.
+ *
+ * - Given a script the conversation wrote and the listing carries under `scripts/`, the list
+ *   shows it by its path, marked changed, and the memory-changes card does not treat it as
+ *   deleted.
  */
 import { describe, expect, it } from "vitest";
 import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
@@ -37,7 +41,20 @@ function scopeInfo(
 }
 
 function fileInfo(name: string, title = name): MemoryFileInfo {
-  return { name, title, description: "", size: 1, modifiedAt: "2026-08-20T00:00:00.000Z" };
+  return {
+    name,
+    path: name,
+    kind: "topic",
+    title,
+    description: "",
+    size: 1,
+    modifiedAt: "2026-08-20T00:00:00.000Z",
+  };
+}
+
+/** A script as the listing gives it: under `scripts/`, its name for a title. */
+function scriptInfo(name: string): MemoryFileInfo {
+  return { ...fileInfo(name), path: `scripts/${name}`, kind: "script" };
 }
 
 const LISTING: ScopeFiles[] = [
@@ -67,6 +84,7 @@ describe("buildMemoryList", () => {
     expect(groups[0]!.rows).toEqual([
       {
         target: { scope: "user", file: "prefs.md" },
+        kind: "topic",
         title: "Prefs",
         modifiedAt: "2026-08-20T00:00:00.000Z",
         changed: "edit",
@@ -90,7 +108,14 @@ describe("buildMemoryList", () => {
       {
         scope: "user",
         scopeKey: "user",
-        rows: [{ target: { scope: "user", file: "a.md" }, title: "a.md", changed: "write" }],
+        rows: [
+          {
+            target: { scope: "user", file: "a.md" },
+            kind: "topic",
+            title: "a.md",
+            changed: "write",
+          },
+        ],
       },
       {
         scope: "workspace",
@@ -98,12 +123,42 @@ describe("buildMemoryList", () => {
         rows: [
           {
             target: { scope: "workspace", scopeKey: "ws-9", file: "b.md" },
+            kind: "topic",
             title: "b.md",
             changed: "edit",
           },
         ],
       },
     ]);
+  });
+});
+
+describe("a script in the listing", () => {
+  const listing: ScopeFiles[] = [
+    LISTING[0]!,
+    { ...LISTING[1]!, files: [fileInfo("conventions.md"), scriptInfo("dedupe.py")] },
+  ];
+  const wrote = [change("workspace", "scripts/dedupe.py", "write", "ws-1")];
+
+  it("is listed by its path after the topics, with this conversation's change marked", () => {
+    const rows = buildMemoryList(listing, wrote)[1]!.rows;
+    expect(rows.map((r) => [r.kind, r.title, r.changed])).toEqual([
+      ["topic", "conventions.md", undefined],
+      ["script", "scripts/dedupe.py", "write"],
+    ]);
+    expect(rows[1]!.target).toEqual({
+      scope: "workspace",
+      scopeKey: "ws-1",
+      file: "scripts/dedupe.py",
+    });
+  });
+
+  it("is not mistaken for a deleted file by the memory-changes card", () => {
+    expect([...deletedChangeKeys(listing, wrote)!]).toEqual([]);
+  });
+
+  it("reads as a script from its path while the listing has not loaded", () => {
+    expect(buildMemoryList(null, wrote)[0]!.rows[0]!.kind).toBe("script");
   });
 });
 

@@ -456,13 +456,15 @@ agent_state/memory/
 └── my-app-a81f32c4/              # one Workspace
     ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
-    └── testing-conventions.md
+    ├── testing-conventions.md
+    └── scripts/                  # optional: reusable scripts
+        └── dedupe-csv.py
 ```
 
 Each scope has its own `MEMORY.md` index, and different agents never share Memory, even in the same Workspace. Because Memory lives in Agent State, it travels with export, import and snapshots.
 
 > [!WARNING]
-> Every Project member who can reach the agent can read its Memory. Keep credentials and sensitive personal data out of it.
+> Every Project member who can reach the agent can read its Memory, scripts included. Keep credentials and sensitive personal data out of it.
 
 To read or delete memories, or to ask the agent to edit them, use the **Memory** tab of the [agent settings](/agents).
 
@@ -506,9 +508,26 @@ The prompt rules out:
 
 Anything else can be saved if the user wants it. For corrections and decisions, the model adds **Why:** and **How to apply:** lines. A memory that proves wrong is deleted together with its index line. Dates are written absolute (`YYYY-MM-DD`), because relative dates mean nothing to a later Session.
 
+### Scripts
+
+A scope can also keep scripts: programs the agent would otherwise write again, such as a parser, a report generator or a checker. Each is one self-contained file in the scope's `scripts/` folder, in any language, directly in that folder with no subfolders. A scope has no `scripts/` until the agent writes its first script there.
+
+The default Memory prompt tells the model to:
+
+- keep a script free of dependencies beyond its interpreter, with a usage comment at the top
+- list it in `MEMORY.md` like a fact, with how to run it: `- [Dedupe CSV](scripts/dedupe-csv.py) — drops duplicate rows by a key column · run: python3 scripts/dedupe-csv.py <in> <out>`
+- run it with `exec_command`, by absolute path through its interpreter (`python3`, `node`, `bash` and so on), because the file tools write files without the execute bit
+- read a script before running one it did not write in the current Session, and keep secrets in the vault, never in the file
+
+Scripts have no tool of their own. A run is an ordinary `exec_command`, shown in the conversation like any other command, and the Session's sandbox, approval mode and command policy apply to it. Writing a script needs full access, as any write to Memory does: a confining [sandbox](/settings#sandbox) keeps Agent State read-only.
+
+A script carries the trust of a Skill the agent wrote for itself. Every later Session of the agent may run it, and every Project member who can reach the agent can read it on the **Memory** tab, where each scope lists its scripts under **Scripts**.
+
+An agent created before scripts existed keeps its stored Memory prompt, which does not mention them, until a [kernel update](#kernel-updates) brings in the current one.
+
 ### Injection
 
-Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. Each `MEMORY.md` lists its scope's memories one per line, as `- [Title](file.md) — hook` with links relative to the scope directory. The model updates the index together with the file, deletions included, so the two never disagree.
+Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. Each `MEMORY.md` lists its scope's memories one per line, as `- [Title](file.md) — hook` (a script as `scripts/<name>`) with links relative to the scope directory. The model updates the index together with the file, deletions included, so the two never disagree.
 
 `{{MEMORY}}` expands to:
 
@@ -522,7 +541,7 @@ Limits:
 - A blank index injects an explicit "nothing saved yet" note.
 - Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for an index with a few enormous lines. Past a cap, a truncation note tells the model to open the full `MEMORY.md` itself. The file on disk is never touched.
 - The default Memory prompt states the line cap and asks for index lines under about 150 characters, so the model keeps the index short before it reaches the caps. The character backstop exists only in code.
-- The model reads topic bodies on demand.
+- The model reads topic bodies and scripts on demand.
 
 The two halves are separate config keys because substitution has no conditionals. A temporary Workspace must never receive the Workspace section (its directory line and the rule for choosing a scope), so that half is simply not appended there. The harness only decides where Memory lives and keeps writes inside it. Deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 

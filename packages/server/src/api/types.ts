@@ -1733,23 +1733,32 @@ export interface MemoryScopeInfo {
   kind: "user" | "workspace";
   /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
   workspacePath?: string;
-  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
+  /** Number of memories in the directory: its Markdown topic files plus the scripts under `scripts/` (the `MEMORY.md` index not counted). */
   fileCount: number;
   /** Whether the directory holds a `MEMORY.md` index, so an import confirmation can say whether one would be replaced. */
   hasIndex: boolean;
-  /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
+  /** Most recent mtime among the directory's topic files and scripts (ISO 8601); unset when it holds neither. */
   updatedAt?: string;
 }
 
-/** One Memory topic file, as listed (frontmatter only — the body is fetched per file). */
+/**
+ * What a memory file is: a `topic` — a Markdown fact directly in the scope directory — or a
+ * `script` — a program the Agent keeps in the scope's `scripts/` directory, in any language.
+ */
+export type MemoryFileKind = "topic" | "script";
+
+/** One memory file, as listed (a topic's frontmatter only — the body is fetched per file). */
 export interface MemoryFileInfo {
-  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
+  /** File name, e.g. `prefers-pnpm.md`, or a script's `dedupe-csv.py`. */
   name: string;
-  /** Frontmatter `name`; falls back to the file name. */
+  /** Where the file sits inside the scope directory: the name for a topic, `scripts/<name>` for a script. This is what the file routes, the index links and a transfer document address it by. */
+  path: string;
+  kind: MemoryFileKind;
+  /** A topic's frontmatter `name`, falling back to the file name; a script's file name. */
   title: string;
-  /** Frontmatter `description`; empty when the file declares none. */
+  /** A topic's frontmatter `description`; empty when the file declares none, and for a script. */
   description: string;
-  /** Frontmatter `updated_at`, verbatim. */
+  /** A topic's frontmatter `updated_at`, verbatim; unset for a script. */
   updatedAt?: string;
   /** File size in bytes. */
   size: number;
@@ -1774,30 +1783,45 @@ export interface MemoryFilesResponse {
   files: MemoryFileInfo[];
 }
 
-/** GET …/memory/scopes/:key/files/:name */
+/** GET …/memory/scopes/:key/files/:name, and …/files/scripts/:name for a script */
 export interface MemoryFileResponse {
   scopeKey: string;
   file: MemoryFileInfo;
   content: string;
 }
 
-/** One topic file inside a transfer document: the name it had in its scope, and its whole text. */
+/** One memory inside a transfer document: where it sat in its scope, and its whole text. */
 export interface MemoryTransferFile {
-  /** File name inside the scope directory, e.g. `prefers-pnpm.md` — a name, never a path. */
-  name: string;
-  /** The file's full Markdown text, frontmatter included. */
+  /** Its place inside the scope directory: `prefers-pnpm.md` for a topic, `scripts/dedupe-csv.py` for a script — never absolute, never deeper than `scripts/`. */
+  path: string;
+  /** The file's full text (a topic's frontmatter included). */
   content: string;
+}
+
+/** A script the scope holds that its export leaves out, so the reader can say what did not travel. */
+export interface MemoryOmittedFile {
+  /** `scripts/<name>`. */
+  path: string;
+  /** Bytes on disk. */
+  size: number;
+  /** `too_large` — over the 512 KB a memory file may hold; `not_text` — not UTF-8 text (a NUL byte counts). */
+  reason: "too_large" | "not_text";
 }
 
 /**
  * GET …/memory/scopes/:key/export, and the body a POST …/import carries back: everything one
- * scope holds, as one JSON document — the topic files and the scope's own `MEMORY.md`.
+ * scope holds, as one JSON document — the topic files, the scripts, and the scope's own
+ * `MEMORY.md`.
  */
 export interface MemoryScopeExport {
   /** Format marker, so a foreign JSON file is refused with a clear reason rather than half-imported. */
   format: "penguin-memory-scope";
-  /** Document version. A reader accepts exactly this; a later format bumps it and states its own compatibility. */
-  version: 1;
+  /**
+   * Document version. 2 added scripts and addresses every entry by `path`; a reader of this
+   * version still accepts version 1 (`MemoryScopeExportV1`), while a server from before it
+   * refuses version 2.
+   */
+  version: 2;
   /** The scope this was exported from. Informational: an import writes into the scope its URL names. */
   scopeKey: string;
   kind: MemoryScopeInfo["kind"];
@@ -1808,13 +1832,28 @@ export interface MemoryScopeExport {
   /** The scope's `MEMORY.md`, or null when the scope has none. Only the index reaches the model's context. */
   index: string | null;
   files: MemoryTransferFile[];
+  /** Scripts listed in the scope but not carried here. Informational: an import does not read it. */
+  omitted: MemoryOmittedFile[];
 }
+
+/** A version 1 document: written before scripts, topics only, each entry named by its file name. An import still reads it. */
+export interface MemoryScopeExportV1 extends Omit<
+  MemoryScopeExport,
+  "version" | "files" | "omitted"
+> {
+  version: 1;
+  /** `name` is the topic's file name inside the scope, e.g. `prefers-pnpm.md`. */
+  files: { name: string; content: string }[];
+}
+
+/** Any document an import accepts. */
+export type MemoryScopeDocument = MemoryScopeExport | MemoryScopeExportV1;
 
 /**
  * What an import does with a name the target scope already holds:
  *   - `skip` — keep what is on disk, write only names the scope does not have (destroys nothing);
  *   - `overwrite` — replace a same-named file's content;
- *   - `replace` — additionally delete every topic file the document does not carry.
+ *   - `replace` — additionally delete every memory (topic or script) the document does not carry.
  * The two destructive modes require `confirm`.
  */
 export type MemoryImportMode = "skip" | "overwrite" | "replace";
@@ -1825,20 +1864,20 @@ export interface MemoryImportRequest {
   mode?: MemoryImportMode;
   /** Required by `overwrite` and `replace`; without it they are refused with 409 `memory_import_confirm_required`. */
   confirm?: boolean;
-  payload: MemoryScopeExport;
+  payload: MemoryScopeDocument;
 }
 
-/** What one import did, name by name, so the UI can report it rather than claim success. */
+/** What one import did, memory by memory (each named by its `path` in the scope), so the UI can report it rather than claim success. */
 export interface MemoryImportResponse {
   scopeKey: string;
   mode: MemoryImportMode;
-  /** Names written that the scope did not have. */
+  /** Paths written that the scope did not have. */
   added: string[];
-  /** Names whose existing content was replaced. */
+  /** Paths whose existing content was replaced. */
   overwritten: string[];
-  /** Names left untouched because the scope already had them (`skip` only). */
+  /** Paths left untouched because the scope already had them (`skip` only). */
   skipped: string[];
-  /** Names deleted because `replace` dropped everything the document did not carry. */
+  /** Paths deleted because `replace` dropped everything the document did not carry. */
   removed: string[];
   /** Whether the scope's `MEMORY.md` was written or extended. */
   indexWritten: boolean;

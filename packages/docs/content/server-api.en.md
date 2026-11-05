@@ -528,8 +528,9 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 | POST | `/agents/:agentId/vault/template-placeholder` | Inserts the `{{VAULT}}` placeholder into the prompt template (owner only) |
 | GET | `/agents/:agentId/memory` | Memory overview |
 | POST | `/agents/:agentId/memory/template-placeholder` | Inserts the `{{MEMORY}}` placeholder into the prompt template |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files and scripts |
 | GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | Reads one topic file / deletes it |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/scripts/:name` | Reads one script / deletes it |
 | GET | `/agents/:agentId/memory/scopes/:key/export` | Exports one scope as a single JSON document |
 | POST | `/agents/:agentId/memory/scopes/:key/import` | Writes an exported scope back (owner only) |
 | GET | `/agents/:agentId/export` | Exports the Agent State snapshot (tar.gz download) |
@@ -566,10 +567,11 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 
 - `GET …/memory` returns the Memory switch, whether the prompt template carries `{{MEMORY}}`, and one entry per scope: the user scope (`user`, `kind: "user"`) first, then the Workspaces.
 - In the scope routes, `:key` is a workspace key or `user`.
-- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats.
-- `DELETE …/scopes/:key/files/:name` deletes a topic file and removes its lines from the `MEMORY.md` index.
-- `GET …/scopes/:key/export` returns every topic file of the scope plus its `MEMORY.md` as one JSON document, downloaded as an attachment.
-- `POST …/scopes/:key/import` takes `{payload, mode?, confirm?}`. `mode` is `skip` (the default, which adds only names the scope lacks), `overwrite` (which replaces same-named files) or `replace` (which also deletes what the document omits). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`.
+- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats, then the scripts in its `scripts/` folder. Each entry carries `kind` (`topic` or `script`) and `path`, its place in the scope: the file name for a topic, `scripts/<name>` for a script.
+- `DELETE …/scopes/:key/files/:name` deletes a topic file and removes its lines from the `MEMORY.md` index; `DELETE …/files/scripts/:name` does the same for a script.
+- `GET …/files/scripts/:name` returns a script's text. A script over 512 KB is refused with 413 `memory_script_too_large`, and one that is not UTF-8 text with 415 `memory_script_not_text`.
+- `GET …/scopes/:key/export` returns every topic file and script of the scope plus its `MEMORY.md` as one JSON document, downloaded as an attachment. The document is `version: 2`, and each entry names its `path`. A script over 512 KB or not UTF-8 text is left out and listed in `omitted` with its `size` and a `reason` (`too_large` or `not_text`).
+- `POST …/scopes/:key/import` takes `{payload, mode?, confirm?}`. `mode` is `skip` (the default, which adds only paths the scope lacks), `overwrite` (which replaces files at the same paths) or `replace` (which also deletes what the document omits, scripts included). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`. A `version: 1` document, whose entries name topic files by `name`, still imports. A document carries at most 100 scripts; when it brings scripts into a scope whose `scripts` is not a directory, the route returns 409 `memory_scripts_not_a_directory` and writes nothing.
 
 ### Plugins and hooks
 

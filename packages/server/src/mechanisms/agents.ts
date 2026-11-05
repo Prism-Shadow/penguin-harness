@@ -103,11 +103,12 @@ export abstract class Memory {
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse>;
+  /** `filePath` is the memory's place in the scope: a topic's name, or `scripts/<name>`. */
   abstract readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<MemoryFileResponse>;
   abstract exportScope(
     projectId: string,
@@ -120,11 +121,12 @@ export abstract class Memory {
     scopeKey: string,
     request: { mode: MemoryImportMode; confirm: boolean; payload: unknown },
   ): Promise<MemoryImportResponse>;
+  /** `filePath` as in `readFile`. */
   abstract deleteFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<void>;
 }
 

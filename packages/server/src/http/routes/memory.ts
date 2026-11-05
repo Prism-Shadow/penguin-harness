@@ -2,9 +2,11 @@
  * Memory routes (`agent_state/memory/`), Project-member operations except where noted:
  *   GET    /api/projects/:p/agents/:a/memory                        # switch + scope groups (user scope first)
  *   POST   /api/projects/:p/agents/:a/memory/template-placeholder    # insert the {{MEMORY}} placeholder into the template
- *   GET    /api/projects/:p/agents/:a/memory/scopes/:key/files      # one scope's topic files
+ *   GET    /api/projects/:p/agents/:a/memory/scopes/:key/files      # one scope's topic files and scripts
  *   GET    …/memory/scopes/:key/files/:name                         # one topic file's content
  *   DELETE …/memory/scopes/:key/files/:name                         # delete + prune its index lines
+ *   GET    …/memory/scopes/:key/files/scripts/:name                 # one script's text (up to 512 KB, UTF-8 only)
+ *   DELETE …/memory/scopes/:key/files/scripts/:name                 # delete + prune its index lines
  *   GET    …/memory/scopes/:key/export                              # the whole scope as one JSON document
  *   POST   …/memory/scopes/:key/import                              # write such a document back (owner only)
  *
@@ -18,8 +20,8 @@
  * agreed to lose (agent-transfer.ts).
  *
  * No route accepts an absolute path: a file is addressed by `agentId` + `scopeKey` + a name
- * inside that scope, and MemoryService re-checks that the resolved path stayed inside the
- * Agent's Memory directory.
+ * inside that scope (under `scripts/` for a script — the path its index line links to), and
+ * MemoryService re-checks that the resolved path stayed inside the Agent's Memory directory.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -30,12 +32,16 @@ export interface MemoryRouteDeps {
   memoryService: Memory;
   access: Access;
 }
+import { MEMORY_SCRIPTS_DIR } from "@prismshadow/penguin-core";
 import type { MemoryImportMode } from "../../api/types.js";
 import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } from "../validate.js";
 import type { Memory } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
+
+/** A script's path in its scope, from the route's single name segment (a decoded separator in it fails the service's name rule). */
+const scriptPath = (name: string): string => `${MEMORY_SCRIPTS_DIR}/${name}`;
 
 /** The export attachment's `YYYYMMDD-HHmm` stamp, from the document's `exportedAt` (local clock). */
 function exportStamp(exportedAt: string): string {
@@ -79,6 +85,13 @@ export function memoryRoutes(deps: MemoryRouteDeps): Hono<AppEnv> {
     return c.json(await deps.memoryService.readFile(projectId, agentId, key, name));
   });
 
+  app.get("/scopes/:scopeKey/files/scripts/:scriptName", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const key = pathParam(c, "scopeKey");
+    const name = pathParam(c, "scriptName");
+    return c.json(await deps.memoryService.readFile(projectId, agentId, key, scriptPath(name)));
+  });
+
   app.get("/scopes/:scopeKey/export", async (c) => {
     const { projectId, agentId } = scope(c);
     const key = pathParam(c, "scopeKey");
@@ -118,6 +131,14 @@ export function memoryRoutes(deps: MemoryRouteDeps): Hono<AppEnv> {
     const key = pathParam(c, "scopeKey");
     const name = pathParam(c, "fileName");
     await deps.memoryService.deleteFile(projectId, agentId, key, name);
+    return c.body(null, 204);
+  });
+
+  app.delete("/scopes/:scopeKey/files/scripts/:scriptName", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const key = pathParam(c, "scopeKey");
+    const name = pathParam(c, "scriptName");
+    await deps.memoryService.deleteFile(projectId, agentId, key, scriptPath(name));
     return c.body(null, 204);
   });
 

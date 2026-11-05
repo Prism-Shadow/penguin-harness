@@ -308,6 +308,15 @@ Each memory row has three buttons:
 
 Memory content is changed through the agent in a chat, not edited in place.
 
+### Scripts
+
+When the agent keeps scripts in a group, the group lists them under **Scripts**, below its memories, with each script's size and date. A script row has two buttons:
+
+- **View** shows the script's folder path and its code, with line numbers, in the same side panel. A script over 512 KB, or one that is not text, is listed but not shown.
+- **Delete** deletes the script after you confirm, and removes its line from `MEMORY.md`.
+
+Scripts have no **Edit**: ask the agent in a chat to change one. Every later Session of the agent may run its scripts, so look at one before you rely on it. See [Scripts](/configuration#scripts).
+
 ### Add a memory
 
 1. On a group's header, select **Add**. The **Add memory** dialog opens.
@@ -316,7 +325,7 @@ Memory content is changed through the agent in a chat, not edited in place.
 
 ### Export and import memories
 
-- **Export** on a group's header downloads every memory in the group, with the group's `MEMORY.md`, as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other.
+- **Export** on a group's header downloads every memory in the group, its scripts and the group's `MEMORY.md` as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other. A script over 512 KB, or one that is not text, is left out of the file, and a notice names it.
 - **Import** on a group's header reads such a file back into the group. Only the Project owner can import.
 
 When you import, choose what happens when the group already has a memory with the same name:
@@ -325,9 +334,11 @@ When you import, choose what happens when the group already has a memory with th
 | --- | --- |
 | **Keep the one that is here** (default) | Adds only what the group does not have. Nothing is lost |
 | **Take the file's version** | Replaces same-named memories. Memories the file does not carry are left alone |
-| **Replace the whole group** | Deletes every memory the file does not carry |
+| **Replace the whole group** | Deletes every memory and script the file does not carry |
 
 If the import would overwrite or delete memories, or replace the group's `MEMORY.md`, a **Confirm the import** dialog lists what changes first.
+
+A file exported before scripts existed still imports. A file exported now cannot be imported into a server from before scripts: that server does not know the file's newer format version and refuses it.
 
 ### Memory prompts
 

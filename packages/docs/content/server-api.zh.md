@@ -528,8 +528,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/vault/template-placeholder` | 在 Prompt 模板中插入 `{{VAULT}}` 占位符（仅所有者） |
 | GET | `/agents/:agentId/memory` | 记忆概览 |
 | POST | `/agents/:agentId/memory/template-placeholder` | 在 Prompt 模板中插入 `{{MEMORY}}` 占位符 |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件 |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件与脚本 |
 | GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/scripts/:name` | 读取 / 删除一个脚本 |
 | GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
 | POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
 | GET | `/agents/:agentId/export` | 导出 Agent State 快照（tar.gz 下载） |
@@ -566,10 +567,11 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 - `GET …/memory` 返回记忆开关、Prompt 模板是否带有 `{{MEMORY}}`，以及每个作用域的条目：用户作用域（`user`，`kind: "user"`）排在最前，随后是各个 Workspace。
 - 在这些作用域路由中，`:key` 是某个 Workspace 的 key 或 `user`。
-- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。
-- `DELETE …/scopes/:key/files/:name` 删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行。
-- `GET …/scopes/:key/export` 把作用域的全部主题文件连同 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。
-- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。`mode` 取 `skip`（默认值，只添加作用域缺少的文件）、`overwrite`（替换同名文件）或 `replace`（还会删除文档中没有包含的文件）。凡会覆盖或删除文件的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。
+- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息，随后是其 `scripts/` 目录下的脚本。每一项都带 `kind`（`topic` 或 `script`）和 `path`，即它在作用域中的位置：主题文件是文件名，脚本是 `scripts/<name>`。
+- `DELETE …/scopes/:key/files/:name` 删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行；`DELETE …/files/scripts/:name` 对脚本做同样的事。
+- `GET …/files/scripts/:name` 返回一个脚本的文本。超过 512 KB 的脚本以 413 `memory_script_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_script_not_text` 拒绝。
+- `GET …/scopes/:key/export` 把作用域的全部主题文件、脚本连同 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。文档为 `version: 2`，每一项以 `path` 标明位置。超过 512 KB 或不是 UTF-8 文本的脚本不写入文档，而是列在 `omitted` 中，附 `size` 与 `reason`（`too_large` 或 `not_text`）。
+- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。`mode` 取 `skip`（默认值，只添加作用域缺少的路径）、`overwrite`（替换同一路径的文件）或 `replace`（还会删除文档中没有包含的文件，脚本也不例外）。凡会覆盖或删除文件的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。`version: 1` 的文档（各项以 `name` 指明主题文件）照常导入。一份文档至多携带 100 个脚本；文档带有脚本而作用域的 `scripts` 不是目录时，路由返回 409 `memory_scripts_not_a_directory`，什么也不写入。
 
 ### 插件与钩子
 

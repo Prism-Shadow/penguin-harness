@@ -643,6 +643,25 @@ const memoryOf = (ctx: Ctx) => {
   return memory;
 };
 
+/** One memory file of the route's scope, by its path there: a topic's name, or `scripts/<name>`. */
+const memoryFileAt = (ctx: Ctx, filePath: string): MemoryFileResponse => {
+  const found = memoryOf(ctx).files.find(
+    (f) => f.scopeKey === ctx.params.scopeKey && f.file.path === filePath,
+  );
+  if (!found) notFound("Memory file");
+  return found;
+};
+
+const deleteMemoryFileAt = (ctx: Ctx, filePath: string) => {
+  const memory = memoryOf(ctx);
+  memory.files = memory.files.filter(
+    (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path === filePath),
+  );
+  const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
+  if (scope) scope.fileCount = memory.files.filter((f) => f.scopeKey === scope.scopeKey).length;
+  return empty();
+};
+
 router
   .get(
     "/api/projects/:projectId/agents/:agentId/memory",
@@ -667,23 +686,19 @@ router
   )
   .get(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name",
-    (ctx): MemoryFileResponse => {
-      const found = memoryOf(ctx).files.find(
-        (f) => f.scopeKey === ctx.params.scopeKey && f.file.name === ctx.params.name,
-      );
-      if (!found) notFound("Memory file");
-      return found;
-    },
+    (ctx): MemoryFileResponse => memoryFileAt(ctx, ctx.params.name!),
   )
-  .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) => {
-    const memory = memoryOf(ctx);
-    memory.files = memory.files.filter(
-      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.name === ctx.params.name),
-    );
-    const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
-    if (scope) scope.fileCount = memory.files.filter((f) => f.scopeKey === scope.scopeKey).length;
-    return empty();
-  })
+  .get(
+    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/scripts/:name",
+    (ctx): MemoryFileResponse => memoryFileAt(ctx, `scripts/${ctx.params.name}`),
+  )
+  .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) =>
+    deleteMemoryFileAt(ctx, ctx.params.name!),
+  )
+  .delete(
+    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/scripts/:name",
+    (ctx) => deleteMemoryFileAt(ctx, `scripts/${ctx.params.name}`),
+  )
   .get(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export",
     (ctx): MemoryScopeExport => {
@@ -692,7 +707,7 @@ router
       if (!scope) notFound("Memory scope");
       return {
         format: "penguin-memory-scope",
-        version: 1,
+        version: 2,
         scopeKey: scope.scopeKey,
         kind: scope.kind,
         ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
@@ -700,7 +715,8 @@ router
         index: scope.hasIndex ? "# Memory\n" : null,
         files: memory.files
           .filter((f) => f.scopeKey === scope.scopeKey)
-          .map((f) => ({ name: f.file.name, content: f.content })),
+          .map((f) => ({ path: f.file.path, content: f.content })),
+        omitted: [],
       };
     },
   )
@@ -713,7 +729,7 @@ router
       overwritten: [],
       skipped: memoryOf(ctx)
         .files.filter((f) => f.scopeKey === ctx.params.scopeKey)
-        .map((f) => f.file.name),
+        .map((f) => f.file.path),
       removed: [],
       indexWritten: false,
     }),
