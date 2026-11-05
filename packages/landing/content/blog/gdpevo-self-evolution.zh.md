@@ -75,23 +75,39 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ## 3. 在 PenguinHarness Web 界面启动实验
 
-在 PenguinHarness 0.2.19 中，默认 Agent 已预装 `skilladam-rsi-toolkit`、`agent-evaluation` 等全部自进化与评测技能，且六个场景的 12 个 GDPEVO Essential Benchmark 包均已内置。实验人员无需额外安装插件或编写底层调度脚本，只需在 Web 界面中完成以下两步即可发起实验。
+在 PenguinHarness 中开展 GDPEVO 自进化实验，不需要编写底层调度脚本。我们可以直接从新建一个主控 Agent 开始，为其挂载对应的 RSI 工具包插件，再通过对话发起实验。
 
-### 第一步：在 Web 界面配置模型与思考强度
+### 第一步：新建主控 Agent 并挂载 RSI 工具包
 
-打开 PenguinHarness 0.2.19 的 Web 界面，在模型设置中添加 `deepseek/deepseek-flash` 并填入 API Key，将当前会话使用的模型选为 `deepseek/deepseek-flash`，思考强度调为 **Max**。
+1. 打开 Web 界面左侧的**智能体**页面，点击右上角的**新建智能体**。
+2. 填写智能体名称（例如 `GDPEVO Controller`）与标识（例如 `gdpevo_controller`）。
+3. 在创建弹窗的**插件**下拉列表中，搜索并勾选本次实验要使用的自进化工具包 `skilladam-rsi-toolkit`（如需对比其他方法，也可一并勾选 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`），点击**创建**。
+   - 如果希望在已有的 Agent 上运行实验，也可以打开左侧的**插件**页面，在 **Agent 自进化**分类下找到 `skilladam-rsi-toolkit` 卡片，直接点击安装到该 Agent。
 
-### 第二步：在聊天框发送启动指令
+> **TODO（配图占位 1 — 新建 Agent 与勾选 RSI 工具包）**：此处预留截图，展示在「新建智能体」弹窗中填写名称与标识，并在「插件」下拉列表中勾选 `skilladam-rsi-toolkit`（或展示「插件 → Agent 自进化」页面下的四个 RSI 工具包卡片）。
 
-由于具体的任务路径、容器运行参数与评分规则均已内置在方法技能和 Benchmark 包说明中，直接在 Web 聊天框向 Agent 发送一句简短指令即可，只需说明方法、评测场景、模型与思考强度。
+### 第二步：配置模型与思考强度
+
+1. 打开左侧的**模型**页面，添加 `deepseek/deepseek-flash` 并保存 API Key。
+2. 回到刚创建的 `gdpevo_controller` 对话界面，在输入框下方的模型选择器中选定 `deepseek/deepseek-flash`，并将思考强度调为 **Max**。
+
+> **TODO（配图占位 2 — 配置模型与思考强度 Max）**：此处预留截图，展示在 `gdpevo_controller` 会话输入框下方选定 `deepseek/deepseek-flash` 模型并将思考强度设为 `Max`。
+
+### 第三步：选择工具包并发送启动指令
+
+在聊天输入框中输入 `/skilladam-rsi-toolkit`（或在技能选择器中勾选 `skilladam-rsi-toolkit`），并在启动指令中明确指定工具包名称、评测包标识、主从 Agent 的模型与思考强度以及 Docker 并发上限。
 
 如果只跑单个场景（以服务工单处理为例），在聊天框输入：
 
-> 使用 SkillAdam，在 GDPEVO Essential-Service Ticket Resolution 上开展自进化实验。模型使用 deepseek/deepseek-flash，思考强度 max。
+> 使用 `skilladam-rsi-toolkit`，在 `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train` 与 `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-test` 上开展自进化实验：在训练集上连续训练一次，冻结导出的 `SKILL.md` 后，在测试集上对 Baseline 与 Final 各完整测试 3 轮。主控 Agent 与容器内目标 Agent 均使用模型 `deepseek/deepseek-flash`，思考强度设为 `max`，Docker 并发上限设为 `4`。
 
 如果直接开展全量六个场景的实验，在聊天框输入：
 
-> 使用 SkillAdam 完成全部六个 GDPEVO Essential 场景的全量实验，每个场景独立训练一次，冻结后对 Baseline 与 Final 各完整测试三次。模型使用 deepseek/deepseek-flash，思考强度 max。
+> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 的全部六个场景（`service-ticket-resolution`、`financial-control`、`portfolio-management`、`coverage-review`、`court-clerk-operations`、`engineering-portfolio-analytics` 各自的 `-train` 与 `-test` 包）上开展自进化实验：每个场景独立连续训练一次，冻结导出的 `SKILL.md` 后，在对应测试集上对 Baseline 与 Final 各完整测试 3 轮。主控 Agent 与容器内目标 Agent 均使用模型 `deepseek/deepseek-flash`，思考强度设为 `max`，Docker 并发上限设为 `4`。
+
+如果要评测其他自进化算法，只需将指令中的 `skilladam-rsi-toolkit` 替换为 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`。
+
+> **TODO（配图占位 3 — 挂载 `skilladam-rsi-toolkit` 并发送启动指令）**：此处预留截图，展示在聊天输入框中挂载 `skilladam-rsi-toolkit` 技能标签、输入上述启动 Prompt 并启动实验后的对话界面。
 
 ## 4. 实验启动后的内部执行流程
 

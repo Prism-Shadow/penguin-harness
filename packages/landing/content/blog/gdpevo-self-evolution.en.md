@@ -75,23 +75,39 @@ Alongside SkillAdam, we evaluated three additional representative self-evolution
 
 ## 3. Launching the Experiment in the PenguinHarness Web UI
 
-In PenguinHarness 0.2.19, the default Agent comes pre-installed with `skilladam-rsi-toolkit`, `agent-evaluation`, and all other self-evolution and evaluation skills, along with all 12 built-in GDPEVO Essential Benchmark packages. Launching an experiment requires only two steps in the Web UI.
+Running a GDPEVO self-evolution experiment in PenguinHarness requires no custom orchestration scripts. We start by creating a dedicated Controller Agent, installing the RSI toolkit plugin onto it, and sending the launch prompt in chat.
 
-### Step 1: Configure the Model and Thinking Effort
+### Step 1: Create a Controller Agent and Install the RSI Toolkit
 
-Open the PenguinHarness 0.2.19 Web UI, add `deepseek/deepseek-flash` with its API key on the Models page, select `deepseek/deepseek-flash` for the current session, and set the thinking effort to **Max**.
+1. Open the **Agents** page from the left sidebar and click **Create Agent** in the top-right corner.
+2. Enter a name (for example, `GDPEVO Controller`) and an ID (for example, `gdpevo_controller`).
+3. In the **Plugins** dropdown of the creation dialog, search for and select `skilladam-rsi-toolkit` (you can also select `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit` if you plan to compare multiple methods), then click **Create**.
+   - To use an existing Agent instead, open the **Plugins** page from the sidebar, find `skilladam-rsi-toolkit` under the **Agent Self-Evolution** category, and install it onto that Agent.
 
-### Step 2: Send the Launch Prompt in Chat
+> **TODO (Screenshot Placeholder 1 — Creating the Agent & Picking the RSI Toolkit)**: Insert screenshot showing the "Create Agent" dialog with `skilladam-rsi-toolkit` selected in the "Plugins" dropdown (or the "Plugins → Agent Self-Evolution" view).
 
-Because task paths, container flags, and grading rules are already packaged inside the method skills and Benchmark manifests, a short prompt naming the method, target scenario, model, and thinking level is sufficient.
+### Step 2: Configure the Model and Thinking Effort
+
+1. Open the **Models** page and add `deepseek/deepseek-flash` with its API key.
+2. Open a chat with `gdpevo_controller`, select `deepseek/deepseek-flash` in the model picker below the composer, and set the thinking effort to **Max**.
+
+> **TODO (Screenshot Placeholder 2 — Selecting Model & Max Thinking Effort)**: Insert screenshot showing the `gdpevo_controller` chat composer with `deepseek/deepseek-flash` and `Max` thinking effort selected.
+
+### Step 3: Select the Toolkit and Send the Launch Prompt
+
+In the chat composer, type `/skilladam-rsi-toolkit` (or pick `skilladam-rsi-toolkit` from the Skills selector) and send a launch prompt that explicitly names the toolkit ID, the Benchmark package IDs, the model and thinking level for both the Controller Agent and the in-container Target Agent, and the Docker concurrency limit.
 
 To run a single scenario (for example, Service Ticket Resolution), send:
 
-> Run a self-evolution experiment with SkillAdam on GDPEVO Essential-Service Ticket Resolution. Use model deepseek/deepseek-flash and thinking level max.
+> Use `skilladam-rsi-toolkit` to run a self-evolution experiment on `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train` and `penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-test`: run one continuous training session on the training set, freeze the exported `SKILL.md`, and evaluate both Baseline and Final for 3 full repetitions on the test set. Use model `deepseek/deepseek-flash` with thinking level `max` for both the Controller Agent and the Target Agent, and set the Docker concurrency limit to `4`.
 
 To run the full experiment across all six scenarios, send:
 
-> Run the full SkillAdam experiment across all six GDPEVO Essential scenarios, training once per scenario and evaluating both Baseline and Final three times each after freezing. Use model deepseek/deepseek-flash and thinking level max.
+> Use `skilladam-rsi-toolkit` to run the full self-evolution experiment across all six GDPEVO Essential scenarios (`service-ticket-resolution`, `financial-control`, `portfolio-management`, `coverage-review`, `court-clerk-operations`, and `engineering-portfolio-analytics`, using each scenario's `-train` and `-test` packages): train once per scenario in a continuous session, freeze the exported `SKILL.md`, and evaluate both Baseline and Final for 3 full repetitions on the corresponding test set. Use model `deepseek/deepseek-flash` with thinking level `max` for both the Controller Agent and the Target Agent, and set the Docker concurrency limit to `4`.
+
+To benchmark another self-evolution algorithm, simply replace `skilladam-rsi-toolkit` in the prompt with `skillopt-rsi-toolkit`, `trace-rsi-toolkit`, or `openskill-rsi-toolkit`.
+
+> **TODO (Screenshot Placeholder 3 — Attaching `skilladam-rsi-toolkit` & Sending the Launch Prompt)**: Insert screenshot showing `skilladam-rsi-toolkit` attached in the chat composer and the Controller Agent starting the experiment.
 
 ## 4. Internal Execution Pipeline After Launch
 
